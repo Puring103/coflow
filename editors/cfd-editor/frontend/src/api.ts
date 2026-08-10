@@ -19,6 +19,8 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
+import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RefTarget } from './bindings/RefTarget'
 import type { EnumVariantOption } from './bindings/EnumVariantOption'
 import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
@@ -77,6 +79,15 @@ export async function initProject(dir: string): Promise<ProjectSnapshot> {
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
   return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
+}
+
+export async function searchRecords(
+  sessionId: number,
+  query: string,
+  mode: ProjectSearchMode,
+  limit = 200,
+): Promise<ProjectSearchResults> {
+  return invokeCommand<ProjectSearchResults>('search_records', { sessionId, query, mode, limit })
 }
 
 export async function getPluginSchema(sessionId: number): Promise<PluginSchemaType[]> {

@@ -32,6 +32,7 @@ mod records;
 mod runtime;
 mod schema_diagnostics;
 mod schema_inspect;
+mod search;
 mod session;
 mod session_build;
 mod source_resolution;
@@ -76,6 +77,7 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
+pub use search::{RecordSearchHit, RecordSearchMode, RecordSearchResults};
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
 pub use statistics::ProjectExecutionStats;

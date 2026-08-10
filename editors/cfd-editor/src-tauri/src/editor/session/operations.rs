@@ -7,10 +7,11 @@ use super::{
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
     CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
     FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields, MutationOp,
-    MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, RecordCoordinate,
-    RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext,
-    WriteFieldOutcome,
+    MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, ProjectSearchHit,
+    ProjectSearchMode, ProjectSearchResults, RecordCoordinate, RecordRow, RefTarget,
+    RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext, WriteFieldOutcome,
 };
+use coflow_runtime::RecordSearchMode;
 
 impl SessionStore {
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
@@ -20,6 +21,43 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(file_records_for_session(&session, file_path))
+    }
+
+    #[allow(clippy::significant_drop_tightening)]
+    pub fn search_records(
+        &self,
+        id: u32,
+        query: &str,
+        mode: ProjectSearchMode,
+        limit: usize,
+    ) -> Result<ProjectSearchResults, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let results = session.queries().search_records(
+            query,
+            match mode {
+                ProjectSearchMode::Key => RecordSearchMode::Key,
+                ProjectSearchMode::FullText => RecordSearchMode::FullText,
+            },
+            limit,
+        );
+        Ok(ProjectSearchResults {
+            revision: session.revisions.current(),
+            hits: results
+                .hits
+                .into_iter()
+                .map(|hit| ProjectSearchHit {
+                    file_path: hit.file_path,
+                    coordinate: hit.coordinate,
+                    field_path: hit.field_path,
+                    preview: hit.preview,
+                })
+                .collect(),
+            truncated: results.truncated,
+        })
     }
 
     /// Returns the schema projection available to read-only editor extensions.

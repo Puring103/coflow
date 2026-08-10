@@ -31,6 +31,9 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectSearchHit } from './bindings/ProjectSearchHit'
+import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
+import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
@@ -62,6 +65,7 @@ import {
 } from './state/editorMutations'
 import { historyShortcutFor } from './state/editorShortcuts'
 import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
+import { groupProjectSearchHits, searchMockRecords } from './state/projectSearch'
 import {
   recordSelection,
   rebindSelection,
@@ -314,13 +318,22 @@ export default function App() {
     for (const child of Array.from(el.children)) ro.observe(child)
     return () => ro.disconnect()
   }, [workspaceTabs])
-  const [globalSearch, setGlobalSearch] = useState('')
+  const [documentSearch, setDocumentSearch] = useState('')
   const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
+  const [projectSearch, setProjectSearch] = useState('')
+  const [projectSearchMode, setProjectSearchMode] = useState<ProjectSearchMode>('key')
+  const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResults | null>(null)
+  const [projectSearchBusy, setProjectSearchBusy] = useState(false)
+  const [projectSearchError, setProjectSearchError] = useState<string | null>(null)
+  const [selectedProjectSearchIndex, setSelectedProjectSearchIndex] = useState(-1)
+  const [collapsedSearchGroups, setCollapsedSearchGroups] = useState<Set<string>>(() => new Set())
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
   const viewsSaveSequence = useRef(0)
-  const globalSearchRef = useRef<HTMLInputElement>(null)
+  const documentSearchRef = useRef<HTMLInputElement>(null)
+  const projectSearchRef = useRef<HTMLInputElement>(null)
+  const projectSearchRequest = useRef(0)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
@@ -337,6 +350,44 @@ export default function App() {
   // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
   // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
   const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
+
+  useEffect(() => {
+    const request = ++projectSearchRequest.current
+    const query = projectSearch.trim()
+    setSelectedProjectSearchIndex(-1)
+    setProjectSearchError(null)
+    if (activePane !== 'search' || !project || !query) {
+      setProjectSearchResults(null)
+      setProjectSearchBusy(false)
+      return
+    }
+    setProjectSearchBusy(true)
+    const timeout = window.setTimeout(() => {
+      const operation = api.isTauri
+        ? api.searchRecords(project.session_id, query, projectSearchMode)
+        : Promise.resolve(searchMockRecords(
+            MOCK_FILE_RECORDS,
+            project.revision,
+            query,
+            projectSearchMode,
+            200,
+          ))
+      operation
+        .then(results => {
+          if (projectSearchRequest.current !== request || results.revision !== project.revision) return
+          setProjectSearchResults(results)
+        })
+        .catch(error => {
+          if (projectSearchRequest.current !== request) return
+          setProjectSearchError(errorMessage(error))
+          setProjectSearchResults(null)
+        })
+        .finally(() => {
+          if (projectSearchRequest.current === request) setProjectSearchBusy(false)
+        })
+    }, 150)
+    return () => window.clearTimeout(timeout)
+  }, [activePane, project, projectSearch, projectSearchMode])
 
   const saveRecordGroups = useCallback((
     filePath: string,
@@ -954,7 +1005,7 @@ export default function App() {
 
   const openFile = useCallback(
     (filePath: string, requestedType = '') => {
-      setGlobalSearch('')
+      setDocumentSearch('')
       const options = project?.file_types[filePath] ?? []
       const typeName = requestedType || options[0]?.name || ''
       const id = workspaceTabId(filePath, typeName)
@@ -990,6 +1041,11 @@ export default function App() {
     },
     [navigateWorkspaceTab]
   )
+
+  const openProjectSearchHit = useCallback((hit: ProjectSearchHit) => {
+    setHighlightField(hit.field_path ?? RECORD_HIGHLIGHT_SENTINEL)
+    openRecord(hit.file_path, hit.coordinate)
+  }, [openRecord])
 
   // Click on a corner badge (on a record or field): reveal the first
   // matching diagnostic in the bottom panel. Falls back to record-level
@@ -1420,10 +1476,15 @@ export default function App() {
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()
-      // Ctrl+F / Cmd+F focuses the record search bar.
+      // Ctrl+F filters the current document; Ctrl+Shift+F opens project search.
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault()
-        globalSearchRef.current?.focus()
+        if (e.shiftKey) {
+          setActivePane('search')
+          requestAnimationFrame(() => projectSearchRef.current?.focus())
+        } else {
+          documentSearchRef.current?.focus()
+        }
       }
       // `?` only toggles help when not focused inside a text-editing control,
       // otherwise typing `?` into inputs/search boxes would steal focus.
@@ -1796,6 +1857,34 @@ export default function App() {
     () => project ? new Set(collectSourceFiles(project)) : new Set<string>(),
     [project],
   )
+  const projectSearchGroups = useMemo(
+    () => groupProjectSearchHits(projectSearchResults?.hits ?? []),
+    [projectSearchResults],
+  )
+  const toggleSearchGroup = useCallback((key: string) => {
+    setCollapsedSearchGroups(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  const focusProjectSearchResult = useCallback((index: number, direction = 1) => {
+    const count = projectSearchResults?.hits.length ?? 0
+    if (count === 0) return
+    requestAnimationFrame(() => {
+      let next = Math.max(0, Math.min(index, count - 1))
+      while (next >= 0 && next < count) {
+        const target = document.querySelector<HTMLElement>(`[data-project-search-index="${next}"]`)
+        if (target) {
+          setSelectedProjectSearchIndex(next)
+          target.focus({ preventScroll: true })
+          return
+        }
+        next += direction
+      }
+    })
+  }, [projectSearchResults])
 
   // Record counts shown next to the search bar across all views. `typeCount`
   // is the number of records of the active type in the current file;
@@ -1808,25 +1897,25 @@ export default function App() {
     const inType = activeType
       ? activeFileData.records.filter(r => recordActualType(r) === activeType)
       : activeFileData.records
-    if (!globalSearch.trim()) return { typeCount: inType.length, matchedCount: inType.length }
+    if (!documentSearch.trim()) return { typeCount: inType.length, matchedCount: inType.length }
     const matchesSearch = currentRoute?.view === 'table' && tableFullTextSearch
       ? recordMatchesFullTextSearch
       : recordMatchesSearch
-    const matched = inType.filter(record => matchesSearch(record, globalSearch))
+    const matched = inType.filter(record => matchesSearch(record, documentSearch))
     return { typeCount: inType.length, matchedCount: matched.length }
-  }, [activeFileData, activeType, currentRoute?.view, globalSearch, tableFullTextSearch])
+  }, [activeFileData, activeType, currentRoute?.view, documentSearch, tableFullTextSearch])
 
   // A hidden row must not remain keyboard-selected after search narrows the
   // active set. Close a hidden table inspector, and keep record mode on the
   // first record that is still visible.
   useEffect(() => {
-    if (!activeFileData || !currentRoute || !globalSearch.trim()) return
+    if (!activeFileData || !currentRoute || !documentSearch.trim()) return
     const matchesSearch = currentRoute.view === 'table' && tableFullTextSearch
       ? recordMatchesFullTextSearch
       : recordMatchesSearch
     const visible = activeFileData.records.filter(record => (
       (!activeType || recordActualType(record) === activeType)
-      && matchesSearch(record, globalSearch)
+      && matchesSearch(record, documentSearch)
     ))
     setInspectorSelection(current => {
       if (!current || current.filePath !== currentRoute.file) return current
@@ -1861,7 +1950,7 @@ export default function App() {
     ) {
       router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: visible[0].coordinate })
     }
-  }, [activeFileData, activeType, currentRoute, globalSearch, router, tableFullTextSearch])
+  }, [activeFileData, activeType, currentRoute, documentSearch, router, tableFullTextSearch])
 
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
@@ -1933,9 +2022,9 @@ export default function App() {
       ?? tree?.querySelector<HTMLElement>('[role="treeitem"]')
     target?.focus({ preventScroll: true })
   }, [])
-  const focusGlobalSearch = useCallback(() => {
-    globalSearchRef.current?.focus({ preventScroll: true })
-    globalSearchRef.current?.select()
+  const focusDocumentSearch = useCallback(() => {
+    documentSearchRef.current?.focus({ preventScroll: true })
+    documentSearchRef.current?.select()
   }, [])
   const focusDocumentTabs = useCallback(() => {
     document.querySelector<HTMLElement>('.document-view-tabs .tab-btn.active')
@@ -2346,10 +2435,10 @@ export default function App() {
           </button>
           <button
             className={`activity-btn activity-brand${activePane === 'search' ? ' active' : ''}`}
-            title="搜索记录 (Ctrl+F)"
+            title="全局搜索 (Ctrl+Shift+F)"
             aria-label="搜索"
             aria-pressed={activePane === 'search'}
-            onClick={() => { setActivePane('search'); requestAnimationFrame(focusGlobalSearch) }}
+            onClick={() => { setActivePane('search'); requestAnimationFrame(() => projectSearchRef.current?.focus()) }}
           >
             <Icon name="search" size={20} />
           </button>
@@ -2426,23 +2515,146 @@ export default function App() {
             </>
           )}
           {activePane === 'search' && (
-            <>
-              <div className="sidebar-header"><span>搜索</span></div>
+            <div className="project-search-pane">
+              <div className="sidebar-header">
+                <span>全局搜索</span>
+                {!!projectSearchResults && (
+                  <span className="project-search-total">{projectSearchResults.hits.length} 条</span>
+                )}
+              </div>
               <div className="pane-search-wrap">
                 <label className="pane-search">
                   <Icon name="search" size={13} />
                   <input
-                    placeholder="按 Key 搜索…"
-                    value={globalSearch}
-                    onChange={e => setGlobalSearch(e.target.value)}
+                    ref={projectSearchRef}
+                    placeholder="输入 Key 或字段值…"
+                    value={projectSearch}
+                    onChange={e => setProjectSearch(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        focusProjectSearchResult(selectedProjectSearchIndex < 0 ? 0 : selectedProjectSearchIndex)
+                      } else if (e.key === 'Enter' && projectSearchResults?.hits[0]) {
+                        e.preventDefault()
+                        openProjectSearchHit(projectSearchResults.hits[0])
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        if (projectSearch) setProjectSearch('')
+                        else setActivePane('files')
+                      }
+                    }}
                     aria-label="跨文件搜索"
                   />
+                  {projectSearch && (
+                    <button
+                      className="pane-search-clear"
+                      onClick={() => { setProjectSearch(''); projectSearchRef.current?.focus() }}
+                      aria-label="清除全局搜索"
+                    >
+                      <Icon name="close" size={12} />
+                    </button>
+                  )}
                 </label>
-                <div className="pane-search-hint">
-                  当前搜索会同时应用到打开的记录视图。在文档内用 Ctrl+F 直接聚焦。
+                <div className="project-search-modes" role="group" aria-label="搜索范围">
+                  <button
+                    className={projectSearchMode === 'key' ? 'active' : ''}
+                    aria-pressed={projectSearchMode === 'key'}
+                    onClick={() => setProjectSearchMode('key')}
+                  >
+                    Key
+                  </button>
+                  <button
+                    className={projectSearchMode === 'full_text' ? 'active' : ''}
+                    aria-pressed={projectSearchMode === 'full_text'}
+                    onClick={() => setProjectSearchMode('full_text')}
+                  >
+                    全文
+                  </button>
                 </div>
               </div>
-            </>
+              <div className="project-search-results" role="tree" aria-label="全局搜索结果">
+                {!project ? (
+                  <div className="project-search-state">请先打开项目</div>
+                ) : projectSearchError ? (
+                  <div className="project-search-state error" role="alert">搜索失败：{projectSearchError}</div>
+                ) : projectSearchBusy && !projectSearchResults ? (
+                  <div className="project-search-state">正在搜索…</div>
+                ) : projectSearch && projectSearchResults?.hits.length === 0 ? (
+                  <div className="project-search-state">没有找到“{projectSearch}”</div>
+                ) : projectSearchResults ? (
+                  <>
+                    {projectSearchGroups.map(fileGroup => {
+                      const fileKey = `file:${fileGroup.filePath}`
+                      const fileCollapsed = collapsedSearchGroups.has(fileKey)
+                      return (
+                        <div className="project-search-file" key={fileGroup.filePath}>
+                          <button
+                            className="project-search-group file"
+                            onClick={() => toggleSearchGroup(fileKey)}
+                            aria-expanded={!fileCollapsed}
+                          >
+                            <Icon name={fileCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+                            <Icon name="file" size={13} />
+                            <span title={fileGroup.filePath}>{fileGroup.filePath}</span>
+                            <b>{fileGroup.hits.length}</b>
+                          </button>
+                          {!fileCollapsed && fileGroup.types.map(typeGroup => {
+                            const typeKey = `type:${fileGroup.filePath}:${typeGroup.actualType}`
+                            const typeCollapsed = collapsedSearchGroups.has(typeKey)
+                            return (
+                              <div className="project-search-type" key={typeKey}>
+                                <button
+                                  className="project-search-group type"
+                                  onClick={() => toggleSearchGroup(typeKey)}
+                                  aria-expanded={!typeCollapsed}
+                                >
+                                  <Icon name={typeCollapsed ? 'chevron-right' : 'chevron-down'} size={11} />
+                                  <span>{typeGroup.actualType}</span>
+                                  <b>{typeGroup.hits.length}</b>
+                                </button>
+                                {!typeCollapsed && typeGroup.hits.map(hit => {
+                                  const index = projectSearchResults.hits.indexOf(hit)
+                                  return (
+                                    <button
+                                      className={`project-search-hit${selectedProjectSearchIndex === index ? ' selected' : ''}`}
+                                      key={`${hit.coordinate.actual_type}:${hit.coordinate.key}:${hit.field_path ?? ''}`}
+                                      data-project-search-index={index}
+                                      role="treeitem"
+                                      onFocus={() => setSelectedProjectSearchIndex(index)}
+                                      onClick={() => openProjectSearchHit(hit)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'ArrowDown') {
+                                          e.preventDefault()
+                                          focusProjectSearchResult(index + 1)
+                                        } else if (e.key === 'ArrowUp') {
+                                          e.preventDefault()
+                                          if (index === 0) projectSearchRef.current?.focus()
+                                          else focusProjectSearchResult(index - 1, -1)
+                                        } else if (e.key === 'Escape') {
+                                          e.preventDefault()
+                                          projectSearchRef.current?.focus()
+                                        }
+                                      }}
+                                    >
+                                      <span className="project-search-hit-key">{hit.coordinate.key}</span>
+                                      {hit.preview && <span className="project-search-hit-preview">{hit.preview}</span>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                    {projectSearchResults.truncated && (
+                      <div className="project-search-limit">已显示前 200 条，请缩小搜索范围</div>
+                    )}
+                    {projectSearchBusy && <div className="project-search-updating">正在更新…</div>}
+                  </>
+                ) : null}
+              </div>
+            </div>
           )}
           {activePane === 'extensions' && (
             <div className="extensions-pane">
@@ -2729,10 +2941,10 @@ export default function App() {
               <div className="global-search-bar">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
-                  ref={globalSearchRef}
-                  placeholder="按 Key 搜索… (Ctrl+F)"
-                  value={globalSearch}
-                  onChange={e => setGlobalSearch(e.target.value)}
+                  ref={documentSearchRef}
+                  placeholder="筛选当前类型… (Ctrl+F)"
+                  value={documentSearch}
+                  onChange={e => setDocumentSearch(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'ArrowDown') {
                       e.preventDefault()
@@ -2742,11 +2954,11 @@ export default function App() {
                       focusFileTree()
                     }
                   }}
-                  aria-label="搜索记录"
+                  aria-label="筛选当前类型"
                   role="searchbox"
                 />
-                {globalSearch && (
-                  <button className="rv-clear-search" onClick={() => setGlobalSearch('')} aria-label="清除搜索">
+                {documentSearch && (
+                  <button className="rv-clear-search" onClick={() => setDocumentSearch('')} aria-label="清除搜索">
                     <Icon name="close" size={13} aria-hidden />
                   </button>
                 )}
@@ -2762,9 +2974,9 @@ export default function App() {
                 )}
                 <span
                   className="global-search-count"
-                  title={globalSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
+                  title={documentSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
                 >
-                  {globalSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
+                  {documentSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
                 </span>
               </div>
 
@@ -2775,7 +2987,7 @@ export default function App() {
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
-                    searchQuery={globalSearch}
+                    searchQuery={documentSearch}
                     fullTextSearch={tableFullTextSearch}
                     recordGroups={resolvedView?.groupFilter ? [] : recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
@@ -2814,20 +3026,20 @@ export default function App() {
                     onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                     onNavigationBoundary={direction => {
                       if (direction === 'ArrowLeft') focusFileTree()
-                      else if (direction === 'ArrowUp') focusGlobalSearch()
+                      else if (direction === 'ArrowUp') focusDocumentSearch()
                     }}
                   />
                 )}
                 {activeViewKind === 'record' && activeRecordCoordinate && (
-                  globalSearch.trim() && matchedCount === 0 ? (
-                    <div className="empty-hint">无匹配 "{globalSearch}" 的记录</div>
+                  documentSearch.trim() && matchedCount === 0 ? (
+                    <div className="empty-hint">无匹配 "{documentSearch}" 的记录</div>
                   ) : <RecordView
                     data={activeFileData}
                     coordinate={activeRecordCoordinate}
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
-                    recordSearch={globalSearch}
+                    recordSearch={documentSearch}
                     hideRecordList={isSingletonType}
                     recordGroups={recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
@@ -2860,7 +3072,7 @@ export default function App() {
                       focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
                     }
                     onExitLeft={focusFileTree}
-                    onExitUp={focusGlobalSearch}
+                    onExitUp={focusDocumentSearch}
                     firstRecordFocusRequest={firstRecordFocusRequest}
                     onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                   />
@@ -2884,7 +3096,7 @@ export default function App() {
                         focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
                       }
                       onExitLeft={focusFileTree}
-                      onExitUp={focusGlobalSearch}
+                      onExitUp={focusDocumentSearch}
                       onExitRight={focusInspector}
                       firstRecordFocusRequest={firstRecordFocusRequest}
                       onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
