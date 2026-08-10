@@ -213,6 +213,7 @@ fn annotation_for_value(
             .ref_target_type
             .clone_from(&shape.ref_target_type);
         annotation.enum_type.clone_from(&shape.enum_type);
+        annotation.enum_is_flag = shape.enum_is_flag;
         annotation.nullable = shape.nullable;
         annotation
             .polymorphic_types
@@ -294,6 +295,7 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
         declared_type: Some(item_shape.display_label.clone()),
         ref_target_type: item_shape.ref_target_type.clone(),
         enum_type: item_shape.enum_type.clone(),
+        enum_is_flag: item_shape.enum_is_flag,
         nullable: item_shape.nullable,
         polymorphic_types: item_shape.polymorphic_types.clone(),
         object_type: item_shape.object_type.clone(),

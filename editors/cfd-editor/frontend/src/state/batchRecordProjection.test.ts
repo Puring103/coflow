@@ -13,6 +13,7 @@ const cell = (name: string, value: FieldCell['value'], declaredType = 'string'):
     declared_type: declaredType,
     ref_target_type: null,
     enum_type: null,
+    enum_is_flag: false,
     nullable: false,
     read_only: false,
     item_annotation: null,

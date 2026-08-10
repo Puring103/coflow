@@ -281,30 +281,31 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | --- | --- | --- |
 | `DATA-NOT-FOUND` | data read | `data get` / `data list` 查询不到目标 record |
 | `DATA-GET-LIMIT` | data read | `data get` 匹配记录超过默认安全上限，需要显式 `--limit` 或 `--all` |
-| `CFD-DATA-001` | `UnknownType` | 未知 record 或 object type |
-| `CFD-DATA-002` | `AbstractRecordType` | 顶层记录直接使用 abstract type |
-| `CFD-DATA-003` | `MissingObjectType` | 多态 object 缺少实际类型 |
-| `CFD-DATA-004` | `ObjectTypeMismatch` | object actual type 不可赋给声明类型 |
-| `CFD-DATA-005` | `UnknownField` | 未知字段 |
-| `CFD-DATA-006` | `MissingRequiredField` | 缺少必填字段 |
-| `CFD-DATA-007` | `TypeMismatch` | value 类型不匹配 |
-| `CFD-DATA-008` | `InvalidEnumVariant` | enum variant 非法 |
-| `CFD-DATA-009` | `DuplicateDictKey` | dict key 重复 |
-| `CFD-DATA-010` | `MissingIdField` | 缺少 ID 字段 |
-| `CFD-DATA-011` | `DuplicateId` | 同一 type 内 record key 重复 |
-| `CFD-DATA-012` | `DuplicatePolymorphicId` | polymorphic range 内 record key 重复 |
-| `CFD-DATA-013` | `InvalidRecordKey` | record key identifier 非法 |
-| `CFD-DATA-014` | `ValueDependencyCycle` | schema default 或 data spread 形成循环依赖 |
-| `CFD-DATA-015` | `SingletonRecordCountInvalid` | `@singleton` type 的 records 数量不等于 1 |
-| `CFD-DATA-016` | `SingletonKeyMissingOrInvalid` | `@singleton` type 的 record key 缺失或非法 |
-| `CFD-DATA-017` | `SingletonKeyCollision` | 不同 `@singleton` type 的 record key 撞名 |
-| `CFD-DATA-018` | `DataStructureLimitExceeded` | 单条 record 的值验证、default 展开或 spread 物化超过结构预算 |
+| `DATA-001` | `UnknownType` | 未知 record 或 object type |
+| `DATA-002` | `AbstractRecordType` | 顶层记录直接使用 abstract type |
+| `DATA-003` | `MissingObjectType` | 多态 object 缺少实际类型 |
+| `DATA-004` | `ObjectTypeMismatch` | object actual type 不可赋给声明类型 |
+| `DATA-005` | `UnknownField` | 未知字段 |
+| `DATA-006` | `MissingRequiredField` | 缺少必填字段 |
+| `DATA-007` | `TypeMismatch` | value 类型不匹配 |
+| `DATA-008` | `InvalidEnumVariant` | enum variant 非法 |
+| `DATA-009` | `DuplicateDictKey` | dict key 重复 |
+| `DATA-010` | `MissingIdField` | 缺少 ID 字段 |
+| `DATA-011` | `DuplicateId` | 同一 type 内 record key 重复 |
+| `DATA-012` | `DuplicatePolymorphicId` | polymorphic range 内 record key 重复 |
+| `DATA-013` | `InvalidRecordKey` | record key identifier 非法 |
+| `DATA-014` | `ValueDependencyCycle` | schema default 或 data spread 形成循环依赖 |
+| `DATA-015` | `SingletonRecordCountInvalid` | `@singleton` type 的 records 数量不等于 1 |
+| `DATA-016` | `SingletonKeyMissingOrInvalid` | `@singleton` type 的 record key 缺失或非法 |
+| `DATA-017` | `SingletonKeyCollision` | 不同 `@singleton` type 的 record key 撞名 |
+| `DATA-018` | `DataStructureLimitExceeded` | 单条 record 的值验证、default 展开或 spread 物化超过结构预算 |
 
 ## 引用解析
 
 | 诊断码 | 名称 | 含义 |
 | --- | --- | --- |
-| `CFD-REF-001` | `RefTargetNotFound` | 找不到被引用的目标记录 |
+| `REF-001` | `RefTargetNotFound` | 找不到被引用的目标记录 |
+| `REF-002` | `RefTargetTypeMismatch` | 引用目标的实际类型不能赋给声明的引用类型 |
 
 路径字段、数组索引或字典 key 不合法时，也会在引用解析阶段报告。
 
@@ -312,26 +313,26 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 
 | 诊断码 | 名称 | 含义 |
 | --- | --- | --- |
-| `CFD-CHECK-001` | `CheckFailed` | 兜底 false 条件 |
-| `CFD-CHECK-002` | `CheckEvalTypeError` | check 求值运行期类型错误 |
-| `CFD-CHECK-003` | `CheckNullAccess` | 访问 null |
-| `CFD-CHECK-004` | `CheckIndexOutOfBounds` | 数组索引越界 |
-| `CFD-CHECK-005` | `CheckMissingDictKey` | 字典 key 不存在 |
-| `CFD-CHECK-006` | `CheckEmptyMinMax` | `min` / `max` 没有非 null 值 |
-| `CFD-CHECK-007` | `CheckComparisonFailed` | 比较条件失败 |
-| `CFD-CHECK-008` | `CheckBoolExpectedTrue` | 裸 bool 表达式为 false |
-| `CFD-CHECK-009` | `CheckNegationFailed` | `!expr` 失败 |
-| `CFD-CHECK-010` | `CheckAndFailed` | `lhs && rhs` 失败 |
-| `CFD-CHECK-011` | `CheckOrFailed` | `lhs || rhs` 失败 |
-| `CFD-CHECK-012` | `CheckTypePredicateFailed` | `expr is TypeName` 失败 |
-| `CFD-CHECK-013` | `CheckNullPredicateFailed` | null 谓词失败 |
-| `CFD-CHECK-014` | `CheckContainsFailed` | `contains` 返回 false |
-| `CFD-CHECK-015` | `CheckUniqueFailed` | `isUnique` 返回 false |
-| `CFD-CHECK-016` | `CheckMatchesFailed` | `matches` 返回 false |
-| `CFD-CHECK-017` | `CheckAnyQuantifierFailed` | `any` 没有元素满足 |
-| `CFD-CHECK-018` | `CheckNoneQuantifierFailed` | `none` 存在满足条件的元素 |
-| `CFD-CHECK-019` | `CheckAllQuantifierFailed` | `all` 存在不满足条件的元素 |
-| `CFD-CHECK-020` | `CheckBudgetExceeded` | check 表达式、嵌套值或集合遍历超过结构预算 |
+| `CHECK-001` | `CheckFailed` | 兜底 false 条件 |
+| `CHECK-002` | `CheckEvalTypeError` | check 求值运行期类型错误 |
+| `CHECK-003` | `CheckNullAccess` | 访问 null |
+| `CHECK-004` | `CheckIndexOutOfBounds` | 数组索引越界 |
+| `CHECK-005` | `CheckMissingDictKey` | 字典 key 不存在 |
+| `CHECK-006` | `CheckEmptyMinMax` | `min` / `max` 没有非 null 值 |
+| `CHECK-007` | `CheckComparisonFailed` | 比较条件失败 |
+| `CHECK-008` | `CheckBoolExpectedTrue` | 裸 bool 表达式为 false |
+| `CHECK-009` | `CheckNegationFailed` | `!expr` 失败 |
+| `CHECK-010` | `CheckAndFailed` | `lhs && rhs` 失败 |
+| `CHECK-011` | `CheckOrFailed` | `lhs || rhs` 失败 |
+| `CHECK-012` | `CheckTypePredicateFailed` | `expr is TypeName` 失败 |
+| `CHECK-013` | `CheckNullPredicateFailed` | null 谓词失败 |
+| `CHECK-014` | `CheckContainsFailed` | `contains` 返回 false |
+| `CHECK-015` | `CheckUniqueFailed` | `isUnique` 返回 false |
+| `CHECK-016` | `CheckMatchesFailed` | `matches` 返回 false |
+| `CHECK-017` | `CheckAnyQuantifierFailed` | `any` 没有元素满足 |
+| `CHECK-018` | `CheckNoneQuantifierFailed` | `none` 存在满足条件的元素 |
+| `CHECK-019` | `CheckAllQuantifierFailed` | `all` 存在不满足条件的元素 |
+| `CHECK-020` | `CheckBudgetExceeded` | check 表达式、嵌套值或集合遍历超过结构预算 |
 
 `when` 不分配独立错误码。`when` 条件为 true 且 body 内规则失败时，诊断使用内部真实规则的错误码。
 

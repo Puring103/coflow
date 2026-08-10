@@ -1,6 +1,9 @@
 mod tokens;
 
-use crate::ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
+use crate::ast::{
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
+    CfdRecord, CfdRef, CfdValue,
+};
 use crate::{CfdParseOptions, CfdSyntaxDiagnostic, Span};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
 use tokens::Token;
@@ -260,9 +263,7 @@ impl<'a> Parser<'a> {
                 }
                 // Peek ahead: if after a name token there is `{`, it's a block.
                 let saved = self.pos;
-                let name_start = self.pos;
-                if let Ok(token) = self.parse_name("value") {
-                    let name_end = self.pos; // capture before skipping whitespace
+                if self.parse_name("value").is_ok() {
                     self.skip_ws_and_comments();
                     if self.peek_char() == Some('{') {
                         // Block with explicit type marker.
@@ -270,18 +271,88 @@ impl<'a> Parser<'a> {
                         let block = self.parse_block()?;
                         return Ok(CfdValue::Block(block));
                     }
-                    // Plain scalar — span must not include trailing whitespace.
-                    let span = Span::new(name_start, name_end);
-                    return Ok(CfdValue::Scalar(token, span));
                 }
                 // Fallback: try to parse as a block starting with `{`.
                 if self.peek_char() == Some('{') {
                     let block = self.parse_block()?;
                     return Ok(CfdValue::Block(block));
                 }
-                Err(self.error("expected a value"))
+                self.pos = saved;
+                let (expr, is_expression) = self.parse_bit_or_expr()?;
+                if is_expression {
+                    Ok(CfdValue::BitExpr(expr))
+                } else {
+                    let CfdBitExprKind::Value(value) = expr.kind else {
+                        return Err(self.error("expected a scalar value"));
+                    };
+                    Ok(CfdValue::Scalar(value, expr.span))
+                }
             }
         }
+    }
+
+    fn parse_bit_or_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
+        self.parse_bit_binary(Self::parse_bit_xor_expr, '|', CfdBitOp::Or)
+    }
+
+    fn parse_bit_xor_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
+        self.parse_bit_binary(Self::parse_bit_and_expr, '^', CfdBitOp::Xor)
+    }
+
+    fn parse_bit_and_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
+        self.parse_bit_binary(Self::parse_bit_primary, '&', CfdBitOp::And)
+    }
+
+    fn parse_bit_binary(
+        &mut self,
+        operand: fn(&mut Self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic>,
+        symbol: char,
+        op: CfdBitOp,
+    ) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
+        let (mut lhs, mut is_expression) = operand(self)?;
+        loop {
+            self.skip_ws_and_comments();
+            if !self.eat_char(symbol) {
+                break;
+            }
+            let (rhs, _) = operand(self)?;
+            let span = Span::new(lhs.span.start, rhs.span.end);
+            lhs = CfdBitExpr {
+                kind: CfdBitExprKind::Binary {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            };
+            self.charge_node(span)?;
+            is_expression = true;
+        }
+        Ok((lhs, is_expression))
+    }
+
+    fn parse_bit_primary(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
+        self.skip_ws_and_comments();
+        if self.eat_char('(') {
+            self.enter_nesting()?;
+            let start = self.pos - 1;
+            let result = (|| {
+                let (mut expr, _) = self.parse_bit_or_expr()?;
+                self.expect_char(')', "closing `)`")?;
+                expr.span = Span::new(start, self.pos);
+                Ok((expr, true))
+            })();
+            self.open_nesting = self.open_nesting.saturating_sub(1);
+            return result;
+        }
+        let token = self.parse_name_token("flag expression operand")?;
+        Ok((
+            CfdBitExpr {
+                kind: CfdBitExprKind::Value(token.text),
+                span: token.span,
+            },
+            false,
+        ))
     }
 
     fn parse_array(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {

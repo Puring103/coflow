@@ -21,6 +21,7 @@ import {
   annotationChild,
   annotationDeclaredType,
   annotationEnumType,
+  annotationEnumIsFlag,
   annotationItem,
   annotationNullable,
   annotationPolymorphicTypes,
@@ -28,6 +29,7 @@ import {
   boolValue,
   cellDeclaredType,
   cellEnumType,
+  cellEnumIsFlag,
   cellItemAnnotation,
   cellNullable,
   cellReadOnly,
@@ -143,6 +145,26 @@ function spreadHintText(info: SpreadInfo | undefined): string | undefined {
 
 function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
   return value.value.variant ?? String(value.value.value)
+}
+
+export function toggleFlagMask(currentMask: bigint, bit: bigint): bigint {
+  if (bit === 0n) return 0n
+  return (currentMask & bit) === bit ? currentMask & ~bit : currentMask | bit
+}
+
+export function everyFlagMask(
+  variants: readonly { value: bigint }[],
+): bigint {
+  return variants.reduce((mask, variant) => mask | variant.value, 0n)
+}
+
+export function selectedFlagVariantNames(
+  variants: readonly { name: string, value: bigint }[],
+  mask: bigint,
+): string[] {
+  return variants
+    .filter(variant => variant.value === 0n ? mask === 0n : (mask & variant.value) === variant.value)
+    .map(variant => variant.name)
 }
 
 function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
@@ -543,6 +565,7 @@ export function DataCardExpanded({
         const declaredType = cellDeclaredType(fc)
         const refTargetType = cellRefTargetType(fc)
         const enumType = cellEnumType(fc)
+        const enumIsFlag = cellEnumIsFlag(fc)
         const nullable = cellNullable(fc)
         const nullCollectionShape = fc.value.kind === 'null'
           ? collectionShapeForDeclaredType(declaredType)
@@ -582,6 +605,7 @@ export function DataCardExpanded({
             declaredType={declaredType}
             refTargetType={refTargetType}
             enumType={enumType}
+            enumIsFlag={enumIsFlag}
             nullable={nullable}
             valueAnnotation={fc.annotation}
             fieldPath={[fieldPathField(fc.name)]}
@@ -637,6 +661,7 @@ function FieldRow({
   declaredType,
   refTargetType,
   enumType,
+  enumIsFlag,
   nullable,
   valueAnnotation,
   fieldPath,
@@ -659,6 +684,7 @@ function FieldRow({
   declaredType?: string
   refTargetType?: string
   enumType?: string
+  enumIsFlag?: boolean
   nullable?: boolean
   valueAnnotation?: FieldAnnotation | null
   fieldPath: FieldPathSegment[]
@@ -669,6 +695,7 @@ function FieldRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
 }) {
+  const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
   const pluginRenderer = useFieldRenderer({
     value,
     type: declaredType ?? '',
@@ -695,6 +722,7 @@ function FieldRow({
       nullable={!!nullable}
       declaredType={declaredType}
       enumType={enumType}
+      enumIsFlag={effectiveEnumIsFlag}
       refTargetType={refTargetType}
       polymorphicTypes={polyTypes}
       onCommit={commit}
@@ -744,6 +772,7 @@ function FieldRow({
       declaredType={declaredType}
       refTargetType={refTargetType}
       enumType={enumType}
+      enumIsFlag={effectiveEnumIsFlag}
       nullable={nullable}
       pathKey={pathKey}
       fieldPath={fieldPath}
@@ -760,6 +789,7 @@ function NullableControls({
   nullable,
   declaredType,
   enumType,
+  enumIsFlag,
   refTargetType,
   polymorphicTypes,
   onCommit,
@@ -768,6 +798,7 @@ function NullableControls({
   nullable: boolean
   declaredType?: string
   enumType?: string
+  enumIsFlag?: boolean
   refTargetType?: string
   polymorphicTypes: string[]
   onCommit: (next: FieldValue) => void
@@ -822,6 +853,7 @@ function NullableControls({
     const scalarDefault = defaultForScalarLike({
       declaredType,
       enumType,
+      enumIsFlag,
       refTargetType,
       lookups,
     })
@@ -890,11 +922,13 @@ function NullableControls({
 function defaultForScalarLike({
   declaredType,
   enumType,
+  enumIsFlag,
   refTargetType,
   lookups,
 }: {
   declaredType?: string
   enumType?: string
+  enumIsFlag?: boolean
   refTargetType?: string
   lookups: EditorLookupAccess
 }): (() => Promise<FieldValue | null>) | null {
@@ -902,7 +936,8 @@ function defaultForScalarLike({
     return async () => {
       const variants = await lookups.loadEnumVariants(enumType)
       if (variants.ok && variants.value.length > 0) {
-        return enumValue(enumType, variants.value[0].name, 0n)
+        const first = variants.value[0]
+        return enumValue(enumType, enumIsFlag ? null : first.name, first.value)
       }
       return null
     }
@@ -935,6 +970,7 @@ function ScalarFieldRow({
   declaredType,
   refTargetType,
   enumType,
+  enumIsFlag,
   nullable,
   pathKey,
   fieldPath,
@@ -956,6 +992,7 @@ function ScalarFieldRow({
   declaredType?: string
   refTargetType?: string
   enumType?: string
+  enumIsFlag?: boolean
   nullable?: boolean
   pathKey?: string
   fieldPath: FieldPathSegment[]
@@ -1049,7 +1086,7 @@ function ScalarFieldRow({
           {pluginRenderer && pluginContext ? (
             <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
-            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
+            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={nullable} />
           ) : (
             <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} />
           )}
@@ -1086,6 +1123,7 @@ export function DirectEditor({
   declaredType,
   refTargetType,
   enumType,
+  enumIsFlag,
   nullable,
 }: {
   value: FieldValue
@@ -1093,6 +1131,7 @@ export function DirectEditor({
   declaredType?: string
   refTargetType?: string
   enumType?: string
+  enumIsFlag?: boolean
   nullable?: boolean
 }) {
   const rowSelection = useContext(ValueRowSelectionCtx)
@@ -1107,7 +1146,7 @@ export function DirectEditor({
     )
   }
   if (value.kind === 'enum' || (value.kind === 'null' && enumType)) {
-    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} nullable={nullable} />
+    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} />
   }
   if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
@@ -1191,6 +1230,7 @@ export function EnumDirectSelect({
   onExit,
   enumType,
   autoFocus = false,
+  isFlag = false,
   nullable = false,
   variant = 'pill',
 }: {
@@ -1200,19 +1240,25 @@ export function EnumDirectSelect({
   /** Required when `value.kind === 'null'`: the enum type this field expects. */
   enumType?: string
   autoFocus?: boolean
+  isFlag?: boolean
   /** When true, offer a "(null)" option so the field can be cleared. */
   nullable?: boolean
   variant?: 'pill' | 'input'
 }) {
   const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
-  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
+  const [variants, setVariants] = useState<import('../bindings/EnumVariantOption').EnumVariantOption[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const incomingMask = value.kind === 'enum' ? value.value.value : 0n
+  const [draftMask, setDraftMask] = useState(incomingMask)
+  const [draftNull, setDraftNull] = useState(value.kind === 'null')
+  const pendingFlagValue = useRef<bigint | 'null' | undefined>(undefined)
   const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
   const color = fieldTypeColor(enumName ?? 'enum')
   useEffect(() => {
     if (!enumName) { setVariants([]); return }
     let alive = true
+    setVariants(null)
     setLoadError(null)
     lookups.loadEnumVariants(enumName).then(r => {
       if (!alive) return
@@ -1221,6 +1267,13 @@ export function EnumDirectSelect({
     })
     return () => { alive = false }
   }, [enumName, lookups])
+  useEffect(() => {
+    const incoming = value.kind === 'null' ? 'null' : incomingMask
+    if (pendingFlagValue.current !== undefined && pendingFlagValue.current !== incoming) return
+    pendingFlagValue.current = undefined
+    setDraftMask(incomingMask)
+    setDraftNull(value.kind === 'null')
+  }, [incomingMask, value.kind])
 
   function commit(next: string) {
     if (next === NULL_SENTINEL) {
@@ -1228,18 +1281,56 @@ export function EnumDirectSelect({
       return
     }
     if (!enumName) return
-    const backingInt = value.kind === 'enum' ? value.value.value : 0n
+    const backingInt = variants?.find(variant => variant.name === next)?.value
+      ?? (value.kind === 'enum' ? value.value.value : 0n)
     onCommit(enumValue(enumName, next, backingInt))
+  }
+
+  function toggleFlag(next: string) {
+    if (next === NULL_SENTINEL) {
+      pendingFlagValue.current = 'null'
+      setDraftNull(true)
+      return
+    }
+    if (!enumName) return
+    const currentMask = draftNull ? 0n : draftMask
+    let nextMask: bigint
+    if (next === FLAG_EVERY_SENTINEL) {
+      nextMask = everyFlagMask(variants ?? [])
+    } else if (next === FLAG_NONE_SENTINEL) {
+      nextMask = 0n
+    } else {
+      const option = variants?.find(variant => variant.name === next)
+      if (!option) return
+      nextMask = toggleFlagMask(currentMask, option.value)
+    }
+    pendingFlagValue.current = nextMask
+    setDraftMask(nextMask)
+    setDraftNull(false)
+  }
+
+  function commitFlagAndExit() {
+    const pending = pendingFlagValue.current
+    pendingFlagValue.current = undefined
+    if (pending === 'null') {
+      if (value.kind !== 'null') onCommit(nullValue())
+    } else if (pending !== undefined && enumName) {
+      if (value.kind !== 'enum' || pending !== incomingMask) {
+        onCommit(enumValue(enumName, null, pending))
+      }
+    }
+    onExit?.()
   }
 
   const inputClass = variant === 'input'
     ? 'dc-input'
     : 'dc-pill-select dc-pill-select-enum'
 
-  if (variants === null && variant === 'input') {
-    return <input className={inputClass} value={current} disabled placeholder="加载中..." />
+  if (variants === null) {
+    return <input className={inputClass} value="" disabled placeholder="加载中..." />
   }
-  if (variants === null || variants.length === 0) {
+
+  if (variants.length === 0) {
     const input = (
       <input
         className={inputClass}
@@ -1271,6 +1362,57 @@ export function EnumDirectSelect({
         {loadError && <span className="dc-load-error" title={loadError}>!</span>}
       </span>
   }
+  if (isFlag) {
+    const mask = draftMask
+    const everyMask = everyFlagMask(variants)
+    const selectableVariants = variants.filter(variant => variant.value !== 0n)
+    const zeroVariant = variants.find(variant => variant.value === 0n)
+    const selectedVariants = selectedFlagVariantNames(selectableVariants, mask)
+    const selected = draftNull ? [NULL_SENTINEL] : [
+      ...(everyMask !== 0n && mask === everyMask ? [FLAG_EVERY_SENTINEL] : []),
+      ...(mask === 0n ? [FLAG_NONE_SENTINEL] : []),
+      ...selectedVariants,
+    ]
+    const labels = selectableVariants
+      .filter(variant => selected.includes(variant.name))
+      .map(variant => variant.label ?? variant.name)
+    const display = draftNull
+      ? NULL_SENTINEL
+      : mask === 0n
+        ? zeroVariant?.label ?? zeroVariant?.name ?? 'None'
+        : labels.join(' | ') || String(mask)
+    return (
+      <SearchableSelect
+        className={inputClass}
+        style={{ '--enum-color': color } as React.CSSProperties}
+        value={display}
+        autoFocus={autoFocus}
+        placeholder="选择标记..."
+        selectedValues={selected}
+        options={[
+          ...(nullable ? [{ value: NULL_SENTINEL }] : []),
+          ...(everyMask !== 0n ? [{
+            value: FLAG_EVERY_SENTINEL,
+            label: 'Every',
+            description: '选择所有标记',
+          }] : []),
+          {
+            value: FLAG_NONE_SENTINEL,
+            label: zeroVariant?.label ?? zeroVariant?.name ?? 'None',
+            description: zeroVariant?.description ?? '清除所有标记',
+          },
+          ...selectableVariants.map(variant => ({
+            value: variant.name,
+            label: variant.label ?? variant.name,
+            description: variant.description ?? undefined,
+          })),
+        ]}
+        onCommit={() => {}}
+        onToggle={toggleFlag}
+        onExit={commitFlagAndExit}
+      />
+    )
+  }
   return (
     <SearchableSelect
       className={inputClass}
@@ -1290,6 +1432,8 @@ export function EnumDirectSelect({
 }
 
 const NULL_SENTINEL = '(null)'
+const FLAG_EVERY_SENTINEL = '(every)'
+const FLAG_NONE_SENTINEL = '(none)'
 
 export function RefDirectSelect({
   value,
@@ -1463,6 +1607,7 @@ export function InlineEditor({
     return (
       <EnumDirectSelect
         value={value}
+        isFlag={value.value.variant === null}
         onCommit={onCommit}
         onExit={onCancel}
         autoFocus

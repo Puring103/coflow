@@ -310,6 +310,68 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 }
 
 #[test]
+fn flag_enum_cells_use_integer_masks() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @flag enum Permission { None = 0, Read = 1, Write = 2, Execute = 4 }
+            type Role { permissions: Permission; }
+        "#,
+    )?;
+    assert_eq!(
+        parse_ok(&schema, "Permission", "5")?,
+        ParsedCell::Value(LoadedValueDraft::enum_value("Permission", 5))
+    );
+    assert_has_code(
+        &parse_err(&schema, "Permission", "Read | Write")?,
+        CellValueErrorCode::InvalidEnumVariant,
+    );
+    assert_eq!(
+        parse_ok(&schema, "Permission", "Read")?,
+        ParsedCell::Value(LoadedValueDraft::enum_variant("Permission", "Read"))
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reader",
+        "Role",
+        [("permissions", LoadedValueDraft::enum_value("Permission", 1))],
+    );
+    let model = build_model(builder)?;
+    let role = model.records().next().expect("role").1;
+    let value = role.field("permissions").expect("permissions");
+    let CfdValue::Enum(flag) = value else {
+        return Err("expected flag enum".to_string());
+    };
+    assert_eq!(flag.variant, None);
+    assert_eq!(render_cell_value(value).map_err(|err| err.to_string())?, "1");
+    Ok(())
+}
+
+#[test]
+fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @flag enum Permission { Read = 1, Write = 2 }
+            type Role { limits: {Permission: int}; }
+        "#,
+    )?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reader",
+        "Role",
+        [("limits", parse_value(&schema, "{Permission: int}", "Read: 3")?)],
+    );
+    let model = build_model(builder)?;
+    let role = model.records().next().expect("role").1;
+    let limits = role.field("limits").expect("limits");
+    assert_eq!(
+        render_cell_value(limits).map_err(|err| err.to_string())?,
+        "{Read: 3}"
+    );
+    Ok(())
+}
+
+#[test]
 fn parses_positional_object_cells_using_field_order() -> TestResult {
     let schema = compile_schema(
         r#"

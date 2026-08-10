@@ -2169,7 +2169,7 @@ fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write()
 }
 
 #[test]
-fn direct_write_field_rejects_missing_ref_target_before_file_write() {
+fn direct_write_field_allows_missing_ref_target() {
     let root = std::env::temp_dir().join(format!(
         "coflow-direct-write-missing-ref-{}",
         std::process::id()
@@ -2196,9 +2196,7 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
     });
     assert!(report.write_ok);
 
-    let before =
-        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
-    let err = session
+    session
         .write_field(
             "Holder",
             "holder",
@@ -2207,18 +2205,21 @@ fn direct_write_field_rejects_missing_ref_target_before_file_write() {
             )],
             &coflow_data_model::CfdValue::record_ref("ghost").unwrap(),
         )
-        .expect_err("direct write should reject missing ref target before writer mutation");
-    assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("was not found")
-    }));
+        .expect("missing target is an editable reference state");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .iter()
+        .any(|diagnostic| diagnostic.code == "REF-001"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
-    assert_eq!(before, after);
+    assert!(after.contains("owner: &ghost"));
 
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn direct_write_field_rejects_ref_target_outside_expected_type_before_file_write() {
+fn direct_write_field_allows_wrong_ref_target_type() {
     let root = std::env::temp_dir().join(format!(
         "coflow-direct-write-ref-type-{}",
         std::process::id()
@@ -2250,9 +2251,7 @@ holder: Holder { item_reward: &item }
     .expect("write config");
     let mut session = session(&root);
 
-    let before =
-        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
-    let err = session
+    session
         .write_field(
             "Holder",
             "holder",
@@ -2261,12 +2260,15 @@ holder: Holder { item_reward: &item }
             )],
             &coflow_data_model::CfdValue::record_ref("currency").unwrap(),
         )
-        .expect_err("direct write should reject sibling-type ref target before writer mutation");
-    assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("not assignable")
-    }));
+        .expect("wrong target type is an editable reference state");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .iter()
+        .any(|diagnostic| diagnostic.code == "REF-002"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
-    assert_eq!(before, after);
+    assert!(after.contains("item_reward: &currency"));
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -2374,7 +2376,7 @@ fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_wr
 }
 
 #[test]
-fn direct_insert_rejects_missing_ref_target_before_file_write() {
+fn direct_insert_allows_missing_ref_target_as_an_editable_state() {
     let root = std::env::temp_dir().join(format!(
         "coflow-direct-insert-missing-ref-{}",
         std::process::id()
@@ -2382,8 +2384,6 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
     let _ = std::fs::remove_dir_all(&root);
     write_shape_annotation_project(&root);
     let mut session = session(&root);
-    let before =
-        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
     let fields = std::collections::BTreeMap::from([
         (
             "owner".to_string(),
@@ -2411,14 +2411,121 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
         ),
     ]);
 
-    let err = session
+    session
         .insert_record("data/records.cfd", None, "holder", "Holder", &fields)
-        .expect_err("direct insert should reject missing ref target");
-    assert!(err.iter().any(|diagnostic| {
-        diagnostic.code == "MUTATION-SHAPE" && diagnostic.message.contains("was not found")
-    }));
+        .expect("missing refs should be persisted for later repair");
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .iter()
+        .any(|diagnostic| diagnostic.code == "REF-001"));
     let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
-    assert_eq!(before, after);
+    assert!(after.contains("holder: Holder"));
+    assert!(after.contains("owner: &ghost"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn deleting_a_referenced_target_keeps_the_session_editable() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-delete-referenced-target-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r#"sword: Item { name: "Sword" }
+main: GameConfig { value: 1 }
+holder: Holder {
+    owner: &sword,
+    inline_item: Item { name: "Inline" },
+    configs: [&main],
+}
+"#,
+    )
+    .expect("write referenced records");
+    let mut session = session(&root);
+
+    let deleted = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::DeleteRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "sword".to_string(),
+            },
+            file: None,
+        }],
+    });
+    assert!(deleted.write_ok, "delete diagnostics: {deleted:?}");
+    assert!(!deleted.check_ok);
+    assert!(deleted
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "REF-001"));
+    assert!(session.queries().record_view("Holder", "holder").is_some());
+
+    let reinserted = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::InsertRecord {
+            file: "data/records.cfd".to_string(),
+            sheet: None,
+            actual_type: "Item".to_string(),
+            key: "sword".to_string(),
+            materialization: DefaultMaterialization::Minimal,
+            fields: serde_json::from_value(json!({ "name": "Sword" })).expect("fields map"),
+        }],
+    });
+    assert!(reinserted.write_ok && reinserted.check_ok, "{reinserted:?}");
+    assert!(!reinserted
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "REF-001"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn missing_required_field_record_can_be_repaired() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-repair-missing-required-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
+        .expect("write schema");
+    std::fs::write(root.join("data/records.cfd"), "item: Item {}\n").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/records.cfd\n",
+    )
+    .expect("write config");
+    let mut session = session(&root);
+    assert!(session.queries().record_view("Item", "item").is_some());
+    assert!(session
+        .queries()
+        .diagnostics()
+        .as_set()
+        .iter()
+        .any(|diagnostic| diagnostic.code == "DATA-006"));
+
+    let repaired = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::SetField {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "item".to_string(),
+            },
+            file: None,
+            path: vec![PatchPathSegment::Field("name".to_string())],
+            value: json!("Item"),
+        }],
+    });
+    assert!(repaired.write_ok && repaired.check_ok, "{repaired:?}");
+    assert!(!session.queries().has_diagnostics());
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -2484,7 +2591,7 @@ fn data_patch_report_includes_remaining_ops_after_failure() {
                 actual_type: "Holder".to_string(),
                 key: "bad".to_string(),
                 materialization: DefaultMaterialization::Minimal,
-                fields: serde_json::from_value(json!({ "owner": "ghost" })).expect("fields map"),
+                fields: serde_json::from_value(json!({ "owner": 1 })).expect("fields map"),
             },
             DataPatchOp::InsertRecord {
                 file: "data/records.cfd".to_string(),

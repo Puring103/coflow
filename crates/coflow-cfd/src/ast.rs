@@ -39,6 +39,7 @@ pub struct CfdField {
 pub enum CfdValue {
     /// Unquoted token — could be int, float, bool, enum variant, etc.
     Scalar(String, Span),
+    BitExpr(CfdBitExpr),
     QuotedString(String, Span),
     Null(Span),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
@@ -57,10 +58,34 @@ impl CfdValue {
             | Self::Null(s)
             | Self::Array(_, s)
             | Self::Spread(_, s) => *s,
+            Self::BitExpr(expr) => expr.span,
             Self::Block(b) => b.span,
             Self::Ref(r) => r.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdBitExpr {
+    pub kind: CfdBitExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CfdBitExprKind {
+    Value(String),
+    Binary {
+        op: CfdBitOp,
+        lhs: Box<CfdBitExpr>,
+        rhs: Box<CfdBitExpr>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CfdBitOp {
+    Or,
+    Xor,
+    And,
 }
 
 #[derive(Debug, Clone, PartialEq)]

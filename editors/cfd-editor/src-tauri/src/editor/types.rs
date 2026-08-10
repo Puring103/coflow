@@ -442,6 +442,8 @@ pub struct FieldAnnotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enum_type: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enum_is_flag: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nullable: bool,
     /// True when this cell is exposed for inspection but cannot be edited.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -478,6 +480,9 @@ pub struct FieldAnnotation {
 )]
 pub struct EnumVariantOption {
     pub name: String,
+    #[serde(with = "coflow_data_model::serde_i64")]
+    #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
+    pub value: i64,
     #[serde(default)]
     pub label: Option<String>,
     #[serde(default)]
@@ -495,6 +500,7 @@ impl FieldAnnotation {
             && self.declared_type.is_none()
             && self.ref_target_type.is_none()
             && self.enum_type.is_none()
+            && !self.enum_is_flag
             && !self.nullable
             && !self.read_only
             && self.item_annotation.is_none()
@@ -810,11 +816,16 @@ mod tests {
     fn enum_variant_option_serializes_missing_metadata_as_null() {
         let value = serde_json::to_value(EnumVariantOption {
             name: "active".to_owned(),
+            value: 1,
             label: None,
             description: None,
         });
 
         assert!(value.is_ok());
+        assert_eq!(
+            value.as_ref().ok().and_then(|value| value.get("value")),
+            Some(&serde_json::Value::String("1".to_string()))
+        );
         assert_eq!(
             value.as_ref().ok().and_then(|value| value.get("label")),
             Some(&serde_json::Value::Null)
