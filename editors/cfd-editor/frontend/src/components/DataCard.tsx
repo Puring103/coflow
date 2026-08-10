@@ -1190,15 +1190,19 @@ export function EnumDirectSelect({
   onCommit,
   onExit,
   enumType,
+  autoFocus = false,
   nullable = false,
+  variant = 'pill',
 }: {
   value: FieldValue & { kind: 'enum' | 'null' }
   onCommit: (next: FieldValue) => void
   onExit?: () => void
   /** Required when `value.kind === 'null'`: the enum type this field expects. */
   enumType?: string
+  autoFocus?: boolean
   /** When true, offer a "(null)" option so the field can be cleared. */
   nullable?: boolean
+  variant?: 'pill' | 'input'
 }) {
   const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
@@ -1228,33 +1232,51 @@ export function EnumDirectSelect({
     onCommit(enumValue(enumName, next, backingInt))
   }
 
-  const pillClass = 'dc-pill-select dc-pill-select-enum'
+  const inputClass = variant === 'input'
+    ? 'dc-input'
+    : 'dc-pill-select dc-pill-select-enum'
 
+  if (variants === null && variant === 'input') {
+    return <input className={inputClass} value={current} disabled placeholder="加载中..." />
+  }
   if (variants === null || variants.length === 0) {
-    // No known variants — free-text fallback (skip null hint here to keep it simple)
-    return (
-      <span className="dc-pill-input-wrap">
-        <input
-          className={pillClass}
-          style={{ '--enum-color': color } as React.CSSProperties}
-          defaultValue={value.kind === 'enum' ? enumVariantText(value) : ''}
-          aria-invalid={!!loadError}
-          onBlur={e => {
-            const next = e.target.value
-            if (value.kind === 'enum' && next === enumVariantText(value)) return
-            if (value.kind === 'null' && next === '') return
+    const input = (
+      <input
+        className={inputClass}
+        style={{ '--enum-color': color } as React.CSSProperties}
+        defaultValue={value.kind === 'enum' ? enumVariantText(value) : ''}
+        autoFocus={autoFocus}
+        aria-invalid={!!loadError}
+        onBlur={event => {
+          const next = event.target.value
+          if (!(value.kind === 'enum' && next === enumVariantText(value))
+            && !(value.kind === 'null' && next === '')) {
             commit(next || (nullable ? NULL_SENTINEL : ''))
-          }}
-        />
+          }
+          requestAnimationFrame(() => onExit?.())
+        }}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.currentTarget.value = value.kind === 'enum' ? enumVariantText(value) : ''
+            event.currentTarget.blur()
+          }
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+      />
+    )
+    return variant === 'input'
+      ? input
+      : <span className="dc-pill-input-wrap">
+        {input}
         {loadError && <span className="dc-load-error" title={loadError}>!</span>}
       </span>
-    )
   }
   return (
     <SearchableSelect
-      className={pillClass}
+      className={inputClass}
       style={{ '--enum-color': color } as React.CSSProperties}
       value={value.kind === 'null' && !nullable ? '' : current}
+      autoFocus={autoFocus}
       placeholder="选择枚举..."
       options={[
         ...(nullable ? [{ value: NULL_SENTINEL }] : []),
@@ -1276,6 +1298,7 @@ export function RefDirectSelect({
   targetType,
   autoFocus = false,
   nullable = false,
+  variant = 'pill',
 }: {
   value: FieldValue & { kind: 'ref' | 'null' }
   onCommit: (next: FieldValue) => void
@@ -1284,6 +1307,7 @@ export function RefDirectSelect({
   autoFocus?: boolean
   /** When true, offer a "(null)" option so the field can be cleared. */
   nullable?: boolean
+  variant?: 'pill' | 'input'
 }) {
   const lookups = useEditorLookups()
   const navigation = useEditorNavigation()
@@ -1292,6 +1316,9 @@ export function RefDirectSelect({
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
   const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
+  const inputClass = variant === 'input'
+    ? 'dc-input dc-input-ref-select'
+    : 'dc-pill-select dc-pill-select-ref dc-pill-select-inwrap'
 
   useEffect(() => {
     if (!targetType) {
@@ -1317,6 +1344,10 @@ export function RefDirectSelect({
     return () => { alive = false }
   }, [targetType, lookups])
 
+  if (targetType && targets === null && variant === 'input') {
+    return <input className={inputClass} style={{ '--ref-color': color } as CSSProperties} value={currentKey} disabled placeholder="加载中..." />
+  }
+
   function commit(key: string) {
     if (key === NULL_SENTINEL) {
       if (value.kind !== 'null') onCommit(nullValue())
@@ -1329,38 +1360,43 @@ export function RefDirectSelect({
 
   if (targetType && targets !== null && targets.length > 0) {
     const hasCurrent = value.kind === 'ref' && !!currentKey && targets.some(target => target.key === currentKey)
-    return (
-      <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
-        <SearchableSelect
-          className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
-          value={value.kind === 'null' && !nullable ? '' : selectedValue}
-          autoFocus={autoFocus}
-          title={targetType}
-          placeholder="选择引用..."
-          options={[
-            ...(nullable ? [{ value: NULL_SENTINEL }] : []),
-            ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
-            ...targets.map(target => ({ value: target.key, label: target.label })),
-          ]}
-          onCommit={commit}
-          onExit={onExit}
-          onModifiedClick={value.kind === 'ref' && targetType && navigation
-            ? () => navigation.openReference(targetType, currentKey)
-            : undefined}
-        />
-      </span>
+    const select = (
+      <SearchableSelect
+        className={inputClass}
+        style={{ '--ref-color': color } as CSSProperties}
+        value={value.kind === 'null' && !nullable ? '' : selectedValue}
+        autoFocus={autoFocus}
+        title={targetType}
+        placeholder="选择引用..."
+        options={[
+          ...(nullable ? [{ value: NULL_SENTINEL }] : []),
+          ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
+          ...targets.map(target => ({ value: target.key, label: target.label })),
+        ]}
+        onCommit={commit}
+        onExit={onExit}
+        onModifiedClick={value.kind === 'ref' && targetType && navigation
+          ? () => navigation.openReference(targetType, currentKey)
+          : undefined}
+      />
     )
+    return variant === 'input'
+      ? select
+      : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>{select}</span>
   }
 
-  return (
-    <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
-      <input
-        className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
-        defaultValue={currentKey}
-        autoFocus={autoFocus}
-        placeholder="key"
-        aria-invalid={!!loadError}
-        onBlur={e => commit(e.target.value)}
+  const input = (
+    <input
+      className={inputClass}
+      style={{ '--ref-color': color } as CSSProperties}
+      defaultValue={currentKey}
+      autoFocus={autoFocus}
+      placeholder="key"
+      aria-invalid={!!loadError}
+      onBlur={event => {
+        commit(event.target.value)
+        requestAnimationFrame(() => onExit?.())
+      }}
         onClick={event => {
           if (
             value.kind === 'ref'
@@ -1373,14 +1409,18 @@ export function RefDirectSelect({
             navigation.openReference(targetType, currentKey)
           }
         }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-        }}
-      />
+      onKeyDown={event => {
+        if (event.key === 'Escape') event.currentTarget.value = currentKey
+        if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur()
+      }}
+    />
+  )
+  return variant === 'input'
+    ? input
+    : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
+      {input}
       {loadError && <span className="dc-load-error" title={loadError}>!</span>}
     </span>
-  )
 }
 
 export function InlineEditor({
@@ -1421,16 +1461,17 @@ export function InlineEditor({
   }
   if (value.kind === 'enum') {
     return (
-      <EnumSelect
+      <EnumDirectSelect
         value={value}
-        current={editVal}
-        onCommit={variant => onCommit(enumValue(value.value.enum_name, variant, value.value.value))}
-        onCancel={onCancel}
+        onCommit={onCommit}
+        onExit={onCancel}
+        autoFocus
+        variant="input"
       />
     )
   }
   if (value.kind === 'ref') {
-    return <RefSelect value={value} onCommit={onCommit} onCancel={onCancel} targetType={targetType} />
+    return <RefDirectSelect value={value} onCommit={onCommit} onExit={onCancel} targetType={targetType} autoFocus variant="input" />
   }
   if (value.kind === 'string') {
     return (
@@ -1466,142 +1507,6 @@ export function InlineEditor({
       onBlur={() => commit(editVal)}
       onKeyDown={e => {
         if (e.key === 'Enter') commit(editVal)
-        if (e.key === 'Escape') onCancel()
-      }}
-    />
-  )
-}
-
-function EnumSelect({
-  value,
-  current,
-  onCommit,
-  onCancel,
-}: {
-  value: FieldValue & { kind: 'enum' }
-  current: string
-  onCommit: (v: string) => void
-  onCancel: () => void
-}) {
-  const lookups = useEditorLookups()
-  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
-  useEffect(() => {
-    let alive = true
-    lookups.loadEnumVariants(value.value.enum_name).then(r => { if (alive) setVariants(r.ok ? r.value : []) })
-    return () => { alive = false }
-  }, [value.value.enum_name, lookups])
-
-  if (variants === null) {
-    return <input className="dc-input" value={current} disabled placeholder="加载中..." />
-  }
-  if (variants.length === 0) {
-    return (
-      <input
-        className="dc-input"
-        defaultValue={current}
-        autoFocus
-        onBlur={e => onCommit(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') onCommit((e.target as HTMLInputElement).value)
-          if (e.key === 'Escape') onCancel()
-        }}
-      />
-    )
-  }
-  return (
-    <SearchableSelect
-      className="dc-input"
-      value={current}
-      autoFocus
-      options={[
-        ...(!variants.some(v => v.name === current) ? [{ value: current }] : []),
-        ...variants.map(v => ({ value: v.name, label: v.label ?? v.name, description: v.description ?? undefined })),
-      ]}
-      onCommit={onCommit}
-      onExit={onCancel}
-    />
-  )
-}
-
-function RefSelect({
-  value,
-  onCommit,
-  onCancel,
-  targetType,
-}: {
-  value: FieldValue & { kind: 'ref' }
-  onCommit: (next: FieldValue) => void
-  onCancel: () => void
-  targetType?: string
-}) {
-  const lookups = useEditorLookups()
-  const navigation = useEditorNavigation()
-  const [val, setVal] = useState(referenceKeyText(value.value))
-  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
-  const color = typeColor(targetType ?? 'ref')
-  useEffect(() => { setVal(referenceKeyText(value.value)) }, [value.value])
-  useEffect(() => {
-    if (!targetType) {
-      setTargets(null)
-      return
-    }
-    let alive = true
-    setTargets(null)
-    lookups.loadRefTargets(targetType).then(r => {
-      if (!alive) return
-      setTargets(r.ok ? r.value.map(target => ({
-        key: target.coordinate.key,
-        label: target.coordinate.key,
-      })) : [])
-    })
-    return () => { alive = false }
-  }, [targetType, lookups])
-
-  if (targetType && targets === null) {
-    return <input className="dc-input dc-input-ref-select" style={{ '--ref-color': color } as CSSProperties} value={val} disabled placeholder="加载中..." />
-  }
-  const loadedTargets = targets ?? []
-  if (targetType && loadedTargets.length > 0) {
-    return (
-      <SearchableSelect
-        className="dc-input dc-input-ref-select"
-        style={{ '--ref-color': color } as CSSProperties}
-        value={referenceKeyText(value.value)}
-        placeholder="选择..."
-        autoFocus
-        options={[
-          ...(value.value && !loadedTargets.some(target => target.key === referenceKeyText(value.value))
-            ? [{ value: referenceKeyText(value.value) }]
-            : []),
-          ...loadedTargets.map(target => ({ value: target.key, label: target.label })),
-        ]}
-        onCommit={next => onCommit(refValue(next))}
-        onExit={onCancel}
-        onModifiedClick={targetType && navigation
-          ? () => navigation.openReference(targetType, referenceKeyText(value.value))
-          : undefined}
-      />
-    )
-  }
-
-  return (
-    <input
-      className="dc-input dc-input-ref-select"
-      style={{ '--ref-color': color } as CSSProperties}
-      value={val}
-      autoFocus
-      placeholder="key"
-      onChange={e => setVal(e.target.value)}
-      onBlur={() => onCommit(refValue(val))}
-      onClick={event => {
-        if (targetType && navigation && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault()
-          event.stopPropagation()
-          navigation.openReference(targetType, referenceKeyText(value.value))
-        }
-      }}
-      onKeyDown={e => {
-        if (e.key === 'Enter') onCommit(refValue(val))
         if (e.key === 'Escape') onCancel()
       }}
     />

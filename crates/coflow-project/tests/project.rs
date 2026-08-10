@@ -12,10 +12,8 @@
 use coflow_api::{path_to_slash as canonical_path_to_slash, SourceLocation};
 use coflow_project::{
     discover_directory_files, init_project, normalize_path, normalized_path_identity,
-    path_is_same_or_descendant, path_to_slash, resolve_config_path, OutputConfig,
-    OutputTargetConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, DEFAULT_PROJECT_YAML,
+    path_is_same_or_descendant, path_to_slash, resolve_config_path, Project, DEFAULT_PROJECT_YAML,
 };
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), String>;
@@ -275,27 +273,27 @@ outputs:
         "provider-neutral config should pass shape validation: {diagnostics:?}"
     );
     assert_eq!(
-        project.config.sources[0].source_type.as_deref(),
+        project.config().sources[0].source_type.as_deref(),
         Some("custom-loader")
     );
     assert_eq!(
-        project.config.sources[0].options()["flavor"],
+        project.config().sources[0].options()["flavor"],
         serde_json::Value::String("custom".to_string())
     );
-    assert!(project.config.sources[0]
+    assert!(project.config().sources[0]
         .options()
         .get("options")
         .is_none());
     assert_eq!(
-        project.config.outputs.targets()[0].data.output_type,
+        project.config().outputs.targets()[0].data.output_type,
         "custom-export"
     );
     assert_eq!(
-        project.config.outputs.targets()[0].data.options()["compact"],
+        project.config().outputs.targets()[0].data.options()["compact"],
         serde_json::Value::Bool(true)
     );
     assert_eq!(
-        project.config.outputs.targets()[0]
+        project.config().outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
@@ -303,14 +301,14 @@ outputs:
         "custom-codegen"
     );
     assert_eq!(
-        project.config.outputs.targets()[0]
+        project.config().outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
             .options()["runtime"],
         serde_json::Value::String("unity".to_string())
     );
-    assert!(project.config.outputs.is_object_shape());
+    assert!(project.config().outputs.is_object_shape());
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
@@ -343,10 +341,10 @@ outputs:
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     assert!(project.schema_diagnostic_set().is_empty());
-    assert!(!project.config.outputs.is_object_shape());
-    assert_eq!(project.config.outputs.targets().len(), 2);
-    assert!(project.config.outputs.targets()[0].code.is_none());
-    let second = &project.config.outputs.targets()[1];
+    assert!(!project.config().outputs.is_object_shape());
+    assert_eq!(project.config().outputs.targets().len(), 2);
+    assert!(project.config().outputs.targets()[0].code.is_none());
+    let second = &project.config().outputs.targets()[1];
     assert_eq!(second.data.output_type, "messagepack");
     assert_eq!(
         second.code.as_ref().expect("code output").output_type,
@@ -392,23 +390,23 @@ outputs:
 
     assert!(project.schema_diagnostic_set().is_empty());
     assert_eq!(
-        project.config.sources[0].source_type.as_deref(),
+        project.config().sources[0].source_type.as_deref(),
         Some("custom-loader")
     );
     assert_eq!(
-        project.config.sources[0].location(),
-        &coflow_api::SourceLocationSpec::new(PathBuf::from("data.custom"))
+        project.config().sources[0].location(),
+        &PathBuf::from("data.custom")
     );
     assert_eq!(
-        project.config.sources[0].options()["flavor"],
+        project.config().sources[0].options()["flavor"],
         serde_json::Value::String("custom".to_string())
     );
     assert_eq!(
-        project.config.sources[0].options()["sheets"][0]["sheet"],
+        project.config().sources[0].options()["sheets"][0]["sheet"],
         serde_json::Value::String("Item".to_string())
     );
     assert_eq!(
-        project.config.outputs.targets()[0]
+        project.config().outputs.targets()[0]
             .code
             .as_ref()
             .expect("code output")
@@ -497,19 +495,19 @@ outputs:
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     assert_eq!(
-        project.config.sources[0].options()["token"],
+        project.config().sources[0].options()["token"],
         "${COFLOW_LITERAL_TOKEN}"
     );
     assert_eq!(
-        project.config.sources[0].options()["nested"]["app_id"],
+        project.config().sources[0].options()["nested"]["app_id"],
         "${COFLOW_NESTED_APP_ID}"
     );
     assert_eq!(
-        project.config.sources[0].options()["nested"]["values"][0],
+        project.config().sources[0].options()["nested"]["values"][0],
         "${COFLOW_ARRAY_TOKEN}"
     );
     assert_eq!(
-        project.config.outputs.targets()[0].data.options()["token"],
+        project.config().outputs.targets()[0].data.options()["token"],
         "${COFLOW_OUTPUT_TOKEN}"
     );
 
@@ -568,7 +566,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     let language = project
-        .config
+        .config()
         .dimensions
         .get("language")
         .expect("language dimension");
@@ -790,31 +788,23 @@ dimensions:
 #[test]
 fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult {
     let root = temp_project_dir("coflow-project-codegen-validation");
-    let missing_code = project_with_outputs(&root, OutputsConfig::default());
+    let missing_code = project_with_outputs(&root, "outputs: []\n");
     let err = missing_code.codegen_diagnostic_set();
     assert!(err.contains("missing outputs.code"));
 
-    let wrong_code = project_with_outputs(
-        &root,
-        OutputsConfig::new(vec![OutputTargetConfig {
-            code: Some(output_config("java", "code", None)),
-            data: output_config("json", "data", None),
-            loader: None,
-        }]),
-    );
+    let wrong_code = project_with_outputs(&root, r#"outputs:
+  - data: { type: json, dir: data }
+    code: { type: java, dir: code }
+"#);
     assert!(
         wrong_code.codegen_diagnostic_set().is_empty(),
         "provider-neutral code output should validate"
     );
 
-    let wrong_data = project_with_outputs(
-        &root,
-        OutputsConfig::new(vec![OutputTargetConfig {
-            code: Some(output_config("csharp", "code", None)),
-            data: output_config("csv", "data", None),
-            loader: None,
-        }]),
-    );
+    let wrong_data = project_with_outputs(&root, r#"outputs:
+  - data: { type: csv, dir: data }
+    code: { type: csharp, dir: code }
+"#);
     assert!(
         wrong_data.codegen_diagnostic_set().is_empty(),
         "provider-neutral data output should validate"
@@ -1045,32 +1035,13 @@ fn path_helpers_normalize_nonexistent_paths_and_slash_components() {
     assert!(std::ptr::fn_addr_eq(project_formatter, canonical_formatter));
 }
 
-fn project_with_outputs(root: &Path, outputs: OutputsConfig) -> Project {
-    Project {
-        config_path: root.join("coflow.yaml"),
-        root_dir: root.to_path_buf(),
-        config: ProjectConfig {
-            schema: SchemaConfig::one(PathBuf::from("schema/main.cft")),
-            sources: Vec::new(),
-            outputs,
-            dimensions: BTreeMap::new(),
-        },
-    }
-}
-
-fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> OutputConfig {
-    let mut options = serde_json::Map::new();
-    if let Some(namespace) = namespace {
-        options.insert(
-            "namespace".to_string(),
-            serde_json::Value::String(namespace.to_string()),
-        );
-    }
-    OutputConfig::new(
-        output_type.to_string(),
-        PathBuf::from(dir),
-        serde_json::Value::Object(options),
+fn project_with_outputs(root: &Path, outputs: &str) -> Project {
+    std::fs::write(
+        root.join("coflow.yaml"),
+        format!("schema: schema/main.cft\n{outputs}"),
     )
+    .expect("write project config");
+    Project::open_schema_only(Some(root)).expect("open test project")
 }
 
 #[test]
@@ -1092,7 +1063,7 @@ fn init_project_scaffolds_minimal_layout() -> TestResult {
     // open path — i.e. nothing about the layout is half-baked.
     let project = Project::open_schema_only(Some(outcome.config_path.as_path()))
         .map_err(|err| err.to_string())?;
-    assert!(project.config.sources.is_empty());
+    assert!(project.config().sources.is_empty());
     Ok(())
 }
 

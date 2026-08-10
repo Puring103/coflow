@@ -57,7 +57,7 @@ fn commit_dimension_generation(
         let changed = match operation {
             DimensionGenerationPlanOp::Move { from, to } => commit_dimension_move(
                 &mut transaction,
-                &project.config_path,
+                project.config_path(),
                 from,
                 to,
                 &mut diagnostics,
@@ -65,7 +65,7 @@ fn commit_dimension_generation(
             ),
             DimensionGenerationPlanOp::Remove(path) => commit_dimension_remove(
                 &mut transaction,
-                &project.config_path,
+                project.config_path(),
                 path,
                 &mut diagnostics,
                 &mut changed_paths,
@@ -160,7 +160,7 @@ fn commit_dimension_sync(
 ) -> bool {
     let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
         diagnostics.push(dimension_diagnostic(
-            &project.config_path,
+            project.config_path(),
             &operation.dimension,
             "DIM-SOURCE-002",
             format!(
@@ -183,14 +183,14 @@ fn commit_dimension_sync(
     let source =
         dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
     if let Err(error) =
-        transaction.snapshot_file(&operation.path, &operation.dimension, &project.config_path)
+        transaction.snapshot_file(&operation.path, &operation.dimension, project.config_path())
     {
         diagnostics.extend(error);
         return false;
     }
     let result = manager.sync_dimension_source(
         TableContext {
-            project_root: &project.root_dir,
+            project_root: project.root_dir(),
         },
         &DimensionSourceRequest {
             source: &source,
@@ -367,7 +367,7 @@ fn dimension_resolved_source(
     provider_id: &str,
     options: DecodedSourceOptions,
 ) -> ResolvedSource {
-    let display_name = path.strip_prefix(&project.root_dir).map_or_else(
+    let display_name = path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );

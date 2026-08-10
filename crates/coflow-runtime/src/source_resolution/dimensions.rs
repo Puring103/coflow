@@ -11,7 +11,7 @@ pub(super) fn resolve_dimension_sources(
 ) -> Result<Vec<ResolvedDimensionSource>, DiagnosticSet> {
     let mut sources = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
-    for (dimension, config) in &resolver.project.config.dimensions {
+    for (dimension, config) in &resolver.project.config().dimensions {
         let Some(out_dir) = config.out_dir.as_ref() else {
             continue;
         };
@@ -90,7 +90,7 @@ fn discovery_diagnostic(
     error: &std::io::Error,
 ) -> DiagnosticSet {
     DiagnosticSet::one(project_diagnostic(
-        &resolver.project.config_path,
+        resolver.project.config_path(),
         format!(
             "failed to {operation} dimension source directory `{}`: {error}",
             directory.display()
@@ -129,7 +129,7 @@ fn configured_dimension_source(
             ),
         )));
     }
-    let display_name = path.strip_prefix(&resolver.project.root_dir).map_or_else(
+    let display_name = path.strip_prefix(resolver.project.root_dir()).map_or_else(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
     );

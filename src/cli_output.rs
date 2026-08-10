@@ -104,7 +104,7 @@ pub(crate) fn display_path(path: &str, root_dir: Option<&Path>) -> String {
 }
 
 pub(crate) fn project_path(project: &Project, path: &Path) -> String {
-    display_path(&path.display().to_string(), Some(&project.root_dir))
+    display_path(&path.display().to_string(), Some(project.root_dir()))
 }
 
 pub(crate) fn relativize_message_paths(message: &str, root_dir: &Path) -> String {

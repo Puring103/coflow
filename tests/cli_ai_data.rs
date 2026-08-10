@@ -1035,7 +1035,7 @@ fn data_write_file_dry_run_does_not_write() {
 }
 
 #[test]
-fn data_write_file_dry_run_check_reports_check_skipped() {
+fn data_write_file_dry_run_check_validates_candidate_without_writing() {
     let root = temp_project_dir("cli-data-write-file-dry-run-check");
     let _cleanup = TempDirCleanup(root.clone());
     write_project(&root);
@@ -1056,19 +1056,19 @@ fn data_write_file_dry_run_check_reports_check_skipped() {
     );
 
     assert!(
-        output.status.success(),
-        "dry-run check is skipped and should not fail\nstdout: {}\nstderr: {}",
+        !output.status.success(),
+        "invalid dry-run candidate should fail checks\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let json: Value = serde_json::from_slice(&output.stdout).expect("write json");
     assert_eq!(json["written"], false);
     assert_eq!(json["dry_run"], true);
-    assert_eq!(json["check_ok"], Value::Null);
-    assert_eq!(
-        json["diagnostics"].as_array().expect("diagnostics").len(),
-        0
-    );
+    assert_eq!(json["check_ok"], false);
+    assert!(!json["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .is_empty());
     assert_eq!(
         std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd"),
         before

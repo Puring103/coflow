@@ -45,12 +45,27 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Project {
-    pub config_path: PathBuf,
-    pub root_dir: PathBuf,
-    pub config: ProjectConfig,
+    config_path: PathBuf,
+    root_dir: PathBuf,
+    config: ProjectConfig,
 }
 
 impl Project {
+    #[must_use]
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
+    }
+
+    #[must_use]
+    pub fn root_dir(&self) -> &Path {
+        &self.root_dir
+    }
+
+    #[must_use]
+    pub const fn config(&self) -> &ProjectConfig {
+        &self.config
+    }
+
     /// Opens a Coflow project by resolving and parsing its config file.
     ///
     /// # Errors

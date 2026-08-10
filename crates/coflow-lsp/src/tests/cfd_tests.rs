@@ -7,7 +7,7 @@ use coflow_cfd::parse_cfd;
 fn cfd_definition_request_returns_schema_field_location() {
     let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
-    let cfd_path = project.root_dir.join("data.cfd");
+    let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
     let cfd_source = "sword: Item { damage: 10 }\n";
     let field_offset = cfd_source.find("damage").expect("damage") + 1;
@@ -56,7 +56,7 @@ fn cfd_definition_request_returns_schema_field_location() {
 fn cfd_requests_ignore_uppercase_cfd_extension() {
     let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-uppercase-cfd-extension", schema_source);
-    let cfd_path = project.root_dir.join("data.CFD");
+    let cfd_path = project.root_dir().join("data.CFD");
     let cfd_uri = path_to_file_uri(&cfd_path);
     let cfd_source = "sword: Item { damage: 10 }\n";
     let field_offset = cfd_source.find("damage").expect("damage") + 1;
@@ -104,7 +104,7 @@ fn cfd_definition_request_resolves_record_keys_across_project_sources() {
 type Holder { key: string; item: Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-cross-file-key-definition", schema_source, "data");
-    let data_dir = project.root_dir.join("data");
+    let data_dir = project.root_dir().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     let target_path = data_dir.join("items.cfd");
     let source_path = data_dir.join("holders.cfd");
@@ -162,7 +162,7 @@ type Skill {}\n\
 type Holder { item: &Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-typed-definition-index", schema_source, "data");
-    let data_dir = project.root_dir.join("data");
+    let data_dir = project.root_dir().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     let skill_path = data_dir.join("a_skills.cfd");
     let item_path = data_dir.join("z_items.cfd");
@@ -266,7 +266,7 @@ type Monster {\n  key: string;\n  stats: Stats;\n}\n\
 type Holder {\n  key: string;\n  hp: int;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-path-field-definition", schema_source, "data");
-    let data_dir = project.root_dir.join("data");
+    let data_dir = project.root_dir().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     let source_path = data_dir.join("holders.cfd");
     let source = "holder: Holder { hp: @Monster.base.stats.hp }\n";
@@ -309,7 +309,7 @@ type Monster {\n  key: string;\n  stats: Stats;\n}\n";
         schema_source,
         "data",
     );
-    let data_dir = project.root_dir.join("data");
+    let data_dir = project.root_dir().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     let source_path = data_dir.join("monsters.cfd");
     let source = "base: Monster { stats: { hp: 10 } }\n\
@@ -357,7 +357,7 @@ fn cfd_definition_request_resolves_each_nested_object_field() {
 type Monster {\n  key: string;\n  stats: Stats;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-nested-field-definition", schema_source, "data");
-    let data_dir = project.root_dir.join("data");
+    let data_dir = project.root_dir().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     let source_path = data_dir.join("monsters.cfd");
     let source = "base: Monster { stats: { hp: 10 } }\n";

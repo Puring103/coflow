@@ -1,4 +1,3 @@
-use coflow_api::SourceLocationSpec;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -76,7 +75,7 @@ pub struct SchemaConfig {
 #[derive(Debug, Clone)]
 pub struct SourceConfig {
     pub source_type: Option<String>,
-    location: SourceLocationSpec,
+    location: PathBuf,
     options: Value,
 }
 
@@ -115,7 +114,7 @@ pub struct OutputConfig {
 
 impl SourceConfig {
     #[must_use]
-    pub const fn location(&self) -> &SourceLocationSpec {
+    pub const fn location(&self) -> &PathBuf {
         &self.location
     }
 
@@ -241,7 +240,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
             .map_err(de::Error::custom)?;
         let path = fields.remove("path");
         let path = path.ok_or_else(|| de::Error::custom("source must set `path`"))?;
-        let location = SourceLocationSpec::new(path_value(path).map_err(de::Error::custom)?);
+        let location = path_value(path).map_err(de::Error::custom)?;
         let options = Value::Object(fields);
         Ok(Self {
             source_type,

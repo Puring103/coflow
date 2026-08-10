@@ -169,7 +169,7 @@ pub fn sync_data_header(
 
 fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
     TableContext {
-        project_root: &session.project.root_dir,
+        project_root: session.project.root_dir(),
     }
 }
 
@@ -414,14 +414,14 @@ fn table_header_layout(
 
 fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a SourceConfig> {
     project
-        .config
+        .config()
         .sources
         .iter()
         .find(|source| source_location_matches(project, source, file))
 }
 
 fn source_location_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
-    let path = (source.location()).path();
+    let path = source.location();
     let requested = path_to_slash(Path::new(file));
     let configured = path_to_slash(path);
     if configured == requested {

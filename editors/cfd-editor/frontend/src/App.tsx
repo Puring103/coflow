@@ -12,13 +12,7 @@ import { UpdateControl } from './components/UpdateControl'
 import { DimensionTableView } from './components/DimensionTableView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
-import {
-  replaceLocalReadPlugins,
-  setReadPluginDataApi,
-  setReadPluginSession,
-  setReadPluginEnabled,
-  useReadPluginSettings,
-} from './plugins'
+import { useFrontendPlugins } from './hooks/useFrontendPlugins'
 import {
   MOCK_PROJECT,
   MOCK_FILE_RECORDS,
@@ -222,22 +216,15 @@ function projectGraphRows(
 }
 
 export default function App() {
-  const pluginSettings = useReadPluginSettings()
-  const restoredPlugins = useRef(false)
-  const globalPluginBundles = useRef<api.FrontendPluginBundle[]>([])
-  const [globalPluginsReady, setGlobalPluginsReady] = useState(false)
-  const [pluginLoadBusy, setPluginLoadBusy] = useState(false)
-  const [pluginLoadError, setPluginLoadError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
-  useEffect(() => {
-    setReadPluginDataApi({
-      getSchema: api.getPluginSchema,
-      getRecordsByType: api.getPluginRecordsByType,
-    })
-  }, [])
-  useEffect(() => {
-    setReadPluginSession(project?.session_id ?? null)
-  }, [project?.session_id])
+  const {
+    settings: pluginSettings,
+    busy: pluginLoadBusy,
+    error: pluginLoadError,
+    install: loadPluginFromSettings,
+    uninstall: uninstallPluginFromSettings,
+    toggle: togglePluginFromSettings,
+  } = useFrontendPlugins(project)
   useEffect(() => {
     const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
     window.addEventListener('contextmenu', suppressBrowserMenu)
@@ -297,77 +284,6 @@ export default function App() {
     window.addEventListener('mousedown', onClick)
     return () => window.removeEventListener('mousedown', onClick)
   }, [settingsOpen])
-  useEffect(() => {
-    if (!api.isTauri || restoredPlugins.current) return
-    restoredPlugins.current = true
-    api.listFrontendPlugins().then(bundles => {
-      globalPluginBundles.current = bundles
-      setGlobalPluginsReady(true)
-    }).catch(error => setPluginLoadError(`加载插件失败：${errorMessage(error)}`))
-  }, [])
-  useEffect(() => {
-    if (!api.isTauri || !globalPluginsReady) return
-    const sessionId = project?.session_id
-    const projectPlugins = sessionId === undefined
-      ? Promise.resolve([])
-      : api.listProjectFrontendPlugins(sessionId)
-    projectPlugins.then(async bundles => {
-      const errors = await replaceLocalReadPlugins([...globalPluginBundles.current, ...bundles])
-      if (errors.length > 0) setPluginLoadError(`部分插件未加载：${errors.join('; ')}`)
-    }).catch(error => setPluginLoadError(`加载项目插件失败：${errorMessage(error)}`))
-  }, [globalPluginsReady, project?.session_id])
-  const loadPluginFromSettings = useCallback(async () => {
-    if (!project) {
-      setPluginLoadError('请先打开项目')
-      return
-    }
-    const manifestPath = await api.pickFrontendPluginManifest()
-    if (!manifestPath) return
-    setPluginLoadBusy(true)
-    setPluginLoadError(null)
-    try {
-      const bundle = await api.installProjectFrontendPlugin(project.session_id, manifestPath)
-      await replaceLocalReadPlugins([
-        ...globalPluginBundles.current,
-        ...await api.listProjectFrontendPlugins(project.session_id),
-      ])
-      setReadPluginEnabled(bundle.id, true)
-    } catch (error) {
-      setPluginLoadError(`加载插件失败：${errorMessage(error)}`)
-    } finally {
-      setPluginLoadBusy(false)
-    }
-  }, [project])
-  const uninstallPluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number]) => {
-    setPluginLoadError(null)
-    try {
-      if (plugin.origin === 'project') {
-        if (!project) return
-        await api.uninstallProjectFrontendPlugin(project.session_id, plugin.id)
-        await replaceLocalReadPlugins([
-          ...globalPluginBundles.current,
-          ...await api.listProjectFrontendPlugins(project.session_id),
-        ])
-      } else {
-        await api.uninstallFrontendPlugin(plugin.id)
-        globalPluginBundles.current = globalPluginBundles.current.filter(item => item.id !== plugin.id)
-        await replaceLocalReadPlugins(globalPluginBundles.current)
-      }
-    } catch (error) {
-      setPluginLoadError(`卸载插件失败：${errorMessage(error)}`)
-    }
-  }, [project, pluginSettings])
-  const togglePluginFromSettings = useCallback(async (plugin: typeof pluginSettings[number], enabled: boolean) => {
-    try {
-      if (plugin.origin === 'project') {
-        if (!project) return
-        await api.setProjectFrontendPluginEnabled(project.session_id, plugin.id, enabled)
-      }
-      setReadPluginEnabled(plugin.id, enabled)
-    } catch (error) {
-      setPluginLoadError(`更新插件状态失败：${errorMessage(error)}`)
-    }
-  }, [project])
   const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const tabScrollRef = useRef<HTMLDivElement>(null)

@@ -276,7 +276,7 @@ impl<'a> ArtifactReleasePlan<'a> {
                 data_options: data_output.options(),
                 loader_options,
                 id_as_enum_variants,
-                object_layout: self.project.config.outputs.is_object_shape(),
+                object_layout: self.project.config().outputs.is_object_shape(),
             },
         });
     }
@@ -307,7 +307,7 @@ impl<'a> ArtifactReleasePlan<'a> {
                 data_options: data_output.options(),
                 loader_options,
                 id_as_enum_variants,
-                object_layout: self.project.config.outputs.is_object_shape(),
+                object_layout: self.project.config().outputs.is_object_shape(),
             },
         });
     }
@@ -963,7 +963,7 @@ mod tests {
 
         fn data_output(&self) -> &coflow_project::OutputConfig {
             self.project
-                .config
+                .config()
                 .outputs
                 .targets()
                 .first()
@@ -973,7 +973,7 @@ mod tests {
 
         fn code_output(&self) -> &coflow_project::OutputConfig {
             self.project
-                .config
+                .config()
                 .outputs
                 .targets()
                 .first()

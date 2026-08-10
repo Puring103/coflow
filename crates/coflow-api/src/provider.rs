@@ -113,6 +113,9 @@ impl ProbeResult {
 pub struct SourceLoadContext<'a> {
     pub project_root: &'a Path,
     pub schema: &'a CftSchema,
+    /// Host-provided source text that should be loaded instead of the backing file.
+    /// Text providers may use this for unsaved documents and dry-run validation.
+    pub source_text: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]

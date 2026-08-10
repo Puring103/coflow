@@ -14,12 +14,13 @@ use crate::project_schema::{
 };
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{
-    open_project_session, open_project_session_from_schema, SessionOpenOptions,
+    open_project_session, open_project_session_from_schema,
+    open_project_session_with_source_overrides, SessionOpenOptions,
 };
 use crate::{
-    CreateRecordDraft, DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation,
-    MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue, ProjectQueries,
-    RecordCoordinate, WriteOutcome,
+    CreateRecordDraft, DataSourceTextOverride, DefaultMaterialization, DimensionValueCoordinate,
+    DimensionValueExpectation, MutationFields, MutationOp, MutationReport, MutationRequest,
+    MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
@@ -189,7 +190,7 @@ fn schema_input_fingerprint(
         source_override.normalized_path.hash(&mut hasher);
         source_override.source.hash(&mut hasher);
     }
-    for (dimension, config) in &project.config.dimensions {
+    for (dimension, config) in &project.config().dimensions {
         dimension.hash(&mut hasher);
         config.variants.hash(&mut hasher);
     }
@@ -223,6 +224,25 @@ impl Runtime {
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
         open_project_session(project, &self.registry, SessionOpenOptions::read_only())
             .map(ReadOnlyProjectSession::new)
+    }
+
+    /// Opens read-only data using host-provided text for selected source files.
+    ///
+    /// # Errors
+    ///
+    /// Returns unrecoverable project/config/schema I/O diagnostics.
+    pub fn open_read_only_session_with_source_overrides(
+        &self,
+        project: Project,
+        source_overrides: &[DataSourceTextOverride],
+    ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
+        open_project_session_with_source_overrides(
+            project,
+            &self.registry,
+            SessionOpenOptions::read_only(),
+            source_overrides,
+        )
+        .map(ReadOnlyProjectSession::new)
     }
 
     /// Builds data for the normal build pipeline. This may write generated

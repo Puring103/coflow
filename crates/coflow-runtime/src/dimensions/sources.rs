@@ -73,7 +73,7 @@ impl DimensionRuntimePlan {
             }
         }
         let managed_directories = project
-            .config
+            .config()
             .dimensions
             .iter()
             .filter(|(dimension, _)| fields_by_dimension.contains_key(dimension.as_str()))

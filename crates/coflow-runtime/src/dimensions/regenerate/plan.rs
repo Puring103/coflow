@@ -21,7 +21,7 @@ pub(super) fn plan_dimension_generation_scoped(
 ) -> DimensionGenerationPlanResult {
     let mut diagnostics = DiagnosticSet::empty();
     let mut operations = Vec::new();
-    for (dimension, config) in &project.config.dimensions {
+    for (dimension, config) in &project.config().dimensions {
         let result = plan_configured_dimension(
             project,
             schema,
@@ -52,7 +52,7 @@ fn plan_configured_dimension(
     let mut diagnostics = DiagnosticSet::empty();
     let Some(out_dir) = config.out_dir.as_ref() else {
         diagnostics.push(dimension_diagnostic(
-            &project.config_path,
+            project.config_path(),
             dimension,
             "DIM-CONFIG-003",
             format!("dimensions.{dimension}.out_dir is required"),
@@ -101,7 +101,7 @@ fn plan_configured_dimension(
             }
             std::collections::btree_map::Entry::Occupied(entry) => {
                 diagnostics.push(dimension_diagnostic(
-                    &project.config_path,
+                    project.config_path(),
                     dimension,
                     "DIM-SOURCE-PATH-CONFLICT",
                     format!(
@@ -114,7 +114,7 @@ fn plan_configured_dimension(
     }
     let dimension_operations = dimension_operations.into_values().collect::<Vec<_>>();
     let reconciliations = match reconcile_dimension_sources(
-        &project.config_path,
+        project.config_path(),
         dimension,
         &out_dir,
         &expected_paths,

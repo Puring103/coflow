@@ -21,6 +21,21 @@ impl TableSourceOptions {
     /// Returns an error when `sheets` or any nested sheet field has the wrong
     /// shape.
     pub fn decode(options: &Value, source_label: &'static str) -> Result<Self, TableOptionsError> {
+        let object = match options.as_object() {
+            Some(object) => object,
+            None if options.is_null() => return Ok(Self::empty_with_label(source_label)),
+            None => {
+                return Err(TableOptionsError::at_root(format!(
+                    "{source_label} options must be an object"
+                )))
+            }
+        };
+        if let Some(key) = object.keys().find(|key| key.as_str() != "sheets") {
+            return Err(TableOptionsError::at_option(
+                key,
+                format!("unknown {source_label} option `{key}`"),
+            ));
+        }
         let sheets = table_sheet_configs_from_options(options, source_label)?;
         let mut sheets_by_name = BTreeMap::new();
         let mut sheets_by_type = BTreeMap::<String, Vec<usize>>::new();
@@ -48,8 +63,12 @@ impl TableSourceOptions {
 
     #[must_use]
     pub fn empty() -> Self {
+        Self::empty_with_label("table source")
+    }
+
+    fn empty_with_label(source_label: &'static str) -> Self {
         Self {
-            source_label: "table source",
+            source_label,
             sheets: Vec::new(),
             sheets_by_name: BTreeMap::new(),
             sheets_by_type: BTreeMap::new(),
@@ -142,12 +161,28 @@ impl TableSourceOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOptionsError {
     pub message: String,
+    pub key_path: Vec<String>,
 }
 
 impl TableOptionsError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            key_path: vec!["sheets".to_string()],
+        }
+    }
+
+    fn at_root(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            key_path: Vec::new(),
+        }
+    }
+
+    fn at_option(key: &str, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            key_path: vec![key.to_string()],
         }
     }
 }

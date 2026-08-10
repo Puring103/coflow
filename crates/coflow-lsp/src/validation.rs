@@ -280,7 +280,7 @@ impl LspValidationCore {
     }
 
     pub(crate) fn apply_watched_files(&mut self, uris: &[String]) -> Result<bool, String> {
-        let root = normalize_path(&self.project.root_dir);
+        let root = normalize_path(self.project.root_dir());
         let mut relevant = false;
         let mut config_changed = false;
         for uri in uris {
@@ -301,7 +301,7 @@ impl LspValidationCore {
             return Ok(false);
         }
         if config_changed {
-            match Project::open_schema_only(Some(&self.project.root_dir)) {
+            match Project::open_schema_only(Some(self.project.root_dir())) {
                 Ok(project) => {
                     // A new configuration can select a different schema set,
                     // so its generation cache must not survive this boundary.
