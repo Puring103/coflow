@@ -235,17 +235,15 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             mode,
             path,
         ),
-        CftValueType::RecordRef(expected_type) => {
-            validate_ref_value(
-                schema,
-                context,
-                expected_type,
-                value,
-                pending_insert,
-                mode,
-                path,
-            )
-        }
+        CftValueType::RecordRef(expected_type) => validate_ref_value(
+            schema,
+            context,
+            expected_type,
+            value,
+            pending_insert,
+            mode,
+            path,
+        ),
         CftValueType::Object(name) => {
             validate_object_value(schema, context, name, value, pending_insert, mode, path)
         }
@@ -333,9 +331,14 @@ fn validate_ref_value<C: CfdValueSemanticContext>(
             }
             Ok(())
         }
-        CfdValue::Ref(target_key) => {
-            validate_ref_target(schema, context, expected_type, target_key, pending_insert, path)
-        }
+        CfdValue::Ref(target_key) => validate_ref_target(
+            schema,
+            context,
+            expected_type,
+            target_key,
+            pending_insert,
+            path,
+        ),
         CfdValue::Object(_) => Err(CfdValueSemanticError::new(
             CfdValueSemanticErrorKind::TypeMismatch,
             path,

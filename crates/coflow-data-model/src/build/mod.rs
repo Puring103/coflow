@@ -147,9 +147,7 @@ impl<'a> ModelCompiler<'a> {
 
     pub(crate) fn build(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         let drafts = self.validate_input_records();
-        self.move_editable_diagnostics(|code| {
-            code == crate::CfdErrorCode::MissingRequiredField
-        });
+        self.move_editable_diagnostics(|code| code == crate::CfdErrorCode::MissingRequiredField);
         self.fail_if_diagnostics()?;
 
         let indexes = indexes::build_indexes(self.schema, &drafts, &mut self.diagnostics);
@@ -168,8 +166,7 @@ impl<'a> ModelCompiler<'a> {
         self.move_editable_diagnostics(|code| {
             matches!(
                 code,
-                crate::CfdErrorCode::RefTargetNotFound
-                    | crate::CfdErrorCode::RefTargetTypeMismatch
+                crate::CfdErrorCode::RefTargetNotFound | crate::CfdErrorCode::RefTargetTypeMismatch
             )
         });
         self.fail_if_diagnostics()?;
@@ -229,10 +226,7 @@ impl<'a> ModelCompiler<'a> {
         })
     }
 
-    fn move_editable_diagnostics(
-        &mut self,
-        predicate: impl Fn(crate::CfdErrorCode) -> bool,
-    ) {
+    fn move_editable_diagnostics(&mut self, predicate: impl Fn(crate::CfdErrorCode) -> bool) {
         let (editable, blocking) = std::mem::take(&mut self.diagnostics)
             .into_iter()
             .partition(|diagnostic| predicate(diagnostic.code));

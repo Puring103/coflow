@@ -705,7 +705,11 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     assert!(report.write_ok);
     assert!(!report.check_ok);
     assert_eq!(report.applied.len(), 2);
-    assert_eq!(session.queries().revision(), 1, "the batch publishes one generation");
+    assert_eq!(
+        session.queries().revision(),
+        1,
+        "the batch publishes one generation"
+    );
     assert!(report.failed.is_empty());
     assert!(report
         .diagnostics
@@ -2495,8 +2499,7 @@ fn missing_required_field_record_can_be_repaired() {
     ));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
-        .expect("write schema");
+    std::fs::write(root.join("schema.cft"), "type Item { name: string; }").expect("write schema");
     std::fs::write(root.join("data/records.cfd"), "item: Item {}\n").expect("write data");
     std::fs::write(
         root.join("coflow.yaml"),

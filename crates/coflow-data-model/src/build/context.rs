@@ -53,14 +53,14 @@ impl<'a> BuildSchema<'a> {
 
     pub(crate) fn enum_value_from_int(self, enum_name: &str, value: i64) -> Option<CftEnumValue> {
         let meta = self.cft.resolve_enum(enum_name)?;
-        let mut resolved =
-            self.cft
-                .enum_value_from_int(enum_name, value)
-                .unwrap_or_else(|| CftEnumValue {
-                    enum_name: meta.name.clone(),
-                    variant: None,
-                    value,
-                });
+        let mut resolved = self
+            .cft
+            .enum_value_from_int(enum_name, value)
+            .unwrap_or_else(|| CftEnumValue {
+                enum_name: meta.name.clone(),
+                variant: None,
+                value,
+            });
         if meta.is_flag {
             resolved.variant = None;
         }

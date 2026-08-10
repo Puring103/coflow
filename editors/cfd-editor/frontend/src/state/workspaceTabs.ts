@@ -124,7 +124,7 @@ export function workspaceToWire(
       type_name: tab.typeName,
       view_id: tab.viewId,
       view_kind: tab.viewKind,
-      ...(isCoordinate(tab.coordinate, tab.typeName) ? { coordinate: tab.coordinate } : {}),
+      coordinate: isCoordinate(tab.coordinate, tab.typeName) ? tab.coordinate : null,
     })),
     active_tab_id: activeTabId,
   }

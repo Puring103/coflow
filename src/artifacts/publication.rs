@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DATA_OUTPUT_SLOT: &str = "data";
@@ -19,6 +20,7 @@ const MANIFEST_VERSION: u32 = 1;
 const STATE_DIR: &str = ".coflow/artifacts";
 const ACTIVE_MANIFEST: &str = "active.json";
 const ENUM_LOCKFILE_NAME: &str = "coflow.enum.lock.json";
+static REVISION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ArtifactManifest {
@@ -70,8 +72,7 @@ pub fn publish_artifacts(
     let mut requested_outputs = Vec::with_capacity(staged_outputs.len());
     for (slot, staged) in staged_outputs {
         let unchanged = manifest.outputs.get(&slot).is_some_and(|active| {
-            active.requested_dir == staged.requested_dir()
-                && staged.requested_output_is_unchanged()
+            active.requested_dir == staged.requested_dir() && staged.requested_output_is_unchanged()
         });
         if unchanged {
             continue;
@@ -437,7 +438,8 @@ fn unique_revision() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
-    format!("{}-{timestamp}", std::process::id())
+    let sequence = REVISION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{timestamp}-{sequence}", std::process::id())
 }
 
 #[cfg(test)]
@@ -569,8 +571,11 @@ mod tests {
         std::fs::create_dir(requested.join("removed")).expect("create removed output directory");
         std::fs::write(requested.join("removed.txt.meta"), "stale-guid")
             .expect("write unmatched Unity metadata");
-        std::fs::write(requested.join("removed/value.txt.meta"), "nested-stale-guid")
-            .expect("write nested unmatched Unity metadata");
+        std::fs::write(
+            requested.join("removed/value.txt.meta"),
+            "nested-stale-guid",
+        )
+        .expect("write nested unmatched Unity metadata");
 
         let replacement = stage_artifact_set(
             &state_dir,

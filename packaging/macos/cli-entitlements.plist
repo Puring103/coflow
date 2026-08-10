@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Coflow CLI Hardened Runtime entitlements.
+
+    The standalone `coflow` binary is a plain command-line tool, so it does not
+    need the WKWebView JIT / unsigned-executable-memory exemptions the editor
+    bundle requires. It only needs outgoing network access so `coflow
+    self-update` can reach the GitHub releases API and download a new binary.
+  -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

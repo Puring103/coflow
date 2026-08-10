@@ -14,9 +14,10 @@ use coflow_runtime::{
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
-    EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
-    PluginSchemaType, ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome,
-    ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome, WriteFieldOutcome,
+    EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery,
+    InsertRecordOutcome, PluginSchemaType, ProjectSnapshot, RecordRow, RefTarget,
+    RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome,
+    WriteFieldOutcome,
 };
 use extension_api::ExtensionManifest;
 use host::EditorHost;

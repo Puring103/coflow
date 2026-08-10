@@ -188,8 +188,7 @@ impl SessionBuildContext<'_> {
     }
 
     fn should_generate_dimensions(&self) -> bool {
-        self.mode == SessionOpenOptions::Build
-            && !self.project.config.dimensions.is_empty()
+        self.mode == SessionOpenOptions::Build && !self.project.config.dimensions.is_empty()
     }
 }
 
@@ -444,6 +443,7 @@ fn load_data(
     Ok((output, indexes))
 }
 
+#[derive(Clone, Copy)]
 struct CachedLoadOptions<'a> {
     reload_paths: &'a BTreeSet<String>,
     include_implicit_dimension_sources: bool,

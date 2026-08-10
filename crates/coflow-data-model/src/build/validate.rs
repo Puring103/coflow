@@ -291,16 +291,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(ValueDraft::Value(value))
             }
-            (
-                CftValueType::Enum(expected),
-                LoadedValueDraft::EnumValue { enum_name, value },
-            ) => {
-                let enum_value = self.resolve_enum_int_value(
-                    enum_name,
-                    *value,
-                    record,
-                    path.clone(),
-                )?;
+            (CftValueType::Enum(expected), LoadedValueDraft::EnumValue { enum_name, value }) => {
+                let enum_value =
+                    self.resolve_enum_int_value(enum_name, *value, record, path.clone())?;
                 let value = CfdValue::Enum(enum_value);
                 self.validate_materialized_value(
                     &CftValueType::Enum(expected.clone()),

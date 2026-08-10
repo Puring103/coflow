@@ -93,12 +93,14 @@ fn coerce_json_value(
                     let mut enum_value = session
                         .schema()
                         .enum_value_from_int(name, value)
-                        .map(Into::into)
-                        .unwrap_or_else(|| CfdEnumValue {
-                            enum_name: name.clone(),
-                            variant: None,
-                            value,
-                        });
+                        .map_or_else(
+                            || CfdEnumValue {
+                                enum_name: name.clone(),
+                                variant: None,
+                                value,
+                            },
+                            Into::into,
+                        );
                     enum_value.variant = None;
                     return Ok(CfdValue::Enum(enum_value));
                 }
@@ -210,9 +212,9 @@ fn normalize_cfd_enum_value(
     }
     if !preserve_variant
         && session
-        .schema()
-        .resolve_enum(value.enum_name.as_str())
-        .is_some_and(|schema_enum| schema_enum.is_flag)
+            .schema()
+            .resolve_enum(value.enum_name.as_str())
+            .is_some_and(|schema_enum| schema_enum.is_flag)
     {
         value.variant = None;
     }

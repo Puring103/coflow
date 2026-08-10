@@ -513,7 +513,9 @@ mod tests {
         assert_eq!(store.by_stage("CHECK"), &[2]);
         assert_eq!(store.by_record("Item", "sword"), &[2]);
         assert_eq!(
-            store.logical_location(2).and_then(|location| location.field_path.as_deref()),
+            store
+                .logical_location(2)
+                .and_then(|location| location.field_path.as_deref()),
             Some("price")
         );
     }

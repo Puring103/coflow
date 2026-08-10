@@ -7,9 +7,8 @@ use coflow_data_model::{
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
-    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo,
-    ProjectExecutionStats, ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView,
-    RefTargetInfo,
+    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
+    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
 
 /// Read-only capability over one immutable project generation.

@@ -1,8 +1,8 @@
 mod tokens;
 
 use crate::ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
-    CfdRecord, CfdRef, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField, CfdRecord,
+    CfdRef, CfdValue,
 };
 use crate::{CfdParseOptions, CfdSyntaxDiagnostic, Span};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};

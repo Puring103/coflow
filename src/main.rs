@@ -33,6 +33,7 @@ mod data_commands;
 mod data_get_target;
 mod diagnostics;
 mod schema_commands;
+mod self_update_command;
 mod skill_commands;
 mod write_file;
 
@@ -41,7 +42,7 @@ use diagnostics::cli_error;
 use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, DataArgs,
     DataCommand, ExportArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
-    SkillArgs, SkillCommand, SkillScopeArgs,
+    SelfUpdateArgs, SkillArgs, SkillCommand, SkillScopeArgs,
 };
 
 fn main() -> ExitCode {
@@ -68,7 +69,12 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Schema(command) => run_schema(&command),
         Command::Data(command) => run_data(&command),
         Command::Skill(command) => run_skill(&command),
+        Command::SelfUpdate(args) => run_self_update(&args),
     }
+}
+
+fn run_self_update(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
+    self_update_command::run(args)
 }
 
 fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {

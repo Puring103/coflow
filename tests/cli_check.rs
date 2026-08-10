@@ -65,10 +65,7 @@ fn full_project_check_failure_uses_check_diagnostics_in_human_output() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("[CHECK-007] [CHECK]"),
-        "stderr: {stderr}"
-    );
+    assert!(stderr.contains("[CHECK-007] [CHECK]"), "stderr: {stderr}");
     assert!(
         stderr.contains("file    data/configs.xlsx"),
         "stderr: {stderr}"
