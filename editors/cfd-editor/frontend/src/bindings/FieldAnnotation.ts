@@ -30,7 +30,7 @@ label?: string,
 /**
  * Optional schema documentation shown by the editor as contextual help.
  */
-description?: string, spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean,
+description?: string, spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, enum_is_flag: boolean, nullable: boolean,
 /**
  * True when this cell is exposed for inspection but cannot be edited.
  */

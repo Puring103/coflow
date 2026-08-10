@@ -1,4 +1,6 @@
-use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdValue};
+use coflow_cfd::{
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlockEntry, CfdRecord, CfdValue,
+};
 use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
 use coflow_data_model::{LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
 use std::collections::{BTreeMap, BTreeSet};
@@ -226,6 +228,29 @@ fn lower_enum(
     value: &CfdValue,
     enum_name: &str,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+    let schema_enum = schema.resolve_enum(enum_name).ok_or_else(|| {
+        error(
+            CfdTextErrorCode::InvalidEnumVariant,
+            format!("unknown enum `{enum_name}`"),
+            value.span(),
+        )
+    })?;
+    if schema_enum.is_flag {
+        let flag_value = match value {
+            CfdValue::Scalar(raw, span) => lower_flag_operand(schema, enum_name, raw, *span)?,
+            CfdValue::BitExpr(expr) => lower_flag_expr(schema, enum_name, expr)?,
+            _ => {
+                return Err(error(
+                    CfdTextErrorCode::TypeMismatch,
+                    format!("expected `{enum_name}` flag value"),
+                    value.span(),
+                ));
+            }
+        };
+        validate_flag_mask(schema, enum_name, flag_value, value.span())?;
+        return Ok(LoadedValueDraft::enum_value(enum_name, flag_value));
+    }
+
     let (raw, span) = scalar(value, "enum value")?;
     let variant = raw
         .strip_prefix(enum_name)
@@ -245,6 +270,88 @@ fn lower_enum(
         ));
     }
     Ok(LoadedValueDraft::enum_variant(enum_name, variant))
+}
+
+fn lower_flag_expr(
+    schema: &CftSchema,
+    enum_name: &str,
+    expr: &CfdBitExpr,
+) -> Result<i64, CfdTextDiagnostics> {
+    match &expr.kind {
+        CfdBitExprKind::Value(raw) => lower_flag_operand(schema, enum_name, raw, expr.span),
+        CfdBitExprKind::Binary { op, lhs, rhs } => {
+            let lhs = lower_flag_expr(schema, enum_name, lhs)?;
+            let rhs = lower_flag_expr(schema, enum_name, rhs)?;
+            Ok(match op {
+                CfdBitOp::Or => lhs | rhs,
+                CfdBitOp::Xor => lhs ^ rhs,
+                CfdBitOp::And => lhs & rhs,
+            })
+        }
+    }
+}
+
+fn lower_flag_operand(
+    schema: &CftSchema,
+    enum_name: &str,
+    raw: &str,
+    span: Span,
+) -> Result<i64, CfdTextDiagnostics> {
+    if let Ok(value) = raw.parse::<i64>() {
+        validate_flag_mask(schema, enum_name, value, span)?;
+        return Ok(value);
+    }
+
+    let variant = if let Some((qualified_enum, variant)) = raw.split_once('.') {
+        if qualified_enum != enum_name || variant.contains('.') {
+            return Err(error(
+                CfdTextErrorCode::InvalidEnumVariant,
+                format!("expected `{enum_name}` flag operand, found `{raw}`"),
+                span,
+            ));
+        }
+        variant
+    } else {
+        raw
+    };
+    schema
+        .enum_variant_value(enum_name, variant)
+        .ok_or_else(|| {
+            error(
+                CfdTextErrorCode::InvalidEnumVariant,
+                format!("unknown enum variant `{enum_name}.{variant}`"),
+                span,
+            )
+        })
+}
+
+fn validate_flag_mask(
+    schema: &CftSchema,
+    enum_name: &str,
+    value: i64,
+    span: Span,
+) -> Result<(), CfdTextDiagnostics> {
+    let declared_mask = schema.resolve_enum(enum_name).map_or(0, |schema_enum| {
+        schema_enum
+            .variants
+            .iter()
+            .fold(0_i64, |mask, variant| mask | variant.value)
+    });
+    if value < 0 {
+        return Err(error(
+            CfdTextErrorCode::InvalidEnumVariant,
+            format!("flag enum `{enum_name}` value must be nonnegative"),
+            span,
+        ));
+    }
+    if value & !declared_mask != 0 {
+        return Err(error(
+            CfdTextErrorCode::InvalidEnumVariant,
+            format!("flag enum `{enum_name}` value {value} contains undeclared bits"),
+            span,
+        ));
+    }
+    Ok(())
 }
 
 fn lower_object(

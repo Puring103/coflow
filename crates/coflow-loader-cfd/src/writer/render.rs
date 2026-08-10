@@ -102,7 +102,7 @@ fn default_cfd_value(schema: &CftSchema, field: &CftField) -> String {
         || value_from_type_default(schema, &field.value_type),
         |default| value_from_schema_default(schema, &field.value_type, default),
     );
-    serialize_value_for_type(&value, None, Some(&field.value_type), 2)
+    serialize_value_for_type(&value, Some(schema), Some(&field.value_type), 2)
 }
 
 fn value_from_schema_default(
@@ -227,10 +227,7 @@ pub(super) fn serialize_value_for_type(
             }
         }
         CfdValue::String(v) => format!("{v:?}"),
-        CfdValue::Enum(e) => e.variant.as_ref().map_or_else(
-            || format!("{}({})", e.enum_name, e.value),
-            ToString::to_string,
-        ),
+        CfdValue::Enum(e) => render_enum_value(e, schema, expected),
         CfdValue::Ref(target_key)
             if matches!(
                 expected.map(CftValueType::non_nullable),
@@ -295,5 +292,90 @@ pub(super) fn serialize_value_for_type(
                 .collect();
             format!("{{{}}}", pairs.join(", "))
         }
+    }
+}
+
+fn render_enum_value(
+    value: &CfdEnumValue,
+    schema: Option<&CftSchema>,
+    expected: Option<&CftValueType>,
+) -> String {
+    let expected_name = expected.and_then(|ty| match ty.non_nullable() {
+        CftValueType::Enum(name) => Some(name.as_str()),
+        _ => None,
+    });
+    let schema_enum = schema
+        .and_then(|schema| schema.resolve_enum(expected_name.unwrap_or(value.enum_name.as_str())))
+        .filter(|schema_enum| schema_enum.name == value.enum_name);
+    if let Some(schema_enum) = schema_enum.filter(|schema_enum| schema_enum.is_flag) {
+        if value.value == 0 {
+            return schema_enum
+                .variants
+                .iter()
+                .find(|variant| variant.value == 0)
+                .map_or_else(|| "0".to_string(), |variant| variant.name.to_string());
+        }
+        let names = schema_enum
+            .variants
+            .iter()
+            .filter(|variant| variant.value != 0 && value.value & variant.value == variant.value)
+            .map(|variant| variant.name.to_string())
+            .collect::<Vec<_>>();
+        let rendered_mask = schema_enum
+            .variants
+            .iter()
+            .filter(|variant| variant.value != 0 && value.value & variant.value == variant.value)
+            .fold(0_i64, |mask, variant| mask | variant.value);
+        if rendered_mask == value.value && !names.is_empty() {
+            return names.join(" | ");
+        }
+        return value.value.to_string();
+    }
+    value.variant.as_ref().map_or_else(
+        || format!("{}({})", value.enum_name, value.value),
+        ToString::to_string,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_value_for_type;
+    use coflow_cft::{
+        build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
+    };
+    use coflow_data_model::{CfdEnumValue, CfdValue};
+
+    #[test]
+    fn serializes_flag_masks_in_schema_order() -> Result<(), String> {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "@flag enum Access { None = 0, Read = 1, Write = 2, Execute = 4 }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .map_err(|error| format!("{error:?}"))?;
+        let schema_enum = schema
+            .resolve_enum("Access")
+            .ok_or_else(|| "missing Access enum".to_string())?;
+        let ty = CftValueType::Enum(schema_enum.name.clone());
+        let value = CfdValue::Enum(
+            CfdEnumValue::try_new("Access", None::<String>, 5)
+                .map_err(|error| error.to_string())?,
+        );
+        let rendered = serialize_value_for_type(&value, Some(&schema), Some(&ty), 0);
+        if rendered != "Read | Execute" {
+            return Err(format!(
+                "expected flag names in schema order, got `{rendered}`"
+            ));
+        }
+
+        let zero = CfdValue::Enum(
+            CfdEnumValue::try_new("Access", None::<String>, 0)
+                .map_err(|error| error.to_string())?,
+        );
+        let rendered = serialize_value_for_type(&zero, Some(&schema), Some(&ty), 0);
+        if rendered != "None" {
+            return Err(format!("expected the zero flag name, got `{rendered}`"));
+        }
+        Ok(())
     }
 }

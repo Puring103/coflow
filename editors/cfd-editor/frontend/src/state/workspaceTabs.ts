@@ -45,11 +45,22 @@ export function routeForWorkspaceTab(
   fallbackCoordinate?: RecordCoordinate,
 ): Route {
   if (tab.viewKind === 'record') {
+    const coordinate = isCoordinate(tab.coordinate, tab.typeName)
+      ? tab.coordinate
+      : isCoordinate(fallbackCoordinate, tab.typeName) ? fallbackCoordinate : undefined
+    if (!coordinate) {
+      return {
+        view: 'table',
+        file: tab.filePath,
+        viewId: DEFAULT_TABLE_VIEW_ID,
+        typeFilter: tab.typeName,
+      }
+    }
     return {
       view: 'record',
       file: tab.filePath,
       viewId: tab.viewId,
-      coordinate: tab.coordinate ?? fallbackCoordinate ?? { actual_type: tab.typeName, key: '' },
+      coordinate,
     }
   }
   return {
@@ -113,7 +124,7 @@ export function workspaceToWire(
       type_name: tab.typeName,
       view_id: tab.viewId,
       view_kind: tab.viewKind,
-      ...(tab.coordinate ? { coordinate: tab.coordinate } : {}),
+      coordinate: isCoordinate(tab.coordinate, tab.typeName) ? tab.coordinate : null,
     })),
     active_tab_id: activeTabId,
   }

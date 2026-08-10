@@ -54,7 +54,7 @@ impl Validator<'_, '_> {
             LoadedDictKeyDraft::String(value) => CfdDictKey::String(value.clone()),
             LoadedDictKeyDraft::Int(value) => CfdDictKey::Int(*value),
             LoadedDictKeyDraft::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
-                self.resolve_enum_value(enum_name, variant, record, path.clone())?,
+                self.resolve_enum_key_value(enum_name, variant, record, path.clone())?,
             ),
         };
         match crate::semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {

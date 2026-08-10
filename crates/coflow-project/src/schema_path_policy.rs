@@ -87,9 +87,7 @@ impl<'a> SchemaPathPolicy<'a> {
     }
 
     pub(super) fn canonicalize(path: &Path) -> Result<PathBuf, DiagnosticSet> {
-        fs::canonicalize(path).map_err(|err| {
-            Self::resolve_error(path, err)
-        })
+        fs::canonicalize(path).map_err(|err| Self::resolve_error(path, err))
     }
 
     pub(super) fn resolve_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {

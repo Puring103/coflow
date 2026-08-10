@@ -52,7 +52,9 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
     match value {
         LoadedValueDraft::Null => Ok(Value::Null),
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
-        LoadedValueDraft::Int(value) => Ok(Value::Number(Number::from(value))),
+        LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
+            Ok(Value::Number(Number::from(value)))
+        }
         LoadedValueDraft::Float(value) => Number::from_f64(value)
             .map(Value::Number)
             .ok_or_else(|| one_value_error("cell float must be finite")),

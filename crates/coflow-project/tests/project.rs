@@ -282,10 +282,7 @@ outputs:
         project.config.sources[0].options()["flavor"],
         serde_json::Value::String("custom".to_string())
     );
-    assert!(project.config.sources[0]
-        .options()
-        .get("options")
-        .is_none());
+    assert!(project.config.sources[0].options().get("options").is_none());
     assert_eq!(
         project.config.outputs.targets()[0].data.output_type,
         "custom-export"

@@ -24,7 +24,7 @@ function context(kind: string, values: Partial<DiagnosticContext> = {}): Diagnos
 function diagnostic(contexts?: DiagnosticItem['contexts']): DiagnosticItem {
   return {
     severity: 'error',
-    code: 'CFD-CHECK-001',
+    code: 'CHECK-001',
     stage: 'CHECK',
     message: 'custom message',
     file_path: null,

@@ -24,14 +24,27 @@ impl Parser<'_> {
         self.parse_name_token(label).map(|t| t.text)
     }
 
-    fn parse_name_token(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
+    pub(super) fn parse_name_token(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         let start = self.pos;
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace()
                 || matches!(
                     ch,
-                    ':' | '=' | ';' | ',' | '{' | '}' | '[' | ']' | '(' | ')' | '@' | '&' | '"'
+                    ':' | '='
+                        | ';'
+                        | ','
+                        | '{'
+                        | '}'
+                        | '['
+                        | ']'
+                        | '('
+                        | ')'
+                        | '@'
+                        | '&'
+                        | '|'
+                        | '^'
+                        | '"'
                 )
             {
                 break;
@@ -197,5 +210,5 @@ impl Parser<'_> {
 }
 
 fn is_value_boundary(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '|' | ':')
+    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | ')' | '|' | '^' | '&' | ':')
 }

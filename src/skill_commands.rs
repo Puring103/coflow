@@ -8,7 +8,7 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::diagnostics::{cli_error, cli_file_error};
 
@@ -324,7 +324,7 @@ fn install_skill(target_root: &Path, skill_name: &str) -> Result<(), DiagnosticS
 
     let had_destination = destination.exists();
     if had_destination {
-        fs::rename(&destination, &backup).map_err(|error| {
+        rename_with_retry(&destination, &backup).map_err(|error| {
             let _ = fs::remove_dir_all(&staging);
             file_error(
                 &destination,
@@ -334,9 +334,9 @@ fn install_skill(target_root: &Path, skill_name: &str) -> Result<(), DiagnosticS
         })?;
     }
 
-    if let Err(error) = fs::rename(&staging, &destination) {
+    if let Err(error) = rename_with_retry(&staging, &destination) {
         if had_destination {
-            let _ = fs::rename(&backup, &destination);
+            let _ = rename_with_retry(&backup, &destination);
         }
         let _ = fs::remove_dir_all(&staging);
         return Err(file_error(
@@ -356,6 +356,22 @@ fn install_skill(target_root: &Path, skill_name: &str) -> Result<(), DiagnosticS
         })?;
     }
     Ok(())
+}
+
+fn rename_with_retry(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let mut delays = [5, 10, 20, 40, 80, 160].into_iter();
+    loop {
+        match fs::rename(source, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                let Some(delay_ms) = delays.next() else {
+                    return Err(error);
+                };
+                std::thread::sleep(Duration::from_millis(delay_ms));
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn has_direct_file(directory: &Dir<'_>, name: &str) -> bool {

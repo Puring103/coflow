@@ -22,7 +22,7 @@ impl DirectoryDiscoveryError {
         self.kind.path()
     }
 
-    pub(super) fn kind(&self) -> &DirectoryDiscoveryErrorKind {
+    pub(super) const fn kind(&self) -> &DirectoryDiscoveryErrorKind {
         &self.kind
     }
 }
@@ -92,12 +92,8 @@ pub(super) struct DiscoveredFile {
 /// Returns an error when a path cannot be resolved or read, or when a link
 /// resolves outside the declared directory root.
 pub fn discover_directory_files(root: &Path) -> Result<Vec<PathBuf>, DirectoryDiscoveryError> {
-    discover_directory_files_with(root, &|_| true).map(|files| {
-        files
-            .into_iter()
-            .map(|file| file.path)
-            .collect::<Vec<_>>()
-    })
+    discover_directory_files_with(root, &|_| true)
+        .map(|files| files.into_iter().map(|file| file.path).collect::<Vec<_>>())
 }
 
 pub(super) fn discover_directory_files_with(

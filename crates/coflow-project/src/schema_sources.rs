@@ -1,9 +1,7 @@
-use crate::schema_path_policy::{SchemaFile, SchemaPathPolicy};
-use crate::{
-    file_discovery::{
-        discover_directory_files_with, DirectoryDiscoveryError, DirectoryDiscoveryErrorKind,
-    },
+use crate::file_discovery::{
+    discover_directory_files_with, DirectoryDiscoveryError, DirectoryDiscoveryErrorKind,
 };
+use crate::schema_path_policy::{SchemaFile, SchemaPathPolicy};
 use crate::SchemaConfig;
 use coflow_api::DiagnosticSet;
 use std::collections::BTreeSet;
@@ -75,10 +73,9 @@ fn push_schema_path(
             .map_err(|error| schema_discovery_error(policy, &error))?;
         for file in files {
             if discovery.visited_files.insert(file.canonical_path.clone()) {
-                discovery.files.push(policy.schema_file_with_identity(
-                    file.path,
-                    file.canonical_path,
-                ));
+                discovery
+                    .files
+                    .push(policy.schema_file_with_identity(file.path, file.canonical_path));
             }
         }
         Ok(())

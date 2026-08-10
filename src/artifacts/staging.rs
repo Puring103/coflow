@@ -77,6 +77,7 @@ pub(super) fn stage_artifact_set(
         write_verified_file(&path, &contents)?;
         write_verified_file(&requested_path, &contents)?;
     }
+    preserve_unity_meta_files(dir, &requested_staging_path)?;
     fault::check(Point::SyncStagingTree)
         .and_then(|()| sync_directory_tree(staged.path()))
         .map_err(|err| diagnostic_set(dir, format!("failed to sync staged artifacts: {err}")))?;
@@ -89,6 +90,98 @@ pub(super) fn stage_artifact_set(
             )
         })?;
     Ok(staged)
+}
+
+fn preserve_unity_meta_files(
+    requested_dir: &Path,
+    requested_staging_dir: &Path,
+) -> Result<(), DiagnosticSet> {
+    if !requested_dir.is_dir() {
+        return Ok(());
+    }
+    preserve_unity_meta_tree(requested_dir, requested_staging_dir)
+}
+
+fn preserve_unity_meta_tree(source_dir: &Path, staging_dir: &Path) -> Result<(), DiagnosticSet> {
+    let mut entries = fs::read_dir(source_dir)
+        .map_err(|err| {
+            diagnostic_set(
+                source_dir,
+                format!(
+                    "failed to inspect output directory `{}` for Unity metadata: {err}",
+                    source_dir.display()
+                ),
+            )
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            diagnostic_set(
+                source_dir,
+                format!(
+                    "failed to inspect output directory `{}` for Unity metadata: {err}",
+                    source_dir.display()
+                ),
+            )
+        })?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+
+    for entry in entries {
+        let source = entry.path();
+        let file_type = entry.file_type().map_err(|err| {
+            diagnostic_set(
+                &source,
+                format!(
+                    "failed to inspect output entry `{}`: {err}",
+                    source.display()
+                ),
+            )
+        })?;
+        if file_type.is_dir() {
+            let nested_staging_dir = staging_dir.join(entry.file_name());
+            if nested_staging_dir.exists() && !nested_staging_dir.is_dir() {
+                continue;
+            }
+            preserve_unity_meta_tree(&source, &nested_staging_dir)?;
+            continue;
+        }
+        if !file_type.is_file() || !is_unity_meta_path(&source) {
+            continue;
+        }
+        let destination = staging_dir.join(entry.file_name());
+        if destination.exists() {
+            continue;
+        }
+        if let Some(parent) = destination.parent() {
+            fault::check(Point::CreateArtifactParent).map_err(|err| {
+                diagnostic_set(
+                    parent,
+                    format!("failed to create `{}`: {err}", parent.display()),
+                )
+            })?;
+            fs::create_dir_all(parent).map_err(|err| {
+                diagnostic_set(
+                    parent,
+                    format!("failed to create `{}`: {err}", parent.display()),
+                )
+            })?;
+        }
+        let contents = fs::read(&source).map_err(|err| {
+            diagnostic_set(
+                &source,
+                format!(
+                    "failed to read Unity metadata file `{}`: {err}",
+                    source.display()
+                ),
+            )
+        })?;
+        write_verified_file(&destination, &contents)?;
+    }
+    Ok(())
+}
+
+fn is_unity_meta_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("meta"))
 }
 
 fn write_verified_file(path: &Path, contents: &[u8]) -> Result<(), DiagnosticSet> {
@@ -471,12 +564,15 @@ fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
 
     let mut left = BufReader::new(fs::File::open(left)?);
     let mut right = BufReader::new(fs::File::open(right)?);
-    let mut left_buffer = [0; 64 * 1024];
-    let mut right_buffer = [0; 64 * 1024];
+    let mut left_buffer = vec![0; 64 * 1024].into_boxed_slice();
+    let mut right_buffer = vec![0; 64 * 1024].into_boxed_slice();
     loop {
         let left_read = left.read(&mut left_buffer)?;
         let right_read = right.read(&mut right_buffer)?;
-        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+        if left_read != right_read {
+            return Ok(false);
+        }
+        if left_buffer[..left_read] != right_buffer[..left_read] {
             return Ok(false);
         }
         if left_read == 0 {

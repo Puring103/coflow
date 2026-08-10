@@ -94,6 +94,10 @@ export function annotationEnumType(annotation: FieldAnnotation | null | undefine
   return annotation?.enum_type ?? undefined
 }
 
+export function annotationEnumIsFlag(annotation: FieldAnnotation | null | undefined): boolean {
+  return !!annotation?.enum_is_flag
+}
+
 export function annotationNullable(annotation: FieldAnnotation | null | undefined): boolean {
   return !!annotation?.nullable
 }
@@ -118,6 +122,10 @@ export function annotationChildren(annotation: FieldAnnotation | null | undefine
 
 export function cellEnumType(cell: FieldCell): string | undefined {
   return cell.annotation?.enum_type ?? undefined
+}
+
+export function cellEnumIsFlag(cell: FieldCell): boolean {
+  return !!cell.annotation?.enum_is_flag
 }
 
 export function cellNullable(cell: FieldCell): boolean {

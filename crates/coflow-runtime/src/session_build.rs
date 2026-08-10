@@ -188,8 +188,7 @@ impl SessionBuildContext<'_> {
     }
 
     fn should_generate_dimensions(&self) -> bool {
-        self.mode == SessionOpenOptions::Build
-            && !self.project.config.dimensions.is_empty()
+        self.mode == SessionOpenOptions::Build && !self.project.config.dimensions.is_empty()
     }
 }
 
@@ -243,7 +242,7 @@ fn build_data_pipeline(
     let mut execution_stats = output.statistics;
     let mut dimensions = commit_dimensions_if_needed(ctx, &output, None, diagnostics);
     record_dimension_work(&mut execution_stats, &dimensions);
-    if diagnostics.is_empty() && ctx.has_dimension_fields() {
+    if diagnostics.is_empty() && output.diagnostics.is_empty() && ctx.has_dimension_fields() {
         let (reloaded, reloaded_indexes) = reload_with_dimensions(ctx, diagnostics)?;
         execution_stats.merge(reloaded.statistics);
         output = reloaded;
@@ -313,7 +312,7 @@ fn rebuild_data_pipeline(
         diagnostics,
     );
     record_dimension_work(&mut execution_stats, &dimensions);
-    if diagnostics.is_empty() && ctx.has_dimension_fields() {
+    if diagnostics.is_empty() && output.diagnostics.is_empty() && ctx.has_dimension_fields() {
         let cache = output
             .source_data
             .base_with_previous_dimensions(&previous.source_data);
@@ -444,6 +443,7 @@ fn load_data(
     Ok((output, indexes))
 }
 
+#[derive(Clone, Copy)]
 struct CachedLoadOptions<'a> {
     reload_paths: &'a BTreeSet<String>,
     include_implicit_dimension_sources: bool,
@@ -547,7 +547,7 @@ fn commit_dimensions_if_needed(
     changed_records: Option<&BTreeSet<crate::RecordCoordinate>>,
     diagnostics: &mut DiagnosticsStore,
 ) -> CommittedDimensions {
-    if !ctx.should_generate_dimensions() {
+    if !ctx.should_generate_dimensions() || !output.diagnostics.is_empty() {
         return CommittedDimensions::default();
     }
 

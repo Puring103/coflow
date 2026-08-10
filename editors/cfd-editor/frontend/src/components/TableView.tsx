@@ -22,6 +22,7 @@ import {
   coordinateId,
   cellDeclaredType,
   cellEnumType,
+  cellEnumIsFlag,
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
@@ -126,8 +127,8 @@ interface Props {
    *  parent has refreshed `data` for this file. */
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
-  /** Delete an existing record by key. */
-  onDeleteRecord?: (coordinate: RecordCoordinate) => Promise<void>
+  /** Delete the records selected by the row context menu. */
+  onDeleteRecords?: (coordinates: readonly RecordCoordinate[]) => Promise<void>
   onMoveRecord?: (coordinate: RecordCoordinate, targetIndex: number) => Promise<void>
   /** Click on a corner badge on a row or cell. `fieldPath` is null for
    *  record-level (the Key column badge), otherwise the column name. */
@@ -162,7 +163,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecord, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -537,6 +538,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   editable={cellEditable}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
+                  enumIsFlag={cellEnumIsFlag(f)}
                   nullable={cellNullable(f)}
                   declaredType={cellDeclaredType(f)}
                   highlightQuery={highlightQueryRef.current}
@@ -1477,16 +1479,20 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               在下方插入记录
             </div>
           )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
+          {!readOnly && data.capabilities.can_delete_record && onDeleteRecords && (
             <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
-              const key = recordKey(contextMenu.row)
-              const coordinate = contextMenu.row.coordinate
+              const records = contextMenu.records
+              const prompt = records.length === 1
+                ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
+                : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
               setContextMenu(null)
-              if (!window.confirm(`确认删除记录 ${key}？此操作不可撤销。`)) return
-              await onDeleteRecord(coordinate)
+              if (!window.confirm(prompt)) return
+              await onDeleteRecords(records)
             }}>
               <Icon name="close" size={13} aria-hidden />
-              删除记录
+              {contextMenu.records.length === 1
+                ? '删除记录'
+                : `删除 ${contextMenu.records.length} 条记录`}
             </div>
           )}
         </div>,
@@ -1723,13 +1729,14 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+  value, label, editable, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
   editable: boolean
   refTargetType?: string
   enumType?: string
+  enumIsFlag?: boolean
   nullable?: boolean
   declaredType?: string
   highlightQuery?: string
@@ -1768,8 +1775,9 @@ function EditableCell({
         <EnumDirectSelect
           value={value as FieldValue & { kind: 'enum' | 'null' }}
           enumType={enumType}
+          isFlag={enumIsFlag}
           nullable={nullable}
-          onCommit={commitAndRestoreFocus}
+          onCommit={enumIsFlag ? onCommit! : commitAndRestoreFocus}
           onExit={onEditingFinished}
         />
       </div>

@@ -19,7 +19,11 @@ const BIN_NAME: &str = "coflow";
 ///
 /// Returns `None` on platforms we do not publish a standalone CLI for.
 fn asset_identifier() -> Option<&'static str> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
+    asset_identifier_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn asset_identifier_for(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
         ("macos", "aarch64") => Some("coflow-cli-macos-arm64"),
         ("macos", "x86_64") => Some("coflow-cli-macos-x64"),
         _ => None,
@@ -45,6 +49,7 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
         .bin_name(BIN_NAME)
+        .target(identifier)
         .identifier(identifier)
         .current_version(current_version)
         .no_confirm(args.yes)
@@ -77,7 +82,10 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
         return Ok(true);
     }
 
-    println!("A newer release is available: {current_version} -> {}", latest.version);
+    println!(
+        "A newer release is available: {current_version} -> {}",
+        latest.version
+    );
 
     if args.check {
         println!("Run `coflow self-update` to install it.");
@@ -85,10 +93,51 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
     }
 
     let status = updater.update().map_err(|error| {
-        cli_error("SELF-UPDATE-INSTALL", format!("self-update failed: {error}"))
+        cli_error(
+            "SELF-UPDATE-INSTALL",
+            format!("self-update failed: {error}"),
+        )
     })?;
 
     let _ = io::stdout().flush();
     println!("Updated coflow to {}.", status.version());
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::asset_identifier_for;
+    use self_update::update::{Release, ReleaseAsset};
+
+    #[test]
+    fn macos_asset_identifiers_match_published_archives() {
+        for (arch, identifier, asset_name) in [
+            (
+                "aarch64",
+                "coflow-cli-macos-arm64",
+                "coflow-cli-macos-arm64.tar.gz",
+            ),
+            (
+                "x86_64",
+                "coflow-cli-macos-x64",
+                "coflow-cli-macos-x64.tar.gz",
+            ),
+        ] {
+            assert_eq!(asset_identifier_for("macos", arch), Some(identifier));
+            let release = Release {
+                assets: vec![ReleaseAsset {
+                    name: asset_name.to_string(),
+                    download_url: "https://example.invalid/coflow.tar.gz".to_string(),
+                }],
+                ..Release::default()
+            };
+            assert!(release.asset_for(identifier, Some(identifier)).is_some());
+        }
+    }
+
+    #[test]
+    fn unsupported_platforms_have_no_asset_identifier() {
+        assert_eq!(asset_identifier_for("windows", "x86_64"), None);
+        assert_eq!(asset_identifier_for("linux", "aarch64"), None);
+    }
 }

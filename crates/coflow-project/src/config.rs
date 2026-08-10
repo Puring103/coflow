@@ -219,7 +219,9 @@ impl<'de> Deserialize<'de> for SchemaConfig {
                 .collect::<Result<Vec<_>, _>>()
                 .map(Self::many)
                 .map_err(de::Error::custom),
-            _ => Err(de::Error::custom("schema must be a path or a list of paths")),
+            _ => Err(de::Error::custom(
+                "schema must be a path or a list of paths",
+            )),
         }
     }
 }

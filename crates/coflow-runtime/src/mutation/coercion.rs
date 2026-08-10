@@ -84,6 +84,27 @@ fn coerce_json_value(
                     .map_err(|error| one_value_error(error.to_string()))
             }),
         CftValueType::Enum(name) => {
+            if session
+                .schema()
+                .resolve_enum(name)
+                .is_some_and(|schema_enum| schema_enum.is_flag)
+            {
+                if let Some(value) = value.as_i64() {
+                    let mut enum_value = session
+                        .schema()
+                        .enum_value_from_int(name, value)
+                        .map_or_else(
+                            || CfdEnumValue {
+                                enum_name: name.clone(),
+                                variant: None,
+                                value,
+                            },
+                            Into::into,
+                        );
+                    enum_value.variant = None;
+                    return Ok(CfdValue::Enum(enum_value));
+                }
+            }
             let variant = value
                 .as_str()
                 .ok_or_else(|| one_value_error(format!("expected enum variant for `{name}`")))?;
@@ -125,7 +146,7 @@ fn normalize_cfd_value(
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Dict),
         CfdValue::Enum(enum_value) => {
-            normalize_cfd_enum_value(session, enum_value).map(CfdValue::Enum)
+            normalize_cfd_enum_value(session, enum_value, false).map(CfdValue::Enum)
         }
         CfdValue::Object(record) => {
             let mut record = *record;
@@ -163,7 +184,9 @@ fn normalize_cfd_dict_key(
     key: CfdDictKey,
 ) -> Result<CfdDictKey, DiagnosticSet> {
     match key {
-        CfdDictKey::Enum(value) => normalize_cfd_enum_value(session, value).map(CfdDictKey::Enum),
+        CfdDictKey::Enum(value) => {
+            normalize_cfd_enum_value(session, value, true).map(CfdDictKey::Enum)
+        }
         key => Ok(key),
     }
 }
@@ -171,6 +194,7 @@ fn normalize_cfd_dict_key(
 fn normalize_cfd_enum_value(
     session: &ProjectSession,
     mut value: CfdEnumValue,
+    preserve_variant: bool,
 ) -> Result<CfdEnumValue, DiagnosticSet> {
     if let Some(variant) = value.variant.as_ref() {
         // Variant identity is authoritative at the wire boundary; semantic
@@ -185,6 +209,14 @@ fn normalize_cfd_enum_value(
                 ))
             })?;
         value.value = expected_value;
+    }
+    if !preserve_variant
+        && session
+            .schema()
+            .resolve_enum(value.enum_name.as_str())
+            .is_some_and(|schema_enum| schema_enum.is_flag)
+    {
+        value.variant = None;
     }
     Ok(value)
 }

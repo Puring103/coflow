@@ -5,7 +5,7 @@ use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagn
 use super::scan::{find_top_level_char, split_top_level, strip_outer_pair};
 use super::strings::parse_string;
 use super::types::CellType;
-use super::{parse_enum, parse_value, ValueContext};
+use super::{parse_value, ValueContext};
 
 pub(super) fn parse_array(
     schema: &CftSchema,
@@ -86,7 +86,7 @@ fn parse_dict_key(
         )),
         CellType::Enum(enum_name) => {
             let LoadedValueDraft::EnumVariant { variant, .. } =
-                parse_enum(schema, enum_name, text)?
+                super::parse_enum_variant(schema, enum_name, text)?
             else {
                 return Err(type_mismatch("enum key"));
             };

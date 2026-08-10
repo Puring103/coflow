@@ -109,6 +109,7 @@ pub(crate) struct LoadProjectDataOptions {
     pub(crate) run_checks: bool,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) load: LoadProjectDataOptions,
     pub(crate) refresh_implicit_dimension_sources: bool,
@@ -133,6 +134,7 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
     })
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftSchema,
@@ -178,7 +180,11 @@ pub(crate) fn load_project_data(
                     .saturating_add(resolved_sources.len());
                 for resolved_source in resolved_sources {
                     diagnostics.extend(load_resolved_dimension_source(
-                        project, schema, registry, &mut state, resolved_source,
+                        project,
+                        schema,
+                        registry,
+                        &mut state,
+                        resolved_source,
                     ));
                 }
             }
@@ -204,8 +210,8 @@ pub(crate) fn load_project_data(
     for batch in &state.source_data.batches {
         builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
-    let model = match builder.build() {
-        Ok(model) => model,
+    let editable = match builder.build_editable() {
+        Ok(output) => output,
         Err(err) => {
             let logical_locations = logical_locations_from_cfd(&err, |id| {
                 record_coordinates.get(id.index()).cloned().flatten()
@@ -217,6 +223,11 @@ pub(crate) fn load_project_data(
             });
         }
     };
+    let model = editable.model;
+    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
+        record_coordinates.get(id.index()).cloned().flatten()
+    });
+    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
     let check = if options.run_checks {
         run_full_project_checks(schema, &model, &origins)
     } else {
@@ -228,16 +239,25 @@ pub(crate) fn load_project_data(
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
+    let check_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(check.diagnostics);
+    model_logical_locations.extend(
+        check
+            .logical_locations
+            .into_iter()
+            .map(|(index, location)| (check_offset + index, location)),
+    );
     Ok(ProjectLoadOutput {
         model,
-        diagnostics: check.diagnostics,
-        logical_locations: check.logical_locations,
+        diagnostics: model_diagnostics,
+        logical_locations: model_logical_locations,
         source_data: state.source_data,
         check_state: check.state,
         statistics,
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
@@ -259,8 +279,7 @@ pub(crate) fn reload_project_data_from_cache(
             .cloned()
             .collect(),
     };
-    if options.load.include_implicit_dimension_sources
-        && options.refresh_implicit_dimension_sources
+    if options.load.include_implicit_dimension_sources && options.refresh_implicit_dimension_sources
     {
         statistics.sources_resolved = refresh_dimension_source_plans(
             project,
@@ -338,13 +357,7 @@ pub(crate) fn reload_project_data_from_cache(
         });
     }
 
-    build_output_from_cache(
-        schema,
-        indexes,
-        source_data,
-        &options,
-        statistics,
-    )
+    build_output_from_cache(schema, indexes, source_data, &options, statistics)
 }
 
 fn preflight_cached_sources(
@@ -468,14 +481,7 @@ fn load_resolved_dimension_source(
         .files
         .add_source_file(entry.display_path.clone(), source_id);
     for field in resolved.fields {
-        match load_dimension_batch(
-            project,
-            schema,
-            registry,
-            &source,
-            &field,
-            &state.records,
-        ) {
+        match load_dimension_batch(project, schema, registry, &source, &field, &state.records) {
             Ok(values) => state.source_data.batches.push(CachedSourceBatch {
                 entry: entry.clone(),
                 records: Arc::default(),
@@ -690,7 +696,7 @@ fn build_output_from_cache(
     for batch in &source_data.batches {
         builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
-    let model = builder.build().map_err(|err| {
+    let editable = builder.build_editable().map_err(|err| {
         let logical_locations = logical_locations_from_cfd(&err, |id| {
             record_coordinates.get(id.index()).cloned().flatten()
         });
@@ -699,6 +705,11 @@ fn build_output_from_cache(
             logical_locations,
         }
     })?;
+    let model = editable.model;
+    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
+        record_coordinates.get(id.index()).cloned().flatten()
+    });
+    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
     let check = if options.load.run_checks {
         run_cached_project_checks(
             schema,
@@ -717,10 +728,18 @@ fn build_output_from_cache(
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
+    let check_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(check.diagnostics);
+    model_logical_locations.extend(
+        check
+            .logical_locations
+            .into_iter()
+            .map(|(index, location)| (check_offset + index, location)),
+    );
     Ok(ProjectLoadOutput {
         model,
-        diagnostics: check.diagnostics,
-        logical_locations: check.logical_locations,
+        diagnostics: model_diagnostics,
+        logical_locations: model_logical_locations,
         source_data,
         check_state: check.state,
         statistics,

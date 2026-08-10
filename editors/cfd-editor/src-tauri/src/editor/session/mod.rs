@@ -45,8 +45,8 @@ use crate::editor::types::{
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
     EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, FileRecords,
-    FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField, PluginSchemaType,
-    ProjectSnapshot, RecordColumn, RecordRow, RefTarget, RenameRecordOutcome,
+    FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField,
+    PluginSchemaType, ProjectSnapshot, RecordColumn, RecordRow, RefTarget, RenameRecordOutcome,
     ReorderRecordsOutcome, ViewConfig, WriteFieldOutcome,
 };
 
