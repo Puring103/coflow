@@ -87,7 +87,6 @@ import {
   moveRecordsToGroup,
   nextRecordGroupName,
   colorRecordGroup,
-  removeRecordFromGroups,
   removeRecordsFromGroups,
   renameRecordGroup,
   replaceGroupedCoordinate,
@@ -1442,15 +1441,21 @@ export default function App() {
     },
     [mutations],
   )
-  const deleteRecord = useCallback(
-    async (filePath: string, coordinate: RecordCoordinate) => {
-      const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
-      await mutations.deleteRecord(filePath, coordinate)
-      saveRecordGroups(
-        filePath,
-        coordinate.actual_type,
-        removeRecordFromGroups(groups, coordinate),
-      )
+  const deleteRecords = useCallback(
+    async (filePath: string, coordinates: readonly RecordCoordinate[]) => {
+      for (const coordinate of coordinates) {
+        await mutations.deleteRecord(filePath, coordinate)
+      }
+
+      const actualTypes = new Set(coordinates.map(coordinate => coordinate.actual_type))
+      for (const actualType of actualTypes) {
+        const groups = projectSettings?.record_groups[filePath]?.[actualType] ?? []
+        saveRecordGroups(
+          filePath,
+          actualType,
+          removeRecordsFromGroups(groups, coordinates),
+        )
+      }
     },
     [mutations, projectSettings, saveRecordGroups],
   )
@@ -2161,12 +2166,12 @@ export default function App() {
     },
     [lookups],
   )
-  const tableOnDeleteRecord = useCallback(
-    (coordinate: RecordCoordinate): Promise<void> => {
-      if (currentRoute?.view === 'table') return deleteRecord(currentRoute.file, coordinate)
+  const tableOnDeleteRecords = useCallback(
+    (coordinates: readonly RecordCoordinate[]): Promise<void> => {
+      if (currentRoute?.view === 'table') return deleteRecords(currentRoute.file, coordinates)
       return Promise.resolve()
     },
-    [currentRoute?.view, currentRoute?.file, deleteRecord],
+    [currentRoute?.view, currentRoute?.file, deleteRecords],
   )
   const tableOnMoveRecord = useCallback(
     (coordinate: RecordCoordinate, targetIndex: number): Promise<void> => {
@@ -2882,7 +2887,7 @@ export default function App() {
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
-                    onDeleteRecord={tableOnDeleteRecord}
+                    onDeleteRecords={tableOnDeleteRecords}
                     onMoveRecord={tableOnMoveRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
