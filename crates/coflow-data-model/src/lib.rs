@@ -36,7 +36,7 @@ mod model;
 mod semantics;
 pub mod serde_i64;
 
-pub use build::CfdModelBuilder;
+pub use build::{CfdModelBuildOutput, CfdModelBuilder};
 pub use coflow_structure::StructuralLimits;
 pub use diagnostics::{
     format_cfd_dict_key, label_to_location, map_diagnostics, CfdDiagnostic, CfdDiagnostics,

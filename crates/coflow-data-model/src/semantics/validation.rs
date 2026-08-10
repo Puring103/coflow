@@ -236,7 +236,15 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             path,
         ),
         CftValueType::RecordRef(expected_type) => {
-            validate_ref_value(schema, context, expected_type, value, pending_insert, path)
+            validate_ref_value(
+                schema,
+                context,
+                expected_type,
+                value,
+                pending_insert,
+                mode,
+                path,
+            )
         }
         CftValueType::Object(name) => {
             validate_object_value(schema, context, name, value, pending_insert, mode, path)
@@ -311,17 +319,23 @@ fn validate_ref_value<C: CfdValueSemanticContext>(
     expected_type: &str,
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
+    mode: ValueValidationMode,
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
     match value {
-        CfdValue::Ref(target_key) => validate_ref_target(
-            schema,
-            context,
-            expected_type,
-            target_key,
-            pending_insert,
-            path,
-        ),
+        CfdValue::Ref(_) if mode == ValueValidationMode::Mutation => {
+            if schema.inheritance_root(expected_type).is_none() {
+                return Err(CfdValueSemanticError::new(
+                    CfdValueSemanticErrorKind::UnknownType,
+                    path,
+                    format!("unknown reference target type `{expected_type}`"),
+                ));
+            }
+            Ok(())
+        }
+        CfdValue::Ref(target_key) => {
+            validate_ref_target(schema, context, expected_type, target_key, pending_insert, path)
+        }
         CfdValue::Object(_) => Err(CfdValueSemanticError::new(
             CfdValueSemanticErrorKind::TypeMismatch,
             path,

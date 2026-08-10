@@ -11,6 +11,42 @@ mod common;
 use common::*;
 
 #[test]
+fn build_blocks_editable_reference_diagnostics_without_publishing() {
+    let root = temp_project_dir("build-editable-ref-diagnostic");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data directory");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; } type Holder { item: &Item; }",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/records.cfd"),
+        "holder: Holder { item: &missing }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run build");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("[REF-001] [REF]"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.join(".coflow/artifacts/active.json").exists());
+    assert!(!root.join("generated/data/Holder.json").exists());
+}
+
+#[test]
 fn build_publishes_multiple_output_targets_and_removes_stale_slots() {
     let root = temp_project_dir("build-multiple-targets");
     let _cleanup = TempDirCleanup(root.clone());

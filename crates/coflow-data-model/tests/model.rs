@@ -556,7 +556,7 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
     let err = builder
         .build()
         .expect_err("parent-typed ref should not satisfy child field");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 }
 
 #[test]
@@ -748,6 +748,48 @@ fn semantic_edges_report_data_model_diagnostics() {
     assert_has_code(&err, CfdErrorCode::MissingRequiredField);
     assert_has_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_has_code(&err, CfdErrorCode::DuplicateDictKey);
+}
+
+#[test]
+fn editable_build_keeps_records_with_only_missing_required_fields() {
+    let schema = compile_schema("type Item { name: string; value: int; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
+
+    let output = builder
+        .build_editable()
+        .expect("a missing field can be repaired later");
+    assert_has_code(
+        &output.diagnostics,
+        CfdErrorCode::MissingRequiredField,
+    );
+    assert_eq!(CfdErrorCode::MissingRequiredField.as_str(), "DATA-006");
+    let item_id = output
+        .model
+        .lookup_assignable(&schema, "Item", "item")
+        .expect("record remains addressable");
+    let item = output.model.record(item_id).expect("item");
+    assert_eq!(item.field("name"), None);
+    assert_eq!(item.field("value"), Some(&CfdValue::Int(1)));
+}
+
+#[test]
+fn editable_build_still_rejects_non_representable_data_errors() {
+    let schema = compile_schema("type Item { value: int; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [
+            ("value", LoadedValueDraft::from(1_i64)),
+            ("unknown", LoadedValueDraft::from(2_i64)),
+        ],
+    );
+
+    let diagnostics = builder
+        .build_editable()
+        .expect_err("unknown fields must remain blocking");
+    assert_has_code(&diagnostics, CfdErrorCode::UnknownField);
 }
 
 #[test]

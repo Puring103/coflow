@@ -204,8 +204,8 @@ pub(crate) fn load_project_data(
     for batch in &state.source_data.batches {
         builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
-    let model = match builder.build() {
-        Ok(model) => model,
+    let editable = match builder.build_editable() {
+        Ok(output) => output,
         Err(err) => {
             let logical_locations = logical_locations_from_cfd(&err, |id| {
                 record_coordinates.get(id.index()).cloned().flatten()
@@ -217,6 +217,11 @@ pub(crate) fn load_project_data(
             });
         }
     };
+    let model = editable.model;
+    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
+        record_coordinates.get(id.index()).cloned().flatten()
+    });
+    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
     let check = if options.run_checks {
         run_full_project_checks(schema, &model, &origins)
     } else {
@@ -228,10 +233,18 @@ pub(crate) fn load_project_data(
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
+    let check_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(check.diagnostics);
+    model_logical_locations.extend(
+        check
+            .logical_locations
+            .into_iter()
+            .map(|(index, location)| (check_offset + index, location)),
+    );
     Ok(ProjectLoadOutput {
         model,
-        diagnostics: check.diagnostics,
-        logical_locations: check.logical_locations,
+        diagnostics: model_diagnostics,
+        logical_locations: model_logical_locations,
         source_data: state.source_data,
         check_state: check.state,
         statistics,
@@ -690,7 +703,7 @@ fn build_output_from_cache(
     for batch in &source_data.batches {
         builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
     }
-    let model = builder.build().map_err(|err| {
+    let editable = builder.build_editable().map_err(|err| {
         let logical_locations = logical_locations_from_cfd(&err, |id| {
             record_coordinates.get(id.index()).cloned().flatten()
         });
@@ -699,6 +712,11 @@ fn build_output_from_cache(
             logical_locations,
         }
     })?;
+    let model = editable.model;
+    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
+        record_coordinates.get(id.index()).cloned().flatten()
+    });
+    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
     let check = if options.load.run_checks {
         run_cached_project_checks(
             schema,
@@ -717,10 +735,18 @@ fn build_output_from_cache(
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
+    let check_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(check.diagnostics);
+    model_logical_locations.extend(
+        check
+            .logical_locations
+            .into_iter()
+            .map(|(index, location)| (check_offset + index, location)),
+    );
     Ok(ProjectLoadOutput {
         model,
-        diagnostics: check.diagnostics,
-        logical_locations: check.logical_locations,
+        diagnostics: model_diagnostics,
+        logical_locations: model_logical_locations,
         source_data,
         check_state: check.state,
         statistics,

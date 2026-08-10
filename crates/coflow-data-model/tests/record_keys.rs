@@ -77,7 +77,7 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
     let err = builder
         .build()
         .expect_err("parent-typed ref should not satisfy child field");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 }
 
 #[test]
@@ -418,7 +418,7 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     let err = sibling_builder
         .build()
         .expect_err("&Child should reject sibling records");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 
     let mut parent_builder = CfdDataModel::builder(&schema);
     parent_builder.add_record(
@@ -435,5 +435,5 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     let err = parent_builder
         .build()
         .expect_err("&Child should reject parent records");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert_has_code(&err, CfdErrorCode::RefTargetTypeMismatch);
 }

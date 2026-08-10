@@ -203,7 +203,11 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             }
         }
 
-        if self.diagnostics.len() == diagnostic_start {
+        let diagnostics = &self.diagnostics[diagnostic_start..];
+        if diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code == CfdErrorCode::MissingRequiredField)
+        {
             Some(RecordDraft {
                 key: key.to_string(),
                 actual_type: actual_type_meta.name.clone(),
