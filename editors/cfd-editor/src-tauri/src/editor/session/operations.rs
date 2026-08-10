@@ -11,7 +11,7 @@ use super::{
     ProjectSearchMode, ProjectSearchResults, RecordCoordinate, RecordRow, RefTarget,
     RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext, WriteFieldOutcome,
 };
-use coflow_runtime::RecordSearchMode;
+use coflow_runtime::{RecordSearchMode, RecordSearchOptions};
 
 impl SessionStore {
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
@@ -36,14 +36,17 @@ impl SessionStore {
             .state
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let results = session.queries().search_records(
-            query,
-            match mode {
+        let results = session.queries().search_records(&RecordSearchOptions {
+            pattern: query.to_string(),
+            mode: match mode {
                 ProjectSearchMode::Key => RecordSearchMode::Key,
                 ProjectSearchMode::FullText => RecordSearchMode::FullText,
             },
-            limit,
-        );
+            file: None,
+            actual_type: None,
+            limit: Some(limit),
+            offset: 0,
+        });
         Ok(ProjectSearchResults {
             revision: session.revisions.current(),
             hits: results

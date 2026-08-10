@@ -5,12 +5,14 @@ use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery,
-    ProjectSchemaSession, ReadOnlyProjectSession, RecordCoordinate, Runtime, WriteProjectSession,
+    ProjectSchemaSession, ReadOnlyProjectSession, RecordCoordinate, RecordSearchMode,
+    RecordSearchOptions, Runtime, WriteProjectSession,
 };
 use output::{
     file_error_report, write_file_report_human, write_get_human, write_json, write_list_human,
-    write_patch_human, write_sources_human,
+    write_patch_human, write_search_human, write_sources_human,
 };
+use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -29,6 +31,33 @@ pub struct DataGetOptions {
     pub offset: usize,
     pub all: bool,
     pub human: bool,
+}
+
+#[derive(Debug)]
+pub struct DataSearchOptions {
+    pub config_or_dir: Option<PathBuf>,
+    pub pattern: String,
+    pub file: Option<String>,
+    pub actual_type: Option<String>,
+    pub mode: RecordSearchMode,
+    pub limit: usize,
+    pub offset: usize,
+    pub human: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSearchReport {
+    pub hits: Vec<DataSearchHit>,
+    pub truncated: bool,
+    pub diagnostics: Vec<FlatDiagnostic>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataSearchHit {
+    pub record: RecordCoordinate,
+    pub file: String,
+    pub field_path: Option<String>,
+    pub preview: Option<String>,
 }
 
 pub(crate) use crate::write_file::{
@@ -89,6 +118,46 @@ pub fn list(
     );
     if human {
         write_list_human(&report)?;
+    } else {
+        write_json(&report)?;
+    }
+    Ok(report.diagnostics.is_empty())
+}
+
+/// Searches record keys or loaded record fields in a project session.
+///
+/// # Errors
+///
+/// Returns an error when the project cannot be opened, the default provider
+/// registry cannot be built, the project session cannot be built, or output
+/// cannot be written.
+pub fn search(options: DataSearchOptions) -> Result<bool, DiagnosticSet> {
+    let (session, _registry) = open_read_session(options.config_or_dir.as_deref())?;
+    let queries = session.queries();
+    let results = queries.search_records(&RecordSearchOptions {
+        pattern: options.pattern,
+        mode: options.mode,
+        file: options.file,
+        actual_type: options.actual_type,
+        limit: Some(options.limit),
+        offset: options.offset,
+    });
+    let report = DataSearchReport {
+        hits: results
+            .hits
+            .into_iter()
+            .map(|hit| DataSearchHit {
+                record: hit.coordinate,
+                file: hit.file_path,
+                field_path: hit.field_path,
+                preview: hit.preview,
+            })
+            .collect(),
+        truncated: results.truncated,
+        diagnostics: queries.diagnostics().flat_diagnostics(),
+    };
+    if options.human {
+        write_search_human(&report)?;
     } else {
         write_json(&report)?;
     }

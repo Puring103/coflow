@@ -190,6 +190,19 @@ fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
             args.offset,
             !args.json,
         ),
+        DataCommand::Search(args) => data_commands::search(data_commands::DataSearchOptions {
+            config_or_dir: args.config_or_dir.clone(),
+            pattern: args.pattern.clone(),
+            file: args.file.clone(),
+            actual_type: args.actual_type.clone(),
+            mode: match args.mode {
+                cli::DataSearchModeArg::Key => coflow_runtime::RecordSearchMode::Key,
+                cli::DataSearchModeArg::FullText => coflow_runtime::RecordSearchMode::FullText,
+            },
+            limit: args.limit,
+            offset: args.offset,
+            human: !args.json,
+        }),
         DataCommand::Get(args) => {
             let target = parse_data_get_target(&args.target).map_err(cli_arg_error)?;
             data_commands::get(data_commands::DataGetOptions {

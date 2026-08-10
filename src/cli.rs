@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -291,6 +291,8 @@ pub(crate) enum DataCommand {
     Sources(DataSourcesArgs),
     /// List record coordinates.
     List(DataListArgs),
+    /// Search record keys or loaded field values.
+    Search(DataSearchArgs),
     /// Fetch complete records.
     Get(DataGetArgs),
     /// Apply a JSON data patch through provider writers.
@@ -327,6 +329,40 @@ pub(crate) struct DataListArgs {
     /// Maximum number of records to return.
     #[arg(long)]
     pub(crate) limit: Option<usize>,
+    /// Number of matching records to skip.
+    #[arg(long, default_value_t = 0)]
+    pub(crate) offset: usize,
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum DataSearchModeArg {
+    Key,
+    FullText,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DataSearchArgs {
+    /// Text to find in record keys or loaded field values.
+    #[arg(value_name = "PATTERN")]
+    pub(crate) pattern: String,
+    /// Project configuration file or directory.
+    #[arg(long = "project", value_name = "CONFIG_OR_DIR")]
+    pub(crate) config_or_dir: Option<PathBuf>,
+    /// Restrict output to a project-relative source file.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) file: Option<String>,
+    /// Restrict output to a concrete record type.
+    #[arg(long = "type", value_name = "TYPE")]
+    pub(crate) actual_type: Option<String>,
+    /// Search only record keys or include loaded field names and values.
+    #[arg(long, value_enum, default_value_t = DataSearchModeArg::Key)]
+    pub(crate) mode: DataSearchModeArg,
+    /// Maximum number of matches to return.
+    #[arg(long, default_value_t = 100)]
+    pub(crate) limit: usize,
     /// Number of matching records to skip.
     #[arg(long, default_value_t = 0)]
     pub(crate) offset: usize,

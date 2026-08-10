@@ -11,6 +11,16 @@ pub enum RecordSearchMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordSearchOptions {
+    pub pattern: String,
+    pub mode: RecordSearchMode,
+    pub file: Option<String>,
+    pub actual_type: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordSearchHit {
     pub file_path: String,
     pub coordinate: RecordCoordinate,
@@ -25,16 +35,11 @@ pub struct RecordSearchResults {
 }
 
 impl ProjectQueries<'_> {
-    /// Search every source-backed record in the current immutable generation.
+    /// Search source-backed records in the current immutable generation.
     #[must_use]
-    pub fn search_records(
-        self,
-        query: &str,
-        mode: RecordSearchMode,
-        limit: usize,
-    ) -> RecordSearchResults {
-        let normalized = query.trim().to_lowercase();
-        if normalized.is_empty() || limit == 0 {
+    pub fn search_records(self, options: &RecordSearchOptions) -> RecordSearchResults {
+        let normalized = options.pattern.trim().to_lowercase();
+        if normalized.is_empty() {
             return RecordSearchResults {
                 hits: Vec::new(),
                 truncated: false,
@@ -42,10 +47,23 @@ impl ProjectQueries<'_> {
         }
 
         let mut hits = Vec::new();
+        let mut skipped = 0_usize;
         for file in self.source_files() {
+            if options
+                .file
+                .as_ref()
+                .is_some_and(|filter| filter != file)
+            {
+                continue;
+            }
             for view in self.record_views_in_file(file) {
+                if options.actual_type.as_ref().is_some_and(|actual_type| {
+                    view.coordinate.actual_type.as_str() != actual_type
+                }) {
+                    continue;
+                }
                 let key_matches = contains_normalized(&view.coordinate.key, &normalized);
-                let field_match = if mode == RecordSearchMode::FullText && !key_matches {
+                let field_match = if options.mode == RecordSearchMode::FullText && !key_matches {
                     find_record_field_match(view.record.fields(), &normalized)
                 } else {
                     None
@@ -53,7 +71,11 @@ impl ProjectQueries<'_> {
                 if !key_matches && field_match.is_none() {
                     continue;
                 }
-                if hits.len() == limit {
+                if skipped < options.offset {
+                    skipped += 1;
+                    continue;
+                }
+                if options.limit.is_some_and(|limit| hits.len() == limit) {
                     return RecordSearchResults {
                         hits,
                         truncated: true,
