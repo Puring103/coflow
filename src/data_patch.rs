@@ -163,7 +163,17 @@ impl DataPatchSessionExt for WriteProjectSession {
         let mutation_report = self.apply_mutation(mutation_request);
         let remaining_ops =
             DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
-        into_data_patch_report(mutation_report, remaining_ops)
+        let enum_lock_result =
+            crate::commands::migrate_enum_lock_after_mutation(self, &mutation_report);
+        let mut report = into_data_patch_report(mutation_report, remaining_ops);
+        match enum_lock_result {
+            Ok(true) => report
+                .affected_files
+                .push("coflow.enum.lock.json".to_string()),
+            Ok(false) => {}
+            Err(diagnostics) => report.diagnostics.extend(diagnostics.flat_diagnostics()),
+        }
+        report
     }
 }
 

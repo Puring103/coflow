@@ -96,6 +96,14 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn id_as_enum_name_for_type(self, type_name: &str) -> Option<String> {
+        self.session
+            .schema()
+            .inherited_id_as_enum(type_name)
+            .map(|name| name.to_string())
+    }
+
+    #[must_use]
     pub fn schema_type_names(self) -> Vec<String> {
         self.session
             .schema()

@@ -451,7 +451,7 @@ impl SessionStore {
         let mut session = session_lock
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let report = session.engine.apply_mutation(MutationRequest {
+        let mut report = session.engine.apply_mutation(MutationRequest {
             stop_on_write_error: true,
             ops: vec![MutationOp::RenameRecord {
                 record: coordinate.clone(),
@@ -459,6 +459,13 @@ impl SessionStore {
                 new_key: new_key.to_string(),
             }],
         });
+        if coflow::commands::migrate_enum_lock_after_mutation(&session.engine, &report)
+            .map_err(api_diagnostics_to_editor_error)?
+        {
+            report
+                .affected_files
+                .push("coflow.enum.lock.json".to_string());
+        }
         let report = finalize_mutation(&mut session, report, "rename record failed")?;
         let outcome = report
             .applied

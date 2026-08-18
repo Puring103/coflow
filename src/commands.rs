@@ -64,6 +64,25 @@ pub struct CleanReport {
     pub staging_removed: usize,
 }
 
+/// Preserves locked `@idAsEnum` values across successful record renames.
+///
+/// Returns whether the versioned enum lock was updated.
+///
+/// # Errors
+///
+/// Returns diagnostics when the existing lock cannot be read or parsed, or
+/// when the migrated lock cannot be published.
+pub fn migrate_enum_lock_after_mutation(
+    session: &coflow_runtime::WriteProjectSession,
+    report: &coflow_runtime::MutationReport,
+) -> Result<bool, DiagnosticSet> {
+    id_as_enum::migrate_id_as_enum_lock_after_mutation(
+        session.project(),
+        session.queries(),
+        report,
+    )
+}
+
 /// Removes inactive artifact generations and abandoned staging entries.
 ///
 /// # Errors

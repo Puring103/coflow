@@ -431,6 +431,11 @@ impl WriteProjectSession {
         ProjectQueries::new(&self.session, self.revision)
     }
 
+    #[must_use]
+    pub const fn project(&self) -> &Project {
+        &self.session.project
+    }
+
     /// Render one effective field value using the table cell grammar.
     ///
     /// # Errors
