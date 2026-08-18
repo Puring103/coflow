@@ -31,6 +31,7 @@ import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { BatchRecordEditor } from './BatchRecordEditor'
 import { BatchCellEditor } from './BatchCellEditor'
 import { projectBatchCells } from '../state/batchRecordProjection'
+import { parseTsv, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
 
 interface Props {
   open: boolean
@@ -240,6 +241,27 @@ export function InspectorPanel({
     ? `${expansionOwner ?? ''}:${JSON.stringify(selection.fieldPath)}`
     : null
 
+  const pasteIntoRecordPath = useCallback(async (
+    path: FieldPathSegment[],
+    text: string,
+    mode: 'replace' | 'append',
+  ) => {
+    if (!data || !record || !onParseCellText || !onWriteField) {
+      throw new Error('当前来源不支持粘贴')
+    }
+    const target = pasteCellAtRecordPath(record, path, !readOnly)
+    if (!target) throw new Error('找不到粘贴目标')
+    const result = await planPaste(parseTsv(text), [[target]], {
+      mode,
+      parse: (coordinate, fieldPath, cellText) => (
+        onParseCellText(data.file_path, coordinate, fieldPath, cellText)
+      ),
+    })
+    if (!result.ok) throw new Error(result.errors.map(error => error.message).join('; '))
+    const write = result.writes[0]
+    if (write) await onWriteField(data.file_path, write.coordinate, write.field_path, write.new_value)
+  }, [data, onParseCellText, onWriteField, readOnly, record])
+
   const recordKeyboard = useRecordItemKeyboard({
     rootRef: bodyRef,
     selectedFieldPath: selectedActionPathWire ? null : keyboardFieldPath,
@@ -257,8 +279,8 @@ export function InspectorPanel({
     onRenderCellText: data && coordinate && onRenderCellText
       ? path => onRenderCellText(data.file_path, coordinate, path)
       : undefined,
-    onParseCellText: data && coordinate && onParseCellText
-      ? (path, text) => onParseCellText(data.file_path, coordinate, path, text)
+    onPaste: data && record && onParseCellText && onWriteField
+      ? pasteIntoRecordPath
       : undefined,
     onWriteField: data && coordinate && onWriteField
       ? (path, value) => onWriteField(data.file_path, coordinate, path, value)
@@ -500,8 +522,7 @@ export function InspectorPanel({
               try {
                 if (!onParseCellText || !onWriteField) return
                 const text = await navigator.clipboard.readText()
-                const next = await onParseCellText(data.file_path, record.coordinate, path, text)
-                await onWriteField(data.file_path, record.coordinate, path, next)
+                await pasteIntoRecordPath(path, text, 'replace')
                 setKeyboardNotice(null)
               } catch (error) {
                 setKeyboardNotice(`粘贴格式不正确：${errorMessage(error)}`)
