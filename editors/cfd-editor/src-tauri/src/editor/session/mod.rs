@@ -339,6 +339,20 @@ impl SessionStore {
         }
     }
 
+    pub fn build_project_status(&self, id: u32) -> Result<bool, EditorError> {
+        let (yaml_path, registry) = self.project_action_context(id)?;
+        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
+        match coflow::commands::build_project_status(&project, registry.as_ref())
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
+        {
+            coflow::commands::CommandOutcome::Success(changed) => Ok(changed),
+            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(&diagnostics))
+            }
+        }
+    }
+
     pub fn source_file_path(&self, id: u32, file_path: &str) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let session = entry

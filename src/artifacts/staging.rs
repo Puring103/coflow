@@ -2,6 +2,7 @@ use super::diagnostic_set;
 use super::fault::{self, Point};
 use coflow_api::{ArtifactContent, ArtifactSet, DiagnosticSet};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -90,6 +91,89 @@ pub(super) fn stage_artifact_set(
             )
         })?;
     Ok(staged)
+}
+
+pub(super) fn artifact_set_matches_requested_dir(
+    artifacts: &ArtifactSet,
+    requested_dir: &Path,
+) -> Result<bool, DiagnosticSet> {
+    if !requested_dir.is_dir() {
+        return Ok(false);
+    }
+    let mut expected = artifacts
+        .files()
+        .iter()
+        .map(|artifact| {
+            let contents = match &artifact.content {
+                ArtifactContent::Text(contents) => contents.as_bytes().to_vec(),
+                ArtifactContent::Bytes(bytes) => bytes.clone(),
+            };
+            (artifact.relative_path.clone(), contents)
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(compare_requested_tree(requested_dir, requested_dir, &mut expected)? && expected.is_empty())
+}
+
+fn compare_requested_tree(
+    root: &Path,
+    directory: &Path,
+    expected: &mut BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<bool, DiagnosticSet> {
+    let entries = fs::read_dir(directory).map_err(|err| {
+        diagnostic_set(
+            directory,
+            format!(
+                "failed to inspect output directory `{}`: {err}",
+                directory.display()
+            ),
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            diagnostic_set(
+                directory,
+                format!(
+                    "failed to inspect output directory `{}`: {err}",
+                    directory.display()
+                ),
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|err| {
+            diagnostic_set(
+                &path,
+                format!("failed to inspect `{}`: {err}", path.display()),
+            )
+        })?;
+        if file_type.is_dir() {
+            if !compare_requested_tree(root, &path, expected)? {
+                return Ok(false);
+            }
+            continue;
+        }
+        if !file_type.is_file() {
+            return Ok(false);
+        }
+        let relative = path.strip_prefix(root).map_err(|err| {
+            diagnostic_set(
+                &path,
+                format!("failed to resolve `{}`: {err}", path.display()),
+            )
+        })?;
+        if is_unity_meta_path(&path) && !expected.contains_key(relative) {
+            continue;
+        }
+        let Some(contents) = expected.remove(relative) else {
+            return Ok(false);
+        };
+        let actual = fs::read(&path).map_err(|err| {
+            diagnostic_set(&path, format!("failed to read `{}`: {err}", path.display()))
+        })?;
+        if actual != contents {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn preserve_unity_meta_files(

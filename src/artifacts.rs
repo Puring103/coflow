@@ -650,6 +650,24 @@ fn validate_release_slots(
 }
 
 impl PreparedArtifactRelease<'_> {
+    /// Return whether publishing would change managed outputs or enum locks.
+    pub fn has_changes(&self) -> Result<bool, DiagnosticSet> {
+        if !self.removed_outputs.is_empty() {
+            return Ok(true);
+        }
+        if let EnumLockUpdate::Replace(value) = &self.enum_lock_update {
+            if read_active_enum_lock(self.project)?.as_ref() != Some(value) {
+                return Ok(true);
+            }
+        }
+        for output in &self.outputs {
+            if !staging::artifact_set_matches_requested_dir(&output.artifacts, &output.dir)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Stage and atomically publish the already generated artifact sets.
     pub fn publish(self) -> Result<ArtifactReleaseReport, DiagnosticSet> {
         let mut staged = Vec::with_capacity(self.outputs.len());
@@ -924,6 +942,45 @@ mod tests {
         assert_eq!(export_calls.load(Ordering::SeqCst), 0);
         assert!(!fixture.root.join("generated/data").exists());
         assert!(!fixture.root.join(".coflow/artifacts").exists());
+    }
+
+    #[test]
+    fn prepared_release_detects_real_output_changes() {
+        let fixture = ArtifactFixture::new("change-status");
+        let exporter = || {
+            Arc::new(TestExporter {
+                decode_calls: Arc::new(AtomicUsize::new(0)),
+                export_calls: Arc::new(AtomicUsize::new(0)),
+            })
+        };
+        let mut first = ArtifactReleasePlan::new(&fixture.project);
+        first.add_data(&fixture.session, exporter(), fixture.data_output(), None);
+        let first = first.prepare().expect("prepare initial output");
+        assert!(first.has_changes().expect("inspect initial output"));
+        first.publish().expect("publish initial output");
+        std::fs::write(
+            fixture.root.join("generated/data/data.txt.meta"),
+            "unity metadata",
+        )
+        .expect("write Unity metadata");
+
+        let mut unchanged = ArtifactReleasePlan::new(&fixture.project);
+        unchanged.add_data(&fixture.session, exporter(), fixture.data_output(), None);
+        assert!(!unchanged
+            .prepare()
+            .expect("prepare unchanged output")
+            .has_changes()
+            .expect("inspect unchanged output"));
+
+        std::fs::write(fixture.root.join("generated/data/data.txt"), "changed")
+            .expect("change generated output");
+        let mut changed = ArtifactReleasePlan::new(&fixture.project);
+        changed.add_data(&fixture.session, exporter(), fixture.data_output(), None);
+        assert!(changed
+            .prepare()
+            .expect("prepare changed output")
+            .has_changes()
+            .expect("inspect changed output"));
     }
 
     struct ArtifactFixture {

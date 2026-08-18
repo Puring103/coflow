@@ -273,6 +273,10 @@ export async function buildProject(sessionId: number): Promise<string> {
   return invokeCommand<string>('build_project', { sessionId })
 }
 
+export async function buildProjectStatus(sessionId: number): Promise<boolean> {
+  return invokeCommand<boolean>('build_project_status', { sessionId })
+}
+
 export async function openSourceFile(sessionId: number, filePath: string): Promise<void> {
   return invokeCommand('open_source_file', { sessionId, filePath })
 }
