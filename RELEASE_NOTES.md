@@ -1,51 +1,36 @@
 # Coflow 0.9.0
 
-## Highlights
+## 重点更新
 
-### Project Search And CLI Workflows
+### 项目搜索与 CLI 工作流
 
-- Added project-wide search in the CFD Editor with key and full-text modes,
-  field-level match previews, and direct navigation to matching records.
-- Added `coflow data search` for scripted key and full-text queries, including
-  type and file filters plus stable pagination.
+- CFD 编辑器新增项目级搜索，支持按记录键或全文检索、显示字段级命中预览，并可直接跳转到匹配记录。
+- 新增 `coflow data search`，支持在脚本中按记录键或全文查询，并提供类型、文件过滤与稳定分页。
 
-### Faster Editor Workflows
+### 更高效的编辑器工作流
 
-- Persisted workspace tabs and views, improved inspector navigation and
-  diagnostics, and added deletion for selected records.
-- Added schema-aware clipboard handling for pasting multiple references or
-  records directly into typed lists.
-- Kept selected table ranges fully visible around sticky headers and columns,
-  including tall first-row cells.
-- Refined file-tree hierarchy, graph and application icons, and the formal
-  Coflow branding across editor surfaces.
-- Added a build indicator that compares generated artifacts with active output
-  files, so it appears only when a build would change managed content.
+- 持久化工作区标签页与视图，改进检查器导航和诊断展示，并支持删除多选记录。
+- 新增 schema 感知的剪贴板处理，可将多个引用或记录直接粘贴到对应类型的列表中。
+- 选中表格区域时会避开固定表头和固定列并完整显示；首行单元格超高时也不会异常下移。
+- 优化文件树层级、图表及应用图标，并在编辑器各处统一使用正式 Coflow 品牌资源。
+- 构建按钮新增待构建提示，通过比较实际生成产物与当前输出文件，仅在构建会改变托管内容时显示。
 
-### Schema And Data Improvements
+### Schema 与数据能力
 
-- Added composite enum flags throughout CFD syntax, table cell values,
-  validation, mutations, and editor controls.
-- Migrated `@idAsEnum` lock values when records are renamed, preserving stable
-  generated enum values.
-- Improved singleton routing, source validation, and editing of intermediate
-  data that still has fixable diagnostics.
+- CFD 语法、表格单元格、校验、数据修改和编辑器控件全面支持复合枚举 flags。
+- 重命名记录时同步迁移 `@idAsEnum` 锁值，保持生成枚举值稳定。
+- 改进 singleton 路由、数据源校验，以及仍包含可修复诊断的中间数据编辑流程。
 
-### Reliable Builds And Distribution
+### 构建可靠性与分发
 
-- Reused unchanged generated outputs and preserved Unity `.meta` files when
-  replacing managed output directories.
-- Added `coflow self-update` with `--check` support for standalone macOS CLI
-  installations, backed by signed and notarized arm64 and x64 archives.
-- Hardened artifact revision identity and build publication behavior across
-  repeated editor and CLI runs.
+- 复用未变化的生成输出，并在替换托管输出目录时保留 Unity `.meta` 文件。
+- macOS 独立 CLI 新增 `coflow self-update` 和 `--check`，arm64 与 x64 发布包均经过签名和公证。
+- 加强产物 revision 唯一性，以及编辑器和 CLI 重复构建时的发布可靠性。
 
-## Compatibility
+## 兼容性
 
-- This release does not intentionally change the JSON, MessagePack, or C#
-  output contracts and requires no planned data migration from 0.8.2.
-- Source validation is stricter and may report previously hidden configuration
-  problems. Run `coflow check` before deploying an existing project.
+- 本版本未主动改变 JSON、MessagePack 或 C# 输出契约，从 0.8.2 升级无需计划内数据迁移。
+- 数据源校验更加严格，可能暴露过去未报告的配置问题。部署现有项目前请运行 `coflow check`。
 
 ---
 
