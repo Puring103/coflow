@@ -158,6 +158,11 @@ pub fn build_project(
 ///
 /// This performs the same validation and generation as [`build_project`] but
 /// does not stage or publish any files.
+///
+/// # Errors
+///
+/// Returns diagnostics when project loading, artifact generation, or output
+/// inspection fails.
 pub fn build_project_status(
     project: &Project,
     registry: &ProviderRegistry,

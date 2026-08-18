@@ -83,8 +83,7 @@ pub(super) fn migrate_id_as_enum_lock_after_mutation(
         let Some((old_coordinate, new_coordinate)) = &applied.outcome.renamed else {
             continue;
         };
-        let Some(enum_name) =
-            queries.id_as_enum_name_for_type(&old_coordinate.actual_type.to_string())
+        let Some(enum_name) = queries.id_as_enum_name_for_type(old_coordinate.actual_type.as_ref())
         else {
             continue;
         };
