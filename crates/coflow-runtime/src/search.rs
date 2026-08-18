@@ -49,17 +49,15 @@ impl ProjectQueries<'_> {
         let mut hits = Vec::new();
         let mut skipped = 0_usize;
         for file in self.source_files() {
-            if options
-                .file
-                .as_ref()
-                .is_some_and(|filter| filter != file)
-            {
+            if options.file.as_ref().is_some_and(|filter| filter != file) {
                 continue;
             }
             for view in self.record_views_in_file(file) {
-                if options.actual_type.as_ref().is_some_and(|actual_type| {
-                    view.coordinate.actual_type.as_str() != actual_type
-                }) {
+                if options
+                    .actual_type
+                    .as_ref()
+                    .is_some_and(|actual_type| view.coordinate.actual_type.as_str() != actual_type)
+                {
                     continue;
                 }
                 let key_matches = contains_normalized(&view.coordinate.key, &normalized);
@@ -147,9 +145,10 @@ fn find_value_match(value: &CfdValue, query: &str, path: &str) -> Option<FieldMa
                 }
             })
         }
-        CfdValue::Array(items) => items.iter().enumerate().find_map(|(index, child)| {
-            find_value_match(child, query, &format!("{path}[{index}]"))
-        }),
+        CfdValue::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, child)| find_value_match(child, query, &format!("{path}[{index}]"))),
         CfdValue::Dict(entries) => entries.iter().find_map(|(key, child)| {
             let key_text = format_cfd_dict_key(key);
             let child_path = format!("{path}[{key_text}]");

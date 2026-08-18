@@ -12,10 +12,7 @@ pub(crate) fn decode_excel_source_options(
 ) -> Result<DecodedSourceOptions, DiagnosticSet> {
     let table =
         TableSourceOptions::decode(raw, "excel source").map_err(excel_options_diagnostics)?;
-    Ok(DecodedSourceOptions::new(
-        EXCEL_LOADER_DESCRIPTOR.id,
-        table,
-    ))
+    Ok(DecodedSourceOptions::new(EXCEL_LOADER_DESCRIPTOR.id, table))
 }
 
 pub(crate) fn excel_source_options(

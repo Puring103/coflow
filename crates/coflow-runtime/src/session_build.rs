@@ -207,8 +207,7 @@ impl SessionBuildContext<'_> {
     }
 
     fn should_generate_dimensions(&self) -> bool {
-        self.mode == SessionOpenOptions::Build
-            && !self.project.config().dimensions.is_empty()
+        self.mode == SessionOpenOptions::Build && !self.project.config().dimensions.is_empty()
     }
 }
 

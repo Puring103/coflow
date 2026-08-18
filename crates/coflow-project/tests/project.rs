@@ -792,19 +792,25 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
     let err = missing_code.codegen_diagnostic_set();
     assert!(err.contains("missing outputs.code"));
 
-    let wrong_code = project_with_outputs(&root, r#"outputs:
+    let wrong_code = project_with_outputs(
+        &root,
+        r#"outputs:
   - data: { type: json, dir: data }
     code: { type: java, dir: code }
-"#);
+"#,
+    );
     assert!(
         wrong_code.codegen_diagnostic_set().is_empty(),
         "provider-neutral code output should validate"
     );
 
-    let wrong_data = project_with_outputs(&root, r#"outputs:
+    let wrong_data = project_with_outputs(
+        &root,
+        r#"outputs:
   - data: { type: csv, dir: data }
     code: { type: csharp, dir: code }
-"#);
+"#,
+    );
     assert!(
         wrong_data.codegen_diagnostic_set().is_empty(),
         "provider-neutral data output should validate"
