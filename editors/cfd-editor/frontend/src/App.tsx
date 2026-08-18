@@ -254,6 +254,8 @@ export default function App() {
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
+  const [buildPending, setBuildPending] = useState(false)
+  const buildStatusRequestRef = useRef(0)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
     tone: 'success' | 'error'
@@ -558,8 +560,10 @@ export default function App() {
   }, [navigateWorkspaceTab, router])
 
   // Auto-load mock data only when not running in Tauri (browser preview).
+  const mockProjectInitializedRef = useRef(false)
   useEffect(() => {
-    if (!api.isTauri) {
+    if (!api.isTauri && !mockProjectInitializedRef.current) {
+      mockProjectInitializedRef.current = true
       generation.adopt(MOCK_PROJECT)
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
@@ -2058,6 +2062,8 @@ export default function App() {
     setErrorMsg(null)
     try {
       const result = await api.buildProject(identity.sessionId)
+      buildStatusRequestRef.current += 1
+      setBuildPending(false)
       setProjectActionNotice({
         message: result.replace('Build completed:', '构建完成：'),
         tone: 'success',
@@ -2070,6 +2076,23 @@ export default function App() {
       setProjectAction(null)
     }
   }, [generation, projectAction])
+
+  useEffect(() => {
+    const request = ++buildStatusRequestRef.current
+    if (!project || !api.isTauri) {
+      setBuildPending(false)
+      return
+    }
+    setBuildPending(false)
+    const timer = window.setTimeout(() => {
+      api.buildProjectStatus(project.session_id).then(changed => {
+        if (buildStatusRequestRef.current === request) setBuildPending(changed)
+      }).catch(() => {
+        if (buildStatusRequestRef.current === request) setBuildPending(false)
+      })
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [project?.session_id, project?.revision])
 
   useEffect(() => {
     if (!projectActionNotice) return
@@ -2376,10 +2399,11 @@ export default function App() {
               className="btn btn-primary btn-icon btn-build"
               onClick={runBuild}
               disabled={projectAction !== null}
-              title="构建项目"
-              aria-label="构建项目"
+              title={buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}
+              aria-label={buildPending ? '构建项目，有待生成的变更' : '构建项目'}
             >
               <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
+              {buildPending && <span className="build-pending-indicator" aria-hidden />}
             </button>
           )}
           <span className="topbar-divider" />

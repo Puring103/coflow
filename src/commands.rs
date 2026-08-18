@@ -1,4 +1,6 @@
-use crate::artifacts::{code_output_slot, data_output_slot, ArtifactReleasePlan};
+use crate::artifacts::{
+    code_output_slot, data_output_slot, ArtifactReleasePlan, PreparedArtifactRelease,
+};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_project::Project;
 use coflow_runtime::Runtime;
@@ -76,11 +78,7 @@ pub fn migrate_enum_lock_after_mutation(
     session: &coflow_runtime::WriteProjectSession,
     report: &coflow_runtime::MutationReport,
 ) -> Result<bool, DiagnosticSet> {
-    id_as_enum::migrate_id_as_enum_lock_after_mutation(
-        session.project(),
-        session.queries(),
-        report,
-    )
+    id_as_enum::migrate_id_as_enum_lock_after_mutation(session.project(), session.queries(), report)
 }
 
 /// Removes inactive artifact generations and abandoned staging entries.
@@ -132,6 +130,47 @@ pub fn build_project(
     project: &Project,
     registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
+    prepare_project_build(project, registry, |prepared| {
+        let published = prepared.publish()?;
+        let mut reports = Vec::with_capacity(project.config().outputs.targets().len());
+        for (index, target) in project.config().outputs.targets().iter().enumerate() {
+            let data = export_report(published.output(&data_output_slot(index))?);
+            let code = target
+                .code
+                .as_ref()
+                .map(|_| {
+                    published
+                        .output(&code_output_slot(index))
+                        .map(codegen_report)
+                })
+                .transpose()?;
+            reports.push(BuildTargetReport {
+                target_index: index,
+                data,
+                code,
+            });
+        }
+        Ok(BuildReport { targets: reports })
+    })
+}
+
+/// Generate configured artifacts in memory and compare them with active outputs.
+///
+/// This performs the same validation and generation as [`build_project`] but
+/// does not stage or publish any files.
+pub fn build_project_status(
+    project: &Project,
+    registry: &ProviderRegistry,
+) -> Result<CommandOutcome<bool>, DiagnosticSet> {
+    prepare_project_build(project, registry, |prepared| prepared.has_changes())
+}
+
+#[allow(clippy::too_many_lines)]
+fn prepare_project_build<T>(
+    project: &Project,
+    registry: &ProviderRegistry,
+    finish: impl FnOnce(PreparedArtifactRelease<'_>) -> Result<T, DiagnosticSet>,
+) -> Result<CommandOutcome<T>, DiagnosticSet> {
     let diagnostics = build_config_diagnostics(project);
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
@@ -245,29 +284,14 @@ pub fn build_project(
     if let Some(lock_state) = enum_lock_state {
         release.replace_enum_lock(lock_state);
     }
-    let published = match release.execute() {
-        Ok(published) => published,
+    let prepared = match release.prepare() {
+        Ok(prepared) => prepared,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let mut reports = Vec::with_capacity(project.config().outputs.targets().len());
-    for (index, target) in project.config().outputs.targets().iter().enumerate() {
-        let data = export_report(published.output(&data_output_slot(index))?);
-        let code = target
-            .code
-            .as_ref()
-            .map(|_| {
-                published
-                    .output(&code_output_slot(index))
-                    .map(codegen_report)
-            })
-            .transpose()?;
-        reports.push(BuildTargetReport {
-            target_index: index,
-            data,
-            code,
-        });
+    match finish(prepared) {
+        Ok(result) => Ok(CommandOutcome::Success(result)),
+        Err(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
     }
-    Ok(CommandOutcome::Success(BuildReport { targets: reports }))
 }
 
 /// Exports every data target configured by the project.

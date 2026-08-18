@@ -625,6 +625,16 @@ async fn build_project(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn build_project_status(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<bool, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().build_project_status(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn open_source_file(
     session_id: u32,
     file_path: String,
@@ -1004,6 +1014,7 @@ pub fn run() -> tauri::Result<()> {
             set_workspace,
             check_project,
             build_project,
+            build_project_status,
             open_source_file,
             get_file_records,
             search_records,
