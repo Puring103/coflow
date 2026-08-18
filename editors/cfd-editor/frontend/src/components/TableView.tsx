@@ -49,6 +49,7 @@ import {
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
+import { visibilityScrollDelta, type AxisRange } from '../state/scrollVisibility'
 import {
   recordSelection,
   recordSelectionCoordinates,
@@ -78,6 +79,7 @@ import {
   planPaste,
   serializeCellMatrix,
   serializeRecordsToRefColumn,
+  shouldExpandSinglePasteTarget,
   type PasteCell,
 } from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
@@ -688,23 +690,47 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         return
       }
       if (!cell || !scroller) return
-      // Vertical: fall back to browser nearest logic.
-      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-      if (columnId === 'key') return
-      // Horizontal: ensure the WHOLE column is visible, respecting the sticky
-      // Key column that overlays the left edge. Only scroll if either edge is
-      // clipped; center if the cell is wider than the visible area.
       const scrollerRect = scroller.getBoundingClientRect()
       const cellRect = cell.getBoundingClientRect()
+      const selectedCells = target.kind === 'value'
+        ? Array.from(scroller.querySelectorAll<HTMLElement>('td.selected-cell'))
+        : []
+      const selectedBounds = selectedCells.length > 0
+        ? elementBounds(selectedCells)
+        : elementBounds([cell])
+      const stickyHeaders = Array.from(scroller.querySelectorAll<HTMLElement>('thead th'))
+      const visibleTop = Math.max(
+        scrollerRect.top,
+        ...stickyHeaders.map(header => header.getBoundingClientRect().bottom),
+      )
+      const verticalTarget = fitsAxis(
+        selectedBounds.top,
+        selectedBounds.bottom,
+        visibleTop,
+        scrollerRect.bottom,
+      ) ? { start: selectedBounds.top, end: selectedBounds.bottom } : { start: cellRect.top, end: cellRect.bottom }
+      scroller.scrollTop += visibilityScrollDelta(
+        { start: visibleTop, end: scrollerRect.bottom },
+        verticalTarget,
+      )
+
+      if (columnId === 'key') return
+      // Respect the sticky key column and reveal the whole selected range when
+      // it fits. Otherwise keep the focused cell visible.
       const keyCol = scroller.querySelector<HTMLElement>('thead .sticky-key-column')
       const leftOccluded = keyCol ? keyCol.getBoundingClientRect().right : scrollerRect.left
       const visibleLeft = Math.max(scrollerRect.left, leftOccluded)
       const visibleRight = scrollerRect.right
-      if (cellRect.right > visibleRight) {
-        scroller.scrollLeft += cellRect.right - visibleRight + 4
-      } else if (cellRect.left < visibleLeft) {
-        scroller.scrollLeft -= visibleLeft - cellRect.left + 4
-      }
+      const horizontalTarget = fitsAxis(
+        selectedBounds.left,
+        selectedBounds.right,
+        visibleLeft,
+        visibleRight,
+      ) ? { start: selectedBounds.left, end: selectedBounds.right } : { start: cellRect.left, end: cellRect.right }
+      scroller.scrollLeft += visibilityScrollDelta(
+        { start: visibleLeft, end: visibleRight },
+        horizontalTarget,
+      )
     }
     reveal()
   }
@@ -992,10 +1018,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 const source = parseTsv(await navigator.clipboard.readText())
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
+                const selectedTarget = anchors.length === 1 && anchors[0].length === 1
+                  ? pasteCellFor(anchors[0][0], records, canEdit)
+                  : null
                 if (
-                  anchors.length === 1
-                  && anchors[0].length === 1
-                  && (source.length > 1 || source[0].length > 1)
+                  selectedTarget
+                  && shouldExpandSinglePasteTarget(source, selectedTarget)
                 ) {
                   anchors = boundedPasteMatrix(
                     anchors[0][0],
@@ -1519,6 +1547,21 @@ function estimateTextWidth(text: string, monospace = false): number {
   return w
 }
 
+function elementBounds(elements: readonly HTMLElement[]): DOMRect {
+  const rects = elements.map(element => element.getBoundingClientRect())
+  const left = Math.min(...rects.map(rect => rect.left))
+  const top = Math.min(...rects.map(rect => rect.top))
+  const right = Math.max(...rects.map(rect => rect.right))
+  const bottom = Math.max(...rects.map(rect => rect.bottom))
+  return new DOMRect(left, top, right - left, bottom - top)
+}
+
+function fitsAxis(start: number, end: number, visibleStart: number, visibleEnd: number): boolean {
+  const target: AxisRange = { start, end }
+  const viewport: AxisRange = { start: visibleStart, end: visibleEnd }
+  return target.end - target.start <= viewport.end - viewport.start
+}
+
 /** Rough East Asian Wide detection covering the ranges that show up in game
  *  data: CJK ideographs, Hangul, kana, full-width forms, CJK punctuation.
  *  Doesn't need to be exhaustive — misses under-count width by ~1 char,
@@ -1592,10 +1635,6 @@ function pasteCellFor(
     value: cell?.value ?? nullValue(),
     writable: editable && !!cell && !cellReadOnly(cell),
   }
-}
-
-function isComplexPasteCell(cell: PasteCell): boolean {
-  return !!cell.annotation?.item_annotation || (cell.annotation?.field_order?.length ?? 0) > 0
 }
 
 function fieldCell(record: RecordRow, fieldName: string) {
