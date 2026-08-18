@@ -649,10 +649,10 @@ fn data_search_filters_before_paginating_and_empty_results_succeed() {
     write_project(&root);
     std::fs::write(
         root.join("schema.cft"),
-        r#"
+        r"
             type Item { name: string; price: int; }
             type Spell { name: string; price: int; }
-        "#,
+        ",
     )
     .expect("write schema");
     std::fs::write(
