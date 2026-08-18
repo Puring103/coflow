@@ -17,6 +17,7 @@ interface Options {
   onToggleExpansion: (path: string, expanded: boolean) => void
   onRenderCellText?: (path: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (path: FieldPathSegment[], text: string) => Promise<FieldValue>
+  onPaste?: (path: FieldPathSegment[], text: string, mode: 'replace' | 'append') => Promise<void>
   onWriteField?: (path: FieldPathSegment[], value: FieldValue) => Promise<unknown>
   onNotice?: (notice: string | null) => void
   onBoundary?: (edge: 'before' | 'parent') => void
@@ -84,12 +85,17 @@ export function useRecordItemKeyboard(options: Options) {
         }
         return
       }
-      if ((event.ctrlKey || event.metaKey) && lower === 'v' && editable && options.onParseCellText && options.onWriteField) {
+      const canPaste = !!options.onPaste || (!!options.onParseCellText && !!options.onWriteField)
+      if ((event.ctrlKey || event.metaKey) && lower === 'v' && editable && canPaste) {
         event.preventDefault()
         try {
           const text = await navigator.clipboard.readText()
-          const next = await options.onParseCellText(path, text)
-          await options.onWriteField(path, next)
+          if (options.onPaste) {
+            await options.onPaste(path, text, event.shiftKey ? 'append' : 'replace')
+          } else {
+            const next = await options.onParseCellText!(path, text)
+            await options.onWriteField!(path, next)
+          }
           options.onNotice?.(null)
         } catch (error) {
           options.onNotice?.(`粘贴格式不正确：${errorMessage(error)}`)

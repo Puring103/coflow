@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import { fieldPathField } from '../wire'
-import { parseTsv, planPaste, serializeCellMatrix, type PasteCell } from './clipboard'
+import {
+  parseTsv,
+  planPaste,
+  serializeCellMatrix,
+  shouldExpandSinglePasteTarget,
+  type PasteCell,
+} from './clipboard'
 
 const coordinate = { actual_type: 'Item', key: 'one' }
 const annotation = (overrides: Partial<FieldAnnotation> = {}): FieldAnnotation => ({
@@ -92,6 +98,46 @@ describe('paste planner', () => {
     const item = await planPaste([['2']], [[target]], { mode: 'replace', parse })
     expect(full.ok && full.writes[0].new_value).toEqual({ kind: 'array', value: [{ kind: 'int', value: 1n }] })
     expect(item.ok && item.writes[0].new_value).toEqual({ kind: 'array', value: [{ kind: 'int', value: 2n }] })
+  })
+
+  it('pastes multiple record references into a typed reference array', async () => {
+    const target = cell('items', {
+      annotation: annotation({
+        declared_type: 'Item[]',
+        item_annotation: annotation({ declared_type: 'Item', ref_target_type: 'Item' }),
+      }),
+      value: { kind: 'array', value: [] },
+    })
+    const result = await planPaste(parseTsv('&sword\n&shield'), [[target]], {
+      mode: 'replace',
+      parse: async (_coordinate, path, text) => {
+        if (path[path.length - 1]?.kind !== 'index' || !text.startsWith('&')) {
+          throw new Error('not an Item reference')
+        }
+        return { kind: 'ref', value: text.slice(1) }
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.writes[0].new_value).toEqual({
+      kind: 'array',
+      value: [
+        { kind: 'ref', value: 'sword' },
+        { kind: 'ref', value: 'shield' },
+      ],
+    })
+  })
+
+  it('keeps a multi-cell source on one collection target', () => {
+    const source = parseTsv('&sword\n&shield')
+    const scalar = cell('name')
+    const list = cell('items', {
+      annotation: annotation({ item_annotation: annotation({ ref_target_type: 'Item' }) }),
+      value: { kind: 'array', value: [] },
+    })
+
+    expect(shouldExpandSinglePasteTarget(source, scalar)).toBe(true)
+    expect(shouldExpandSinglePasteTarget(source, list)).toBe(false)
   })
 
   it('assembles object fields in explicit schema order, including complex fields', async () => {

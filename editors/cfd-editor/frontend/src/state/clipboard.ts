@@ -1,7 +1,9 @@
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
+import type { CfdDictKey } from '../bindings/CfdDictKey'
 import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
+import type { RecordRow } from '../bindings/RecordRow'
 import { fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
 import type { CellAnchor } from './editorSelection'
 import { fieldValuesEqual } from './batchRecordProjection'
@@ -94,6 +96,55 @@ export interface PasteCell {
 export interface PasteContext {
   parse: (coordinate: RecordCoordinate, path: FieldPathSegment[], text: string) => Promise<CfdValue>
   mode: 'replace' | 'append'
+}
+
+export function pasteCellAtRecordPath(
+  record: RecordRow,
+  fieldPath: FieldPathSegment[],
+  writable: boolean,
+): PasteCell | null {
+  const top = fieldPath[0]
+  if (top?.kind !== 'field') return null
+  const fieldIndex = record.field_index[top.value]
+  const field = typeof fieldIndex === 'number'
+    ? record.fields[fieldIndex]
+    : record.fields.find(candidate => candidate.name === top.value)
+  if (!field) return null
+
+  let value = field.value
+  let annotation = field.annotation
+  for (const segment of fieldPath.slice(1)) {
+    if (segment.kind === 'field' && value.kind === 'object') {
+      const child = value.value.fields[segment.value]
+      if (!child) return null
+      value = child
+      annotation = annotation?.children[segment.value] ?? null
+      continue
+    }
+    if (segment.kind === 'index' && value.kind === 'array') {
+      const child = value.value[segment.value]
+      if (!child) return null
+      value = child
+      annotation = annotation?.children[String(segment.value)] ?? annotation?.item_annotation ?? null
+      continue
+    }
+    if (segment.kind === 'dict_key' && value.kind === 'dict') {
+      const entry = value.value.find(([key]) => dictKeyPathText(key) === segment.value)
+      if (!entry) return null
+      value = entry[1]
+      annotation = annotation?.children[segment.value] ?? annotation?.item_annotation ?? null
+      continue
+    }
+    return null
+  }
+
+  return {
+    coordinate: record.coordinate,
+    fieldPath,
+    annotation,
+    value,
+    writable,
+  }
 }
 
 export interface PasteError {
@@ -315,4 +366,22 @@ function isComplex(annotation: FieldAnnotation | null): boolean {
 
 function write(cell: PasteCell, value: CfdValue): BatchWriteFieldInput {
   return { coordinate: cell.coordinate, field_path: cell.fieldPath, new_value: value }
+}
+
+export function shouldExpandSinglePasteTarget(
+  source: readonly (readonly string[])[],
+  target: PasteCell,
+): boolean {
+  const hasMultipleSourceCells = source.length > 1 || (source[0]?.length ?? 0) > 1
+  return hasMultipleSourceCells && !isComplex(target.annotation)
+}
+
+function dictKeyPathText(key: CfdDictKey): string {
+  if (key.kind === 'int') return String(key.value)
+  if (key.kind === 'enum') {
+    return key.value.variant
+      ? `${key.value.enum_name}.${key.value.variant}`
+      : `${key.value.enum_name}(${key.value.value})`
+  }
+  return JSON.stringify(key.value)
 }
