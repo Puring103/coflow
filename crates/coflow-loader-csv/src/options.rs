@@ -11,10 +11,7 @@ pub(crate) fn decode_csv_source_options(
     raw: &Value,
 ) -> Result<DecodedSourceOptions, DiagnosticSet> {
     let table = TableSourceOptions::decode(raw, "csv source").map_err(csv_options_diagnostics)?;
-    Ok(DecodedSourceOptions::new(
-        CSV_LOADER_DESCRIPTOR.id,
-        table,
-    ))
+    Ok(DecodedSourceOptions::new(CSV_LOADER_DESCRIPTOR.id, table))
 }
 
 pub(crate) fn csv_source_options(

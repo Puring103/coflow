@@ -124,6 +124,7 @@ fn check_project_after_data_write(
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let registry = default_provider_registry()?;
     let runtime = Runtime::new(registry);
-    let session = runtime.open_read_only_session_with_source_overrides(project, source_overrides)?;
+    let session =
+        runtime.open_read_only_session_with_source_overrides(project, source_overrides)?;
     Ok(session.queries().diagnostics().flat_diagnostics())
 }

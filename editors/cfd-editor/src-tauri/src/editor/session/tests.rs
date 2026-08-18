@@ -92,11 +92,11 @@ fn project_search_covers_all_files_and_reports_field_matches() {
         )
         .expect("search record values");
     assert_eq!(full_text_results.hits.len(), 1);
+    assert_eq!(full_text_results.hits[0].coordinate.key.as_str(), "sword");
     assert_eq!(
-        full_text_results.hits[0].coordinate.key.as_str(),
-        "sword"
+        full_text_results.hits[0].field_path.as_deref(),
+        Some("name")
     );
-    assert_eq!(full_text_results.hits[0].field_path.as_deref(), Some("name"));
     assert_eq!(
         full_text_results.hits[0].preview.as_deref(),
         Some("name: Iron Sword")
