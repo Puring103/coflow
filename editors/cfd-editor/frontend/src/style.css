@@ -912,6 +912,29 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   color: var(--text-mute);
   flex-shrink: 0;
 }
+.topbar-left .btn-build {
+  position: relative;
+  width: var(--h-input);
+  min-width: var(--h-input);
+  height: var(--h-input);
+  padding: 0;
+  justify-content: center;
+}
+.build-pending-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--bg-0);
+  border-radius: 50%;
+  background: var(--yellow);
+  pointer-events: none;
+}
+.tree-file-chevron-spacer {
+  width: 12px;
+  flex: 0 0 12px;
+}
 .tree-item-label {
   min-width: 0;
   overflow: hidden;

@@ -537,6 +537,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
       }}
       title={ghost ? '不在 sources 目录内（只读）' : node.path}
     >
+      <span className="tree-file-chevron-spacer" aria-hidden />
       <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
       <span>{node.name}</span>
     </div>
