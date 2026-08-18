@@ -38,6 +38,7 @@ coflow <command> --help
 | 只生成代码 | `coflow codegen` | [`codegen`](#codegen) |
 | 查询或写入 schema | `coflow schema ...` | [`schema`](#schema) |
 | 查询或修改数据 | `coflow data ...` | [`data`](#data) |
+| 全局或文件内搜索数据 | `coflow data search PATTERN` | [`data search`](#data-search) |
 | 管理 Agent Skills | `coflow skill ...` | [`skill`](#skill) |
 
 不确定命令会读取或写入什么时，查看文末的[命令矩阵](#命令矩阵)。
@@ -82,7 +83,7 @@ machine-readable JSON，适合编辑器、CI 和自动化脚本。`cft check`、
 `--json`。
 
 使用 `--json` 的查询命令会先输出 report 再用退出码表达结果：`schema inspect/files`、
-`data sources/list` 在 report 含 diagnostics 时返回 `1`。`data get` 的显式 lookup/limit 错误
+`data sources/list/search` 在 report 含 diagnostics 时返回 `1`。`data get` 的显式 lookup/limit 错误
 返回 `1`；成功生成 report 后，只要至少返回一条 record 就返回 `0`，即使 report 同时带有
 项目 diagnostics；空 records 只有在 diagnostics 也为空时返回 `0`。
 
@@ -455,6 +456,56 @@ coflow data list examples/rpg --file data/items.cfd --limit 20
 `diagnostics`；每项记录形如
 `{"record":{"actual_type":"Item","key":"sword"},"file":"...","provider":"..."}`。
 
+### `data search`
+
+在整个项目或指定逻辑源文件中搜索已加载的记录。
+
+```powershell
+coflow data search PATTERN [--project CONFIG_OR_DIR] [--file FILE] [--type TYPE] [--mode key|full-text] [--limit N] [--offset N] [--json]
+```
+
+示例：
+
+```powershell
+coflow data search sword --project examples/rpg
+coflow data search "fire damage" --project examples/rpg --mode full-text
+coflow data search sword --project examples/rpg --file data/items.cfd --type Item
+coflow data search sword --project examples/rpg --limit 20 --offset 20 --json
+```
+
+`PATTERN` 是唯一的搜索词，不需要再传 `--query` 或 `--search`。省略 `--file` 时搜索整个项目；
+传入 `--file` 时只搜索该项目相对路径对应的逻辑源文件。`--type` 在分页前按具体记录类型过滤。
+匹配不区分大小写：
+
+- `--mode key` 是默认模式，只匹配 record key。
+- `--mode full-text` 同时匹配 record key，以及已加载字段的名称和值；每条 record 最多返回一个最佳命中。
+
+该命令搜索 Coflow 加载、解析并映射后的逻辑数据，不搜索源文件原文。因此注释、未映射的 Excel
+单元格和其他没有进入数据模型的文本不会命中。它会像 `data list`/`data get` 一样加载完整项目，
+输出中的 `diagnostics` 包含数据加载、记录校验和 CFT `check {}` 诊断。没有匹配且没有诊断时命令成功。
+
+默认 `--limit` 为 100；`--offset` 在文件和类型过滤后应用。JSON report 包含 `hits`、`truncated`
+和 `diagnostics`。`truncated` 为 `true` 表示当前页之后仍有匹配项。key 命中的 `field_path` 和
+`preview` 为 `null`；字段命中示例：
+
+```json
+{
+  "hits": [
+    {
+      "record": { "actual_type": "Item", "key": "sword" },
+      "file": "data/items.cfd",
+      "field_path": "name",
+      "preview": "name: Sword"
+    }
+  ],
+  "truncated": false,
+  "diagnostics": []
+}
+```
+
+human 输出每行以 tab 分隔：key 命中输出 `TYPE.KEY` 和 `FILE`；字段命中还会输出
+`FIELD_PATH` 和 `PREVIEW`。
+
 ### `data get`
 
 输出完整 record 数据。
@@ -792,6 +843,7 @@ coflow skill uninstall -g [--json]
 | `schema write-file` | 是 | 否 | 否 | 否（`--check` 只编译 schema） | 写 `.cft` |
 | `data sources` | 是 | 是 | 是 | 是 | 否 |
 | `data list` | 是 | 是 | 是 | 是 | 否 |
+| `data search` | 是 | 是 | 是 | 是 | 否 |
 | `data get` | 是 | 是 | 是 | 是 | 否 |
 | `data create-file` | 是 | 否 | 否 | 否 | 创建数据文件 |
 | `data create-table` | 是 | 否 | 否 | 否 | 创建表格 sheet/table |
