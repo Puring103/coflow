@@ -79,9 +79,9 @@ impl ProjectQueries<'_> {
                         truncated: true,
                     };
                 }
-                let (field_path, preview) = field_match
-                    .map(|matched| (Some(matched.path), Some(matched.preview)))
-                    .unwrap_or((None, None));
+                let (field_path, preview) = field_match.map_or((None, None), |matched| {
+                    (Some(matched.path), Some(matched.preview))
+                });
                 hits.push(RecordSearchHit {
                     file_path: view.display_path.to_string(),
                     coordinate: view.coordinate,
