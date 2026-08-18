@@ -1,3 +1,54 @@
+# Coflow 0.9.0
+
+## Highlights
+
+### Project Search And CLI Workflows
+
+- Added project-wide search in the CFD Editor with key and full-text modes,
+  field-level match previews, and direct navigation to matching records.
+- Added `coflow data search` for scripted key and full-text queries, including
+  type and file filters plus stable pagination.
+
+### Faster Editor Workflows
+
+- Persisted workspace tabs and views, improved inspector navigation and
+  diagnostics, and added deletion for selected records.
+- Added schema-aware clipboard handling for pasting multiple references or
+  records directly into typed lists.
+- Kept selected table ranges fully visible around sticky headers and columns,
+  including tall first-row cells.
+- Refined file-tree hierarchy, graph and application icons, and the formal
+  Coflow branding across editor surfaces.
+- Added a build indicator that compares generated artifacts with active output
+  files, so it appears only when a build would change managed content.
+
+### Schema And Data Improvements
+
+- Added composite enum flags throughout CFD syntax, table cell values,
+  validation, mutations, and editor controls.
+- Migrated `@idAsEnum` lock values when records are renamed, preserving stable
+  generated enum values.
+- Improved singleton routing, source validation, and editing of intermediate
+  data that still has fixable diagnostics.
+
+### Reliable Builds And Distribution
+
+- Reused unchanged generated outputs and preserved Unity `.meta` files when
+  replacing managed output directories.
+- Added `coflow self-update` with `--check` support for standalone macOS CLI
+  installations, backed by signed and notarized arm64 and x64 archives.
+- Hardened artifact revision identity and build publication behavior across
+  repeated editor and CLI runs.
+
+## Compatibility
+
+- This release does not intentionally change the JSON, MessagePack, or C#
+  output contracts and requires no planned data migration from 0.8.2.
+- Source validation is stricter and may report previously hidden configuration
+  problems. Run `coflow check` before deploying an existing project.
+
+---
+
 # Coflow 0.8.2
 
 ## Highlights
