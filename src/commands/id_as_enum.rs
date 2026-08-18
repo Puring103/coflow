@@ -1,8 +1,10 @@
 use crate::artifacts::artifact_diagnostic_set;
-use crate::artifacts::{enum_lockfile_path, read_active_enum_lock};
+use crate::artifacts::{
+    enum_lockfile_path, publish_artifacts, read_active_enum_lock, EnumLockUpdate,
+};
 use coflow_api::DiagnosticSet;
 use coflow_project::Project;
-use coflow_runtime::IdAsEnumInfo;
+use coflow_runtime::{IdAsEnumInfo, MutationReport, ProjectQueries};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,6 +57,64 @@ pub(super) fn prepare_id_as_enum_artifacts_for_build(
         variants,
         lock_state,
     })
+}
+
+pub(super) fn migrate_id_as_enum_lock_after_mutation(
+    project: &Project,
+    queries: ProjectQueries<'_>,
+    report: &MutationReport,
+) -> Result<bool, DiagnosticSet> {
+    let lockfile = enum_lockfile_path(project);
+    let Some(mut locked) = read_active_enum_lock(project)?
+        .map(serde_json::from_value::<IdAsEnumLockfile>)
+        .transpose()
+        .map_err(|err| {
+            artifact_diagnostic_set(
+                &lockfile,
+                format!("failed to parse @idAsEnum lock state: {err}"),
+            )
+        })?
+    else {
+        return Ok(false);
+    };
+
+    let mut changed = false;
+    for applied in &report.applied {
+        let Some((old_coordinate, new_coordinate)) = &applied.outcome.renamed else {
+            continue;
+        };
+        let Some(enum_name) =
+            queries.id_as_enum_name_for_type(&old_coordinate.actual_type.to_string())
+        else {
+            continue;
+        };
+        let Some(entries) = locked.get_mut(&enum_name) else {
+            continue;
+        };
+        let old_key = old_coordinate.key.to_string();
+        let Some(value) = entries.remove(&old_key) else {
+            continue;
+        };
+        entries.insert(new_coordinate.key.to_string(), value);
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(false);
+    }
+    let lock_state = serde_json::to_value(locked).map_err(|err| {
+        artifact_diagnostic_set(
+            &lockfile,
+            format!("failed to serialize @idAsEnum lock state: {err}"),
+        )
+    })?;
+    publish_artifacts(
+        project,
+        Vec::new(),
+        &[],
+        EnumLockUpdate::Replace(lock_state),
+    )?;
+    Ok(true)
 }
 
 fn collect_id_as_enum_ids(info: Vec<IdAsEnumInfo>) -> BTreeMap<String, IdAsEnumIds> {

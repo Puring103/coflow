@@ -998,6 +998,61 @@ fn data_patch_cli_supports_rename_and_dict_key_paths() {
 }
 
 #[test]
+fn data_patch_rename_migrates_id_as_enum_lock_value() {
+    let root = temp_project_dir("cli-data-patch-rename-enum-lock");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            @idAsEnum(ItemId)
+            type Item { name: string; }
+            enum ItemId {}
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+    std::fs::write(
+        root.join("coflow.enum.lock.json"),
+        r#"{"ItemId":{"sword":17}}"#,
+    )
+    .expect("write enum lock");
+
+    let report = apply_data_patch_command(
+        &root,
+        "rename-enum-lock.json",
+        &json!({
+            "ops": [{
+                "op": "rename_record",
+                "record": { "type": "Item", "key": "sword" },
+                "new_key": "blade"
+            }]
+        }),
+    );
+
+    assert_eq!(report["write_ok"], true);
+    assert_eq!(
+        report["affected_files"],
+        json!(["data/items.cfd", "coflow.enum.lock.json"])
+    );
+    let lock: Value = serde_json::from_slice(
+        &std::fs::read(root.join("coflow.enum.lock.json")).expect("read enum lock"),
+    )
+    .expect("parse enum lock");
+    assert_eq!(lock, json!({"ItemId": {"blade": 17}}));
+    assert_eq!(active_enum_lock(&root), lock);
+}
+
+#[test]
 fn data_patch_accepts_patch_string_argument() {
     let root = temp_project_dir("cli-data-patch-string");
     let _cleanup = TempDirCleanup(root.clone());
