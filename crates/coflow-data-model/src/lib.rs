@@ -30,6 +30,7 @@ mod build;
 pub mod cell_value;
 mod dependencies;
 mod diagnostics;
+mod formatted;
 mod indexes;
 mod ingest;
 mod model;
@@ -43,11 +44,16 @@ pub use diagnostics::{
     CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity, CfdStage, MappedDiagnostic,
     MappedLabel, RecordOrigin, SourceDocument, SourceLocation, TextSpan,
 };
-pub use ingest::{DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
+pub use ingest::{
+    DimensionValueDraft, LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment,
+    LoadedFormattedString, LoadedRecordDraft, LoadedValueDraft,
+};
+pub use formatted::{evaluate_formatted_string, stringify_value};
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject,
-    CfdRecord, CfdRecordId, CfdTable, CfdValue, DimensionFieldLookupError, DimensionRefCoordinate,
-    DimensionValueLookup, RecordCoordinate, RefEdge, RefSite, SpreadEdge,
+    CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
+    CfdFormattedString, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
+    RefEdge, RefSite, SpreadEdge,
 };
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,

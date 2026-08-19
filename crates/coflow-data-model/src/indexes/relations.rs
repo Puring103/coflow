@@ -149,6 +149,7 @@ impl SpreadEdgeBuilder<'_, '_, '_> {
                 }
             }
             ValueDraft::Value(_)
+            | ValueDraft::FormattedString(_)
             | ValueDraft::PendingRef { .. }
             | ValueDraft::PendingSpreadField { .. } => {}
         }

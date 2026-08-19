@@ -201,6 +201,7 @@ impl<'a> RecordCheckWalker<'a> {
             | CfdValue::Int(_)
             | CfdValue::Float(_)
             | CfdValue::String(_)
+            | CfdValue::FormattedString(_)
             | CfdValue::Enum(_) => {}
         }
     }

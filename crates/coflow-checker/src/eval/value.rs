@@ -77,6 +77,7 @@ impl<'a> EvalValue<'a> {
             | CfdValue::Int(_)
             | CfdValue::Float(_)
             | CfdValue::String(_)
+            | CfdValue::FormattedString(_)
             | CfdValue::Enum(_) => Self::Model(value),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
@@ -189,6 +190,7 @@ fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
         CfdValue::Int(value) => Some(ScalarValue::Int(*value)),
         CfdValue::Float(value) => Some(ScalarValue::Float(*value)),
         CfdValue::String(value) => Some(ScalarValue::String(value)),
+        CfdValue::FormattedString(value) => Some(ScalarValue::String(&value.rendered)),
         CfdValue::Enum(value) => Some(ScalarValue::Enum(value)),
         CfdValue::Object(_) | CfdValue::Ref(_) | CfdValue::Array(_) | CfdValue::Dict(_) => None,
     }

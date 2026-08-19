@@ -1,6 +1,12 @@
 import type { DictKey, FieldValue } from '../wire'
 import type { RecordRow } from '../bindings/RecordRow'
 
+const REFERENCE_NAME = String.raw`[_\p{L}][_\p{L}\p{N}]*`
+const FIELD_REFERENCE_PATTERN = new RegExp(
+  String.raw`\{(?:${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}::${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*)\}`,
+  'u',
+)
+
 export function parseFieldValueText(original: FieldValue, raw: string): FieldValue | null {
   switch (original.kind) {
     case 'bool':
@@ -18,7 +24,13 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
       return Number.isFinite(value) ? { kind: 'float', value } : null
     }
     case 'string':
-      return { kind: 'string', value: raw }
+      return hasFieldReference(raw)
+        ? { kind: 'formatted_string', value: { source: JSON.stringify(raw), rendered: raw } }
+        : { kind: 'string', value: raw }
+    case 'formatted_string':
+      return hasFieldReference(raw)
+        ? { kind: 'formatted_string', value: { ...original.value, source: JSON.stringify(raw) } }
+        : { kind: 'string', value: raw }
     case 'enum':
       return { kind: 'enum', value: { ...original.value, variant: raw } }
     case 'ref':
@@ -29,7 +41,22 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
 }
 
 export function plainFieldValueText(value: FieldValue): string {
+  if (value.kind === 'formatted_string') return formattedSourceText(value.value.source)
   return scalarText(value) ?? ''
+}
+
+function hasFieldReference(value: string): boolean {
+  return FIELD_REFERENCE_PATTERN.test(value)
+}
+
+function formattedSourceText(source: string): string {
+  const quoted = source.startsWith('f"') ? source.slice(1) : source
+  try {
+    const value: unknown = JSON.parse(quoted)
+    return typeof value === 'string' ? value : source
+  } catch {
+    return source
+  }
 }
 
 function scalarText(value: FieldValue): string | null {
@@ -38,6 +65,7 @@ function scalarText(value: FieldValue): string | null {
     case 'int': return String(value.value)
     case 'float': return String(value.value)
     case 'string': return value.value
+    case 'formatted_string': return value.value.rendered
     case 'enum': return enumVariantText(value)
     case 'ref': return referenceKeyText(value.value)
     default: return null
@@ -81,6 +109,7 @@ export function summaryOf(value: FieldValue): string {
       const allScalar = value.value.every(item => (
         item.kind === 'bool' || item.kind === 'int' || item.kind === 'float'
         || item.kind === 'string' || item.kind === 'enum'
+        || item.kind === 'formatted_string'
       ))
       if (allScalar && value.value.length <= 6) {
         const joined = value.value.map(summaryOf).join(', ')
@@ -159,6 +188,7 @@ function valueKindLabel(value: FieldValue): string {
     case 'int': return 'int'
     case 'float': return 'float'
     case 'string': return 'string'
+    case 'formatted_string': return 'string'
     case 'enum': return value.value.enum_name
     case 'object': return value.value.actual_type
     case 'ref': return '&'

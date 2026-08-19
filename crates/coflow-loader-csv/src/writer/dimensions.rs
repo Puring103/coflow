@@ -437,6 +437,7 @@ fn render_fallback_cell_value(value: &CfdValue) -> String {
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
         CfdValue::String(value) => value.clone(),
+        CfdValue::FormattedString(value) => value.source.clone(),
         CfdValue::Enum(value) => value.variant.as_deref().map_or_else(
             || format!("{}({})", value.enum_name, value.value),
             |variant| format!("{}.{}", value.enum_name, variant),

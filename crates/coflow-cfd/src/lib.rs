@@ -24,7 +24,7 @@ mod parser;
 
 pub use ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
-    CfdRecord, CfdRef, CfdValue,
+    CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 pub use coflow_structure::{Span, StructuralLimits};
 

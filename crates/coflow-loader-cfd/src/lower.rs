@@ -1,8 +1,12 @@
 use coflow_cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlockEntry, CfdRecord, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlockEntry, CfdFormatSegment, CfdRecord,
+    CfdValue,
 };
 use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
-use coflow_data_model::{LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft};
+use coflow_data_model::{
+    LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
+    LoadedRecordDraft, LoadedValueDraft,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
@@ -215,6 +219,25 @@ fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> 
 fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
+        CfdValue::FormattedString(value) => Ok(LoadedValueDraft::FormattedString(
+            LoadedFormattedString {
+                source: value.source.clone(),
+                segments: value
+                    .segments
+                    .iter()
+                    .map(|segment| match segment {
+                        CfdFormatSegment::Text(text) => LoadedFormatSegment::Text(text.clone()),
+                        CfdFormatSegment::Reference(reference) => {
+                            LoadedFormatSegment::Reference(LoadedFieldReference {
+                                type_name: reference.type_name.clone(),
+                                key: reference.key.clone(),
+                                path: reference.path.clone(),
+                            })
+                        }
+                    })
+                    .collect(),
+            },
+        )),
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected string",

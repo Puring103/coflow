@@ -7,6 +7,7 @@ pub enum LoadedValueDraft {
     Int(i64),
     Float(f64),
     String(String),
+    FormattedString(LoadedFormattedString),
     EnumVariant {
         enum_name: String,
         variant: String,
@@ -31,6 +32,25 @@ pub enum LoadedValueDraft {
         spreads: Vec<LoadedValueDraft>,
         entries: Vec<(LoadedDictKeyDraft, LoadedValueDraft)>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedFormattedString {
+    pub source: String,
+    pub segments: Vec<LoadedFormatSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoadedFormatSegment {
+    Text(String),
+    Reference(LoadedFieldReference),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedFieldReference {
+    pub type_name: Option<String>,
+    pub key: Option<String>,
+    pub path: Vec<String>,
 }
 
 impl LoadedValueDraft {

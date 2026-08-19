@@ -74,6 +74,98 @@ fn string_fields_require_quotes() {
 }
 
 #[test]
+fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum Rarity { Common, Rare, }
+            type Stats { hp: int; }
+            type Item {
+                name: string;
+                enabled: bool;
+                price: float;
+                rarity: Rarity;
+                stats: Stats;
+                tags: [string];
+            }
+            type Holder {
+                item: &Item;
+                message: string;
+            }
+        "#,
+    );
+    let source = r#"
+        sword: Item {
+            name: "Iron Sword",
+            enabled: true,
+            price: 12.5,
+            rarity: Rare,
+            stats: { hp: 30 },
+            tags: ["weapon", "melee"],
+        }
+        holder: Holder {
+            item: &sword,
+            message: "<b>{&Item::sword.name}</b> {&Item::sword.enabled} {&Item::sword.price} {&Item::sword.rarity} {&Item::sword.stats} {&Item::sword.tags}",
+        }
+    "#;
+
+    let model = load_cfd_model(&schema, source)?;
+    let holder = model
+        .record(model.record_by_type_key("Holder", "holder").expect("holder"))
+        .expect("holder record");
+    let CfdValue::FormattedString(message) = holder.field("message").expect("message") else {
+        panic!("expected formatted string");
+    };
+    assert!(message.source.starts_with("\"<b>"));
+    assert_eq!(
+        message.rendered,
+        "<b>Iron Sword</b> true 12.5 Rare Stats{hp: 30} [\"weapon\", \"melee\"]"
+    );
+    Ok(())
+}
+
+#[test]
+fn formatted_strings_follow_record_reference_fields() -> TestResult {
+    let schema = compile_schema(
+        "type Item { name: string; } type Holder { item: &Item; message: string; }",
+    );
+    let model = load_cfd_model(
+        &schema,
+        r#"
+            sword: Item { name: "Iron Sword" }
+            holder: Holder { item: &sword, message: "{item.name}" }
+        "#,
+    )?;
+    let holder = model
+        .record(model.record_by_type_key("Holder", "holder").expect("holder"))
+        .expect("holder record");
+    assert!(matches!(
+        holder.field("message"),
+        Some(CfdValue::FormattedString(value)) if value.rendered == "Iron Sword"
+    ));
+    Ok(())
+}
+
+#[test]
+fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> TestResult {
+    let schema = compile_schema("type Item { name: string; message: string; }");
+    let model = load_cfd_model(
+        &schema,
+        r#"
+            sword: Item { name: "Iron Sword", message: "source" }
+            shield: Item { name: "Iron Shield", message: "{&sword.name}" }
+        "#,
+    )?;
+    let shield = model
+        .record(model.record_by_type_key("Item", "shield").expect("shield"))
+        .expect("shield record");
+    assert!(matches!(
+        shield.field("message"),
+        Some(CfdValue::FormattedString(value)) if value.rendered == "Iron Sword"
+    ));
+    Ok(())
+}
+
+#[test]
 fn ref_type_fields_parse_key_only_refs() -> TestResult {
     let schema = compile_schema(
         r#"

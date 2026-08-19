@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFieldValueText, recordMatchesFullTextSearch, recordMatchesSearch, referenceKeyText, summaryOf } from './fieldValue'
+import { parseFieldValueText, plainFieldValueText, recordMatchesFullTextSearch, recordMatchesSearch, referenceKeyText, summaryOf } from './fieldValue'
 import type { RecordRow } from '../bindings/RecordRow'
 
 describe('FieldValue authoring', () => {
@@ -25,6 +25,35 @@ describe('FieldValue authoring', () => {
         { kind: 'int', value: 9007199254740993n },
       ],
     })).toBe('[alpha, 9007199254740993]')
+  })
+
+  it('displays formatted output but edits the original source', () => {
+    const value = {
+      kind: 'formatted_string' as const,
+      value: {
+        source: 'f"<b>{&Item::sword.name}</b>"',
+        rendered: '<b>Iron Sword</b>',
+      },
+    }
+    expect(summaryOf(value)).toBe('<b>Iron Sword</b>')
+    expect(plainFieldValueText(value)).toBe('<b>{&Item::sword.name}</b>')
+  })
+
+  it('automatically recognizes record field references in ordinary string input', () => {
+    expect(parseFieldValueText(
+      { kind: 'string', value: '' },
+      '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
+    )).toEqual({
+      kind: 'formatted_string',
+      value: {
+        source: '"当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}"',
+        rendered: '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
+      },
+    })
+    expect(parseFieldValueText({ kind: 'string', value: '' }, '样式 {color:red}')).toEqual({
+      kind: 'string',
+      value: '样式 {color:red}',
+    })
   })
 
   it('renders references as keys without type qualifiers', () => {

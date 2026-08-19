@@ -10,8 +10,8 @@ pub(crate) use edges::{RefEdgeId, SpreadEdgeId};
 pub use ids::{CfdRecordId, RecordCoordinate};
 pub use tables::CfdTable;
 pub use value::{
-    CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdObject, CfdRecord,
-    CfdValue,
+    CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdFormattedString,
+    CfdObject, CfdRecord, CfdValue,
 };
 
 use crate::build::CfdModelBuilder;

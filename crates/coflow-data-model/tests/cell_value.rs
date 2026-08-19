@@ -310,6 +310,32 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 }
 
 #[test]
+fn parses_formatted_string_cell_references() -> TestResult {
+    let schema = compile_schema("type Item { name: string; }")?;
+    let value = parse_value(&schema, "string", r#"{name} {&sword.name} {&Item::sword.name}"#)?;
+    let LoadedValueDraft::FormattedString(value) = value else {
+        return Err("expected formatted string cell value".to_string());
+    };
+    assert_eq!(
+        value.source,
+        r#""{name} {&sword.name} {&Item::sword.name}""#
+    );
+    assert_eq!(value.segments.len(), 5);
+    let references = value
+        .segments
+        .iter()
+        .filter_map(|segment| match segment {
+            coflow_data_model::LoadedFormatSegment::Reference(reference) => Some(reference),
+            coflow_data_model::LoadedFormatSegment::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!((references[0].type_name.as_deref(), references[0].key.as_deref()), (None, None));
+    assert_eq!((references[1].type_name.as_deref(), references[1].key.as_deref()), (None, Some("sword")));
+    assert_eq!((references[2].type_name.as_deref(), references[2].key.as_deref()), (Some("Item"), Some("sword")));
+    Ok(())
+}
+
+#[test]
 fn flag_enum_cells_use_integer_masks() -> TestResult {
     let schema = compile_schema(
         r#"

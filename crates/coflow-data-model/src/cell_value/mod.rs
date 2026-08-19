@@ -33,7 +33,7 @@ pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorC
 use objects::parse_object;
 use refs::parse_ref;
 pub use render::{render_cell_value, CellRenderError};
-use strings::parse_string;
+use strings::{parse_automatic_formatted_string, parse_formatted_string, parse_string};
 use types::CellType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +124,15 @@ fn parse_value(
             "false" | "0" | "no" | "n" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
+        CellType::String if text.starts_with("f\"") => {
+            parse_formatted_string(text).map(LoadedValueDraft::FormattedString)
+        }
+        CellType::String if text.contains("{&") => {
+            match parse_automatic_formatted_string(text)? {
+                Some(value) => Ok(LoadedValueDraft::FormattedString(value)),
+                None => parse_string(text).map(LoadedValueDraft::String),
+            }
+        }
         CellType::String => parse_string(text).map(LoadedValueDraft::String),
         CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
         CellType::Ref(type_name) => parse_ref(type_name, text),

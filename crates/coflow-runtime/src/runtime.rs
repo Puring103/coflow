@@ -476,7 +476,13 @@ impl WriteProjectSession {
         path: &[CfdPathSegment],
         text: &str,
     ) -> Result<CfdValue, DiagnosticSet> {
-        crate::mutation::parse_cell_text_value(&self.session, &coordinate.actual_type, path, text)
+        crate::mutation::parse_cell_text_value(
+            &self.session,
+            &coordinate.actual_type,
+            &coordinate.key,
+            path,
+            text,
+        )
     }
 
     #[must_use]

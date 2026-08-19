@@ -172,6 +172,7 @@ fn scalar_text(value: &CfdValue) -> Option<String> {
         CfdValue::Int(value) => Some(value.to_string()),
         CfdValue::Float(value) => Some(value.to_string()),
         CfdValue::String(value) => Some(value.clone()),
+        CfdValue::FormattedString(value) => Some(value.rendered.clone()),
         CfdValue::Enum(value) => Some(format!(
             "{} {} {}",
             value.enum_name,

@@ -1,7 +1,8 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
-use crate::model::{CfdDictKey, CfdObject, CfdRecordId, CfdValue};
-use coflow_cft::{FieldName, RecordKey, TypeName};
+use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordId, CfdValue};
+use crate::{stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
+use coflow_cft::{CftValueType, FieldName, RecordKey, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -222,6 +223,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<CfdValue> {
         match value {
             ValueDraft::Value(value) => Some(value.clone()),
+            ValueDraft::FormattedString(value) => self.resolve_formatted_string(value, node, cursor),
             ValueDraft::PendingRef {
                 expected_type: _,
                 key,
@@ -267,6 +269,179 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 .resolve_dict_spread(spreads, entries, node, cursor)
                 .map(CfdValue::Dict),
         }
+    }
+
+    fn resolve_formatted_string(
+        &mut self,
+        value: &LoadedFormattedString,
+        node: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<CfdValue> {
+        let mut rendered = String::new();
+        for segment in &value.segments {
+            match segment {
+                LoadedFormatSegment::Text(text) => rendered.push_str(text),
+                LoadedFormatSegment::Reference(reference) => {
+                    let resolved = self.resolve_format_reference(reference, node, cursor)?;
+                    rendered.push_str(&stringify_value(&resolved));
+                }
+            }
+        }
+        Some(CfdValue::FormattedString(CfdFormattedString {
+            source: value.source.clone(),
+            rendered,
+        }))
+    }
+
+    fn resolve_format_reference(
+        &mut self,
+        reference: &LoadedFieldReference,
+        node: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<CfdValue> {
+        let Some(owner) = self.drafts.get(node.record.index()) else {
+            return None;
+        };
+        let type_name = reference
+            .type_name
+            .as_deref()
+            .unwrap_or(owner.actual_type.as_str());
+        let expected_type = match TypeName::new(type_name) {
+            Ok(value) if self.schema.resolve_type(value.as_str()).is_some() => value,
+            Ok(value) => {
+                self.diagnostics.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::UnknownType,
+                        format!("unknown formatted string reference type `{value}`"),
+                    )
+                    .with_primary(Some(node.record), node.path.clone()),
+                );
+                return None;
+            }
+            Err(error) => {
+                self.diagnostics.push(
+                    CfdDiagnostic::error(CfdErrorCode::UnknownType, error.to_string())
+                        .with_primary(Some(node.record), node.path.clone()),
+                );
+                return None;
+            }
+        };
+        let record_id = if let Some(key) = &reference.key {
+            self.resolve_ref_target(&expected_type, key, node)?.0
+        } else {
+            node.record
+        };
+        let mut current_type = self
+            .drafts
+            .get(record_id.index())
+            .map(|record| CftValueType::Object(record.actual_type.clone()))?;
+        let mut current_record = Some(record_id);
+        let mut current_value = None;
+
+        for field_name in &reference.path {
+            let (value, field_type) = if let Some(record_id) = current_record.take() {
+                self.resolve_record_field(record_id, field_name, node, cursor)?
+            } else {
+                self.resolve_value_field(
+                    current_value.as_ref()?,
+                    &current_type,
+                    field_name,
+                    node,
+                    cursor,
+                )?
+            };
+            current_type = field_type;
+            current_record = match (&value, current_type.non_nullable()) {
+                (CfdValue::Ref(key), CftValueType::RecordRef(target_type)) => self
+                    .resolve_ref_target(target_type, key.as_str(), node)
+                    .map(|(record_id, _)| record_id),
+                _ => None,
+            };
+            current_value = Some(value);
+        }
+        current_value
+    }
+
+    fn resolve_record_field(
+        &mut self,
+        record_id: CfdRecordId,
+        field_name: &str,
+        node: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<(CfdValue, CftValueType)> {
+        let record = self.drafts.get(record_id.index())?;
+        let field = self
+            .schema
+            .full_fields(record.actual_type.as_str())
+            .find(|field| field.name.as_str() == field_name);
+        let Some(field) = field else {
+            let actual_type = record.actual_type.clone();
+            self.push_unknown_format_field(actual_type.as_str(), field_name, node);
+            return None;
+        };
+        let value = record.fields.get(&field.name)?;
+        let target_node = ValueNode {
+            record: record_id,
+            path: CfdPath::root().field(field_name),
+            branch: Vec::new(),
+        };
+        let resolved = self.resolve_node(value, target_node, cursor, true)?;
+        Some((resolved, field.value_type.clone()))
+    }
+
+    fn resolve_value_field(
+        &mut self,
+        value: &CfdValue,
+        ty: &CftValueType,
+        field_name: &str,
+        node: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<(CfdValue, CftValueType)> {
+        match (value, ty.non_nullable()) {
+            (CfdValue::Object(object), CftValueType::Object(declared_type)) => {
+                let actual_type = if object.actual_type().is_empty() {
+                    declared_type.as_str()
+                } else {
+                    object.actual_type()
+                };
+                let field = self
+                    .schema
+                    .full_fields(actual_type)
+                    .find(|field| field.name.as_str() == field_name);
+                let Some(field) = field else {
+                    self.push_unknown_format_field(actual_type, field_name, node);
+                    return None;
+                };
+                object
+                    .field(field_name)
+                    .cloned()
+                    .map(|value| (value, field.value_type.clone()))
+            }
+            (CfdValue::Ref(key), CftValueType::RecordRef(target_type)) => {
+                let (record_id, _) = self.resolve_ref_target(target_type, key.as_str(), node)?;
+                self.resolve_record_field(record_id, field_name, node, cursor)
+            }
+            _ => {
+                self.diagnostics.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::TypeMismatch,
+                        format!("cannot read field `{field_name}` from formatted string value"),
+                    )
+                    .with_primary(Some(node.record), node.path.clone()),
+                );
+                None
+            }
+        }
+    }
+
+    fn push_unknown_format_field(&mut self, type_name: &str, field_name: &str, node: &ValueNode) {
+        self.diagnostics.push(
+            CfdDiagnostic::error(
+                CfdErrorCode::UnknownField,
+                format!("unknown formatted string field `{field_name}` on type `{type_name}`"),
+            )
+            .with_primary(Some(node.record), node.path.clone()),
+        );
     }
 
     fn resolve_ref_target(
@@ -564,6 +739,7 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
             | CfdValue::Int(_)
             | CfdValue::Float(_)
             | CfdValue::String(_)
+            | CfdValue::FormattedString(_)
             | CfdValue::Enum(_)
             | CfdValue::Ref(_) => {}
         }

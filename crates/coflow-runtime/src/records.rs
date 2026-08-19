@@ -186,6 +186,7 @@ pub fn value_summary(value: &CfdValue) -> String {
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
         CfdValue::String(value) => string_summary(value),
+        CfdValue::FormattedString(value) => string_summary(&value.rendered),
         CfdValue::Enum(value) => value
             .variant
             .as_ref()
@@ -244,6 +245,7 @@ const fn value_kind(value: &CfdValue) -> &'static str {
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",
         CfdValue::String(_) => "string",
+        CfdValue::FormattedString(_) => "string",
         CfdValue::Enum(_) => "enum",
         CfdValue::Ref(_) => "&",
         CfdValue::Object(_) => "object",

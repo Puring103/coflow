@@ -197,11 +197,23 @@ pub enum CfdValue {
     ),
     Float(f64),
     String(String),
+    FormattedString(CfdFormattedString),
     Enum(CfdEnumValue),
     Object(Box<CfdObject>),
     Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordKey),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CfdFormattedString {
+    pub source: String,
+    pub rendered: String,
 }
 
 impl CfdValue {

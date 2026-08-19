@@ -44,6 +44,8 @@ import {
   refValue,
 } from '../wire'
 import { Icon } from './Icon'
+import { RichTextString } from './RichTextString'
+import { RichTextInput } from './RichTextInput'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, fieldTypeColor } from '../utils/typeColor'
 import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
@@ -304,7 +306,9 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'float':
       return <span className="vc vc-num">{highlightSearchText(String(value.value), highlightQuery)}</span>
     case 'string':
-      return <span className="vc vc-str">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
+      return <span className="vc vc-str"><RichTextString text={value.value} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
+    case 'formatted_string':
+      return <span className="vc vc-str"><RichTextString text={value.value.rendered} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'enum':
       return (
         <span className="vc vc-enum">
@@ -1004,7 +1008,8 @@ function ScalarFieldRow({
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
-    || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
+    || value.kind === 'string' || value.kind === 'formatted_string'
+    || value.kind === 'enum' || value.kind === 'ref'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
   const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
@@ -1151,7 +1156,7 @@ export function DirectEditor({
   if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
-  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
+  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
   return <ValueChip value={value} />
@@ -1162,7 +1167,7 @@ function TextDirectInput({
   onCommit,
   color,
 }: {
-  value: FieldValue & { kind: 'int' | 'float' | 'string' }
+  value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
   onCommit: (next: FieldValue) => void
   color: string
 }) {
@@ -1178,15 +1183,16 @@ function TextDirectInput({
     else setText(initial)
   }
 
-  if (value.kind === 'string') {
+  if (value.kind === 'string' || value.kind === 'formatted_string') {
     return (
-      <textarea
+      <RichTextInput
         className="dc-input dc-input-flat dc-input-textarea"
         value={text}
         rows={1}
-        onChange={e => {
-          setText(e.target.value)
-          const el = e.target as HTMLTextAreaElement
+        onValueChange={value => {
+          setText(value)
+          const el = document.activeElement as HTMLTextAreaElement | null
+          if (!el || el.tagName !== 'TEXTAREA') return
           el.style.height = 'auto'
           el.style.height = el.scrollHeight + 'px'
         }}
@@ -1618,7 +1624,7 @@ export function InlineEditor({
   if (value.kind === 'ref') {
     return <RefDirectSelect value={value} onCommit={onCommit} onExit={onCancel} targetType={targetType} autoFocus variant="input" />
   }
-  if (value.kind === 'string') {
+  if (value.kind === 'string' || value.kind === 'formatted_string') {
     return (
       <textarea
         className="dc-input dc-input-textarea"
