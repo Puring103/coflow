@@ -401,14 +401,8 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
     require_not_contains(database, "Load(string dataDir)")?;
     require_not_contains(database, "Path.Combine")?;
     require_not_contains(database, "File.ReadAllText")?;
-    require_contains(
-        database,
-        "Reward.LoadRawTable(loadText(\"Reward.json\"))",
-    )?;
-    require_contains(
-        database,
-        "Item.LoadRawTable(loadText(\"Item.json\"))",
-    )?;
+    require_contains(database, "Reward.LoadRawTable(loadText(\"Reward.json\"))")?;
+    require_contains(database, "Item.LoadRawTable(loadText(\"Item.json\"))")?;
     require_contains(
         database,
         "var context = new LoadContext(itemIndex, rewardIndex);",
@@ -862,10 +856,7 @@ fn codegen_json_allows_cyclic_table_references() -> Result<(), String> {
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "CoflowTables.cs")?;
-    require_contains(
-        database,
-        "Item.LoadRawTable(loadText(\"Item.json\"))",
-    )?;
+    require_contains(database, "Item.LoadRawTable(loadText(\"Item.json\"))")?;
     require_contains(database, "var context = new LoadContext(itemIndex);")?;
     require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
 

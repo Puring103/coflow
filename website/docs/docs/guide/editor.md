@@ -12,6 +12,22 @@ CFD Editor 提供：
 
 编辑器会在文件变化后重新加载项目，并避免较早的加载结果覆盖较新的修改。
 
+### 富文本字符串
+
+表格、记录和检查器中的 string 字段支持 HTML 与 Unity 风格富文本。进入编辑状态后输入 `<` 或标签前缀，编辑器会列出支持的标签；使用方向键选择，按 `Enter` 或 `Tab` 插入完整标签。离开编辑状态后，表格与记录视图会直接预览粗体、斜体、下划线、颜色、字号等样式。
+
+```text
+推荐 <b>火焰之剑</b>，售价 <color=#ffb347>100</color> 金币
+```
+
+常用补全包括 `b`、`i`、`u`、`s`、`strong`、`em`、`mark`、`sub`、`sup`、`color`、`size`、`font-weight`、`span`、`br`、`space` 和 `sprite`。预览只把受支持的标签和安全样式映射为编辑器样式，不执行字符串中的 HTML、脚本、链接或外部资源；未知标签按普通文本处理。源数据始终保存原始字符串，不会被预览结果替换。
+
+富文本标签可以和 CFD / 表格格式化字符串一起使用。字段引用先在项目加载时求值，编辑器再预览生成的富文本：
+
+```cfd
+text: "推荐 <b>{&Item::sword_fire.name}</b>，售价 <color=#ffb347>{&Item::sword_fire.price}</color> 金币"
+```
+
 ## VS Code 与 LSP
 
 Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转和语义高亮。LSP 适合文本编辑和快速导航，但完整项目交付仍应运行 `coflow check` 或 `coflow build`。

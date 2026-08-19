@@ -152,7 +152,9 @@ pub(super) fn parse_automatic_formatted_string(
                 Ok(reference) => reference,
                 Err(error) if expression.starts_with('&') => return Err(error),
                 Err(_) => {
-                    let ch = rest.chars().next().expect("non-empty string remainder");
+                    let Some(ch) = rest.chars().next() else {
+                        break;
+                    };
                     literal.push(ch);
                     pos += ch.len_utf8();
                     continue;
@@ -166,7 +168,9 @@ pub(super) fn parse_automatic_formatted_string(
             pos += relative_end + 1;
             continue;
         }
-        let ch = rest.chars().next().expect("non-empty string remainder");
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
         literal.push(ch);
         pos += ch.len_utf8();
     }
@@ -178,32 +182,42 @@ pub(super) fn parse_automatic_formatted_string(
 }
 
 fn parse_reference(expression: &str) -> Result<LoadedFieldReference, CellValueDiagnostics> {
-    let (type_name, key, path) = if let Some(reference) = expression.strip_prefix('&') {
-        let (type_name, record) = reference
-            .split_once("::")
-            .map_or((None, reference), |(type_name, record)| {
-                (Some(type_name.to_string()), record)
-            });
-        let mut parts = record.split('.');
-        let key = parts.next().unwrap_or_default();
-        let path = parts.map(str::to_string).collect::<Vec<_>>();
-        (type_name, Some(key.to_string()), path)
-    } else {
-        (
-            None,
-            None,
-            expression.split('.').map(str::to_string).collect::<Vec<_>>(),
-        )
-    };
+    let (type_name, key, path) = expression.strip_prefix('&').map_or_else(
+        || {
+            (
+                None,
+                None,
+                expression
+                    .split('.')
+                    .map(str::to_string)
+                    .collect::<Vec<_>>(),
+            )
+        },
+        |reference| {
+            let (type_name, record) = reference
+                .split_once("::")
+                .map_or((None, reference), |(type_name, record)| {
+                    (Some(type_name.to_string()), record)
+                });
+            let mut parts = record.split('.');
+            let key = parts.next().unwrap_or_default();
+            let path = parts.map(str::to_string).collect::<Vec<_>>();
+            (type_name, Some(key.to_string()), path)
+        },
+    );
     if path.is_empty()
         || type_name.as_deref().is_some_and(str::is_empty)
         || key.as_deref().is_some_and(str::is_empty)
-        || type_name.as_deref().is_some_and(|name| !is_reference_name(name))
+        || type_name
+            .as_deref()
+            .is_some_and(|name| !is_reference_name(name))
         || key.as_deref().is_some_and(|name| !is_reference_name(name))
         || path.iter().any(|name| !is_reference_name(name))
         || expression.chars().any(char::is_whitespace)
     {
-        return Err(syntax("formatted string reference must use `field`, `&key.field`, or `&Type::key.field`"));
+        return Err(syntax(
+            "formatted string reference must use `field`, `&key.field`, or `&Type::key.field`",
+        ));
     }
     Ok(LoadedFieldReference {
         type_name,

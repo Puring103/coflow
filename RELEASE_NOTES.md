@@ -1,3 +1,31 @@
+# Coflow 0.9.1
+
+## 重点更新
+
+### 格式化字符串
+
+- CFD 和 Excel / CSV string 字段现在可以直接使用 `{field}`、`{&key.field}` 与 `{&Type::key.field}` 引用字段值。
+- 引用支持穿过内联对象和记录引用；构建时会检查不存在的目标、无效路径与循环引用。
+- check、JSON / MessagePack 导出和代码生成使用求值后的普通字符串，同时保留作者源码用于编辑器和 writer 回写。
+
+### 编辑器富文本
+
+- CFD Editor 的 string 字段新增 HTML / Unity 富文本标签补全；输入 `<` 后可用键盘选择并插入完整标签。
+- 表格和记录视图会安全预览粗体、斜体、下划线、颜色、字号等受支持样式，不执行脚本、链接或外部资源。
+- 格式化字段引用可以嵌入富文本，引用求值后直接显示最终预览；字段标签与说明也可通过 hover 查看。
+
+### C# JSON 加载
+
+- 生成的 JSON loader 改为接收 `Func<string, string?>`，按文件名加载 JSON 文本，便于直接接入 Unity `TextAsset`、Addressables 或自定义资源系统。
+- MessagePack loader 保持目录加载方式不变。
+
+## 兼容性
+
+- JSON C# loader 的入口从 `Load(string dataDir)` 改为 `Load(Func<string, string?> loadText)`；现有调用方需要提供读取文本的回调。
+- JSON、MessagePack 数据格式和 MessagePack C# loader 没有变化。升级现有项目前请运行 `coflow check` 和 `coflow build`。
+
+---
+
 # Coflow 0.9.0
 
 ## 重点更新

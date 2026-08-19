@@ -71,6 +71,18 @@ if (tables.TbItem.TryGet("sword_fire", out var found))
 }
 ```
 
+JSON loader 的参数类型是 `Func<string, string?>`。它按生成的文件名请求 JSON 文本；没有记录而未生成文件的空表可以返回 `null`。调用方可以从磁盘读取，也可以直接接入 Unity `TextAsset`、Addressables、AssetBundle 或自定义资源系统：
+
+```csharp
+var tables = CoflowTables.Load(fileName =>
+{
+    var asset = Resources.Load<TextAsset>($"Config/{Path.GetFileNameWithoutExtension(fileName)}");
+    return asset == null ? null : asset.text;
+});
+```
+
+MessagePack loader 处理二进制数据，继续使用 `CoflowTables.Load(dataDir)` 从目录加载 `.msgpack` 文件。
+
 每张 concrete table 生成一个 `Tb{TypeName}` 访问器。
 
 访问器类型实现只读列表能力，并提供：
