@@ -9,6 +9,7 @@ use super::{coercion::coerce_json_field_value, one_value_error};
 pub(crate) fn parse_cell_text_value(
     session: &ProjectSession,
     actual_type: &str,
+    key: &str,
     path: &[CfdPathSegment],
     text: &str,
 ) -> Result<CfdValue, coflow_api::DiagnosticSet> {
@@ -35,6 +36,20 @@ pub(crate) fn parse_cell_text_value(
             "empty cell text omits a value; use `null` for a nullable field",
         ));
     };
+    let input = match input {
+        LoadedValueDraft::FormattedString(formatted) => {
+            return coflow_data_model::evaluate_formatted_string(
+                session.schema(),
+                session.model(),
+                actual_type,
+                key,
+                &formatted,
+            )
+            .map(CfdValue::FormattedString)
+            .map_err(one_value_error);
+        }
+        other => other,
+    };
     let json = input_value_to_json(input)?;
     coerce_json_field_value(session, &expected, &json)
 }
@@ -59,6 +74,9 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             .map(Value::Number)
             .ok_or_else(|| one_value_error("cell float must be finite")),
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
+        LoadedValueDraft::FormattedString(_) => Err(one_value_error(
+            "formatted strings must be evaluated before JSON coercion",
+        )),
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
         LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();

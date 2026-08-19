@@ -653,7 +653,7 @@ function firstScalarSummary(row: RecordRow): string | null {
   for (const field of row.fields) {
     const kind = field.value.kind
     if (kind === 'bool' || kind === 'int' || kind === 'float'
-        || kind === 'string' || kind === 'enum' || kind === 'ref') {
+        || kind === 'string' || kind === 'formatted_string' || kind === 'enum' || kind === 'ref') {
       const summary = row.field_summaries[field.name]
       if (summary) return summary
     }

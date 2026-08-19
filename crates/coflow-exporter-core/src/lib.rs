@@ -455,6 +455,7 @@ where
             }
         }
         CfdValue::String(value) => sink_event(location, sink.string(value)),
+        CfdValue::FormattedString(value) => sink_event(location, sink.string(&value.rendered)),
         CfdValue::Enum(value) => sink_event(location, sink.int(value.value)),
         CfdValue::Object(object) => {
             let type_name = match declared_type {

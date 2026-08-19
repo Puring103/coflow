@@ -41,6 +41,7 @@ pub enum CfdValue {
     Scalar(String, Span),
     BitExpr(CfdBitExpr),
     QuotedString(String, Span),
+    FormattedString(CfdFormattedString),
     Null(Span),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
@@ -59,10 +60,32 @@ impl CfdValue {
             | Self::Array(_, s)
             | Self::Spread(_, s) => *s,
             Self::BitExpr(expr) => expr.span,
+            Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
             Self::Ref(r) => r.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdFormattedString {
+    pub source: String,
+    pub segments: Vec<CfdFormatSegment>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CfdFormatSegment {
+    Text(String),
+    Reference(CfdFieldReference),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdFieldReference {
+    pub type_name: Option<String>,
+    pub key: Option<String>,
+    pub path: Vec<String>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

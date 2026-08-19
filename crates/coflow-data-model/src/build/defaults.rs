@@ -227,6 +227,7 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
             }
             DraftNode::Value(
                 ValueDraft::Value(_)
+                | ValueDraft::FormattedString(_)
                 | ValueDraft::PendingRef { .. }
                 | ValueDraft::PendingSpreadField { .. },
             ) => {}

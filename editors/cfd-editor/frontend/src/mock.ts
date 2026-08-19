@@ -324,6 +324,7 @@ function mockSummary(value: FieldValue): string {
     case 'int':
     case 'float': return String(value.value)
     case 'string': return value.value
+    case 'formatted_string': return value.value.rendered
     case 'enum': return value.value.variant ?? String(value.value.value)
     case 'ref': return value.value
     case 'object': return value.value.actual_type

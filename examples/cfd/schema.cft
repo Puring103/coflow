@@ -96,6 +96,12 @@ type Encounter {
   weakness_hint: float;
 }
 
+@label("公告")
+type Announcement {
+  @label("内容")
+  text: string;
+}
+
 # The CFD editor's built-in chemical-equation reading plugin recognizes this
 # field and renders it as a chemical equation. Other fields remain ordinary
 # game-data fields and are not controlled by the plugin.

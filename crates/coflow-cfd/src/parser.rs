@@ -1,8 +1,8 @@
 mod tokens;
 
 use crate::ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField, CfdRecord,
-    CfdRef, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
+    CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 use crate::{CfdParseOptions, CfdSyntaxDiagnostic, Span};
 use coflow_structure::{StructuralBudget, StructureKind, TraversalCursor};
@@ -245,11 +245,23 @@ impl<'a> Parser<'a> {
 
     fn parse_value_inner(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
+        if self.source[self.pos..].starts_with("f\"") {
+            return self.parse_formatted_string();
+        }
         match self.peek_char() {
             Some('"') => {
                 let start = self.pos;
                 let s = self.parse_quoted_string()?;
-                Ok(CfdValue::QuotedString(s, Span::new(start, self.pos)))
+                let span = Span::new(start, self.pos);
+                if let Some(segments) = parse_automatic_format_segments(&s, span)? {
+                    Ok(CfdValue::FormattedString(CfdFormattedString {
+                        source: self.source[start..self.pos].to_string(),
+                        segments,
+                        span,
+                    }))
+                } else {
+                    Ok(CfdValue::QuotedString(s, span))
+                }
             }
             Some('[') => self.parse_array(),
             Some('@') => Err(self.error("invalid record reference")),
@@ -289,6 +301,100 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+    }
+
+    fn parse_formatted_string(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
+        let start = self.pos;
+        self.pos += 2;
+        let mut segments = Vec::new();
+        let mut text = String::new();
+        while let Some(ch) = self.peek_char() {
+            if ch == '"' {
+                self.pos += 1;
+                if !text.is_empty() {
+                    segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
+                }
+                return Ok(CfdValue::FormattedString(CfdFormattedString {
+                    source: self.source[start..self.pos].to_string(),
+                    segments,
+                    span: Span::new(start, self.pos),
+                }));
+            }
+            if ch == '\\' {
+                let escape_start = self.pos;
+                self.pos += 1;
+                let Some(escaped) = self.peek_char() else {
+                    return Err(CfdSyntaxDiagnostic {
+                        message: "unterminated formatted string escape".to_string(),
+                        span: Span::new(escape_start, self.pos),
+                    });
+                };
+                self.pos += escaped.len_utf8();
+                match escaped {
+                    '"' => text.push('"'),
+                    '\\' => text.push('\\'),
+                    'n' => text.push('\n'),
+                    'r' => text.push('\r'),
+                    't' => text.push('\t'),
+                    other => {
+                        return Err(CfdSyntaxDiagnostic {
+                            message: format!("unsupported string escape `\\{other}`"),
+                            span: Span::new(escape_start, self.pos),
+                        });
+                    }
+                }
+                continue;
+            }
+            if ch == '{' {
+                if self.source[self.pos..].starts_with("{{") {
+                    text.push('{');
+                    self.pos += 2;
+                    continue;
+                }
+                if !text.is_empty() {
+                    segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
+                }
+                segments.push(CfdFormatSegment::Reference(self.parse_field_reference()?));
+                continue;
+            }
+            if ch == '}' {
+                if self.source[self.pos..].starts_with("}}") {
+                    text.push('}');
+                    self.pos += 2;
+                    continue;
+                }
+                return Err(CfdSyntaxDiagnostic {
+                    message: "literal `}` in a formatted string must be written as `}}`"
+                        .to_string(),
+                    span: Span::new(self.pos, self.pos + 1),
+                });
+            }
+            self.pos += ch.len_utf8();
+            text.push(ch);
+        }
+        Err(CfdSyntaxDiagnostic {
+            message: "unterminated formatted string".to_string(),
+            span: Span::new(start, self.pos),
+        })
+    }
+
+    fn parse_field_reference(&mut self) -> Result<CfdFieldReference, CfdSyntaxDiagnostic> {
+        let start = self.pos;
+        self.pos += 1;
+        let expression_start = self.pos;
+        while self.peek_char().is_some_and(|ch| ch != '}') {
+            self.pos += self.peek_char().map_or(0, char::len_utf8);
+        }
+        if self.peek_char() != Some('}') {
+            return Err(CfdSyntaxDiagnostic {
+                message: "unterminated formatted string reference".to_string(),
+                span: Span::new(start, self.pos),
+            });
+        }
+        let expression_end = self.pos;
+        self.pos += 1;
+        let expression = self.source[expression_start..expression_end].trim();
+        parse_field_reference_text(expression, Span::new(start, self.pos))
     }
 
     fn parse_bit_or_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
@@ -446,6 +552,114 @@ impl<'a> Parser<'a> {
                 span,
             })
     }
+}
+
+fn parse_automatic_format_segments(
+    value: &str,
+    span: Span,
+) -> Result<Option<Vec<CfdFormatSegment>>, CfdSyntaxDiagnostic> {
+    if !value.contains('{') {
+        return Ok(None);
+    }
+
+    let mut segments = Vec::new();
+    let mut text = String::new();
+    let mut pos = 0;
+    let mut has_reference = false;
+    while pos < value.len() {
+        let rest = &value[pos..];
+        if rest.starts_with("{{") {
+            text.push('{');
+            pos += 2;
+            continue;
+        }
+        if rest.starts_with("}}") {
+            text.push('}');
+            pos += 2;
+            continue;
+        }
+        if rest.starts_with('{') {
+            let Some(relative_end) = rest.find('}') else {
+                break;
+            };
+            let expression = rest[1..relative_end].trim();
+            let reference = match parse_field_reference_text(expression, span) {
+                Ok(reference) => reference,
+                Err(error) if expression.starts_with('&') => return Err(error),
+                Err(_) => {
+                    let ch = rest.chars().next().expect("non-empty string remainder");
+                    text.push(ch);
+                    pos += ch.len_utf8();
+                    continue;
+                }
+            };
+            if !text.is_empty() {
+                segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
+            }
+            segments.push(CfdFormatSegment::Reference(reference));
+            has_reference = true;
+            pos += relative_end + 1;
+            continue;
+        }
+        let ch = rest.chars().next().expect("non-empty string remainder");
+        text.push(ch);
+        pos += ch.len_utf8();
+    }
+    if !text.is_empty() {
+        segments.push(CfdFormatSegment::Text(text));
+    }
+    Ok(has_reference.then_some(segments))
+}
+
+fn parse_field_reference_text(
+    expression: &str,
+    span: Span,
+) -> Result<CfdFieldReference, CfdSyntaxDiagnostic> {
+    let (type_name, key, path) = if let Some(reference) = expression.strip_prefix('&') {
+        let (type_name, record) = reference
+            .split_once("::")
+            .map_or((None, reference), |(type_name, record)| {
+                (Some(type_name.to_string()), record)
+            });
+        let mut parts = record.split('.');
+        let key = parts.next().unwrap_or_default();
+        let path = parts.map(str::to_string).collect::<Vec<_>>();
+        (type_name, Some(key.to_string()), path)
+    } else {
+        (
+            None,
+            None,
+            expression.split('.').map(str::to_string).collect::<Vec<_>>(),
+        )
+    };
+    if path.is_empty()
+        || type_name.as_deref().is_some_and(str::is_empty)
+        || key.as_deref().is_some_and(str::is_empty)
+        || type_name.as_deref().is_some_and(|name| !is_reference_name(name))
+        || key.as_deref().is_some_and(|name| !is_reference_name(name))
+        || path.iter().any(|name| !is_reference_name(name))
+        || expression.chars().any(char::is_whitespace)
+    {
+        return Err(CfdSyntaxDiagnostic {
+            message: "formatted string reference must use `field`, `&key.field`, or `&Type::key.field`"
+                .to_string(),
+            span,
+        });
+    }
+    Ok(CfdFieldReference {
+        type_name,
+        key,
+        path,
+        span,
+    })
+}
+
+fn is_reference_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
 }
 
 #[derive(Default)]

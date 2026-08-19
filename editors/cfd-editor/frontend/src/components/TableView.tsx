@@ -42,6 +42,7 @@ import {
 import { DataCardCompact, EnumDirectSelect, RefDirectSelect, highlightSearchText } from './DataCard'
 import {
   parseFieldValueText,
+  plainFieldValueText,
   recordMatchesFullTextSearch,
   recordMatchesSearch,
   summaryOf as valueSummary,
@@ -49,6 +50,7 @@ import {
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
+import { RichTextInput } from './RichTextInput'
 import { visibilityScrollDelta, type AxisRange } from '../state/scrollVisibility'
 import {
   recordSelection,
@@ -1784,7 +1786,8 @@ function EditableCell({
 }) {
   const [editing, setEditing] = useState(false)
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
-                || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
+                || value.kind === 'string' || value.kind === 'formatted_string'
+                || value.kind === 'enum' || value.kind === 'ref'
   // null cells become editable when the schema tells us they hold an enum/ref/bool
   const isNullDropdown = value.kind === 'null' && !!(enumType || refTargetType)
   const canEdit = editable && (isScalar || isNullDropdown) && !!onCommit
@@ -1843,7 +1846,7 @@ function EditableCell({
     return (
       <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CellTextEditor
-          value={value as FieldValue & { kind: 'int' | 'float' | 'string' }}
+          value={value as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
           onCommit={next => { onCommit!(next); setEditing(false) }}
           onCancel={() => setEditing(false)}
         />
@@ -1886,17 +1889,38 @@ function selectionOwnsRow(
 function CellTextEditor({
   value, onCommit, onCancel,
 }: {
-  value: FieldValue & { kind: 'int' | 'float' | 'string' }
+  value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
   onCommit: (next: FieldValue) => void
   onCancel: () => void
 }) {
   const [text, setText] = useState(
-    value.kind === 'int' || value.kind === 'float' ? String(value.value) : value.value
+    value.kind === 'int' || value.kind === 'float'
+      ? String(value.value)
+      : plainFieldValueText(value)
   )
   function commit() {
     const next = parseFieldValueText(value, text)
     if (next) onCommit(next)
     else onCancel()
+  }
+  if (value.kind === 'string' || value.kind === 'formatted_string') {
+    return (
+      <RichTextInput
+        className="dc-input dc-input-flat"
+        value={text}
+        rows={1}
+        autoFocus
+        onValueChange={setText}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
+            event.currentTarget.blur()
+          }
+          if (event.key === 'Escape') onCancel()
+        }}
+      />
+    )
   }
   return (
     <input

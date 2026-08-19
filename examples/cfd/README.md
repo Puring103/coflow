@@ -15,6 +15,8 @@ CFD loader tests.
 - `data/03-spread.cfd`: object and dictionary `...` spread with local overrides.
 - `data/04-chemical-equations.cfd`: a `ChemicalEquation` record for the CFD
   editor's chemical-equation reading-plugin example.
+- `data/05-formatted-strings.cfd`: an ordinary string that references fields on
+  another record and mixes HTML and Unity rich-text tags.
 
 The examples are loaded by `coflow-loader-cfd` tests:
 

@@ -79,6 +79,10 @@ export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
     case 'string':
     case 'ref':
       return left.value === (right as typeof left).value
+    case 'formatted_string': {
+      const value = (right as typeof left).value
+      return left.value.source === value.source && left.value.rendered === value.rendered
+    }
     case 'int':
       return BigInt(left.value) === BigInt((right as typeof left).value)
     case 'enum': {

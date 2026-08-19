@@ -441,6 +441,8 @@ export function cloneValue(value: FieldValue): FieldValue {
       return { kind: 'float', value: value.value }
     case 'string':
       return { kind: 'string', value: value.value }
+    case 'formatted_string':
+      return { kind: 'formatted_string', value: { ...value.value } }
     case 'enum':
       return {
         kind: 'enum',

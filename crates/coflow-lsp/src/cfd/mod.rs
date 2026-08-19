@@ -116,6 +116,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         }
         CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
         CfdValue::QuotedString(_, span) => c.add_plain(*span, SEM_STRING),
+        CfdValue::FormattedString(value) => c.add_plain(value.span, SEM_STRING),
         CfdValue::Null(span) => c.add_plain(*span, SEM_KEYWORD),
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {

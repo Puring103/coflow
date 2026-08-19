@@ -1,5 +1,6 @@
 use crate::diagnostics::RecordOrigin;
 use crate::model::{CfdDictKey, CfdValue};
+use crate::LoadedFormattedString;
 use coflow_cft::{FieldName, TypeName};
 use std::collections::BTreeMap;
 
@@ -22,6 +23,7 @@ pub(crate) struct SpreadFieldSource {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ValueDraft {
     Value(CfdValue),
+    FormattedString(LoadedFormattedString),
     Object(Box<RecordDraft>),
     PendingRef {
         expected_type: TypeName,
