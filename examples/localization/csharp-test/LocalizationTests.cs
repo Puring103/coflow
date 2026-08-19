@@ -48,7 +48,11 @@ public class LocalizationTests
 
     private static (CoflowTables Tables, VariantLocalizationProvider Provider) Setup()
     {
-        var tables = CoflowTables.Load(DataDir);
+        var tables = CoflowTables.Load(fileName =>
+        {
+            var path = Path.Combine(DataDir, fileName);
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        });
         var provider = VariantLocalizationProvider.FromTables(tables);
         // Replace the global provider for the duration of the test. xunit
         // serialises tests in a single class so the global state is fine.

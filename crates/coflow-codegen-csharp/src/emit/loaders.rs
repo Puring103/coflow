@@ -33,7 +33,7 @@ pub(super) fn loader_method(
     // accessor) but they do land on disk as a top-level array of records
     // — the database loader calls `LoadTable` on them just like a table.
     // Without `is_disk_loadable` the type-loader templates would skip
-    // `LoadTable` for singletons and the shared `Load(dataDir)` body would
+    // `LoadTable` for singletons and the shared database loader body would
     // fail to compile.
     let is_disk_loadable = is_table || ty.is_singleton;
     let fields = schema_fields

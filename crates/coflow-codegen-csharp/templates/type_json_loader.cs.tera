@@ -1,12 +1,12 @@
 {% if type.loader.is_disk_loadable and not type.loader.is_table %}
-    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    internal static List<{{ type.loader.type_name }}> LoadTable(string? json, {{ project.database_class }}.LoadContext context)
     {
-        if (!File.Exists(path))
+        if (json is null)
         {
             return new List<{{ type.loader.type_name }}>();
         }
 
-        var array = JArray.Parse(File.ReadAllText(path));
+        var array = JArray.Parse(json);
         var result = new List<{{ type.loader.type_name }}>(array.Count);
 
         foreach (var row in array)
@@ -18,14 +18,14 @@
     }
 
 {% endif %}{% if type.loader.is_table %}
-    internal static (List<{{ type.loader.type_name }}> Rows, Dictionary<{{ type.loader.type_name }}, JToken> RawRows) LoadRawTable(string path)
+    internal static (List<{{ type.loader.type_name }}> Rows, Dictionary<{{ type.loader.type_name }}, JToken> RawRows) LoadRawTable(string? json)
     {
-        if (!File.Exists(path))
+        if (json is null)
         {
             return (new List<{{ type.loader.type_name }}>(), new Dictionary<{{ type.loader.type_name }}, JToken>());
         }
 
-        var array = JArray.Parse(File.ReadAllText(path));
+        var array = JArray.Parse(json);
         var result = new List<{{ type.loader.type_name }}>(array.Count);
         var rawRows = new Dictionary<{{ type.loader.type_name }}, JToken>(array.Count);
 

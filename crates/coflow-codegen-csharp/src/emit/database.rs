@@ -107,10 +107,25 @@ fn build_context_lookups(
 pub fn build_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
     let mut load_steps = Vec::new();
     for table in table_models {
-        load_steps.push(format!(
-            "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
-            table.records_var, table.raw_rows_var, table.name, table.source_name, load_extension
-        ));
+        if load_extension == "json" {
+            load_steps.push(format!(
+                "var ({}, {}) = {}.LoadRawTable(loadText(\"{}.{}\"));",
+                table.records_var,
+                table.raw_rows_var,
+                table.name,
+                table.source_name,
+                load_extension
+            ));
+        } else {
+            load_steps.push(format!(
+                "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
+                table.records_var,
+                table.raw_rows_var,
+                table.name,
+                table.source_name,
+                load_extension
+            ));
+        }
     }
     for table in table_models {
         load_steps.push(format!(

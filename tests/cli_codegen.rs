@@ -402,7 +402,11 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         dotnet_dir.join("Program.cs"),
         r#"using Game.Config;
 
-var tables = CoflowTables.Load(args[0]);
+var tables = CoflowTables.Load(fileName =>
+{
+    var path = Path.Combine(args[0], fileName);
+    return File.Exists(path) ? File.ReadAllText(path) : null;
+});
 Expect(tables.TbReward.Count == 1, "expected 1 reward");
 Expect(tables.TbItem.Count == 1, "expected 1 item");
 Expect(tables.TbBundle.Count == 1, "expected 1 bundle");
@@ -640,7 +644,11 @@ outputs:
         dotnet_dir.join("Program.cs"),
         r#"using Game.Config;
 
-var tables = CoflowTables.Load(args[0]);
+var tables = CoflowTables.Load(fileName =>
+{
+    var path = Path.Combine(args[0], fileName);
+    return File.Exists(path) ? File.ReadAllText(path) : null;
+});
 var a = tables.TbNode.Get("a");
 var b = tables.TbNode.Get("b");
 if (!object.ReferenceEquals(a.Next, b))
