@@ -219,8 +219,8 @@ fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> 
 fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
-        CfdValue::FormattedString(value) => Ok(LoadedValueDraft::FormattedString(
-            LoadedFormattedString {
+        CfdValue::FormattedString(value) => {
+            Ok(LoadedValueDraft::FormattedString(LoadedFormattedString {
                 source: value.source.clone(),
                 segments: value
                     .segments
@@ -236,8 +236,8 @@ fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics
                         }
                     })
                     .collect(),
-            },
-        )),
+            }))
+        }
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected string",

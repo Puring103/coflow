@@ -223,7 +223,9 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<CfdValue> {
         match value {
             ValueDraft::Value(value) => Some(value.clone()),
-            ValueDraft::FormattedString(value) => self.resolve_formatted_string(value, node, cursor),
+            ValueDraft::FormattedString(value) => {
+                self.resolve_formatted_string(value, node, cursor)
+            }
             ValueDraft::PendingRef {
                 expected_type: _,
                 key,
@@ -299,9 +301,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<CfdValue> {
-        let Some(owner) = self.drafts.get(node.record.index()) else {
-            return None;
-        };
+        let owner = self.drafts.get(node.record.index())?;
         let type_name = reference
             .type_name
             .as_deref()

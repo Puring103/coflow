@@ -18,11 +18,11 @@
 - **强类型建模**：CFT schema 支持类型、默认值、枚举、引用、多态、数组、字典、注解和 check 规则。配置约束只有一份权威定义，改一处生效。
 - **构建期挡错**：类型不对、引用悬空、check 不过都会在构建阶段挡下，错误数据不会进入产物。每条诊断带上文件、表、单元格和字段路径。
 - **多数据源统合**：Excel、CSV 和 CFD 文本加载后进入同一个 runtime model，跨源引用天然成立；改动通过统一 writer/patch 机制写回原始数据源。
-- **专用配置表达**：表格适合批量数值，CFD 文本适合嵌套结构、多态对象和覆盖模板 —— 每一份数据都放在最合适的地方。
+- **专用配置表达**：表格适合批量数值，CFD 文本适合嵌套结构、多态对象和覆盖模板；string 字段可引用其他字段生成格式化文本。
 - **AI 友好维护**：稳定的 CLI 让 AI agent 读 schema、查记录、提交结构化 patch、消费诊断继续修。改动经 schema 校验、可回滚、可复盘。
 - **维度与变体**：一份 schema 支持任意维度的变体（语言、平台、服等）。每个变体在构建期独立展开、各自跑 check，覆盖漏了在构建期就发现。
 - **运行时交付**：一次构建同时产出运行时数据（JSON / MessagePack）和加载代码（C#），消除 DTO 与 schema 的手写漂移。
-- **可视化编辑器与 LSP**：文件视图、表格视图、记录视图、关系图和诊断面板；VS Code/LSP 集成提供 CFT/CFD 的诊断、补全、hover、跳转和语义高亮。
+- **可视化编辑器与 LSP**：文件视图、表格视图、记录视图、关系图和诊断面板；字符串编辑支持 HTML / Unity 富文本标签补全和安全预览；VS Code/LSP 集成提供 CFT/CFD 的诊断、补全、hover、跳转和语义高亮。
 
 ---
 
@@ -254,13 +254,15 @@ data 命令区分：
 - **JSON**：依赖 `Newtonsoft.Json`。
 - **MessagePack**：依赖 MessagePack-CSharp，走显式 `MessagePackReader` 路径，面向普通 .NET 和 Unity/IL2CPP 环境。
 
-默认生成入口是 `CoflowTables`：
+默认生成入口是 `CoflowTables`。JSON loader 接收按文件名返回 JSON 文本的回调，可直接对接 Unity `TextAsset`、Addressables 或其他资源系统：
 
 ```csharp
-var tables = CoflowTables.Load(dataDir);
+var tables = CoflowTables.Load(fileName => jsonAssets.GetValueOrDefault(fileName));
 var item = tables.TbItem.Get("potion");
 var maybeItem = tables.TbItem.Find("potion");
 ```
+
+MessagePack loader 仍使用 `CoflowTables.Load(dataDir)` 从输出目录读取二进制文件。
 
 每张表通过 `Tb{TypeName}` 访问器暴露 `Get`、`Find`、`TryGet` 和只读列表 API。生成的 loader 面向受信的 Coflow exporter 产物；不会生成自定义 `CftLoadException`。JSON 导出不会为无记录的表写空 `[]` 文件，C# JSON loader 会把缺失的空表文件视为空表。
 

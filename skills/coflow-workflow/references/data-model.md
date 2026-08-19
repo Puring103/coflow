@@ -38,6 +38,11 @@ record key 相当于记录的业务 ID，不需要也不能再声明为普通 `i
 | `{K: V}` | 字典 |
 | `T?` | 可显式取 `null` 的值 |
 
+CFD 和表格 string 字段会自动识别 `{field}`、`{&key.field}` 和
+`{&Type::key.field}` 字段引用，并在统一数据模型
+构建期间解析。解析结果仍作为 string 参与 check、JSON/MessagePack 导出和代码生成。模型
+同时保留作者源码，供支持编辑的数据源和编辑器回写。
+
 字典 key 只允许 `string`、`int` 或 enum。同一个字典中不能出现重复 key。
 
 ## 内联对象与记录引用

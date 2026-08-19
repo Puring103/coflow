@@ -127,12 +127,11 @@ fn parse_value(
         CellType::String if text.starts_with("f\"") => {
             parse_formatted_string(text).map(LoadedValueDraft::FormattedString)
         }
-        CellType::String if text.contains("{&") => {
-            match parse_automatic_formatted_string(text)? {
-                Some(value) => Ok(LoadedValueDraft::FormattedString(value)),
-                None => parse_string(text).map(LoadedValueDraft::String),
-            }
-        }
+        CellType::String if text.contains('{') => parse_automatic_formatted_string(text)?
+            .map_or_else(
+                || parse_string(text).map(LoadedValueDraft::String),
+                |value| Ok(LoadedValueDraft::FormattedString(value)),
+            ),
         CellType::String => parse_string(text).map(LoadedValueDraft::String),
         CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
         CellType::Ref(type_name) => parse_ref(type_name, text),

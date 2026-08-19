@@ -336,9 +336,9 @@ outputs:
     let database = std::fs::read_to_string(root.join("generated/code/CoflowTables.cs"))
         .expect("read generated CoflowTables.cs");
     assert!(database.contains("public Table<string, ItemNameVariants> TbItemNameVariants { get; }"));
-    assert!(database.contains(
-        "ItemNameVariants.LoadRawTable(loadText(\"Item_nameVariants.json\"))"
-    ));
+    assert!(
+        database.contains("ItemNameVariants.LoadRawTable(loadText(\"Item_nameVariants.json\"))")
+    );
 }
 
 #[test]

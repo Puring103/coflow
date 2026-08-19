@@ -4,6 +4,11 @@ use crate::{
 };
 use coflow_cft::{CftSchema, CftValueType};
 
+/// Resolves all field references in a loaded formatted string.
+///
+/// # Errors
+///
+/// Returns an error when a referenced record or field cannot be resolved.
 pub fn evaluate_formatted_string(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -43,12 +48,7 @@ fn resolve_reference<'a>(
     let key = reference.key.as_deref().unwrap_or(current_key);
     let record_id = model
         .lookup_assignable(schema, type_name, key)
-        .ok_or_else(|| {
-            format!(
-                "formatted string record `&{}.{}` was not found",
-                type_name, key
-            )
-        })?;
+        .ok_or_else(|| format!("formatted string record `&{type_name}.{key}` was not found"))?;
     let record = model
         .record(record_id)
         .ok_or_else(|| "formatted string record was not found".to_string())?;
@@ -77,16 +77,22 @@ fn resolve_reference<'a>(
             (CfdValue::Ref(key), CftValueType::RecordRef(target_type)) => {
                 let target_id = model
                     .lookup_assignable(schema, target_type.as_str(), key.as_str())
-                    .ok_or_else(|| format!("reference target `&{target_type}.{key}` was not found"))?;
+                    .ok_or_else(|| {
+                        format!("reference target `&{target_type}.{key}` was not found")
+                    })?;
                 let target = model
                     .record(target_id)
                     .ok_or_else(|| "reference target was not found".to_string())?;
-                value = target
-                    .field(field)
-                    .ok_or_else(|| format!("unknown field `{field}` on type `{}`", target.actual_type()))?;
+                value = target.field(field).ok_or_else(|| {
+                    format!("unknown field `{field}` on type `{}`", target.actual_type())
+                })?;
                 ty = field_type(schema, target.actual_type(), field)?;
             }
-            _ => return Err(format!("cannot read field `{field}` from formatted string value")),
+            _ => {
+                return Err(format!(
+                    "cannot read field `{field}` from formatted string value"
+                ))
+            }
         }
     }
     Ok(value)
@@ -111,8 +117,7 @@ pub fn stringify_value(value: &CfdValue) -> String {
         CfdValue::Enum(value) => value
             .variant
             .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| value.value.to_string()),
+            .map_or_else(|| value.value.to_string(), ToString::to_string),
         CfdValue::Ref(key) => format!("&{key}"),
         CfdValue::Object(object) => format!(
             "{}{{{}}}",
@@ -154,7 +159,6 @@ fn dict_key(key: &CfdDictKey) -> String {
         CfdDictKey::Enum(value) => value
             .variant
             .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| value.value.to_string()),
+            .map_or_else(|| value.value.to_string(), ToString::to_string),
     }
 }

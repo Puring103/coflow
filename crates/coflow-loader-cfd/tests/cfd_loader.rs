@@ -110,7 +110,11 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
 
     let model = load_cfd_model(&schema, source)?;
     let holder = model
-        .record(model.record_by_type_key("Holder", "holder").expect("holder"))
+        .record(
+            model
+                .record_by_type_key("Holder", "holder")
+                .expect("holder"),
+        )
         .expect("holder record");
     let CfdValue::FormattedString(message) = holder.field("message").expect("message") else {
         panic!("expected formatted string");
@@ -125,9 +129,8 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
 
 #[test]
 fn formatted_strings_follow_record_reference_fields() -> TestResult {
-    let schema = compile_schema(
-        "type Item { name: string; } type Holder { item: &Item; message: string; }",
-    );
+    let schema =
+        compile_schema("type Item { name: string; } type Holder { item: &Item; message: string; }");
     let model = load_cfd_model(
         &schema,
         r#"
@@ -136,7 +139,11 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
         "#,
     )?;
     let holder = model
-        .record(model.record_by_type_key("Holder", "holder").expect("holder"))
+        .record(
+            model
+                .record_by_type_key("Holder", "holder")
+                .expect("holder"),
+        )
         .expect("holder record");
     assert!(matches!(
         holder.field("message"),

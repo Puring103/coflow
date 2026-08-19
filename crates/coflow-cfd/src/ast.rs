@@ -67,20 +67,20 @@ impl CfdValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdFormattedString {
     pub source: String,
     pub segments: Vec<CfdFormatSegment>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CfdFormatSegment {
     Text(String),
     Reference(CfdFieldReference),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdFieldReference {
     pub type_name: Option<String>,
     pub key: Option<String>,

@@ -44,11 +44,11 @@ pub use diagnostics::{
     CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity, CfdStage, MappedDiagnostic,
     MappedLabel, RecordOrigin, SourceDocument, SourceLocation, TextSpan,
 };
+pub use formatted::{evaluate_formatted_string, stringify_value};
 pub use ingest::{
     DimensionValueDraft, LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment,
     LoadedFormattedString, LoadedRecordDraft, LoadedValueDraft,
 };
-pub use formatted::{evaluate_formatted_string, stringify_value};
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
     CfdFormattedString, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
