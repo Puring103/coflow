@@ -203,7 +203,7 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
     )?;
     require_contains(
         database,
-        "ItemDisplayNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_display_nameVariants.json\"))",
+        "ItemDisplayNameVariants.LoadRawTable(loadText(\"Item_display_nameVariants.json\"))",
     )?;
 
     let helper = generated_file(&files, "Localized.cs")?;
@@ -269,7 +269,7 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_contains(database, "public GameConfig GameConfig { get; }")?;
     require_contains(
         database,
-        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), LoadContext.Empty)",
+        "GameConfig.LoadTable(loadText(\"GameConfig.json\"), LoadContext.Empty)",
     )?;
     require_contains(database, "must have exactly 1 record")?;
     require_not_contains(database, "TbGameConfig")?;
@@ -283,7 +283,7 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     let singleton = generated_file(&files, "GameConfig.cs")?;
     require_contains(
         singleton,
-        "internal static List<GameConfig> LoadTable(string path, CoflowTables.LoadContext context)",
+        "internal static List<GameConfig> LoadTable(string? json, CoflowTables.LoadContext context)",
     )?;
     // The singleton has no per-row `id` field; `LoadTable` should wrap
     // `LoadInline`, which silently skips the wire-side `"id"` key that
@@ -394,14 +394,20 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
     require_contains(database, "public sealed partial class CoflowTables")?;
     require_contains(database, "public Table<string, Reward> TbReward { get; }")?;
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
-    require_contains(database, "public static CoflowTables Load(string dataDir)")?;
     require_contains(
         database,
-        "Reward.LoadRawTable(Path.Combine(dataDir, \"Reward.json\"))",
+        "public static CoflowTables Load(Func<string, string?> loadText)",
+    )?;
+    require_not_contains(database, "Load(string dataDir)")?;
+    require_not_contains(database, "Path.Combine")?;
+    require_not_contains(database, "File.ReadAllText")?;
+    require_contains(
+        database,
+        "Reward.LoadRawTable(loadText(\"Reward.json\"))",
     )?;
     require_contains(
         database,
-        "Item.LoadRawTable(Path.Combine(dataDir, \"Item.json\"))",
+        "Item.LoadRawTable(loadText(\"Item.json\"))",
     )?;
     require_contains(
         database,
@@ -540,7 +546,7 @@ fn codegen_uses_pascal_case_public_names_and_raw_source_names_for_loading() -> R
         database,
         "public Table<string, ItemConfig> TbItemConfig { get; }",
     )?;
-    require_contains(database, "Path.Combine(dataDir, \"item_config.json\")")?;
+    require_contains(database, "loadText(\"item_config.json\")")?;
     Ok(())
 }
 
@@ -858,7 +864,7 @@ fn codegen_json_allows_cyclic_table_references() -> Result<(), String> {
     let database = generated_file(&files, "CoflowTables.cs")?;
     require_contains(
         database,
-        "Item.LoadRawTable(Path.Combine(dataDir, \"Item.json\"))",
+        "Item.LoadRawTable(loadText(\"Item.json\"))",
     )?;
     require_contains(database, "var context = new LoadContext(itemIndex);")?;
     require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;

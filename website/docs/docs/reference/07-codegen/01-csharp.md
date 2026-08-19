@@ -60,7 +60,7 @@ generated/csharp/
 默认入口类是 `CoflowTables`：
 
 ```csharp
-var tables = CoflowTables.Load(dataDir);
+var tables = CoflowTables.Load(fileName => jsonAssets.GetValueOrDefault(fileName));
 
 var item = tables.TbItem.Get("sword_fire");
 var maybeItem = tables.TbItem.Find("missing");

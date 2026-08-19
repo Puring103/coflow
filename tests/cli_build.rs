@@ -337,7 +337,7 @@ outputs:
         .expect("read generated CoflowTables.cs");
     assert!(database.contains("public Table<string, ItemNameVariants> TbItemNameVariants { get; }"));
     assert!(database.contains(
-        "ItemNameVariants.LoadRawTable(Path.Combine(dataDir, \"Item_nameVariants.json\"))"
+        "ItemNameVariants.LoadRawTable(loadText(\"Item_nameVariants.json\"))"
     ));
 }
 
