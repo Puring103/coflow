@@ -52,6 +52,7 @@ import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { RichTextInput } from './RichTextInput'
 import { visibilityScrollDelta, type AxisRange } from '../state/scrollVisibility'
+import { fieldMetadataTitle } from '../utils/fieldMetadata'
 import {
   recordSelection,
   recordSelectionCoordinates,
@@ -470,7 +471,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               className="th-label"
               style={{ '--field-color': fieldTypeColor(declared ?? name) } as React.CSSProperties}
             >
-              <span className="th-label-name" title={display?.description}>{highlightSearchText(label, highlightQueryRef.current)}</span>
+              <span className="th-label-name" title={fieldMetadataTitle(name, display?.description)}>{highlightSearchText(label, highlightQueryRef.current)}</span>
               {declared && (
                 <span className="th-label-type" title={`类型：${declared}`}>{declared}</span>
               )}

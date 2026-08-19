@@ -64,6 +64,7 @@ import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
 import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
+import { fieldMetadataTitle } from '../utils/fieldMetadata'
 
 export function CardHeader({
   recordKey,
@@ -1084,7 +1085,7 @@ function ScalarFieldRow({
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
       >
         {leading}
-        <span className="dc-row-label-text">{label}</span>
+        <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
@@ -1767,7 +1768,7 @@ function ExpandableRow({
               <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
             </span>
           )}
-          <span className="dc-row-label-text">{label}</span>
+          <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
@@ -1842,7 +1843,9 @@ function ComplexValueChildren({
         return (
           <FieldRow
             key={fc.name}
-            label={fc.name}
+            label={annotation?.label ?? fc.name}
+            fieldName={fc.name}
+            description={annotation?.description ?? undefined}
             value={fc.value}
             depth={depth}
             onEdit={onEdit}
