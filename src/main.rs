@@ -227,7 +227,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
 
 fn run_lsp(args: &LspArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    coflow_lsp::run(project).map_err(|message| cli_error("LSP-RUNTIME", message))
+    coflow::lsp::run(project).map_err(|message| cli_error("LSP-RUNTIME", message))
 }
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {

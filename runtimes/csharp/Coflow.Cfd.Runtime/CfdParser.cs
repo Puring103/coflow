@@ -47,8 +47,9 @@ public static class CfdParser
             {
                 SkipTrivia();
                 if (End) break;
-                var start = Position;
+                var start = Cursor;
                 var first = ParseIdentifier("record key or type");
+                SkipTrivia();
                 if (Match(':'))
                 {
                     var type = ParseIdentifier("record type");
@@ -77,8 +78,9 @@ public static class CfdParser
             {
                 SkipTrivia();
                 if (Match('}')) { Exit(); return; }
-                var keyStart = Position;
+                var keyStart = Cursor;
                 var key = ParseIdentifier("record key");
+                SkipTrivia();
                 string type = groupType;
                 if (Match(':')) type = ParseIdentifier("record type");
                 AddRecord(records, ParseRecord(key, type, keyStart));
@@ -98,6 +100,7 @@ public static class CfdParser
 
         private CfdRecordNode ParseRecord(string key, string type, Position start)
         {
+            SkipTrivia();
             Expect('{', "expected `{` after record declaration");
             Enter();
             var fields = ParseFields();
@@ -112,7 +115,7 @@ public static class CfdParser
             {
                 SkipTrivia();
                 if (Match('}')) return fields;
-                var start = Position;
+                var start = Cursor;
                 var name = ParseIdentifier("field name");
                 Expect(':', "expected `:` after field name");
                 var value = ParseValue();
@@ -128,7 +131,7 @@ public static class CfdParser
         private CfdValueNode ParseValue()
         {
             SkipTrivia();
-            var start = Position;
+            var start = Cursor;
             if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdNullValue(CurrentSpan()); }
             if (Match('"')) return new CfdStringValue(ParseString(), SpanFrom(start));
             if (Match('&')) return new CfdReferenceValue(ParseIdentifier("reference key"), SpanFrom(start));
@@ -155,7 +158,7 @@ public static class CfdParser
             {
                 SkipTrivia();
                 if (Match('}')) { Exit(); return new CfdDictionaryValue(entries, SpanFrom(start)); }
-                var entryStart = Position;
+                var entryStart = Cursor;
                 var key = ParseValue();
                 Expect(':', "expected `:` after dictionary key");
                 var value = ParseValue();
@@ -177,7 +180,7 @@ public static class CfdParser
             {
                 SkipTrivia();
                 if (Match(']')) { Exit(); return new CfdArrayValue(values, SpanFrom(start)); }
-                var entryStart = Position;
+                var entryStart = Cursor;
                 var key = ParseValue();
                 SkipTrivia();
                 if (Match(':'))
@@ -268,7 +271,7 @@ public static class CfdParser
         private char Peek() => _source.Text[_index];
         private char Read() { var value = _source.Text[_index++]; if (value == '\n') { _line++; _column = 1; } else _column++; return value; }
         private bool End => _index >= _source.Text.Length;
-        private Position Position => new(_line, _column);
+        private Position Cursor => new(_line, _column);
         private CfdSpan CurrentSpan() => new(_line, _column, _line, _column);
         private CfdSpan SpanFrom(Position start) => new(start.Line, start.Column, _line, _column);
         private void Error(string code, string message, CfdSpan span) => _errors.Add(new CfdDiagnostic(code, message, _source.Path, span));

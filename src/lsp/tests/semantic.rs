@@ -1,15 +1,15 @@
-use super::common::*;
-use super::*;
-use crate::diagnostics::lsp_range;
-use crate::document_symbols::document_symbols;
-use crate::semantic_tokens::{
+use super::super::diagnostics::lsp_range;
+use super::super::document_symbols::document_symbols;
+use super::super::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
     MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY,
     SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
-use crate::text::{is_after_line_comment, is_inside_string};
-use crate::uri::{hex_value, percent_decode};
+use super::super::text::{is_after_line_comment, is_inside_string};
+use super::super::uri::{hex_value, percent_decode};
+use super::common::*;
+use super::*;
 use coflow_language::cfd::parse_cfd;
 use coflow_language::Span;
 

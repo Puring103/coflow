@@ -3,9 +3,9 @@ use coflow_language::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
-use crate::documentation::{annotation_documentation, static_documentation};
-use crate::position::{byte_offset_from_position, byte_range, range_from_span, LspPosition};
-use crate::{
+use super::documentation::{annotation_documentation, static_documentation};
+use super::position::{byte_offset_from_position, byte_range, range_from_span, LspPosition};
+use super::{
     current_type_at, dotted_chain_at, enum_variant_by_chain, field_by_chain, is_trivia_position,
     word_at, LspBuild, LspDocument,
 };

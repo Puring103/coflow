@@ -61,6 +61,7 @@ pub struct CsharpType {
     pub loader_fields: Vec<CsharpLoaderField>,
     pub loader_id_type: Option<String>,
     pub loader_enabled: bool,
+    pub loader_variants: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

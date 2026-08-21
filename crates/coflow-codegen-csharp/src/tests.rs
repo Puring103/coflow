@@ -73,8 +73,23 @@ fn descriptor_declares_cfd_runtime_contract() {
 }
 
 #[test]
+fn emits_empty_type_reader_without_invalid_argument_list() {
+    let files = generate_csharp_cfd(
+        &schema("type Empty { }"),
+        &CsharpCodegenOptions::new("Game.Config"),
+        &["data/empty.cfd".to_string()],
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate");
+    let output = all(&files);
+    assert!(output.contains("CfdValueReader.ValidateFields(fields);"));
+    assert!(!output.contains("ValidateFields(fields, );"));
+}
+
+#[test]
 fn registry_generator_returns_safe_code_artifacts() {
-    let mut registry = coflow_codegen_api::CodegenRegistry::default();
+    let mut registry = coflow_runtime::codegen::CodegenRegistry::default();
     registry
         .register(CsharpCfdCodeGenerator)
         .expect("register C#");

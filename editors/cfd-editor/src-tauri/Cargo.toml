@@ -37,7 +37,6 @@ serde_json = "1"
 sha2 = "0.10"
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 coflow = { path = "../../..", default-features = false }
-extension-api = { path = "../extension-api" }
 ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]

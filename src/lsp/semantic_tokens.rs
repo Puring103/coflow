@@ -6,8 +6,8 @@ use coflow_language::syntax::lexer::{lex, TokenKind};
 use coflow_language::syntax::CheckVisitor;
 use coflow_language::{ModuleId, Span};
 
-use crate::position::position_from_byte;
-use crate::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
+use super::position::position_from_byte;
+use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
     "namespace",

@@ -1,4 +1,6 @@
 using Coflow.Cfd.Runtime;
+using System;
+using System.Linq;
 using Xunit;
 
 namespace Coflow.Cfd.Runtime.Tests;
@@ -71,7 +73,7 @@ public sealed class ParserTests
     {
         var document = CfdParser.Parse(new CfdSource("data/items.cfd", """
             # a comment
-            Item {
+            item: Item {
               "display-name": "line\n\u4e2d"
               note: "quoted \"text\""
             }
@@ -90,5 +92,56 @@ public sealed class ParserTests
             new CfdLoadOptions { MaxDepth = 1, MaxNodes = 2 }));
         Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
         Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
+    }
+
+    [Fact]
+    public void RejectsDuplicateIdentityAcrossDocuments()
+    {
+        var documents = CfdParser.ParseAll(new[]
+        {
+            new CfdSource("data/one.cfd", "Item { sword {} }"),
+            new CfdSource("data/two.cfd", "Item { sword {} }"),
+        });
+
+        var error = Assert.Throws<CfdLoadException>(() => new CfdLoadContext(documents));
+        Assert.Contains(error.Errors, diagnostic =>
+            diagnostic.Code == "CFD-SYNTAX-DUPLICATE-RECORD" && diagnostic.Path == "data/two.cfd");
+    }
+
+    [Fact]
+    public void ReportsUnknownFieldsAndConversionFailures()
+    {
+        var document = CfdParser.Parse(new CfdSource(
+            "data/item.cfd",
+            "Item { sword { name: \"Sword\", extra: 1, count: 999999999999999999999 } }"));
+        var fields = document.Records[0].Fields;
+
+        var unknown = Assert.Throws<CfdLoadException>(() => CfdValueReader.ValidateFields(fields, "name", "count"));
+        Assert.Equal("CFD-FIELD-UNKNOWN", unknown.Errors[0].Code);
+        Assert.NotNull(unknown.Errors[0].Span);
+
+        var count = fields.Single(field => field.Name == "count").Value;
+        var overflow = Assert.Throws<CfdLoadException>(() => { _ = CfdValueReader.Int32(count); });
+        Assert.Equal("CFD-VALUE-NUMERIC", overflow.Errors[0].Code);
+
+        var invalidEnum = Assert.Throws<CfdLoadException>(() => CfdValueReader.EnumText<TestElement>("Unknown"));
+        Assert.Equal("CFD-VALUE-ENUM", invalidEnum.Errors[0].Code);
+
+        var flags = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { sword { value: Fire|Ice } }"));
+        var flagsValue = flags.Records[0].Fields[0].Value;
+        Assert.Equal(TestFlags.Fire | TestFlags.Ice, CfdValueReader.Enum<TestFlags>(flagsValue));
+    }
+
+    private enum TestElement
+    {
+        Fire,
+        Ice,
+    }
+
+    [Flags]
+    private enum TestFlags
+    {
+        Fire = 1,
+        Ice = 2,
     }
 }

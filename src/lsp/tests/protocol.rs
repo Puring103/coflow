@@ -1,6 +1,6 @@
+use super::super::validation::{build_snapshot, ValidationInput};
 use super::common::*;
 use super::*;
-use crate::validation::{build_snapshot, ValidationInput};
 
 #[test]
 fn request_errors_are_reported_without_returning_from_handler() {

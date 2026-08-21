@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::path_from_file_uri;
-use crate::state::{LspBuild, LspDocument};
+use super::path_from_file_uri;
+use super::state::{LspBuild, LspDocument};
 use coflow_runtime::ProjectRuntime;
 
 pub(crate) use snapshot::{

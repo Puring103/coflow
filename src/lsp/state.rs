@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::definition;
-use crate::uri::{path_from_file_uri, path_to_file_uri};
+use super::definition;
+use super::uri::{path_from_file_uri, path_to_file_uri};
 
 pub(crate) struct LspBuild {
     pub(crate) schema: ProjectSchemaSession,

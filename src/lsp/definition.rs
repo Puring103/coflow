@@ -4,7 +4,7 @@ use coflow_language::{CftSchema, Span};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-use crate::{
+use super::{
     byte_offset_from_position, byte_range, cfd, current_type_at, dotted_chain_at, field_by_type,
     is_builtin_name, is_trivia_position, range_from_span, word_at, LspBuild, LspDocument,
     LspPosition,
@@ -149,8 +149,8 @@ pub(crate) fn field_location_by_chain(
     chain: &[String],
 ) -> Option<Value> {
     let (field_name, receiver) = chain.split_last()?;
-    let receiver_type = crate::type_of_chain(build, document, offset, receiver)?;
-    let type_name = crate::type_name_of_schema_ref(&receiver_type)?;
+    let receiver_type = super::type_of_chain(build, document, offset, receiver)?;
+    let type_name = super::type_name_of_schema_ref(&receiver_type)?;
     field_location(build, type_name, field_name)
 }
 
@@ -178,7 +178,7 @@ fn ast_field_name_span(document: &LspDocument, type_name: &str, field_name: &str
 }
 
 fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
-    let (enum_def, variant) = crate::enum_variant_by_chain(build, chain)?;
+    let (enum_def, variant) = super::enum_variant_by_chain(build, chain)?;
     let document = build.document_by_module(&enum_def.module)?;
     let span =
         ast_enum_variant_name_span(document, &enum_def.name, &variant.name).unwrap_or(variant.span);

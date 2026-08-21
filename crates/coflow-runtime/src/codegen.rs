@@ -4,8 +4,8 @@
 //! one immutable snapshot and returns only source artifacts; publication and
 //! filesystem access stay in the application layer.
 
+use crate::CfdDataModel;
 use coflow_language::CftSchema;
-use coflow_runtime::CfdDataModel;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;

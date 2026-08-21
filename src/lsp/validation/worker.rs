@@ -1,5 +1,5 @@
+use super::super::RunEvent;
 use super::{build_snapshot, ValidationInput, ValidationRevision, ValidationSnapshot};
-use crate::RunEvent;
 use std::sync::{mpsc::Sender, Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 

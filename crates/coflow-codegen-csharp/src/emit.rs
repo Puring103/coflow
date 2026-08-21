@@ -115,6 +115,11 @@ pub fn build_csharp_type(
             },
         })
         .collect();
+    let loader_variants = if schema_type.is_abstract {
+        view.concrete_assignable_types(&schema_type.name)?.to_vec()
+    } else {
+        Vec::new()
+    };
     Ok(CsharpType {
         name: view.csharp_type_name(&schema_type.name),
         source_name: schema_type.name.to_string(),
@@ -137,6 +142,7 @@ pub fn build_csharp_type(
         loader_id_type: (!schema_type.is_singleton && !schema_type.is_abstract)
             .then(|| csharp_type(&view.key_field_type(&schema_type.name), view)),
         loader_enabled: !schema_type.is_abstract,
+        loader_variants,
     })
 }
 
@@ -210,6 +216,7 @@ pub fn build_csharp_dimension_type(
         loader_fields,
         loader_id_type: Some("string".to_string()),
         loader_enabled: true,
+        loader_variants: Vec::new(),
     })
 }
 

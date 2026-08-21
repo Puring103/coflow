@@ -27,11 +27,7 @@ pub fn render_common_project(
         });
     }
 
-    for schema_type in project
-        .types
-        .iter()
-        .filter(|schema_type| schema_type.loader_enabled)
-    {
+    for schema_type in &project.types {
         let mut context = Context::new();
         context.insert("project", project);
         context.insert("type", schema_type);
@@ -109,6 +105,11 @@ pub fn render_cfd_loader(
     {
         render_type_reader(&mut output, schema_type);
     }
+    for schema_type in project.types.iter().filter(|schema_type| {
+        !schema_type.loader_enabled && !schema_type.loader_variants.is_empty()
+    }) {
+        render_polymorphic_reader(&mut output, schema_type);
+    }
     output.push_str("    public static ");
     output.push_str(&project.database_class);
     output.push_str(" Load(Func<string, string?> loadText, CfdLoadOptions? options = null) => Load(new DelegateCfdTextLoader(loadText), options);\n\n");
@@ -155,9 +156,17 @@ pub fn render_cfd_loader(
 
 fn render_type_reader(output: &mut String, schema_type: &crate::model::CsharpType) {
     let field_args = schema_type
-        .loader_fields
-        .iter()
-        .map(|field| {
+        .loader_id_type
+        .as_ref()
+        .map(|id_type| {
+            if id_type == "string" {
+                "key".to_string()
+            } else {
+                format!("CfdValueReader.EnumText<{}>(key)", id_type)
+            }
+        })
+        .into_iter()
+        .chain(schema_type.loader_fields.iter().map(|field| {
             let expression = field
                 .reader_expression
                 .replace(
@@ -169,50 +178,61 @@ fn render_type_reader(output: &mut String, schema_type: &crate::model::CsharpTyp
                 )
                 .replace("CONTEXT", "context");
             expression
-        })
-        .collect::<Vec<_>>();
-    let top_args = schema_type
-        .loader_id_type
-        .as_ref()
-        .map(|id_type| {
-            if id_type == "string" {
-                "record.Key".to_string()
-            } else {
-                format!("CfdValueReader.EnumText<{}>(record.Key)", id_type)
-            }
-        })
-        .into_iter()
-        .chain(schema_type.loader_fields.iter().map(|field| {
-            let expression = field
-                .reader_expression
-                .replace(
-                    "VALUE",
-                    &format!(
-                        "CfdValueReader.Field(record.Fields, \"{}\")",
-                        escape_csharp_string(&field.source_name)
-                    ),
-                )
-                .replace("CONTEXT", "context");
-            expression
         }))
         .collect::<Vec<_>>();
+    let expected_fields = schema_type
+        .loader_fields
+        .iter()
+        .map(|field| format!("\"{}\"", escape_csharp_string(&field.source_name)))
+        .collect::<Vec<_>>();
+    let validation = if expected_fields.is_empty() {
+        "CfdValueReader.ValidateFields(fields);".to_string()
+    } else {
+        format!(
+            "CfdValueReader.ValidateFields(fields, {});",
+            expected_fields.join(", ")
+        )
+    };
     output.push_str(&format!(
-        "    private static {} Read{}(CfdRecordNode record, CfdLoadContext context) => new {}({});\n",
+        "    private static {} Read{}(CfdRecordNode record, CfdLoadContext context) => Read{}Fields(record.Fields, record.Key, context);\n",
         schema_type.name,
         schema_type.name,
-        schema_type.name,
-        top_args.join(", ")
+        schema_type.name
     ));
     output.push_str(&format!(
         "    private static {} Read{}(CfdValueNode node, CfdLoadContext context) => CfdValueReader.Object(node, context, Read{}Fields);\n",
         schema_type.name, schema_type.name, schema_type.name
     ));
     output.push_str(&format!(
-        "    private static {} Read{}Fields(IReadOnlyList<CfdFieldNode> fields, string key, CfdLoadContext context) => new {}({});\n\n",
+        "    private static {} Read{}Fields(IReadOnlyList<CfdFieldNode> fields, string key, CfdLoadContext context)\n    {{\n        {}\n        return new {}({});\n    }}\n\n",
         schema_type.name,
         schema_type.name,
+        validation,
         schema_type.name,
         field_args.join(", ")
+    ));
+}
+
+fn render_polymorphic_reader(output: &mut String, schema_type: &crate::model::CsharpType) {
+    let arms = schema_type
+        .loader_variants
+        .iter()
+        .map(|variant| {
+            format!(
+                "            \"{}\" => Read{}(node, context),",
+                escape_csharp_string(variant),
+                variant
+            )
+        })
+        .collect::<Vec<_>>();
+    output.push_str(&format!(
+        "    private static {} Read{}(CfdValueNode node, CfdLoadContext context)\n    {{\n        if (node is CfdReferenceValue reference)\n            return context.Resolve<{}>(\"{}\", reference.Key);\n        if (node is not CfdObjectValue objectValue || objectValue.DeclaredType is null)\n            throw new CfdLoadException(new[] {{ new CfdDiagnostic(\"CFD-VALUE-TYPE\", \"expected a polymorphic object or reference\", string.Empty, node.Span) }});\n        return objectValue.DeclaredType switch\n        {{\n{}\n            _ => throw new CfdLoadException(new[] {{ new CfdDiagnostic(\"CFD-REF-UNKNOWN-TYPE\", $\"unknown concrete type `{{objectValue.DeclaredType}}` for `{}`\", string.Empty, node.Span) }}),\n        }};\n    }}\n\n",
+        schema_type.name,
+        schema_type.name,
+        schema_type.name,
+        schema_type.source_name,
+        arms.join("\n"),
+        schema_type.source_name
     ));
 }
 

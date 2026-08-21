@@ -387,7 +387,6 @@ dependencies = [
  "coflow",
  "coflow-language",
  "coflow-runtime",
- "extension-api",
  "notify",
  "serde",
  "serde_json",
@@ -513,10 +512,8 @@ version = "0.9.1"
 dependencies = [
  "atomicwrites",
  "clap",
- "coflow-codegen-api",
  "coflow-codegen-csharp",
  "coflow-language",
- "coflow-lsp",
  "coflow-runtime",
  "dirs",
  "include_dir",
@@ -528,20 +525,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-codegen-api"
-version = "0.9.1"
-dependencies = [
- "coflow-language",
- "coflow-runtime",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "coflow-codegen-csharp"
 version = "0.9.1"
 dependencies = [
- "coflow-codegen-api",
  "coflow-language",
  "coflow-runtime",
  "serde",
@@ -557,15 +543,6 @@ dependencies = [
  "regex",
  "serde",
  "unicode-ident",
-]
-
-[[package]]
-name = "coflow-lsp"
-version = "0.9.1"
-dependencies = [
- "coflow-language",
- "coflow-runtime",
- "serde_json",
 ]
 
 [[package]]
@@ -1132,13 +1109,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "extension-api"
-version = "0.9.1"
-dependencies = [
- "serde",
 ]
 
 [[package]]

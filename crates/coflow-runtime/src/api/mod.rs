@@ -1,6 +1,6 @@
 //! Internal CFD source/writer contract shared by the runtime and editor.
 //!
-//! Target-language generation lives in `coflow-codegen-api`; runtime data stays
+//! Target-language generation lives in the runtime `codegen` module; runtime data stays
 //! in the typed CFD model and is never exposed as a serialized export contract.
 
 #![cfg_attr(
