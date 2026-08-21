@@ -29,8 +29,8 @@ fn write_project() -> TempDir {
 #[test]
 fn project_uses_data_paths_and_direct_code_outputs() {
     let project = write_project();
-    let opened = Project::open_schema_only(Some(&project.path().join("coflow.yaml")))
-        .expect("open project");
+    let opened =
+        Project::open_schema_only(Some(&project.path().join("coflow.yaml"))).expect("open project");
     assert_eq!(opened.data_paths().len(), 1);
     assert_eq!(opened.data_paths()[0].path(), Path::new("data/"));
     assert_eq!(opened.config().codegen[0].language, "csharp");
@@ -39,26 +39,42 @@ fn project_uses_data_paths_and_direct_code_outputs() {
 #[test]
 fn runtime_is_cfd_only_and_loads_the_project() {
     let project = write_project();
+    fs::write(project.path().join("data/ignored.json"), "{}\n").expect("ignored file");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
     let session = Runtime::new()
         .open_read_only_session(opened)
         .expect("load CFD");
     assert_eq!(session.queries().record_count_for_type("Item"), 1);
-    assert!(session.queries().source_files().all(|path| path.ends_with(".cfd")));
+    assert!(session
+        .queries()
+        .source_files()
+        .all(|path| path.ends_with(".cfd")));
 }
 
 #[test]
 fn code_artifacts_reject_duplicate_or_traversal_paths() {
     let duplicate = CodeArtifactSet::new(vec![
-        CodeArtifactFile { relative_path: "Item.cs".into(), contents: String::new() },
-        CodeArtifactFile { relative_path: "Item.cs".into(), contents: String::new() },
+        CodeArtifactFile {
+            relative_path: "Item.cs".into(),
+            contents: String::new(),
+        },
+        CodeArtifactFile {
+            relative_path: "Item.cs".into(),
+            contents: String::new(),
+        },
     ]);
-    assert!(matches!(duplicate, Err(CodegenError::DuplicateArtifactPath(_))));
+    assert!(matches!(
+        duplicate,
+        Err(CodegenError::DuplicateArtifactPath(_))
+    ));
     let traversal = CodeArtifactSet::new(vec![CodeArtifactFile {
         relative_path: "../Item.cs".into(),
         contents: String::new(),
     }]);
-    assert!(matches!(traversal, Err(CodegenError::InvalidArtifactPath(_))));
+    assert!(matches!(
+        traversal,
+        Err(CodegenError::InvalidArtifactPath(_))
+    ));
 }
 
 #[test]

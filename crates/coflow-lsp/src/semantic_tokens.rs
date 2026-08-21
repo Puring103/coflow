@@ -1,10 +1,10 @@
-use coflow_cft::syntax::ast::{
+use coflow_language::syntax::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use coflow_cft::syntax::lexer::{lex, TokenKind};
-use coflow_cft::syntax::CheckVisitor;
-use coflow_cft::{ModuleId, Span};
+use coflow_language::syntax::lexer::{lex, TokenKind};
+use coflow_language::syntax::CheckVisitor;
+use coflow_language::{ModuleId, Span};
 
 use crate::position::position_from_byte;
 use crate::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
@@ -245,7 +245,7 @@ fn add_lex_semantic_token(
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
-    ast: &coflow_cft::syntax::ast::ModuleAst,
+    ast: &coflow_language::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     for annotation in &ast.dangling_annotations {
@@ -638,7 +638,7 @@ fn classify_check_expr(
             );
         }
         CheckExprKind::Is { predicate, .. } => match predicate {
-            coflow_cft::syntax::ast::TypePredicate::Type(name) => {
+            coflow_language::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(
                     &document.source,
                     name.span,
@@ -647,7 +647,7 @@ fn classify_check_expr(
                     tokens,
                 );
             }
-            coflow_cft::syntax::ast::TypePredicate::Null(span) => {
+            coflow_language::syntax::ast::TypePredicate::Null(span) => {
                 push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         },

@@ -10,8 +10,8 @@ use crate::semantic_tokens::{
 };
 use crate::text::{is_after_line_comment, is_inside_string};
 use crate::uri::{hex_value, percent_decode};
-use coflow_cfd::parse_cfd;
-use coflow_cft::Span;
+use coflow_language::cfd::parse_cfd;
+use coflow_language::Span;
 
 #[test]
 fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {

@@ -1,6 +1,6 @@
-use coflow_cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
-use coflow_cft::syntax::CheckVisitor;
-use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
+use coflow_language::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
+use coflow_language::syntax::CheckVisitor;
+use coflow_language::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
 use coflow_runtime::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
@@ -22,7 +22,7 @@ pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
     pub(crate) source: Arc<str>,
-    pub(crate) ast: Option<Arc<coflow_cft::syntax::ast::ModuleAst>>,
+    pub(crate) ast: Option<Arc<coflow_language::syntax::ast::ModuleAst>>,
 }
 
 impl LspDocument {
@@ -30,7 +30,7 @@ impl LspDocument {
         &self.source
     }
 
-    pub(crate) fn ast(&self) -> Option<&coflow_cft::syntax::ast::ModuleAst> {
+    pub(crate) fn ast(&self) -> Option<&coflow_language::syntax::ast::ModuleAst> {
         self.ast.as_deref()
     }
 }
@@ -75,7 +75,7 @@ impl LspBuild {
         self
     }
 
-    pub(crate) fn schema(&self) -> Option<&coflow_cft::CftSchema> {
+    pub(crate) fn schema(&self) -> Option<&coflow_language::CftSchema> {
         self.schema.schema()
     }
 
@@ -106,7 +106,7 @@ pub(crate) fn current_type_at<'a>(
 pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
-) -> Option<&coflow_cft::syntax::ast::FieldDef> {
+) -> Option<&coflow_language::syntax::ast::FieldDef> {
     let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {

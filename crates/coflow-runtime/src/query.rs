@@ -1,8 +1,8 @@
-use crate::api::{CfdSourceCatalog, WriterCapabilities};
-use coflow_cft::{CftSchema, CftValueType};
-use coflow_data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use crate::api::WriterCapabilities;
+use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use coflow_language::{CftSchema, CftValueType};
 
-use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
+use crate::indexes::{FileIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
@@ -42,11 +42,6 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub(crate) const fn sources(self) -> &'a SourceIndex {
         self.session.sources()
-    }
-
-    #[must_use]
-    pub(crate) const fn records(self) -> &'a RecordIndex {
-        self.session.records()
     }
 
     #[must_use]
@@ -389,52 +384,18 @@ impl<'a> ProjectQueries<'a> {
         self.session.file_tree()
     }
 
-    pub(crate) fn writer_capabilities_for_file(
-        self,
-        catalog: &CfdSourceCatalog,
-        file: &str,
-    ) -> WriterCapabilities {
+    pub(crate) fn writer_capabilities_for_file(self, file: &str) -> WriterCapabilities {
         let Some(entry) = self
             .files()
             .source_for_display(file)
             .and_then(|source_id| self.sources().entries().get(source_id.index()))
         else {
-            return WriterCapabilities::read_only().with_provider_id("unknown");
+            return WriterCapabilities::read_only();
         };
-        catalog.source_writer(&entry.provider_id).map_or_else(
-            || WriterCapabilities::read_only().with_provider_id(entry.provider_id.clone()),
-            |writer| {
-                writer
-                    .capabilities(&entry.source)
-                    .with_provider_id(entry.provider_id.clone())
-            },
-        )
-    }
-
-    /// Return the provider-resolved table/sheet name for a record type in a
-    /// source file. Non-table providers and unmapped types return `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the table source options cannot be
-    /// decoded or resolved.
-    pub fn table_sheet_for_type(
-        self,
-        catalog: &CfdSourceCatalog,
-        file: &str,
-        actual_type: &str,
-    ) -> Result<Option<String>, crate::api::DiagnosticSet> {
-        let Some(entry) = self
-            .files()
-            .source_for_display(file)
-            .and_then(|source_id| self.sources().entries().get(source_id.index()))
-        else {
-            return Ok(None);
-        };
-        let Some(manager) = catalog.table_manager(&entry.provider_id) else {
-            return Ok(None);
-        };
-        manager.sheet_for_type(&entry.source, actual_type)
+        let _ = entry;
+        crate::cfd_loader::writer::CFD_WRITER_DESCRIPTOR
+            .capabilities
+            .clone()
     }
 }
 
@@ -450,7 +411,7 @@ fn dimension_value_at_path<'a>(
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
             (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
                 entries.iter().find_map(|(candidate, value)| {
-                    (coflow_data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                    (crate::data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
                 })?
             }
             _ => return None,

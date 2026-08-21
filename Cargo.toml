@@ -29,10 +29,6 @@ required-features = ["cli"]
 members = [
     "crates/coflow-language",
     "crates/coflow-codegen-api",
-    "crates/coflow-cft",
-    "crates/coflow-cfd",
-    "crates/coflow-data-model",
-    "crates/coflow-checker",
     "crates/coflow-runtime",
     "crates/coflow-codegen-csharp",
     "crates/coflow-lsp",
@@ -77,7 +73,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
-coflow-cft = { path = "crates/coflow-cft" }
-coflow-data-model = { path = "crates/coflow-data-model" }
+coflow-language = { path = "crates/coflow-language" }
 tempfile = "3"
 toml = "0.9"

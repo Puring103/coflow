@@ -2,12 +2,12 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use crate::write_file::{
     read_source, read_stdin_source, write_json, write_report_human, write_source,
 };
-use coflow_runtime::{DiagnosticSet, FlatDiagnostic};
-use coflow_runtime::{path_to_slash, Project};
 use coflow_runtime::{
     inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
     SchemaTextOverride, SchemaTypeRefInfo,
 };
+use coflow_runtime::{path_to_slash, Project};
+use coflow_runtime::{DiagnosticSet, FlatDiagnostic};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 

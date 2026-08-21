@@ -9,10 +9,10 @@
 fn export_bindings() {
     use cfd_editor_lib::editor::types as t;
     // Core types
-    export_with_retry::<coflow_data_model::CfdValue>("CfdValue tree");
-    export_with_retry::<coflow_data_model::CfdRecord>("CfdRecord tree");
-    export_with_retry::<coflow_data_model::CfdDictKey>("CfdDictKey tree");
-    export_with_retry::<coflow_data_model::CfdPathSegment>("CfdPathSegment tree");
+    export_with_retry::<coflow_runtime::CfdValue>("CfdValue tree");
+    export_with_retry::<coflow_runtime::CfdRecord>("CfdRecord tree");
+    export_with_retry::<coflow_runtime::CfdDictKey>("CfdDictKey tree");
+    export_with_retry::<coflow_runtime::CfdPathSegment>("CfdPathSegment tree");
     export_with_retry::<coflow_runtime::FlatDiagnostic>("FlatDiagnostic");
     export_with_retry::<coflow_runtime::WriterCapabilities>("WriterCapabilities");
     export_with_retry::<coflow_runtime::FileTreeNode>("FileTreeNode");

@@ -1,4 +1,4 @@
-use coflow_data_model::{CfdDiagnostics, LoadedRecordDraft, RecordOrigin};
+use crate::data_model::{CfdDiagnostics, LoadedRecordDraft, RecordOrigin};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
@@ -269,12 +269,6 @@ pub enum SourceLocation {
         end_line: usize,
         end_character: usize,
     },
-    TableCell {
-        path: PathBuf,
-        sheet: Option<String>,
-        row: usize,
-        column: usize,
-    },
     ProjectConfig {
         path: PathBuf,
         key_path: Vec<String>,
@@ -300,37 +294,15 @@ impl SourceLocation {
                 end_character,
                 ..
             } => TextRange::from_parts(*start_line, *start_character, *end_line, *end_character),
-            Self::TableCell { row, column, .. } => TextRange::from_parts(
-                row.saturating_sub(1),
-                column.saturating_sub(1),
-                row.saturating_sub(1),
-                (*column).max(1),
-            ),
             Self::ProjectConfig { .. } | Self::Artifact { .. } => TextRange::from_parts(0, 0, 0, 1),
-        }
-    }
-
-    #[must_use]
-    pub fn sheet(&self) -> Option<&str> {
-        match self {
-            Self::TableCell { sheet, .. } => sheet.as_deref(),
-            Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn cell_name(&self) -> Option<String> {
-        match self {
-            Self::TableCell { row, column, .. } => spreadsheet_cell_name(*row, *column),
-            Self::FileSpan { .. } | Self::ProjectConfig { .. } | Self::Artifact { .. } => None,
         }
     }
 }
 
-impl From<coflow_data_model::SourceLocation> for SourceLocation {
-    fn from(loc: coflow_data_model::SourceLocation) -> Self {
+impl From<crate::data_model::SourceLocation> for SourceLocation {
+    fn from(loc: crate::data_model::SourceLocation) -> Self {
         match loc {
-            coflow_data_model::SourceLocation::FileSpan {
+            crate::data_model::SourceLocation::FileSpan {
                 path,
                 start_line,
                 start_character,
@@ -342,17 +314,6 @@ impl From<coflow_data_model::SourceLocation> for SourceLocation {
                 start_character,
                 end_line,
                 end_character,
-            },
-            coflow_data_model::SourceLocation::TableCell {
-                path,
-                sheet,
-                row,
-                column,
-            } => Self::TableCell {
-                path,
-                sheet,
-                row,
-                column,
             },
         }
     }
@@ -369,7 +330,7 @@ pub fn map_diagnostics_with_origins(
     origins: &[RecordOrigin],
 ) -> DiagnosticSet {
     let mapped =
-        coflow_data_model::map_diagnostics(diagnostics, |id| origins.get(id.index()).cloned());
+        crate::data_model::map_diagnostics(diagnostics, |id| origins.get(id.index()).cloned());
     DiagnosticSet {
         diagnostics: mapped
             .into_iter()
@@ -473,7 +434,6 @@ pub fn byte_range(source: &str, start: usize, end: usize) -> TextRange {
 pub fn source_location_display_path(location: &SourceLocation) -> String {
     match location {
         SourceLocation::FileSpan { path, .. }
-        | SourceLocation::TableCell { path, .. }
         | SourceLocation::ProjectConfig { path, .. }
         | SourceLocation::Artifact { path } => path_to_slash(path),
     }
@@ -494,27 +454,6 @@ pub fn path_to_slash(path: &Path) -> String {
     raw.strip_prefix(r"\\?\")
         .or_else(|| raw.strip_prefix("//?/"))
         .map_or_else(|| raw.clone(), str::to_owned)
-}
-
-#[must_use]
-pub fn spreadsheet_cell_name(row: usize, column: usize) -> Option<String> {
-    if row == 0 || column == 0 {
-        return None;
-    }
-    Some(format!("{}{}", spreadsheet_column_name(column), row))
-}
-
-fn spreadsheet_column_name(column: usize) -> String {
-    let mut value = column;
-    let mut name = Vec::new();
-    while value > 0 {
-        value -= 1;
-        #[allow(clippy::cast_possible_truncation)]
-        let offset = (value % 26) as u8;
-        name.push((b'A' + offset) as char);
-        value /= 26;
-    }
-    name.iter().rev().collect()
 }
 
 #[cfg(test)]

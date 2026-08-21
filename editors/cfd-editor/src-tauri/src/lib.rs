@@ -7,7 +7,7 @@ pub mod editor;
 mod host;
 mod watcher;
 
-use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_runtime::{CfdPathSegment, CfdValue};
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
@@ -956,19 +956,13 @@ async fn transfer_record(
     session_id: u32,
     coordinate: RecordCoordinate,
     destination_file: String,
-    destination_sheet: Option<String>,
     target_index: usize,
     host: State<'_, EditorHost>,
 ) -> Result<ReorderRecordsOutcome, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
-        host.sessions().transfer_record(
-            session_id,
-            &coordinate,
-            &destination_file,
-            destination_sheet.as_deref(),
-            target_index,
-        )
+        host.sessions()
+            .transfer_record(session_id, &coordinate, &destination_file, target_index)
     })
     .await
 }

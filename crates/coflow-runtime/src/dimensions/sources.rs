@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use coflow_cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
-use coflow_data_model::RecordCoordinate;
+use crate::data_model::RecordCoordinate;
 use crate::project::Project;
+use coflow_language::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionField {
@@ -33,8 +33,7 @@ impl DimensionField {
         if self.is_singleton {
             extension == "cfd" && stem == self.source_type.as_str()
         } else {
-            extension == "cfd"
-                && stem == format!("{}_{}", self.bucket, self.source_field)
+            extension == "cfd" && stem == format!("{}_{}", self.bucket, self.source_field)
         }
     }
 }
@@ -138,8 +137,8 @@ mod tests {
 
     use std::collections::{BTreeMap, BTreeSet};
 
-    use coflow_cft::{BucketName, DimensionName, FieldName, TypeName};
-    use coflow_data_model::RecordCoordinate;
+    use crate::data_model::RecordCoordinate;
+    use coflow_language::{BucketName, DimensionName, FieldName, TypeName};
 
     use super::{DimensionField, DimensionRuntimePlan};
 
@@ -166,13 +165,16 @@ mod tests {
 
     #[test]
     fn changed_record_types_select_only_assignable_dimension_fields() {
-        let modules = coflow_cft::parse_modules([coflow_cft::CftFile::new(
-            coflow_cft::ModuleId::from("test.cft"),
+        let modules = coflow_language::parse_modules([coflow_language::CftFile::new(
+            coflow_language::ModuleId::from("test.cft"),
             "test.cft".into(),
             "type Base { value: int; } type Child: Base {} type Other { value: int; }",
         )]);
-        let schema = coflow_cft::build_schema(&modules, &coflow_cft::CftDimensionInputs::default())
-            .expect("schema");
+        let schema = coflow_language::build_schema(
+            &modules,
+            &coflow_language::CftDimensionInputs::default(),
+        )
+        .expect("schema");
         let dimension = DimensionName::new("language").expect("dimension");
         let fields = vec![
             DimensionField {

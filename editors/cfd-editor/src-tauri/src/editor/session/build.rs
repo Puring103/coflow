@@ -1,7 +1,7 @@
 //! Project session construction through the shared Coflow engine.
 
-use coflow_runtime::{DiagnosticSet, CfdSourceCatalog, WriterCapabilities};
 use coflow_runtime::Project;
+use coflow_runtime::{DiagnosticSet, WriterCapabilities};
 use coflow_runtime::{FileTreeNode, ProjectQueries, ProjectRuntime, Runtime};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -17,11 +17,6 @@ pub(super) struct SessionSnapshotParts {
 type FileTypeNames = BTreeMap<String, Vec<String>>;
 type TypeDisplayNames = BTreeMap<(String, String), String>;
 
-pub(super) fn default_cfd_catalog() -> Result<CfdSourceCatalog, EditorError> {
-    coflow_runtime::cfd_source_catalog()
-        .map_err(|err| EditorError::project(format!("failed to register default providers: {err}")))
-}
-
 pub(super) fn session_capabilities_for_file(
     session: &EditorSession,
     file_path: &str,
@@ -31,14 +26,13 @@ pub(super) fn session_capabilities_for_file(
 
 pub(super) fn build_session(
     yaml_path_in: &std::path::Path,
-    registry: &CfdSourceCatalog,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
     let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
         EditorError::project(prefixed_diagnostics("failed to open project", &err))
     })?;
     let yaml_path = project.config_path().to_path_buf();
     let project_root = project.root_dir().to_path_buf();
-    let runtime = Runtime::with_catalog(registry.clone());
+    let runtime = Runtime::new();
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime
@@ -50,7 +44,7 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
     let file_tree = engine.queries().file_tree();
-    let (file_type_names, type_display_names) = type_navigation(engine.queries(), registry);
+    let (file_type_names, type_display_names) = type_navigation(engine.queries());
     let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
 
     Ok((
@@ -68,13 +62,9 @@ pub(super) fn build_session(
     ))
 }
 
-fn type_navigation(
-    queries: ProjectQueries<'_>,
-    registry: &CfdSourceCatalog,
-) -> (FileTypeNames, TypeDisplayNames) {
-    let mut display_names = BTreeMap::new();
+fn type_navigation(queries: ProjectQueries<'_>) -> (FileTypeNames, TypeDisplayNames) {
+    let display_names = BTreeMap::new();
     let mut file_type_names = BTreeMap::new();
-    let schema_type_names = queries.schema_type_names();
     for file_path in queries.source_files() {
         let mut type_names = Vec::new();
         let mut type_seen = HashSet::new();
@@ -82,18 +72,6 @@ fn type_navigation(
             let type_name = view.coordinate.actual_type.to_string();
             if type_seen.insert(type_name.clone()) {
                 type_names.push(type_name);
-            }
-        }
-        for type_name in &schema_type_names {
-            let Ok(Some(sheet)) = queries.table_sheet_for_type(registry, file_path, type_name)
-            else {
-                continue;
-            };
-            if type_seen.insert(type_name.clone()) {
-                type_names.push(type_name.clone());
-            }
-            if sheet != *type_name {
-                display_names.insert((file_path.to_string(), type_name.clone()), sheet);
             }
         }
         file_type_names.insert(file_path.to_string(), type_names);

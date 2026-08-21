@@ -2,7 +2,11 @@ use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "coflow", about = "CFD schema validation and multi-language code generation.", version)]
+#[command(
+    name = "coflow",
+    about = "CFD schema validation and multi-language code generation.",
+    version
+)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,

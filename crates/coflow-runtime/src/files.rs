@@ -2,7 +2,7 @@
 //!
 //! Surfaces directories and files under the project root that either back a
 //! loaded record (`in_sources`) or carry an extension registered by the
-//! configured providers. Dimension output directories can be grouped under a
+//! configured compensations. Dimension output directories can be grouped under a
 //! display-named virtual folder via [`FileTreeOptions::dimension_groups`].
 
 use serde::{Deserialize, Serialize};

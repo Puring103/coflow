@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::api::DiagnosticSet;
-use coflow_cft::{
+use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
+use coflow_language::{
     CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
     ValueDependencyMode,
 };
-use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
 
 use super::{
     one_mutation_error, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft,

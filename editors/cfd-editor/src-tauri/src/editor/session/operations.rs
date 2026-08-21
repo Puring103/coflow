@@ -151,7 +151,7 @@ impl SessionStore {
         &self,
         id: u32,
         coordinate: &RecordCoordinate,
-        field_path: &[coflow_data_model::CfdPathSegment],
+        field_path: &[coflow_runtime::CfdPathSegment],
     ) -> Result<String, EditorError> {
         let entry = self.session(id)?;
         let session = entry
@@ -168,7 +168,7 @@ impl SessionStore {
         &self,
         id: u32,
         coordinate: &RecordCoordinate,
-        field_path: &[coflow_data_model::CfdPathSegment],
+        field_path: &[coflow_runtime::CfdPathSegment],
         text: &str,
     ) -> Result<CfdValue, EditorError> {
         let entry = self.session(id)?;
@@ -255,7 +255,7 @@ impl SessionStore {
         &self,
         id: u32,
         coordinate: &RecordCoordinate,
-        field_path: &[coflow_data_model::CfdPathSegment],
+        field_path: &[coflow_runtime::CfdPathSegment],
         new_value: &CfdValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
@@ -276,7 +276,7 @@ impl SessionStore {
             .state
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let mut seen = Vec::<(RecordCoordinate, Vec<coflow_data_model::CfdPathSegment>)>::new();
+        let mut seen = Vec::<(RecordCoordinate, Vec<coflow_runtime::CfdPathSegment>)>::new();
         let targets = writes
             .iter()
             .filter(|write| {
@@ -353,7 +353,7 @@ impl SessionStore {
         &self,
         id: u32,
         coordinate: &RecordCoordinate,
-        field_path: &[coflow_data_model::CfdPathSegment],
+        field_path: &[coflow_runtime::CfdPathSegment],
         edit: CollectionEdit,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
@@ -423,7 +423,6 @@ impl SessionStore {
             stop_on_write_error: true,
             ops: vec![MutationOp::InsertRecord {
                 file: file_path.to_string(),
-                sheet: None,
                 actual_type: actual_type.to_string(),
                 key: record_key.to_string(),
                 fields: MutationFields::Cfd(fields_map),
@@ -606,7 +605,6 @@ impl SessionStore {
         id: u32,
         coordinate: &RecordCoordinate,
         destination_file: &str,
-        destination_sheet: Option<&str>,
         target_index: usize,
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
@@ -626,7 +624,6 @@ impl SessionStore {
             ops: vec![MutationOp::TransferRecord {
                 record: coordinate.clone(),
                 destination_file: destination_file.to_string(),
-                destination_sheet: destination_sheet.map(ToOwned::to_owned),
                 target_index,
                 source_file: Some(source_file),
             }],

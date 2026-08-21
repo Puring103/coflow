@@ -1,7 +1,7 @@
 use super::common::*;
 use super::*;
 use crate::definition::{cft_schema_field_definition_location, cft_type_definition_location};
-use coflow_cfd::parse_cfd;
+use coflow_language::cfd::parse_cfd;
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
@@ -207,7 +207,6 @@ type Holder { item: &Item; }\n";
     assert_eq!(result["range"]["end"]["character"], 6);
 }
 
-
 #[test]
 fn cfd_definition_request_returns_null_for_invalid_record_references() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
@@ -248,7 +247,6 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
     let hp = cfd_definition_result_at(&mut server, &source_uri, source, ".hp");
     assert_eq!(hp, Value::Null);
 }
-
 
 #[test]
 fn cfd_definition_request_resolves_each_nested_object_field() {

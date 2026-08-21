@@ -1,4 +1,4 @@
-use coflow_cft::syntax::ast::Annotation;
+use coflow_language::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),
@@ -34,7 +34,7 @@ pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
 )];
 
 pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
-    coflow_cft::CftCheckBuiltin::ALL
+    coflow_language::CftCheckBuiltin::ALL
         .into_iter()
         .map(|builtin| (builtin.name(), builtin.documentation()))
 }

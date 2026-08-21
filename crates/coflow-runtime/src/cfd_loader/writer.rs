@@ -1,7 +1,7 @@
 //! Writer that persists field edits back to `.cfd` source text using span
 //! patches against the parsed AST.
 //!
-//! `CfdWriter` is the [`SourceWriter`] implementation used by sources whose
+//! `CfdWriter` is the [`CfdDocumentWriter`] implementation used by sources whose
 //! origin is [`RecordOrigin::File`]. Each write reads and parses the backing
 //! file from disk so transaction rollback and external edits are always
 //! observed by the next operation.
@@ -12,27 +12,23 @@ mod schema_nav;
 mod target;
 
 use crate::api::{
-    CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter,
-    SyncHeaderRequest, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult, WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    CfdDocumentWriter, CfdWriterDescriptor, DeleteRecordRequest, Diagnostic, DiagnosticSet,
+    InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
+    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
 };
-use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
-use coflow_cft::Span;
-use coflow_data_model::RecordOrigin;
+use crate::data_model::RecordOrigin;
+use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
+use coflow_language::Span;
 use patch::{
     append_record_source, apply_patch, delete_record_span, find_record, reorder_record_spans,
     replace_spans, serialize_record, validate_record_key, validate_values,
 };
-use render::{added_columns, cfd_top_level_fields, removed_columns, rewrite_cfd_records};
 use std::path::Path;
 
-pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+pub static CFD_WRITER_DESCRIPTOR: CfdWriterDescriptor = CfdWriterDescriptor {
     id: "cfd",
     display_name: "Coflow data text",
     capabilities: WriterCapabilities {
-        provider_id: String::new(),
         can_edit_field: true,
         can_edit_key: true,
         can_insert_record: true,
@@ -40,14 +36,6 @@ pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         can_reorder_records: true,
         requires_full_refresh_after_write: true,
     },
-};
-
-pub static CFD_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
-    id: "cfd",
-    display_name: "Coflow data text",
-    file_extensions: &["cfd"],
-    aliases: &[],
-    addressing: TableAddressing::Document,
 };
 
 /// Writer for `.cfd` text sources.
@@ -100,8 +88,8 @@ fn ensure_parse_ok(path: &Path, diagnostics: &[CfdSyntaxDiagnostic]) -> Result<(
     Ok(())
 }
 
-impl SourceWriter for CfdWriter {
-    fn descriptor(&self) -> &'static WriterDescriptor {
+impl CfdDocumentWriter for CfdWriter {
+    fn descriptor(&self) -> &'static CfdWriterDescriptor {
         &CFD_WRITER_DESCRIPTOR
     }
 
@@ -392,67 +380,6 @@ fn ensure_cfd_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), 
             "CFD-WRITE",
             "cfd reorder requires File origins",
         ))),
-    }
-}
-
-impl TableManager for CfdWriter {
-    fn descriptor(&self) -> &'static TableManagerDescriptor {
-        &CFD_TABLE_MANAGER_DESCRIPTOR
-    }
-
-    fn create_table(
-        &self,
-        _ctx: TableContext<'_>,
-        request: &CreateTableRequest<'_>,
-    ) -> Result<TableOperationResult, DiagnosticSet> {
-        let path = request.source.location.path();
-        if path.exists() {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-TABLE",
-                format!("file `{}` already exists", path.display()),
-            )));
-        }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                DiagnosticSet::one(diag(
-                    "CFD-TABLE",
-                    format!("failed to create `{}`: {err}", parent.display()),
-                ))
-            })?;
-        }
-        Self::write_source(path, "")?;
-        Ok(TableOperationResult {
-            headers: Vec::new(),
-            added: Vec::new(),
-            removed: Vec::new(),
-            diagnostics: DiagnosticSet::empty(),
-        })
-    }
-
-    fn sync_header(
-        &self,
-        _ctx: TableContext<'_>,
-        request: &SyncHeaderRequest<'_>,
-    ) -> Result<TableOperationResult, DiagnosticSet> {
-        let path = request.source.location.path();
-        let (source, ast) = Self::read_or_parse(path)?;
-        let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
-        let added = added_columns(request.headers, &old_fields);
-        let removed = removed_columns(request.headers, &old_fields);
-        let schema = request.schema.ok_or_else(|| {
-            DiagnosticSet::one(diag(
-                "CFD-TABLE",
-                "cfd header sync requires schema metadata",
-            ))
-        })?;
-        let new_source = rewrite_cfd_records(&source, &ast.records, request.actual_type, schema)?;
-        Self::write_source(path, &new_source)?;
-        Ok(TableOperationResult {
-            headers: request.headers.to_vec(),
-            added,
-            removed,
-            diagnostics: DiagnosticSet::empty(),
-        })
     }
 }
 

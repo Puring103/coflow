@@ -1,11 +1,11 @@
-use coflow_cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
-};
-use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
-use coflow_data_model::{
+use crate::data_model::{
     LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
     LoadedRecordDraft, LoadedValueDraft,
 };
+use coflow_language::cfd::{
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
+};
+use coflow_language::{record_key_ident_error, CftSchema, CftValueType, Span};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
@@ -69,45 +69,45 @@ fn lower_object_fields(
     let mut seen = BTreeSet::new();
     let mut diagnostics = Vec::new();
     for field in fields {
-                if field.name == "id" {
-                    diagnostics.extend(
-                        error(
-                            CfdTextErrorCode::ReservedIdField,
-                            "`id` is reserved for the record key",
-                            field.name_span,
-                        )
-                        .diagnostics,
-                    );
-                    continue;
-                }
-                if !seen.insert(field.name.clone()) {
-                    diagnostics.extend(
-                        error(
-                            CfdTextErrorCode::DuplicateField,
-                            format!("duplicate field `{}`", field.name),
-                            field.name_span,
-                        )
-                        .diagnostics,
-                    );
-                    continue;
-                }
-                let Some(meta) = fields_by_name.get(field.name.as_str()) else {
-                    diagnostics.extend(
-                        error(
-                            CfdTextErrorCode::UnknownField,
-                            format!("unknown field `{}` on type `{type_name}`", field.name),
-                            field.name_span,
-                        )
-                        .diagnostics,
-                    );
-                    continue;
-                };
-                match lower_value(schema, &field.value, &meta.value_type) {
-                    Ok(value) => {
-                        values.insert(field.name.clone(), value);
-                    }
-                    Err(error) => diagnostics.extend(error.diagnostics),
-                }
+        if field.name == "id" {
+            diagnostics.extend(
+                error(
+                    CfdTextErrorCode::ReservedIdField,
+                    "`id` is reserved for the record key",
+                    field.name_span,
+                )
+                .diagnostics,
+            );
+            continue;
+        }
+        if !seen.insert(field.name.clone()) {
+            diagnostics.extend(
+                error(
+                    CfdTextErrorCode::DuplicateField,
+                    format!("duplicate field `{}`", field.name),
+                    field.name_span,
+                )
+                .diagnostics,
+            );
+            continue;
+        }
+        let Some(meta) = fields_by_name.get(field.name.as_str()) else {
+            diagnostics.extend(
+                error(
+                    CfdTextErrorCode::UnknownField,
+                    format!("unknown field `{}` on type `{type_name}`", field.name),
+                    field.name_span,
+                )
+                .diagnostics,
+            );
+            continue;
+        };
+        match lower_value(schema, &field.value, &meta.value_type) {
+            Ok(value) => {
+                values.insert(field.name.clone(), value);
+            }
+            Err(error) => diagnostics.extend(error.diagnostics),
+        }
     }
     finish(values, diagnostics)
 }
@@ -447,19 +447,19 @@ fn lower_dict(
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
     for field in &block.fields {
-                let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
-                let value = lower_value(schema, &field.value, value_type);
-                match (key, value) {
-                    (Ok(key), Ok(value)) => entries.push((key, value)),
-                    (key, value) => {
-                        if let Err(error) = key {
-                            diagnostics.extend(error.diagnostics);
-                        }
-                        if let Err(error) = value {
-                            diagnostics.extend(error.diagnostics);
-                        }
-                    }
+        let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
+        let value = lower_value(schema, &field.value, value_type);
+        match (key, value) {
+            (Ok(key), Ok(value)) => entries.push((key, value)),
+            (key, value) => {
+                if let Err(error) = key {
+                    diagnostics.extend(error.diagnostics);
                 }
+                if let Err(error) = value {
+                    diagnostics.extend(error.diagnostics);
+                }
+            }
+        }
     }
     finish(LoadedValueDraft::dict(entries), diagnostics)
 }
@@ -581,7 +581,7 @@ fn validate_actual_type(
 }
 
 pub(super) fn syntax_diagnostics(
-    diagnostics: Vec<coflow_cfd::CfdSyntaxDiagnostic>,
+    diagnostics: Vec<coflow_language::cfd::CfdSyntaxDiagnostic>,
 ) -> CfdTextDiagnostics {
     CfdTextDiagnostics {
         diagnostics: diagnostics

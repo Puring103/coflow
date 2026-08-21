@@ -19,7 +19,6 @@ default = []
 # `export_bindings` test to refresh `editors/cfd-editor/frontend/src/bindings/`.
 ts-export = [
     "dep:ts-rs",
-    "coflow-data-model/ts-export",
     "coflow-runtime/ts-export",
 ]
 
@@ -36,11 +35,10 @@ notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-coflow-data-model = { path = "../../../crates/coflow-data-model" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 coflow = { path = "../../..", default-features = false }
 extension-api = { path = "../extension-api" }
 ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]
-coflow-cft = { path = "../../../crates/coflow-cft" }
+coflow-language = { path = "../../../crates/coflow-language" }

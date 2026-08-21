@@ -10,6 +10,6 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-cft = { path = "../coflow-cft" }
-coflow-cfd = { path = "../coflow-cfd" }
-coflow-structure = { path = "../coflow-structure" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+unicode-ident = "1"

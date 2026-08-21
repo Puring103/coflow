@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::api::{
-    Diagnostic, DiagnosticSet, ResolvedSource, SourceTransaction, SourceTransactionCompensation,
+    CfdSource, Diagnostic, DiagnosticSet, SourceTransaction, SourceTransactionCompensation,
     WriteContext,
 };
 
@@ -12,7 +12,7 @@ use super::plan::MutationExecutionPlan;
 #[derive(Debug, Default)]
 pub(crate) struct MutationTransaction {
     local: LocalFileTransaction,
-    providers: Vec<ProviderTransaction>,
+    compensations: Vec<CompensationTransaction>,
 }
 
 impl MutationTransaction {
@@ -44,7 +44,7 @@ impl MutationTransaction {
 
     fn enlist(
         &mut self,
-        source: &ResolvedSource,
+        source: &CfdSource,
         declared: SourceTransaction,
     ) -> Result<(), DiagnosticSet> {
         match declared {
@@ -53,7 +53,7 @@ impl MutationTransaction {
                 self.local.snapshot_file(path)?;
             }
             SourceTransaction::Compensation(compensation) => {
-                self.providers.push(ProviderTransaction {
+                self.compensations.push(CompensationTransaction {
                     source: source.display_name.clone(),
                     compensation,
                 });
@@ -67,74 +67,74 @@ impl MutationTransaction {
 
     pub(crate) fn commit(mut self) -> Result<(), DiagnosticSet> {
         let mut failure = None;
-        for provider in &mut self.providers {
-            if let Err(provider_diagnostics) = provider.compensation.prepare_commit() {
-                failure = Some((provider.source.clone(), provider_diagnostics));
+        for writer in &mut self.compensations {
+            if let Err(writer_diagnostics) = writer.compensation.prepare_commit() {
+                failure = Some((writer.source.clone(), writer_diagnostics));
                 break;
             }
         }
-        if let Some((source, provider_diagnostics)) = failure {
+        if let Some((source, writer_diagnostics)) = failure {
             let mut diagnostics = DiagnosticSet::one(transaction_error(
                 "WRITE-TXN-COMMIT",
                 &source,
                 "prepare publication for",
             ));
-            diagnostics.extend(provider_diagnostics);
+            diagnostics.extend(writer_diagnostics);
             self.compensate_into(&mut diagnostics);
             return Err(diagnostics);
         }
-        for provider in &mut self.providers {
-            provider.compensation.commit();
+        for writer in &mut self.compensations {
+            writer.compensation.commit();
         }
         Ok(())
     }
 
     pub(crate) fn compensate_into(mut self, diagnostics: &mut DiagnosticSet) {
-        for provider in self.providers.iter_mut().rev() {
-            if let Err(provider_diagnostics) = provider.compensation.compensate() {
+        for writer in self.compensations.iter_mut().rev() {
+            if let Err(writer_diagnostics) = writer.compensation.compensate() {
                 diagnostics.push(transaction_error(
                     "WRITE-TXN-COMPENSATE",
-                    &provider.source,
+                    &writer.source,
                     "compensate",
                 ));
-                diagnostics.extend(provider_diagnostics);
+                diagnostics.extend(writer_diagnostics);
             }
         }
         self.local.rollback_into(diagnostics);
     }
 
     fn abort_into(&mut self, diagnostics: &mut DiagnosticSet) {
-        for provider in self.providers.iter_mut().rev() {
-            if let Err(provider_diagnostics) = provider.compensation.abort() {
+        for writer in self.compensations.iter_mut().rev() {
+            if let Err(writer_diagnostics) = writer.compensation.abort() {
                 diagnostics.push(transaction_error(
                     "WRITE-TXN-ABORT",
-                    &provider.source,
+                    &writer.source,
                     "abort",
                 ));
-                diagnostics.extend(provider_diagnostics);
+                diagnostics.extend(writer_diagnostics);
             }
         }
     }
 }
 
-struct ProviderTransaction {
+struct CompensationTransaction {
     source: String,
     compensation: Box<dyn SourceTransactionCompensation>,
 }
 
-impl std::fmt::Debug for ProviderTransaction {
+impl std::fmt::Debug for CompensationTransaction {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("ProviderTransaction")
+            .debug_struct("CompensationTransaction")
             .field("source", &self.source)
             .field("compensation", &"..")
             .finish()
     }
 }
 
-fn source_key(source: &ResolvedSource) -> String {
+fn source_key(source: &CfdSource) -> String {
     let path = source.location.path();
-    format!("{}:path:{}", source.provider_id, path.display())
+    format!("path:{}", path.display())
 }
 
 fn transaction_error(code: &str, source: &str, operation: &str) -> Diagnostic {

@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::api::{
-    Diagnostic, DiagnosticSet, CfdSourceCatalog, ResolvedSource, Severity, SourceWriter,
-};
+use crate::api::{CfdDocumentWriter, CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet};
 
 use crate::indexes::SourceId;
 use crate::ProjectSession;
@@ -10,7 +8,7 @@ use crate::ProjectSession;
 pub(super) fn source_for_id(
     session: &ProjectSession,
     source_id: SourceId,
-) -> Result<ResolvedSource, DiagnosticSet> {
+) -> Result<CfdSource, DiagnosticSet> {
     session
         .sources()
         .entries()
@@ -31,7 +29,7 @@ pub(super) fn source_for_id(
 pub(super) fn source_for_file(
     session: &ProjectSession,
     file: &str,
-) -> Result<ResolvedSource, DiagnosticSet> {
+) -> Result<CfdSource, DiagnosticSet> {
     match session.files.sources_for_display(file) {
         [source_id] => source_for_id(session, *source_id),
         [] => Err(DiagnosticSet::one(Diagnostic::error(
@@ -52,17 +50,7 @@ pub(super) fn source_for_file(
 
 pub(super) fn lookup_source_writer(
     catalog: &CfdSourceCatalog,
-    source: &ResolvedSource,
-) -> Result<Arc<dyn SourceWriter>, DiagnosticSet> {
-    catalog.source_writer(&source.provider_id).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic {
-            code: "WRITE-NO-WRITER".to_string(),
-            stage: "WRITE".to_string(),
-            severity: Severity::Error,
-            message: format!("no writer registered for provider `{}`", source.provider_id),
-            primary: None,
-            related: Vec::new(),
-            contexts: Vec::new(),
-        })
-    })
+    _source: &CfdSource,
+) -> Result<Arc<dyn CfdDocumentWriter>, DiagnosticSet> {
+    Ok(catalog.writer() as Arc<dyn CfdDocumentWriter>)
 }

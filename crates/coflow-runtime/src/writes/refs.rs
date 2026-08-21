@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::api::{
-    DiagnosticSet, DimensionSourceManager, DimensionSourceSchema, CfdSourceCatalog, ResolvedSource,
-    SourceWriter, TableContext, WriteCellRequest, WriteDimensionValueRequest,
+    CfdDimensionWriter, CfdDocumentWriter, CfdSource, CfdSourceCatalog, CfdWriteContext,
+    DiagnosticSet, DimensionSourceSchema, WriteCellRequest, WriteDimensionValueRequest,
     WriteFieldPathSegment,
 };
-use coflow_cft::{CftSchema, RecordKey};
-use coflow_data_model::{
+use crate::data_model::{
     CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
+use coflow_language::{CftSchema, RecordKey};
 
 use super::writer::{lookup_source_writer, source_for_id};
 use crate::indexes::SourceId;
@@ -17,27 +17,27 @@ use crate::ProjectSession;
 
 pub(super) enum ReferenceUpdateAction {
     Source {
-        writer: Arc<dyn SourceWriter>,
-        source: ResolvedSource,
+        writer: Arc<dyn CfdDocumentWriter>,
+        source: CfdSource,
         requests: Vec<OwnedWriteCellRequest>,
         display_path: String,
     },
     Dimension {
-        manager: Arc<dyn DimensionSourceManager>,
+        manager: Arc<dyn CfdDimensionWriter>,
         request: OwnedDimensionWriteRequest,
         display_path: String,
     },
 }
 
 impl ReferenceUpdateAction {
-    pub(super) const fn source(&self) -> &ResolvedSource {
+    pub(super) const fn source(&self) -> &CfdSource {
         match self {
             Self::Source { source, .. } => source,
             Self::Dimension { request, .. } => &request.source,
         }
     }
 
-    pub(super) const fn writer(&self) -> Option<&Arc<dyn SourceWriter>> {
+    pub(super) const fn writer(&self) -> Option<&Arc<dyn CfdDocumentWriter>> {
         match self {
             Self::Source { writer, .. } => Some(writer),
             Self::Dimension { .. } => None,
@@ -56,7 +56,7 @@ impl ReferenceUpdateAction {
         &self,
         project_root: &std::path::Path,
         schema: &CftSchema,
-        model: &coflow_data_model::CfdDataModel,
+        model: &crate::data_model::CfdDataModel,
     ) -> Result<DiagnosticSet, DiagnosticSet> {
         match self {
             Self::Source {
@@ -90,18 +90,21 @@ impl ReferenceUpdateAction {
             Self::Dimension {
                 manager, request, ..
             } => manager
-                .write_dimension_value(TableContext { project_root }, &request.as_request(schema)?)
+                .write_dimension_value(
+                    CfdWriteContext { project_root },
+                    &request.as_request(schema)?,
+                )
                 .map(|_| DiagnosticSet::empty()),
         }
     }
 }
 
 pub(super) struct OwnedDimensionWriteRequest {
-    source: ResolvedSource,
-    source_type: coflow_cft::TypeName,
-    source_field: coflow_cft::FieldName,
-    dimension: coflow_cft::DimensionName,
-    variant: coflow_cft::VariantName,
+    source: CfdSource,
+    source_type: coflow_language::TypeName,
+    source_field: coflow_language::FieldName,
+    dimension: coflow_language::DimensionName,
+    variant: coflow_language::VariantName,
     source_key: RecordKey,
     new_value: CfdValue,
 }
@@ -158,7 +161,7 @@ impl OwnedWriteCellRequest {
     pub(super) fn as_request<'a>(
         &'a self,
         schema: &'a CftSchema,
-        source: &'a ResolvedSource,
+        source: &'a CfdSource,
     ) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
@@ -246,14 +249,7 @@ pub(super) fn reference_update_actions(
                         field.declaring_type, field.name
                     ))
                 })?;
-            let manager = catalog
-                .dimension_source_manager(&source_entry.provider_id)
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension source provider `{}` disappeared before reference rewrite",
-                        source_entry.provider_id
-                    ))
-                })?;
+            let manager = catalog.dimension_source_manager();
             let action_index = actions.len();
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,

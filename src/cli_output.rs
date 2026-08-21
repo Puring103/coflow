@@ -58,15 +58,8 @@ fn write_diagnostic_block(
             display_path(&diagnostic.path, root_dir)
         )?;
     }
-    if let Some(sheet) = &diagnostic.sheet {
-        writeln!(stderr, "{:<8}{sheet}", "sheet")?;
-    }
-    if let Some(cell) = &diagnostic.cell {
-        writeln!(stderr, "{:<8}{cell}", "cell")?;
-    } else {
-        writeln!(stderr, "{:<8}{}", "line", diagnostic.start_line + 1)?;
-        writeln!(stderr, "{:<8}{}", "column", diagnostic.start_character + 1)?;
-    }
+    writeln!(stderr, "{:<8}{}", "line", diagnostic.start_line + 1)?;
+    writeln!(stderr, "{:<8}{}", "column", diagnostic.start_character + 1)?;
     let message = root_dir.map_or_else(
         || diagnostic.message.clone(),
         |root_dir| relativize_message_paths(&diagnostic.message, root_dir),

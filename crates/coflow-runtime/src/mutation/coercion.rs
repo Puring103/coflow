@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
-use coflow_cft::{CftValueType, FieldName, RecordKey};
-use coflow_data_model::{
+use crate::data_model::{
     CfdDictKey, CfdEnumValue, CfdObject, CfdValue, ValueValidationMode, ValueValidationRequest,
 };
+use coflow_language::{CftValueType, FieldName, RecordKey};
 use serde_json::{Map, Value};
 
 use crate::write_rules;

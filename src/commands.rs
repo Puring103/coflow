@@ -2,9 +2,9 @@ use coflow_codegen_api::{
     CodegenInput, CodegenRegistry, CodegenTarget, SourceManifestEntry, SourceOrigin,
 };
 use coflow_codegen_csharp::CsharpCfdCodeGenerator;
-use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_runtime::Project;
 use coflow_runtime::Runtime;
+use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -81,9 +81,7 @@ pub fn build_project(project: &Project) -> Result<CommandOutcome<BuildReport>, D
     }
 }
 
-pub fn build_project_status(
-    project: &Project,
-) -> Result<CommandOutcome<bool>, DiagnosticSet> {
+pub fn build_project_status(project: &Project) -> Result<CommandOutcome<bool>, DiagnosticSet> {
     match generate_project_code(project)? {
         CommandOutcome::Success(_) => Ok(CommandOutcome::Success(false)),
         CommandOutcome::Diagnostics(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
@@ -95,7 +93,12 @@ pub fn generate_project_code(
 ) -> Result<CommandOutcome<CodegenProjectReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
-    let targets = project.config().codegen.iter().enumerate().collect::<Vec<_>>();
+    let targets = project
+        .config()
+        .codegen
+        .iter()
+        .enumerate()
+        .collect::<Vec<_>>();
     if targets.is_empty() && diagnostics.is_empty() {
         diagnostics.push(project_diagnostic(
             project.config_path(),
@@ -120,13 +123,15 @@ pub fn generate_project_code(
         })
         .collect::<Vec<_>>();
     let mut generators = CodegenRegistry::default();
-    generators.register(CsharpCfdCodeGenerator).map_err(|error| {
-        DiagnosticSet::one(project_diagnostic(
-            project.config_path(),
-            format!("failed to register C# code generator: {error}"),
-            ["codegen"],
-        ))
-    })?;
+    generators
+        .register(CsharpCfdCodeGenerator)
+        .map_err(|error| {
+            DiagnosticSet::one(project_diagnostic(
+                project.config_path(),
+                format!("failed to register C# code generator: {error}"),
+                ["codegen"],
+            ))
+        })?;
     let mut reports = Vec::with_capacity(targets.len());
     for (index, target) in targets {
         let generator = generators.get(&target.language).ok_or_else(|| {
@@ -173,7 +178,9 @@ pub fn generate_project_code(
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    Ok(CommandOutcome::Success(CodegenProjectReport { targets: reports }))
+    Ok(CommandOutcome::Success(CodegenProjectReport {
+        targets: reports,
+    }))
 }
 
 fn publish_code_files(
@@ -187,7 +194,10 @@ fn publish_code_files(
         .map_err(|error| format!("failed to create output parent: {error}"))?;
     let staging = parent.join(format!(
         ".{}.cfd-staging-{}",
-        directory.file_name().and_then(|name| name.to_str()).unwrap_or("generated"),
+        directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("generated"),
         std::process::id()
     ));
     if staging.exists() {
@@ -207,7 +217,10 @@ fn publish_code_files(
     }
     let backup = parent.join(format!(
         ".{}.cfd-backup-{}",
-        directory.file_name().and_then(|name| name.to_str()).unwrap_or("generated"),
+        directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("generated"),
         std::process::id()
     ));
     if backup.exists() {

@@ -222,6 +222,7 @@ public static class CfdParser
         private string ParseIdentifier(string expected)
         {
             SkipTrivia();
+            if (Match('"')) return ParseString();
             var builder = new StringBuilder();
             while (!End)
             {

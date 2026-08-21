@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use crate::api::{Diagnostic, DiagnosticSet, CfdProviderBindings, Severity, WriterCapabilities};
+use crate::api::{Diagnostic, DiagnosticSet, Severity, WriterCapabilities};
 use crate::catalog::CfdSourceCatalog;
-use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdDataModel;
+use crate::data_model::CfdDataModel;
+use crate::data_model::{CfdPathSegment, CfdValue};
 use crate::project::Project;
+use coflow_language::CftSchema;
 
 use crate::project_schema::{
     open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
@@ -204,12 +204,6 @@ impl Runtime {
         }
     }
 
-    /// Creates a runtime from the fixed CFD catalog.
-    #[must_use]
-    pub const fn with_catalog(catalog: CfdSourceCatalog) -> Self {
-        Self { catalog }
-    }
-
     /// Builds a schema-only session without loading project data.
     ///
     /// # Errors
@@ -295,20 +289,7 @@ impl Runtime {
 }
 
 fn fixed_cfd_catalog() -> CfdSourceCatalog {
-    cfd_source_catalog()
-        .unwrap_or_else(|_| CfdSourceCatalog::from_bindings(CfdProviderBindings::default()))
-}
-
-/// Builds the only source catalog supported by the runtime: the concrete CFD
-/// parser and writer. Hosts do not select providers by input format.
-pub fn cfd_source_catalog() -> Result<CfdSourceCatalog, String> {
-    let mut bindings = CfdProviderBindings::default();
-    bindings
-        .register_bundle(
-            crate::cfd_loader::cfd_binding_bundle().map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(CfdSourceCatalog::from_bindings(bindings))
+    CfdSourceCatalog::default()
 }
 
 /// Read capability for a built project.
@@ -386,7 +367,6 @@ impl BuildProjectSession {
     pub fn into_diagnostics(self) -> DiagnosticSet {
         self.session.into_diagnostics()
     }
-
 }
 
 #[derive(Debug)]
@@ -415,12 +395,12 @@ impl WriteProjectSession {
         &self.session.project
     }
 
-    /// Render one effective field value using the table cell grammar.
+    /// Render one effective field value using the CFD value grammar.
     ///
     /// # Errors
     ///
     /// Returns diagnostics when the field path does not exist or its value
-    /// cannot be represented by the table cell grammar.
+    /// cannot be represented by the CFD value grammar.
     pub fn render_cell_text(
         &self,
         coordinate: &RecordCoordinate,
@@ -443,7 +423,7 @@ impl WriteProjectSession {
         crate::mutation::render_cell_text_value(value)
     }
 
-    /// Parse table cell text using the schema type at one field path.
+    /// Parse CFD value text using the schema type at one field path.
     ///
     /// # Errors
     ///
@@ -466,8 +446,7 @@ impl WriteProjectSession {
 
     #[must_use]
     pub fn writer_capabilities_for_file(&self, file: &str) -> WriterCapabilities {
-        self.queries()
-            .writer_capabilities_for_file(&self.catalog, file)
+        self.queries().writer_capabilities_for_file(file)
     }
 
     /// Build a schema-shaped default record value.
@@ -518,7 +497,7 @@ impl WriteProjectSession {
         report
     }
 
-    /// Writes one field and returns its provider outcome.
+    /// Writes one field and returns its writer outcome.
     ///
     /// # Errors
     ///
@@ -601,14 +580,12 @@ impl WriteProjectSession {
     pub fn insert_record(
         &mut self,
         file: &str,
-        sheet: Option<&str>,
         record_key: &str,
         actual_type: &str,
         fields: &BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::InsertRecord {
             file: file.to_string(),
-            sheet: sheet.map(ToOwned::to_owned),
             actual_type: actual_type.to_string(),
             key: record_key.to_string(),
             fields: MutationFields::Cfd(fields.clone()),
@@ -638,7 +615,7 @@ impl WriteProjectSession {
     /// # Errors
     ///
     /// Returns diagnostics when either record is missing, the records belong
-    /// to different containers, or the provider cannot persist record order.
+    /// to different containers, or the writer cannot persist record order.
     pub fn swap_records(
         &mut self,
         first: &RecordCoordinate,
@@ -656,7 +633,7 @@ impl WriteProjectSession {
     /// # Errors
     ///
     /// Returns diagnostics when the record is missing, the index is outside
-    /// the container, or the provider cannot persist record order.
+    /// the container, or the writer cannot persist record order.
     pub fn move_record(
         &mut self,
         record: &RecordCoordinate,
@@ -680,13 +657,11 @@ impl WriteProjectSession {
         &mut self,
         record: &RecordCoordinate,
         destination_file: &str,
-        destination_sheet: Option<&str>,
         target_index: usize,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::TransferRecord {
             record: record.clone(),
             destination_file: destination_file.to_string(),
-            destination_sheet: destination_sheet.map(ToOwned::to_owned),
             target_index,
             source_file: None,
         })

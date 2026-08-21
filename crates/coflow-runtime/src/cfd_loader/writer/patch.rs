@@ -1,9 +1,9 @@
 use crate::api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
-use coflow_cfd::ast::CfdRecord as AstRecord;
-use coflow_cfd::CfdAst;
-use coflow_cft::CftSchema;
-use coflow_cft::Span;
-use coflow_data_model::CfdValue;
+use crate::data_model::CfdValue;
+use coflow_language::cfd::ast::CfdRecord as AstRecord;
+use coflow_language::cfd::CfdAst;
+use coflow_language::CftSchema;
+use coflow_language::Span;
 use std::collections::BTreeMap;
 
 use super::diag;
@@ -159,7 +159,7 @@ pub(super) fn validate_record_key(key: &str) -> Result<(), DiagnosticSet> {
             "record key must not be empty",
         )));
     }
-    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::record_key_ident_error(key) {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("record key `{key}` is invalid: {reason}"),

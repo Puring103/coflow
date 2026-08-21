@@ -1,12 +1,11 @@
 use crate::api::{
-    byte_range, DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
-    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    RewriteDimensionRecordRequest, TableContext, WriteDimensionValueRequest,
+    byte_range, CfdDimensionWriter, CfdDimensionWriterDescriptor, CfdWriteContext, Diagnostic,
+    DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceLoadResult, DimensionSourceRequest,
+    DimensionSourceResult, RewriteDimensionRecordRequest, WriteDimensionValueRequest,
 };
-use coflow_cfd::parse_cfd;
-use coflow_cft::{CftValueType, RecordKey};
-use coflow_data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
+use crate::data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
+use coflow_language::cfd::parse_cfd;
+use coflow_language::{CftValueType, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::Path;
@@ -14,20 +13,20 @@ use std::path::Path;
 use super::render::serialize_value;
 use super::{diag, raw_span, CfdWriter};
 
-pub(super) static CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManagerDescriptor =
-    DimensionSourceManagerDescriptor {
+pub(crate) static CFD_DIMENSION_WRITER_DESCRIPTOR: CfdDimensionWriterDescriptor =
+    CfdDimensionWriterDescriptor {
         id: "cfd",
         display_name: "Coflow data text dimension source",
     };
 
-impl DimensionSourceManager for CfdWriter {
-    fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
-        &CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+impl CfdDimensionWriter for CfdWriter {
+    fn descriptor(&self) -> &'static CfdDimensionWriterDescriptor {
+        &CFD_DIMENSION_WRITER_DESCRIPTOR
     }
 
     fn load_dimension_source(
         &self,
-        _ctx: TableContext<'_>,
+        _ctx: CfdWriteContext<'_>,
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -125,16 +124,9 @@ impl DimensionSourceManager for CfdWriter {
         }
     }
 
-    fn source_options(
-        &self,
-        _request: &DimensionSourceOptionsRequest<'_>,
-    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
-        super::super::options::decode_cfd_source_options(&serde_json::Value::Null)
-    }
-
     fn write_dimension_value(
         &self,
-        _ctx: TableContext<'_>,
+        _ctx: CfdWriteContext<'_>,
         request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -172,7 +164,7 @@ impl DimensionSourceManager for CfdWriter {
 
     fn rewrite_dimension_record(
         &self,
-        _ctx: TableContext<'_>,
+        _ctx: CfdWriteContext<'_>,
         request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         if request.schema.source_type.is_singleton {
@@ -207,7 +199,7 @@ impl DimensionSourceManager for CfdWriter {
 
     fn sync_dimension_source(
         &self,
-        _ctx: TableContext<'_>,
+        _ctx: CfdWriteContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -296,7 +288,7 @@ fn read_existing_dimension_cfd(
             return Err(DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
                 format!(
-                    "dimension source `{}` contains unmanaged id `{}`; variant tables can only edit existing records",
+                    "dimension source `{}` contains unmanaged id `{}`; variant records can only edit existing records",
                     path.display(),
                     record.key
                 ),
@@ -306,7 +298,7 @@ fn read_existing_dimension_cfd(
             return Err(DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
                 format!(
-                    "dimension source `{}` contains duplicate id `{}`; variant tables can only edit existing records",
+                    "dimension source `{}` contains duplicate id `{}`; variant records can only edit existing records",
                     path.display(),
                     record.key
                 ),

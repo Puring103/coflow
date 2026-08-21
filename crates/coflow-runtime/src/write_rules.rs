@@ -1,9 +1,9 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchema, CftValueType, TypeName};
-use coflow_data_model::{
+use crate::data_model::{
     CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
     ValueValidationRequest,
 };
+use coflow_language::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 use crate::ProjectSession;
@@ -13,7 +13,7 @@ fn validate_record_key_for_stage(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::record_key_ident_error(key) {
         return Err(one_error(
             code,
             stage,
@@ -187,12 +187,12 @@ pub(crate) fn validate_value_semantics(
         session,
         pending_records,
     };
-    coflow_data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
+    crate::data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
         let reference_error = matches!(
             err.kind(),
-            coflow_data_model::CfdValueSemanticErrorKind::RefTargetNotFound
-                | coflow_data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
-                | coflow_data_model::CfdValueSemanticErrorKind::MissingRequiredField
+            crate::data_model::CfdValueSemanticErrorKind::RefTargetNotFound
+                | crate::data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
+                | crate::data_model::CfdValueSemanticErrorKind::MissingRequiredField
         );
         let code = if reference_error {
             reference_code
@@ -200,7 +200,7 @@ pub(crate) fn validate_value_semantics(
             value_code
         };
         let message = if code == "MUTATION-VALUE"
-            && err.kind() == coflow_data_model::CfdValueSemanticErrorKind::TypeMismatch
+            && err.kind() == crate::data_model::CfdValueSemanticErrorKind::TypeMismatch
         {
             format!(
                 "value does not match expected schema type: {}",
@@ -220,7 +220,7 @@ pub(crate) fn ensure_object_type_assignable(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    coflow_data_model::validate_object_type_assignable(schema, expected_type, actual_type)
+    crate::data_model::validate_object_type_assignable(schema, expected_type, actual_type)
         .map_err(|err| one_error(code, stage, err.message()))
 }
 
@@ -240,7 +240,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
         self.session
             .model
             .record(id)
-            .map(coflow_data_model::CfdRecord::actual_type)
+            .map(crate::data_model::CfdRecord::actual_type)
     }
 
     fn pending_record_actual_type(&self, inheritance_root: &TypeName, key: &str) -> Option<&str> {

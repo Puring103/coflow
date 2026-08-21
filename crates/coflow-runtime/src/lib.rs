@@ -15,22 +15,22 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+mod api;
+mod catalog;
+mod cfd_loader;
 #[cfg(feature = "internal-check-bench")]
 #[doc(hidden)]
 pub mod check_benchmark_support;
-mod api;
-mod catalog;
+pub mod checker;
 mod checks;
-mod cfd_loader;
-mod data_files;
-mod data_read;
+pub mod data_model;
 mod dimensions;
 mod files;
 mod indexes;
 mod load;
 mod mutation;
-mod project_schema;
 mod project;
+mod project_schema;
 mod query;
 mod records;
 mod runtime;
@@ -44,29 +44,37 @@ mod statistics;
 mod write_rules;
 mod writes;
 
-pub use data_files::{
-    create_data_file, sync_data_header, DataCreateFileOptions, DataFileReport,
-    DataSyncHeaderOptions,
-};
 pub use api::*;
-pub use catalog::CfdSourceCatalog;
 pub use cfd_loader::{
-    load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextDiagnostic, CfdWriter,
-    CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
-    CFD_LOADER_DESCRIPTOR,
+    load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextDiagnostic, CfdTextDiagnostics,
+    CfdTextErrorCode, CfdTextLoadError, CfdTextSpan, CfdWriter,
 };
-pub use project::*;
-pub use data_read::{
-    data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
-    DataRecordInfo, DataRecordSummary, DataSourceInfo, DataSourcesReport,
+pub use checker::{
+    execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
+    CheckOutput, CheckProjection, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,
+};
+pub use data_model::cell_value;
+pub use data_model::serde_i64;
+pub use data_model::{
+    validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
+    CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
+    CfdErrorCode, CfdFormattedString, CfdLabel, CfdModelBuildOutput, CfdModelBuilder, CfdObject,
+    CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable, CfdValue,
+    CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
+    DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
+    LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
+    LoadedRecordDraft, LoadedValueDraft, MappedDiagnostic, MappedLabel, PendingInsertRef,
+    RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan, ValueValidationMode,
+    ValueValidationRequest,
 };
 pub use dimensions::{DimensionFieldInfo, DimensionInfo};
 pub use files::FileTreeNode;
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
+pub use project::*;
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-pub use coflow_data_model::{CfdPathSegment, RecordCoordinate};
+pub use coflow_language::StructuralLimits;
+pub use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
@@ -81,8 +89,7 @@ pub use records::{
     RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
-    cfd_source_catalog, BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime,
-    WriteProjectSession,
+    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
 };
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,

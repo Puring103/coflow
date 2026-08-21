@@ -7,23 +7,24 @@ the project configuration, compiled CFT schema, CFD data model, diagnostics, and
 indexes to one revision. Hosts consume purpose-specific projections of a generation; they do not
 traverse its internal indexes or model identifiers directly.
 
-## Source resolution
+## CFD input resolution
 
-Source resolution turns a project-facing source configuration into provider-owned typed options
-and one or more concrete resolved sources. It owns provider selection, option decoding, provider
-identity contracts, directory expansion, target location overrides, and project-config diagnostics.
+Input resolution turns project paths into the fixed CFD file set. It recursively discovers `.cfd`
+files under configured directories, excludes generated dimension files, assigns source spans, and
+emits project diagnostics. There is no provider selection, source option decoding, or format
+competition.
 
 ## Mutation plan
 
-A mutation plan is the validated execution plan for one batch of record changes. It resolves write
-targets, sources, writers, provider request facts, and reference rewrite actions once. Preflight,
+A mutation plan is the validated execution plan for one batch of record changes. It resolves CFD
+write targets, source spans, writer requests, and reference rewrite actions once. Preflight,
 transaction enlistment, and staged writes consume the same plan.
 
-## Artifact release
+## Code artifact release
 
-An artifact release is the ordered validation, generation, staging, verification, and publication
-of data or code artifacts. Build, export, and codegen are command adapters over the same release
-lifecycle. Publication activates an immutable artifact generation through the manifest.
+A code artifact release is the ordered validation, target-language generation, staging,
+verification, and publication of source files. `build` and `codegen` share this lifecycle; no data
+export artifact is produced.
 
 ## Editor generation
 
@@ -37,8 +38,8 @@ A graph layout is the filtered, generation-local projection of record reference 
 nodes, forward/back edges, and positions. Field selection, reachability, cycle classification, card
 geometry, and ELK graph construction belong to one pure module; browser workers are layout adapters.
 
-## Provider output
+## Generator output
 
-A provider output is an in-memory artifact set generated from schema/model input and provider-owned
-decoded options. Filesystem destinations, staging directories, manifests, and publication belong to
-the artifact release, not to the provider output contract.
+A generator output is an in-memory set of target-language source files produced from one immutable
+schema/model snapshot and target options. Filesystem destinations, staging directories, manifests,
+and publication belong to the code artifact release, not to a generator.

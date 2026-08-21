@@ -18,7 +18,6 @@ import {
 } from './wire'
 
 const MOCK_CFD_CAPS: WriterCapabilities = {
-  provider_id: 'cfd',
   can_edit_field: true,
   can_edit_key: true,
   can_insert_record: true,

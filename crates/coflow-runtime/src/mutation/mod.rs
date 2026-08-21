@@ -1,6 +1,6 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftField, CftSchema};
-use coflow_data_model::CfdEnumValue;
+use crate::data_model::CfdEnumValue;
+use coflow_language::{CftField, CftSchema};
 
 use crate::ProjectSession;
 

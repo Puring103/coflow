@@ -5,10 +5,10 @@
 //! (schema shape and enum integer value) is collected into
 //! `FieldAnnotation` on the side.
 
-use coflow_data_model::{CfdRecord, CfdValue};
 use coflow_runtime::{
     dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
 };
+use coflow_runtime::{CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::editor::session::Diagnostics;
@@ -275,8 +275,8 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
 
 #[cfg(test)]
 mod tests {
-    use coflow_data_model::CfdValue;
     use coflow_runtime::value_summary;
+    use coflow_runtime::CfdValue;
 
     #[test]
     fn string_summary_preserves_ascii_truncation_behavior() {

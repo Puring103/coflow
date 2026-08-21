@@ -84,14 +84,13 @@ in this file or in `docs/`.
 
 ### Internal Crate Boundaries
 
-- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, CFD resolve/load/write, data model, checks, diagnostics, and source/record/file indexes. Its public API exposes `CfdSourceCatalog`; the provider traits used to implement CFD are runtime-private.
-- `coflow-data-model` owns source-neutral record/value semantics and the schema-guided table cell value grammar consumed by runtime and table providers.
-- `coflow-structure` owns domain-neutral structural limits and traversal/work accounting shared by parsers, compilers, and evaluators.
+- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, data model, checks, diagnostics, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
+- `coflow-language` owns the schema-guided CFD value grammar and structural limits shared by parsers, compilers, and evaluators.
 - The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
 - The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through staging and active-manifest publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.
 - `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-runtime` and keeps only editor wire DTOs, graph/table views, and write command bridging.
 - `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
-- Code generation contracts live in `coflow-codegen-api`; data export providers are intentionally absent.
+- Code generation contracts live in `coflow-codegen-api`; data export providers and serialized data artifacts are intentionally absent.
 
 ### Website Reference Documents
 
@@ -104,8 +103,6 @@ Public reference documentation lives under `website/docs/docs/reference/`:
 - `website/docs/docs/reference/05-data-model.md`: data model.
 - `website/docs/docs/reference/11-schema-api.md`: schema API.
 - `website/docs/docs/reference/02-project-pipeline.md`: project pipeline.
-- `website/docs/docs/reference/04-sources/`: data sources, providers, and cell value syntax.
-- `website/docs/docs/reference/06-export/`: JSON and MessagePack export formats.
 - `website/docs/docs/reference/07-codegen/01-csharp.md`: C# code generation.
 - `website/docs/docs/reference/09-diagnostics/01-diagnostics.md`: diagnostics format and handling.
 - `website/docs/docs/reference/09-diagnostics/02-codes.md`: diagnostics error code index.

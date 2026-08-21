@@ -385,8 +385,7 @@ version = "0.9.1"
 dependencies = [
  "atomicwrites",
  "coflow",
- "coflow-cft",
- "coflow-data-model",
+ "coflow-language",
  "coflow-runtime",
  "extension-api",
  "notify",
@@ -514,10 +513,9 @@ version = "0.9.1"
 dependencies = [
  "atomicwrites",
  "clap",
- "coflow-cft",
  "coflow-codegen-api",
  "coflow-codegen-csharp",
- "coflow-data-model",
+ "coflow-language",
  "coflow-lsp",
  "coflow-runtime",
  "dirs",
@@ -530,38 +528,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-cfd"
-version = "0.9.1"
-dependencies = [
- "coflow-structure",
-]
-
-[[package]]
-name = "coflow-cft"
-version = "0.9.1"
-dependencies = [
- "coflow-structure",
- "regex",
- "serde",
- "unicode-ident",
-]
-
-[[package]]
-name = "coflow-checker"
-version = "0.9.1"
-dependencies = [
- "coflow-cft",
- "coflow-data-model",
- "coflow-structure",
- "regex",
-]
-
-[[package]]
 name = "coflow-codegen-api"
 version = "0.9.1"
 dependencies = [
- "coflow-cft",
- "coflow-data-model",
+ "coflow-language",
+ "coflow-runtime",
  "serde",
  "serde_json",
 ]
@@ -570,9 +541,9 @@ dependencies = [
 name = "coflow-codegen-csharp"
 version = "0.9.1"
 dependencies = [
- "coflow-cft",
  "coflow-codegen-api",
- "coflow-data-model",
+ "coflow-language",
+ "coflow-runtime",
  "serde",
  "serde_json",
  "tera",
@@ -580,32 +551,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-data-model"
-version = "0.9.1"
-dependencies = [
- "coflow-cft",
- "coflow-structure",
- "serde",
- "serde_json",
- "ts-rs",
- "unicode-ident",
-]
-
-[[package]]
 name = "coflow-language"
 version = "0.9.1"
 dependencies = [
- "coflow-cfd",
- "coflow-cft",
- "coflow-structure",
+ "regex",
+ "serde",
+ "unicode-ident",
 ]
 
 [[package]]
 name = "coflow-lsp"
 version = "0.9.1"
 dependencies = [
- "coflow-cfd",
- "coflow-cft",
+ "coflow-language",
  "coflow-runtime",
  "serde_json",
 ]
@@ -614,21 +572,16 @@ dependencies = [
 name = "coflow-runtime"
 version = "0.9.1"
 dependencies = [
- "coflow-cfd",
- "coflow-cft",
- "coflow-checker",
- "coflow-data-model",
+ "coflow-language",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
  "tempfile",
  "ts-rs",
+ "unicode-ident",
  "walkdir",
 ]
-
-[[package]]
-name = "coflow-structure"
-version = "0.9.1"
 
 [[package]]
 name = "colorchoice"

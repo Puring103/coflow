@@ -4,8 +4,8 @@
 //! one immutable snapshot and returns only source artifacts; publication and
 //! filesystem access stay in the application layer.
 
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdDataModel;
+use coflow_language::CftSchema;
+use coflow_runtime::CfdDataModel;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -91,7 +91,9 @@ impl CodeArtifactSet {
                 ));
             }
             if previous == Some(file.relative_path.as_path()) {
-                return Err(CodegenError::DuplicateArtifactPath(file.relative_path.clone()));
+                return Err(CodegenError::DuplicateArtifactPath(
+                    file.relative_path.clone(),
+                ));
             }
             previous = Some(&file.relative_path);
         }
@@ -123,7 +125,11 @@ impl fmt::Display for CodegenError {
                 write!(formatter, "invalid code artifact path `{}`", path.display())
             }
             Self::DuplicateArtifactPath(path) => {
-                write!(formatter, "duplicate code artifact path `{}`", path.display())
+                write!(
+                    formatter,
+                    "duplicate code artifact path `{}`",
+                    path.display()
+                )
             }
             Self::Message(message) => formatter.write_str(message),
         }

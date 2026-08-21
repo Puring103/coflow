@@ -58,6 +58,16 @@ pub struct CsharpType {
     pub base_constructor_call: Option<String>,
     pub assignments: Vec<CsharpConstructorAssignment>,
     pub equality: Option<CsharpEquality>,
+    pub loader_fields: Vec<CsharpLoaderField>,
+    pub loader_id_type: Option<String>,
+    pub loader_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpLoaderField {
+    pub source_name: String,
+    pub property_name: String,
+    pub reader_expression: String,
 }
 
 #[derive(Debug, Serialize)]

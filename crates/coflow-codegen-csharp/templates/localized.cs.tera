@@ -56,9 +56,9 @@ namespace {{ project.namespace }}
 
     /// <summary>
     /// Pluggable backend for <see cref="Localization"/>. Implementations are
-    /// expected to read a translation table (CSV / runtime asset) and return
-    /// the language-specific value, or <paramref name="defaultValue"/> when
-    /// the key is missing.
+    /// expected to resolve the key from the host application's localization
+    /// service and return the language-specific value, or
+    /// <paramref name="defaultValue"/> when the key is missing.
     /// </summary>
     public interface LocalizationProvider
     {

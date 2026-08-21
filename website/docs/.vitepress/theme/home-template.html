@@ -242,12 +242,12 @@
               </div>
               <div class="stage-demo">
                 <div class="diagnostic-showcase terminal-diagnostics">
-                  <div class="code-window"><div class="win-bar"><span class="win-file">Excel</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
+                  <div class="code-window"><div class="win-bar"><span class="win-file">CFD</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
 <span class="tok-dim">----------------------------------------</span>
-[<span class="tok-err">CELL-TypeMismatch</span>] [<span class="tok-type">CELL</span>]
-<span class="tok-key">file</span>    data/items.xlsx
-<span class="tok-key">sheet</span>   Item
-<span class="tok-key">cell</span>    B2
+[<span class="tok-err">CFD-TEXT-TypeMismatch</span>] [<span class="tok-type">CFD</span>]
+<span class="tok-key">file</span>    data/items.cfd
+<span class="tok-key">record</span> Item.fireball
+<span class="tok-key">field</span>  power
 <span class="tok-key">message</span>
   failed to parse `Item.level` cell:
   expected int</code></pre></div>
@@ -388,7 +388,7 @@
                   <div class="live-grid"><b>Key</b><b>power</b><b>tags</b><strong>fireball</strong><span class="live-error">-5 <i>1</i></span><span>[burn]</span><strong>frost_nova</strong><span>28</span><span class="live-warning">[ice, ice] <i>1</i></span></div>
                   <div class="live-diag-head"><span>诊断</span><em>1</em><i>1</i></div>
                   <div class="live-diag-row"><i>×</i><span>技能威力不能为负</span><code>CFD-CHECK-007</code><b>power</b></div>
-                  <div class="live-status"><span>items.xlsx</span><span>实时检查</span><b>● 已同步</b></div>
+                  <div class="live-status"><span>items.cfd</span><span>实时检查</span><b>● 已同步</b></div>
                 </div>
               </div>
             </li>
@@ -398,12 +398,12 @@
               <div class="stage-marker"><span>09</span></div>
               <div class="stage-text">
                 <p class="stage-tag">DELIVER</p>
-                <h3 data-en="Multiple languages and data formats">多语言，多数据类型交付</h3>
-                <p data-en="Export one configuration into different data formats and programming languages.">一份配置可以导出为各种不同的数据和编程语言。</p>
+                <h3 data-en="Multiple languages, one CFD source">多语言代码生成</h3>
+                <p data-en="Load one CFD source directly and generate typed code for every target language.">同一份 CFD 数据直接加载，并为每个目标语言生成类型安全的代码。</p>
               </div>
               <div class="stage-demo">
                 <div class="editor-chrome artifact-view">
-                  <div class="artifact-group"><header>数据文件</header><span><b>JSON</b><code>skills.json</code></span><span><b>MessagePack</b><code>skills.bytes</code></span></div>
+                  <div class="artifact-group"><header>输入</header><span><b>CFD</b><code>data/skills.cfd</code></span></div>
                   <div class="artifact-group"><header>代码文件</header><span><b>C#</b><code>Skill.cs</code></span><span><b>TypeScript</b><code>Skill.ts</code></span></div>
                   <footer><i></i> Build complete · Published atomically</footer>
                 </div>
@@ -438,42 +438,18 @@
               <div class="stage-marker"><span>03</span></div>
               <div class="stage-text">
                 <p class="stage-tag">UNIFY</p>
-                <h3 data-en="Multiple sources, one configuration model">多种数据，统一配置</h3>
-                <p data-en="Bring different data sources into one consistent model. Use Excel for tabular data, CFD for complex nested structures, and CSV or JSON for version-friendly workflows.">将不同类型的数据统合成一致的模型，统一配置。用 Excel 表达同构数据，用专门设计的 CFD 语言配置复杂嵌套数据，用 CSV 与 JSON 文件配置，利于版本管理。</p>
+                <h3 data-en="One CFD source, one configuration model">CFD 数据，统一配置</h3>
+                <p data-en="Use the purpose-built CFD language for nested, version-friendly configuration.">使用专门设计的 CFD 语言表达可版本管理的嵌套配置。</p>
               </div>
               <div class="stage-demo">
-                <div class="card-stack code-stack source-stack" data-cardstack aria-label="同一条数据的四种配置文件">
-                  <div class="stack-tabs" role="tablist">
-                    <button type="button" data-view="excel" class="is-active">Excel</button>
-                    <button type="button" data-view="cfd">CFD</button>
-                    <button type="button" data-view="csv">CSV</button>
-                    <button type="button" data-view="json">JSON</button>
-                  </div>
+                <div class="card-stack code-stack source-stack" data-cardstack aria-label="CFD 配置文件">
                   <div class="stack-deck">
-                    <article class="stack-card code-card spreadsheet-card" data-card="excel" data-offset="0">
-                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.xlsx · Skill</span><span class="win-lang">EXCEL</span></div><div class="sheet-grid"><b></b><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><i>1</i><strong>key</strong><strong>name</strong><strong>element</strong><strong>power</strong><strong>cooldown</strong><i>2</i><span>fireball</span><span>火球术</span><span>Fire</span><span>35</span><span>3.0</span><i>3</i><span>frost_nova</span><span>冰霜新星</span><span>Ice</span><span>28</span><span>5.0</span><i>4</i><span>heal</span><span>治疗术</span><span>Holy</span><span>20</span><span>2.5</span></div></div>
-                    </article>
-                    <article class="stack-card code-card" data-card="cfd" data-offset="1">
+                    <article class="stack-card code-card" data-card="cfd" data-offset="0">
                       <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.cfd</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code><span class="tok-type">Skill</span> fireball {
   name = <span class="tok-string">"火球术"</span>
   element = <span class="tok-type">Fire</span>
   power = <span class="tok-number">35</span>
   cooldown = <span class="tok-number">3.0</span>
-}</code></pre></div>
-                    </article>
-                    <article class="stack-card code-card" data-card="csv" data-offset="2">
-                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.csv</span><span class="win-lang">CSV</span></div><pre class="code-sample"><code><span class="tok-key">key,name,element,power,cooldown</span>
-fireball,火球术,Fire,35,3.0
-frost_nova,冰霜新星,Ice,28,5.0
-heal,治疗术,Holy,20,2.5</code></pre></div>
-                    </article>
-                    <article class="stack-card code-card" data-card="json" data-offset="-1">
-                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.json</span><span class="win-lang">JSON</span></div><pre class="code-sample"><code>{
-  <span class="tok-string">"key"</span>: <span class="tok-string">"fireball"</span>,
-  <span class="tok-string">"name"</span>: <span class="tok-string">"火球术"</span>,
-  <span class="tok-string">"element"</span>: <span class="tok-string">"Fire"</span>,
-  <span class="tok-string">"power"</span>: <span class="tok-number">35</span>,
-  <span class="tok-string">"cooldown"</span>: <span class="tok-number">3.0</span>
 }</code></pre></div>
                     </article>
                   </div>
@@ -522,8 +498,8 @@ name: <span class="tok-type">string</span>;</code></pre></section>
                 <div class="editor-chrome cli-demo" aria-label="常用 Coflow 命令">
                   <div><span>$</span><code>coflow skill install -g</code><em>安装 Skill</em></div>
                   <div><span>$</span><code>coflow schema inspect Skill</code><em>理解类型</em></div>
-                  <div><span>$</span><code>coflow data get Skill.fireball</code><em>读取数据</em></div>
-                  <div><span>$</span><code>coflow data patch --patch change.json</code><em>准确修改</em></div>
+                  <div><span>$</span><code>coflow codegen .</code><em>生成目标代码</em></div>
+                  <div><span>$</span><code>coflow build .</code><em>校验并发布</em></div>
                   <div><span>$</span><code>coflow check .</code><em>验证结果</em></div>
                 </div>
               </div>
@@ -552,10 +528,10 @@ name: <span class="tok-type">string</span>;</code></pre></section>
                 <path class="lane-flow lane-flow-p" d="M198 150 H818" />
               </svg>
               <div class="flow-node role-engineer"><i></i><div><b data-en="Programmers">程序</b><small>CFT · check</small></div></div>
-              <div class="flow-node role-planner"><i></i><div><b data-en="Designers">策划</b><small>Excel · CSV · CFD</small></div></div>
+              <div class="flow-node role-planner"><i></i><div><b data-en="Designers">策划</b><small>CFD Editor · CFD</small></div></div>
               <div class="flow-node role-agent"><i></i><div><b>AI</b><small>CLI · Skills</small></div></div>
               <div class="flow-core"><b>Coflow</b></div>
-              <div class="flow-output"><div><b>Runtime</b><small>JSON · MsgPack · C#</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></div>
+              <div class="flow-output"><div><b>Runtime</b><small>CFD · C# · 多语言</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></div>
             </div></div>
           </figure>
           <div class="role-cards" data-reveal>
@@ -568,8 +544,8 @@ name: <span class="tok-type">string</span>;</code></pre></section>
             <article class="role-card role-planner">
               <span class="role-bar"></span>
               <h3 data-en="Designers">策划</h3>
-              <p class="role-entry">Excel · CSV · CFD</p>
-              <p data-en="Keep familiar file formats or use the purpose-built editor. Changes are validated immediately and errors point to exact cells.">沿用熟悉的文件格式，或用专门设计的编辑器编写配置；改动实时校验，错误精确定位到单元格。</p>
+              <p class="role-entry">CFD Editor · CFD</p>
+              <p data-en="Use the purpose-built editor and CFD text format. Changes are validated immediately and errors point to exact spans.">使用专门设计的编辑器和 CFD 文本格式；改动实时校验，错误精确定位到文本范围。</p>
             </article>
             <article class="role-card role-agent">
               <span class="role-bar"></span>

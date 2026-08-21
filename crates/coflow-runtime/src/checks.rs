@@ -6,9 +6,9 @@ mod store;
 use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
-use coflow_cft::CftSchema;
-use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
-use coflow_data_model::{CfdDataModel, RecordOrigin};
+use crate::checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
+use crate::data_model::{CfdDataModel, RecordOrigin};
+use coflow_language::CftSchema;
 
 use crate::indexes::DiagnosticLogicalLocation;
 use impact::CheckImpact;
@@ -86,8 +86,8 @@ fn execute_plan(
         Ok(tasks) => execute_checks(schema, model, tasks, limits),
         Err(error) => CheckOutput {
             results: Vec::new(),
-            request_diagnostics: vec![coflow_data_model::CfdDiagnostic::error(
-                coflow_data_model::CfdErrorCode::CheckBudgetExceeded,
+            request_diagnostics: vec![crate::data_model::CfdDiagnostic::error(
+                crate::data_model::CfdErrorCode::CheckBudgetExceeded,
                 format!("check task planning limit {} exceeded", error.max_tasks),
             )
             .into()],
@@ -104,16 +104,16 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use crate::checker::{CheckProjection, CheckTarget};
     use crate::checks::impact::{
         ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
     };
+    use crate::data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use crate::RecordCoordinate;
-    use coflow_cft::{
+    use coflow_language::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CheckOwner, DimensionName,
         FieldName, ModuleId, RecordKey, TypeName, VariantName,
     };
-    use coflow_checker::{CheckProjection, CheckTarget};
-    use coflow_data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use std::collections::BTreeSet;
 
     fn schema(source: &str) -> CftSchema {

@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::api::{source_location_display_path, DiagnosticSet, FlatDiagnostic, ResolvedSource};
-use coflow_data_model::RecordOrigin;
-use coflow_data_model::{CfdDataModel, CfdRecordId};
+use crate::api::{source_location_display_path, CfdSource, DiagnosticSet, FlatDiagnostic};
+use crate::data_model::RecordOrigin;
+use crate::data_model::{CfdDataModel, CfdRecordId};
 
 use crate::RecordCoordinate;
 
@@ -193,37 +193,36 @@ impl DiagnosticLogicalLocation {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SourceIndex {
-    pub(crate) entries: Vec<ResolvedSourceEntry>,
+    pub(crate) entries: Vec<CfdSourceEntry>,
 }
 
 impl SourceIndex {
     #[must_use]
-    pub(crate) fn entries(&self) -> &[ResolvedSourceEntry] {
+    pub(crate) fn entries(&self) -> &[CfdSourceEntry] {
         &self.entries
     }
 
-    pub(crate) fn push(&mut self, entry: ResolvedSourceEntry) {
+    pub(crate) fn push(&mut self, entry: CfdSourceEntry) {
         self.entries.push(entry);
     }
 
-    pub(crate) fn get_or_insert_dimension(&mut self, entry: ResolvedSourceEntry) -> SourceId {
-        if let Some(index) = self.entries.iter().position(|candidate| {
-            candidate.provider_id == entry.provider_id
-                && candidate.source.location == entry.source.location
-        }) {
+    pub(crate) fn get_or_insert_dimension(&mut self, entry: CfdSourceEntry) -> SourceId {
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|candidate| candidate.source.location == entry.source.location)
+        {
             return SourceId(index);
         }
         let id = SourceId(self.entries.len());
         self.entries.push(entry);
         id
     }
-
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ResolvedSourceEntry {
-    pub provider_id: String,
-    pub source: ResolvedSource,
+pub(crate) struct CfdSourceEntry {
+    pub source: CfdSource,
     pub display_path: String,
 }
 
@@ -262,7 +261,6 @@ pub(crate) struct PendingRecordRef {
     pub key: String,
     pub origin: RecordOrigin,
     pub source_id: SourceId,
-    pub provider_id: String,
     pub display_path: String,
 }
 
@@ -374,7 +372,6 @@ impl RecordIndexBuilder {
                     coordinate,
                     origin: pending.origin,
                     source_id: pending.source_id,
-                    provider_id: pending.provider_id,
                     display_path: pending.display_path,
                 },
             );
@@ -414,7 +411,6 @@ impl RecordIndex {
             key: pending.key,
             origin: pending.origin,
             source_id: pending.source_id,
-            provider_id: pending.provider_id,
             display_path: pending.display_path,
         });
     }
@@ -426,7 +422,6 @@ pub(crate) struct RecordRef {
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
     pub(crate) source_id: SourceId,
-    pub provider_id: String,
     pub display_path: String,
 }
 
@@ -437,7 +432,6 @@ pub struct RejectedRecordRef {
     pub key: String,
     pub origin: RecordOrigin,
     pub(crate) source_id: SourceId,
-    pub provider_id: String,
     pub display_path: String,
 }
 

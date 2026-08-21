@@ -1,19 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-/// Static description of a source writer.
+/// Static description of the built-in CFD writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WriterDescriptor {
+pub struct CfdWriterDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
     pub capabilities: WriterCapabilities,
 }
 
 /// Editing capabilities exposed to the front-end so the UI can grey out
-/// disabled actions per source.
-///
-/// The descriptor contains the provider's maximum capability set. Hosts use
-/// [`crate::SourceWriter::capabilities`] for the authoritative per-source
-/// result when support depends on the resolved storage format.
+/// disabled actions.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -22,7 +18,6 @@ pub struct WriterDescriptor {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriterCapabilities {
-    pub provider_id: String,
     pub can_edit_field: bool,
     pub can_edit_key: bool,
     pub can_insert_record: bool,
@@ -35,7 +30,6 @@ impl WriterCapabilities {
     #[must_use]
     pub fn read_only() -> Self {
         Self {
-            provider_id: String::new(),
             can_edit_field: false,
             can_edit_key: false,
             can_insert_record: false,
@@ -48,7 +42,6 @@ impl WriterCapabilities {
     #[must_use]
     pub fn local_full() -> Self {
         Self {
-            provider_id: String::new(),
             can_edit_field: true,
             can_edit_key: true,
             can_insert_record: true,
@@ -56,11 +49,5 @@ impl WriterCapabilities {
             can_reorder_records: true,
             requires_full_refresh_after_write: true,
         }
-    }
-
-    #[must_use]
-    pub fn with_provider_id(mut self, provider_id: impl Into<String>) -> Self {
-        self.provider_id = provider_id.into();
-        self
     }
 }

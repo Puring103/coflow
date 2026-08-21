@@ -16,8 +16,7 @@
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
-    build_project, check_project, clean_project, generate_project_code,
-    CommandOutcome,
+    build_project, check_project, clean_project, generate_project_code, CommandOutcome,
 };
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{normalize_path, path_to_slash, Project};
@@ -38,8 +37,8 @@ use diagnostics::cli_error;
 
 use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, InitArgs,
-    LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
-    SelfUpdateArgs, SkillArgs, SkillCommand, SkillScopeArgs,
+    LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs, SkillArgs, SkillCommand,
+    SkillScopeArgs,
 };
 
 fn main() -> ExitCode {

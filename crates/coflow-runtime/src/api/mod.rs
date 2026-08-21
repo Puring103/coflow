@@ -1,7 +1,7 @@
 //! Internal CFD source/writer contract shared by the runtime and editor.
 //!
-//! Target-language generation lives in `coflow-codegen-api`; data export and
-//! serialized loader contracts are intentionally not public from this crate.
+//! Target-language generation lives in `coflow-codegen-api`; runtime data stays
+//! in the typed CFD model and is never exposed as a serialized export contract.
 
 #![cfg_attr(
     not(test),
@@ -20,37 +20,26 @@
 
 pub mod diagnostics;
 pub mod operations;
-pub mod provider;
-mod bindings;
+pub mod source;
 pub mod writer;
 
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
-    source_location_display_path, spreadsheet_cell_name, Diagnostic, DiagnosticContext,
-    DiagnosticSet, FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
+    source_location_display_path, Diagnostic, DiagnosticContext, DiagnosticSet, FlatDiagnostic,
+    Label, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub use operations::{
-    CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
-    DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    DimensionSourceSchema, RewriteDimensionRecordRequest,
-    SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
-    TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
+    CfdDimensionWriter, CfdDimensionWriterDescriptor, CfdWriteContext, DimensionSourceEntry,
+    DimensionSourceLoadRequest, DimensionSourceLoadResult, DimensionSourceRequest,
+    DimensionSourceResult, DimensionSourceSchema, RewriteDimensionRecordRequest,
+    WriteDimensionValueRequest,
 };
-pub use provider::{
-    DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,
-    ProjectSourceRef, ResolvedSource, SourceLoadContext, SourceLocationSpec, CfdSourceAdapter,
-    CfdSourceAdapterDescriptor, SourceResolveContext,
-};
-pub(crate) use bindings::{
-    CfdBindingBundle, CfdBindingError, CfdProviderBindings, CfdSourceSelectionError,
-};
+pub use source::{CfdLoadContext, CfdSource, CfdSourcePath, LoadedCfdSource};
 pub use writer::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, SourceTransaction, SourceTransactionCompensation, SourceWriter,
-    WriteBatchFailure,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
-    WriterCapabilities, WriterDescriptor,
+    CfdDocumentWriter, CfdWriterDescriptor, DeleteRecordRequest, InsertRecordRequest,
+    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest, SourceTransaction,
+    SourceTransactionCompensation, WriteBatchFailure, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriteRecordRef, WriterCapabilities,
 };
 
 pub(crate) use crate::catalog::CfdSourceCatalog;

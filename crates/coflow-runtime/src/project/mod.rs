@@ -22,9 +22,7 @@ mod schema_sources;
 mod validation;
 
 pub use crate::api::path_to_slash;
-pub use config::{
-    DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig,
-};
+pub use config::{DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig};
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{

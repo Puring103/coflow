@@ -22,8 +22,8 @@ type Monster {
 `coflow check` 和 `coflow build` 加载完整 CFD 数据并运行相关规则；
 只编译 schema 的 `coflow cft check`、`coflow schema` 和 `coflow codegen` 不执行数据规则。
 
-校验失败会作为诊断返回，并阻止 `build` 或 `export` 发布新产物。`check` 块本身不会写入导出数据，
-也不会生成游戏运行时代码；运行时消费者读取的是已经通过 Coflow 校验的产物。
+校验失败会作为诊断返回，并阻止 `build` 或 `codegen` 发布新的代码文件。`check` 块本身不会写入 CFD，
+也不会生成运行时代码；目标语言 runtime 读取的是已经通过 Coflow 校验的 CFD 和生成代码。
 
 ## 可用值
 

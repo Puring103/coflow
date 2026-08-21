@@ -8,10 +8,10 @@
 //! `ProjectSnapshot`, ... — that bundle core data with editor-specific
 //! derived metadata (file hints, enum int values, ...).
 
-use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
-use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
+use coflow_runtime::{CfdDictKey, CfdRecord, CfdValue};
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{DimensionValueState, FileTreeNode, RecordCoordinate};
+use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -462,7 +462,7 @@ pub struct FieldAnnotation {
     pub description: Option<String>,
     #[serde(
         default,
-        with = "coflow_data_model::serde_i64::option",
+        with = "coflow_runtime::serde_i64::option",
         skip_serializing_if = "Option::is_none"
     )]
     pub enum_int_value: Option<i64>,
@@ -511,7 +511,7 @@ pub struct FieldAnnotation {
 )]
 pub struct EnumVariantOption {
     pub name: String,
-    #[serde(with = "coflow_data_model::serde_i64")]
+    #[serde(with = "coflow_runtime::serde_i64")]
     #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
     pub value: i64,
     #[serde(default)]
@@ -576,7 +576,7 @@ pub struct WriteFieldOutcome {
 pub struct BatchWriteFieldEditOutcome {
     pub coordinate: RecordCoordinate,
     pub final_coordinate: RecordCoordinate,
-    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    pub field_path: Vec<coflow_runtime::CfdPathSegment>,
     #[serde(default)]
     pub old_value: Option<CfdValue>,
     #[serde(default)]
@@ -591,7 +591,7 @@ pub struct BatchWriteFieldEditOutcome {
 )]
 pub struct BatchWriteFieldInput {
     pub coordinate: RecordCoordinate,
-    pub field_path: Vec<coflow_data_model::CfdPathSegment>,
+    pub field_path: Vec<coflow_runtime::CfdPathSegment>,
     pub new_value: CfdValue,
 }
 

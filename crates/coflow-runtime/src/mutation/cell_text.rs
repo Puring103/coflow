@@ -1,5 +1,5 @@
-use coflow_data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
-use coflow_data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
+use crate::data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
+use crate::data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
 use serde_json::{Map, Number, Value};
 
 use crate::{write_rules, ProjectSession};
@@ -38,7 +38,7 @@ pub(crate) fn parse_cell_text_value(
     };
     let input = match input {
         LoadedValueDraft::FormattedString(formatted) => {
-            return coflow_data_model::evaluate_formatted_string(
+            return crate::data_model::evaluate_formatted_string(
                 session.schema(),
                 session.model(),
                 actual_type,
@@ -131,7 +131,7 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::input_value_to_json;
-    use coflow_data_model::{LoadedDictKeyDraft, LoadedValueDraft};
+    use crate::data_model::{LoadedDictKeyDraft, LoadedValueDraft};
     use serde_json::json;
 
     #[test]

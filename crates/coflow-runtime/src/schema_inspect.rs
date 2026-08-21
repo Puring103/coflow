@@ -1,5 +1,5 @@
 use crate::api::FlatDiagnostic;
-use coflow_cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
+use coflow_language::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
 use serde::Serialize;
 
 use crate::ProjectSchemaSession;
@@ -60,7 +60,7 @@ pub struct SchemaEnumInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaEnumVariantInfo {
     pub name: String,
-    #[serde(with = "coflow_data_model::serde_i64")]
+    #[serde(with = "crate::data_model::serde_i64")]
     pub value: i64,
 }
 
@@ -95,14 +95,14 @@ pub enum SchemaTypeRefInfo {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaDefaultValueInfo {
     Null,
-    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
+    Int(#[serde(with = "crate::data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
     String(String),
     Enum {
         enum_name: String,
         variant: String,
-        #[serde(with = "coflow_data_model::serde_i64")]
+        #[serde(with = "crate::data_model::serde_i64")]
         value: i64,
     },
     EmptyArray,
@@ -119,7 +119,7 @@ pub struct SchemaConstInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaConstValueInfo {
-    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
+    Int(#[serde(with = "crate::data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
     String(String),
@@ -172,7 +172,7 @@ pub fn inspect_schema(
             fields: view
                 .resolve_type(&ty.name)
                 .into_iter()
-                .flat_map(coflow_cft::CftType::all_fields)
+                .flat_map(coflow_language::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
                     ty: value_type_info(&field.value_type),

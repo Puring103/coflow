@@ -1,7 +1,7 @@
 use crate::api::{
     byte_range, map_diagnostics_with_origins, Diagnostic, DiagnosticSet, Label, SourceLocation,
 };
-use coflow_data_model::{CfdDiagnostics, RecordOrigin, TextSpan};
+use crate::data_model::{CfdDiagnostics, RecordOrigin, TextSpan};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;

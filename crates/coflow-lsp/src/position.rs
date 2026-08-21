@@ -1,4 +1,4 @@
-use coflow_cft::Span;
+use coflow_language::Span;
 use serde_json::Value;
 
 use crate::diagnostics::lsp_range;

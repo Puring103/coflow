@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::api::{DiagnosticSet, FlatDiagnostic};
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
+use crate::data_model::{CfdPath, CfdPathSegment, CfdValue};
+use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -21,8 +21,6 @@ pub struct MutationRequest {
 pub enum MutationOp {
     InsertRecord {
         file: String,
-        #[serde(default)]
-        sheet: Option<String>,
         #[serde(rename = "type")]
         actual_type: String,
         key: String,
@@ -75,8 +73,6 @@ pub enum MutationOp {
     TransferRecord {
         record: RecordCoordinate,
         destination_file: String,
-        #[serde(default)]
-        destination_sheet: Option<String>,
         target_index: usize,
         #[serde(default)]
         source_file: Option<String>,
@@ -203,7 +199,6 @@ pub enum CreateRequiredInput {
 pub(crate) enum PreparedMutationOp {
     InsertRecord {
         file: String,
-        sheet: Option<String>,
         actual_type: TypeName,
         key: RecordKey,
         fields: BTreeMap<String, CfdValue>,
@@ -243,7 +238,6 @@ pub(crate) enum PreparedMutationOp {
     TransferRecord {
         record: RecordCoordinate,
         destination_file: String,
-        destination_sheet: Option<String>,
         target_index: usize,
     },
     FoldedSetField {
@@ -375,7 +369,7 @@ pub struct MutationReport {
     pub failed: Vec<MutationFailedOp>,
     /// Deduplicated project-facing source paths changed by the transaction.
     pub affected_files: Vec<String>,
-    /// Provider diagnostics followed by diagnostics from the published generation.
+    /// Writer diagnostics followed by diagnostics from the published generation.
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -430,20 +424,22 @@ mod tests {
     #[test]
     fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
         let primary = Label {
-            location: SourceLocation::TableCell {
+            location: SourceLocation::FileSpan {
                 path: "items.cfd".into(),
-                sheet: Some("items".to_string()),
-                row: 2,
-                column: 3,
+                start_line: 1,
+                start_character: 0,
+                end_line: 1,
+                end_character: 1,
             },
             message: Some("primary".to_string()),
         };
         let related = Label {
-            location: SourceLocation::TableCell {
+            location: SourceLocation::FileSpan {
                 path: "items.cfd".into(),
-                sheet: Some("items".to_string()),
-                row: 4,
-                column: 3,
+                start_line: 3,
+                start_character: 0,
+                end_line: 3,
+                end_character: 1,
             },
             message: Some("related".to_string()),
         };

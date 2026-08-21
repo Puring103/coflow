@@ -15,45 +15,23 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
-use crate::api::{
-    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-    CfdBindingBundle, CfdBindingError, ResolvedSource, SourceLoadContext, CfdSourceAdapter,
-    CfdSourceAdapterDescriptor, SourceResolveContext,
-};
+use crate::api::{CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet, LoadedCfdSource};
 
 mod diagnostics;
 mod lower;
-mod options;
 pub mod writer;
-use coflow_cfd::parse_cfd;
-use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use coflow_language::cfd::parse_cfd;
+use coflow_language::CftSchema;
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
 use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
-use options::decode_cfd_source_options;
 use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 pub use writer::CfdWriter;
-
-/// Declares every catalog role implemented by the CFD provider package.
-///
-/// # Errors
-///
-/// Returns an error if two CFD implementations declare the same role id.
-pub fn cfd_binding_bundle() -> Result<CfdBindingBundle, CfdBindingError> {
-    let writer = Arc::new(CfdWriter::new());
-    let mut bundle = CfdBindingBundle::default();
-    bundle.add_source_provider(CfdLoader)?;
-    bundle.add_source_writer_arc(Arc::clone(&writer))?;
-    bundle.add_table_manager_arc(Arc::clone(&writer))?;
-    bundle.add_dimension_source_manager_arc(writer)?;
-    Ok(bundle)
-}
 
 /// Parses `.cfd` text into source-neutral input records.
 ///
@@ -115,50 +93,11 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CfdLoader;
 
-pub const CFD_LOADER_DESCRIPTOR: CfdSourceAdapterDescriptor = CfdSourceAdapterDescriptor {
-    id: "cfd",
-    display_name: "Coflow data text",
-    extensions: &["cfd"],
-    option_keys: &[],
-};
-
-impl CfdSourceAdapter for CfdLoader {
-    fn descriptor(&self) -> &'static CfdSourceAdapterDescriptor {
-        &CFD_LOADER_DESCRIPTOR
-    }
-
-    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
-        if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
-            return ProbeResult::certain();
-        }
-        if source
-            .location
-            .path()
-            .extension()
-            .and_then(|ext| ext.to_str())
-            == Some("cfd")
-        {
-            ProbeResult::likely()
-        } else {
-            ProbeResult::none()
-        }
-    }
-
-    fn decode_options(
-        &self,
-        options: &serde_json::Value,
-    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
-        decode_cfd_source_options(options)
-    }
-
-    fn resolve(
-        &self,
-        _ctx: SourceResolveContext<'_>,
-        source: &ResolvedSource,
-    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+impl CfdLoader {
+    pub fn resolve(&self, source: &CfdSource) -> Result<CfdSource, DiagnosticSet> {
         let path = source.location.path();
         if is_cfd_path(path) {
-            return Ok(vec![source.clone()]);
+            return Ok(source.clone());
         }
         Err(DiagnosticSet::one(Diagnostic::error(
             "CFD-SOURCE",
@@ -170,11 +109,11 @@ impl CfdSourceAdapter for CfdLoader {
         )))
     }
 
-    fn load(
+    pub fn load(
         &self,
-        ctx: SourceLoadContext<'_>,
-        source: &ResolvedSource,
-    ) -> Result<LoadedSource, DiagnosticSet> {
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
         let file = source.location.path();
         let contents = match ctx.source_text {
             Some(source) => Cow::Borrowed(source),
@@ -198,7 +137,7 @@ impl CfdSourceAdapter for CfdLoader {
                         })
                     })
                     .collect();
-                LoadedSource { records }
+                LoadedCfdSource { records }
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }

@@ -1,7 +1,7 @@
 use crate::api::{DiagnosticSet, WriteFieldPathSegment};
-use coflow_cfd::ast::{CfdBlock, CfdRecord as AstRecord, CfdValue as AstValue};
-use coflow_cft::Span;
-use coflow_cft::{CftSchema, CftValueType};
+use coflow_language::cfd::ast::{CfdBlock, CfdRecord as AstRecord, CfdValue as AstValue};
+use coflow_language::Span;
+use coflow_language::{CftSchema, CftValueType};
 
 use super::diag;
 use super::schema_nav::{
@@ -75,7 +75,10 @@ fn full_value_span(value: &AstValue) -> Span {
     value.span()
 }
 
-fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a coflow_cfd::CfdField> {
+fn find_field_in_record<'a>(
+    record: &'a AstRecord,
+    name: &str,
+) -> Option<&'a coflow_language::cfd::CfdField> {
     record.fields().find(|field| field.name == name)
 }
 

@@ -1,6 +1,6 @@
 //! Project-wide record search over one immutable runtime generation.
 
-use coflow_data_model::{format_cfd_dict_key, CfdValue, RecordCoordinate};
+use crate::data_model::{format_cfd_dict_key, CfdValue, RecordCoordinate};
 
 use crate::{value_summary, ProjectQueries};
 
@@ -103,7 +103,7 @@ struct FieldMatch {
 }
 
 fn find_record_field_match(
-    fields: &std::collections::BTreeMap<coflow_cft::FieldName, CfdValue>,
+    fields: &std::collections::BTreeMap<coflow_language::FieldName, CfdValue>,
     query: &str,
 ) -> Option<FieldMatch> {
     fields.iter().find_map(|(name, value)| {

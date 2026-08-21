@@ -1,4 +1,6 @@
-use coflow_runtime::{Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_runtime::{
+    Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation,
+};
 use serde::Serialize;
 use std::path::Path;
 
@@ -28,10 +30,6 @@ pub struct DiagnosticJson {
     pub severity: String,
     pub message: String,
     pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sheet: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cell: Option<String>,
     #[serde(rename = "startLine")]
     pub start_line: usize,
     #[serde(rename = "startCharacter")]
@@ -48,10 +46,6 @@ pub struct DiagnosticJson {
 #[derive(Debug, Serialize)]
 pub struct RelatedJson {
     pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sheet: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cell: Option<String>,
     #[serde(rename = "startLine")]
     pub start_line: usize,
     #[serde(rename = "startCharacter")]
@@ -83,8 +77,6 @@ fn diagnostic_json_from_diagnostic(diagnostic: Diagnostic) -> DiagnosticJson {
         path: primary
             .as_ref()
             .map_or_else(String::new, |location| location.path.clone()),
-        sheet: primary.as_ref().and_then(|location| location.sheet.clone()),
-        cell: primary.as_ref().and_then(|location| location.cell.clone()),
         start_line: primary.as_ref().map_or(0, |location| location.start_line),
         start_character: primary
             .as_ref()
@@ -106,8 +98,6 @@ fn related_json_from_label(label: &Label) -> RelatedJson {
     let location = label_location(label);
     RelatedJson {
         path: location.path,
-        sheet: location.sheet,
-        cell: location.cell,
         start_line: location.start_line,
         start_character: location.start_character,
         end_line: location.end_line,
@@ -119,8 +109,6 @@ fn related_json_from_label(label: &Label) -> RelatedJson {
 #[derive(Debug)]
 struct JsonLocation {
     path: String,
-    sheet: Option<String>,
-    cell: Option<String>,
     start_line: usize,
     start_character: usize,
     end_line: usize,
@@ -132,17 +120,6 @@ fn label_location(label: &Label) -> JsonLocation {
     match &label.location {
         SourceLocation::FileSpan { path, .. } => JsonLocation {
             path: path.display().to_string(),
-            sheet: None,
-            cell: None,
-            start_line: range.start.line,
-            start_character: range.start.character,
-            end_line: range.end.line,
-            end_character: range.end.character,
-        },
-        SourceLocation::TableCell { path, .. } => JsonLocation {
-            path: path.display().to_string(),
-            sheet: label.location.sheet().map(str::to_string),
-            cell: label.location.cell_name(),
             start_line: range.start.line,
             start_character: range.start.character,
             end_line: range.end.line,
@@ -151,8 +128,6 @@ fn label_location(label: &Label) -> JsonLocation {
         SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
             JsonLocation {
                 path: path.display().to_string(),
-                sheet: None,
-                cell: None,
                 start_line: range.start.line,
                 start_character: range.start.character,
                 end_line: range.end.line,

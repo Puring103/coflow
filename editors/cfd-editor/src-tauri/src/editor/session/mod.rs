@@ -29,8 +29,7 @@ use std::path::Path as StdPath;
 use std::path::PathBuf as StdPathBuf;
 use std::sync::{Arc, RwLock};
 
-use coflow_runtime::CfdSourceCatalog;
-use coflow_data_model::{CfdValue, RecordOrigin};
+use coflow_runtime::{CfdValue, RecordOrigin};
 use coflow_runtime::{
     DefaultMaterialization, MutationFields, MutationOp, MutationRequest, MutationValue,
     ProjectQueries, RecordCoordinate, WriteProjectSession,
@@ -54,8 +53,7 @@ use crate::editor::types::{
 pub use diagnostics::Diagnostics;
 
 use build::{
-    build_session, default_cfd_catalog, diagnostic_messages, session_capabilities_for_file,
-    SessionSnapshotParts,
+    build_session, diagnostic_messages, session_capabilities_for_file, SessionSnapshotParts,
 };
 use path::strip_unc_prefix;
 use revision::{RevisionCoordinator, RevisionTicket};
@@ -117,7 +115,6 @@ struct ReloadCandidate {
 struct Inner {
     next_id: u32,
     sessions: HashMap<u32, Arc<SessionEntry>>,
-    registry: Arc<CfdSourceCatalog>,
 }
 
 #[derive(Default)]
@@ -137,7 +134,6 @@ impl SessionStore {
             inner: RwLock::new(Inner {
                 next_id: 0,
                 sessions: HashMap::new(),
-                registry: Arc::new(default_cfd_catalog()?),
             }),
         })
     }
@@ -149,8 +145,7 @@ impl SessionStore {
     }
 
     pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectSnapshot, EditorError> {
-        let registry = self.registry()?;
-        let (session, snapshot_partial) = build_session(yaml_path, registry.as_ref())?;
+        let (session, snapshot_partial) = build_session(yaml_path)?;
         let mut inner = self
             .inner
             .write()
@@ -412,8 +407,7 @@ impl SessionStore {
                 .map_err(|_| EditorError::session("session poisoned"))?;
             (session.yaml_path.clone(), session.revisions.begin_reload())
         };
-        let registry = self.registry()?;
-        let (session, snapshot) = build_session(&yaml_path, registry.as_ref())?;
+        let (session, snapshot) = build_session(&yaml_path)?;
         Ok((
             entry,
             ReloadCandidate {
@@ -465,14 +459,6 @@ impl SessionStore {
             .sessions
             .remove(&id);
         Ok(())
-    }
-
-    fn registry(&self) -> Result<Arc<CfdSourceCatalog>, EditorError> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|_| EditorError::session("session store poisoned during registry read"))?;
-        Ok(Arc::clone(&inner.registry))
     }
 
     fn session(&self, id: u32) -> Result<Arc<SessionEntry>, EditorError> {
@@ -615,9 +601,6 @@ fn record_type_index(session: &EditorSession, coordinate: &RecordCoordinate) -> 
 fn record_container_key(origin: &RecordOrigin) -> String {
     match origin {
         RecordOrigin::File { path, .. } => format!("file:{}", path.display()),
-        RecordOrigin::Table {
-            document, sheet, ..
-        } => format!("table:{}:{sheet}", document.path().display()),
         RecordOrigin::None => "none".to_string(),
     }
 }
@@ -625,7 +608,7 @@ fn record_container_key(origin: &RecordOrigin) -> String {
 fn write_field_in_session(
     session: &mut EditorSession,
     coordinate: &RecordCoordinate,
-    field_path: &[coflow_data_model::CfdPathSegment],
+    field_path: &[coflow_runtime::CfdPathSegment],
     new_value: &CfdValue,
 ) -> Result<WriteFieldOutcome, EditorError> {
     let old_value = session

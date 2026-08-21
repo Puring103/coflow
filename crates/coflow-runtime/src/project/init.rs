@@ -1,6 +1,6 @@
+use crate::api::DiagnosticSet;
 use crate::project::diagnostics::file_error;
 use crate::project::normalize_path;
-use crate::api::DiagnosticSet;
 use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;

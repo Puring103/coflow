@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::api::{
-    Diagnostic, DiagnosticSet, DimensionSourceManager, CfdSourceCatalog, ResolvedSource,
-    SourceWriter, WriteFieldPathSegment,
+    CfdDimensionWriter, CfdDocumentWriter, CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet,
+    WriteFieldPathSegment,
 };
-use coflow_data_model::{CfdValue, RecordOrigin};
+use crate::data_model::{CfdValue, RecordOrigin};
 
 use crate::dimensions::DimensionField;
 use crate::indexes::{RecordRef, SourceId};
@@ -29,25 +29,24 @@ pub(crate) enum MutationExecutionPlan {
 }
 
 pub(crate) struct InsertPlan {
-    pub(super) source: ResolvedSource,
-    pub(super) writer: Arc<dyn SourceWriter>,
-    pub(super) sheet: Option<String>,
+    pub(super) source: CfdSource,
+    pub(super) writer: Arc<dyn CfdDocumentWriter>,
 }
 
 pub(crate) struct WriteFieldPlan {
     pub(super) target: WriteTarget,
-    pub(super) source: ResolvedSource,
-    pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) source: CfdSource,
+    pub(super) writer: Arc<dyn CfdDocumentWriter>,
 }
 
 pub(crate) struct DimensionWritePlan {
-    pub(super) source: ResolvedSource,
-    pub(super) manager: Arc<dyn DimensionSourceManager>,
+    pub(super) source: CfdSource,
+    pub(super) manager: Arc<dyn CfdDimensionWriter>,
 }
 
 pub(crate) struct DimensionRecordAction {
-    pub(super) source: ResolvedSource,
-    pub(super) manager: Arc<dyn DimensionSourceManager>,
+    pub(super) source: CfdSource,
+    pub(super) manager: Arc<dyn CfdDimensionWriter>,
     pub(super) field: DimensionField,
 }
 
@@ -60,8 +59,8 @@ pub(crate) struct RenameWritePlan {
     pub(super) old_coordinate: RecordCoordinate,
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
-    pub(super) source: ResolvedSource,
-    pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) source: CfdSource,
+    pub(super) writer: Arc<dyn CfdDocumentWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
@@ -70,14 +69,14 @@ pub(crate) struct DeletePlan {
     pub(super) coordinate: RecordCoordinate,
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
-    pub(super) source: ResolvedSource,
-    pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) source: CfdSource,
+    pub(super) writer: Arc<dyn CfdDocumentWriter>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct ReorderPlan {
-    pub(super) source: ResolvedSource,
-    pub(super) writer: Arc<dyn SourceWriter>,
+    pub(super) source: CfdSource,
+    pub(super) writer: Arc<dyn CfdDocumentWriter>,
     pub(super) operation: ReorderOperation,
     pub(super) display_path: String,
 }
@@ -87,12 +86,11 @@ pub(crate) struct TransferPlan {
     pub(super) fields: std::collections::BTreeMap<String, CfdValue>,
     pub(super) source_origin: RecordOrigin,
     pub(super) source_display_path: String,
-    pub(super) source: ResolvedSource,
-    pub(super) source_writer: Arc<dyn SourceWriter>,
+    pub(super) source: CfdSource,
+    pub(super) source_writer: Arc<dyn CfdDocumentWriter>,
     pub(super) destination_display_path: String,
-    pub(super) destination: ResolvedSource,
-    pub(super) destination_writer: Arc<dyn SourceWriter>,
-    pub(super) destination_sheet: Option<String>,
+    pub(super) destination: CfdSource,
+    pub(super) destination_writer: Arc<dyn CfdDocumentWriter>,
     pub(super) before: Option<ResolvedRecordPosition>,
 }
 
@@ -122,7 +120,7 @@ impl MutationExecutionPlan {
 
     pub(crate) fn visit_sources<E>(
         &self,
-        mut visit: impl FnMut(&ResolvedSource, Option<&Arc<dyn SourceWriter>>) -> Result<(), E>,
+        mut visit: impl FnMut(&CfdSource, Option<&Arc<dyn CfdDocumentWriter>>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Insert(plan) => visit(&plan.source, Some(&plan.writer))?,
@@ -157,9 +155,7 @@ impl MutationExecutionPlan {
         let (Self::WriteField(left), Self::WriteField(right)) = (self, other) else {
             return false;
         };
-        Arc::ptr_eq(&left.writer, &right.writer)
-            && left.source.provider_id == right.source.provider_id
-            && left.source.location == right.source.location
+        Arc::ptr_eq(&left.writer, &right.writer) && left.source.location == right.source.location
     }
 }
 
@@ -171,21 +167,10 @@ pub(crate) fn prepare_mutation_execution(
     allow_noop: bool,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
     match op {
-        PreparedMutationOp::InsertRecord {
-            file,
-            sheet,
-            actual_type,
-            ..
-        } => {
+        PreparedMutationOp::InsertRecord { file, .. } => {
             let source = source_for_file(session, file)?;
             let writer = lookup_source_writer(catalog, &source)?;
-            Ok(MutationExecutionPlan::Insert(InsertPlan {
-                source,
-                writer,
-                sheet: sheet
-                    .clone()
-                    .or_else(|| sheet_for_file_type(session, file, actual_type)),
-            }))
+            Ok(MutationExecutionPlan::Insert(InsertPlan { source, writer }))
         }
         PreparedMutationOp::SetField {
             write_record,
@@ -227,14 +212,7 @@ pub(crate) fn prepare_mutation_execution(
         }),
         PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
             let source = source_for_file(session, write_file)?;
-            let manager = catalog
-                .dimension_source_manager(&source.provider_id)
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension source provider `{}` disappeared before mutation planning",
-                        source.provider_id
-                    ))
-                })?;
+            let manager = catalog.dimension_source_manager();
             Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
                 source,
                 manager,
@@ -257,17 +235,9 @@ pub(crate) fn prepare_mutation_execution(
         PreparedMutationOp::TransferRecord {
             record,
             destination_file,
-            destination_sheet,
             target_index,
             ..
-        } => prepare_transfer_record(
-            session,
-            catalog,
-            record,
-            destination_file,
-            destination_sheet.as_deref(),
-            *target_index,
-        ),
+        } => prepare_transfer_record(session, catalog, record, destination_file, *target_index),
         PreparedMutationOp::FoldedSetField { .. }
         | PreparedMutationOp::FoldedRenameRecord { .. }
         | PreparedMutationOp::FoldedDeleteRecord { .. }
@@ -280,7 +250,6 @@ fn prepare_transfer_record(
     catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
     destination_file: &str,
-    requested_sheet: Option<&str>,
     target_index: usize,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
     let record_ref = required_record_ref(session, record)?;
@@ -324,21 +293,12 @@ fn prepare_transfer_record(
         )));
     }
 
-    let destination_sheet = resolve_transfer_sheet(
-        session,
-        destination_file,
-        &record.actual_type,
-        requested_sheet,
-    )?;
     let order = session
         .records
         .ids_in_file(destination_file)
         .iter()
         .filter_map(|id| session.records.get(*id))
-        .filter(|candidate| {
-            candidate.coordinate.actual_type == record.actual_type
-                && record_matches_sheet(candidate, destination_sheet.as_deref())
-        })
+        .filter(|candidate| candidate.coordinate.actual_type == record.actual_type)
         .collect::<Vec<_>>();
     if target_index > order.len() {
         return Err(DiagnosticSet::one(Diagnostic::error(
@@ -366,50 +326,8 @@ fn prepare_transfer_record(
         destination_display_path: destination_file.to_string(),
         destination,
         destination_writer,
-        destination_sheet,
         before,
     }))
-}
-
-fn resolve_transfer_sheet(
-    session: &ProjectSession,
-    file: &str,
-    actual_type: &str,
-    requested: Option<&str>,
-) -> Result<Option<String>, DiagnosticSet> {
-    if let Some(sheet) = requested {
-        return Ok(Some(sheet.to_string()));
-    }
-    let sheets = session
-        .records
-        .ids_in_file(file)
-        .iter()
-        .filter_map(|id| session.records.get(*id))
-        .filter(|record| record.coordinate.actual_type.as_str() == actual_type)
-        .filter_map(|record| match &record.origin {
-            RecordOrigin::Table { sheet, .. } => Some(sheet.clone()),
-            RecordOrigin::File { .. } | RecordOrigin::None => None,
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    match sheets.len() {
-        0 => Ok(None),
-        1 => Ok(sheets.into_iter().next()),
-        _ => Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-TRANSFER-SHEET",
-            "WRITE",
-            "destination file maps this type to multiple sheets; specify destination_sheet",
-        ))),
-    }
-}
-
-fn record_matches_sheet(record: &RecordRef, sheet: Option<&str>) -> bool {
-    match (&record.origin, sheet) {
-        (RecordOrigin::Table { sheet: actual, .. }, Some(expected)) => actual == expected,
-        (RecordOrigin::Table { .. } | RecordOrigin::File { .. }, None) => true,
-        (RecordOrigin::File { .. } | RecordOrigin::None, Some(_)) | (RecordOrigin::None, None) => {
-            false
-        }
-    }
 }
 
 fn prepare_swap_records(
@@ -506,16 +424,12 @@ fn required_record_ref<'a>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RecordContainer {
     File(SourceId),
-    Table(SourceId, String),
     None(SourceId),
 }
 
 fn record_container(record: &RecordRef) -> RecordContainer {
     match &record.origin {
         RecordOrigin::File { .. } => RecordContainer::File(record.source_id),
-        RecordOrigin::Table { sheet, .. } => {
-            RecordContainer::Table(record.source_id, sheet.clone())
-        }
         RecordOrigin::None => RecordContainer::None(record.source_id),
     }
 }
@@ -529,7 +443,7 @@ fn ensure_same_container(left: &RecordRef, right: &RecordRef) -> Result<(), Diag
     Err(DiagnosticSet::one(Diagnostic::error(
         "WRITE-REORDER-CONTAINER",
         "WRITE",
-        "records must belong to the same writable file or table sheet",
+        "records must belong to the same writable CFD file",
     )))
 }
 
@@ -537,7 +451,7 @@ fn reorder_writer(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     record: &RecordRef,
-) -> Result<(ResolvedSource, Arc<dyn SourceWriter>), DiagnosticSet> {
+) -> Result<(CfdSource, Arc<dyn CfdDocumentWriter>), DiagnosticSet> {
     if matches!(record.origin, RecordOrigin::None) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-REORDER-ORIGIN",
@@ -705,14 +619,7 @@ fn dimension_record_actions(
         if !applies {
             continue;
         }
-        let manager = catalog
-            .dimension_source_manager(&entry.source.provider_id)
-            .ok_or_else(|| {
-                transaction_invariant(format!(
-                    "dimension source provider `{}` disappeared before record mutation planning",
-                    entry.source.provider_id
-                ))
-            })?;
+        let manager = catalog.dimension_source_manager();
         actions.push(DimensionRecordAction {
             source: entry.source.clone(),
             manager,
@@ -720,27 +627,4 @@ fn dimension_record_actions(
         });
     }
     Ok(actions)
-}
-
-fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {
-    for id in session.records.ids_in_file(file) {
-        let Some(record_ref) = session.records.get(*id) else {
-            continue;
-        };
-        let RecordOrigin::Table { sheet, .. } = &record_ref.origin else {
-            continue;
-        };
-        if record_ref.coordinate.actual_type.as_str() == actual_type {
-            return Some(sheet.clone());
-        }
-    }
-    None
-}
-
-fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
-    DiagnosticSet::one(Diagnostic::error(
-        "MUTATION-TXN-INVARIANT",
-        "MUTATION",
-        message,
-    ))
 }

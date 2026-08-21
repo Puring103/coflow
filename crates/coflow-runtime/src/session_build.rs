@@ -2,10 +2,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::api::{DiagnosticSet, CfdSourceCatalog};
-use coflow_cft::{CftModuleSet, CftSchema};
-use coflow_data_model::CfdDataModel;
+use crate::api::{CfdSourceCatalog, DiagnosticSet};
+use crate::data_model::CfdDataModel;
 use crate::project::Project;
+use coflow_language::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;
@@ -647,12 +647,6 @@ fn assemble_session(
     }
 }
 
-fn loader_extensions(catalog: &CfdSourceCatalog) -> BTreeSet<String> {
-    let mut extensions = BTreeSet::new();
-    for loader in catalog.source_providers() {
-        for ext in loader.descriptor().extensions {
-            extensions.insert((*ext).to_string());
-        }
-    }
-    extensions
+fn loader_extensions(_catalog: &CfdSourceCatalog) -> BTreeSet<String> {
+    ["cfd".to_string()].into_iter().collect()
 }

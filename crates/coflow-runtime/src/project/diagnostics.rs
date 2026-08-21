@@ -1,5 +1,5 @@
-use crate::project::validation::ProjectDiagnostic;
 use crate::api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use crate::project::validation::ProjectDiagnostic;
 use std::path::Path;
 
 const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
