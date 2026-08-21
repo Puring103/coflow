@@ -29,7 +29,6 @@ pub(crate) struct ProjectSession {
     pub(crate) sources: SourceIndex,
     pub(crate) records: RecordIndex,
     pub(crate) files: FileIndex,
-    pub(crate) loader_extensions: BTreeSet<String>,
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) execution_stats: ProjectExecutionStats,
@@ -225,13 +224,11 @@ impl ProjectSession {
         })
     }
 
-    /// File-tree view of the project using default options (every
-    /// loader-registered extension is walked, dimension `out_dirs` become
-    /// virtual subtrees).
+    /// File-tree view of the project. All `.cfd` files are visible, while
+    /// dimension `out_dirs` become virtual subtrees.
     #[must_use]
     pub(crate) fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
-            extra_extensions: self.loader_extensions.iter().cloned().collect(),
             dimension_groups: Vec::new(),
             in_sources: BTreeSet::new(),
         };
@@ -250,12 +247,9 @@ impl ProjectSession {
         self.file_tree_with(options)
     }
 
-    /// File-tree view using caller-supplied options. The options carry the
-    /// extension whitelist and any dimension groups that should be lifted to
-    /// the top of the tree.
+    /// File-tree view using caller-supplied dimension groups and source paths.
     #[must_use]
     pub(crate) fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
-        let ext_whitelist: BTreeSet<String> = options.extra_extensions.into_iter().collect();
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
             if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {
@@ -265,19 +259,13 @@ impl ProjectSession {
                 }
             }
         }
-        let mut tree = files::build_file_tree(
-            self.project.root_dir(),
-            &options.in_sources,
-            &ext_whitelist,
-            &skip,
-        );
+        let mut tree = files::build_file_tree(self.project.root_dir(), &options.in_sources, &skip);
         for group in options.dimension_groups.iter().rev() {
             if let Some(node) = files::build_dimension_subtree(
                 self.project.root_dir(),
                 group.display_name.clone(),
                 &group.dir,
                 &options.in_sources,
-                &ext_whitelist,
             ) {
                 tree.insert(0, node);
             }

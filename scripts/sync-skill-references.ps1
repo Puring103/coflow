@@ -64,41 +64,6 @@ $Mappings = @(
         Target = "skills/coflow-schema/references/schema-api.md"
         Url = "$PublicDocsBase/docs/reference/11-schema-api"
     }
-    @{
-        Source = "website/docs/docs/reference/03-language/02-cfd.md"
-        Target = "skills/coflow-data/references/cfd.md"
-        Url = "$PublicDocsBase/docs/reference/03-language/02-cfd"
-    }
-    @{
-        Source = "website/docs/docs/reference/03-language/03-cell-value.md"
-        Target = "skills/coflow-data/references/cell-value.md"
-        Url = "$PublicDocsBase/docs/reference/03-language/03-cell-value"
-    }
-    @{
-        Source = "website/docs/docs/reference/04-sources/01-overview.md"
-        Target = "skills/coflow-data/references/sources-overview.md"
-        Url = "$PublicDocsBase/docs/reference/04-sources/01-overview"
-    }
-    @{
-        Source = "website/docs/docs/reference/04-sources/02-table.md"
-        Target = "skills/coflow-data/references/table-source.md"
-        Url = "$PublicDocsBase/docs/reference/04-sources/02-table"
-    }
-    @{
-        Source = "website/docs/docs/reference/04-sources/03-excel.md"
-        Target = "skills/coflow-data/references/excel.md"
-        Url = "$PublicDocsBase/docs/reference/04-sources/03-excel"
-    }
-    @{
-        Source = "website/docs/docs/reference/04-sources/04-csv.md"
-        Target = "skills/coflow-data/references/csv.md"
-        Url = "$PublicDocsBase/docs/reference/04-sources/04-csv"
-    }
-    @{
-        Source = "website/docs/docs/reference/08-cli.md"
-        Target = "skills/coflow-data/references/cli.md"
-        Url = "$PublicDocsBase/docs/reference/08-cli"
-    }
 )
 
 function Get-RepoPath([string]$RelativePath) {

@@ -640,13 +640,8 @@ fn assemble_session(
         sources: indexes.sources,
         records: indexes.records,
         files: indexes.files,
-        loader_extensions: loader_extensions(ctx.catalog),
         source_data,
         check_state,
         execution_stats,
     }
-}
-
-fn loader_extensions(_catalog: &CfdSourceCatalog) -> BTreeSet<String> {
-    ["cfd".to_string()].into_iter().collect()
 }

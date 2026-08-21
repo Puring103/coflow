@@ -319,6 +319,8 @@ public static CoflowTables Load(Func<string, string?> loadText, CfdLoadOptions? 
 - 删除 `coflow-lsp`，把 LSP 模块移入根 crate 的 `src/lsp/`。
 - 删除 `extension-api`，编辑器 backend 内置 `ExtensionManifest`。
 - 删除 provider trait、catalog、source option decode、probe confidence、动态 source type。
+- 删除 `loader_extensions`、`extra_extensions` 等格式扩展点；文件树和目录发现直接以 `.cfd`
+  为唯一规则，维度目录只作为 runtime 管理的 CFD 子树处理。
 - 删除 CSV/Excel/table/sheet loader、通用 loader core、JSON/MessagePack exporter 和 exporter core。
 - 删除 `export` 命令、export flags、serialized artifact DTO、旧 C# materializer。
 - 清理 Cargo features、workspace members、bench、fixture 和依赖锁文件。
