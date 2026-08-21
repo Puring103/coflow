@@ -229,8 +229,6 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
   const base = field.annotation
   if (!base && !requiredRef) return null
   return {
-    spread_info: base?.spread_info ?? null,
-    ref_target_file: base?.ref_target_file ?? null,
     enum_int_value: base?.enum_int_value ?? null,
     declared_type: base?.declared_type ?? null,
     ref_target_type: base?.ref_target_type ?? requiredRef ?? null,

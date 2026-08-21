@@ -1,23 +1,25 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use coflow_api::{
     DiagnosticSet, DimensionSourceManager, DimensionSourceSchema, ProviderRegistry, ResolvedSource,
-    RewriteDimensionReferencesRequest, RewriteRecordReferencesRequest, SourceWriter,
-    SpreadRewriteTarget, TableContext, WriteCellRequest, WriteDimensionValueRequest,
+    SourceWriter, TableContext, WriteCellRequest, WriteDimensionValueRequest,
     WriteFieldPathSegment,
 };
 use coflow_cft::{CftSchema, RecordKey};
 use coflow_data_model::{
-    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, RecordOrigin, SpreadEdge,
+    CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
 
 use super::writer::{lookup_source_writer, source_for_id};
+use crate::indexes::SourceId;
 use crate::ProjectSession;
 
 pub(super) enum ReferenceUpdateAction {
     Source {
         writer: Arc<dyn SourceWriter>,
-        request: OwnedWriteCellRequest,
+        source: ResolvedSource,
+        requests: Vec<OwnedWriteCellRequest>,
         display_path: String,
     },
     Dimension {
@@ -30,7 +32,7 @@ pub(super) enum ReferenceUpdateAction {
 impl ReferenceUpdateAction {
     pub(super) const fn source(&self) -> &ResolvedSource {
         match self {
-            Self::Source { request, .. } => &request.source,
+            Self::Source { source, .. } => source,
             Self::Dimension { request, .. } => &request.source,
         }
     }
@@ -58,17 +60,33 @@ impl ReferenceUpdateAction {
     ) -> Result<DiagnosticSet, DiagnosticSet> {
         match self {
             Self::Source {
-                writer, request, ..
-            } => writer
-                .write_field(
-                    coflow_api::WriteContext {
-                        project_root,
-                        schema,
-                        model: Some(model),
-                    },
-                    &request.as_request(schema),
-                )
-                .map(|outcome| outcome.diagnostics),
+                writer,
+                source,
+                requests,
+                ..
+            } => {
+                let requests = requests
+                    .iter()
+                    .map(|request| request.as_request(schema, source))
+                    .collect::<Vec<_>>();
+                writer
+                    .write_field_batch(
+                        coflow_api::WriteContext {
+                            project_root,
+                            schema,
+                            model: Some(model),
+                        },
+                        &requests,
+                    )
+                    .map(|outcomes| {
+                        let mut diagnostics = DiagnosticSet::empty();
+                        for outcome in outcomes {
+                            diagnostics.extend(outcome.diagnostics);
+                        }
+                        diagnostics
+                    })
+                    .map_err(|failure| failure.diagnostics)
+            }
             Self::Dimension {
                 manager, request, ..
             } => manager
@@ -134,11 +152,14 @@ pub(super) struct OwnedWriteCellRequest {
     actual_type: String,
     field_path: Vec<WriteFieldPathSegment>,
     new_value: CfdValue,
-    source: ResolvedSource,
 }
 
 impl OwnedWriteCellRequest {
-    pub(super) fn as_request<'a>(&'a self, schema: &'a CftSchema) -> WriteCellRequest<'a> {
+    pub(super) fn as_request<'a>(
+        &'a self,
+        schema: &'a CftSchema,
+        source: &'a ResolvedSource,
+    ) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
             record_key: &self.record_key,
@@ -146,151 +167,8 @@ impl OwnedWriteCellRequest {
             field_path: &self.field_path,
             new_value: &self.new_value,
             schema,
-            source: &self.source,
+            source,
         }
-    }
-}
-
-pub(super) enum SourceRewriteAction {
-    Source {
-        writer: Arc<dyn SourceWriter>,
-        request: OwnedRewriteRecordReferencesRequest,
-        display_path: String,
-    },
-    Dimension {
-        manager: Arc<dyn DimensionSourceManager>,
-        request: OwnedRewriteDimensionReferencesRequest,
-        display_path: String,
-    },
-}
-
-impl SourceRewriteAction {
-    pub(super) const fn source(&self) -> &ResolvedSource {
-        match self {
-            Self::Source { request, .. } => &request.source,
-            Self::Dimension { request, .. } => &request.source,
-        }
-    }
-
-    pub(super) const fn writer(&self) -> Option<&Arc<dyn SourceWriter>> {
-        match self {
-            Self::Source { writer, .. } => Some(writer),
-            Self::Dimension { .. } => None,
-        }
-    }
-
-    pub(super) fn display_path(&self) -> &str {
-        match self {
-            Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => {
-                display_path
-            }
-        }
-    }
-
-    pub(super) fn execute(
-        &self,
-        project_root: &std::path::Path,
-        schema: &CftSchema,
-        model: &coflow_data_model::CfdDataModel,
-    ) -> Result<DiagnosticSet, DiagnosticSet> {
-        match self {
-            Self::Source {
-                writer, request, ..
-            } => writer
-                .rewrite_record_references(
-                    coflow_api::WriteContext {
-                        project_root,
-                        schema,
-                        model: Some(model),
-                    },
-                    &request.as_request(schema),
-                )
-                .map(|outcome| outcome.diagnostics),
-            Self::Dimension {
-                manager, request, ..
-            } => manager
-                .rewrite_dimension_references(
-                    TableContext { project_root },
-                    &request.as_request(schema)?,
-                )
-                .map(|_| DiagnosticSet::empty()),
-        }
-    }
-}
-
-pub(super) struct OwnedRewriteRecordReferencesRequest {
-    source: ResolvedSource,
-    old_key: String,
-    new_key: String,
-    targets: Vec<SpreadRewriteTarget>,
-}
-
-impl OwnedRewriteRecordReferencesRequest {
-    pub(super) fn as_request<'a>(
-        &'a self,
-        schema: &'a CftSchema,
-    ) -> RewriteRecordReferencesRequest<'a> {
-        RewriteRecordReferencesRequest {
-            source: &self.source,
-            old_key: &self.old_key,
-            new_key: &self.new_key,
-            targets: &self.targets,
-            schema,
-        }
-    }
-}
-
-pub(super) struct OwnedRewriteDimensionReferencesRequest {
-    source: ResolvedSource,
-    source_type: coflow_cft::TypeName,
-    source_field: coflow_cft::FieldName,
-    dimension: coflow_cft::DimensionName,
-    variant: coflow_cft::VariantName,
-    source_key: RecordKey,
-    object_path: Vec<CfdPathSegment>,
-    old_key: RecordKey,
-    new_key: RecordKey,
-}
-
-impl OwnedRewriteDimensionReferencesRequest {
-    fn as_request<'a>(
-        &'a self,
-        schema: &'a CftSchema,
-    ) -> Result<RewriteDimensionReferencesRequest<'a>, DiagnosticSet> {
-        let source_type = schema.resolve_type(&self.source_type).ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension source type `{}` disappeared before spread rewrite",
-                self.source_type
-            ))
-        })?;
-        let source_field = schema
-            .field(&self.source_type, &self.source_field)
-            .ok_or_else(|| {
-                transaction_invariant(format!(
-                    "dimension source field `{}.{}` disappeared before spread rewrite",
-                    self.source_type, self.source_field
-                ))
-            })?;
-        let dimension = schema.resolve_dimension(&self.dimension).ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension `{}` disappeared before spread rewrite",
-                self.dimension
-            ))
-        })?;
-        Ok(RewriteDimensionReferencesRequest {
-            source: &self.source,
-            schema: DimensionSourceSchema {
-                schema,
-                dimension,
-                source_type,
-                source_field,
-            },
-            source_key: &self.source_key,
-            variant: &self.variant,
-            object_path: &self.object_path,
-            old_key: &self.old_key,
-            new_key: &self.new_key,
-        })
     }
 }
 
@@ -307,7 +185,9 @@ pub(super) fn reference_update_actions(
         ))
     })?;
     let mut actions = Vec::new();
-    for edge in session.model.direct_ref_edges_to_target(target_id) {
+    let mut source_actions = BTreeMap::<SourceId, usize>::new();
+    let mut dimension_actions = BTreeMap::<(CfdRecordId, DimensionRefCoordinate), usize>::new();
+    for edge in session.model.ref_edges_to_target(target_id) {
         let Some(host_ref) = session.records.get(edge.site.host) else {
             continue;
         };
@@ -315,6 +195,24 @@ pub(super) fn reference_update_actions(
             continue;
         };
         if let Some(dimension) = &edge.site.dimension {
+            let action_key = (edge.site.host, dimension.clone());
+            let relative_path = edge
+                .site
+                .path
+                .segments
+                .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
+                .unwrap_or(&edge.site.path.segments);
+            if let Some(index) = dimension_actions.get(&action_key).copied() {
+                let ReferenceUpdateAction::Dimension { request, .. } = &mut actions[index] else {
+                    unreachable!("dimension action index must point to a dimension write");
+                };
+                if !replace_ref_value(&mut request.new_value, relative_path, &new_key) {
+                    return Err(transaction_invariant(
+                        "indexed dimension reference disappeared before rename",
+                    ));
+                }
+                continue;
+            }
             let Some(values) = host_record.dimension_field(dimension.field.as_str()) else {
                 continue;
             };
@@ -322,12 +220,6 @@ pub(super) fn reference_update_actions(
                 continue;
             };
             let mut root = value.value.clone();
-            let relative_path = edge
-                .site
-                .path
-                .segments
-                .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
-                .unwrap_or(&edge.site.path.segments);
             if !replace_ref_value(&mut root, relative_path, &new_key) {
                 continue;
             }
@@ -362,6 +254,7 @@ pub(super) fn reference_update_actions(
                         source_entry.provider_id
                     ))
                 })?;
+            let action_index = actions.len();
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
                 display_path: source_entry.display_path.clone(),
@@ -379,6 +272,7 @@ pub(super) fn reference_update_actions(
                     new_value: root,
                 },
             });
+            dimension_actions.insert(action_key, action_index);
         } else {
             if !matches!(
                 host_record.value_at_path(&edge.site.path),
@@ -387,19 +281,29 @@ pub(super) fn reference_update_actions(
                 continue;
             }
             let source = source_for_id(session, host_ref.source_id)?;
-            let writer = lookup_source_writer(registry, &source)?;
-            actions.push(ReferenceUpdateAction::Source {
-                writer,
-                display_path: host_ref.display_path.clone(),
-                request: OwnedWriteCellRequest {
-                    origin: host_ref.origin.clone(),
-                    record_key: host_ref.coordinate.key.to_string(),
-                    actual_type: host_ref.coordinate.actual_type.to_string(),
-                    field_path: edge.site.path.segments.clone(),
-                    new_value: CfdValue::Ref(new_key.clone()),
+            let request = OwnedWriteCellRequest {
+                origin: host_ref.origin.clone(),
+                record_key: host_ref.coordinate.key.to_string(),
+                actual_type: host_ref.coordinate.actual_type.to_string(),
+                field_path: edge.site.path.segments.clone(),
+                new_value: CfdValue::Ref(new_key.clone()),
+            };
+            if let Some(index) = source_actions.get(&host_ref.source_id).copied() {
+                let ReferenceUpdateAction::Source { requests, .. } = &mut actions[index] else {
+                    unreachable!("source action index must point to a source write");
+                };
+                requests.push(request);
+            } else {
+                let writer = lookup_source_writer(registry, &source)?;
+                let action_index = actions.len();
+                actions.push(ReferenceUpdateAction::Source {
+                    writer,
                     source,
-                },
-            });
+                    display_path: host_ref.display_path.clone(),
+                    requests: vec![request],
+                });
+                source_actions.insert(host_ref.source_id, action_index);
+            }
         }
     }
     Ok(actions)
@@ -433,144 +337,4 @@ fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &
         _ => None,
     };
     next.is_some_and(|next| replace_ref_value(next, rest, new_key))
-}
-
-pub(super) fn source_rewrite_actions(
-    session: &ProjectSession,
-    registry: &ProviderRegistry,
-    target_id: CfdRecordId,
-    old_key: &str,
-    new_key: &str,
-) -> Result<Vec<SourceRewriteAction>, DiagnosticSet> {
-    let old_key = RecordKey::new(old_key.to_string()).map_err(|error| {
-        transaction_invariant(format!(
-            "old record key became invalid before rewrite: {error}"
-        ))
-    })?;
-    let new_key = RecordKey::new(new_key.to_string()).map_err(|error| {
-        transaction_invariant(format!(
-            "new record key became invalid before rewrite: {error}"
-        ))
-    })?;
-    let mut by_file =
-        std::collections::BTreeMap::<String, (ResolvedSource, Vec<SpreadRewriteTarget>)>::new();
-    let mut dimension_actions = Vec::new();
-    for edge in session.model.spread_edges_from_source(target_id) {
-        let Some(host_ref) = session.records.get(edge.host) else {
-            continue;
-        };
-        let Some(host_record) = session.model.record(edge.host) else {
-            continue;
-        };
-        if edge.dimension.is_some() {
-            dimension_actions.push(dimension_spread_rewrite_action(
-                session,
-                registry,
-                edge,
-                host_record,
-                &old_key,
-                &new_key,
-            )?);
-            continue;
-        }
-        let source = source_for_id(session, host_ref.source_id)?;
-        let target = SpreadRewriteTarget {
-            origin: host_ref.origin.clone(),
-            record_key: host_ref.coordinate.key.to_string(),
-            actual_type: host_ref.coordinate.actual_type.to_string(),
-            object_path: edge.path.segments.clone(),
-        };
-        by_file
-            .entry(host_ref.display_path.clone())
-            .and_modify(|(_, targets)| targets.push(target.clone()))
-            .or_insert_with(|| (source, vec![target]));
-    }
-    let mut actions = by_file
-        .into_iter()
-        .map(|(display_path, (source, targets))| {
-            let writer = lookup_source_writer(registry, &source)?;
-            Ok(SourceRewriteAction::Source {
-                writer,
-                display_path,
-                request: OwnedRewriteRecordReferencesRequest {
-                    source,
-                    old_key: old_key.to_string(),
-                    new_key: new_key.to_string(),
-                    targets,
-                },
-            })
-        })
-        .collect::<Result<Vec<_>, DiagnosticSet>>()?;
-    actions.extend(dimension_actions);
-    Ok(actions)
-}
-
-fn dimension_spread_rewrite_action(
-    session: &ProjectSession,
-    registry: &ProviderRegistry,
-    edge: &SpreadEdge,
-    host_record: &CfdRecord,
-    old_key: &RecordKey,
-    new_key: &RecordKey,
-) -> Result<SourceRewriteAction, DiagnosticSet> {
-    let dimension = edge.dimension.as_ref().ok_or_else(|| {
-        transaction_invariant("dimension spread rewrite lost its dimension coordinate")
-    })?;
-    let field = session
-        .schema()
-        .field(host_record.actual_type(), &dimension.field)
-        .ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension host field `{}.{}` disappeared before spread rewrite",
-                host_record.actual_type(),
-                dimension.field
-            ))
-        })?;
-    let source_entry = session
-        .source_data
-        .dimension_source(
-            field.declaring_type.as_str(),
-            field.name.as_str(),
-            dimension.dimension.as_str(),
-        )
-        .ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension field `{}.{}` lost its managed source before spread rewrite",
-                field.declaring_type, field.name
-            ))
-        })?;
-    let manager = registry
-        .dimension_source_manager(&source_entry.provider_id)
-        .ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension source provider `{}` disappeared before spread rewrite",
-                source_entry.provider_id
-            ))
-        })?;
-    let object_path = edge
-        .path
-        .segments
-        .strip_prefix(&[CfdPathSegment::Field(dimension.field.to_string())])
-        .unwrap_or(&edge.path.segments)
-        .to_vec();
-    let source_key = RecordKey::new(host_record.key().to_string()).map_err(|error| {
-        transaction_invariant(format!(
-            "validated host key became invalid before spread rewrite: {error}"
-        ))
-    })?;
-    Ok(SourceRewriteAction::Dimension {
-        manager,
-        display_path: source_entry.display_path.clone(),
-        request: OwnedRewriteDimensionReferencesRequest {
-            source: source_entry.source.clone(),
-            source_type: field.declaring_type.clone(),
-            source_field: field.name.clone(),
-            dimension: dimension.dimension.clone(),
-            variant: dimension.variant.clone(),
-            source_key,
-            object_path,
-            old_key: old_key.clone(),
-            new_key: new_key.clone(),
-        },
-    })
 }

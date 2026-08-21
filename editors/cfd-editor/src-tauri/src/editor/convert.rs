@@ -2,17 +2,17 @@
 //!
 //! After spec 17, `FieldCell.value` is a `CfdValue` straight from the
 //! core model — no wire-only re-encoding. Editor-derived metadata
-//! (spread-source, ref target file hint, enum integer value) is
-//! collected into `FieldAnnotation` on the side.
+//! (schema shape and enum integer value) is collected into
+//! `FieldAnnotation` on the side.
 
-use coflow_data_model::{CfdPath, CfdRecord, CfdValue};
+use coflow_data_model::{CfdRecord, CfdValue};
 use coflow_runtime::{
     dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::editor::session::Diagnostics;
-use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, SpreadInfo};
+use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow};
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
@@ -128,7 +128,7 @@ fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
             Some(FieldCell {
                 name: name.clone(),
                 value: value.clone(),
-                annotation: build_annotation(record, &name, value, ctx, &[]),
+                annotation: build_annotation(record, &name, value, ctx),
             })
         })
         .collect()
@@ -149,26 +149,9 @@ fn build_annotation(
     field_name: &str,
     value: &CfdValue,
     ctx: &WireContext<'_>,
-    parent_path: &[String],
 ) -> Option<FieldAnnotation> {
-    let host_coordinate = host.coordinate();
-    let path = CfdPath::root().field(field_name.to_string());
     let declared_shape = ctx.queries.field_shape(host.actual_type(), field_name);
-    let mut annotation = annotation_for_value(
-        value,
-        ctx,
-        Some(&host_coordinate),
-        &path,
-        declared_shape.as_ref(),
-    );
-    if let Some(source) = ctx.queries.spread_source(&host_coordinate, &path) {
-        annotation.spread_info = Some(spread_info_for_source(
-            ctx,
-            &source,
-            parent_path,
-            field_name,
-        ));
-    }
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
     // Synthesized dimension records expose a `default` slot that mirrors the
     // source record's value. Writing into it isn't blocked at the engine
     // layer, but the editor renders it as read-only to steer users to the
@@ -187,9 +170,8 @@ pub fn annotation_for_draft_field(
     value: &CfdValue,
     ctx: &WireContext<'_>,
 ) -> Option<FieldAnnotation> {
-    let path = CfdPath::root().field(field_name.to_string());
     let declared_shape = ctx.queries.field_shape(actual_type, field_name);
-    let annotation = annotation_for_value(value, ctx, None, &path, declared_shape.as_ref());
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
     if annotation.is_empty() {
         None
     } else {
@@ -200,8 +182,6 @@ pub fn annotation_for_draft_field(
 fn annotation_for_value(
     value: &CfdValue,
     ctx: &WireContext<'_>,
-    host: Option<&RecordCoordinate>,
-    path: &CfdPath,
     declared_shape: Option<&FieldShapeInfo>,
 ) -> FieldAnnotation {
     let mut annotation = FieldAnnotation::default();
@@ -229,15 +209,6 @@ fn annotation_for_value(
         }
     }
     match value {
-        CfdValue::Ref(_) => {
-            annotation.ref_target_file = host
-                .and_then(|host| ctx.queries.resolved_ref_target(host, path))
-                .and_then(|target| {
-                    ctx.queries
-                        .file_for_record(&target.actual_type, &target.key)
-                        .map(str::to_string)
-                });
-        }
         CfdValue::Enum(enum_value) => {
             annotation.enum_int_value = Some(enum_value.value);
         }
@@ -246,9 +217,7 @@ fn annotation_for_value(
             annotation.field_order = ctx.queries.type_field_names(object.actual_type());
             for (name, child) in object.fields() {
                 let child_shape = ctx.queries.field_shape(object.actual_type(), name.as_str());
-                let child_path = path.clone().field(name.as_str());
-                let child_annotation =
-                    annotation_for_value(child, ctx, host, &child_path, child_shape.as_ref());
+                let child_annotation = annotation_for_value(child, ctx, child_shape.as_ref());
                 if !child_annotation.is_empty() {
                     annotation
                         .children
@@ -259,9 +228,7 @@ fn annotation_for_value(
         CfdValue::Array(items) => {
             let item_shape = declared_shape.and_then(|shape| shape.collection_item.as_deref());
             for (idx, child) in items.iter().enumerate() {
-                let child_path = path.clone().index(idx);
-                let child_annotation =
-                    annotation_for_value(child, ctx, host, &child_path, item_shape);
+                let child_annotation = annotation_for_value(child, ctx, item_shape);
                 if !child_annotation.is_empty() {
                     annotation
                         .children
@@ -273,9 +240,7 @@ fn annotation_for_value(
             let item_shape = declared_shape.and_then(|shape| shape.collection_item.as_deref());
             for (key, child) in entries {
                 let key_text = dict_key_path_text(key);
-                let child_path = path.clone().dict_key_value(key);
-                let child_annotation =
-                    annotation_for_value(child, ctx, host, &child_path, item_shape);
+                let child_annotation = annotation_for_value(child, ctx, item_shape);
                 if !child_annotation.is_empty() {
                     annotation.children.insert(key_text, child_annotation);
                 }
@@ -306,25 +271,6 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
         ann.item_annotation = Some(Box::new(element_template(inner)));
     }
     ann
-}
-
-fn spread_info_for_source(
-    ctx: &WireContext<'_>,
-    source: &RecordCoordinate,
-    parent_path: &[String],
-    field_name: &str,
-) -> SpreadInfo {
-    let mut source_field_path = parent_path.to_vec();
-    source_field_path.push(field_name.to_string());
-    let source_record_file = ctx
-        .queries
-        .file_for_record(&source.actual_type, &source.key)
-        .map(str::to_string);
-    SpreadInfo {
-        source: source.clone(),
-        source_record_file,
-        source_field_path,
-    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,4 @@
 use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
-use coflow_data_model::CfdPath;
 use coflow_data_model::RecordOrigin;
 
 use crate::indexes::{RecordRef, SourceId};
@@ -27,44 +26,15 @@ pub(super) struct WriteTarget {
 }
 
 pub(super) fn write_target_for_path(
-    session: &ProjectSession,
+    _session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
 ) -> Result<WriteTarget, DiagnosticSet> {
-    let Some(WriteFieldPathSegment::Field(top_field)) = path.first() else {
-        return Ok(WriteTarget {
-            coordinate: host_ref.coordinate.clone(),
-            origin: host_ref.origin.clone(),
-            source_id: host_ref.source_id,
-            display_path: host_ref.display_path.clone(),
-            field_path: path.to_vec(),
-        });
-    };
-    let path = CfdPath {
-        segments: path.to_vec(),
-    };
-    let Some((source_id, source_path)) = session.model.spread_source_path(host_ref.id, &path)
-    else {
-        return Ok(WriteTarget {
-            coordinate: host_ref.coordinate.clone(),
-            origin: host_ref.origin.clone(),
-            source_id: host_ref.source_id,
-            display_path: host_ref.display_path.clone(),
-            field_path: path.segments,
-        });
-    };
-    let Some(source_ref) = session.records.get(source_id) else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-SPREAD-SOURCE",
-            "WRITE",
-            format!("spread source for field `{top_field}` is no longer indexed"),
-        )));
-    };
     Ok(WriteTarget {
-        coordinate: source_ref.coordinate.clone(),
-        origin: source_ref.origin.clone(),
-        source_id: source_ref.source_id,
-        display_path: source_ref.display_path.clone(),
-        field_path: source_path.segments,
+        coordinate: host_ref.coordinate.clone(),
+        origin: host_ref.origin.clone(),
+        source_id: host_ref.source_id,
+        display_path: host_ref.display_path.clone(),
+        field_path: path.to_vec(),
     })
 }

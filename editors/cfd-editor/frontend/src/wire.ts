@@ -12,7 +12,6 @@ import type { GraphEdge } from './bindings/GraphEdge'
 import type { GraphNode } from './bindings/GraphNode'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
-import type { SpreadInfo } from './bindings/SpreadInfo'
 
 export type FieldValue = CfdValue
 export type DictKey = CfdDictKey
@@ -68,10 +67,6 @@ export function recordFields(object: CfdObject): FieldCell[] {
 
 export function objectFields(value: FieldValue): FieldCell[] {
   return value.kind === 'object' ? recordFields(value.value) : []
-}
-
-export function cellSpreadInfo(cell: FieldCell): SpreadInfo | undefined {
-  return cell.annotation?.spread_info ?? undefined
 }
 
 export function cellDeclaredType(cell: FieldCell): string | undefined {
@@ -145,10 +140,6 @@ export function annotationChild(
   key: string | number,
 ): FieldAnnotation | undefined {
   return annotation?.children?.[String(key)] ?? undefined
-}
-
-export function isSpreadCell(cell: FieldCell): boolean {
-  return !!cellSpreadInfo(cell)
 }
 
 export function fieldPathField(name: string): FieldPathSegment {

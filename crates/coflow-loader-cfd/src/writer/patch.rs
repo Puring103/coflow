@@ -1,5 +1,5 @@
 use coflow_api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
-use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
+use coflow_cfd::ast::CfdRecord as AstRecord;
 use coflow_cfd::CfdAst;
 use coflow_cft::CftSchema;
 use coflow_cft::Span;
@@ -274,42 +274,6 @@ fn find_closing_brace(source: &str, near: usize) -> Result<usize, DiagnosticSet>
         "CFD-WRITE",
         "closing brace not found",
     )))
-}
-
-pub(super) fn collect_spread_ref_key_spans(
-    entries: &[CfdBlockEntry],
-    old_key: &str,
-    out: &mut Vec<Span>,
-) {
-    for entry in entries {
-        if let CfdBlockEntry::Spread(value, _) = entry {
-            collect_ref_key_spans_in_value(value, old_key, out);
-        }
-    }
-}
-
-fn collect_ref_key_spans_in_value(value: &AstValue, old_key: &str, out: &mut Vec<Span>) {
-    match value {
-        AstValue::Ref(reference) => {
-            if reference.key.0 == old_key {
-                out.push(reference.key.1);
-            }
-        }
-        AstValue::Array(items, _) => {
-            for item in items {
-                collect_ref_key_spans_in_value(item, old_key, out);
-            }
-        }
-        AstValue::Spread(inner, _) => {
-            collect_ref_key_spans_in_value(inner, old_key, out);
-        }
-        AstValue::Block(_)
-        | AstValue::Scalar(_, _)
-        | AstValue::BitExpr(_)
-        | AstValue::QuotedString(_, _)
-        | AstValue::FormattedString(_)
-        | AstValue::Null(_) => {}
-    }
 }
 
 pub(super) fn replace_spans(

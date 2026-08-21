@@ -6,7 +6,7 @@
 //! straight to the front-end. The types that *remain* here are
 //! composition views — `RecordRow`, `FieldCell`, `FieldAnnotation`,
 //! `ProjectSnapshot`, ... — that bundle core data with editor-specific
-//! derived metadata (file hints, enum int values, spread info, ...).
+//! derived metadata (file hints, enum int values, ...).
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
@@ -416,7 +416,7 @@ pub struct FieldDiagnostic {
 /// One cell in a record row.
 ///
 /// `value` is the authoritative `CfdValue`, shipped straight from the core
-/// model. `annotation` carries spread, ref-target, and enum metadata.
+/// model. `annotation` carries ref-target and enum metadata.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -432,10 +432,6 @@ pub struct FieldCell {
 
 /// Editor-only derived metadata for a single cell.
 ///
-/// - `spread_info`: cell came from a `...spread`; carries the source coordinate
-///   and a file-path hint for jump-to-source.
-/// - `ref_target_file`: project-relative file path of the record this cell
-///   refers to. Only meaningful when `value` is a `CfdValue::Ref`.
 /// - `enum_int_value`: integer backing the variant when `value` is a
 ///   `CfdValue::Enum`. The variant name lives on the value itself; the
 ///   integer is convenient for displays / filtering.
@@ -464,10 +460,6 @@ pub struct FieldAnnotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spread_info: Option<SpreadInfo>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ref_target_file: Option<String>,
     #[serde(
         default,
         with = "coflow_data_model::serde_i64::option",
@@ -531,10 +523,8 @@ pub struct EnumVariantOption {
 impl FieldAnnotation {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.spread_info.is_none()
-            && self.label.is_none()
+        self.label.is_none()
             && self.description.is_none()
-            && self.ref_target_file.is_none()
             && self.enum_int_value.is_none()
             && self.declared_type.is_none()
             && self.ref_target_type.is_none()
@@ -548,21 +538,6 @@ impl FieldAnnotation {
             && self.field_order.is_empty()
             && self.children.is_empty()
     }
-}
-
-/// Source record coordinate of a spread-inherited cell, plus the field
-/// path within the source record so the UI can render source attribution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct SpreadInfo {
-    pub source: RecordCoordinate,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_record_file: Option<String>,
-    pub source_field_path: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

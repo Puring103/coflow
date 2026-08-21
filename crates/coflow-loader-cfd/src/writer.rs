@@ -13,22 +13,20 @@ mod target;
 
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    RewriteRecordReferencesRequest, SourceWriter, SyncHeaderRequest, TableAddressing, TableContext,
-    TableManager, TableManagerDescriptor, TableOperationResult, WriteCellRequest, WriteContext,
-    WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter,
+    SyncHeaderRequest, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult, WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_cft::Span;
 use coflow_data_model::RecordOrigin;
 use patch::{
-    append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
-    find_record, reorder_record_spans, replace_spans, serialize_record, validate_record_key,
-    validate_values,
+    append_record_source, apply_patch, delete_record_span, find_record, reorder_record_spans,
+    replace_spans, serialize_record, validate_record_key, validate_values,
 };
 use render::{added_columns, cfd_top_level_fields, removed_columns, rewrite_cfd_records};
 use std::path::Path;
-use target::spread_entries_at_path;
 
 pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "cfd",
@@ -134,6 +132,64 @@ impl SourceWriter for CfdWriter {
         Ok(WriteOutcome::default())
     }
 
+    fn write_field_batch(
+        &self,
+        _ctx: WriteContext<'_>,
+        requests: &[WriteCellRequest<'_>],
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        let Some(first) = requests.first() else {
+            return Ok(Vec::new());
+        };
+        let RecordOrigin::File { path, .. } = first.origin else {
+            return Err(WriteBatchFailure {
+                index: 0,
+                diagnostics: DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    "cfd writer requires a File origin",
+                )),
+            });
+        };
+        let (mut source, mut ast) =
+            Self::read_or_parse(path).map_err(|diagnostics| WriteBatchFailure {
+                index: 0,
+                diagnostics,
+            })?;
+        for (index, request) in requests.iter().enumerate() {
+            let RecordOrigin::File {
+                path: request_path, ..
+            } = request.origin
+            else {
+                return Err(WriteBatchFailure {
+                    index,
+                    diagnostics: DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "cfd writer requires a File origin",
+                    )),
+                });
+            };
+            if request_path != path {
+                return Err(WriteBatchFailure {
+                    index,
+                    diagnostics: DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "cfd field batch must target one source file",
+                    )),
+                });
+            }
+            source = apply_patch(&source, &ast, request)
+                .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
+            let (next_ast, diagnostics) = parse_cfd(&source);
+            ensure_parse_ok(path, &diagnostics)
+                .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
+            ast = next_ast;
+        }
+        Self::write_source(path, &source).map_err(|diagnostics| WriteBatchFailure {
+            index: requests.len() - 1,
+            diagnostics,
+        })?;
+        Ok(vec![WriteOutcome::default(); requests.len()])
+    }
+
     fn insert_record(
         &self,
         _ctx: WriteContext<'_>,
@@ -237,59 +293,6 @@ impl SourceWriter for CfdWriter {
             ))
         })?;
         let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
-        Self::write_source(path, &new_source)?;
-        Ok(WriteOutcome::default())
-    }
-
-    fn rewrite_record_references(
-        &self,
-        _ctx: WriteContext<'_>,
-        request: &RewriteRecordReferencesRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        let path = request.source.location.path();
-        let (source, ast) = Self::read_or_parse(path)?;
-        let mut spans = Vec::new();
-        for target in request.targets {
-            let RecordOrigin::File {
-                path: origin_path, ..
-            } = &target.origin
-            else {
-                continue;
-            };
-            if origin_path != path {
-                continue;
-            }
-            let record = ast
-                .records
-                .iter()
-                .find(|record| {
-                    record.key == target.record_key && record.type_name == target.actual_type
-                })
-                .ok_or_else(|| {
-                    DiagnosticSet::one(diag(
-                        "CFD-WRITE",
-                        format!(
-                            "record `{}.{}` not found in AST",
-                            target.actual_type, target.record_key
-                        ),
-                    ))
-                })?;
-            let entries = spread_entries_at_path(
-                request.schema,
-                &target.actual_type,
-                record,
-                &target.object_path,
-            )?;
-            collect_spread_ref_key_spans(entries, request.old_key, &mut spans);
-        }
-        if spans.is_empty() {
-            return Ok(WriteOutcome::default());
-        }
-        let replacements = spans
-            .into_iter()
-            .map(|span| (span, request.new_key.to_string()))
-            .collect::<Vec<_>>();
-        let new_source = replace_spans(&source, &replacements)?;
         Self::write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }

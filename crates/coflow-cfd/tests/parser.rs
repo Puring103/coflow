@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use coflow_cfd::{
-    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExprKind, CfdBitOp, CfdBlockEntry,
+    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExprKind, CfdBitOp,
     CfdParseOptions, CfdValue, StructuralLimits,
 };
 
@@ -415,15 +415,8 @@ fn default_limits_reject_deep_input_without_recursing_unboundedly() {
     );
 }
 
-// ── Spread syntax ─────────────────────────────────────────────────────────────
-
 #[test]
-fn spread_in_block() {
-    let ast = parse_ok("r: T { ...&base, x: 1, }");
-    let r = &ast.records[0];
-    assert_eq!(r.entries.len(), 2);
-    assert!(matches!(r.entries[0], CfdBlockEntry::Spread(_, _)));
-    let fields = r.fields().collect::<Vec<_>>();
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].name, "x");
+fn spread_syntax_is_rejected() {
+    let (_, diagnostics) = parse_cfd("r: T { ...&base, x: 1, }");
+    assert!(!diagnostics.is_empty());
 }

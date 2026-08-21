@@ -7,7 +7,6 @@
 这些项相对独立、风险较低，适合集中做一轮文档或小型回归补强：
 
 - #20：文档说明 `coflow.enum.lock.json` 保留已删除 key 是稳定编号策略，并标注未来可加 prune/compact。
-- #24：文档强调 CFD spread 必须写 `...&key`，不是 `...key`。
 
 ## P0：高风险缺陷
 
@@ -137,28 +136,6 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
   - 可选提供 prune/compact 命令。
 
 ## Excel / CFD 数据安全边界
-
-### 23. CFD spread 互相引用未报错
-
-- 复现轮次：第 29 轮。
-- 现象：
-  - 尝试制造 `stage_forest_02` 与 `stage_forest_03` 互相 spread，check 仍通过。
-- 影响：
-  - 如果语义上不允许，可能缺少循环检测。
-- 建议：
-  - 确认 spread 语义。
-  - 如果不允许循环，增加诊断和回归测试。
-
-### 24. CFD spread 语法需要文档强调
-
-- 复现轮次：第 20 轮。
-- 现象：
-  - `...stage_forest_02` 报 `ReferenceNeedsMarker`。
-  - `...&stage_forest_02` 才通过。
-- 影响：
-  - 语法易写错。
-- 建议：
-  - CFD reference 文档中明确 spread 引用必须使用 `&key`。
 
 ## 当前表现良好的能力
 

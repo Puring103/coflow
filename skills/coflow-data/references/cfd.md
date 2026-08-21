@@ -2,7 +2,7 @@
 
 CFD（Coflow Data File，`.cfd`）是 coflow 的文本数据文件格式，用来编写 CFT schema 定义下的配置记录。
 
-它适合承载表格不容易表达的数据：单例、嵌套对象、数组、字典、多态对象、记录引用和覆盖模板。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。项目中的不同数据源会合并检查，因此可以互相引用。
+它适合承载表格不容易表达的数据：单例、嵌套对象、数组、字典、多态对象和记录引用。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。项目中的不同数据源会合并检查，因此可以互相引用。
 
 下面是一个简单 CFD 文件：
 
@@ -302,47 +302,6 @@ item: &sword_fire
 
 字段类型为 `Reward` 时，CFD 必须写内联对象。数组和字典会递归应用内层类型。
 
-## 覆盖
-
-CFD 支持 `...source` 覆盖语法，用于复用对象或字典中的值，再局部改写字段或条目。
-
-```cfd
-elite_monster: Monster {
-  ...&basic_monster,
-  name: "Elite Training Dummy",
-  stats: { hp: 250, attack: 5 },
-}
-```
-
-规则：
-
-- spread 按出现顺序合并。
-- 后面的 spread 覆盖前面的 spread。
-- 本地字段或本地字典条目覆盖所有 spread 来源。
-- 对象 spread 可以引用顶层 record，也可以使用内联对象；来源类型必须能赋值给当前对象类型。
-- 字典 spread 使用内联字典；每个 key 和 value 都必须符合当前字典类型。
-- `...&key` 中的 key 按当前对象类型查找，可以引用该类型或其子类型的 record。
-
-对象和字典都可以使用内联 spread：
-
-```cfd
-elite_monster: Monster {
-  ...&base_monster,
-  stats: {
-    ...{ hp: 100, attack: 5 },
-    hp: 250,
-  }
-}
-
-elite_drop: DropTable {
-  ...&base_drop,
-  weights: {
-    ...{Ice: 5},
-    Fire: 20,
-  },
-}
-```
-
 ## 和 CFT 的关系
 
 CFD 只描述数据值，具体语义由 CFT 决定：
@@ -351,7 +310,7 @@ CFD 只描述数据值，具体语义由 CFT 决定：
 - 字段名必须来自目标 type 或其父类。
 - 字段值会按照 CFT 字段类型解析。
 - 未填写字段会使用 CFT 默认值。
-- `&Type` 引用和对象 spread 会按照 CFT 继承关系检查可赋值性。
+- `&Type` 引用会按照 CFT 继承关系检查可赋值性。
 - `check` 块会在对象构建、默认值填充和引用解析后执行。
 
 因此，修改 CFT 字段类型、默认值或继承关系，都可能影响 CFD 文件是否仍然通过检查。
@@ -423,10 +382,16 @@ default_drops: DropTable {
 }
 
 elite_monster: Monster {
-  ...&basic_monster,
   name: "Elite Training Dummy",
   stats: { hp: 250, attack: 5 },
   weaknesses: { Fire: 1.25, Ice: 1.5 },
+  drop: {
+    rewards: [
+      ItemReward { item: &sword_fire, count: 1 },
+      CurrencyReward { amount: 10 },
+    ],
+    weights: { Fire: 10, Ice: 5 },
+  },
 }
 
 fire_encounter: Encounter {
@@ -445,7 +410,6 @@ fire_encounter: Encounter {
 | `featured_item: sword_fire` | 裸 key 不会被解析为对象引用 | 写 `&sword_fire` |
 | `name: Fire Sword` | string 值必须使用引号 | 写 `name: "Fire Sword"` |
 | `Reward { r1 { ... } }` 且 `Reward` 是抽象类型 | 抽象类型不能直接实例化 | 写 `r1: ItemReward { ... }` |
-| `...&sword_fire` spread 到 `Stats` | spread 来源类型不能赋给目标对象类型 | 使用同类型或可赋值对象来源 |
 | `name: null` 且 `name` 不是 nullable | `null` 只能赋给 `T?` | 改字段类型为 `string?` 或提供字符串 |
 | `element: Flame` | enum variant 不存在 | 检查 CFT enum 定义并写正确 variant |
 | 普通 enum 写 `A | B` | 只有 `@flag` enum 支持按位表达式 | 改为单个变体，或把 enum 声明为 `@flag` |

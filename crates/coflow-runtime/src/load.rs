@@ -803,10 +803,7 @@ fn record_model_work(
         .saturating_add(model.record_count());
     statistics.ref_edges_rebuilt = statistics
         .ref_edges_rebuilt
-        .saturating_add(model.direct_ref_edges().count());
-    statistics.spread_edges_rebuilt = statistics
-        .spread_edges_rebuilt
-        .saturating_add(model.spread_edges().count());
+        .saturating_add(model.ref_edges().count());
     statistics.check_roots_executed = statistics
         .check_roots_executed
         .saturating_add(check.statistics.executed_tasks);

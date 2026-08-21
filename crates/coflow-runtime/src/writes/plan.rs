@@ -11,9 +11,7 @@ use crate::indexes::{RecordRef, SourceId};
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
 
-use super::refs::{
-    reference_update_actions, source_rewrite_actions, ReferenceUpdateAction, SourceRewriteAction,
-};
+use super::refs::{reference_update_actions, ReferenceUpdateAction};
 use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
 use super::writer::{lookup_source_writer, source_for_file, source_for_id};
 use crate::write_rules;
@@ -65,7 +63,6 @@ pub(crate) struct RenameWritePlan {
     pub(super) source: ResolvedSource,
     pub(super) writer: Arc<dyn SourceWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
-    pub(super) rewrite_actions: Vec<SourceRewriteAction>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
@@ -135,9 +132,6 @@ impl MutationExecutionPlan {
             Self::Rename(RenamePlan::Write(plan)) => {
                 visit(&plan.source, Some(&plan.writer))?;
                 for action in &plan.reference_actions {
-                    visit(action.source(), action.writer())?;
-                }
-                for action in &plan.rewrite_actions {
                     visit(action.source(), action.writer())?;
                 }
                 for action in &plan.dimension_actions {
@@ -643,8 +637,6 @@ fn prepare_rename(
     let source = source_for_id(session, target_ref.source_id)?;
     let writer = lookup_source_writer(registry, &source)?;
     let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
-    let rewrite_actions =
-        source_rewrite_actions(session, registry, target_ref.id, &record.key, new_key)?;
     let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
@@ -653,7 +645,6 @@ fn prepare_rename(
         source,
         writer,
         reference_actions,
-        rewrite_actions,
         dimension_actions,
     })))
 }

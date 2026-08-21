@@ -165,17 +165,8 @@ impl ProjectSession {
         let record_ref = self
             .records
             .get_by_coordinate(&coordinate.actual_type, &coordinate.key)?;
-        let host_path = CfdPath {
-            segments: path.to_vec(),
-        };
-        let (target_ref, target_path) = if let Some((source_id, source_path)) =
-            self.model.spread_source_path(record_ref.id, &host_path)
-        {
-            (self.records.get(source_id)?, source_path.segments)
-        } else {
-            (record_ref, path.to_vec())
-        };
-        let target_record = self.model.record(target_ref.id)?;
+        let target_path = path.to_vec();
+        let target_record = self.model.record(record_ref.id)?;
         let old_value = record_value_at_path(
             target_record,
             &CfdPath {
@@ -185,8 +176,8 @@ impl ProjectSession {
         .cloned();
         Some(EffectiveFieldWrite {
             host: coordinate.clone(),
-            target: target_ref.coordinate.clone(),
-            file_path: target_ref.display_path.clone(),
+            target: record_ref.coordinate.clone(),
+            file_path: record_ref.display_path.clone(),
             field_path: target_path,
             old_value,
         })

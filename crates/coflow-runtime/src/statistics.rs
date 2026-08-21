@@ -12,7 +12,6 @@ pub struct ProjectExecutionStats {
     pub records_materialized: usize,
     pub records_reused: usize,
     pub ref_edges_rebuilt: usize,
-    pub spread_edges_rebuilt: usize,
     pub check_roots_executed: usize,
     pub dimension_records_projected: usize,
     pub dimension_sources_planned: usize,
@@ -36,9 +35,6 @@ impl ProjectExecutionStats {
         self.ref_edges_rebuilt = self
             .ref_edges_rebuilt
             .saturating_add(other.ref_edges_rebuilt);
-        self.spread_edges_rebuilt = self
-            .spread_edges_rebuilt
-            .saturating_add(other.spread_edges_rebuilt);
         self.check_roots_executed = self
             .check_roots_executed
             .saturating_add(other.check_roots_executed);

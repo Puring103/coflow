@@ -1,7 +1,7 @@
 mod tokens;
 
 use crate::ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField,
     CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 use crate::{CfdParseOptions, CfdSyntaxDiagnostic, Span};
@@ -92,7 +92,7 @@ impl<'a> Parser<'a> {
                 group_type: None,
                 type_name,
                 type_span,
-                entries: block.entries,
+                fields: block.fields,
                 span,
             };
             self.charge_node(span)?;
@@ -136,7 +136,7 @@ impl<'a> Parser<'a> {
                 group_type: Some((group_token.text.clone(), group_token.span)),
                 type_name,
                 type_span,
-                entries: block.entries,
+                fields: block.fields,
                 span,
             };
             self.charge_node(span)?;
@@ -175,7 +175,7 @@ impl<'a> Parser<'a> {
 
         let start = self.pos;
         self.expect_char('{', "block start `{`")?;
-        let mut entries = Vec::new();
+        let mut fields = Vec::new();
 
         loop {
             self.skip_ws_and_comments();
@@ -186,16 +186,7 @@ impl<'a> Parser<'a> {
                 return Err(self.error("unterminated block, expected `}`"));
             }
 
-            if self.eat_spread() {
-                let spread_start = self.pos - 3;
-                let value = self.parse_value()?;
-                let span = Span::new(spread_start, value.span().end);
-                entries.push(CfdBlockEntry::Spread(value, span));
-                self.charge_node(span)?;
-            } else {
-                let field = self.parse_field()?;
-                entries.push(CfdBlockEntry::Field(field));
-            }
+            fields.push(self.parse_field()?);
 
             self.skip_ws_and_comments();
             if self.eat_char(',') {
@@ -208,7 +199,7 @@ impl<'a> Parser<'a> {
 
         Ok(CfdBlock {
             type_marker,
-            entries,
+            fields,
             span: Span::new(start, self.pos),
         })
     }
@@ -480,15 +471,7 @@ impl<'a> Parser<'a> {
             if self.is_eof() {
                 return Err(self.error("unterminated array, expected `]`"));
             }
-            if self.eat_spread() {
-                let spread_start = self.pos - 3;
-                let value = self.parse_value()?;
-                let span = Span::new(spread_start, value.span().end);
-                items.push(CfdValue::Spread(Box::new(value), span));
-                self.charge_node(span)?;
-            } else {
-                items.push(self.parse_value()?);
-            }
+            items.push(self.parse_value()?);
             self.skip_ws_and_comments();
             if self.eat_char(',') {
                 self.skip_ws_and_comments();

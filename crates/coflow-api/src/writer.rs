@@ -5,8 +5,8 @@ mod transaction;
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteBatchFailure,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
+    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    WriteOutcome, WriteRecordRef,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
@@ -120,24 +120,6 @@ pub trait SourceWriter: Send + Sync {
             "WRITE",
             "writer does not support renaming record keys",
         )))
-    }
-
-    /// Rewrite source-level references to a renamed record key.
-    ///
-    /// The default implementation is a no-op because ordinary `CfdValue::Ref`
-    /// locations are updated via [`SourceWriter::write_field`]. Providers should
-    /// override this when their source syntax contains references that do not
-    /// survive as runtime refs.
-    ///
-    /// # Errors
-    ///
-    /// Returns diagnostics when the source cannot be read or updated.
-    fn rewrite_record_references(
-        &self,
-        _ctx: WriteContext<'_>,
-        _request: &RewriteRecordReferencesRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
-        Ok(WriteOutcome::default())
     }
 
     /// Delete a top-level record.

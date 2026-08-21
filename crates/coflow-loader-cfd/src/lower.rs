@@ -1,6 +1,5 @@
 use coflow_cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlockEntry, CfdFormatSegment, CfdRecord,
-    CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
 };
 use coflow_cft::{record_key_ident_error, CftSchema, CftValueType, Span};
 use coflow_data_model::{
@@ -43,28 +42,18 @@ fn lower_record(
     } else {
         validate_record_type(schema, &record.type_name, record.type_span)?;
     }
-    let fields = lower_object_entries(schema, &record.type_name, &record.entries)?;
+    let fields = lower_object_fields(schema, &record.type_name, &record.fields)?;
     Ok(ParsedLoadedRecordDraft {
-        record: LoadedRecordDraft::with_spreads(
-            record.key.clone(),
-            record.type_name.clone(),
-            fields.spreads,
-            fields.fields,
-        ),
+        record: LoadedRecordDraft::new(record.key.clone(), record.type_name.clone(), fields),
         span: text_span(record.span),
     })
 }
 
-struct ObjectFields {
-    spreads: Vec<LoadedValueDraft>,
-    fields: BTreeMap<String, LoadedValueDraft>,
-}
-
-fn lower_object_entries(
+fn lower_object_fields(
     schema: &CftSchema,
     type_name: &str,
-    entries: &[CfdBlockEntry],
-) -> Result<ObjectFields, CfdTextDiagnostics> {
+    fields: &[CfdField],
+) -> Result<BTreeMap<String, LoadedValueDraft>, CfdTextDiagnostics> {
     let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
         error(
             CfdTextErrorCode::UnknownType,
@@ -76,21 +65,10 @@ fn lower_object_entries(
         .all_fields()
         .map(|field| (field.name.as_str(), field))
         .collect::<BTreeMap<_, _>>();
-    let mut spreads = Vec::new();
     let mut values = BTreeMap::new();
     let mut seen = BTreeSet::new();
     let mut diagnostics = Vec::new();
-    for entry in entries {
-        match entry {
-            CfdBlockEntry::Spread(value, _) => match lower_spread(
-                schema,
-                value,
-                &CftValueType::Object(schema_type.name.clone()),
-            ) {
-                Ok(value) => spreads.push(value),
-                Err(error) => diagnostics.extend(error.diagnostics),
-            },
-            CfdBlockEntry::Field(field) => {
+    for field in fields {
                 if field.name == "id" {
                     diagnostics.extend(
                         error(
@@ -130,16 +108,8 @@ fn lower_object_entries(
                     }
                     Err(error) => diagnostics.extend(error.diagnostics),
                 }
-            }
-        }
     }
-    finish(
-        ObjectFields {
-            spreads,
-            fields: values,
-        },
-        diagnostics,
-    )
+    finish(values, diagnostics)
 }
 
 pub(crate) fn lower_value(
@@ -390,16 +360,11 @@ fn lower_object(
             } else {
                 (expected_type, true)
             };
-            let fields = lower_object_entries(schema, actual_type, &block.entries)?;
-            Ok(match (declared, fields.spreads.is_empty()) {
-                (true, true) => LoadedValueDraft::object_with_declared_type(fields.fields),
-                (true, false) => LoadedValueDraft::object_spread(fields.spreads, fields.fields),
-                (false, true) => LoadedValueDraft::object(actual_type, fields.fields),
-                (false, false) => LoadedValueDraft::object_spread_with_actual_type(
-                    actual_type,
-                    fields.spreads,
-                    fields.fields,
-                ),
+            let fields = lower_object_fields(schema, actual_type, &block.fields)?;
+            Ok(if declared {
+                LoadedValueDraft::object_with_declared_type(fields)
+            } else {
+                LoadedValueDraft::object(actual_type, fields)
             })
         }
         CfdValue::Ref(_) => Err(error(
@@ -450,15 +415,7 @@ fn lower_array(
     let mut lowered = Vec::with_capacity(items.len());
     let mut diagnostics = Vec::new();
     for item in items {
-        let result = if matches!(item, CfdValue::Spread(_, _)) {
-            Err(error(
-                CfdTextErrorCode::Syntax,
-                "array spreads are not supported",
-                item.span(),
-            ))
-        } else {
-            lower_value(schema, item, inner)
-        };
+        let result = lower_value(schema, item, inner);
         match result {
             Ok(value) => lowered.push(value),
             Err(error) => diagnostics.extend(error.diagnostics),
@@ -487,17 +444,9 @@ fn lower_dict(
             block.span,
         ));
     }
-    let dict_type = CftValueType::Dict(Box::new(key_type.clone()), Box::new(value_type.clone()));
-    let mut spreads = Vec::new();
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
-    for entry in &block.entries {
-        match entry {
-            CfdBlockEntry::Spread(value, _) => match lower_spread(schema, value, &dict_type) {
-                Ok(value) => spreads.push(value),
-                Err(error) => diagnostics.extend(error.diagnostics),
-            },
-            CfdBlockEntry::Field(field) => {
+    for field in &block.fields {
                 let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
                 let value = lower_value(schema, &field.value, value_type);
                 match (key, value) {
@@ -511,15 +460,8 @@ fn lower_dict(
                         }
                     }
                 }
-            }
-        }
     }
-    let value = if spreads.is_empty() {
-        LoadedValueDraft::dict(entries)
-    } else {
-        LoadedValueDraft::dict_spread(spreads, entries)
-    };
-    finish(value, diagnostics)
+    finish(LoadedValueDraft::dict(entries), diagnostics)
 }
 
 fn lower_dict_key(
@@ -570,17 +512,6 @@ fn lower_dict_key(
             span,
         )),
     }
-}
-
-fn lower_spread(
-    schema: &CftSchema,
-    value: &CfdValue,
-    ty: &CftValueType,
-) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
-    if matches!(value, CfdValue::Ref(_)) {
-        return lower_ref(value, "");
-    }
-    lower_value(schema, value, ty)
 }
 
 fn validate_record_key(key: &str, span: Span) -> Result<(), CfdTextDiagnostics> {

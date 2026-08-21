@@ -12,7 +12,7 @@ CFD loader tests.
   inline objects, and `&key` references.
 - `data/02-polymorphic-and-paths.cfd`: polymorphic grouping and
   key-only `&key` references.
-- `data/03-spread.cfd`: object and dictionary `...` spread with local overrides.
+- `data/03-elite-records.cfd`: nested objects, dictionaries, and record references.
 - `data/04-chemical-equations.cfd`: a `ChemicalEquation` record for the CFD
   editor's chemical-equation reading-plugin example.
 - `data/05-formatted-strings.cfd`: an ordinary string that references fields on

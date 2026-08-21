@@ -1,12 +1,12 @@
 mod dicts;
 
-use crate::build::{BuildSchema, RecordDraft, SpreadFieldSource, ValueDraft};
+use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::LoadedValueDraft;
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
 use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
-use coflow_cft::{CftField, CftValueType, FieldName, TypeName};
+use coflow_cft::{CftField, CftValueType, TypeName};
 use coflow_structure::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -57,7 +57,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         expected_type: Option<&str>,
         key: &str,
         actual_type: &str,
-        input_spreads: &[LoadedValueDraft],
         input_fields: &BTreeMap<String, LoadedValueDraft>,
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -70,7 +69,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             expected_type,
             key,
             actual_type,
-            input_spreads,
             input_fields,
             record,
             path,
@@ -84,7 +82,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         expected_type: Option<&str>,
         key: &str,
         actual_type: &str,
-        input_spreads: &[LoadedValueDraft],
         input_fields: &BTreeMap<String, LoadedValueDraft>,
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -133,10 +130,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         // `fields` has lifetime 's, independent of `self`, so it can be held
         // across calls to &mut self methods below.
         let fields = schema.full_fields(actual_type).collect::<Vec<_>>();
-        let work = input_fields
-            .len()
-            .saturating_add(input_spreads.len())
-            .saturating_add(fields.len());
+        let work = input_fields.len().saturating_add(fields.len());
         self.charge_work(work, record, &path)?;
         let known_fields = fields
             .iter()
@@ -155,37 +149,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
 
         let mut out = BTreeMap::new();
-        let mut spread_sources = Vec::new();
-        let mut spread_field_sources = BTreeMap::new();
-        for spread in input_spreads {
-            let spread_origin = top_level_spread_source(&actual_type_meta.name, spread);
-            let Some(spread_fields) = self.validate_object_spread(
-                &actual_type_meta.name,
-                spread,
-                record,
-                path.clone(),
-                cursor,
-            ) else {
-                continue;
-            };
-            if let Some(origin) = &spread_origin {
-                spread_sources.push(origin.clone());
-            }
-            for name in spread_fields.keys() {
-                if let Some(origin) = &spread_origin {
-                    spread_field_sources.insert(name.clone(), origin.clone());
-                }
-            }
-            out.extend(spread_fields);
-        }
         for field in fields {
             let field_path = path.clone().field(field.name.as_str());
             let value = if let Some(value) = input_fields.get(field.name.as_str()) {
-                // An explicit field overrides any spread-imported value.
-                spread_field_sources.remove(field.name.as_str());
                 self.validate_field_value(field, value, record, field_path, cursor)
-            } else if out.contains_key(field.name.as_str()) {
-                continue;
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path, cursor)
             } else {
@@ -213,8 +180,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 actual_type: actual_type_meta.name.clone(),
                 fields: out,
                 origin: RecordOrigin::None,
-                spread_sources,
-                spread_field_sources,
             })
         } else {
             None
@@ -317,11 +282,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 LoadedValueDraft::Object {
                     actual_type,
                     fields,
-                }
-                | LoadedValueDraft::ObjectSpread {
-                    actual_type,
-                    spreads: _,
-                    fields,
                 },
             ) => {
                 let actual = if let Some(actual) = actual_type {
@@ -338,15 +298,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 } else {
                     expected.to_string()
                 };
-                let spreads = match value {
-                    LoadedValueDraft::ObjectSpread { spreads, .. } => spreads.as_slice(),
-                    _ => &[],
-                };
                 let draft = self.validate_record(
                     Some(expected),
                     "",
                     &actual,
-                    spreads,
                     fields,
                     record,
                     path,
@@ -371,80 +326,8 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     self.validate_dict_entries(key_ty, value_ty, entries, record, &path, cursor);
                 Some(ValueDraft::Dict(out))
             }
-            (
-                CftValueType::Dict(key_ty, value_ty),
-                LoadedValueDraft::DictSpread { spreads, entries },
-            ) => {
-                let mut out_spreads = Vec::with_capacity(spreads.len());
-                for spread in spreads {
-                    let Some(spread) =
-                        self.validate_value(ty, spread, record, path.clone(), cursor)
-                    else {
-                        continue;
-                    };
-                    out_spreads.push(spread);
-                }
-                let out_entries =
-                    self.validate_dict_entries(key_ty, value_ty, entries, record, &path, cursor);
-                Some(ValueDraft::DictSpread {
-                    spreads: out_spreads,
-                    entries: out_entries,
-                })
-            }
             _ => {
                 self.type_mismatch(&display_value_type(ty), value, record, path);
-                None
-            }
-        }
-    }
-
-    fn validate_object_spread(
-        &mut self,
-        type_name: &TypeName,
-        spread: &LoadedValueDraft,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-        parent: TraversalCursor,
-    ) -> Option<BTreeMap<FieldName, ValueDraft>> {
-        let cursor = self.enter_value(parent, record, &path)?;
-        match spread {
-            LoadedValueDraft::RecordRef(key) => Some(
-                self.schema
-                    .full_fields(type_name.as_str())
-                    .map(|field| {
-                        (
-                            field.name.clone(),
-                            ValueDraft::PendingSpreadField {
-                                source_type: type_name.clone(),
-                                key: key.clone(),
-                                field: field.name.clone(),
-                            },
-                        )
-                    })
-                    .collect(),
-            ),
-            LoadedValueDraft::Object { .. } | LoadedValueDraft::ObjectSpread { .. } => {
-                let object_type = self.schema.resolve_type(type_name.as_str())?.name.clone();
-                let draft = self.validate_value_inner(
-                    &CftValueType::Object(object_type),
-                    spread,
-                    record,
-                    path,
-                    cursor,
-                )?;
-                let ValueDraft::Object(record_draft) = draft else {
-                    return None;
-                };
-                Some(record_draft.fields)
-            }
-            _ => {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::TypeMismatch,
-                        "object spread requires an object value",
-                    )
-                    .with_primary(record, path),
-                );
                 None
             }
         }
@@ -654,19 +537,6 @@ impl CfdValueSemanticContext for SourceValueSemanticContext {
     }
 }
 
-fn top_level_spread_source(
-    expected_type: &TypeName,
-    spread: &LoadedValueDraft,
-) -> Option<SpreadFieldSource> {
-    match spread {
-        LoadedValueDraft::RecordRef(key) => Some(SpreadFieldSource {
-            expected_type: expected_type.clone(),
-            key: key.clone(),
-        }),
-        _ => None,
-    }
-}
-
 fn display_value_type(ty: &CftValueType) -> String {
     ty.display_label()
 }
@@ -681,10 +551,8 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
         LoadedValueDraft::FormattedString(_) => "formatted string",
         LoadedValueDraft::EnumVariant { .. } | LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
-        LoadedValueDraft::ObjectSpread { .. } => "object spread",
         LoadedValueDraft::RecordRef(_) => "record ref",
         LoadedValueDraft::Array(_) => "array",
         LoadedValueDraft::Dict(_) => "dict",
-        LoadedValueDraft::DictSpread { .. } => "dict spread",
     }
 }

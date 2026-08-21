@@ -180,101 +180,6 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 }
 
 #[test]
-fn data_model_reports_direct_spread_dependency_cycle() {
-    let schema = compile_schema("type Stats { hp: int; }");
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "self_ref",
-        "Stats",
-        [LoadedValueDraft::record_ref("self_ref")],
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    ));
-
-    let err = builder.build().expect_err("spread cycle must be rejected");
-    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
-    assert_eq!(
-        diagnostic.message,
-        "data spread dependency cycle: Stats.self_ref.hp -> Stats.self_ref.hp"
-    );
-    assert_eq!(
-        primary_path_segments(diagnostic),
-        [CfdPathSegment::Field("hp".to_string())]
-    );
-}
-
-#[test]
-fn data_model_reports_one_canonical_indirect_spread_cycle() {
-    let schema = compile_schema("type Stats { hp: int; }");
-    let mut builder = CfdDataModel::builder(&schema);
-    for (key, source) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-            key,
-            "Stats",
-            [LoadedValueDraft::record_ref(source)],
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        ));
-    }
-
-    let err = builder.build().expect_err("spread cycle must be rejected");
-    let cycles = err
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code == CfdErrorCode::ValueDependencyCycle)
-        .collect::<Vec<_>>();
-    assert_eq!(cycles.len(), 1, "the same cycle should be reported once");
-    assert_eq!(
-        cycles[0].message,
-        "data spread dependency cycle: Stats.a.hp -> Stats.b.hp -> Stats.c.hp -> Stats.a.hp"
-    );
-    assert_eq!(cycles[0].related.len(), 2);
-}
-
-#[test]
-fn data_model_resolves_shared_spread_source_for_multiple_consumers() {
-    let schema = compile_schema("type Stats { hp: int; }");
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base", "Stats", [("hp", LoadedValueDraft::from(7_i64))]);
-    for key in ["left", "right"] {
-        builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-            key,
-            "Stats",
-            [LoadedValueDraft::record_ref("base")],
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        ));
-    }
-
-    let model = builder.build().expect("shared spread source resolves");
-    let base = model
-        .lookup_assignable(&schema, "Stats", "base")
-        .expect("base");
-    for key in ["left", "right"] {
-        let id = model
-            .lookup_assignable(&schema, "Stats", key)
-            .expect("consumer");
-        let record = model.record(id);
-        assert_eq!(
-            record.and_then(|record| record.field("hp")),
-            Some(&CfdValue::Int(7))
-        );
-        assert_eq!(
-            model.spread_edges().filter(|edge| edge.host == id).count(),
-            1
-        );
-        assert_eq!(
-            model.spread_source_at_path(id, &CfdPath::root().field("hp")),
-            Some(base)
-        );
-    }
-    assert_eq!(
-        model
-            .spread_edges()
-            .filter(|edge| edge.host == base)
-            .count(),
-        0
-    );
-}
-
-#[test]
 fn dimension_field_lookup_reads_record_owned_overlay() {
     let schema = compile_schema_with_dimensions(
         r#"
@@ -361,7 +266,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
     let item = model
         .lookup_assignable(&schema, "Item", "potion")
         .expect("item");
-    let edges = model.direct_ref_edges_from_host(offer).collect::<Vec<_>>();
+    let edges = model.ref_edges_from_host(offer).collect::<Vec<_>>();
 
     assert_eq!(edges.len(), 2);
     assert!(edges.iter().any(|edge| edge.site.dimension.is_none()));
@@ -374,67 +279,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
     assert_eq!(coordinate.dimension.as_str(), "platform");
     assert_eq!(coordinate.variant.as_str(), "pc");
     assert_eq!(overlay.target, item);
-    assert_eq!(model.direct_ref_edges_to_target(item).count(), 2);
-}
-
-#[test]
-fn dimension_spreads_are_precomputed_with_typed_coordinates() {
-    let schema = compile_schema_with_dimensions(
-        r#"
-            type Stats { value: int; }
-            type Holder {
-                @dimension("platform")
-                stats: Stats;
-            }
-        "#,
-        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
-            .expect("valid dimension fixture"),
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("base", "Stats", [("value", LoadedValueDraft::from(1_i64))]);
-    builder.add_record(
-        "holder",
-        "Holder",
-        [(
-            "stats",
-            LoadedValueDraft::object("Stats", [("value", LoadedValueDraft::from(2_i64))]),
-        )],
-    );
-    builder.add_dimension_value_draft(DimensionValueDraft {
-        source_type: coflow_cft::TypeName::new("Holder").unwrap(),
-        source_key: coflow_cft::RecordKey::new("holder").unwrap(),
-        field: coflow_cft::FieldName::new("stats").unwrap(),
-        dimension: coflow_cft::DimensionName::new("platform").unwrap(),
-        variant: coflow_cft::VariantName::new("pc").unwrap(),
-        value: LoadedValueDraft::object_spread(
-            [LoadedValueDraft::record_ref("base")],
-            std::iter::empty::<(&str, LoadedValueDraft)>(),
-        ),
-        origin: RecordOrigin::None,
-    });
-
-    let model = builder.build().expect("data model should build");
-    let base = model
-        .lookup_assignable(&schema, "Stats", "base")
-        .expect("base");
-    let holder = model
-        .lookup_assignable(&schema, "Holder", "holder")
-        .expect("holder");
-    let edge = model
-        .spread_edges_from_source(base)
-        .find(|edge| edge.host == holder)
-        .expect("dimension spread edge");
-    let coordinate = edge.dimension.as_ref().expect("dimension coordinate");
-
-    assert_eq!(edge.path, CfdPath::root().field("stats"));
-    assert_eq!(coordinate.field.as_str(), "stats");
-    assert_eq!(coordinate.dimension.as_str(), "platform");
-    assert_eq!(coordinate.variant.as_str(), "pc");
-    assert_eq!(
-        model.spread_source_at_path(holder, &CfdPath::root().field("stats").field("value")),
-        None,
-        "default provenance must ignore dimension-only spread edges"
-    );
+    assert_eq!(model.ref_edges_to_target(item).count(), 2);
 }
 
 #[test]
@@ -663,51 +508,6 @@ fn plain_object_fields_reject_record_refs() {
         .build()
         .expect_err("plain object fields should reject record refs");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn object_spread_merges_record_refs_before_local_overrides() {
-    let schema = compile_schema(
-        r#"
-            type Stats { hp: int; attack: int; }
-            type Monster { name: string; stats: Stats; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "base",
-        "Stats",
-        [
-            ("hp", LoadedValueDraft::from(100_i64)),
-            ("attack", LoadedValueDraft::from(20_i64)),
-        ],
-    );
-    builder.add_record(
-        "elite",
-        "Monster",
-        [
-            ("name", LoadedValueDraft::from("Elite")),
-            (
-                "stats",
-                LoadedValueDraft::object_spread(
-                    [LoadedValueDraft::record_ref("base")],
-                    [("hp", LoadedValueDraft::from(180_i64))],
-                ),
-            ),
-        ],
-    );
-
-    let model = builder.build().expect("spread should build");
-    let elite_id = record_id_at(&model, 1);
-    let Some(CfdValue::Object(stats)) = model
-        .record(elite_id)
-        .and_then(|record| record.field("stats"))
-    else {
-        panic!("expected stats object");
-    };
-    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
-    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
 }
 
 #[test]

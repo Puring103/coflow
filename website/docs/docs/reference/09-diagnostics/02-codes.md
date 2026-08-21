@@ -294,11 +294,11 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | `DATA-011` | `DuplicateId` | 同一 type 内 record key 重复 |
 | `DATA-012` | `DuplicatePolymorphicId` | polymorphic range 内 record key 重复 |
 | `DATA-013` | `InvalidRecordKey` | record key identifier 非法 |
-| `DATA-014` | `ValueDependencyCycle` | schema default 或 data spread 形成循环依赖 |
+| `DATA-014` | `ValueDependencyCycle` | schema default 或格式化字符串引用形成循环依赖 |
 | `DATA-015` | `SingletonRecordCountInvalid` | `@singleton` type 的 records 数量不等于 1 |
 | `DATA-016` | `SingletonKeyMissingOrInvalid` | `@singleton` type 的 record key 缺失或非法 |
 | `DATA-017` | `SingletonKeyCollision` | 不同 `@singleton` type 的 record key 撞名 |
-| `DATA-018` | `DataStructureLimitExceeded` | 单条 record 的值验证、default 展开或 spread 物化超过结构预算 |
+| `DATA-018` | `DataStructureLimitExceeded` | 单条 record 的值验证或 default 展开超过结构预算 |
 
 ## 引用解析
 
@@ -376,7 +376,6 @@ provider 专属阶段；需要跨 provider 保持稳定语义的诊断会保留 
 | `WRITE-TXN-NO-OUTCOME` | `WRITE` | provider 事务结束后没有返回 commit/abort 结果 |
 | `WRITE-ROLLBACK` | `WRITE` | 写入失败后的本地文件回滚失败 |
 | `WRITE-RENAME` | `WRITE` | record key 重命名失败，例如新 key 已存在或引用改写失败 |
-| `WRITE-SPREAD-SOURCE` | `WRITE` | 写入涉及 spread 来源记录，但无法定位或更新来源 |
 | `WRITE-TRANSFER-FILE` | `WRITE` | record 移动的目标文件无效或与来源文件相同 |
 | `WRITE-TRANSFER-ORIGIN` | `WRITE` | record 移动时无法确定或更新来源坐标 |
 | `WRITE-TRANSFER-INDEX` | `WRITE` | record 移动的目标插入位置超出范围 |

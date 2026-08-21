@@ -1,7 +1,6 @@
 use super::ids::CfdRecordId;
-use crate::diagnostics::{CfdPath, CfdPathSegment};
+use crate::diagnostics::CfdPath;
 use coflow_cft::{DimensionName, FieldName, VariantName};
-use std::collections::BTreeSet;
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
 /// record and the `CfdPath` to the ref.
@@ -62,53 +61,4 @@ impl RefEdgeId {
 pub struct RefEdge {
     pub site: RefSite,
     pub target: CfdRecordId,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct SpreadEdgeId(usize);
-
-impl SpreadEdgeId {
-    #[must_use]
-    pub(crate) const fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    #[must_use]
-    pub(crate) fn index(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpreadEdge {
-    pub host: CfdRecordId,
-    pub path: CfdPath,
-    pub dimension: Option<DimensionRefCoordinate>,
-    pub fields: BTreeSet<FieldName>,
-    pub source: CfdRecordId,
-}
-
-impl SpreadEdge {
-    #[must_use]
-    pub(crate) fn covers_path(&self, path: &CfdPath) -> bool {
-        if !path.segments.starts_with(&self.path.segments) {
-            return false;
-        }
-        let relative = &path.segments[self.path.segments.len()..];
-        let Some(CfdPathSegment::Field(field)) = relative.first() else {
-            return false;
-        };
-        self.fields.contains(field.as_str())
-    }
-
-    #[must_use]
-    pub(crate) fn source_path_for(&self, host_path: &CfdPath) -> Option<CfdPath> {
-        if !self.covers_path(host_path) {
-            return None;
-        }
-        let relative = &host_path.segments[self.path.segments.len()..];
-        Some(CfdPath {
-            segments: relative.to_vec(),
-        })
-    }
 }

@@ -45,10 +45,14 @@ Stage {
   }
 
   stage_forest_03 {
-    ...&stage_forest_02,
     name: "Scout Camp Hard",
     unlock_level: 5,
     recommended_power: 160,
+    spawns: [
+      { monster: &goblin_scout, count: 3, weight: 80 },
+      { monster: &slime_green, count: 2, weight: 20 },
+    ],
+    drop_table: &drop_goblin_scout,
     first_clear_reward: CurrencyReward { key: first_clear_hard_gold, currency: gold, amount: 50 },
     unlock_stage: &stage_forest_02,
   }

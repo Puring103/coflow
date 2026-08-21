@@ -115,9 +115,6 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             object.insert("$dict".to_string(), Value::Array(entries));
             Ok(Value::Object(object))
         }
-        LoadedValueDraft::ObjectSpread { .. } | LoadedValueDraft::DictSpread { .. } => Err(
-            one_value_error("spread cell values cannot be pasted into an effective field value"),
-        ),
     }
 }
 

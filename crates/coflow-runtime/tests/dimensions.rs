@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
+use coflow_api::{DiagnosticSet, ProviderRegistry};
 use coflow_cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
     ModuleId, RecordKey, TypeName, VariantName,
@@ -16,7 +16,7 @@ use coflow_data_model::{CfdDataModel, CfdValue, LoadedRecordDraft, LoadedValueDr
 use coflow_project::Project;
 use coflow_runtime::{
     BuildProjectSession, DimensionValueCoordinate, DimensionValueOrigin, ReadOnlyProjectSession,
-    Runtime, WriteProjectSession,
+    Runtime,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,7 +26,6 @@ struct SnapshotSabotageCsvManager {
     target: std::path::PathBuf,
     sync_called: Arc<AtomicBool>,
 }
-
 impl coflow_api::DimensionSourceManager for SnapshotSabotageCsvManager {
     fn descriptor(&self) -> &'static coflow_api::DimensionSourceManagerDescriptor {
         coflow_api::DimensionSourceManager::descriptor(&coflow_loader_csv::CsvWriter::new())
@@ -179,7 +178,6 @@ fn localized_schema_requires_language_dimension_config() {
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
-
 #[test]
 fn custom_dimension_schema_requires_matching_dimension_config() {
     let root = std::env::temp_dir().join(format!(
@@ -220,7 +218,6 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
-
 #[test]
 fn read_only_session_reports_unreadable_dimension_source_directory() {
     let root = std::env::temp_dir().join(format!(
@@ -2160,281 +2157,4 @@ dimensions:
     assert_eq!(overlay.variants["en"].value, CfdValue::Null);
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
-}
-
-#[test]
-fn write_field_redirects_spread_fields_to_source_record() {
-    let root = std::env::temp_dir().join(format!(
-        "coflow-runtime-spread-write-source-{}",
-        std::process::id()
-    ));
-    if root.exists() {
-        std::fs::remove_dir_all(&root).expect("clean temp dir");
-    }
-    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
-    std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema/main.cft"),
-        r#"
-        type Item {
-            name: string;
-            power: int;
-        }
-        type Holder {
-            stats: Item;
-        }
-        "#,
-    )
-    .expect("write schema");
-    std::fs::write(
-        root.join("data/source.cfd"),
-        r#"base: Item {
-    name: "Base",
-    power: 1,
-}
-"#,
-    )
-    .expect("write source");
-    std::fs::write(
-        root.join("data/host.cfd"),
-        r#"child: Item {
-    ...&base,
-}
-holder: Holder {
-    stats: {
-        ...&base,
-    },
-}
-chain: Holder {
-    stats: {
-        ...&child,
-    },
-}
-"#,
-    )
-    .expect("write host");
-    std::fs::write(
-        root.join("coflow.yaml"),
-        r#"schema: schema/main.cft
-sources:
-  - path: data/source.cfd
-  - path: data/host.cfd
-"#,
-    )
-    .expect("write config");
-
-    let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let session = build_session(project, &registry).expect("build session");
-    assert!(
-        !session.queries().has_diagnostics(),
-        "diagnostics: {:?}",
-        session.queries().diagnostics().as_set()
-    );
-    drop(session);
-    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
-    let mut session = Runtime::new(registry)
-        .open_write_session(project)
-        .expect("open write session");
-
-    session
-        .write_field(
-            "Item",
-            "child",
-            &[WriteFieldPathSegment::Field("name".to_string())],
-            &CfdValue::String("Edited".to_string()),
-        )
-        .expect("spread field write");
-
-    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
-    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
-    assert!(
-        source.contains(r#"name: "Edited""#),
-        "source file should receive spread edit:\n{source}"
-    );
-    assert!(
-        host.contains("...&base") && !host.contains("Edited"),
-        "host file should not receive spread edit:\n{host}"
-    );
-
-    assert_nested_spread_write_redirects(&mut session, &root);
-
-    std::fs::remove_dir_all(root).expect("remove temp dir");
-}
-
-fn assert_nested_spread_write_redirects(session: &mut WriteProjectSession, root: &std::path::Path) {
-    session
-        .write_field(
-            "Holder",
-            "holder",
-            &[
-                WriteFieldPathSegment::Field("stats".to_string()),
-                WriteFieldPathSegment::Field("name".to_string()),
-            ],
-            &CfdValue::String("Nested".to_string()),
-        )
-        .expect("nested spread field write");
-
-    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
-    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
-    assert!(
-        source.contains(r#"name: "Nested""#),
-        "source file should receive nested spread edit:\n{source}"
-    );
-    assert!(
-        host.contains("stats") && !host.contains("Nested"),
-        "host file should not receive nested spread edit:\n{host}"
-    );
-
-    session
-        .write_field(
-            "Holder",
-            "chain",
-            &[
-                WriteFieldPathSegment::Field("stats".to_string()),
-                WriteFieldPathSegment::Field("name".to_string()),
-            ],
-            &CfdValue::String("Chained".to_string()),
-        )
-        .expect("chained spread field write");
-
-    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
-    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
-    assert!(
-        source.contains(r#"name: "Chained""#),
-        "source file should receive chained spread edit:\n{source}"
-    );
-    assert!(
-        !host.contains("Chained"),
-        "host file should not receive chained spread edit:\n{host}"
-    );
-}
-
-#[test]
-fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan() {
-    let root = std::env::temp_dir().join(format!(
-        "coflow-runtime-rename-spread-source-{}",
-        std::process::id()
-    ));
-    if root.exists() {
-        std::fs::remove_dir_all(&root).expect("clean temp dir");
-    }
-    write_rename_spread_project(&root);
-
-    let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let session = build_session(project, &registry).expect("build session");
-    drop(session);
-    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
-    let mut session = Runtime::new(registry)
-        .open_write_session(project)
-        .expect("open write session");
-
-    session
-        .rename_record_key("Holder", "base_holder", "renamed_holder")
-        .expect("rename base holder");
-
-    let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
-    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
-    let unrelated =
-        std::fs::read_to_string(root.join("data/unrelated.cfd")).expect("read unrelated");
-
-    assert!(
-        host.contains("renamed_holder: Holder"),
-        "host record renamed:\n{host}"
-    );
-    assert!(
-        items.contains("base: Item"),
-        "item source unchanged:\n{items}"
-    );
-    assert!(
-        host.contains("holder: &renamed_holder") && host.contains("...&renamed_holder"),
-        "direct Holder refs and selected spread source should update:\n{host}"
-    );
-    assert!(
-        host.contains(r#"label: "&base""#),
-        "string literal should not be rewritten:\n{host}"
-    );
-    assert!(
-        host.contains("same_file_unrelated: OtherHolder {\n    ...&base_holder"),
-        "same-file unrelated same-key spread should not be rewritten by a source scan:\n{host}"
-    );
-    assert!(
-        unrelated.contains("item: &other") && unrelated.contains(r#"label: "&base""#),
-        "unrelated source should not be globally scanned:\n{unrelated}"
-    );
-
-    std::fs::remove_dir_all(root).expect("remove temp dir");
-}
-
-fn write_rename_spread_project(root: &std::path::Path) {
-    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
-    std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema/main.cft"),
-        r#"
-        type Item { name: string; }
-        type Holder { item: &Item; label: string; }
-        type Wrapper { holder: &Holder; label: string; }
-        type OtherHolder { item: &Item; label: string; }
-        "#,
-    )
-    .expect("write schema");
-    std::fs::write(
-        root.join("data/items.cfd"),
-        r#"base: Item {
-    name: "Base",
-}
-other: Item {
-    name: "Other",
-}
-"#,
-    )
-    .expect("write items");
-    std::fs::write(root.join("data/host.cfd"), rename_spread_host_source()).expect("write host");
-    std::fs::write(
-        root.join("data/unrelated.cfd"),
-        r#"unrelated: Holder {
-    item: &other,
-    label: "&base",
-}
-"#,
-    )
-    .expect("write unrelated");
-    std::fs::write(
-        root.join("coflow.yaml"),
-        r#"schema: schema/main.cft
-sources:
-  - path: data/items.cfd
-  - path: data/host.cfd
-  - path: data/unrelated.cfd
-"#,
-    )
-    .expect("write config");
-}
-
-const fn rename_spread_host_source() -> &'static str {
-    r#"base_holder: Holder {
-    item: &base,
-    label: "&base",
-}
-direct: Holder {
-    item: &base,
-    label: "&base",
-}
-copy: Holder {
-    ...&base_holder,
-}
-direct_wrapper: Wrapper {
-    holder: &base_holder,
-    label: "&base_holder",
-}
-base_holder: OtherHolder {
-    item: &base,
-    label: "Other",
-}
-same_file_unrelated: OtherHolder {
-    ...&base_holder,
-}
-"#
 }

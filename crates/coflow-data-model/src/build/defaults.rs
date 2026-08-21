@@ -140,7 +140,6 @@ impl Validator<'_, '_> {
             Some(type_name),
             "",
             type_name,
-            &[],
             &fields,
             record,
             path,
@@ -213,23 +212,10 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                         .map(|(_, value)| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(ValueDraft::DictSpread { spreads, entries }) => {
-                pending.extend(
-                    spreads
-                        .iter()
-                        .map(|value| (DraftNode::Value(value), child_depth)),
-                );
-                pending.extend(
-                    entries
-                        .iter()
-                        .map(|(_, value)| (DraftNode::Value(value), child_depth)),
-                );
-            }
             DraftNode::Value(
                 ValueDraft::Value(_)
                 | ValueDraft::FormattedString(_)
-                | ValueDraft::PendingRef { .. }
-                | ValueDraft::PendingSpreadField { .. },
+                | ValueDraft::PendingRef { .. },
             ) => {}
         }
     }

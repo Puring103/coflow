@@ -514,7 +514,7 @@ coflow data migrate-records <project> --from data/workflow.xlsx --to data/progre
 第 28 轮到第 34 轮覆盖真实项目后期常见事故：
 
 - Excel 人工破坏：重复 key、空 key、公式单元格、合并单元格。
-- CFD 人工破坏：截断文件、漏写 `&`、同文件重复 key、spread 互相引用。
+- CFD 人工破坏：截断文件、漏写 `&`、同文件重复 key。
 - 引用图级联：删除被 `Stage` / `Quest` 引用的记录，确认跨文件诊断。
 - 本地化迁移：record rename 对维度行的影响、移除 localized 后旧 CSV 是否清理、维度 CSV 重复 id。
 - 导出格式：JSON 切 MessagePack 再切回，验证 codegen 兼容性和失败产物安全。

@@ -53,7 +53,7 @@ pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
     CfdFormattedString, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
-    RefEdge, RefSite, SpreadEdge,
+    RefEdge, RefSite,
 };
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,

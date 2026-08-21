@@ -36,7 +36,6 @@ fn export_bindings() {
     export_with_retry::<t::RecordRow>("RecordRow");
     export_with_retry::<t::FieldCell>("FieldCell");
     export_with_retry::<t::FieldAnnotation>("FieldAnnotation");
-    export_with_retry::<t::SpreadInfo>("SpreadInfo");
     export_with_retry::<t::WriteFieldOutcome>("WriteFieldOutcome");
     export_with_retry::<t::WriteDimensionValueOutcome>("WriteDimensionValueOutcome");
     export_with_retry::<t::CollectionEdit>("CollectionEdit");

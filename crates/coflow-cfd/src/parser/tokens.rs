@@ -161,16 +161,6 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn eat_spread(&mut self) -> bool {
-        self.skip_ws_and_comments();
-        if self.source[self.pos..].starts_with("...") {
-            self.pos += 3;
-            true
-        } else {
-            false
-        }
-    }
-
     pub(super) fn eat_keyword(&mut self, kw: &str) -> bool {
         self.skip_ws_and_comments();
         if !self.source[self.pos..].starts_with(kw) {

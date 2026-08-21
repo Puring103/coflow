@@ -226,7 +226,7 @@ fn wrong_ref_target_type_has_a_reference_diagnostic() {
 }
 
 #[test]
-fn direct_refs_populate_ref_edge_indexes() {
+fn refs_populate_ref_edge_indexes() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -261,230 +261,16 @@ fn direct_refs_populate_ref_edge_indexes() {
     let item_site = RefSite::new(holder_id, CfdPath::root().field("item"));
     let array_site = RefSite::new(holder_id, CfdPath::root().field("items").index(0));
 
-    assert_eq!(model.resolve_direct_ref(&item_site), Some(item_id));
-    assert_eq!(model.resolve_direct_ref(&array_site), Some(item_id));
+    assert_eq!(model.resolve_ref(&item_site), Some(item_id));
+    assert_eq!(model.resolve_ref(&array_site), Some(item_id));
 
-    let host_edges = model
-        .direct_ref_edges_from_host(holder_id)
-        .collect::<Vec<_>>();
+    let host_edges = model.ref_edges_from_host(holder_id).collect::<Vec<_>>();
     assert_eq!(host_edges.len(), 2);
     assert!(host_edges.iter().any(|edge| edge.site == item_site));
     assert!(host_edges.iter().any(|edge| edge.site == array_site));
 
-    let target_edges = model
-        .direct_ref_edges_to_target(item_id)
-        .collect::<Vec<_>>();
+    let target_edges = model.ref_edges_to_target(item_id).collect::<Vec<_>>();
     assert_eq!(target_edges.len(), 2);
     assert!(target_edges.iter().any(|edge| edge.site == item_site));
     assert!(target_edges.iter().any(|edge| edge.site == array_site));
-}
-
-#[test]
-fn object_spread_source_is_not_a_direct_ref_edge() {
-    let schema = compile_schema(
-        r#"
-            type Stats {
-                hp: int;
-                item: &Item;
-                nested: Nested;
-            }
-            type Nested {
-                item: &Item;
-            }
-            type Item { name: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]);
-    builder.add_record(
-        "base",
-        "Stats",
-        [
-            ("hp", LoadedValueDraft::from(10_i64)),
-            ("item", LoadedValueDraft::record_ref("sword")),
-            (
-                "nested",
-                LoadedValueDraft::object_with_declared_type([(
-                    "item",
-                    LoadedValueDraft::record_ref("sword"),
-                )]),
-            ),
-        ],
-    );
-    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "copy",
-        "Stats",
-        [LoadedValueDraft::record_ref("base")],
-        [("hp", LoadedValueDraft::from(20_i64))],
-    ));
-
-    let model = builder.build().expect("spread should build");
-    let item_id = model
-        .lookup_assignable(&schema, "Item", "sword")
-        .expect("item");
-    let base_id = model
-        .lookup_assignable(&schema, "Stats", "base")
-        .expect("base");
-    let copy_id = model
-        .lookup_assignable(&schema, "Stats", "copy")
-        .expect("copy");
-
-    let inherited_item_site = RefSite::new(copy_id, CfdPath::root().field("item"));
-    let inherited_nested_item_site =
-        RefSite::new(copy_id, CfdPath::root().field("nested").field("item"));
-    assert!(model.direct_ref_edges_to_target(base_id).next().is_none());
-    assert!(model.resolve_direct_ref(&inherited_item_site).is_none());
-    assert!(model
-        .resolve_direct_ref(&inherited_nested_item_site)
-        .is_none());
-
-    let spread_edge = model
-        .spread_edges_from_source(base_id)
-        .find(|edge| edge.host == copy_id && edge.path == CfdPath::root())
-        .expect("copy root spread edge");
-    assert_eq!(spread_edge.source, base_id);
-    assert!(spread_edge.fields.contains("item"));
-    assert!(spread_edge.fields.contains("nested"));
-    assert!(!spread_edge.fields.contains("hp"));
-    assert_eq!(model.spread_edges_from_source(base_id).count(), 1);
-    assert_eq!(
-        model.spread_source_at_path(copy_id, &CfdPath::root().field("item")),
-        Some(base_id)
-    );
-    assert_eq!(
-        model.spread_source_at_path(copy_id, &CfdPath::root().field("nested").field("item")),
-        Some(base_id)
-    );
-    assert_eq!(
-        model.spread_source_at_path(copy_id, &CfdPath::root().field("hp")),
-        None
-    );
-
-    assert_eq!(
-        model.resolve_direct_ref(&RefSite::new(base_id, CfdPath::root().field("item"))),
-        Some(item_id)
-    );
-    assert_eq!(
-        model.resolve_direct_ref(&RefSite::new(
-            base_id,
-            CfdPath::root().field("nested").field("item")
-        )),
-        Some(item_id)
-    );
-}
-
-#[test]
-fn fully_overridden_spread_still_records_object_level_edge() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                name: string;
-                power: int;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "base",
-        "Item",
-        [
-            ("name", LoadedValueDraft::from("Base")),
-            ("power", LoadedValueDraft::from(1_i64)),
-        ],
-    );
-    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "copy",
-        "Item",
-        [LoadedValueDraft::record_ref("base")],
-        [
-            ("name", LoadedValueDraft::from("Copy")),
-            ("power", LoadedValueDraft::from(2_i64)),
-        ],
-    ));
-
-    let model = builder
-        .build()
-        .expect("fully overridden spread should build");
-    let base_id = model
-        .lookup_assignable(&schema, "Item", "base")
-        .expect("base");
-    let copy_id = model
-        .lookup_assignable(&schema, "Item", "copy")
-        .expect("copy");
-    let edge = model
-        .spread_edges_from_source(base_id)
-        .find(|edge| edge.host == copy_id && edge.path == CfdPath::root())
-        .expect("copy root spread edge");
-
-    assert_eq!(edge.source, base_id);
-    assert!(edge.fields.is_empty());
-    assert_eq!(model.spread_edges_from_source(base_id).count(), 1);
-    assert_eq!(
-        model.spread_source_at_path(copy_id, &CfdPath::root().field("name")),
-        None
-    );
-}
-
-#[test]
-fn multiple_spreads_at_same_object_site_keep_all_edges() {
-    let schema = compile_schema(
-        r#"
-            type Stats {
-                hp: int;
-                mp: int;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "hp_base",
-        "Stats",
-        [
-            ("hp", LoadedValueDraft::from(10_i64)),
-            ("mp", LoadedValueDraft::from(0_i64)),
-        ],
-    );
-    builder.add_record(
-        "mp_base",
-        "Stats",
-        [
-            ("hp", LoadedValueDraft::from(0_i64)),
-            ("mp", LoadedValueDraft::from(20_i64)),
-        ],
-    );
-    builder.add_loaded_record(LoadedRecordDraft::with_spreads(
-        "copy",
-        "Stats",
-        [
-            LoadedValueDraft::record_ref("hp_base"),
-            LoadedValueDraft::record_ref("mp_base"),
-        ],
-        [("hp", LoadedValueDraft::from(30_i64))],
-    ));
-
-    let model = builder.build().expect("multi-spread should build");
-    let copy_id = model
-        .lookup_assignable(&schema, "Stats", "copy")
-        .expect("copy");
-    let hp_base_id = model
-        .lookup_assignable(&schema, "Stats", "hp_base")
-        .expect("hp base");
-    let mp_base_id = model
-        .lookup_assignable(&schema, "Stats", "mp_base")
-        .expect("mp base");
-    let edges = model
-        .spread_edges()
-        .filter(|edge| edge.host == copy_id && edge.path == CfdPath::root())
-        .collect::<Vec<_>>();
-
-    assert_eq!(edges.len(), 2);
-    assert!(edges.iter().any(|edge| edge.source == hp_base_id));
-    assert!(edges.iter().any(|edge| edge.source == mp_base_id));
-    assert_eq!(
-        model.spread_source_at_path(copy_id, &CfdPath::root().field("mp")),
-        Some(mp_base_id)
-    );
 }

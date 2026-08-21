@@ -48,14 +48,7 @@ fn main() {
         representative_records.clone(),
         dimension_values.clone(),
     );
-    assert_eq!(
-        representative_model.direct_ref_edges().count(),
-        RECORD_COUNT - 1
-    );
-    assert_eq!(
-        representative_model.spread_edges().count(),
-        RECORD_COUNT - 1
-    );
+    assert_eq!(representative_model.ref_edges().count(), RECORD_COUNT - 1);
     let representative_build_elapsed = measure(|| {
         for _ in 0..BUILD_ROUNDS {
             black_box(build_model_with_dimensions(
@@ -77,8 +70,7 @@ fn main() {
         "model index build: depth={INHERITANCE_DEPTH}, records={RECORD_COUNT}, builds={BUILD_ROUNDS}, elapsed={build_elapsed:?}"
     );
     println!(
-        "representative model build: depth={INHERITANCE_DEPTH}, records={RECORD_COUNT}, refs={}, spreads={}, dimensions=2, variants=5, dimension_values={}, builds={BUILD_ROUNDS}, elapsed={representative_build_elapsed:?}",
-        RECORD_COUNT - 1,
+        "representative model build: depth={INHERITANCE_DEPTH}, records={RECORD_COUNT}, refs={}, dimensions=2, variants=5, dimension_values={}, builds={BUILD_ROUNDS}, elapsed={representative_build_elapsed:?}",
         RECORD_COUNT - 1,
         dimension_values.len(),
     );
@@ -162,13 +154,14 @@ fn representative_records() -> (Vec<LoadedRecordDraft>, Vec<DimensionValueDraft>
         ],
     ));
     for index in 1..RECORD_COUNT {
-        records.push(LoadedRecordDraft::with_spreads(
+        records.push(LoadedRecordDraft::new(
             format!("record_{index}"),
             "Type64",
-            [LoadedValueDraft::record_ref("record_0")],
             [
                 ("value", LoadedValueDraft::from(index as i64)),
                 ("target", LoadedValueDraft::record_ref("record_0")),
+                ("name", LoadedValueDraft::from(format!("Record {index}"))),
+                ("label", LoadedValueDraft::from(format!("record_{index}"))),
             ],
         ));
     }

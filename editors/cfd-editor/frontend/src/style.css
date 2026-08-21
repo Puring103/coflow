@@ -3454,25 +3454,6 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   min-height: 24px;
 }
 
-.dc-row-spread .dc-row-label {
-  font-style: italic;
-  color: var(--text-mute);
-}
-.dc-row-spread .dc-row-value-inner::after {
-  content: 'spread';
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--text-mute);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 0 5px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.dc-row-spread .dc-row-value-inner > .vc { opacity: 0.7; }
-
 /* Drag handle in the row's leading slot. Reserves an 8px gutter on the left
  * of the label so the handle has its own column and doesn't push the label. */
 .dc-row-label-text {

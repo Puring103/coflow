@@ -72,12 +72,6 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
         ))
         .into());
     }
-    if json.contains("spread_field_sources") {
-        return Err(std::io::Error::other(format!(
-            "wire should not contain internal spread source indexes: {json}"
-        ))
-        .into());
-    }
     let round: CfdRecord = serde_json::from_str(&json)?;
     if record != round {
         return Err(std::io::Error::other(format!("round trip changed record: {round:?}")).into());

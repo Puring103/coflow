@@ -23,7 +23,6 @@ use std::sync::Arc;
 struct FailingReloadCsvManager {
     fail_next_load: Arc<AtomicBool>,
 }
-
 impl coflow_api::DimensionSourceManager for FailingReloadCsvManager {
     fn descriptor(&self) -> &'static coflow_api::DimensionSourceManagerDescriptor {
         coflow_api::DimensionSourceManager::descriptor(&coflow_loader_csv::CsvWriter::new())
@@ -139,43 +138,6 @@ fn write_project(root: &std::path::Path) {
     .expect("write config");
 }
 
-fn write_spread_project(root: &std::path::Path) {
-    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
-    std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema").join("main.cft"),
-        r"
-            type Item {
-                name: string;
-                power: int;
-            }
-        ",
-    )
-    .expect("write schema");
-    std::fs::write(
-        root.join("data").join("source.cfd"),
-        r#"base: Item {
-    name: "Base",
-    power: 1,
-}
-"#,
-    )
-    .expect("write source");
-    std::fs::write(
-        root.join("data").join("host.cfd"),
-        r"child: Item {
-    ...&base,
-}
-",
-    )
-    .expect("write host");
-    std::fs::write(
-        root.join("coflow.yaml"),
-        "schema: schema/main.cft\nsources:\n  - path: data/source.cfd\n  - path: data/host.cfd\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
-    )
-    .expect("write config");
-}
-
 fn write_group_cfd_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
@@ -286,6 +248,7 @@ fn write_polymorphic_ref_rename_project(root: &std::path::Path) {
             }
             type Stage {
                 first_clear_reward: Reward;
+                repeat_reward: Reward;
             }
         ",
     )
@@ -301,6 +264,7 @@ shield: Item { name: "Shield" }
         root.join("data").join("stages.cfd"),
         r"stage_start: Stage {
     first_clear_reward: ItemReward { item: &sword, count: 1 },
+    repeat_reward: ItemReward { item: &sword, count: 2 },
 }
 ",
     )
@@ -308,6 +272,44 @@ shield: Item { name: "Shield" }
     std::fs::write(
         root.join("coflow.yaml"),
         "schema: schema.cft\nsources:\n  - path: data/items.cfd\n  - path: data/stages.cfd\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
+fn write_csv_ref_rename_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Holder {
+                first: &Item;
+                second: &Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        "sword: Item { name: \"Sword\" }\n",
+    )
+    .expect("write items");
+    std::fs::write(
+        root.join("data/holders.csv"),
+        "id,first,second\nloadout,&sword,&sword\n",
+    )
+    .expect("write holders");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/items.cfd
+  - path: data/holders.csv
+    type: csv
+    sheets:
+      - sheet: holders
+        type: Holder
+"#,
     )
     .expect("write config");
 }
@@ -373,6 +375,43 @@ fn write_dimension_ref_project(root: &std::path::Path) {
     std::fs::write(
         root.join("data/dimensions/platform/Offer_item.csv"),
         "id,default,pc\nstarter,&potion,&potion\n",
+    )
+    .expect("write dimension refs");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema.cft
+sources:
+  - path: data/main.cfd
+dimensions:
+  platform:
+    variants: [pc]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+}
+
+fn write_dimension_ref_array_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r#"
+            type Item { name: string; }
+            type Offer {
+                @dimension("platform")
+                items: [&Item];
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/main.cfd"),
+        "potion: Item { name: \"Potion\" }\nstarter: Offer { items: [&potion, &potion] }\n",
+    )
+    .expect("write records");
+    std::fs::write(
+        root.join("data/dimensions/platform/Offer_items.csv"),
+        "id,default,pc\nstarter,&potion | &potion,&potion | &potion\n",
     )
     .expect("write dimension refs");
     std::fs::write(
@@ -737,7 +776,6 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
 
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 fn dimension_patch_preserves_record_selector_json_shape() {
     let json = json!({
@@ -806,7 +844,6 @@ fn dimension_patch_reports_invalid_coordinates_without_writing() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 fn dimension_mutation_reports_schema_and_path_errors_without_writing() {
     let root = std::env::temp_dir().join(format!(
@@ -1342,117 +1379,34 @@ fn rename_record_rewrites_refs_in_dimension_overlays() {
 }
 
 #[test]
-fn rename_record_rewrites_spread_sources_in_dimension_overlays() {
+fn rename_record_rewrites_every_ref_in_one_dimension_value() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-dimension-spread-rename-{}",
+        "coflow-data-patch-dimension-ref-array-rename-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
-    write_dimension_spread_project(&root);
-    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
+    write_dimension_ref_array_project(&root);
     let mut session = session(&root);
 
     let report = session.apply_data_patch(DataPatchRequest {
         stop_on_write_error: true,
         ops: vec![DataPatchOp::RenameRecord {
             record: PatchRecordSelector {
-                actual_type: "Leaf".to_string(),
-                key: "base".to_string(),
+                actual_type: "Item".to_string(),
+                key: "potion".to_string(),
             },
             file: None,
-            new_key: "renamed".to_string(),
+            new_key: "elixir".to_string(),
         }],
     });
 
-    assert!(report.write_ok, "report: {report:#?}");
-    let main = std::fs::read_to_string(root.join("data/main.cfd")).expect("read main source");
-    let dimension = std::fs::read_to_string(&dimension_file).expect("read dimension source");
-    assert!(main.contains("...&renamed"), "{main}");
-    assert_eq!(dimension.matches("...&renamed").count(), 2, "{dimension}");
-    assert!(!dimension.contains("...&base"), "{dimension}");
+    assert!(report.write_ok, "diagnostics: {:?}", report.diagnostics);
+    let dimension = std::fs::read_to_string(root.join("data/dimensions/platform/Offer_items.csv"))
+        .expect("read dimension source");
+    assert_eq!(dimension.matches("&elixir").count(), 4, "{dimension}");
+    assert!(!dimension.contains("&potion"), "{dimension}");
     assert_incremental_diagnostics_match_fresh(&session, &root);
     let _ = std::fs::remove_dir_all(root);
-}
-
-#[test]
-fn dimension_spread_rewrite_failure_compensates_every_source() {
-    let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-dimension-spread-compensate-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    write_dimension_spread_project(&root);
-    let mut session = session(&root);
-    let main_file = root.join("data/main.cfd");
-    let dimension_file = root.join("data/dimensions/platform/Holder.cfd");
-    let original_main = std::fs::read(&main_file).expect("read main source");
-    std::fs::write(&dimension_file, "this is invalid CFD").expect("corrupt dimension source");
-    let corrupted_dimension = std::fs::read(&dimension_file).expect("read corrupt source");
-
-    let report = session.apply_data_patch(DataPatchRequest {
-        stop_on_write_error: true,
-        ops: vec![DataPatchOp::RenameRecord {
-            record: PatchRecordSelector {
-                actual_type: "Leaf".to_string(),
-                key: "base".to_string(),
-            },
-            file: None,
-            new_key: "renamed".to_string(),
-        }],
-    });
-
-    assert!(!report.write_ok, "report: {report:#?}");
-    assert_eq!(
-        std::fs::read(&main_file).expect("read restored main"),
-        original_main
-    );
-    assert_eq!(
-        std::fs::read(&dimension_file).expect("read restored dimension"),
-        corrupted_dimension
-    );
-    assert!(session.queries().record_view("Leaf", "base").is_some());
-    assert!(session.queries().record_view("Leaf", "renamed").is_none());
-    let _ = std::fs::remove_dir_all(root);
-}
-
-fn write_dimension_spread_project(root: &std::path::Path) {
-    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create data dir");
-    std::fs::write(
-        root.join("schema.cft"),
-        r#"
-            type Leaf { value: int; }
-            type Stats { nested: Leaf; }
-
-            @singleton
-            type Holder {
-                @dimension("platform")
-                stats: Stats;
-            }
-        "#,
-    )
-    .expect("write schema");
-    std::fs::write(
-        root.join("data/main.cfd"),
-        "base: Leaf { value: 1 }\nHolder: Holder { stats: { nested: { ...&base } } }\n",
-    )
-    .expect("write records");
-    std::fs::write(
-        root.join("data/dimensions/platform/Holder.cfd"),
-        "stats: Holder { default: { nested: { value: 1 } }, pc: { nested: { ...&base } }, mobile: { nested: { ...&base } } }\n",
-    )
-    .expect("write dimension values");
-    std::fs::write(
-        root.join("coflow.yaml"),
-        r#"schema: schema.cft
-sources:
-  - path: data/main.cfd
-dimensions:
-  platform:
-    variants: [pc, mobile]
-    out_dir: data/dimensions/platform
-"#,
-    )
-    .expect("write config");
 }
 
 #[test]
@@ -1587,10 +1541,45 @@ fn rename_record_updates_refs_inside_polymorphic_cfd_values() {
         "polymorphic ref not renamed: {stages}"
     );
     assert!(
+        stages.contains("ItemReward { item: &blade, count: 2 }"),
+        "second polymorphic ref not renamed: {stages}"
+    );
+    assert!(!stages.contains("&sword"), "stale ref remains: {stages}");
+    assert!(
         session.queries().record_view("Item", "blade").is_some(),
         "rebuilt session should expose renamed item"
     );
 
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn rename_record_batches_refs_in_one_csv_source() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-csv-ref-rename-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_csv_ref_rename_project(&root);
+    let mut session = session(&root);
+
+    let report = session.apply_data_patch(DataPatchRequest {
+        stop_on_write_error: true,
+        ops: vec![DataPatchOp::RenameRecord {
+            record: PatchRecordSelector {
+                actual_type: "Item".to_string(),
+                key: "sword".to_string(),
+            },
+            file: Some("data/items.cfd".to_string()),
+            new_key: "blade".to_string(),
+        }],
+    });
+
+    assert!(report.write_ok, "rename failed: {:?}", report.failed);
+    let holders = std::fs::read_to_string(root.join("data/holders.csv")).expect("read holders");
+    assert!(holders.contains("loadout,&blade,&blade"), "{holders}");
+    assert!(!holders.contains("&sword"), "{holders}");
+    assert_incremental_diagnostics_match_fresh(&session, &root);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -3497,67 +3486,6 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(!text.contains("Should Not Run"));
-
-    let _ = std::fs::remove_dir_all(root);
-}
-
-#[test]
-fn patch_set_field_file_guard_uses_spread_source_file() {
-    let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-spread-file-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    write_spread_project(&root);
-    let mut session = session(&root);
-
-    let report = session.apply_data_patch(DataPatchRequest {
-        stop_on_write_error: true,
-        ops: vec![DataPatchOp::SetField {
-            record: PatchRecordSelector {
-                actual_type: "Item".to_string(),
-                key: "child".to_string(),
-            },
-            file: Some("data/source.cfd".to_string()),
-            path: vec![PatchPathSegment::Field("name".to_string())],
-            value: json!("Edited Through Spread"),
-        }],
-    });
-
-    assert!(report.write_ok);
-    assert!(report.failed.is_empty());
-    assert_eq!(report.applied.len(), 1);
-    assert_eq!(report.applied[0].file.as_deref(), Some("data/source.cfd"));
-
-    let source = std::fs::read_to_string(root.join("data").join("source.cfd")).expect("source");
-    let host = std::fs::read_to_string(root.join("data").join("host.cfd")).expect("host");
-    assert!(source.contains("Edited Through Spread"));
-    assert!(!host.contains("Edited Through Spread"));
-
-    let report = session.apply_data_patch(DataPatchRequest {
-        stop_on_write_error: true,
-        ops: vec![DataPatchOp::SetField {
-            record: PatchRecordSelector {
-                actual_type: "Item".to_string(),
-                key: "child".to_string(),
-            },
-            file: Some("data/host.cfd".to_string()),
-            path: vec![PatchPathSegment::Field("power".to_string())],
-            value: json!(2),
-        }],
-    });
-
-    assert!(!report.write_ok);
-    assert_eq!(report.failed.len(), 1);
-    assert!(report.failed[0]
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-FILE-GUARD"));
-
-    let source = std::fs::read_to_string(root.join("data").join("source.cfd")).expect("source");
-    let host = std::fs::read_to_string(root.join("data").join("host.cfd")).expect("host");
-    assert!(!source.contains("power: 2"));
-    assert!(!host.contains("power: 2"));
 
     let _ = std::fs::remove_dir_all(root);
 }

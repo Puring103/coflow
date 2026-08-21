@@ -23,7 +23,7 @@ pub mod ast;
 mod parser;
 
 pub use ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdBlockEntry, CfdField,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField,
     CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 pub use coflow_structure::{Span, StructuralLimits};

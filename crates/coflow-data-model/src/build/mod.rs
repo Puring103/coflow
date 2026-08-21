@@ -5,17 +5,14 @@ mod resolve;
 mod validate;
 
 pub(crate) use context::BuildSchema;
-pub(crate) use draft::{RecordDraft, SpreadFieldSource, ValueDraft};
+pub(crate) use draft::{RecordDraft, ValueDraft};
 
 use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin};
-use crate::indexes::{
-    self, build_ref_indexes, build_spread_indexes, extend_dimension_spread_indexes,
-    SpreadIndexContext,
-};
+use crate::indexes::{self, build_ref_indexes};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord, CfdRecordId,
-    CfdValue, DimensionRefCoordinate,
+    CfdValue,
 };
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
@@ -175,25 +172,6 @@ impl<'a> ModelCompiler<'a> {
             self.validate_dimension_values(&records, &indexes.record_by_domain_key);
         self.fail_if_diagnostics()?;
 
-        let spread_context =
-            SpreadIndexContext::new(&drafts, &indexes.record_by_domain_key, self.schema);
-        let mut spread_indexes = build_spread_indexes(spread_context);
-        for (record_id, input, draft, path) in &validated_dimension_values {
-            let coordinate = DimensionRefCoordinate {
-                field: input.field.clone(),
-                dimension: input.dimension.clone(),
-                variant: input.variant.clone(),
-            };
-            extend_dimension_spread_indexes(
-                &mut spread_indexes,
-                draft,
-                *record_id,
-                path,
-                &coordinate,
-                spread_context,
-            );
-        }
-
         let dimension_values = self.resolve_dimension_values(
             &drafts,
             &indexes.record_by_domain_key,
@@ -202,25 +180,14 @@ impl<'a> ModelCompiler<'a> {
         self.fail_if_diagnostics()?;
         attach_dimension_values(&mut records, dimension_values);
 
-        let ref_indexes = build_ref_indexes(
-            &records,
-            &indexes.record_by_domain_key,
-            self.schema,
-            &spread_indexes.edges,
-        );
+        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, self.schema);
 
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables,
                 record_by_domain_key: indexes.record_by_domain_key,
                 records,
-                ref_edges: ref_indexes.edges,
-                ref_by_site: ref_indexes.by_site,
-                ref_by_host: ref_indexes.by_host,
-                ref_by_target: ref_indexes.by_target,
-                spread_edges: spread_indexes.edges,
-                spread_by_host: spread_indexes.by_host,
-                spread_by_source: spread_indexes.by_source,
+                refs: ref_indexes,
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
         })
@@ -244,7 +211,6 @@ impl<'a> ModelCompiler<'a> {
                 None,
                 &record.key,
                 &record.actual_type,
-                &record.spreads,
                 &record.fields,
                 Some(id),
                 CfdPath::root(),

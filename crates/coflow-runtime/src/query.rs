@@ -1,8 +1,6 @@
 use coflow_api::{ProviderRegistry, WriterCapabilities};
 use coflow_cft::{CftSchema, CftValueType};
-use coflow_data_model::{
-    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup, RefSite,
-};
+use coflow_data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
 
 use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
 use crate::{
@@ -337,38 +335,13 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub fn spread_source(
-        self,
-        coordinate: &RecordCoordinate,
-        path: &CfdPath,
-    ) -> Option<RecordCoordinate> {
-        let host = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key)?;
-        let source = self.session.model().spread_source_at_path(host, path)?;
-        self.coordinate_of(source)
-    }
-
-    #[must_use]
-    pub fn resolved_ref_target(
-        self,
-        coordinate: &RecordCoordinate,
-        path: &CfdPath,
-    ) -> Option<RecordCoordinate> {
-        let host = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key)?;
-        let target = self
-            .session
-            .model()
-            .resolve_ref(&RefSite::new(host, path.clone()))?;
-        self.coordinate_of(target)
-    }
-
-    #[must_use]
     pub fn record_references(self, coordinate: &RecordCoordinate) -> Vec<RecordReferenceInfo> {
         let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key) else {
             return Vec::new();
         };
         self.session
             .model()
-            .direct_ref_edges_from_host(host)
+            .ref_edges_from_host(host)
             .filter_map(|edge| {
                 Some(RecordReferenceInfo {
                     target: self.coordinate_of(edge.target)?,
