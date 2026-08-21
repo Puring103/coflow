@@ -13,7 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-api = { path = "../coflow-api" }
+coflow-codegen-api = { path = "../coflow-codegen-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde = { version = "1", features = ["derive"] }

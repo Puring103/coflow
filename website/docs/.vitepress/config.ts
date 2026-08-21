@@ -78,29 +78,9 @@ export default withMermaid(defineConfig({
                 { text: 'CFT Schema', link: '/docs/reference/03-language/01-cft' },
                 { text: 'Check 校验', link: '/docs/reference/03-language/04-check' },
                 { text: 'CFD 文本数据', link: '/docs/reference/03-language/02-cfd' },
-                { text: '表格单元格值', link: '/docs/reference/03-language/03-cell-value' }
-              ]
-            },
-            {
-              text: '数据源与 Provider',
-              collapsed: false,
-              items: [
-                { text: '概览', link: '/docs/reference/04-sources/01-overview' },
-                { text: '表格 Source', link: '/docs/reference/04-sources/02-table' },
-                { text: 'Excel', link: '/docs/reference/04-sources/03-excel' },
-                { text: 'CSV', link: '/docs/reference/04-sources/04-csv' },
-                { text: 'Provider API', link: '/docs/reference/04-sources/06-provider-api' }
               ]
             },
             { text: '数据模型', link: '/docs/reference/05-data-model' },
-            {
-              text: '导出',
-              collapsed: false,
-              items: [
-                { text: 'JSON', link: '/docs/reference/06-export/01-json' },
-                { text: 'MessagePack', link: '/docs/reference/06-export/02-messagepack' }
-              ]
-            },
             {
               text: '代码生成',
               collapsed: false,
@@ -127,7 +107,7 @@ export default withMermaid(defineConfig({
         {
           text: '示例',
           items: [
-            { text: 'RPG 示例', link: '/examples/rpg' }
+            { text: 'CFD 示例', link: '/docs/guide/examples' }
           ]
         }
       ]

@@ -2,7 +2,7 @@
 //!
 //! Parses `.cfd` text into a [`CfdAst`] with source spans, without requiring
 //! a compiled CFT schema. Intended for use by language tooling (LSP, syntax
-//! highlighting). For data loading use `coflow-loader-cfd`.
+//! highlighting). For data loading use `coflow-runtime`.
 
 #![cfg_attr(
     not(test),
@@ -37,7 +37,7 @@ pub struct CfdParseOptions {
 ///
 /// Only covers structural errors (missing `{`, unterminated strings, etc.).
 /// Schema-level errors (unknown types, wrong field types) are reported by
-/// `coflow-loader-cfd`.
+/// `coflow-runtime`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdSyntaxDiagnostic {
     pub message: String,

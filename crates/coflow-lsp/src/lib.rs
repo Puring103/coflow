@@ -29,8 +29,8 @@ mod uri;
 mod validation;
 
 #[cfg(test)]
-use coflow_project::normalize_path;
-use coflow_project::Project;
+use coflow_runtime::normalize_path;
+use coflow_runtime::Project;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{

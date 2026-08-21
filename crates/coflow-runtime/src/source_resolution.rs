@@ -2,18 +2,18 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, Label, ProjectSourceRef, ProviderRegistry, ResolvedSource, Severity,
-    SourceLocation, SourceLocationSpec, SourceProvider, SourceProviderSelectionError,
+use crate::api::{
+    Diagnostic, DiagnosticSet, Label, ProjectSourceRef, CfdSourceCatalog, ResolvedSource, Severity,
+    SourceLocation, SourceLocationSpec, CfdSourceAdapter, CfdSourceSelectionError,
     SourceResolveContext,
 };
-use coflow_project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
+use crate::project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
 use serde_json::Value;
 
 mod dimensions;
 
 pub(crate) struct ResolvedLoaderSource {
-    pub(crate) provider: Arc<dyn SourceProvider>,
+    pub(crate) provider: Arc<dyn CfdSourceAdapter>,
     pub(crate) source: ResolvedSource,
 }
 
@@ -33,12 +33,12 @@ pub(crate) struct ConfiguredSource {
 
 pub(crate) struct SourceResolver<'a> {
     project: &'a Project,
-    registry: &'a ProviderRegistry,
+    catalog: &'a CfdSourceCatalog,
 }
 
 impl<'a> SourceResolver<'a> {
-    pub(crate) const fn new(project: &'a Project, registry: &'a ProviderRegistry) -> Self {
-        Self { project, registry }
+    pub(crate) const fn new(project: &'a Project, catalog: &'a CfdSourceCatalog) -> Self {
+        Self { project, catalog }
     }
 
     pub(crate) fn configured(
@@ -91,7 +91,7 @@ impl<'a> SourceResolver<'a> {
         let source_index = self
             .project
             .config()
-            .sources
+            .data
             .iter()
             .position(|candidate| std::ptr::eq(candidate, source));
         let mut configured = self.configured(source, source_index);
@@ -127,7 +127,7 @@ impl<'a> SourceResolver<'a> {
         forced_provider: Option<&str>,
     ) -> Result<ResolvedSource, DiagnosticSet> {
         let provider = match forced_provider {
-            Some(provider_id) => self.registry.source_provider(provider_id).ok_or_else(|| {
+            Some(provider_id) => self.catalog.source_provider(provider_id).ok_or_else(|| {
                 DiagnosticSet::one(project_diagnostic(
                     self.project.config_path(),
                     format!("source provider `{provider_id}` is not registered"),
@@ -233,14 +233,14 @@ impl<'a> SourceResolver<'a> {
     fn select_optional(
         &self,
         configured: &ConfiguredSource,
-    ) -> Result<Option<Arc<dyn SourceProvider>>, DiagnosticSet> {
+    ) -> Result<Option<Arc<dyn CfdSourceAdapter>>, DiagnosticSet> {
         let option_keys = source_option_keys(&configured.options);
         match self
-            .registry
+            .catalog
             .select_source_provider(&source_ref(configured, None, &option_keys))
         {
             Ok(provider) => Ok(Some(provider)),
-            Err(SourceProviderSelectionError::NoSourceProvider) => Ok(None),
+            Err(CfdSourceSelectionError::NoCfdSourceAdapter) => Ok(None),
             Err(error) => Err(DiagnosticSet::one(loader_selection_diagnostic(
                 self.project.config_path(),
                 configured,
@@ -253,9 +253,9 @@ impl<'a> SourceResolver<'a> {
         &self,
         configured: &ConfiguredSource,
         source_type: Option<&str>,
-    ) -> Result<Arc<dyn SourceProvider>, DiagnosticSet> {
+    ) -> Result<Arc<dyn CfdSourceAdapter>, DiagnosticSet> {
         let option_keys = source_option_keys(&configured.options);
-        self.registry
+        self.catalog
             .select_source_provider(&source_ref(configured, source_type, &option_keys))
             .map_err(|error| {
                 DiagnosticSet::one(loader_selection_diagnostic(
@@ -268,7 +268,7 @@ impl<'a> SourceResolver<'a> {
 
     fn decode_and_expand(
         &self,
-        provider: &Arc<dyn SourceProvider>,
+        provider: &Arc<dyn CfdSourceAdapter>,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let decoded =
@@ -278,7 +278,7 @@ impl<'a> SourceResolver<'a> {
 
     fn expand_decoded(
         &self,
-        provider: &Arc<dyn SourceProvider>,
+        provider: &Arc<dyn CfdSourceAdapter>,
         decoded: &ResolvedSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let context = SourceResolveContext {
@@ -299,7 +299,7 @@ impl<'a> SourceResolver<'a> {
 }
 
 pub(crate) fn validate_resolved_source(
-    provider: &dyn SourceProvider,
+    provider: &dyn CfdSourceAdapter,
     source: &ResolvedSource,
 ) -> Result<(), DiagnosticSet> {
     let expected = provider.descriptor().id;
@@ -336,7 +336,7 @@ fn configured_source(
 }
 
 fn decode_configured_source(
-    provider: &dyn SourceProvider,
+    provider: &dyn CfdSourceAdapter,
     source: &ConfiguredSource,
     config_path: &Path,
 ) -> Result<ResolvedSource, DiagnosticSet> {
@@ -381,7 +381,7 @@ fn source_option_diagnostics(
         };
         let mut key_path = Vec::new();
         if let Some(index) = source.source_index {
-            key_path.extend(["sources".to_string(), index.to_string()]);
+            key_path.extend(["data".to_string(), index.to_string()]);
         }
         key_path.append(&mut option_path);
         diagnostic.primary = Some(Label {
@@ -410,7 +410,7 @@ fn options_for_provider(options: &Value, keys: &[&str]) -> Value {
 
 fn validate_directory_options<'a>(
     options: &Value,
-    providers: impl IntoIterator<Item = &'a dyn SourceProvider>,
+    providers: impl IntoIterator<Item = &'a dyn CfdSourceAdapter>,
     config_path: &Path,
     source_index: Option<usize>,
 ) -> Result<(), DiagnosticSet> {
@@ -439,7 +439,7 @@ fn directory_option_diagnostic(
 ) -> Diagnostic {
     let mut key_path = Vec::new();
     if let Some(index) = source_index {
-        key_path.extend(["sources".to_string(), index.to_string()]);
+        key_path.extend(["data".to_string(), index.to_string()]);
     }
     key_path.push(key.to_string());
     Diagnostic {
@@ -481,23 +481,23 @@ fn source_option_keys(options: &Value) -> Vec<&str> {
 fn loader_selection_diagnostic(
     config_path: &Path,
     spec: &ConfiguredSource,
-    error: SourceProviderSelectionError,
+    error: CfdSourceSelectionError,
 ) -> Diagnostic {
     let path = spec.location.path();
     let source = path.display().to_string();
     match error {
-        SourceProviderSelectionError::UnknownSourceProvider { id } => project_diagnostic(
+        CfdSourceSelectionError::UnknownCfdSourceAdapter { id } => project_diagnostic(
             config_path,
             format!("source `{source}` uses unknown source provider `{id}`"),
         ),
-        SourceProviderSelectionError::NoSourceProvider => project_diagnostic(
+        CfdSourceSelectionError::NoCfdSourceAdapter => project_diagnostic(
             config_path,
             format!("source `{source}` has no matching source provider"),
         ),
-        SourceProviderSelectionError::AmbiguousSourceProviders { ids } => project_diagnostic(
+        CfdSourceSelectionError::AmbiguousCfdSourceAdapters { ids } => project_diagnostic(
             config_path,
             format!(
-                "source `{source}` matches multiple source providers {}; set source `type` explicitly",
+                "source `{source}` matches multiple CFD providers; source type selection is unavailable ({})",
                 ids.join(", ")
             ),
         ),
@@ -525,15 +525,15 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
 #[cfg(test)]
 mod tests {
     use super::{decode_configured_source, validate_resolved_source, ConfiguredSource};
-    use coflow_api::{
+    use crate::api::{
         DecodedSourceOptions, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-        ResolvedSource, SourceLoadContext, SourceLocationSpec, SourceProvider,
-        SourceProviderDescriptor,
+        ResolvedSource, SourceLoadContext, SourceLocationSpec, CfdSourceAdapter,
+        CfdSourceAdapterDescriptor,
     };
     use serde_json::Value;
     use std::path::Path;
 
-    static DESCRIPTOR: SourceProviderDescriptor = SourceProviderDescriptor {
+    static DESCRIPTOR: CfdSourceAdapterDescriptor = CfdSourceAdapterDescriptor {
         id: "contract-test",
         display_name: "Contract test",
         extensions: &[],
@@ -545,8 +545,8 @@ mod tests {
         decoded_provider_id: &'static str,
     }
 
-    impl SourceProvider for ContractProvider {
-        fn descriptor(&self) -> &'static SourceProviderDescriptor {
+    impl CfdSourceAdapter for ContractProvider {
+        fn descriptor(&self) -> &'static CfdSourceAdapterDescriptor {
             &DESCRIPTOR
         }
 

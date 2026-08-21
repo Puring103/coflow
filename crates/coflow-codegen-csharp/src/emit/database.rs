@@ -104,54 +104,6 @@ fn build_context_lookups(
     Ok(context_lookups)
 }
 
-pub fn build_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
-    let mut load_steps = Vec::new();
-    for table in table_models {
-        if load_extension == "json" {
-            load_steps.push(format!(
-                "var ({}, {}) = {}.LoadRawTable(loadText(\"{}.{}\"));",
-                table.records_var,
-                table.raw_rows_var,
-                table.name,
-                table.source_name,
-                load_extension
-            ));
-        } else {
-            load_steps.push(format!(
-                "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
-                table.records_var,
-                table.raw_rows_var,
-                table.name,
-                table.source_name,
-                load_extension
-            ));
-        }
-    }
-    for table in table_models {
-        load_steps.push(format!(
-            "var {} = {}.BuildIndex({});",
-            table.index_var, table.name, table.records_var
-        ));
-    }
-    let context_args = table_models
-        .iter()
-        .map(|table| table.index_var.clone())
-        .collect::<Vec<_>>();
-    let context_expr = if context_args.is_empty() {
-        "LoadContext.Empty".to_string()
-    } else {
-        format!("new LoadContext({})", context_args.join(", "))
-    };
-    load_steps.push(format!("var context = {context_expr};"));
-    for table in table_models {
-        load_steps.push(format!(
-            "{}.HydrateAll({}, {}, context);",
-            table.name, table.records_var, table.raw_rows_var
-        ));
-    }
-    load_steps
-}
-
 fn build_table_model(view: &CsharpLoweringPlan<'_>, table_name: &str) -> CsharpTable {
     let csharp_name = view.csharp_type_name(table_name);
     let id_ty = view.key_field_type(table_name);

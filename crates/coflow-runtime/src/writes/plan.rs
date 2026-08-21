@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, DimensionSourceManager, ProviderRegistry, ResolvedSource,
+use crate::api::{
+    Diagnostic, DiagnosticSet, DimensionSourceManager, CfdSourceCatalog, ResolvedSource,
     SourceWriter, WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdValue, RecordOrigin};
@@ -166,7 +166,7 @@ impl MutationExecutionPlan {
 #[allow(clippy::too_many_lines)]
 pub(crate) fn prepare_mutation_execution(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     op: &PreparedMutationOp,
     allow_noop: bool,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
@@ -178,7 +178,7 @@ pub(crate) fn prepare_mutation_execution(
             ..
         } => {
             let source = source_for_file(session, file)?;
-            let writer = lookup_source_writer(registry, &source)?;
+            let writer = lookup_source_writer(catalog, &source)?;
             Ok(MutationExecutionPlan::Insert(InsertPlan {
                 source,
                 writer,
@@ -200,7 +200,7 @@ pub(crate) fn prepare_mutation_execution(
                     "record key writes require a string value",
                 )));
             };
-            prepare_rename(session, registry, write_record, new_key)
+            prepare_rename(session, catalog, write_record, new_key)
                 .map(MutationExecutionPlan::Rename)
         }
         PreparedMutationOp::SetField {
@@ -210,7 +210,7 @@ pub(crate) fn prepare_mutation_execution(
             ..
         } => prepare_write_field(
             session,
-            registry,
+            catalog,
             &write_record.actual_type,
             &write_record.key,
             path,
@@ -227,7 +227,7 @@ pub(crate) fn prepare_mutation_execution(
         }),
         PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
             let source = source_for_file(session, write_file)?;
-            let manager = registry
+            let manager = catalog
                 .dimension_source_manager(&source.provider_id)
                 .ok_or_else(|| {
                     transaction_invariant(format!(
@@ -242,18 +242,18 @@ pub(crate) fn prepare_mutation_execution(
         }
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
-        } => prepare_rename(session, registry, record, new_key).map(MutationExecutionPlan::Rename),
+        } => prepare_rename(session, catalog, record, new_key).map(MutationExecutionPlan::Rename),
         PreparedMutationOp::DeleteRecord { record, .. } => {
-            prepare_delete(session, registry, record).map(MutationExecutionPlan::Delete)
+            prepare_delete(session, catalog, record).map(MutationExecutionPlan::Delete)
         }
         PreparedMutationOp::SwapRecords { first, second, .. } => {
-            prepare_swap_records(session, registry, first, second)
+            prepare_swap_records(session, catalog, first, second)
         }
         PreparedMutationOp::MoveRecord {
             record,
             target_index,
             ..
-        } => prepare_move_record(session, registry, record, *target_index),
+        } => prepare_move_record(session, catalog, record, *target_index),
         PreparedMutationOp::TransferRecord {
             record,
             destination_file,
@@ -262,7 +262,7 @@ pub(crate) fn prepare_mutation_execution(
             ..
         } => prepare_transfer_record(
             session,
-            registry,
+            catalog,
             record,
             destination_file,
             destination_sheet.as_deref(),
@@ -277,7 +277,7 @@ pub(crate) fn prepare_mutation_execution(
 
 fn prepare_transfer_record(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
     destination_file: &str,
     requested_sheet: Option<&str>,
@@ -303,7 +303,7 @@ fn prepare_transfer_record(
         .record(record_ref.id)
         .ok_or_else(|| reorder_invariant("record is missing from the data model"))?;
     let source = source_for_id(session, record_ref.source_id)?;
-    let source_writer = lookup_source_writer(registry, &source)?;
+    let source_writer = lookup_source_writer(catalog, &source)?;
     if !source_writer.capabilities(&source).can_delete_record {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-UNSUPPORTED",
@@ -312,7 +312,7 @@ fn prepare_transfer_record(
         )));
     }
     let destination = source_for_file(session, destination_file)?;
-    let destination_writer = lookup_source_writer(registry, &destination)?;
+    let destination_writer = lookup_source_writer(catalog, &destination)?;
     if !destination_writer
         .capabilities(&destination)
         .can_insert_record
@@ -414,7 +414,7 @@ fn record_matches_sheet(record: &RecordRef, sheet: Option<&str>) -> bool {
 
 fn prepare_swap_records(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     first: &RecordCoordinate,
     second: &RecordCoordinate,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
@@ -433,7 +433,7 @@ fn prepare_swap_records(
             coordinate: first_ref.coordinate.clone(),
         });
     }
-    let (source, writer) = reorder_writer(session, registry, first_ref)?;
+    let (source, writer) = reorder_writer(session, catalog, first_ref)?;
     Ok(MutationExecutionPlan::Reorder(ReorderPlan {
         source,
         writer,
@@ -447,7 +447,7 @@ fn prepare_swap_records(
 
 fn prepare_move_record(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
     target_index: usize,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
@@ -481,7 +481,7 @@ fn prepare_move_record(
     }
     order.remove(old_index);
     let before = order.get(target_index).copied().map(resolved_position);
-    let (source, writer) = reorder_writer(session, registry, record_ref)?;
+    let (source, writer) = reorder_writer(session, catalog, record_ref)?;
     Ok(MutationExecutionPlan::Reorder(ReorderPlan {
         source,
         writer,
@@ -535,7 +535,7 @@ fn ensure_same_container(left: &RecordRef, right: &RecordRef) -> Result<(), Diag
 
 fn reorder_writer(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     record: &RecordRef,
 ) -> Result<(ResolvedSource, Arc<dyn SourceWriter>), DiagnosticSet> {
     if matches!(record.origin, RecordOrigin::None) {
@@ -546,7 +546,7 @@ fn reorder_writer(
         )));
     }
     let source = source_for_id(session, record.source_id)?;
-    let writer = lookup_source_writer(registry, &source)?;
+    let writer = lookup_source_writer(catalog, &source)?;
     if !writer.capabilities(&source).can_reorder_records {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-UNSUPPORTED",
@@ -574,7 +574,7 @@ fn reorder_invariant(message: &str) -> DiagnosticSet {
 
 fn prepare_write_field(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     actual_type: &str,
     key: &str,
     path: &[WriteFieldPathSegment],
@@ -606,7 +606,7 @@ fn prepare_write_field(
         return Ok(None);
     }
     let source = source_for_id(session, target.source_id)?;
-    let writer = lookup_source_writer(registry, &source)?;
+    let writer = lookup_source_writer(catalog, &source)?;
     Ok(Some(WriteFieldPlan {
         target,
         source,
@@ -616,7 +616,7 @@ fn prepare_write_field(
 
 fn prepare_rename(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
     new_key: &str,
 ) -> Result<RenamePlan, DiagnosticSet> {
@@ -635,9 +635,9 @@ fn prepare_rename(
         });
     }
     let source = source_for_id(session, target_ref.source_id)?;
-    let writer = lookup_source_writer(registry, &source)?;
-    let reference_actions = reference_update_actions(session, registry, target_ref.id, new_key)?;
-    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
+    let writer = lookup_source_writer(catalog, &source)?;
+    let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
+    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
@@ -651,7 +651,7 @@ fn prepare_rename(
 
 fn prepare_delete(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
 ) -> Result<DeletePlan, DiagnosticSet> {
     let Some(record_ref) = session
@@ -670,8 +670,8 @@ fn prepare_delete(
         )));
     };
     let source = source_for_id(session, record_ref.source_id)?;
-    let writer = lookup_source_writer(registry, &source)?;
-    let dimension_actions = dimension_record_actions(session, registry, &record.actual_type)?;
+    let writer = lookup_source_writer(catalog, &source)?;
+    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
@@ -684,7 +684,7 @@ fn prepare_delete(
 
 fn dimension_record_actions(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     actual_type: &str,
 ) -> Result<Vec<DimensionRecordAction>, DiagnosticSet> {
     let schema = session.schema();
@@ -705,7 +705,7 @@ fn dimension_record_actions(
         if !applies {
             continue;
         }
-        let manager = registry
+        let manager = catalog
             .dimension_source_manager(&entry.source.provider_id)
             .ok_or_else(|| {
                 transaction_invariant(format!(

@@ -1,4 +1,8 @@
 schema: schema/
 
-sources:
-  - path: data
+data: data/
+
+codegen:
+  - language: csharp
+    dir: generated/csharp
+    namespace: CardGame.Config

@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Severity};
+use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use coflow_cft::{CftField, CftSchema};
 use coflow_data_model::CfdEnumValue;
 

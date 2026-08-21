@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, Diagnostic,
-    DiagnosticSet, ExportContext, LoaderGenerationContext, LoaderGenerator, ProviderRegistry,
-    Severity, WriterCapabilities,
-};
+use crate::api::{Diagnostic, DiagnosticSet, CfdProviderBindings, Severity, WriterCapabilities};
+use crate::catalog::CfdSourceCatalog;
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_project::Project;
+use coflow_cft::CftSchema;
+use coflow_data_model::CfdDataModel;
+use crate::project::Project;
 
 use crate::project_schema::{
     open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
@@ -25,7 +24,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
-    registry: ProviderRegistry,
+    catalog: CfdSourceCatalog,
 }
 
 /// Owns the published schema generation for one project.
@@ -177,7 +176,7 @@ fn schema_input_fingerprint(
                     .requested_module
                     .as_deref()
                     .is_some_and(|requested| requested == module.module_id)
-                    || coflow_project::normalize_path(&module.canonical_path)
+                    || crate::project::normalize_path(&module.canonical_path)
                         == source_override.normalized_path
             })
             .map_or(&module.source, |(_, source_override)| {
@@ -199,8 +198,16 @@ fn schema_input_fingerprint(
 
 impl Runtime {
     #[must_use]
-    pub const fn new(registry: ProviderRegistry) -> Self {
-        Self { registry }
+    pub fn new() -> Self {
+        Self {
+            catalog: fixed_cfd_catalog(),
+        }
+    }
+
+    /// Creates a runtime from the fixed CFD catalog.
+    #[must_use]
+    pub const fn with_catalog(catalog: CfdSourceCatalog) -> Self {
+        Self { catalog }
     }
 
     /// Builds a schema-only session without loading project data.
@@ -222,7 +229,7 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::read_only())
+        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
             .map(ReadOnlyProjectSession::new)
     }
 
@@ -238,7 +245,7 @@ impl Runtime {
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
         open_project_session_with_source_overrides(
             project,
-            &self.registry,
+            &self.catalog,
             SessionOpenOptions::read_only(),
             source_overrides,
         )
@@ -255,12 +262,12 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<BuildProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::build())
+        open_project_session(project, &self.catalog, SessionOpenOptions::build())
             .map(BuildProjectSession::new)
     }
 
     /// Opens a mutation-capable session without generating dimension files.
-    /// The session owns the registry used by every command and rebuild.
+    /// The session owns the CFD catalog used by every command and rebuild.
     ///
     /// # Errors
     ///
@@ -269,8 +276,8 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
@@ -282,9 +289,26 @@ impl Runtime {
         &self,
         schema: ProjectSchemaSession,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_from_schema(schema, &self.registry, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+        open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
     }
+}
+
+fn fixed_cfd_catalog() -> CfdSourceCatalog {
+    cfd_source_catalog()
+        .unwrap_or_else(|_| CfdSourceCatalog::from_bindings(CfdProviderBindings::default()))
+}
+
+/// Builds the only source catalog supported by the runtime: the concrete CFD
+/// parser and writer. Hosts do not select providers by input format.
+pub fn cfd_source_catalog() -> Result<CfdSourceCatalog, String> {
+    let mut bindings = CfdProviderBindings::default();
+    bindings
+        .register_bundle(
+            crate::cfd_loader::cfd_binding_bundle().map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(CfdSourceCatalog::from_bindings(bindings))
 }
 
 /// Read capability for a built project.
@@ -310,6 +334,16 @@ impl ReadOnlyProjectSession {
     #[must_use]
     pub const fn queries(&self) -> ProjectQueries<'_> {
         ProjectQueries::new(&self.session, 0)
+    }
+
+    #[must_use]
+    pub fn schema(&self) -> &CftSchema {
+        self.session.schema()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &CfdDataModel {
+        self.session.model()
     }
 
     #[must_use]
@@ -339,89 +373,34 @@ impl BuildProjectSession {
     }
 
     #[must_use]
+    pub fn schema(&self) -> &CftSchema {
+        self.session.schema()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &CfdDataModel {
+        self.session.model()
+    }
+
+    #[must_use]
     pub fn into_diagnostics(self) -> DiagnosticSet {
         self.session.into_diagnostics()
     }
 
-    /// Generates export artifacts from this session's immutable project generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the exporter rejects its options or input.
-    pub fn export_artifacts(
-        &self,
-        exporter: &dyn DataExporter,
-        options: &DecodedOutputOptions,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        exporter.export(
-            ExportContext {
-                schema: self.session.schema(),
-                model: self.session.model(),
-            },
-            options,
-        )
-    }
-
-    /// Generates code artifacts from this session's immutable project generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the generator rejects its options or input.
-    pub fn codegen_artifacts(
-        &self,
-        codegen: &dyn CodeGenerator,
-        options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-        include_model: bool,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        codegen.generate(
-            CodegenContext {
-                schema: self.session.schema(),
-                model: include_model.then_some(self.session.model()),
-                id_as_enum_variants,
-            },
-            options,
-        )
-    }
-
-    /// Generates loader artifacts from this session's immutable schema generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the loader rejects its options or input.
-    pub fn loader_artifacts(
-        &self,
-        loader: &dyn LoaderGenerator,
-        code_options: &DecodedOutputOptions,
-        data_options: &DecodedOutputOptions,
-        loader_options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        loader.generate(
-            LoaderGenerationContext {
-                schema: self.session.schema(),
-                model: Some(self.session.model()),
-                code_options,
-                data_options,
-                id_as_enum_variants,
-            },
-            loader_options,
-        )
-    }
 }
 
 #[derive(Debug)]
 pub struct WriteProjectSession {
     session: ProjectSession,
-    registry: ProviderRegistry,
+    catalog: CfdSourceCatalog,
     revision: u64,
 }
 
 impl WriteProjectSession {
-    const fn new(session: ProjectSession, registry: ProviderRegistry) -> Self {
+    const fn new(session: ProjectSession, catalog: CfdSourceCatalog) -> Self {
         Self {
             session,
-            registry,
+            catalog,
             revision: 0,
         }
     }
@@ -488,7 +467,7 @@ impl WriteProjectSession {
     #[must_use]
     pub fn writer_capabilities_for_file(&self, file: &str) -> WriterCapabilities {
         self.queries()
-            .writer_capabilities_for_file(&self.registry, file)
+            .writer_capabilities_for_file(&self.catalog, file)
     }
 
     /// Build a schema-shaped default record value.
@@ -529,10 +508,10 @@ impl WriteProjectSession {
             .default_collection_item_value(actual_type, path)
     }
 
-    /// Apply a batch of mutation commands using the registry owned by this
+    /// Apply a batch of mutation commands using the CFD catalog owned by this
     /// capability.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
-        let report = self.session.apply_mutation(&self.registry, request);
+        let report = self.session.apply_mutation(&self.catalog, request);
         if report.generation_changed {
             self.revision = self.revision.saturating_add(1);
         }

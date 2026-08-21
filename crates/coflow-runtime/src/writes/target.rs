@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use crate::api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
 use coflow_data_model::RecordOrigin;
 
 use crate::indexes::{RecordRef, SourceId};

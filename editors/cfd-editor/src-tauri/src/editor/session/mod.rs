@@ -2,7 +2,7 @@
 //!
 //! `SessionStore` owns a small population of `EditorSession`s — one per
 //! loaded project — and dispatches every editor command through a shared
-//! `ProviderRegistry`. Each session is wrapped in its own `RwLock` so reads
+//! `CfdSourceCatalog`. Each session is wrapped in its own `RwLock` so reads
 //! don't block one another and a write is scoped to a single session.
 //!
 //! After spec 17, the data flow is:
@@ -29,7 +29,7 @@ use std::path::Path as StdPath;
 use std::path::PathBuf as StdPathBuf;
 use std::sync::{Arc, RwLock};
 
-use coflow_api::ProviderRegistry;
+use coflow_runtime::CfdSourceCatalog;
 use coflow_data_model::{CfdValue, RecordOrigin};
 use coflow_runtime::{
     DefaultMaterialization, MutationFields, MutationOp, MutationRequest, MutationValue,
@@ -54,7 +54,7 @@ use crate::editor::types::{
 pub use diagnostics::Diagnostics;
 
 use build::{
-    build_session, default_provider_registry, diagnostic_messages, session_capabilities_for_file,
+    build_session, default_cfd_catalog, diagnostic_messages, session_capabilities_for_file,
     SessionSnapshotParts,
 };
 use path::strip_unc_prefix;
@@ -117,7 +117,7 @@ struct ReloadCandidate {
 struct Inner {
     next_id: u32,
     sessions: HashMap<u32, Arc<SessionEntry>>,
-    registry: Arc<ProviderRegistry>,
+    registry: Arc<CfdSourceCatalog>,
 }
 
 #[derive(Default)]
@@ -137,13 +137,13 @@ impl SessionStore {
             inner: RwLock::new(Inner {
                 next_id: 0,
                 sessions: HashMap::new(),
-                registry: Arc::new(default_provider_registry()?),
+                registry: Arc::new(default_cfd_catalog()?),
             }),
         })
     }
 
     pub fn init_project(&self, dir: &StdPath) -> Result<ProjectSnapshot, EditorError> {
-        let outcome = coflow_project::init_project(dir)
+        let outcome = coflow_runtime::init_project(dir)
             .map_err(|err| EditorError::project(diagnostic_messages(&err)))?;
         self.load_project(&outcome.config_path)
     }
@@ -303,10 +303,10 @@ impl SessionStore {
     }
 
     pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
-        let (yaml_path, registry) = self.project_action_context(id)?;
-        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::check_project(&project, registry.as_ref())
+        match coflow::commands::check_project(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
@@ -317,19 +317,16 @@ impl SessionStore {
     }
 
     pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
-        let (yaml_path, registry) = self.project_action_context(id)?;
-        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::build_project(&project, registry.as_ref())
+        match coflow::commands::build_project(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(report) => {
                 let mut outputs = Vec::new();
                 for target in report.targets {
-                    outputs.push(target.data.dir.display().to_string());
-                    if let Some(code) = target.code {
-                        outputs.push(code.dir.display().to_string());
-                    }
+                    outputs.push(target.code.dir.display().to_string());
                 }
                 Ok(format!("Build completed: {}", outputs.join(", ")))
             }
@@ -340,10 +337,10 @@ impl SessionStore {
     }
 
     pub fn build_project_status(&self, id: u32) -> Result<bool, EditorError> {
-        let (yaml_path, registry) = self.project_action_context(id)?;
-        let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::build_project_status(&project, registry.as_ref())
+        match coflow::commands::build_project_status(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow::commands::CommandOutcome::Success(changed) => Ok(changed),
@@ -383,10 +380,7 @@ impl SessionStore {
         Ok(path)
     }
 
-    fn project_action_context(
-        &self,
-        id: u32,
-    ) -> Result<(StdPathBuf, Arc<ProviderRegistry>), EditorError> {
+    fn project_action_context(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let yaml_path = entry
             .state
@@ -394,7 +388,7 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session poisoned during project action"))?
             .yaml_path
             .clone();
-        Ok((yaml_path, self.registry()?))
+        Ok(yaml_path)
     }
 
     pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {
@@ -473,7 +467,7 @@ impl SessionStore {
         Ok(())
     }
 
-    fn registry(&self) -> Result<Arc<ProviderRegistry>, EditorError> {
+    fn registry(&self) -> Result<Arc<CfdSourceCatalog>, EditorError> {
         let inner = self
             .inner
             .read()
@@ -835,13 +829,13 @@ fn create_record_field_draft_to_wire(
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> EditorError {
+fn api_diagnostics_to_editor_error(diagnostics: coflow_runtime::DiagnosticSet) -> EditorError {
     let message = diagnostics
         .iter()
         .map(|d| d.message.as_str())
         .collect::<Vec<_>>()
         .join("; ");
-    let flat: Vec<coflow_api::FlatDiagnostic> = diagnostics
+    let flat: Vec<coflow_runtime::FlatDiagnostic> = diagnostics
         .diagnostics
         .iter()
         .map(|d| d.flat_view(None, None, None))
@@ -849,7 +843,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
     EditorError::write(message).with_diagnostics(flat)
 }
 
-fn project_diagnostics_to_editor_error(diagnostics: &coflow_api::DiagnosticSet) -> EditorError {
+fn project_diagnostics_to_editor_error(diagnostics: &coflow_runtime::DiagnosticSet) -> EditorError {
     let message = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.message.as_str())
@@ -904,6 +898,3 @@ fn mutation_report_to_editor_error(
     })
     .with_diagnostics(diagnostics)
 }
-
-#[cfg(test)]
-mod tests;

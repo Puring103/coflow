@@ -1,10 +1,10 @@
 mod snapshot;
 mod worker;
 
-use coflow_api::DiagnosticSet;
+use coflow_runtime::DiagnosticSet;
 use coflow_cfd::CfdAst;
 use coflow_cft::CftSchema;
-use coflow_project::{normalize_path, Project};
+use coflow_runtime::{normalize_path, Project};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

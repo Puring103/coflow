@@ -5,7 +5,7 @@ mod store;
 
 use std::collections::BTreeMap;
 
-use coflow_api::DiagnosticSet;
+use crate::api::DiagnosticSet;
 use coflow_cft::CftSchema;
 use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
 use coflow_data_model::{CfdDataModel, RecordOrigin};

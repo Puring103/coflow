@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::DiagnosticSet;
-use coflow_api::WriteFieldPathSegment;
+use crate::api::DiagnosticSet;
+use crate::api::WriteFieldPathSegment;
 use coflow_cft::{CftValueType, RecordKey};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
 

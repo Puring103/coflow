@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{Diagnostic, DiagnosticSet};
+use crate::api::{Diagnostic, DiagnosticSet};
 
 use crate::{ProjectSession, RecordCoordinate};
 

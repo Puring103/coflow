@@ -47,6 +47,7 @@ pub struct CsharpEnumVariant {
 #[derive(Debug, Serialize)]
 pub struct CsharpType {
     pub name: String,
+    pub source_name: String,
     pub declaration: String,
     pub constructor_visibility: String,
     pub summary: Option<String>,
@@ -56,7 +57,6 @@ pub struct CsharpType {
     pub base_constructor_args: Vec<String>,
     pub base_constructor_call: Option<String>,
     pub assignments: Vec<CsharpConstructorAssignment>,
-    pub loader: Option<CsharpLoader>,
     pub equality: Option<CsharpEquality>,
 }
 
@@ -134,55 +134,6 @@ pub struct CsharpContextLookupField {
 pub struct CsharpParameter {
     pub ty: String,
     pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct CsharpLoader {
-    pub type_name: String,
-    pub source_name: String,
-    pub key_type_name: String,
-    pub key_local_name: String,
-    pub key_property: String,
-    pub key_read_expr: String,
-    pub key_messagepack_read_expr: String,
-    pub is_table: bool,
-    /// True when the type lands in a top-level JSON / msgpack file as an
-    /// array of records. Tables and singletons both qualify; abstract /
-    /// inline-only types do not. The loader templates emit `LoadTable`
-    /// for any disk-loadable type so the shared database template can
-    /// call it uniformly.
-    pub is_disk_loadable: bool,
-    pub is_struct: bool,
-    pub requires_hydration: bool,
-    pub fields: Vec<CsharpLoadField>,
-    pub polymorphic_cases: Vec<CsharpPolymorphicCase>,
-    pub is_polymorphic: bool,
-    pub expected: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpLoadField {
-    pub property: String,
-    pub source_name: String,
-    pub local_name: String,
-    pub type_name: String,
-    pub assignment_target: String,
-    pub read_expr: String,
-    pub inline_read_expr: String,
-    pub messagepack_read_expr: String,
-    pub inline_messagepack_read_expr: String,
-    pub default_expr: Option<String>,
-    pub missing_expr: Option<String>,
-    pub is_required: bool,
-    pub requires_context: bool,
-    pub has_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpPolymorphicCase {
-    pub type_name: String,
-    pub source_name: String,
 }
 
 #[derive(Debug, Serialize)]

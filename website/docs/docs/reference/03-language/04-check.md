@@ -19,7 +19,7 @@ type Monster {
 ## 执行时机与产物边界
 
 `check` 在字段值和默认值构建完成、记录引用解析完成后执行。`coflow check`、`coflow build`、
-`coflow export` 以及加载完整项目数据的 `coflow data` 查询和修改命令都会运行相关规则；
+`coflow check` 和 `coflow build` 加载完整 CFD 数据并运行相关规则；
 只编译 schema 的 `coflow cft check`、`coflow schema` 和 `coflow codegen` 不执行数据规则。
 
 校验失败会作为诊断返回，并阻止 `build` 或 `export` 发布新产物。`check` 块本身不会写入导出数据，

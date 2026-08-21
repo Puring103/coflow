@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry, WriterCapabilities};
+use crate::api::{Diagnostic, DiagnosticSet, FlatDiagnostic, CfdSourceCatalog, WriterCapabilities};
 use coflow_data_model::CfdValue;
 use serde::{Deserialize, Serialize};
 
@@ -69,7 +69,7 @@ pub struct DataRecordInfo {
 }
 
 #[must_use]
-pub fn data_sources(queries: ProjectQueries<'_>, registry: &ProviderRegistry) -> DataSourcesReport {
+pub fn data_sources(queries: ProjectQueries<'_>, catalog: &CfdSourceCatalog) -> DataSourcesReport {
     let sources = queries
         .sources()
         .entries()
@@ -88,7 +88,7 @@ pub fn data_sources(queries: ProjectQueries<'_>, registry: &ProviderRegistry) ->
             DataSourceInfo {
                 file: entry.display_path.clone(),
                 provider: entry.provider_id.clone(),
-                capabilities: writer_capabilities(registry, &entry.source),
+                capabilities: writer_capabilities(catalog, &entry.source),
                 types,
             }
         })
@@ -266,10 +266,10 @@ const fn requires_explicit_large_get(query: &DataGetQuery, match_count: usize) -
 }
 
 fn writer_capabilities(
-    registry: &ProviderRegistry,
-    source: &coflow_api::ResolvedSource,
+    catalog: &CfdSourceCatalog,
+    source: &crate::api::ResolvedSource,
 ) -> WriterCapabilities {
-    registry.source_writer(&source.provider_id).map_or_else(
+    catalog.source_writer(&source.provider_id).map_or_else(
         || WriterCapabilities::read_only().with_provider_id(source.provider_id.clone()),
         |writer| {
             writer

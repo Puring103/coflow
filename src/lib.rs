@@ -13,6 +13,4 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-mod artifacts;
 pub mod commands;
-pub mod data_patch;

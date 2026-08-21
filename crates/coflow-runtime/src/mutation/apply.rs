@@ -1,4 +1,4 @@
-use coflow_api::{DiagnosticSet, ProviderRegistry, Severity, WriteContext};
+use crate::api::{DiagnosticSet, CfdSourceCatalog, Severity, WriteContext};
 use std::collections::BTreeSet;
 
 use crate::writes::{
@@ -19,7 +19,7 @@ impl ProjectSession {
     /// Prepare, stage, and atomically publish a mutation request.
     pub fn apply_mutation(
         &mut self,
-        registry: &ProviderRegistry,
+        catalog: &CfdSourceCatalog,
         request: MutationRequest,
     ) -> MutationReport {
         let (planned, mut failed, write_ok, stopped) = plan_mutations(self, request);
@@ -27,7 +27,7 @@ impl ProjectSession {
             return report_without_publish(self, write_ok, failed);
         }
 
-        let executable = match prepare_execution_plans(self, registry, planned) {
+        let executable = match prepare_execution_plans(self, catalog, planned) {
             Ok(executable) => executable,
             Err(failure) => {
                 failed.push(failure);
@@ -50,14 +50,14 @@ impl ProjectSession {
             return stage_without_generation(self, write_ok, failed, &executable);
         }
 
-        execute_generation_mutation(self, registry, write_ok, failed, &executable)
+        execute_generation_mutation(self, catalog, write_ok, failed, &executable)
     }
 }
 
 #[allow(clippy::too_many_lines)]
 fn execute_generation_mutation(
     session: &mut ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     write_ok: bool,
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
@@ -132,7 +132,7 @@ fn execute_generation_mutation(
             .zip(&staged)
             .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
     );
-    let rebuilt = match rebuild_after_mutation(session, registry, &impact) {
+    let rebuilt = match rebuild_after_mutation(session, catalog, &impact) {
         Ok(rebuilt) => rebuilt,
         Err(mut diagnostics) => {
             transaction.compensate_into(&mut diagnostics);
@@ -148,7 +148,7 @@ fn execute_generation_mutation(
         .map(|path| {
             path.strip_prefix(session.project.root_dir()).map_or_else(
                 |_| path.display().to_string(),
-                coflow_project::path_to_slash,
+                crate::project::path_to_slash,
             )
         })
         .collect::<Vec<_>>();
@@ -237,14 +237,14 @@ fn stage_without_generation(
 
 fn prepare_execution_plans(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     planned: Vec<PlannedMutationOp>,
 ) -> Result<Vec<ExecutableMutation>, MutationFailedOp> {
     let allow_noop = planned.len() == 1;
     planned
         .into_iter()
         .map(|planned| {
-            match prepare_mutation_execution(session, registry, &planned.op, allow_noop) {
+            match prepare_mutation_execution(session, catalog, &planned.op, allow_noop) {
                 Ok(execution) => Ok(ExecutableMutation { planned, execution }),
                 Err(diagnostics) => Err(failed_op(&planned, diagnostics)),
             }
@@ -265,7 +265,7 @@ fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
         .into()
 }
 
-fn is_editable_diagnostic(diagnostic: &coflow_api::Diagnostic) -> bool {
+fn is_editable_diagnostic(diagnostic: &crate::api::Diagnostic) -> bool {
     diagnostic.stage == "CHECK"
         || matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
 }

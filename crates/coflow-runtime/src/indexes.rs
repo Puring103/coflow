@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::{source_location_display_path, DiagnosticSet, FlatDiagnostic, ResolvedSource};
+use crate::api::{source_location_display_path, DiagnosticSet, FlatDiagnostic, ResolvedSource};
 use coflow_data_model::RecordOrigin;
 use coflow_data_model::{CfdDataModel, CfdRecordId};
 
@@ -218,10 +218,6 @@ impl SourceIndex {
         id
     }
 
-    #[must_use]
-    pub(crate) fn get(&self, id: SourceId) -> Option<&ResolvedSourceEntry> {
-        self.entries.get(id.index())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -485,7 +481,7 @@ impl FileIndex {
 mod tests {
     use std::collections::BTreeMap;
 
-    use coflow_api::{Diagnostic, DiagnosticSet};
+    use crate::api::{Diagnostic, DiagnosticSet};
 
     use super::{DiagnosticLogicalLocation, DiagnosticsStore, FileIndex, SourceId};
 

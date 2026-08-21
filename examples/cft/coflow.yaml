@@ -11,13 +11,7 @@ schema:
   - 10_comprehensive_schema.cft
   - 11_unicode_identifiers.cft
 
-sources: []
-
-outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
+codegen:
+  - language: csharp
     dir: generated/csharp
     namespace: Game.Config

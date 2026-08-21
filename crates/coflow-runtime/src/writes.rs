@@ -11,7 +11,7 @@ mod target;
 mod transaction;
 mod writer;
 
-use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
+use crate::api::{DiagnosticSet, CfdSourceCatalog, WriteFieldPathSegment};
 use coflow_cft::{FieldName, TypeName};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -217,10 +217,10 @@ pub(crate) fn effective_write_target_for_path(
 
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
 ) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(session, registry, impact)
+    crate::session_build::rebuild_project_session_from_generation(session, catalog, impact)
 }
 
 #[cfg(test)]

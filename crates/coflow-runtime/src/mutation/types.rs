@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{DiagnosticSet, FlatDiagnostic};
+use crate::api::{DiagnosticSet, FlatDiagnostic};
 use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
 use serde::{Deserialize, Serialize};
@@ -212,7 +212,7 @@ pub(crate) enum PreparedMutationOp {
         record: RecordCoordinate,
         write_record: RecordCoordinate,
         write_file: String,
-        path: Vec<coflow_api::WriteFieldPathSegment>,
+        path: Vec<crate::api::WriteFieldPathSegment>,
         value: CfdValue,
     },
     WriteDimensionValue {
@@ -423,7 +423,7 @@ const fn default_true() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use coflow_api::{Diagnostic, Label, Severity, SourceLocation};
+    use crate::api::{Diagnostic, Label, Severity, SourceLocation};
 
     use super::MutationFailedOp;
 
@@ -431,7 +431,7 @@ mod tests {
     fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
         let primary = Label {
             location: SourceLocation::TableCell {
-                path: "items.csv".into(),
+                path: "items.cfd".into(),
                 sheet: Some("items".to_string()),
                 row: 2,
                 column: 3,
@@ -440,7 +440,7 @@ mod tests {
         };
         let related = Label {
             location: SourceLocation::TableCell {
-                path: "items.csv".into(),
+                path: "items.cfd".into(),
                 sheet: Some("items".to_string()),
                 row: 4,
                 column: 3,
@@ -450,7 +450,7 @@ mod tests {
         let failure = MutationFailedOp::from_diagnostics(
             0,
             "set_field",
-            coflow_api::DiagnosticSet::one(Diagnostic {
+            crate::api::DiagnosticSet::one(Diagnostic {
                 code: "TEST-STRUCTURED".to_string(),
                 stage: "WRITE".to_string(),
                 severity: Severity::Warning,

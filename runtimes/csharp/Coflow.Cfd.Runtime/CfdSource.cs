@@ -1,0 +1,36 @@
+namespace Coflow.Cfd.Runtime;
+
+/// <summary>Logical project path and UTF-16 source text for one CFD file.</summary>
+public readonly struct CfdSource : IEquatable<CfdSource>
+{
+    public CfdSource(string path, string text)
+    {
+        Path = path ?? throw new ArgumentNullException(nameof(path));
+        Text = text ?? throw new ArgumentNullException(nameof(text));
+    }
+
+    public string Path { get; }
+    public string Text { get; }
+
+    public bool Equals(CfdSource other) => Path == other.Path && Text == other.Text;
+    public override bool Equals(object? obj) => obj is CfdSource other && Equals(other);
+    public override int GetHashCode() => HashCode.Combine(Path, Text);
+}
+
+public interface ICfdSourceProvider
+{
+    bool TryLoad(string logicalPath, out string? text);
+}
+
+public sealed class DelegateCfdSourceProvider : ICfdSourceProvider
+{
+    private readonly Func<string, string?> _loader;
+
+    public DelegateCfdSourceProvider(Func<string, string?> loader) => _loader = loader;
+
+    public bool TryLoad(string logicalPath, out string? text)
+    {
+        text = _loader(logicalPath);
+        return text is not null;
+    }
+}

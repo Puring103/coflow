@@ -1,5 +1,5 @@
 use crate::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
-use coflow_project::Project;
+use coflow_runtime::Project;
 use serde::Serialize;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ pub(crate) fn write_json_diagnostics(diagnostics: Vec<DiagnosticJson>) -> Result
 }
 
 pub(crate) fn write_project_diagnostics(
-    diagnostics: coflow_api::DiagnosticSet,
+    diagnostics: coflow_runtime::DiagnosticSet,
     json: bool,
     root_dir: &Path,
 ) -> Result<(), String> {

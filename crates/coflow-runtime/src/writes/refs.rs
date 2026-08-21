@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_api::{
-    DiagnosticSet, DimensionSourceManager, DimensionSourceSchema, ProviderRegistry, ResolvedSource,
+use crate::api::{
+    DiagnosticSet, DimensionSourceManager, DimensionSourceSchema, CfdSourceCatalog, ResolvedSource,
     SourceWriter, TableContext, WriteCellRequest, WriteDimensionValueRequest,
     WriteFieldPathSegment,
 };
@@ -71,7 +71,7 @@ impl ReferenceUpdateAction {
                     .collect::<Vec<_>>();
                 writer
                     .write_field_batch(
-                        coflow_api::WriteContext {
+                        crate::api::WriteContext {
                             project_root,
                             schema,
                             model: Some(model),
@@ -175,7 +175,7 @@ impl OwnedWriteCellRequest {
 #[allow(clippy::too_many_lines)]
 pub(super) fn reference_update_actions(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     target_id: CfdRecordId,
     new_key: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
@@ -246,7 +246,7 @@ pub(super) fn reference_update_actions(
                         field.declaring_type, field.name
                     ))
                 })?;
-            let manager = registry
+            let manager = catalog
                 .dimension_source_manager(&source_entry.provider_id)
                 .ok_or_else(|| {
                     transaction_invariant(format!(
@@ -294,7 +294,7 @@ pub(super) fn reference_update_actions(
                 };
                 requests.push(request);
             } else {
-                let writer = lookup_source_writer(registry, &source)?;
+                let writer = lookup_source_writer(catalog, &source)?;
                 let action_index = actions.len();
                 actions.push(ReferenceUpdateAction::Source {
                     writer,
@@ -310,7 +310,7 @@ pub(super) fn reference_update_actions(
 }
 
 fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
-    DiagnosticSet::one(coflow_api::Diagnostic::error(
+    DiagnosticSet::one(crate::api::Diagnostic::error(
         "MUTATION-TXN-INVARIANT",
         "MUTATION",
         message,

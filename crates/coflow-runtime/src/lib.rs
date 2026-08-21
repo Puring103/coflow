@@ -18,7 +18,10 @@
 #[cfg(feature = "internal-check-bench")]
 #[doc(hidden)]
 pub mod check_benchmark_support;
+mod api;
+mod catalog;
 mod checks;
+mod cfd_loader;
 mod data_files;
 mod data_read;
 mod dimensions;
@@ -27,6 +30,7 @@ mod indexes;
 mod load;
 mod mutation;
 mod project_schema;
+mod project;
 mod query;
 mod records;
 mod runtime;
@@ -44,6 +48,14 @@ pub use data_files::{
     create_data_file, sync_data_header, DataCreateFileOptions, DataFileReport,
     DataSyncHeaderOptions,
 };
+pub use api::*;
+pub use catalog::CfdSourceCatalog;
+pub use cfd_loader::{
+    load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextDiagnostic, CfdWriter,
+    CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
+    CFD_LOADER_DESCRIPTOR,
+};
+pub use project::*;
 pub use data_read::{
     data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
     DataRecordInfo, DataRecordSummary, DataSourceInfo, DataSourcesReport,
@@ -69,7 +81,8 @@ pub use records::{
     RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
-    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
+    cfd_source_catalog, BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime,
+    WriteProjectSession,
 };
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,
