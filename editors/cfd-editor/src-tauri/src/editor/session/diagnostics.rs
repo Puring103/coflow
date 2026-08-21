@@ -1,7 +1,7 @@
 //! Editor-side view of the engine's diagnostics in wire-friendly
-//! [`coflow_api::FlatDiagnostic`] shape.
+//! [`coflow_runtime::FlatDiagnostic`] shape.
 
-use coflow_api::{path_to_slash, FlatDiagnostic};
+use coflow_runtime::{path_to_slash, FlatDiagnostic};
 use coflow_runtime::DiagnosticsStore;
 use std::collections::HashMap;
 use std::path::Path;

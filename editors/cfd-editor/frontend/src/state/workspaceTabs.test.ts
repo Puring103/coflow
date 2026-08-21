@@ -73,7 +73,7 @@ describe('project workspace tabs', () => {
   })
 
   it('restores a dimension file tab with an empty type name', () => {
-    const filePath = 'data/dimensions/language/item.csv'
+    const filePath = 'data/dimensions/language/item.cfd'
     const id = workspaceTabId(filePath, '')
     const restored = sanitizeProjectWorkspace({
       active_tab_id: id,

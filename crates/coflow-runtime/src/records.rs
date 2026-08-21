@@ -1,6 +1,6 @@
 //! Record views and write outcomes exposed at the engine boundary.
 
-use coflow_api::DiagnosticSet;
+use crate::api::DiagnosticSet;
 use coflow_data_model::{
     format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdValue,
 };

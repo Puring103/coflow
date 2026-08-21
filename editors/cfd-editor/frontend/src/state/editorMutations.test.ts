@@ -75,7 +75,7 @@ function dimensionOutcome(
       ? { kind: 'missing' }
       : { kind: 'value', value: { kind: 'string', value: newValue } },
     diagnostics: [],
-    affected_files: ['data/dimensions/language/Item_name.csv'],
+    affected_files: ['data/dimensions/language/Item_name.cfd'],
   }
 }
 
@@ -200,13 +200,13 @@ describe('EditorMutationController', () => {
     )
     const missing = { kind: 'missing' as const }
     const first = mutations.writeDimensionValue(
-      'data/dimensions/language/Item_name.csv',
+      'data/dimensions/language/Item_name.cfd',
       dimensionCoordinate,
       missing,
       { kind: 'value', value: { kind: 'string', value: '中间值' } },
     )
     const latest = mutations.writeDimensionValue(
-      'data/dimensions/language/Item_name.csv',
+      'data/dimensions/language/Item_name.cfd',
       dimensionCoordinate,
       missing,
       { kind: 'value', value: { kind: 'string', value: '最终值' } },

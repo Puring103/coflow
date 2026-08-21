@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::DiagnosticSet;
+use crate::api::DiagnosticSet;
 use coflow_cft::{CftField, CftFieldDimension, CftValueType, VariantName};
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
 

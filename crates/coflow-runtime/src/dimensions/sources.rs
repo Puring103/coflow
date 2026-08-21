@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use coflow_cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 use coflow_data_model::RecordCoordinate;
-use coflow_project::Project;
+use crate::project::Project;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionField {
@@ -19,7 +19,7 @@ impl DimensionField {
         if self.is_singleton {
             format!("{}.cfd", self.source_type)
         } else {
-            format!("{}_{}.csv", self.bucket, self.source_field)
+            format!("{}_{}.cfd", self.bucket, self.source_field)
         }
     }
 
@@ -33,7 +33,7 @@ impl DimensionField {
         if self.is_singleton {
             extension == "cfd" && stem == self.source_type.as_str()
         } else {
-            matches!(extension, "csv" | "cfd")
+            extension == "cfd"
                 && stem == format!("{}_{}", self.bucket, self.source_field)
         }
     }
@@ -107,7 +107,7 @@ impl DimensionRuntimePlan {
         let path = project.resolve_path(Path::new(display_path));
         matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("csv" | "cfd")
+            Some("cfd")
         ) && self
             .managed_directories
             .iter()
@@ -144,7 +144,7 @@ mod tests {
     use super::{DimensionField, DimensionRuntimePlan};
 
     #[test]
-    fn dimension_source_matching_preserves_supported_formats() {
+    fn dimension_source_matching_accepts_only_cfd() {
         let dimension = DimensionName::new("language").expect("dimension");
         let regular = DimensionField {
             dimension,
@@ -153,7 +153,7 @@ mod tests {
             bucket: BucketName::new("Item").expect("bucket"),
             is_singleton: false,
         };
-        assert!(regular.matches_source_path(std::path::Path::new("Item_name.csv")));
+        assert!(!regular.matches_source_path(std::path::Path::new("Item_name.csv")));
         assert!(regular.matches_source_path(std::path::Path::new("Item_name.cfd")));
 
         let singleton = DimensionField {

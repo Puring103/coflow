@@ -1,4 +1,4 @@
-use coflow_api::{
+use crate::api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceSchema, InsertRecordRequest,
     RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
     RewriteDimensionRecordRequest, WriteCellRequest, WriteContext, WriteDimensionValueRequest,
@@ -288,7 +288,7 @@ fn stage_write_dimension_value(
         .resolve_dimension(&coordinate.dimension)
         .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
     let result = plan.manager.write_dimension_value(
-        coflow_api::TableContext {
+        crate::api::TableContext {
             project_root: session.project.root_dir(),
         },
         &WriteDimensionValueRequest {
@@ -322,7 +322,7 @@ fn stage_write_dimension_value(
 fn field_write_outcome(
     plan: &WriteFieldPlan,
     host_record: &RecordCoordinate,
-    provider_outcome: coflow_api::WriteOutcome,
+    provider_outcome: crate::api::WriteOutcome,
 ) -> WriteOutcome {
     WriteOutcome {
         touched: if host_record == &plan.target.coordinate {
@@ -599,7 +599,7 @@ fn rewrite_dimension_records(
             .resolve_dimension(&action.field.dimension)
             .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
         let result = action.manager.rewrite_dimension_record(
-            coflow_api::TableContext {
+            crate::api::TableContext {
                 project_root: session.project.root_dir(),
             },
             &RewriteDimensionRecordRequest {

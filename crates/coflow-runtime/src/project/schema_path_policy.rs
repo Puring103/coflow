@@ -1,0 +1,140 @@
+use crate::project::diagnostics::file_error;
+use crate::project::path_to_slash;
+use crate::project::paths::resolve_project_relative;
+use crate::api::DiagnosticSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug)]
+pub struct SchemaFile {
+    pub path: PathBuf,
+    pub canonical_path: PathBuf,
+    pub module_id: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SchemaPathPolicy<'a> {
+    root_dir: &'a Path,
+}
+
+impl<'a> SchemaPathPolicy<'a> {
+    pub(super) const fn new(root_dir: &'a Path) -> Self {
+        Self { root_dir }
+    }
+
+    pub(super) fn resolve(&self, path: &Path) -> PathBuf {
+        resolve_project_relative(self.root_dir, path)
+    }
+
+    pub(super) fn validate_config_path(&self, path: &Path, label: &str) -> Result<(), String> {
+        if path.as_os_str().is_empty() {
+            return Err(format!("{label} path is empty"));
+        }
+        let resolved = self.resolve(path);
+        if !resolved.exists() {
+            return Err(format!("{label} path `{}` does not exist", path.display()));
+        }
+        if resolved.is_file() && !Self::is_cft_path(&resolved) {
+            return Err(format!(
+                "schema file `{}` has unsupported extension",
+                path_to_slash(path)
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn is_cft_path(path: &Path) -> bool {
+        path.extension().and_then(|ext| ext.to_str()) == Some("cft")
+    }
+
+    pub(super) fn unsupported_file_error(&self, path: &Path) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!(
+                "schema file `{}` has unsupported extension",
+                self.display_path(path)
+            ),
+        )
+    }
+
+    pub(super) fn missing_path_error(path: &Path) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!("schema path `{}` does not exist", path.display()),
+        )
+    }
+
+    pub(super) fn read_dir_error(dir: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+        file_error(
+            dir,
+            "PROJECT-SCHEMA-READ",
+            "PROJECT",
+            format!("failed to read schema directory `{}`: {err}", dir.display()),
+        )
+    }
+
+    pub(super) fn read_file_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-READ",
+            "PROJECT",
+            format!("failed to read schema `{}`: {err}", path.display()),
+        )
+    }
+
+    pub(super) fn canonicalize(path: &Path) -> Result<PathBuf, DiagnosticSet> {
+        fs::canonicalize(path).map_err(|err| Self::resolve_error(path, err))
+    }
+
+    pub(super) fn resolve_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!("failed to resolve schema path `{}`: {err}", path.display()),
+        )
+    }
+
+    pub(super) fn outside_declared_root_error(
+        &self,
+        path: &Path,
+        declared_root: &Path,
+        canonical_path: &Path,
+    ) -> DiagnosticSet {
+        file_error(
+            path,
+            "PROJECT-SCHEMA-PATH",
+            "PROJECT",
+            format!(
+                "schema path `{}` resolves outside declared root `{}` to `{}`",
+                self.display_path(path),
+                self.display_path(declared_root),
+                canonical_path.display(),
+            ),
+        )
+    }
+
+    pub(super) fn schema_file_with_identity(
+        &self,
+        path: PathBuf,
+        canonical_path: PathBuf,
+    ) -> SchemaFile {
+        let module_path = canonical_path
+            .strip_prefix(self.root_dir)
+            .unwrap_or(canonical_path.as_path());
+        let module_id = path_to_slash(module_path);
+        SchemaFile {
+            path,
+            canonical_path,
+            module_id,
+        }
+    }
+
+    fn display_path(&self, path: &Path) -> String {
+        path_to_slash(path.strip_prefix(self.root_dir).unwrap_or(path))
+    }
+}

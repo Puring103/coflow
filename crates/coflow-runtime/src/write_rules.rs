@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
+use crate::api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
 use coflow_cft::{CftSchema, CftValueType, TypeName};
 use coflow_data_model::{
     CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,

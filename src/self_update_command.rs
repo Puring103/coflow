@@ -5,7 +5,7 @@
 //! replaced wholesale by the Tauri updater, so self-update is neither needed
 //! nor wanted there.
 
-use coflow_api::DiagnosticSet;
+use coflow_runtime::DiagnosticSet;
 use std::io::{self, Write};
 
 use crate::cli::SelfUpdateArgs;

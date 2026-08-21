@@ -1,7 +1,7 @@
 //! Project session construction through the shared Coflow engine.
 
-use coflow_api::{DiagnosticSet, ProviderRegistry, WriterCapabilities};
-use coflow_project::Project;
+use coflow_runtime::{DiagnosticSet, CfdSourceCatalog, WriterCapabilities};
+use coflow_runtime::Project;
 use coflow_runtime::{FileTreeNode, ProjectQueries, ProjectRuntime, Runtime};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -17,8 +17,8 @@ pub(super) struct SessionSnapshotParts {
 type FileTypeNames = BTreeMap<String, Vec<String>>;
 type TypeDisplayNames = BTreeMap<(String, String), String>;
 
-pub(super) fn default_provider_registry() -> Result<ProviderRegistry, EditorError> {
-    coflow_builtins::default_provider_registry()
+pub(super) fn default_cfd_catalog() -> Result<CfdSourceCatalog, EditorError> {
+    coflow_runtime::cfd_source_catalog()
         .map_err(|err| EditorError::project(format!("failed to register default providers: {err}")))
 }
 
@@ -31,14 +31,14 @@ pub(super) fn session_capabilities_for_file(
 
 pub(super) fn build_session(
     yaml_path_in: &std::path::Path,
-    registry: &ProviderRegistry,
+    registry: &CfdSourceCatalog,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
     let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
         EditorError::project(prefixed_diagnostics("failed to open project", &err))
     })?;
     let yaml_path = project.config_path().to_path_buf();
     let project_root = project.root_dir().to_path_buf();
-    let runtime = Runtime::new(registry.clone());
+    let runtime = Runtime::with_catalog(registry.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime
@@ -70,7 +70,7 @@ pub(super) fn build_session(
 
 fn type_navigation(
     queries: ProjectQueries<'_>,
-    registry: &ProviderRegistry,
+    registry: &CfdSourceCatalog,
 ) -> (FileTypeNames, TypeDisplayNames) {
     let mut display_names = BTreeMap::new();
     let mut file_type_names = BTreeMap::new();

@@ -1,8 +1,8 @@
-use coflow_api::{Diagnostic, DiagnosticSet};
+use crate::api::{Diagnostic, DiagnosticSet};
 use coflow_cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftModuleSet, CftSchema, ModuleId,
 };
-use coflow_project::{normalize_path, Project};
+use crate::project::{normalize_path, Project};
 use std::path::PathBuf;
 use std::sync::Arc;
 

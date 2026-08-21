@@ -1,8 +1,7 @@
 # CFD Examples
 
 These files demonstrate CFD as a text data format for complex game configuration.
-They can be loaded through the example `coflow.yaml` project or directly by the
-CFD loader tests.
+They can be loaded through the example `coflow.yaml` project and generated C# bindings.
 
 - `schema.cft`: small schema used by all examples. It also demonstrates editor-facing
   `@label` / `@description` metadata on table fields, nested object fields, enum
@@ -18,8 +17,9 @@ CFD loader tests.
 - `data/05-formatted-strings.cfd`: an ordinary string that references fields on
   another record and mixes HTML and Unity rich-text tags.
 
-The examples are loaded by `coflow-loader-cfd` tests:
+Validate and generate the example with:
 
 ```powershell
-cargo test -p coflow-loader-cfd examples_cfd_files_load_together
+coflow check examples/cfd
+coflow codegen examples/cfd
 ```

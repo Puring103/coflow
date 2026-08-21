@@ -1,6 +1,6 @@
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use coflow_api::DiagnosticSet;
-use coflow_project::Project;
+use coflow_runtime::DiagnosticSet;
+use coflow_runtime::Project;
 use include_dir::{include_dir, Dir, DirEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::diagnostics::{cli_error, cli_file_error};
 
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SKILL_NAMES: [&str; 3] = ["coflow-data", "coflow-schema", "coflow-workflow"];
+const SKILL_NAMES: [&str; 2] = ["coflow-schema", "coflow-workflow"];
 const MANIFEST_RELATIVE_PATH: &str = ".coflow/skill-installs.json";
 
 static BUNDLED_SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/skills");
@@ -610,7 +610,7 @@ mod tests {
 
         verify(installed.targets.len() == 2, "unexpected install targets")?;
         verify(
-            home.join(".agents/skills/coflow-data/SKILL.md").is_file(),
+            home.join(".agents/skills/coflow-schema/SKILL.md").is_file(),
             "universal skill was not installed",
         )?;
         verify(
@@ -619,7 +619,7 @@ mod tests {
             "detected Cursor skill was not installed",
         )?;
         verify(
-            !home.join(".claude/skills/coflow-data").exists(),
+            !home.join(".claude/skills/coflow-schema").exists(),
             "undetected Claude target was installed",
         )?;
         verify(
@@ -630,7 +630,7 @@ mod tests {
         let removed = uninstall_global_in(&context).map_err(|error| error.to_string())?;
         verify(removed.targets.len() == 2, "unexpected uninstall targets")?;
         verify(
-            !home.join(".agents/skills/coflow-data").exists(),
+            !home.join(".agents/skills/coflow-schema").exists(),
             "universal skill was not removed",
         )?;
         verify(
@@ -652,7 +652,7 @@ mod tests {
             agents: BTreeSet::from(["test".to_string()]),
         };
         install_targets("project", vec![target.clone()]).map_err(|error| error.to_string())?;
-        let extra = target.path.join("coflow-data/extra.txt");
+        let extra = target.path.join("coflow-schema/extra.txt");
         fs::write(&extra, "local change").map_err(|error| error.to_string())?;
 
         install_targets("project", vec![target.clone()]).map_err(|error| error.to_string())?;

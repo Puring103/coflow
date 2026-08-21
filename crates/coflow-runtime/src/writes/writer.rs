@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, ProviderRegistry, ResolvedSource, Severity, SourceWriter,
+use crate::api::{
+    Diagnostic, DiagnosticSet, CfdSourceCatalog, ResolvedSource, Severity, SourceWriter,
 };
 
 use crate::indexes::SourceId;
@@ -12,8 +12,9 @@ pub(super) fn source_for_id(
     source_id: SourceId,
 ) -> Result<ResolvedSource, DiagnosticSet> {
     session
-        .sources
-        .get(source_id)
+        .sources()
+        .entries()
+        .get(source_id.index())
         .map(|entry| entry.source.clone())
         .ok_or_else(|| {
             DiagnosticSet::one(Diagnostic::error(
@@ -50,10 +51,10 @@ pub(super) fn source_for_file(
 }
 
 pub(super) fn lookup_source_writer(
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     source: &ResolvedSource,
 ) -> Result<Arc<dyn SourceWriter>, DiagnosticSet> {
-    registry.source_writer(&source.provider_id).ok_or_else(|| {
+    catalog.source_writer(&source.provider_id).ok_or_else(|| {
         DiagnosticSet::one(Diagnostic {
             code: "WRITE-NO-WRITER".to_string(),
             stage: "WRITE".to_string(),

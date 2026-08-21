@@ -12,7 +12,7 @@ pub(crate) fn parse_cell_text_value(
     key: &str,
     path: &[CfdPathSegment],
     text: &str,
-) -> Result<CfdValue, coflow_api::DiagnosticSet> {
+) -> Result<CfdValue, crate::api::DiagnosticSet> {
     let expected = write_rules::expected_type_for_cfd_path(
         session.schema(),
         actual_type,
@@ -56,14 +56,14 @@ pub(crate) fn parse_cell_text_value(
 
 pub(crate) fn render_cell_text_value(
     value: &CfdValue,
-) -> Result<String, coflow_api::DiagnosticSet> {
+) -> Result<String, crate::api::DiagnosticSet> {
     if matches!(value, CfdValue::Null) {
         return Ok("null".to_string());
     }
     render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
 }
 
-fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::DiagnosticSet> {
+fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::DiagnosticSet> {
     match value {
         LoadedValueDraft::Null => Ok(Value::Null),
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
@@ -90,7 +90,7 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             let mut object = fields
                 .into_iter()
                 .map(|(name, value)| Ok((name, input_value_to_json(value)?)))
-                .collect::<Result<Map<_, _>, coflow_api::DiagnosticSet>>()?;
+                .collect::<Result<Map<_, _>, crate::api::DiagnosticSet>>()?;
             if let Some(actual_type) = actual_type {
                 object.insert("$type".to_string(), Value::String(actual_type));
             }
@@ -110,7 +110,7 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
                     entry.insert("value".to_string(), input_value_to_json(value)?);
                     Ok(Value::Object(entry))
                 })
-                .collect::<Result<Vec<_>, coflow_api::DiagnosticSet>>()?;
+                .collect::<Result<Vec<_>, crate::api::DiagnosticSet>>()?;
             let mut object = Map::new();
             object.insert("$dict".to_string(), Value::Array(entries));
             Ok(Value::Object(object))

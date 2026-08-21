@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use coflow_api::{
+use crate::api::{
     Diagnostic, DiagnosticSet, ResolvedSource, SourceTransaction, SourceTransactionCompensation,
     WriteContext,
 };

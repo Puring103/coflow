@@ -3,7 +3,7 @@
 //! Combines the `DimensionConfig` declared in `coflow.yaml` with the schema
 //! dimension fields discovered during model build.
 
-use coflow_project::{DimensionConfig, Project};
+use crate::project::{DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

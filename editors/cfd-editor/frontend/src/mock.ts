@@ -40,7 +40,7 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       in_sources: true,
       first_source_descendant: null,
       children: [
-        { name: 'Item_name.csv', path: 'data/dimensions/language/Item_name.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/language/Item_name.csv', children: [] },
+        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
       ],
     },
     {
@@ -50,7 +50,7 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       in_sources: true,
       first_source_descendant: null,
       children: [
-        { name: 'Item_icon.csv', path: 'data/dimensions/platform/Item_icon.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/platform/Item_icon.csv', children: [] },
+        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
       ],
     },
     {
@@ -207,9 +207,9 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
 }
 
 export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {
-  'data/dimensions/language/Item_name.csv': {
+  'data/dimensions/language/Item_name.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/language/Item_name.csv',
+    file_path: 'data/dimensions/language/Item_name.cfd',
     dimension: 'language',
     display_name: '本地化',
     variants: ['zh-CN', 'en-US'],
@@ -236,9 +236,9 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
     ],
   },
-  'data/dimensions/platform/Item_icon.csv': {
+  'data/dimensions/platform/Item_icon.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/platform/Item_icon.csv',
+    file_path: 'data/dimensions/platform/Item_icon.cfd',
     dimension: 'platform',
     display_name: '平台',
     variants: ['mobile', 'desktop'],

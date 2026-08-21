@@ -1,4 +1,4 @@
-use coflow_api::{ProviderRegistry, WriterCapabilities};
+use crate::api::{CfdSourceCatalog, WriterCapabilities};
 use coflow_cft::{CftSchema, CftValueType};
 use coflow_data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
 
@@ -391,7 +391,7 @@ impl<'a> ProjectQueries<'a> {
 
     pub(crate) fn writer_capabilities_for_file(
         self,
-        registry: &ProviderRegistry,
+        catalog: &CfdSourceCatalog,
         file: &str,
     ) -> WriterCapabilities {
         let Some(entry) = self
@@ -401,7 +401,7 @@ impl<'a> ProjectQueries<'a> {
         else {
             return WriterCapabilities::read_only().with_provider_id("unknown");
         };
-        registry.source_writer(&entry.provider_id).map_or_else(
+        catalog.source_writer(&entry.provider_id).map_or_else(
             || WriterCapabilities::read_only().with_provider_id(entry.provider_id.clone()),
             |writer| {
                 writer
@@ -420,10 +420,10 @@ impl<'a> ProjectQueries<'a> {
     /// decoded or resolved.
     pub fn table_sheet_for_type(
         self,
-        registry: &ProviderRegistry,
+        catalog: &CfdSourceCatalog,
         file: &str,
         actual_type: &str,
-    ) -> Result<Option<String>, coflow_api::DiagnosticSet> {
+    ) -> Result<Option<String>, crate::api::DiagnosticSet> {
         let Some(entry) = self
             .files()
             .source_for_display(file)
@@ -431,7 +431,7 @@ impl<'a> ProjectQueries<'a> {
         else {
             return Ok(None);
         };
-        let Some(manager) = registry.table_manager(&entry.provider_id) else {
+        let Some(manager) = catalog.table_manager(&entry.provider_id) else {
             return Ok(None);
         };
         manager.sheet_for_type(&entry.source, actual_type)

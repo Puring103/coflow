@@ -21,8 +21,8 @@ function dimension(name: string, displayName: string, outDir: string): Dimension
 describe('buildFileTreeGroups', () => {
   it('keeps data first, then localization, then other configured dimensions', () => {
     const data = node('data', 'data', [node('items.cfd', 'data/items.cfd')])
-    const languageFile = node('Item_name.csv', 'generated/lang/Item_name.csv')
-    const platformFile = node('Item_icon.csv', 'generated/platform/Item_icon.csv')
+    const languageFile = node('Item_name.cfd', 'generated/lang/Item_name.cfd')
+    const platformFile = node('Item_icon.cfd', 'generated/platform/Item_icon.cfd')
     const groups = buildFileTreeGroups(
       [
         node('平台', 'generated/platform', [platformFile]),

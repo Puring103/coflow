@@ -1,4 +1,4 @@
-use coflow_api::{
+use crate::api::{
     byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label,
     SourceLocation,
 };

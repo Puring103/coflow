@@ -1,4 +1,4 @@
-use coflow_api::FlatDiagnostic;
+use crate::api::FlatDiagnostic;
 use coflow_cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
 use serde::Serialize;
 

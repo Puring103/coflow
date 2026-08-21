@@ -18,7 +18,11 @@ pub(super) fn test_project(name: &str, source: &str) -> (TempProject, Project) {
     let root = std::env::temp_dir().join(format!("coflow-{name}-{suffix}"));
     let schema = root.join("schema");
     std::fs::create_dir_all(&schema).expect("create schema dir");
-    std::fs::write(root.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("write config");
     std::fs::write(schema.join("main.cft"), source).expect("write schema");
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     (TempProject(root), project)
@@ -38,7 +42,9 @@ pub(super) fn test_project_with_config(
     std::fs::create_dir_all(&schema).expect("create schema dir");
     std::fs::write(
         root.join("coflow.yaml"),
-        format!("schema: schema/\nsources:\n  - path: {source_dir}\n"),
+        format!(
+            "schema: schema/\ndata: {source_dir}\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n"
+        ),
     )
     .expect("write config");
     std::fs::write(schema.join("main.cft"), source).expect("write schema");

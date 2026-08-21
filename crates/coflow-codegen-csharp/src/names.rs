@@ -183,20 +183,3 @@ pub fn pluralize(name: &str) -> String {
 pub fn index_param_name(type_name: &str) -> String {
     format!("{}Index", camel_case(type_name))
 }
-
-pub fn format_float(value: f64) -> String {
-    let mut text = value.to_string();
-    if !text.contains('.') && !text.contains('e') && !text.contains('E') {
-        text.push_str(".0");
-    }
-    text
-}
-
-pub fn escape_csharp_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}

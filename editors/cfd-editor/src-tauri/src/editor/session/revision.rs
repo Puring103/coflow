@@ -167,7 +167,7 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create temp directory");
-        let path = root.join("generated.csv");
+        let path = root.join("generated.cfd");
         fs::write(&path, "generated").expect("write generated file");
         fs::remove_file(&path).expect("remove generated file");
 

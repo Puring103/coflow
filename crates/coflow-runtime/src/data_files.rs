@@ -1,9 +1,9 @@
-use coflow_api::{
-    CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
+use crate::api::{
+    CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, CfdSourceCatalog,
     ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableAddressing, TableContext,
     TableManager, TableManagerDescriptor,
 };
-use coflow_project::{path_to_slash, Project, SourceConfig};
+use crate::project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use std::path::Path;
 
@@ -55,17 +55,17 @@ struct TableHeaderLayout {
 /// invalid, or when the file cannot be created.
 pub fn create_data_file(
     session: &ProjectSchemaSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let (provider_id, source) = table_operation_source(
         session.project(),
-        registry,
+        catalog,
         &options.file,
         options.provider.as_deref(),
     )?;
-    let descriptor = table_manager_descriptor(registry, &provider_id)?;
-    let manager = table_manager(registry, &provider_id)?;
+    let descriptor = table_manager_descriptor(catalog, &provider_id)?;
+    let manager = table_manager(catalog, &provider_id)?;
     let actual_type = options.actual_type;
     let layout = descriptor
         .requires_table_layout()
@@ -116,23 +116,23 @@ pub fn create_data_file(
 /// invalid, or when the file cannot be updated.
 pub fn sync_data_header(
     session: &ProjectSchemaSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let (provider_id, source) = table_operation_source(
         session.project(),
-        registry,
+        catalog,
         &options.file,
         options.provider.as_deref(),
     )?;
-    let descriptor = table_manager_descriptor(registry, &provider_id)?;
+    let descriptor = table_manager_descriptor(catalog, &provider_id)?;
     if !source.location.path().exists() {
         return Err(one_data_file_error(
             "DATA-FILE-MISSING",
             format!("file `{}` does not exist", options.file),
         ));
     }
-    let manager = table_manager(registry, &provider_id)?;
+    let manager = table_manager(catalog, &provider_id)?;
     let layout = table_header_layout(
         session,
         manager.as_ref(),
@@ -175,14 +175,14 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
 
 fn table_operation_source(
     project: &Project,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     target: &str,
     requested_provider: Option<&str>,
 ) -> Result<(String, ResolvedSource), DiagnosticSet> {
     let configured = configured_table_source(project, target);
     if let Some(configured) = configured {
         let requested = requested_provider
-            .map(|provider| resolve_explicit_provider_id(registry, provider))
+            .map(|provider| resolve_explicit_provider_id(catalog, provider))
             .transpose()?;
         if let (Some(requested), Some(configured_provider)) =
             (requested.as_deref(), configured.source_type.as_deref())
@@ -201,10 +201,10 @@ fn table_operation_source(
         } else if let Some(configured_provider) = &configured.source_type {
             configured_provider.clone()
         } else {
-            resolve_provider_id(registry, None, target)?
+            resolve_provider_id(catalog, None, target)?
         };
         let location = SourceLocationSpec::new(project.resolve_path(Path::new(target)));
-        let source = SourceResolver::new(project, registry).resolve_exact_at(
+        let source = SourceResolver::new(project, catalog).resolve_exact_at(
             configured,
             (!provider_id.is_empty()).then_some(provider_id.as_str()),
             location,
@@ -213,8 +213,8 @@ fn table_operation_source(
         return Ok((source.provider_id.clone(), source));
     }
 
-    let provider_id = resolve_provider_id(registry, requested_provider, target)?;
-    let source = SourceResolver::new(project, registry).resolve_unconfigured(
+    let provider_id = resolve_provider_id(catalog, requested_provider, target)?;
+    let source = SourceResolver::new(project, catalog).resolve_unconfigured(
         &provider_id,
         SourceLocationSpec::new(project.resolve_path(Path::new(target))),
         target.to_string(),
@@ -233,10 +233,10 @@ impl TableManagerDescriptorExt for TableManagerDescriptor {
 }
 
 fn table_manager(
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     provider_id: &str,
 ) -> Result<std::sync::Arc<dyn TableManager>, DiagnosticSet> {
-    registry.table_manager(provider_id).ok_or_else(|| {
+    catalog.table_manager(provider_id).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-PROVIDER",
             format!("table manager `{provider_id}` is not registered"),
@@ -245,10 +245,10 @@ fn table_manager(
 }
 
 fn table_manager_descriptor(
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     provider_id: &str,
 ) -> Result<&'static TableManagerDescriptor, DiagnosticSet> {
-    registry
+    catalog
         .table_manager_descriptors()
         .into_iter()
         .find(|descriptor| descriptor.id == provider_id)
@@ -282,18 +282,18 @@ const fn report(
 }
 
 fn resolve_provider_id(
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     raw: Option<&str>,
     file: &str,
 ) -> Result<String, DiagnosticSet> {
     if let Some(provider) = raw {
-        return resolve_explicit_provider_id(registry, provider);
+        return resolve_explicit_provider_id(catalog, provider);
     }
     let extension = Path::new(file)
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or_default();
-    let candidates = registry
+    let candidates = catalog
         .table_manager_descriptors()
         .into_iter()
         .filter(|descriptor| descriptor.file_extensions.contains(&extension))
@@ -316,13 +316,13 @@ fn resolve_provider_id(
 }
 
 fn resolve_explicit_provider_id(
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     provider: &str,
 ) -> Result<String, DiagnosticSet> {
-    if registry.table_manager(provider).is_some() {
+    if catalog.table_manager(provider).is_some() {
         return Ok(provider.to_string());
     }
-    let candidates = registry
+    let candidates = catalog
         .table_manager_descriptors()
         .into_iter()
         .filter(|descriptor| descriptor.aliases.contains(&provider))
@@ -415,7 +415,7 @@ fn table_header_layout(
 fn configured_table_source<'a>(project: &'a Project, file: &str) -> Option<&'a SourceConfig> {
     project
         .config()
-        .sources
+        .data
         .iter()
         .find(|source| source_location_matches(project, source, file))
 }

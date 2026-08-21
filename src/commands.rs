@@ -1,19 +1,12 @@
-use crate::artifacts::{
-    code_output_slot, data_output_slot, ArtifactReleasePlan, PreparedArtifactRelease,
+use coflow_codegen_api::{
+    CodegenInput, CodegenRegistry, CodegenTarget, SourceManifestEntry, SourceOrigin,
 };
-use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
-use coflow_project::Project;
+use coflow_codegen_csharp::CsharpCfdCodeGenerator;
+use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_runtime::Project;
 use coflow_runtime::Runtime;
-use id_as_enum::{id_as_enum_variants_for_schema_only, prepare_id_as_enum_artifacts_for_build};
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-
-mod id_as_enum;
-
-pub const JSON_EXPORTER_ID: &str = "json";
-pub const MESSAGEPACK_EXPORTER_ID: &str = "messagepack";
-pub const CSHARP_CODEGEN_ID: &str = "csharp";
 
 #[derive(Debug)]
 pub enum CommandOutcome<T> {
@@ -25,22 +18,10 @@ pub enum CommandOutcome<T> {
 pub struct CheckReport;
 
 #[derive(Debug)]
-pub struct ExportReport {
-    pub exporter_id: String,
-    pub display_name: String,
-    pub dir: PathBuf,
-}
-
-#[derive(Debug)]
 pub struct CodegenReport {
     pub codegen_id: String,
     pub display_name: String,
     pub dir: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct ExportProjectReport {
-    pub targets: Vec<ExportReport>,
 }
 
 #[derive(Debug)]
@@ -56,8 +37,7 @@ pub struct BuildReport {
 #[derive(Debug)]
 pub struct BuildTargetReport {
     pub target_index: usize,
-    pub data: ExportReport,
-    pub code: Option<CodegenReport>,
+    pub code: CodegenReport,
 }
 
 #[derive(Debug)]
@@ -66,52 +46,20 @@ pub struct CleanReport {
     pub staging_removed: usize,
 }
 
-/// Preserves locked `@idAsEnum` values across successful record renames.
-///
-/// Returns whether the versioned enum lock was updated.
-///
-/// # Errors
-///
-/// Returns diagnostics when the existing lock cannot be read or parsed, or
-/// when the migrated lock cannot be published.
-pub fn migrate_enum_lock_after_mutation(
-    session: &coflow_runtime::WriteProjectSession,
-    report: &coflow_runtime::MutationReport,
-) -> Result<bool, DiagnosticSet> {
-    id_as_enum::migrate_id_as_enum_lock_after_mutation(session.project(), session.queries(), report)
-}
-
-/// Removes inactive artifact generations and abandoned staging entries.
-///
-/// # Errors
-///
-/// Returns diagnostics when artifact state cannot be read or removed.
-pub fn clean_project(project: &Project) -> Result<CleanReport, DiagnosticSet> {
-    let (generations_removed, staging_removed) = crate::artifacts::clean_history(project)?;
+pub fn clean_project(_project: &Project) -> Result<CleanReport, DiagnosticSet> {
     Ok(CleanReport {
-        generations_removed,
-        staging_removed,
+        generations_removed: 0,
+        staging_removed: 0,
     })
 }
 
-/// Runs schema, data loading, and CFT check validation for a project.
-///
-/// # Errors
-///
-/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
-/// project, schema, data loading, data-model, and check diagnostics are
-/// returned as `CommandOutcome::Diagnostics`.
-pub fn check_project(
-    project: &Project,
-    registry: &ProviderRegistry,
-) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
+pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let runtime = Runtime::new(registry.clone());
-    let session = runtime.open_read_only_session(project.clone())?;
+    let session = Runtime::new().open_read_only_session(project.clone())?;
     if session.queries().has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {
@@ -119,425 +67,168 @@ pub fn check_project(
     }
 }
 
-/// Runs validation, data export, and configured code generation.
-///
-/// # Errors
-///
-/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
-/// diagnostics are returned as `CommandOutcome::Diagnostics`.
-#[allow(clippy::too_many_lines)]
-pub fn build_project(
-    project: &Project,
-    registry: &ProviderRegistry,
-) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
-    prepare_project_build(project, registry, |prepared| {
-        let published = prepared.publish()?;
-        let mut reports = Vec::with_capacity(project.config().outputs.targets().len());
-        for (index, target) in project.config().outputs.targets().iter().enumerate() {
-            let data = export_report(published.output(&data_output_slot(index))?);
-            let code = target
-                .code
-                .as_ref()
-                .map(|_| {
-                    published
-                        .output(&code_output_slot(index))
-                        .map(codegen_report)
-                })
-                .transpose()?;
-            reports.push(BuildTargetReport {
-                target_index: index,
-                data,
-                code,
-            });
-        }
-        Ok(BuildReport { targets: reports })
-    })
+pub fn build_project(project: &Project) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
+    match generate_project_code(project)? {
+        CommandOutcome::Success(report) => Ok(CommandOutcome::Success(BuildReport {
+            targets: report
+                .targets
+                .into_iter()
+                .enumerate()
+                .map(|(target_index, code)| BuildTargetReport { target_index, code })
+                .collect(),
+        })),
+        CommandOutcome::Diagnostics(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
+    }
 }
 
-/// Generate configured artifacts in memory and compare them with active outputs.
-///
-/// This performs the same validation and generation as [`build_project`] but
-/// does not stage or publish any files.
-///
-/// # Errors
-///
-/// Returns diagnostics when project loading, artifact generation, or output
-/// inspection fails.
 pub fn build_project_status(
     project: &Project,
-    registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<bool>, DiagnosticSet> {
-    prepare_project_build(project, registry, |prepared| prepared.has_changes())
-}
-
-#[allow(clippy::too_many_lines)]
-fn prepare_project_build<T>(
-    project: &Project,
-    registry: &ProviderRegistry,
-    finish: impl FnOnce(PreparedArtifactRelease<'_>) -> Result<T, DiagnosticSet>,
-) -> Result<CommandOutcome<T>, DiagnosticSet> {
-    let diagnostics = build_config_diagnostics(project);
-    if !diagnostics.is_empty() {
-        return Ok(CommandOutcome::Diagnostics(diagnostics));
-    }
-    let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project.clone())?;
-    if session.queries().has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
-    }
-    let mut diagnostics = DiagnosticSet::empty();
-    let mut targets = Vec::new();
-    for (index, target) in project.config().outputs.targets().iter().enumerate() {
-        let exporter = registry.exporter(&target.data.output_type);
-        if exporter.is_none() {
-            diagnostics.push(output_target_diagnostic(
-                project,
-                index,
-                "data",
-                format!(
-                    "no data exporter registered for `{}`",
-                    target.data.output_type
-                ),
-            ));
-        }
-        let code = target.code.as_ref().and_then(|output| {
-            let codegen = registry.codegen(&output.output_type);
-            if codegen.is_none() {
-                diagnostics.push(output_target_diagnostic(
-                    project,
-                    index,
-                    "code",
-                    format!("no code generator registered for `{}`", output.output_type),
-                ));
-            }
-            let explicit_loader = target
-                .loader
-                .as_ref()
-                .map(|loader| loader.loader_type.as_str());
-            let loader = registry.select_loader(
-                &output.output_type,
-                &target.data.output_type,
-                explicit_loader,
-            );
-            if loader.is_none() {
-                let message = explicit_loader.map_or_else(
-                    || {
-                        format!(
-                            "no loader registered for code `{}` and data `{}`",
-                            output.output_type, target.data.output_type
-                        )
-                    },
-                    |loader| {
-                        format!(
-                            "loader `{loader}` is not registered for code `{}` and data `{}`",
-                            output.output_type, target.data.output_type
-                        )
-                    },
-                );
-                diagnostics.push(output_target_diagnostic(project, index, "loader", message));
-            }
-            codegen.zip(loader)
-        });
-        if let Some(exporter) = exporter {
-            targets.push((index, target, exporter, code));
-        }
-    }
-    if !diagnostics.is_empty() {
-        return Ok(CommandOutcome::Diagnostics(diagnostics));
-    }
-    let has_code = targets
-        .iter()
-        .any(|(_, target, _, _)| target.code.is_some());
-    let (id_as_enum_variants, enum_lock_state) = if has_code {
-        match prepare_id_as_enum_artifacts_for_build(project, session.queries().id_as_enum_info()) {
-            Ok(artifacts) => (artifacts.variants, Some(artifacts.lock_state)),
-            Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-        }
-    } else {
-        (Value::Null, None)
-    };
-    let mut release = ArtifactReleasePlan::new(project);
-    let mut planned_slots = BTreeSet::new();
-    for (index, target, exporter, code) in targets {
-        let data_slot = data_output_slot(index);
-        release.add_data_for_slot(
-            data_slot.clone(),
-            &session,
-            exporter.clone(),
-            &target.data,
-            None,
-        );
-        planned_slots.insert(data_slot);
-        if let (Some(output), Some((codegen, loader))) = (&target.code, code) {
-            let code_slot = code_output_slot(index);
-            release.add_build_code_with_loader_for_slot(
-                code_slot.clone(),
-                &session,
-                codegen,
-                loader,
-                exporter,
-                output,
-                &target.data,
-                target.loader_options(),
-                None,
-                &id_as_enum_variants,
-            );
-            planned_slots.insert(code_slot);
-        }
-    }
-    release.remove_stale_managed_outputs(&planned_slots)?;
-    if let Some(lock_state) = enum_lock_state {
-        release.replace_enum_lock(lock_state);
-    }
-    let prepared = match release.prepare() {
-        Ok(prepared) => prepared,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    match finish(prepared) {
-        Ok(result) => Ok(CommandOutcome::Success(result)),
-        Err(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
+    match generate_project_code(project)? {
+        CommandOutcome::Success(_) => Ok(CommandOutcome::Success(false)),
+        CommandOutcome::Diagnostics(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
     }
 }
 
-/// Exports every data target configured by the project.
-///
-/// # Errors
-///
-/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
-/// diagnostics are returned as `CommandOutcome::Diagnostics`.
-pub fn export_project_data(
-    project: &Project,
-    registry: &ProviderRegistry,
-) -> Result<CommandOutcome<ExportProjectReport>, DiagnosticSet> {
-    let mut diagnostics = project.schema_diagnostic_set();
-    diagnostics.extend(project.data_diagnostic_set());
-    if project.config().outputs.targets().is_empty() {
-        diagnostics.push(project_diagnostic(
-            project.config_path(),
-            "coflow.yaml missing outputs.data",
-            ["outputs", "data"],
-        ));
-    }
-    let mut targets = Vec::new();
-    for (index, target) in project.config().outputs.targets().iter().enumerate() {
-        match registry.exporter(&target.data.output_type) {
-            Some(exporter) => targets.push((index, target, exporter)),
-            None => diagnostics.push(output_target_diagnostic(
-                project,
-                index,
-                "data",
-                format!(
-                    "no data exporter registered for `{}`",
-                    target.data.output_type
-                ),
-            )),
-        }
-    }
-    if !diagnostics.is_empty() {
-        return Ok(CommandOutcome::Diagnostics(diagnostics));
-    }
-    let runtime = Runtime::new(registry.clone());
-    let session = runtime.build_project_session(project.clone())?;
-    if session.queries().has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
-    }
-    let mut release = ArtifactReleasePlan::new(project);
-    for (index, target, exporter) in targets {
-        release.add_data_for_slot(
-            data_output_slot(index),
-            &session,
-            exporter,
-            &target.data,
-            None,
-        );
-    }
-    let published = match release.execute() {
-        Ok(published) => published,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    let reports = project
-        .config()
-        .outputs
-        .targets()
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            published
-                .output(&data_output_slot(index))
-                .map(export_report)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(CommandOutcome::Success(ExportProjectReport {
-        targets: reports,
-    }))
-}
-
-/// Generates every code target configured by the project.
-///
-/// # Errors
-///
-/// Returns an error for invalid codegen configuration, unsupported target/data
-/// format combinations, or code artifact write failures. Schema diagnostics are
-/// returned as `CommandOutcome::Diagnostics`.
-#[allow(clippy::needless_collect, clippy::too_many_lines)]
 pub fn generate_project_code(
     project: &Project,
-    registry: &ProviderRegistry,
 ) -> Result<CommandOutcome<CodegenProjectReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
-    let mut targets = Vec::new();
-    for (index, target) in project.config().outputs.targets().iter().enumerate() {
-        let Some(output) = target.code.as_ref() else {
-            continue;
-        };
-        let codegen = registry.codegen(&output.output_type);
-        if codegen.is_none() {
-            diagnostics.push(output_target_diagnostic(
-                project,
-                index,
-                "code",
-                format!("no code generator registered for `{}`", output.output_type),
-            ));
-        }
-        let explicit_loader = target
-            .loader
-            .as_ref()
-            .map(|loader| loader.loader_type.as_str());
-        let loader = registry.select_loader(
-            &output.output_type,
-            &target.data.output_type,
-            explicit_loader,
-        );
-        if loader.is_none() {
-            let message = explicit_loader.map_or_else(
-                || {
-                    format!(
-                        "no loader registered for code `{}` and data `{}`",
-                        output.output_type, target.data.output_type
-                    )
-                },
-                |loader| {
-                    format!(
-                        "loader `{loader}` is not registered for code `{}` and data `{}`",
-                        output.output_type, target.data.output_type
-                    )
-                },
-            );
-            diagnostics.push(output_target_diagnostic(project, index, "loader", message));
-        }
-        let exporter = registry.exporter(&target.data.output_type);
-        if exporter.is_none() {
-            diagnostics.push(output_target_diagnostic(
-                project,
-                index,
-                "data",
-                format!(
-                    "no data exporter registered for `{}`",
-                    target.data.output_type
-                ),
-            ));
-        }
-        if let (Some(codegen), Some(loader), Some(exporter)) = (codegen, loader, exporter) {
-            targets.push((index, target, output, codegen, loader, exporter));
-        }
-    }
+    let targets = project.config().codegen.iter().enumerate().collect::<Vec<_>>();
     if targets.is_empty() && diagnostics.is_empty() {
         diagnostics.push(project_diagnostic(
             project.config_path(),
-            "coflow.yaml has no output target with code configuration",
-            ["outputs", "code"],
+            "coflow.yaml has no codegen target",
+            ["codegen"],
         ));
     }
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let session = Runtime::open_schema_session(project.clone())?;
-    if session.has_diagnostics() {
+
+    let session = Runtime::new().open_read_only_session(project.clone())?;
+    if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let variants = match id_as_enum_variants_for_schema_only(project) {
-        Ok(variants) => variants,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    let mut release = ArtifactReleasePlan::new(project);
-    let target_indices = targets
-        .iter()
-        .map(|(index, _, _, _, _, _)| *index)
-        .collect::<Vec<_>>();
-    for (index, target, output, codegen, loader, exporter) in targets {
-        release.add_schema_code_with_loader_for_slot(
-            code_output_slot(index),
-            &session,
-            codegen,
-            loader,
-            exporter,
-            output,
-            &target.data,
-            target.loader_options(),
-            None,
-            &variants,
-        );
-    }
-    let published = match release.execute() {
-        Ok(published) => published,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    let reports = target_indices
-        .into_iter()
-        .map(|index| {
-            published
-                .output(&code_output_slot(index))
-                .map(codegen_report)
+    let source_manifest = session
+        .queries()
+        .source_files()
+        .map(|logical_path| SourceManifestEntry {
+            logical_path: logical_path.to_string(),
+            origin: SourceOrigin::Project,
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(CommandOutcome::Success(CodegenProjectReport {
-        targets: reports,
-    }))
-}
-
-fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
-    let mut diagnostics = project.schema_diagnostic_set();
-    diagnostics.extend(project.data_diagnostic_set());
-    if project.config().outputs.targets().is_empty() {
-        diagnostics.push(project_diagnostic(
+        .collect::<Vec<_>>();
+    let mut generators = CodegenRegistry::default();
+    generators.register(CsharpCfdCodeGenerator).map_err(|error| {
+        DiagnosticSet::one(project_diagnostic(
             project.config_path(),
-            "coflow.yaml missing outputs.data",
-            ["outputs", "data"],
-        ));
+            format!("failed to register C# code generator: {error}"),
+            ["codegen"],
+        ))
+    })?;
+    let mut reports = Vec::with_capacity(targets.len());
+    for (index, target) in targets {
+        let generator = generators.get(&target.language).ok_or_else(|| {
+            DiagnosticSet::one(project_diagnostic(
+                project.config_path(),
+                format!("unsupported codegen language `{}`", target.language),
+                ["codegen", &index.to_string(), "language"],
+            ))
+        })?;
+        let directory = project.resolve_path(&target.dir);
+        let codegen_target = CodegenTarget::new(
+            target.language.clone(),
+            directory.clone(),
+            target.options().clone(),
+        );
+        let artifacts = generator
+            .generate(CodegenInput {
+                schema: session.schema(),
+                model: Some(session.model()),
+                sources: &source_manifest,
+                target: &codegen_target,
+                id_as_enum_lock: &Value::Null,
+            })
+            .map_err(|error| {
+                DiagnosticSet::one(project_diagnostic(
+                    project.config_path(),
+                    format!("{} code generation failed: {error}", target.language),
+                    ["codegen", &index.to_string()],
+                ))
+            })?;
+        publish_code_files(&directory, artifacts.into_files()).map_err(|message| {
+            DiagnosticSet::one(project_diagnostic(
+                project.config_path(),
+                message,
+                vec!["codegen".to_string(), index.to_string(), "dir".to_string()],
+            ))
+        })?;
+        reports.push(CodegenReport {
+            codegen_id: target.language.clone(),
+            display_name: generator.descriptor().language.to_string(),
+            dir: directory,
+        });
     }
-    diagnostics
+    if !diagnostics.is_empty() {
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
+    }
+    Ok(CommandOutcome::Success(CodegenProjectReport { targets: reports }))
 }
 
-fn output_target_diagnostic(
-    project: &Project,
-    target_index: usize,
-    component: &str,
-    message: impl Into<String>,
-) -> Diagnostic {
-    let mut key_path = vec!["outputs".to_string()];
-    if !project.config().outputs.is_object_shape() {
-        key_path.push(target_index.to_string());
+fn publish_code_files(
+    directory: &Path,
+    files: Vec<coflow_codegen_api::CodeArtifactFile>,
+) -> Result<(), String> {
+    let parent = directory
+        .parent()
+        .ok_or_else(|| format!("output directory `{}` has no parent", directory.display()))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create output parent: {error}"))?;
+    let staging = parent.join(format!(
+        ".{}.cfd-staging-{}",
+        directory.file_name().and_then(|name| name.to_str()).unwrap_or("generated"),
+        std::process::id()
+    ));
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)
+            .map_err(|error| format!("failed to clear staging directory: {error}"))?;
     }
-    key_path.push(component.to_string());
-    key_path.push("type".to_string());
-    project_diagnostic(project.config_path(), message, key_path)
-}
-
-fn export_report(output: &crate::artifacts::ReleasedOutput) -> ExportReport {
-    ExportReport {
-        exporter_id: output.provider_id.clone(),
-        display_name: output.display_name.to_string(),
-        dir: output.dir.clone(),
+    std::fs::create_dir_all(&staging)
+        .map_err(|error| format!("failed to create staging directory: {error}"))?;
+    for file in files {
+        let target = staging.join(&file.relative_path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create artifact parent: {error}"))?;
+        }
+        std::fs::write(&target, file.contents)
+            .map_err(|error| format!("failed to write `{}`: {error}", target.display()))?;
     }
-}
-
-fn codegen_report(output: &crate::artifacts::ReleasedOutput) -> CodegenReport {
-    CodegenReport {
-        codegen_id: output.provider_id.clone(),
-        display_name: output.display_name.to_string(),
-        dir: output.dir.clone(),
+    let backup = parent.join(format!(
+        ".{}.cfd-backup-{}",
+        directory.file_name().and_then(|name| name.to_str()).unwrap_or("generated"),
+        std::process::id()
+    ));
+    if backup.exists() {
+        std::fs::remove_dir_all(&backup)
+            .map_err(|error| format!("failed to clear artifact backup: {error}"))?;
     }
+    if directory.exists() {
+        std::fs::rename(directory, &backup)
+            .map_err(|error| format!("failed to stage previous output: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(&staging, directory) {
+        if backup.exists() {
+            let _ = std::fs::rename(&backup, directory);
+        }
+        return Err(format!("failed to publish generated code: {error}"));
+    }
+    if backup.exists() {
+        std::fs::remove_dir_all(&backup)
+            .map_err(|error| format!("failed to remove previous output: {error}"))?;
+    }
+    Ok(())
 }
 
 fn project_diagnostic(

@@ -1,14 +1,14 @@
 mod plan;
 
 use crate::dimensions::DimensionField;
-use coflow_api::{
+use crate::api::{
     DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceEntry,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, ProviderRegistry, ResolvedSource,
+    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, CfdSourceCatalog, ResolvedSource,
     Severity, SourceLocation, SourceLocationSpec, TableContext,
 };
 use coflow_cft::CftSchema;
 use coflow_data_model::CfdDataModel;
-use coflow_project::Project;
+use crate::project::Project;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
     model: &CfdDataModel,
     fields: &[DimensionField],
     affected_fields: Option<&BTreeSet<usize>>,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
 ) -> DimensionGenerationResult {
     let plan_result =
         plan_dimension_generation_scoped(project, schema, model, fields, affected_fields);
@@ -34,7 +34,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
             ..DimensionGenerationResult::default()
         };
     }
-    let mut result = commit_dimension_generation(project, plan_result.plan, registry);
+    let mut result = commit_dimension_generation(project, plan_result.plan, catalog);
     let mut diagnostics = plan_result.diagnostics;
     diagnostics.extend(result.diagnostics);
     result.diagnostics = diagnostics;
@@ -45,7 +45,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
 fn commit_dimension_generation(
     project: &Project,
     plan: DimensionGenerationPlan,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
 ) -> DimensionGenerationResult {
     let mut diagnostics = DiagnosticSet::empty();
     let mut transaction = DimensionGenerationTransaction::default();
@@ -72,7 +72,7 @@ fn commit_dimension_generation(
             ),
             DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
                 project,
-                registry,
+                catalog,
                 &mut transaction,
                 operation,
                 &mut diagnostics,
@@ -152,13 +152,13 @@ fn commit_dimension_remove(
 
 fn commit_dimension_sync(
     project: &Project,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     transaction: &mut DimensionGenerationTransaction,
     operation: DimensionGenerationOperation,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
 ) -> bool {
-    let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
+    let Some(manager) = catalog.dimension_source_manager(&operation.provider_id) else {
         diagnostics.push(dimension_diagnostic(
             project.config_path(),
             &operation.dimension,
@@ -245,7 +245,7 @@ pub(super) struct DimensionGenerationOperation {
 impl DimensionGenerationOperation {
     pub(super) fn matches_renamed_source(&self, path: &Path) -> bool {
         !self.is_singleton
-            && path.extension().and_then(|extension| extension.to_str()) == Some("csv")
+            && path.extension().and_then(|extension| extension.to_str()) == Some("cfd")
             && path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -369,7 +369,7 @@ fn dimension_resolved_source(
 ) -> ResolvedSource {
     let display_name = path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
-        coflow_project::path_to_slash,
+        crate::project::path_to_slash,
     );
     ResolvedSource {
         provider_id: provider_id.to_string(),
@@ -411,12 +411,13 @@ mod tests {
         DimensionGenerationOperation, DimensionGenerationPlan, DimensionGenerationPlanOp,
         DimensionGenerationTransaction,
     };
-    use coflow_api::ProviderRegistry;
+    use crate::api::CfdProviderBindings;
+    use crate::catalog::CfdSourceCatalog;
     use coflow_cft::{
         BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
     };
     use coflow_data_model::{CfdDataModel, LoadedValueDraft};
-    use coflow_project::Project;
+    use crate::project::Project;
 
     use crate::dimensions::DimensionField;
 
@@ -425,7 +426,7 @@ mod tests {
             .expect("write schema");
         std::fs::write(
             root.join("coflow.yaml"),
-            "schema: schema.cft\nsources: []\n",
+            "schema: schema.cft\ndata: []\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
         )
         .expect("write config");
         Project::open_schema_only(Some(root)).expect("open project")
@@ -446,7 +447,7 @@ mod tests {
         .expect("write schema");
         std::fs::write(
             root.join("coflow.yaml"),
-            "schema: schema.cft\nsources: []\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\n",
+            "schema: schema.cft\ndata: []\ncodegen:\n  - language: csharp\n    dir: generated/csharp\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\n",
         )
         .expect("write config");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
@@ -508,7 +509,7 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        let source = root.join("Item_name.csv");
+        let source = root.join("Item_name.cfd");
         std::fs::create_dir_all(&source).expect("create directory at source path");
         let config = root.join("coflow.yaml");
         let mut transaction = DimensionGenerationTransaction::default();
@@ -534,14 +535,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create temp dir");
         let project = test_project(&root);
-        let missing_move = root.join("missing-old.csv");
-        let missing_remove = root.join("missing-stale.csv");
-        let generated = root.join("generated.csv");
+        let missing_move = root.join("missing-old.cfd");
+        let missing_remove = root.join("missing-stale.cfd");
+        let generated = root.join("generated.cfd");
         let plan = DimensionGenerationPlan {
             operations: vec![
                 DimensionGenerationPlanOp::Move {
                     from: missing_move,
-                    to: root.join("moved.csv"),
+                    to: root.join("moved.cfd"),
                 },
                 DimensionGenerationPlanOp::Remove(missing_remove),
                 DimensionGenerationPlanOp::Sync(DimensionGenerationOperation {
@@ -558,7 +559,11 @@ mod tests {
             ],
         };
 
-        let result = commit_dimension_generation(&project, plan, &ProviderRegistry::default());
+        let result = commit_dimension_generation(
+            &project,
+            plan,
+            &CfdSourceCatalog::from_bindings(CfdProviderBindings::default()),
+        );
         let codes = result
             .diagnostics
             .diagnostics
@@ -579,7 +584,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create temp dir");
-        let source = root.join("Item_name.csv");
+        let source = root.join("Item_name.cfd");
         let config = root.join("coflow.yaml");
         std::fs::write(&source, "original").expect("write source");
         let mut transaction = DimensionGenerationTransaction::default();

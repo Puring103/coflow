@@ -16,21 +16,18 @@
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow::commands::{
-    build_project, check_project, clean_project, export_project_data, generate_project_code,
+    build_project, check_project, clean_project, generate_project_code,
     CommandOutcome,
 };
-use coflow_api::DiagnosticSet;
-use coflow_project::{normalize_path, path_to_slash, Project};
+use coflow_runtime::DiagnosticSet;
+use coflow_runtime::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
-use data_get_target::parse_data_get_target;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod cli;
 mod cli_output;
-mod data_commands;
-mod data_get_target;
 mod diagnostics;
 mod schema_commands;
 mod self_update_command;
@@ -40,8 +37,8 @@ mod write_file;
 use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, DataArgs,
-    DataCommand, ExportArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, InitArgs,
+    LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand,
     SelfUpdateArgs, SkillArgs, SkillCommand, SkillScopeArgs,
 };
 
@@ -64,10 +61,8 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Check(args) => project_check(&args),
         Command::Build(args) => project_build(&args),
         Command::Clean(args) => project_clean(&args),
-        Command::Export(args) => export_data(&args),
         Command::Codegen(args) => generate_code(&args),
         Command::Schema(command) => run_schema(&command),
-        Command::Data(command) => run_data(&command),
         Command::Skill(command) => run_skill(&command),
         Command::SelfUpdate(args) => run_self_update(&args),
     }
@@ -177,116 +172,11 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, DiagnosticSet> {
     }
 }
 
-fn run_data(command: &DataArgs) -> Result<bool, DiagnosticSet> {
-    match &command.command {
-        DataCommand::Sources(args) => {
-            data_commands::sources(args.config_or_dir.as_deref(), !args.json)
-        }
-        DataCommand::List(args) => data_commands::list(
-            args.config_or_dir.as_deref(),
-            args.actual_type.clone(),
-            args.file.clone(),
-            args.limit,
-            args.offset,
-            !args.json,
-        ),
-        DataCommand::Search(args) => data_commands::search(data_commands::DataSearchOptions {
-            config_or_dir: args.config_or_dir.clone(),
-            pattern: args.pattern.clone(),
-            file: args.file.clone(),
-            actual_type: args.actual_type.clone(),
-            mode: match args.mode {
-                cli::DataSearchModeArg::Key => coflow_runtime::RecordSearchMode::Key,
-                cli::DataSearchModeArg::FullText => coflow_runtime::RecordSearchMode::FullText,
-            },
-            limit: args.limit,
-            offset: args.offset,
-            human: !args.json,
-        }),
-        DataCommand::Get(args) => {
-            let target = parse_data_get_target(&args.target).map_err(cli_arg_error)?;
-            data_commands::get(data_commands::DataGetOptions {
-                config_or_dir: target.config_or_dir,
-                selector: target.selector,
-                actual_type: args.actual_type.clone(),
-                file: args.file.clone(),
-                keys: split_keys(&args.keys),
-                limit: args.limit,
-                offset: args.offset,
-                all: args.all,
-                human: !args.json,
-            })
-        }
-        DataCommand::Patch(args) => data_commands::patch(
-            args.config_or_dir.as_deref(),
-            data_commands::DataPatchInput {
-                json: args.patch.clone(),
-                file: args.patch_file.clone(),
-                stdin: args.stdin,
-            },
-            !args.json,
-        ),
-        DataCommand::CreateFile(args) => data_commands::create_file(
-            args.config_or_dir.as_deref(),
-            args.file.clone(),
-            args.actual_type.clone(),
-            args.provider.clone(),
-            args.sheet.clone(),
-            !args.json,
-        ),
-        DataCommand::CreateTable(args) => data_commands::create_table(
-            args.config_or_dir.as_deref(),
-            args.source.clone(),
-            args.actual_type.clone(),
-            args.provider.as_deref(),
-            args.sheet.clone(),
-            !args.json,
-        ),
-        DataCommand::SyncHeader(args) => data_commands::sync_header(
-            args.config_or_dir.as_deref(),
-            args.file.clone(),
-            args.actual_type.clone(),
-            args.provider.clone(),
-            args.sheet.clone(),
-            !args.json,
-        ),
-        DataCommand::WriteFile(args) => data_commands::write_file(
-            args.config_or_dir.as_deref(),
-            &data_commands::DataWriteFileOptions {
-                file: args.file.clone(),
-                mode: if args.dry_run {
-                    data_commands::DataWriteMode::DryRun
-                } else {
-                    data_commands::DataWriteMode::Write
-                },
-                check: if args.check {
-                    data_commands::DataWriteCheck::Run
-                } else {
-                    data_commands::DataWriteCheck::Skip
-                },
-                output: if args.json {
-                    data_commands::DataWriteOutput::Json
-                } else {
-                    data_commands::DataWriteOutput::Human
-                },
-            },
-        ),
-    }
-}
-
 fn init_project(args: InitArgs) -> Result<bool, DiagnosticSet> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
-    let outcome = coflow_project::init_project(&dir)?;
+    let outcome = coflow_runtime::init_project(&dir)?;
     println!("created {}", outcome.config_path.display());
     Ok(true)
-}
-
-fn split_keys(keys: &[String]) -> Vec<String> {
-    keys.iter()
-        .flat_map(|key| key.split(','))
-        .filter(|key| !key.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
 }
 
 fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
@@ -345,8 +235,7 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir().to_path_buf();
     let config_path = project.config_path().to_path_buf();
-    let registry = default_provider_registry()?;
-    match check_project(&project, &registry)? {
+    match check_project(&project)? {
         CommandOutcome::Success(_) => {
             if args.json {
                 write_json_diagnostics(Vec::new()).map_err(output_error)?;
@@ -369,22 +258,14 @@ fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir().to_path_buf();
     let config_path = project.config_path().to_path_buf();
-    let registry = default_provider_registry()?;
-    match build_project(&project, &registry)? {
+    match build_project(&project)? {
         CommandOutcome::Success(report) => {
             for target in report.targets {
                 println!(
-                    "{} data exported to {}",
-                    target.data.display_name,
-                    display_path(&target.data.dir.display().to_string(), Some(&root_dir))
+                    "{} code generated to {}",
+                    target.code.display_name,
+                    display_path(&target.code.dir.display().to_string(), Some(&root_dir))
                 );
-                if let Some(code) = target.code {
-                    println!(
-                        "{} code generated to {}",
-                        code.display_name,
-                        display_path(&code.dir.display().to_string(), Some(&root_dir))
-                    );
-                }
             }
             println!(
                 "Build completed: {}",
@@ -411,33 +292,10 @@ fn project_clean(args: &CleanArgs) -> Result<bool, DiagnosticSet> {
     Ok(true)
 }
 
-fn export_data(args: &ExportArgs) -> Result<bool, DiagnosticSet> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir().to_path_buf();
-    let registry = default_provider_registry()?;
-    match export_project_data(&project, &registry)? {
-        CommandOutcome::Success(report) => {
-            for target in report.targets {
-                println!(
-                    "{} data exported to {}",
-                    target.display_name,
-                    display_path(&target.dir.display().to_string(), Some(&root_dir))
-                );
-            }
-            Ok(true)
-        }
-        CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
-            Ok(false)
-        }
-    }
-}
-
 fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir().to_path_buf();
-    let registry = default_provider_registry()?;
-    match generate_project_code(&project, &registry)? {
+    match generate_project_code(&project)? {
         CommandOutcome::Success(report) => {
             for target in report.targets {
                 println!(
@@ -455,15 +313,6 @@ fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {
     }
 }
 
-fn cli_arg_error(message: String) -> DiagnosticSet {
-    cli_error("CLI-ARG", message)
-}
-
 fn output_error(message: String) -> DiagnosticSet {
     cli_error("CLI-OUTPUT", message)
-}
-
-fn default_provider_registry() -> Result<coflow_api::ProviderRegistry, DiagnosticSet> {
-    coflow_builtins::default_provider_registry()
-        .map_err(|err| cli_error("PROVIDER-REGISTRY", err.to_string()))
 }

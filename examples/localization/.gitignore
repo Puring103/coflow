@@ -1,6 +1,0 @@
-# `coflow build` artifacts — regenerated every time.
-generated/
-
-# .NET test harness build output.
-csharp-test/bin/
-csharp-test/obj/

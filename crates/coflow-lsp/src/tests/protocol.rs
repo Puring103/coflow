@@ -475,7 +475,11 @@ fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
     let alternate_path = root.join("alternate.cft");
     std::fs::write(&alternate_path, "type Alternate {}\n").expect("write alternate schema");
     let config_path = root.join("coflow.yaml");
-    std::fs::write(&config_path, "schema: alternate.cft\n").expect("change config");
+    std::fs::write(
+        &config_path,
+        "schema: alternate.cft\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("change config");
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",
@@ -667,11 +671,11 @@ fn oversized_content_length_is_rejected_before_body_allocation() {
 #[test]
 fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
     for (severity, expected) in [
-        (coflow_api::Severity::Error, 1),
-        (coflow_api::Severity::Warning, 2),
-        (coflow_api::Severity::Info, 3),
+        (coflow_runtime::Severity::Error, 1),
+        (coflow_runtime::Severity::Warning, 2),
+        (coflow_runtime::Severity::Info, 3),
     ] {
-        let diagnostic = coflow_api::Diagnostic {
+        let diagnostic = coflow_runtime::Diagnostic {
             code: "TEST".to_string(),
             stage: "TEST".to_string(),
             severity,
@@ -687,17 +691,17 @@ fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
 
 #[test]
 fn lsp_diagnostic_renders_structured_context_without_mutating_message() {
-    let diagnostic = coflow_api::Diagnostic {
+    let diagnostic = coflow_runtime::Diagnostic {
         code: "TEST".to_string(),
         stage: "CHECK".to_string(),
-        severity: coflow_api::Severity::Error,
+        severity: coflow_runtime::Severity::Error,
         message: "custom".to_string(),
         primary: None,
         related: Vec::new(),
-        contexts: vec![coflow_api::DiagnosticContext {
+        contexts: vec![coflow_runtime::DiagnosticContext {
             kind: "when".to_string(),
             expression: Some("enabled".to_string()),
-            ..coflow_api::DiagnosticContext::default()
+            ..coflow_runtime::DiagnosticContext::default()
         }],
     };
 

@@ -2,13 +2,13 @@
 //!
 //! After the core-types refactor (spec 17), the editor stops re-defining
 //! "value", "path segment", "dict key" and friends; those are imported
-//! from `coflow-data-model` / `coflow-api` / `coflow-runtime` and shipped
+//! from `coflow-data-model` / `coflow-runtime` and shipped
 //! straight to the front-end. The types that *remain* here are
 //! composition views — `RecordRow`, `FieldCell`, `FieldAnnotation`,
 //! `ProjectSnapshot`, ... — that bundle core data with editor-specific
 //! derived metadata (file hints, enum int values, ...).
 
-use coflow_api::{FlatDiagnostic, WriterCapabilities};
+use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdValue};
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{DimensionValueState, FileTreeNode, RecordCoordinate};

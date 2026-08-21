@@ -18,7 +18,6 @@ pub struct CsharpLoweringPlan<'a> {
     loadable_table_set: BTreeSet<String>,
     singleton_types: Vec<String>,
     polymorphic_types: Vec<String>,
-    polymorphic_type_set: BTreeSet<String>,
     ref_targets: Vec<String>,
     id_as_enum_names: BTreeSet<String>,
     type_id_as_enum: BTreeMap<String, String>,
@@ -50,7 +49,6 @@ impl<'a> CsharpLoweringPlan<'a> {
         let mut declared_tables = Vec::new();
         let mut singleton_types = Vec::new();
         let mut polymorphic_types = Vec::new();
-        let mut polymorphic_type_set = BTreeSet::new();
         let mut ref_targets = BTreeSet::new();
         let mut id_as_enum_names = BTreeSet::new();
         let mut type_id_as_enum = BTreeMap::new();
@@ -68,7 +66,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             }
             if schema.range_is_polymorphic(&ty.name) {
                 polymorphic_types.push(ty.name.to_string());
-                polymorphic_type_set.insert(ty.name.to_string());
             }
             if let Some(parent) = &ty.parent {
                 types_with_descendants.insert(parent.to_string());
@@ -133,7 +130,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             loadable_table_set,
             singleton_types,
             polymorphic_types,
-            polymorphic_type_set,
             ref_targets,
             id_as_enum_names,
             type_id_as_enum,
@@ -221,10 +217,6 @@ impl<'a> CsharpLoweringPlan<'a> {
         &self.polymorphic_types
     }
 
-    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.polymorphic_type_set.contains(type_name)
-    }
-
     pub fn csharp_type_name(&self, type_name: &str) -> String {
         self.csharp_types
             .get(type_name)
@@ -241,10 +233,6 @@ impl<'a> CsharpLoweringPlan<'a> {
 
     pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
         self.type_id_as_enum.get(type_name).cloned()
-    }
-
-    pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.id_as_enum_names.contains(enum_name)
     }
 
     pub fn key_field_type(&self, type_name: &str) -> CftValueType {

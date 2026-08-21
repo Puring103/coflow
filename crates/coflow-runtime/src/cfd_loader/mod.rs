@@ -1,0 +1,209 @@
+//! Text `.cfd` loader for Coflow data models.
+
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+#![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
+
+use crate::api::{
+    DecodedSourceOptions, Diagnostic, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
+    CfdBindingBundle, CfdBindingError, ResolvedSource, SourceLoadContext, CfdSourceAdapter,
+    CfdSourceAdapterDescriptor, SourceResolveContext,
+};
+
+mod diagnostics;
+mod lower;
+mod options;
+pub mod writer;
+use coflow_cfd::parse_cfd;
+use coflow_cft::CftSchema;
+use coflow_data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use diagnostics::{cfd_error_to_diagnostics, text_span};
+pub use diagnostics::{
+    CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
+};
+use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
+use options::decode_cfd_source_options;
+use std::borrow::Cow;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+pub use writer::CfdWriter;
+
+/// Declares every catalog role implemented by the CFD provider package.
+///
+/// # Errors
+///
+/// Returns an error if two CFD implementations declare the same role id.
+pub fn cfd_binding_bundle() -> Result<CfdBindingBundle, CfdBindingError> {
+    let writer = Arc::new(CfdWriter::new());
+    let mut bundle = CfdBindingBundle::default();
+    bundle.add_source_provider(CfdLoader)?;
+    bundle.add_source_writer_arc(Arc::clone(&writer))?;
+    bundle.add_table_manager_arc(Arc::clone(&writer))?;
+    bundle.add_dimension_source_manager_arc(writer)?;
+    Ok(bundle)
+}
+
+/// Parses `.cfd` text into source-neutral input records.
+///
+/// The returned records use the top-level CFD record name as
+/// [`LoadedRecordDraft::key`]. No `id` field is emitted.
+///
+/// # Errors
+///
+/// Returns text diagnostics when parsing or schema-guided conversion fails.
+pub fn parse_cfd_input_records(
+    schema: &CftSchema,
+    source: &str,
+) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
+    parse_cfd_input_records_with_spans(schema, source).map(|records| {
+        records
+            .into_iter()
+            .map(|record| record.record)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn parse_cfd_input_records_with_spans(
+    schema: &CftSchema,
+    source: &str,
+) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
+    let (ast, diagnostics) = parse_cfd(source);
+    if !diagnostics.is_empty() {
+        return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
+    }
+    lower_records(schema, &ast).map_err(CfdTextLoadError::Text)
+}
+
+/// Parses `.cfd` text and builds a validated [`CfdDataModel`].
+///
+/// # Errors
+///
+/// Returns text diagnostics for CFD syntax/conversion errors or data-model
+/// diagnostics for schema/data/reference errors.
+pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
+    let records = parse_cfd_input_records_with_spans(schema, source)?;
+    let mut builder = CfdDataModel::builder(schema);
+    let mut origins = Vec::with_capacity(records.len());
+    for record in records {
+        let origin = RecordOrigin::File {
+            path: PathBuf::new(),
+            span: Some(text_span(source, record.span)),
+        };
+        origins.push(origin.clone());
+        builder.add_loaded_record(record.record.with_origin(origin));
+    }
+    builder
+        .build()
+        .map_err(|diagnostics| CfdTextLoadError::DataModel {
+            diagnostics,
+            origins,
+        })
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CfdLoader;
+
+pub const CFD_LOADER_DESCRIPTOR: CfdSourceAdapterDescriptor = CfdSourceAdapterDescriptor {
+    id: "cfd",
+    display_name: "Coflow data text",
+    extensions: &["cfd"],
+    option_keys: &[],
+};
+
+impl CfdSourceAdapter for CfdLoader {
+    fn descriptor(&self) -> &'static CfdSourceAdapterDescriptor {
+        &CFD_LOADER_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
+            return ProbeResult::certain();
+        }
+        if source
+            .location
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            == Some("cfd")
+        {
+            ProbeResult::likely()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn decode_options(
+        &self,
+        options: &serde_json::Value,
+    ) -> Result<DecodedSourceOptions, DiagnosticSet> {
+        decode_cfd_source_options(options)
+    }
+
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        let path = source.location.path();
+        if is_cfd_path(path) {
+            return Ok(vec![source.clone()]);
+        }
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "CFD-SOURCE",
+            "CFD",
+            format!(
+                "source file `{}` has unsupported extension",
+                source.display_name
+            ),
+        )))
+    }
+
+    fn load(
+        &self,
+        ctx: SourceLoadContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<LoadedSource, DiagnosticSet> {
+        let file = source.location.path();
+        let contents = match ctx.source_text {
+            Some(source) => Cow::Borrowed(source),
+            None => Cow::Owned(fs::read_to_string(file).map_err(|err| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "CFD-READ",
+                    "CFD",
+                    format!("failed to read CFD source `{}`: {err}", file.display()),
+                ))
+            })?),
+        };
+        parse_cfd_input_records_with_spans(ctx.schema, &contents)
+            .map(|records| {
+                let records = records
+                    .into_iter()
+                    .map(|record| {
+                        let span = text_span(&contents, record.span);
+                        record.record.with_origin(RecordOrigin::File {
+                            path: file.clone(),
+                            span: Some(span),
+                        })
+                    })
+                    .collect();
+                LoadedSource { records }
+            })
+            .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
+    }
+}
+
+fn is_cfd_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+}

@@ -2,10 +2,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use coflow_api::{DiagnosticSet, ProviderRegistry};
+use crate::api::{DiagnosticSet, CfdSourceCatalog};
 use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::CfdDataModel;
-use coflow_project::Project;
+use crate::project::Project;
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;
@@ -35,21 +35,21 @@ use crate::ProjectExecutionStats;
 /// returned session diagnostics.
 pub(crate) fn open_project_session(
     project: Project,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    build_project_session_with_effects(project, registry, options).map(|output| output.session)
+    build_project_session_with_effects(project, catalog, options).map(|output| output.session)
 }
 
 pub(crate) fn open_project_session_with_source_overrides(
     project: Project,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: SessionOpenOptions,
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<ProjectSession, DiagnosticSet> {
     finish_project_session(
         open_schema_session(project)?,
-        registry,
+        catalog,
         options,
         source_overrides,
     )
@@ -58,10 +58,10 @@ pub(crate) fn open_project_session_with_source_overrides(
 
 pub(crate) fn open_project_session_from_schema(
     schema_session: ProjectSchemaSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    finish_project_session(schema_session, registry, options, &[]).map(|output| output.session)
+    finish_project_session(schema_session, catalog, options, &[]).map(|output| output.session)
 }
 
 pub(crate) struct SessionBuildOutput {
@@ -87,22 +87,22 @@ impl SessionOpenOptions {
 
 pub(crate) fn build_project_session_with_effects(
     project: Project,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: SessionOpenOptions,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    finish_project_session(open_schema_session(project)?, registry, options, &[])
+    finish_project_session(open_schema_session(project)?, catalog, options, &[])
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ctx = SessionBuildContext {
         project: session.project.clone(),
         modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
-        registry,
+        catalog,
         mode: SessionOpenOptions::Build,
         dimension_plan: Arc::clone(&session.dimension_plan),
         source_overrides: &[],
@@ -132,7 +132,7 @@ pub(crate) fn rebuild_project_session_from_generation(
 
 fn finish_project_session(
     schema_session: ProjectSchemaSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     options: SessionOpenOptions,
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
@@ -152,7 +152,7 @@ fn finish_project_session(
         project,
         modules,
         schema,
-        registry,
+        catalog,
         mode: options,
         dimension_plan,
         source_overrides,
@@ -195,7 +195,7 @@ struct SessionBuildContext<'a> {
     project: Project,
     modules: Arc<CftModuleSet>,
     schema: Arc<CftSchema>,
-    registry: &'a ProviderRegistry,
+    catalog: &'a CfdSourceCatalog,
     mode: SessionOpenOptions,
     dimension_plan: Arc<DimensionRuntimePlan>,
     source_overrides: &'a [DataSourceTextOverride],
@@ -444,7 +444,7 @@ fn load_data(
         &ctx.project,
         &ctx.schema,
         &ctx.dimension_plan,
-        ctx.registry,
+        ctx.catalog,
         &mut indexes,
         LoadProjectDataOptions {
             include_implicit_dimension_sources,
@@ -483,7 +483,7 @@ fn load_cached_data(
         &ctx.project,
         &ctx.schema,
         &ctx.dimension_plan,
-        ctx.registry,
+        ctx.catalog,
         &mut indexes,
         previous,
         options.reload_paths,
@@ -511,7 +511,7 @@ fn load_cached_data(
 fn project_display_path(project: &Project, path: &std::path::Path) -> String {
     path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
-        coflow_project::path_to_slash,
+        crate::project::path_to_slash,
     )
 }
 
@@ -584,7 +584,7 @@ fn commit_dimensions_if_needed(
         &output.model,
         ctx.dimension_plan.fields(),
         affected_fields.as_ref(),
-        ctx.registry,
+        ctx.catalog,
     );
     diagnostics.extend(dimension_result.diagnostics);
     CommittedDimensions {
@@ -640,16 +640,16 @@ fn assemble_session(
         sources: indexes.sources,
         records: indexes.records,
         files: indexes.files,
-        loader_extensions: loader_extensions(ctx.registry),
+        loader_extensions: loader_extensions(ctx.catalog),
         source_data,
         check_state,
         execution_stats,
     }
 }
 
-fn loader_extensions(registry: &ProviderRegistry) -> BTreeSet<String> {
+fn loader_extensions(catalog: &CfdSourceCatalog) -> BTreeSet<String> {
     let mut extensions = BTreeSet::new();
-    for loader in registry.source_providers() {
+    for loader in catalog.source_providers() {
         for ext in loader.descriptor().extensions {
             extensions.insert((*ext).to_string());
         }

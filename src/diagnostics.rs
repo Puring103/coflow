@@ -1,4 +1,4 @@
-use coflow_api::{Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_runtime::{Diagnostic, DiagnosticContext, DiagnosticSet, Label, Severity, SourceLocation};
 use serde::Serialize;
 use std::path::Path;
 

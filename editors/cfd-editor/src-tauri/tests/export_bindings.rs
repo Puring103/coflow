@@ -13,8 +13,8 @@ fn export_bindings() {
     export_with_retry::<coflow_data_model::CfdRecord>("CfdRecord tree");
     export_with_retry::<coflow_data_model::CfdDictKey>("CfdDictKey tree");
     export_with_retry::<coflow_data_model::CfdPathSegment>("CfdPathSegment tree");
-    export_with_retry::<coflow_api::FlatDiagnostic>("FlatDiagnostic");
-    export_with_retry::<coflow_api::WriterCapabilities>("WriterCapabilities");
+    export_with_retry::<coflow_runtime::FlatDiagnostic>("FlatDiagnostic");
+    export_with_retry::<coflow_runtime::WriterCapabilities>("WriterCapabilities");
     export_with_retry::<coflow_runtime::FileTreeNode>("FileTreeNode");
     export_with_retry::<coflow_runtime::DimensionValueCoordinate>("DimensionValueCoordinate");
     export_with_retry::<coflow_runtime::DimensionValueView>("DimensionValueView");

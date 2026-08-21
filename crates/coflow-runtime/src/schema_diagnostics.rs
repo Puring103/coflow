@@ -1,4 +1,4 @@
-use coflow_api::{
+use crate::api::{
     byte_range, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, TextRange,
 };
 use coflow_cft::{CftDiagnostic, CftLabel};
@@ -116,7 +116,7 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
-    use coflow_api::SourceLocation;
+    use crate::api::SourceLocation;
     use coflow_cft::{CftDiagnostic, CftErrorCode, CftSeverity, ModuleId, Span};
     use std::collections::BTreeMap;
     use std::path::PathBuf;

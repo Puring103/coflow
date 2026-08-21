@@ -1,7 +1,7 @@
 use coflow_cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
 use coflow_cft::syntax::CheckVisitor;
 use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
-use coflow_project::normalize_path;
+use coflow_runtime::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

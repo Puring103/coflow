@@ -2,15 +2,12 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet,
-    LoaderGenerationContext, LoaderGenerator,
-};
+use crate::api::DiagnosticSet;
 use coflow_cft::{CftModuleSet, CftSchema};
 use coflow_data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
 };
-use coflow_project::{path_to_slash, Project};
+use crate::project::{path_to_slash, Project};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
@@ -331,57 +328,6 @@ impl ProjectSchemaSession {
         !self.diagnostics.is_empty()
     }
 
-    /// Generates schema-only code artifacts from this session.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the generator rejects its options or schema.
-    pub fn codegen_artifacts(
-        &self,
-        codegen: &dyn CodeGenerator,
-        options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        let schema = self
-            .schema()
-            .ok_or_else(|| self.diagnostics.clone().into_set())?;
-        codegen.generate(
-            CodegenContext {
-                schema,
-                model: None,
-                id_as_enum_variants,
-            },
-            options,
-        )
-    }
-
-    /// Generates schema-only loader artifacts without filtering tables by data.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the loader rejects its options or schema.
-    pub fn loader_artifacts(
-        &self,
-        loader: &dyn LoaderGenerator,
-        code_options: &DecodedOutputOptions,
-        data_options: &DecodedOutputOptions,
-        loader_options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        let schema = self
-            .schema()
-            .ok_or_else(|| self.diagnostics.clone().into_set())?;
-        loader.generate(
-            LoaderGenerationContext {
-                schema,
-                model: None,
-                code_options,
-                data_options,
-                id_as_enum_variants,
-            },
-            loader_options,
-        )
-    }
 }
 
 fn display_source_path(source: &str) -> String {

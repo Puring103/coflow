@@ -1,7 +1,5 @@
 mod database;
 mod identifiers;
-mod loaders;
-mod readers;
 mod types;
 
 use crate::lowering::{CsharpDimensionTable, CsharpLoweringPlan};
@@ -9,16 +7,12 @@ use crate::model::{
     CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
     CsharpProperty, CsharpType,
 };
-use crate::names::camel_case;
 use crate::CsharpCodegenError;
 use coflow_cft::{CftEnum, CftField, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
-pub use database::{build_csharp_database, build_load_steps};
+pub use database::build_csharp_database;
 use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
-use loaders::{
-    dimension_loader_method, field_type_requires_context, loader_method, polymorphic_loader,
-};
 use types::{csharp_field_property_type, csharp_type};
 
 pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
@@ -90,12 +84,6 @@ pub fn build_csharp_type(
         );
     }
 
-    let loader = if schema_type.is_abstract {
-        Some(polymorphic_loader(&schema_type.name, view)?)
-    } else {
-        Some(loader_method(&schema_type.name, view)?)
-    };
-
     let all_field_props = view
         .fields(&ty.name)?
         .map(|f| csharp_public_member_name(&f.name))
@@ -111,6 +99,7 @@ pub fn build_csharp_type(
 
     Ok(CsharpType {
         name: view.csharp_type_name(&schema_type.name),
+        source_name: schema_type.name.to_string(),
         declaration: type_declaration(schema_type, view),
         constructor_visibility: if schema_type.is_abstract {
             "protected".to_string()
@@ -125,7 +114,6 @@ pub fn build_csharp_type(
             .then(|| format!(" : base({})", base_constructor_args.join(", "))),
         base_constructor_args,
         assignments,
-        loader,
         equality,
     })
 }
@@ -172,6 +160,7 @@ pub fn build_csharp_dimension_type(
 
     Ok(CsharpType {
         name: name.clone(),
+        source_name: table.source_name.clone(),
         declaration: format!("public sealed partial class {name} : IEquatable<{name}>"),
         constructor_visibility: "public".to_string(),
         summary: None,
@@ -181,7 +170,6 @@ pub fn build_csharp_dimension_type(
         base_constructor_args: Vec::new(),
         base_constructor_call: None,
         assignments,
-        loader: Some(dimension_loader_method(table, view)?),
         equality: Some(CsharpEquality {
             key_property: "Id".to_string(),
             is_struct: false,
@@ -289,10 +277,8 @@ pub(super) fn backing_field_name(
     ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
 ) -> Option<String> {
-    field_type_requires_context(ty, view)
-        .ok()
-        .filter(|requires_context| *requires_context)
-        .map(|_| format!("_{}", camel_case(property_name)))
+    let _ = (property_name, ty, view);
+    None
 }
 
 fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> String {
