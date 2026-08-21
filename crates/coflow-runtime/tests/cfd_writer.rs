@@ -10,14 +10,16 @@
     clippy::unwrap_used
 )]
 
-use coflow_runtime::{
-    DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    ResolvedSource, SourceLocationSpec, CfdSourceAdapter, SourceWriter, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment, WriteRecordRef,
+use coflow_language::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
-use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdLoader, CfdWriter};
+use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdWriter};
+use coflow_runtime::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
+use coflow_runtime::{
+    CfdDocumentWriter, CfdSource, CfdSourcePath, DeleteRecordRequest, InsertRecordRequest,
+    ReorderRecordsOperation, ReorderRecordsRequest, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteRecordRef,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,7 +28,7 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("coflow-cfd-writer-{name}-{id}"));
+    let dir = std::env::temp_dir().join(format!("coflow-language-writer-{name}-{id}"));
     if dir.exists() {
         fs::remove_dir_all(&dir).expect("remove temp dir");
     }
@@ -39,13 +41,9 @@ fn compile_schema(source: &str) -> CftSchema {
     build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
 }
 
-fn empty_source(path: &Path) -> ResolvedSource {
-    ResolvedSource {
-        provider_id: "cfd".to_string(),
-        location: SourceLocationSpec::new(path.to_path_buf()),
-        options: CfdLoader
-            .decode_options(&serde_json::Value::Null)
-            .expect("decode cfd options"),
+fn empty_source(path: &Path) -> CfdSource {
+    CfdSource {
+        location: CfdSourcePath::new(path.to_path_buf()),
         display_name: path.display().to_string(),
     }
 }
@@ -517,7 +515,6 @@ fn inserts_record_at_end_of_cfd_file() {
             },
             &InsertRecordRequest {
                 source: &source,
-                sheet: None,
                 record_key: "potion",
                 actual_type: "Item",
                 fields: &fields,
@@ -571,7 +568,6 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
             },
             &InsertRecordRequest {
                 source: &source,
-                sheet: None,
                 record_key: "shared",
                 actual_type: "Skill",
                 fields: &fields,
@@ -641,7 +637,6 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
             },
             &InsertRecordRequest {
                 source: &source,
-                sheet: None,
                 record_key: "starter",
                 actual_type: "Loot",
                 fields: &fields,
@@ -767,7 +762,6 @@ shared: Skill {
         "skill should be deleted: {after}"
     );
 }
-
 
 #[test]
 fn writes_enum_dict_key_path_using_qualified_display_text() {

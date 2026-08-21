@@ -2,11 +2,11 @@ use super::{
     dimension_diagnostic, DimensionGenerationOperation, DimensionGenerationPlan,
     DimensionGenerationPlanOp, DimensionGenerationPlanResult,
 };
-use crate::dimensions::DimensionField;
 use crate::api::DiagnosticSet;
-use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, CfdValue};
+use crate::data_model::{CfdDataModel, CfdValue};
+use crate::dimensions::DimensionField;
 use crate::project::Project;
+use coflow_language::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -70,7 +70,6 @@ fn plan_configured_dimension(
         .enumerate()
         .filter(|(_, field)| field.dimension.as_str() == dimension)
     {
-        let provider_id = "cfd";
         let path = out_dir.join(field.source_file_name());
         let path_identity = crate::project::normalized_path_identity(&path);
         expected_paths.insert(path_identity.clone());
@@ -79,9 +78,7 @@ fn plan_configured_dimension(
         }
         let operation = DimensionGenerationOperation {
             dimension: dimension.to_string(),
-            provider_id: provider_id.to_string(),
             path: path.clone(),
-            sheet: format!("{}_{}", field.bucket, field.source_field),
             actual_type: field.source_type.to_string(),
             entries: dimension_entries(schema, model, field),
             variants: config.variants.clone(),

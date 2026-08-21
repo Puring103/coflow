@@ -14,18 +14,16 @@ default = []
 internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
-    "coflow-data-model/ts-export",
 ]
 
 [dependencies]
-coflow-cfd = { path = "../coflow-cfd" }
-coflow-cft = { path = "../coflow-cft" }
-coflow-checker = { path = "../coflow-checker" }
-coflow-data-model = { path = "../coflow-data-model" }
+coflow-language = { path = "../coflow-language" }
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 ts-rs = { version = "10", optional = true }
+unicode-ident = "1"
 walkdir = "2"
 
 [dev-dependencies]

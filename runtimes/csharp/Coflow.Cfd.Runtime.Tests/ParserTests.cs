@@ -25,7 +25,7 @@ public sealed class ParserTests
     public void ReportsStableMissingSourceError()
     {
         var error = Assert.Throws<CfdLoadException>(() => CfdLoader.LoadDocuments(
-            new DelegateCfdSourceProvider(_ => null), new[] { "data/missing.cfd" }));
+            new DelegateCfdTextLoader(_ => null), new[] { "data/missing.cfd" }));
         Assert.Equal("CFD-SOURCE-MISSING", error.Errors[0].Code);
         Assert.Equal("data/missing.cfd", error.Errors[0].Path);
     }
@@ -64,5 +64,31 @@ public sealed class ParserTests
             new CfdSource("data/items.cfd", "Item { sword {} }"),
             new CfdLoadOptions { MaxSourceBytes = 4 }));
         Assert.Contains(limited.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-SOURCE");
+    }
+
+    [Fact]
+    public void ParsesCommentsEscapesUnicodeAndQuotedKeys()
+    {
+        var document = CfdParser.Parse(new CfdSource("data/items.cfd", """
+            # a comment
+            Item {
+              "display-name": "line\n\u4e2d"
+              note: "quoted \"text\""
+            }
+            """));
+
+        Assert.Equal("display-name", document.Records[0].Fields[0].Name);
+        Assert.Equal("line\n中", ((CfdStringValue)document.Records[0].Fields[0].Value).Value);
+        Assert.Equal("quoted \"text\"", ((CfdStringValue)document.Records[0].Fields[1].Value).Value);
+    }
+
+    [Fact]
+    public void ReportsDepthAndNodeLimitsWithStableCodes()
+    {
+        var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
+            new CfdSource("data/items.cfd", "Item { item { values: [1, 2, 3] } }"),
+            new CfdLoadOptions { MaxDepth = 1, MaxNodes = 2 }));
+        Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
+        Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
     }
 }

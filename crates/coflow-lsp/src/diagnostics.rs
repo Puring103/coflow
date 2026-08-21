@@ -92,8 +92,7 @@ pub fn lsp_label_location(location: &coflow_runtime::SourceLocation) -> LspLabel
     match location {
         coflow_runtime::SourceLocation::FileSpan { path, .. }
         | coflow_runtime::SourceLocation::ProjectConfig { path, .. }
-        | coflow_runtime::SourceLocation::Artifact { path }
-        | coflow_runtime::SourceLocation::TableCell { path, .. } => LspLabelLocation {
+        | coflow_runtime::SourceLocation::Artifact { path } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),
             start_line: range.start.line,
             start_character: range.start.character,

@@ -2,9 +2,9 @@ use crate::api::{
     byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label,
     SourceLocation,
 };
-use coflow_cft::CftSchema;
-use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
-use coflow_data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
+use crate::checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
+use crate::data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
+use coflow_language::CftSchema;
 
 use super::{CheckDiagnosticStore, ProjectCheckOutput};
 use crate::load::logical_locations_from_cfd;
@@ -25,7 +25,7 @@ pub(super) fn render_check_store(
     let logical_locations = logical_locations_from_cfd(&cfd, |id| {
         model
             .record(id)
-            .map(coflow_data_model::CfdRecord::coordinate)
+            .map(crate::data_model::CfdRecord::coordinate)
     });
     ProjectCheckOutput {
         diagnostics: map_check_diagnostics_with_origins(Some(schema), raw, origins),

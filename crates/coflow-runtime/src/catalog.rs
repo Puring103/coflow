@@ -1,15 +1,16 @@
-//! Fixed CFD source catalog used by the runtime.
+//! Concrete CFD source services owned by the runtime.
 //!
-//! The provider traits remain an implementation detail of the runtime while
-//! the host-facing API exposes one concrete catalog. This keeps source
-//! selection deterministic: every project reads and writes `.cfd` through the
-//! built-in implementation.
+//! This is deliberately a value object, not a registration point. Every
+//! project has exactly one text loader and one CFD writer.
 
-use crate::api::CfdProviderBindings;
+use crate::api::CfdDimensionWriter;
+use crate::cfd_loader::{CfdLoader, CfdWriter};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CfdSourceCatalog {
-    pub(crate) bindings: CfdProviderBindings,
+    pub(crate) loader: Arc<CfdLoader>,
+    pub(crate) writer: Arc<CfdWriter>,
 }
 
 impl std::fmt::Debug for CfdSourceCatalog {
@@ -21,16 +22,25 @@ impl std::fmt::Debug for CfdSourceCatalog {
     }
 }
 
-impl CfdSourceCatalog {
-    pub(crate) const fn from_bindings(bindings: CfdProviderBindings) -> Self {
-        Self { bindings }
+impl Default for CfdSourceCatalog {
+    fn default() -> Self {
+        Self {
+            loader: Arc::new(CfdLoader),
+            writer: Arc::new(CfdWriter::new()),
+        }
     }
 }
 
-impl std::ops::Deref for CfdSourceCatalog {
-    type Target = CfdProviderBindings;
+impl CfdSourceCatalog {
+    pub(crate) fn loader(&self) -> Arc<CfdLoader> {
+        Arc::clone(&self.loader)
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.bindings
+    pub(crate) fn writer(&self) -> Arc<CfdWriter> {
+        Arc::clone(&self.writer)
+    }
+
+    pub(crate) fn dimension_source_manager(&self) -> Arc<dyn CfdDimensionWriter> {
+        Arc::clone(&self.writer) as Arc<dyn CfdDimensionWriter>
     }
 }

@@ -21,15 +21,15 @@ mod model;
 mod names;
 mod render;
 
-use coflow_cft::CftSchema;
+use coflow_language::CftSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
 use coflow_codegen_api::{
-    CodeArtifactFile, CodeArtifactSet, CodegenError, CodegenInput as CfdCodegenInput,
-    CodegenDescriptor as CfdCodegenDescriptor, CodeGenerator as CfdCodeGeneratorTrait,
+    CodeArtifactFile, CodeArtifactSet, CodeGenerator as CfdCodeGeneratorTrait,
+    CodegenDescriptor as CfdCodegenDescriptor, CodegenError, CodegenInput as CfdCodegenInput,
 };
 
 pub use ir::{CsharpCodegenOptions, CsharpIdAsEnumVariant};
@@ -58,7 +58,6 @@ impl CsharpCodegenError {
             messages: messages.into_iter().collect(),
         }
     }
-
 }
 
 impl fmt::Display for CsharpCodegenError {
@@ -104,7 +103,7 @@ pub fn generate_csharp_cfd(
     let mut files = render::render_common_project(&project)?;
     files.push(GeneratedFile {
         relative_path: PathBuf::from(format!("{}.Cfd.cs", project.database_class)),
-        contents: render::render_cfd_loader(&project, sources),
+        contents: render::render_cfd_loader(&project, sources, schema),
     });
     Ok(files)
 }
@@ -131,25 +130,18 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
         let options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
             CodegenError::Message(format!("invalid C# output options: {error}"))
         })?;
-        let codegen = CsharpCodegenOptions::new(
-            options.namespace.as_deref().unwrap_or("Game.Config"),
-        )
-        .with_database_class(options.database_class.as_deref().unwrap_or("CoflowTables"))
-        .with_int_32(options.int_32)
-        .with_float_32(options.float_32);
+        let codegen =
+            CsharpCodegenOptions::new(options.namespace.as_deref().unwrap_or("Game.Config"))
+                .with_database_class(options.database_class.as_deref().unwrap_or("CoflowTables"))
+                .with_int_32(options.int_32)
+                .with_float_32(options.float_32);
         let sources = input
             .sources
             .iter()
             .map(|source| source.logical_path.clone())
             .collect::<Vec<_>>();
-        let files = generate_csharp_cfd(
-            input.schema,
-            &codegen,
-            &sources,
-            BTreeMap::new(),
-            None,
-        )
-        .map_err(|error| CodegenError::Message(error.to_string()))?;
+        let files = generate_csharp_cfd(input.schema, &codegen, &sources, BTreeMap::new(), None)
+            .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
                 .into_iter()

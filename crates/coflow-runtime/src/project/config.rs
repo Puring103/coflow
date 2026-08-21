@@ -52,13 +52,18 @@ impl<'de> Deserialize<'de> for ProjectConfig {
                 .into_iter()
                 .map(|value| serde_json::from_value(value).map_err(de::Error::custom))
                 .collect::<Result<Vec<OutputConfig>, _>>()?,
-            Some(Value::Object(value)) => vec![
-                serde_json::from_value(Value::Object(value)).map_err(de::Error::custom)?,
-            ],
+            Some(Value::Object(value)) => {
+                vec![serde_json::from_value(Value::Object(value)).map_err(de::Error::custom)?]
+            }
             _ => return Err(de::Error::custom("codegen must be an object or a list")),
         };
 
-        Ok(Self { schema, data, codegen, dimensions })
+        Ok(Self {
+            schema,
+            data,
+            codegen,
+            dimensions,
+        })
     }
 }
 
@@ -97,9 +102,7 @@ pub struct SchemaConfig {
 
 #[derive(Debug, Clone)]
 pub struct SourceConfig {
-    pub source_type: Option<String>,
     location: PathBuf,
-    options: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -112,21 +115,12 @@ pub struct OutputConfig {
 impl SourceConfig {
     #[must_use]
     pub fn from_path(path: PathBuf) -> Self {
-        Self {
-            source_type: Some("cfd".to_string()),
-            location: path,
-            options: Value::Object(Map::new()),
-        }
+        Self { location: path }
     }
 
     #[must_use]
     pub const fn location(&self) -> &PathBuf {
         &self.location
-    }
-
-    #[must_use]
-    pub const fn options(&self) -> &Value {
-        &self.options
     }
 
     #[must_use]

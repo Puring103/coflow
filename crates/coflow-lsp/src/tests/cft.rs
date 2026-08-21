@@ -1,8 +1,8 @@
 use super::common::*;
 use super::*;
 use crate::completion::receiver_chain_before_dot;
-use coflow_cft::syntax::ast::Item;
-use coflow_cft::CftValueType;
+use coflow_language::syntax::ast::Item;
+use coflow_language::CftValueType;
 
 #[test]
 fn hover_and_definition_ignore_comment_and_string_words() {

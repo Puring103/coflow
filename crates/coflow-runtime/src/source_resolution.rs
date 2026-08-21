@@ -1,34 +1,26 @@
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 
 use crate::api::{
-    Diagnostic, DiagnosticSet, Label, ProjectSourceRef, CfdSourceCatalog, ResolvedSource, Severity,
-    SourceLocation, SourceLocationSpec, CfdSourceAdapter, CfdSourceSelectionError,
-    SourceResolveContext,
+    CfdSource, CfdSourceCatalog, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity,
+    SourceLocation,
 };
 use crate::project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
-use serde_json::Value;
 
 mod dimensions;
 
 pub(crate) struct ResolvedLoaderSource {
-    pub(crate) provider: Arc<dyn CfdSourceAdapter>,
-    pub(crate) source: ResolvedSource,
+    pub(crate) source: CfdSource,
 }
 
 pub(crate) struct ResolvedDimensionSource {
-    pub(crate) source: ResolvedSource,
+    pub(crate) source: CfdSource,
     pub(crate) fields: Vec<crate::dimensions::DimensionField>,
 }
 
 #[derive(Clone)]
 pub(crate) struct ConfiguredSource {
-    pub(crate) provider_id: String,
-    pub(crate) location: SourceLocationSpec,
-    pub(crate) options: Value,
+    pub(crate) location: CfdSourcePath,
     pub(crate) display_name: String,
-    pub(crate) source_index: Option<usize>,
 }
 
 pub(crate) struct SourceResolver<'a> {
@@ -41,37 +33,29 @@ impl<'a> SourceResolver<'a> {
         Self { project, catalog }
     }
 
-    pub(crate) fn configured(
-        &self,
-        source: &SourceConfig,
-        source_index: Option<usize>,
-    ) -> ConfiguredSource {
-        configured_source(self.project, source, source_index)
+    pub(crate) fn configured(&self, source: &SourceConfig) -> ConfiguredSource {
+        configured_source(self.project, source)
     }
 
     pub(crate) fn resolve_for_load(
         &self,
-        source: &SourceConfig,
+        _source: &SourceConfig,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         if configured.location.path().is_dir() {
-            return self.resolve_directory(configured, source.source_type.as_deref());
+            return self.resolve_directory(configured);
         }
-        let provider = self.select(configured, source.source_type.as_deref())?;
-        self.decode_and_expand(&provider, configured)
+        self.resolve_file(configured)
     }
 
     pub(crate) fn resolve_implicit(
         &self,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let source_type =
-            (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
         if configured.location.path().is_dir() {
-            return self.resolve_directory(configured, source_type);
+            return self.resolve_directory(configured);
         }
-        let provider = self.select(configured, source_type)?;
-        self.decode_and_expand(&provider, configured)
+        self.resolve_file(configured)
     }
 
     pub(crate) fn resolve_dimension_sources(
@@ -81,78 +65,11 @@ impl<'a> SourceResolver<'a> {
         dimensions::resolve_dimension_sources(self, plan)
     }
 
-    pub(crate) fn resolve_exact_at(
-        &self,
-        source: &SourceConfig,
-        forced_provider: Option<&str>,
-        location: SourceLocationSpec,
-        display_name: String,
-    ) -> Result<ResolvedSource, DiagnosticSet> {
-        let source_index = self
-            .project
-            .config()
-            .data
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, source));
-        let mut configured = self.configured(source, source_index);
-        configured.location = location;
-        configured.display_name = display_name;
-        self.resolve_exact_configured(
-            &configured,
-            forced_provider.or(source.source_type.as_deref()),
-        )
-    }
-
-    pub(crate) fn resolve_unconfigured(
-        &self,
-        provider_id: &str,
-        location: SourceLocationSpec,
-        display_name: String,
-    ) -> Result<ResolvedSource, DiagnosticSet> {
-        self.resolve_exact_configured(
-            &ConfiguredSource {
-                provider_id: provider_id.to_string(),
-                location,
-                options: Value::Null,
-                display_name,
-                source_index: None,
-            },
-            Some(provider_id),
-        )
-    }
-
-    fn resolve_exact_configured(
-        &self,
-        configured: &ConfiguredSource,
-        forced_provider: Option<&str>,
-    ) -> Result<ResolvedSource, DiagnosticSet> {
-        let provider = match forced_provider {
-            Some(provider_id) => self.catalog.source_provider(provider_id).ok_or_else(|| {
-                DiagnosticSet::one(project_diagnostic(
-                    self.project.config_path(),
-                    format!("source provider `{provider_id}` is not registered"),
-                ))
-            })?,
-            None => self.select(configured, None)?,
-        };
-        decode_configured_source(provider.as_ref(), configured, self.project.config_path())
-    }
-
     fn resolve_directory(
         &self,
         configured: &ConfiguredSource,
-        forced_provider: Option<&str>,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let directory = configured.location.path();
-        let selected_provider = forced_provider
-            .map(|provider_id| self.select(configured, Some(provider_id)))
-            .transpose()?;
-        let decoded_directory = selected_provider
-            .as_ref()
-            .map(|provider| {
-                decode_configured_source(provider.as_ref(), configured, self.project.config_path())
-            })
-            .transpose()?;
         let files = discover_directory_files(directory).map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 self.project.config_path(),
@@ -167,340 +84,46 @@ impl<'a> SourceResolver<'a> {
             .filter_map(|config| config.out_dir.as_ref())
             .map(|out_dir| self.project.resolve_path(out_dir))
             .collect::<Vec<_>>();
-        let mut selected = Vec::new();
+        let mut resolved = Vec::new();
         for path in files.into_iter().filter(|path| {
             !managed_dimension_dirs
                 .iter()
                 .any(|out_dir| path_is_same_or_descendant(path, out_dir))
         }) {
-            let file_source = ConfiguredSource {
-                provider_id: String::new(),
-                display_name: path.display().to_string(),
-                location: SourceLocationSpec::new(path.clone()),
-                options: configured.options.clone(),
-                source_index: configured.source_index,
-            };
-            let provider = if let Some(provider) = &selected_provider {
-                let extensions = provider.descriptor().extensions;
-                let matches_extension = path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extensions.contains(&extension));
-                if !extensions.is_empty() && !matches_extension {
-                    continue;
-                }
-                Arc::clone(provider)
-            } else {
-                let Some(provider) = self.select_optional(&file_source)? else {
-                    continue;
-                };
-                provider
-            };
-            selected.push((path, provider));
-        }
-        if selected_provider.is_none() {
-            validate_directory_options(
-                &configured.options,
-                selected.iter().map(|(_, provider)| provider.as_ref()),
-                self.project.config_path(),
-                configured.source_index,
-            )?;
-        }
-
-        let mut resolved = Vec::new();
-        for (path, provider) in selected {
-            if let Some(template) = &decoded_directory {
-                let mut source = template.clone();
-                source.display_name = path.display().to_string();
-                source.location = SourceLocationSpec::new(path);
-                resolved.extend(self.expand_decoded(&provider, &source)?);
+            if path.extension().and_then(|extension| extension.to_str()) != Some("cfd") {
                 continue;
             }
-            let mut file_source = ConfiguredSource {
-                provider_id: provider.descriptor().id.to_string(),
+            let file_source = ConfiguredSource {
                 display_name: path.display().to_string(),
-                location: SourceLocationSpec::new(path),
-                options: configured.options.clone(),
-                source_index: configured.source_index,
+                location: CfdSourcePath::new(path.clone()),
             };
-            file_source.options =
-                options_for_provider(&file_source.options, provider.descriptor().option_keys);
-            resolved.extend(self.decode_and_expand(&provider, &file_source)?);
+            resolved.extend(self.resolve_file(&file_source)?);
         }
         Ok(resolved)
     }
 
-    fn select_optional(
+    fn resolve_file(
         &self,
-        configured: &ConfiguredSource,
-    ) -> Result<Option<Arc<dyn CfdSourceAdapter>>, DiagnosticSet> {
-        let option_keys = source_option_keys(&configured.options);
-        match self
-            .catalog
-            .select_source_provider(&source_ref(configured, None, &option_keys))
-        {
-            Ok(provider) => Ok(Some(provider)),
-            Err(CfdSourceSelectionError::NoCfdSourceAdapter) => Ok(None),
-            Err(error) => Err(DiagnosticSet::one(loader_selection_diagnostic(
-                self.project.config_path(),
-                configured,
-                error,
-            ))),
-        }
-    }
-
-    fn select(
-        &self,
-        configured: &ConfiguredSource,
-        source_type: Option<&str>,
-    ) -> Result<Arc<dyn CfdSourceAdapter>, DiagnosticSet> {
-        let option_keys = source_option_keys(&configured.options);
-        self.catalog
-            .select_source_provider(&source_ref(configured, source_type, &option_keys))
-            .map_err(|error| {
-                DiagnosticSet::one(loader_selection_diagnostic(
-                    self.project.config_path(),
-                    configured,
-                    error,
-                ))
-            })
-    }
-
-    fn decode_and_expand(
-        &self,
-        provider: &Arc<dyn CfdSourceAdapter>,
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let decoded =
-            decode_configured_source(provider.as_ref(), configured, self.project.config_path())?;
-        self.expand_decoded(provider, &decoded)
-    }
-
-    fn expand_decoded(
-        &self,
-        provider: &Arc<dyn CfdSourceAdapter>,
-        decoded: &ResolvedSource,
-    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        let context = SourceResolveContext {
-            project_root: self.project.root_dir(),
+        let source = CfdSource {
+            location: configured.location.clone(),
+            display_name: configured.display_name.clone(),
         };
-        provider
-            .resolve(context, decoded)?
-            .into_iter()
-            .map(|source| {
-                validate_resolved_source(provider.as_ref(), &source)?;
-                Ok(ResolvedLoaderSource {
-                    provider: Arc::clone(provider),
-                    source,
-                })
-            })
-            .collect()
+        self.catalog
+            .loader()
+            .resolve(&source)
+            .map(|source| vec![ResolvedLoaderSource { source }])
     }
 }
 
-pub(crate) fn validate_resolved_source(
-    provider: &dyn CfdSourceAdapter,
-    source: &ResolvedSource,
-) -> Result<(), DiagnosticSet> {
-    let expected = provider.descriptor().id;
-    if source.provider_id == expected && source.options.provider_id() == expected {
-        return Ok(());
-    }
-    Err(DiagnosticSet::one(Diagnostic::error(
-        "PROVIDER-SOURCE-CONTRACT",
-        "PROVIDER",
-        format!(
-            "provider `{expected}` resolved source `{}` with provider id `{}` and options owner `{}`",
-            source.display_name,
-            source.provider_id,
-            source.options.provider_id()
-        ),
-    )))
-}
-
-fn configured_source(
-    project: &Project,
-    source: &SourceConfig,
-    source_index: Option<usize>,
-) -> ConfiguredSource {
+fn configured_source(project: &Project, source: &SourceConfig) -> ConfiguredSource {
     let path = source.location();
-    let location = SourceLocationSpec::new(project.resolve_path(path));
+    let location = CfdSourcePath::new(project.resolve_path(path));
     let display_name = path.display().to_string();
     ConfiguredSource {
-        provider_id: source.source_type.clone().unwrap_or_default(),
         location,
-        options: source.options().clone(),
         display_name,
-        source_index,
-    }
-}
-
-fn decode_configured_source(
-    provider: &dyn CfdSourceAdapter,
-    source: &ConfiguredSource,
-    config_path: &Path,
-) -> Result<ResolvedSource, DiagnosticSet> {
-    let options = provider
-        .decode_options(&source.options)
-        .map_err(|diagnostics| source_option_diagnostics(diagnostics, config_path, source))?;
-    if options.provider_id() != provider.descriptor().id {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "PROVIDER-OPTIONS-CONTRACT",
-            "PROVIDER",
-            format!(
-                "provider `{}` decoded source options owned by `{}`",
-                provider.descriptor().id,
-                options.provider_id()
-            ),
-        )));
-    }
-    Ok(ResolvedSource {
-        provider_id: provider.descriptor().id.to_string(),
-        location: source.location.clone(),
-        options,
-        display_name: source.display_name.clone(),
-    })
-}
-
-fn source_option_diagnostics(
-    mut diagnostics: DiagnosticSet,
-    config_path: &Path,
-    source: &ConfiguredSource,
-) -> DiagnosticSet {
-    for diagnostic in &mut diagnostics.diagnostics {
-        let mut option_path = match diagnostic.primary.take() {
-            Some(Label {
-                location: SourceLocation::ProjectConfig { key_path, .. },
-                ..
-            }) => key_path,
-            Some(primary) => {
-                diagnostic.primary = Some(primary);
-                continue;
-            }
-            None => Vec::new(),
-        };
-        let mut key_path = Vec::new();
-        if let Some(index) = source.source_index {
-            key_path.extend(["data".to_string(), index.to_string()]);
-        }
-        key_path.append(&mut option_path);
-        diagnostic.primary = Some(Label {
-            location: SourceLocation::ProjectConfig {
-                path: config_path.to_path_buf(),
-                key_path,
-            },
-            message: None,
-        });
-    }
-    diagnostics
-}
-
-fn options_for_provider(options: &Value, keys: &[&str]) -> Value {
-    let Some(object) = options.as_object() else {
-        return options.clone();
-    };
-    Value::Object(
-        object
-            .iter()
-            .filter(|(key, _)| keys.contains(&key.as_str()))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-    )
-}
-
-fn validate_directory_options<'a>(
-    options: &Value,
-    providers: impl IntoIterator<Item = &'a dyn CfdSourceAdapter>,
-    config_path: &Path,
-    source_index: Option<usize>,
-) -> Result<(), DiagnosticSet> {
-    let Some(object) = options.as_object() else {
-        return Ok(());
-    };
-    let allowed = providers
-        .into_iter()
-        .flat_map(|provider| provider.descriptor().option_keys.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let mut diagnostics = DiagnosticSet::empty();
-    for key in object.keys().filter(|key| !allowed.contains(key.as_str())) {
-        diagnostics.push(directory_option_diagnostic(config_path, source_index, key));
-    }
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
-}
-
-fn directory_option_diagnostic(
-    config_path: &Path,
-    source_index: Option<usize>,
-    key: &str,
-) -> Diagnostic {
-    let mut key_path = Vec::new();
-    if let Some(index) = source_index {
-        key_path.extend(["data".to_string(), index.to_string()]);
-    }
-    key_path.push(key.to_string());
-    Diagnostic {
-        code: "PROJECT-001".to_string(),
-        stage: "PROJECT".to_string(),
-        severity: Severity::Error,
-        message: format!("unknown directory source option `{key}`"),
-        primary: Some(Label {
-            location: SourceLocation::ProjectConfig {
-                path: PathBuf::from(config_path),
-                key_path,
-            },
-            message: None,
-        }),
-        related: Vec::new(),
-        contexts: Vec::new(),
-    }
-}
-
-const fn source_ref<'a>(
-    source: &'a ConfiguredSource,
-    source_type: Option<&'a str>,
-    option_keys: &'a [&'a str],
-) -> ProjectSourceRef<'a> {
-    ProjectSourceRef {
-        source_type,
-        location: &source.location,
-        option_keys,
-    }
-}
-
-fn source_option_keys(options: &Value) -> Vec<&str> {
-    options
-        .as_object()
-        .map(|object| object.keys().map(String::as_str).collect())
-        .unwrap_or_default()
-}
-
-fn loader_selection_diagnostic(
-    config_path: &Path,
-    spec: &ConfiguredSource,
-    error: CfdSourceSelectionError,
-) -> Diagnostic {
-    let path = spec.location.path();
-    let source = path.display().to_string();
-    match error {
-        CfdSourceSelectionError::UnknownCfdSourceAdapter { id } => project_diagnostic(
-            config_path,
-            format!("source `{source}` uses unknown source provider `{id}`"),
-        ),
-        CfdSourceSelectionError::NoCfdSourceAdapter => project_diagnostic(
-            config_path,
-            format!("source `{source}` has no matching source provider"),
-        ),
-        CfdSourceSelectionError::AmbiguousCfdSourceAdapters { ids } => project_diagnostic(
-            config_path,
-            format!(
-                "source `{source}` matches multiple CFD providers; source type selection is unavailable ({})",
-                ids.join(", ")
-            ),
-        ),
     }
 }
 
@@ -524,87 +147,18 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_configured_source, validate_resolved_source, ConfiguredSource};
-    use crate::api::{
-        DecodedSourceOptions, DiagnosticSet, LoadedSource, ProbeResult, ProjectSourceRef,
-        ResolvedSource, SourceLoadContext, SourceLocationSpec, CfdSourceAdapter,
-        CfdSourceAdapterDescriptor,
-    };
-    use serde_json::Value;
-    use std::path::Path;
-
-    static DESCRIPTOR: CfdSourceAdapterDescriptor = CfdSourceAdapterDescriptor {
-        id: "contract-test",
-        display_name: "Contract test",
-        extensions: &[],
-        option_keys: &[],
-    };
-
-    #[derive(Debug)]
-    struct ContractProvider {
-        decoded_provider_id: &'static str,
-    }
-
-    impl CfdSourceAdapter for ContractProvider {
-        fn descriptor(&self) -> &'static CfdSourceAdapterDescriptor {
-            &DESCRIPTOR
-        }
-
-        fn probe(&self, _source: &ProjectSourceRef<'_>) -> ProbeResult {
-            ProbeResult::certain()
-        }
-
-        fn decode_options(&self, _options: &Value) -> Result<DecodedSourceOptions, DiagnosticSet> {
-            Ok(DecodedSourceOptions::new(self.decoded_provider_id, ()))
-        }
-
-        fn load(
-            &self,
-            _ctx: SourceLoadContext<'_>,
-            _source: &ResolvedSource,
-        ) -> Result<LoadedSource, DiagnosticSet> {
-            Ok(LoadedSource {
-                records: Vec::new(),
-            })
-        }
-    }
-
     #[test]
-    fn decoded_options_must_belong_to_selected_provider() {
-        let provider = ContractProvider {
-            decoded_provider_id: "other-provider",
-        };
-        let configured = ConfiguredSource {
-            provider_id: DESCRIPTOR.id.to_string(),
-            location: SourceLocationSpec::new("contract.source"),
-            options: Value::Null,
-            display_name: "contract.source".to_string(),
-            source_index: Some(0),
-        };
-        let result = decode_configured_source(&provider, &configured, Path::new("coflow.yaml"));
-        assert!(result.is_err(), "foreign decoded options must be rejected");
-        let Err(diagnostics) = result else {
-            return;
-        };
-        assert_eq!(diagnostics.diagnostics[0].code, "PROVIDER-OPTIONS-CONTRACT");
-    }
+    fn configured_source_keeps_project_relative_display_name() {
+        use super::configured_source;
+        use crate::project::{Project, SourceConfig};
+        use std::path::PathBuf;
 
-    #[test]
-    fn resolved_source_identity_must_match_selected_provider() {
-        let provider = ContractProvider {
-            decoded_provider_id: DESCRIPTOR.id,
-        };
-        let source = ResolvedSource {
-            provider_id: "other-provider".to_string(),
-            location: SourceLocationSpec::new("contract.source"),
-            options: DecodedSourceOptions::new(DESCRIPTOR.id, ()),
-            display_name: "contract.source".to_string(),
-        };
-        let result = validate_resolved_source(&provider, &source);
-        assert!(result.is_err(), "foreign resolved source must be rejected");
-        let Err(diagnostics) = result else {
-            return;
-        };
-        assert_eq!(diagnostics.diagnostics[0].code, "PROVIDER-SOURCE-CONTRACT");
+        let config =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
+        let project =
+            Project::open_schema_only(Some(config.as_path())).expect("example project should open");
+        let configured = configured_source(&project, &SourceConfig::from_path("data.cfd".into()));
+        assert_eq!(configured.display_name, "data.cfd");
+        assert!(configured.location.path().ends_with("data.cfd"));
     }
 }

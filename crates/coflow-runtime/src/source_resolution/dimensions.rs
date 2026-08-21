@@ -1,7 +1,6 @@
 use super::{project_diagnostic, ConfiguredSource, ResolvedDimensionSource, SourceResolver};
+use crate::api::{CfdSourcePath, Diagnostic, DiagnosticSet};
 use crate::dimensions::{DimensionField, DimensionRuntimePlan};
-use crate::api::{Diagnostic, DiagnosticSet, SourceLocationSpec};
-use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -135,15 +134,12 @@ fn configured_dimension_source(
     );
     Ok(Some((
         ConfiguredSource {
-            provider_id: String::new(),
-            location: SourceLocationSpec::new(path),
-            options: source_options(matched_fields[0], &extension),
+            location: CfdSourcePath::new(path),
             display_name: if display_name.is_empty() {
                 directory.display().to_string()
             } else {
                 display_name
             },
-            source_index: None,
         },
         matched_fields.into_iter().cloned().collect(),
     )))
@@ -158,8 +154,4 @@ fn fields_for_source_path<'a>(
         .copied()
         .filter(|field| field.matches_source_path(path))
         .collect()
-}
-
-fn source_options(_field: &DimensionField, _extension: &str) -> Value {
-    Value::Object(serde_json::Map::new())
 }

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use coflow_cft::CheckStatementId;
-use coflow_checker::{CheckDiagnostic, CheckOutput, CheckProjection, CheckTarget, CheckTask};
-use coflow_data_model::{CfdDataModel, CfdRecordId};
+use crate::checker::{CheckDiagnostic, CheckOutput, CheckProjection, CheckTarget, CheckTask};
+use crate::data_model::{CfdDataModel, CfdRecordId};
+use coflow_language::CheckStatementId;
 
 use crate::RecordCoordinate;
 

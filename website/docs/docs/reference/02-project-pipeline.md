@@ -3,7 +3,7 @@
 项目执行只有一条输入链路：
 
 ```text
-coflow.yaml -> CFT compiler -> CFD catalog -> parser/lowerer
+coflow.yaml -> CFT compiler -> fixed CFD loader -> parser/lowerer
             -> CfdDataModel -> checks -> CodegenInput -> language source files
 ```
 

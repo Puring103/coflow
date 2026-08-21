@@ -5,13 +5,11 @@
 | crate | 职责 |
 | --- | --- |
 | `coflow-language` | CFT/CFD parser、AST、span 和结构限制 |
-| `coflow-data-model` | source-neutral 值、记录 identity、引用和来源索引 |
-| `coflow-checker` | schema-guided check 计划与诊断 |
-| `coflow-runtime` | 配置、CFD catalog、generation、CLI/editor/LSP 共享会话 |
+| `coflow-runtime` | 配置、CFD 文档/数据模型、checker、generation、CLI/editor/LSP 共享会话 |
 | `coflow-codegen-api` | `CodeGenerator`、`CodegenInput`、`CodeArtifactSet` |
 | `coflow-codegen-csharp` | C# declarations、typed binding 和 runtime 入口 |
 
-旧表格 loader、exporter、通用 source provider 和数据 artifact crate 不属于最终 workspace。未来扩展点只有目标语言 generator。
+输入格式固定为 CFD；架构扩展点只有目标语言 generator。
 
 ## 核心接口
 
@@ -21,14 +19,10 @@ pub trait CodeGenerator {
     fn generate(&self, input: CodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError>;
 }
 
-pub struct Runtime {
-    project: Project,
-    published: Option<Arc<ProjectGeneration>>,
-}
-
 impl Runtime {
-    pub fn refresh(&mut self, overlays: &[CfdOverlay]) -> Result<RefreshResult, DiagnosticSet>;
-    pub fn codegen(&self, request: &CodegenRequest) -> Result<CodeArtifactSet, DiagnosticSet>;
+    pub fn new() -> Self;
+    pub fn open_read_only(&self, project: Project) -> Result<ReadOnlyProjectSession, DiagnosticSet>;
+    pub fn open_write(&self, project: Project) -> Result<WriteProjectSession, DiagnosticSet>;
 }
 ```
 

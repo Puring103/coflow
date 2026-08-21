@@ -1,10 +1,10 @@
 //! Record views and write outcomes exposed at the engine boundary.
 
 use crate::api::DiagnosticSet;
-use coflow_data_model::{
+use crate::data_model::{
     format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdValue,
 };
-use coflow_data_model::{RecordOrigin, SourceLocation};
+use crate::data_model::{RecordOrigin, SourceLocation};
 use serde::{Deserialize, Serialize};
 
 use super::RecordCoordinate;
@@ -17,12 +17,11 @@ pub struct RecordView<'a> {
     pub display_path: &'a str,
     pub record: &'a CfdRecord,
     pub origin: &'a RecordOrigin,
-    pub provider_id: &'a str,
 }
 
 /// Outcome of one staged write operation inside a mutation transaction.
 ///
-/// Provider diagnostics stay attached to the operation that emitted them.
+/// Writer diagnostics stay attached to the operation that emitted them.
 /// Generation diagnostics are reported once by [`crate::MutationReport`].
 ///
 /// `renamed` is `Some(old, new)` when the write modified a record's `id`
@@ -65,7 +64,7 @@ pub struct RefTargetInfo {
 pub struct RecordReferenceInfo {
     pub target: RecordCoordinate,
     pub path: CfdPath,
-    pub dimension: Option<coflow_data_model::DimensionRefCoordinate>,
+    pub dimension: Option<crate::data_model::DimensionRefCoordinate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -107,13 +106,6 @@ pub enum DimensionValueOrigin {
         end_line: usize,
         end_character: usize,
     },
-    TableCell {
-        path: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        sheet: Option<String>,
-        row: usize,
-        column: usize,
-    },
 }
 
 impl DimensionValueOrigin {
@@ -131,17 +123,6 @@ impl DimensionValueOrigin {
                 start_character,
                 end_line,
                 end_character,
-            }),
-            SourceLocation::TableCell {
-                path,
-                sheet,
-                row,
-                column,
-            } => Some(Self::TableCell {
-                path: path.display().to_string(),
-                sheet,
-                row,
-                column,
             }),
         }
     }

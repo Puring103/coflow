@@ -4,8 +4,8 @@ use crate::api::{
     RewriteDimensionRecordRequest, WriteCellRequest, WriteContext, WriteDimensionValueRequest,
     WriteRecordRef,
 };
-use coflow_cft::RecordKey;
-use coflow_data_model::CfdValue;
+use crate::data_model::CfdValue;
+use coflow_language::RecordKey;
 use std::collections::BTreeSet;
 
 use crate::mutation::PreparedMutationOp;
@@ -158,7 +158,7 @@ pub(crate) fn stage_mutation_op(
             })
         }
         _ => Err(plan_mismatch(
-            "prepared mutation and provider execution plan do not match",
+            "prepared mutation and writer execution plan do not match",
         )),
     }
 }
@@ -209,14 +209,14 @@ pub(crate) fn stage_field_mutation_batch(
         schema: session.schema(),
         model: Some(&session.model),
     };
-    let provider_outcomes = first_plan
+    let writer_outcomes = first_plan
         .writer
         .write_field_batch(ctx, &requests)
         .map_err(|failure| MutationBatchFailure {
             index: failure.index,
             diagnostics: failure.diagnostics,
         })?;
-    if provider_outcomes.len() != batch.len() {
+    if writer_outcomes.len() != batch.len() {
         return Err(MutationBatchFailure {
             index: 0,
             diagnostics: plan_mismatch("writer returned the wrong number of field batch outcomes"),
@@ -225,8 +225,8 @@ pub(crate) fn stage_field_mutation_batch(
     batch
         .iter()
         .enumerate()
-        .zip(provider_outcomes)
-        .map(|((index, (op, execution)), provider_outcome)| {
+        .zip(writer_outcomes)
+        .map(|((index, (op, execution)), writer_outcome)| {
             let (
                 PreparedMutationOp::SetField { record, .. },
                 MutationExecutionPlan::WriteField(plan),
@@ -239,7 +239,7 @@ pub(crate) fn stage_field_mutation_batch(
                     ),
                 });
             };
-            Ok(field_write_outcome(plan, record, provider_outcome))
+            Ok(field_write_outcome(plan, record, writer_outcome))
         })
         .collect()
 }
@@ -265,8 +265,8 @@ fn stage_write_field(
         schema,
         model: Some(&session.model),
     };
-    let provider_outcome = plan.writer.write_field(ctx, &request)?;
-    Ok(field_write_outcome(plan, host_record, provider_outcome))
+    let writer_outcome = plan.writer.write_field(ctx, &request)?;
+    Ok(field_write_outcome(plan, host_record, writer_outcome))
 }
 
 fn stage_write_dimension_value(
@@ -288,7 +288,7 @@ fn stage_write_dimension_value(
         .resolve_dimension(&coordinate.dimension)
         .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
     let result = plan.manager.write_dimension_value(
-        crate::api::TableContext {
+        crate::api::CfdWriteContext {
             project_root: session.project.root_dir(),
         },
         &WriteDimensionValueRequest {
@@ -322,7 +322,7 @@ fn stage_write_dimension_value(
 fn field_write_outcome(
     plan: &WriteFieldPlan,
     host_record: &RecordCoordinate,
-    provider_outcome: crate::api::WriteOutcome,
+    writer_outcome: crate::api::WriteOutcome,
 ) -> WriteOutcome {
     WriteOutcome {
         touched: if host_record == &plan.target.coordinate {
@@ -335,7 +335,7 @@ fn field_write_outcome(
         renamed: None,
         reordered: false,
         affected_files: vec![plan.target.display_path.clone()],
-        diagnostics: provider_outcome.diagnostics,
+        diagnostics: writer_outcome.diagnostics,
     }
 }
 
@@ -415,7 +415,6 @@ fn stage_insert_record(
     let schema = session.schema();
     let request = InsertRecordRequest {
         source: &plan.source,
-        sheet: plan.sheet.as_deref(),
         record_key,
         actual_type,
         fields,
@@ -427,7 +426,7 @@ fn stage_insert_record(
         schema,
         model: Some(&session.model),
     };
-    let provider_outcome = plan.writer.insert_record(ctx, &request)?;
+    let writer_outcome = plan.writer.insert_record(ctx, &request)?;
     let inserted = RecordCoordinate::try_new(actual_type, record_key)
         .map_err(|_| plan_mismatch("insert coordinate became invalid before staging"))?;
     Ok(WriteOutcome {
@@ -437,7 +436,7 @@ fn stage_insert_record(
         renamed: None,
         reordered: false,
         affected_files: vec![file.to_string()],
-        diagnostics: provider_outcome.diagnostics,
+        diagnostics: writer_outcome.diagnostics,
     })
 }
 
@@ -458,7 +457,7 @@ fn stage_delete_record(
         schema,
         model: Some(&session.model),
     };
-    let provider_outcome = plan.writer.delete_record(ctx, &request)?;
+    let writer_outcome = plan.writer.delete_record(ctx, &request)?;
     let old_key = record.key.clone();
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     rewrite_dimension_records(
@@ -475,7 +474,7 @@ fn stage_delete_record(
         renamed: None,
         reordered: false,
         affected_files: affected_files.into_iter().collect(),
-        diagnostics: provider_outcome.diagnostics,
+        diagnostics: writer_outcome.diagnostics,
     })
 }
 
@@ -506,7 +505,7 @@ fn stage_reorder_records(
         schema: session.schema(),
         model: Some(&session.model),
     };
-    let provider_outcome = plan.writer.reorder_records(
+    let writer_outcome = plan.writer.reorder_records(
         ctx,
         &ReorderRecordsRequest {
             source: &plan.source,
@@ -520,7 +519,7 @@ fn stage_reorder_records(
         renamed: None,
         reordered: true,
         affected_files: vec![plan.display_path.clone()],
-        diagnostics: provider_outcome.diagnostics,
+        diagnostics: writer_outcome.diagnostics,
     })
 }
 
@@ -539,7 +538,6 @@ fn stage_transfer_record(
         ctx,
         &InsertRecordRequest {
             source: &plan.destination,
-            sheet: plan.destination_sheet.as_deref(),
             record_key: &plan.coordinate.key,
             actual_type: &plan.coordinate.actual_type,
             fields: &plan.fields,
@@ -599,7 +597,7 @@ fn rewrite_dimension_records(
             .resolve_dimension(&action.field.dimension)
             .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
         let result = action.manager.rewrite_dimension_record(
-            crate::api::TableContext {
+            crate::api::CfdWriteContext {
                 project_root: session.project.root_dir(),
             },
             &RewriteDimensionRecordRequest {

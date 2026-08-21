@@ -1,9 +1,9 @@
+use crate::api::DiagnosticSet;
 use crate::project::file_discovery::{
     discover_directory_files_with, DirectoryDiscoveryError, DirectoryDiscoveryErrorKind,
 };
 use crate::project::schema_path_policy::{SchemaFile, SchemaPathPolicy};
 use crate::project::SchemaConfig;
-use crate::api::DiagnosticSet;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

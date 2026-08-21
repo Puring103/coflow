@@ -1,14 +1,13 @@
 mod plan;
 
-use crate::dimensions::DimensionField;
 use crate::api::{
-    DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceEntry,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, CfdSourceCatalog, ResolvedSource,
-    Severity, SourceLocation, SourceLocationSpec, TableContext,
+    CfdSource, CfdSourceCatalog, CfdSourcePath, CfdWriteContext, Diagnostic, DiagnosticSet,
+    DimensionSourceEntry, DimensionSourceRequest, Label, Severity, SourceLocation,
 };
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdDataModel;
+use crate::data_model::CfdDataModel;
+use crate::dimensions::DimensionField;
 use crate::project::Project;
+use coflow_language::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -158,30 +157,8 @@ fn commit_dimension_sync(
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
 ) -> bool {
-    let Some(manager) = catalog.dimension_source_manager(&operation.provider_id) else {
-        diagnostics.push(dimension_diagnostic(
-            project.config_path(),
-            &operation.dimension,
-            "DIM-SOURCE-002",
-            format!(
-                "dimension source provider `{}` is not registered",
-                operation.provider_id
-            ),
-        ));
-        return false;
-    };
-    let options = match manager.source_options(&DimensionSourceOptionsRequest {
-        sheet: &operation.sheet,
-        actual_type: &operation.actual_type,
-    }) {
-        Ok(options) => options,
-        Err(error) => {
-            diagnostics.extend(error);
-            return false;
-        }
-    };
-    let source =
-        dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
+    let manager = catalog.dimension_source_manager();
+    let source = dimension_resolved_source(project, &operation.path);
     if let Err(error) =
         transaction.snapshot_file(&operation.path, &operation.dimension, project.config_path())
     {
@@ -189,7 +166,7 @@ fn commit_dimension_sync(
         return false;
     }
     let result = manager.sync_dimension_source(
-        TableContext {
+        CfdWriteContext {
             project_root: project.root_dir(),
         },
         &DimensionSourceRequest {
@@ -232,9 +209,7 @@ pub(super) enum DimensionGenerationPlanOp {
 #[derive(Debug)]
 pub(super) struct DimensionGenerationOperation {
     pub(super) dimension: String,
-    pub(super) provider_id: String,
     pub(super) path: PathBuf,
-    pub(super) sheet: String,
     pub(super) actual_type: String,
     pub(super) entries: Vec<DimensionSourceEntry>,
     pub(super) variants: Vec<String>,
@@ -361,20 +336,13 @@ impl FileSnapshot {
     }
 }
 
-fn dimension_resolved_source(
-    project: &Project,
-    path: &Path,
-    provider_id: &str,
-    options: DecodedSourceOptions,
-) -> ResolvedSource {
+fn dimension_resolved_source(project: &Project, path: &Path) -> CfdSource {
     let display_name = path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
         crate::project::path_to_slash,
     );
-    ResolvedSource {
-        provider_id: provider_id.to_string(),
-        location: SourceLocationSpec::new(path.to_path_buf()),
-        options,
+    CfdSource {
+        location: CfdSourcePath::new(path.to_path_buf()),
         display_name,
     }
 }
@@ -411,13 +379,12 @@ mod tests {
         DimensionGenerationOperation, DimensionGenerationPlan, DimensionGenerationPlanOp,
         DimensionGenerationTransaction,
     };
-    use crate::api::CfdProviderBindings;
     use crate::catalog::CfdSourceCatalog;
-    use coflow_cft::{
+    use crate::data_model::{CfdDataModel, LoadedValueDraft};
+    use crate::project::Project;
+    use coflow_language::{
         BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
     };
-    use coflow_data_model::{CfdDataModel, LoadedValueDraft};
-    use crate::project::Project;
 
     use crate::dimensions::DimensionField;
 
@@ -451,14 +418,14 @@ mod tests {
         )
         .expect("write config");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
-        let modules = coflow_cft::parse_modules([CftFile::new(
+        let modules = coflow_language::parse_modules([CftFile::new(
             ModuleId::from("schema.cft"),
             "schema.cft".into(),
             "type Item { name: string; } type Other { label: string; }",
         )]);
         let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
             .expect("dimensions");
-        let schema = coflow_cft::build_schema(&modules, &dimensions).expect("schema");
+        let schema = coflow_language::build_schema(&modules, &dimensions).expect("schema");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("item", "Item", [("name", LoadedValueDraft::from("Item"))]);
         builder.add_record(
@@ -547,9 +514,7 @@ mod tests {
                 DimensionGenerationPlanOp::Remove(missing_remove),
                 DimensionGenerationPlanOp::Sync(DimensionGenerationOperation {
                     dimension: "language".to_string(),
-                    provider_id: "missing-provider".to_string(),
                     path: generated,
-                    sheet: "Item_name".to_string(),
                     actual_type: "Item".to_string(),
                     entries: Vec::new(),
                     variants: vec!["zh".to_string()],
@@ -559,18 +524,13 @@ mod tests {
             ],
         };
 
-        let result = commit_dimension_generation(
-            &project,
-            plan,
-            &CfdSourceCatalog::from_bindings(CfdProviderBindings::default()),
-        );
+        let result = commit_dimension_generation(&project, plan, &CfdSourceCatalog::default());
         let codes = result
             .diagnostics
             .diagnostics
             .iter()
             .map(|diagnostic| diagnostic.code.as_str())
             .collect::<std::collections::BTreeSet<_>>();
-        assert!(codes.contains("DIM-SOURCE-002"));
         assert!(codes.contains("DIM-SOURCE-005"));
         assert!(codes.contains("DIM-SOURCE-006"));
         std::fs::remove_dir_all(root).expect("remove temp dir");

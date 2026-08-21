@@ -1,6 +1,6 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName};
+use coflow_language::{CftEnum, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]

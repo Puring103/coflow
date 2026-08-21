@@ -3,11 +3,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::api::DiagnosticSet;
-use coflow_cft::{CftModuleSet, CftSchema};
-use coflow_data_model::{
+use crate::data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
 };
 use crate::project::{path_to_slash, Project};
+use coflow_language::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
@@ -131,7 +131,6 @@ impl ProjectSession {
             display_path: record_ref.display_path.as_str(),
             record,
             origin: &record_ref.origin,
-            provider_id: record_ref.provider_id.as_str(),
         })
     }
 
@@ -222,7 +221,6 @@ impl ProjectSession {
                 display_path: record_ref.display_path.as_str(),
                 record,
                 origin: &record_ref.origin,
-                provider_id: record_ref.provider_id.as_str(),
             })
         })
     }
@@ -298,11 +296,6 @@ pub struct ProjectSchemaSession {
 
 impl ProjectSchemaSession {
     #[must_use]
-    pub(crate) const fn project(&self) -> &Project {
-        &self.project
-    }
-
-    #[must_use]
     pub fn schema(&self) -> Option<&CftSchema> {
         self.schema.as_deref()
     }
@@ -327,7 +320,6 @@ impl ProjectSchemaSession {
     pub fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
     }
-
 }
 
 fn display_source_path(source: &str) -> String {

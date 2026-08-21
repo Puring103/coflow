@@ -45,7 +45,7 @@ codegen:
 
 ```csharp
 var database = Game.Config.GameConfig.Load(
-    new DelegateCfdSourceProvider(File.ReadAllText));
+    new DelegateCfdTextLoader(File.ReadAllText));
 ```
 
 生成代码声明 `SourceFiles`，runtime 只按这个清单读取 CFD，不扫描目录，也不解析 CFT。

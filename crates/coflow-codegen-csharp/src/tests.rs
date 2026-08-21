@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use super::*;
-use coflow_cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
+use coflow_language::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
 
 fn schema(source: &str) -> CftSchema {
@@ -31,9 +31,10 @@ fn emits_declarations_and_direct_cfd_entrypoint() {
     assert!(output.contains("SourceFiles"));
     assert!(output.contains("ICfdTypeBinding"));
     assert!(output.contains("DeclaredType => \"Item\""));
-    assert!(output.contains(
-        "Load(ICfdSourceProvider provider, CfdLoadOptions? options = null)"
-    ));
+    assert!(output.contains("CfdValueReader.String"));
+    assert!(output.contains("ReadItemFields"));
+    assert!(!output.contains("CfdMaterializer"));
+    assert!(output.contains("Load(ICfdTextLoader loader, CfdLoadOptions? options = null)"));
     assert!(output.contains("CfdParser.ParseAll"));
     assert!(output.contains("Coflow.Cfd.Runtime"));
     assert!(!output.contains("Newtonsoft.Json"));
@@ -55,14 +56,19 @@ fn preserves_display_metadata_as_xml_docs() {
         .iter()
         .find(|file| file.relative_path.as_os_str() == "Item.cs")
         .expect("item file");
-    assert!(item.contents.contains("<summary>Item: Description</summary>"));
+    assert!(item
+        .contents
+        .contains("<summary>Item: Description</summary>"));
     assert!(item.contents.contains("<summary>Name</summary>"));
 }
 
 #[test]
 fn descriptor_declares_cfd_runtime_contract() {
     assert_eq!(CSHARP_CFD_CODEGEN_DESCRIPTOR.id, "csharp");
-    assert_eq!(CSHARP_CFD_CODEGEN_DESCRIPTOR.runtime_package, "Coflow.Cfd.Runtime");
+    assert_eq!(
+        CSHARP_CFD_CODEGEN_DESCRIPTOR.runtime_package,
+        "Coflow.Cfd.Runtime"
+    );
     assert!(CSHARP_CFD_CODEGEN_DESCRIPTOR.needs_model);
 }
 

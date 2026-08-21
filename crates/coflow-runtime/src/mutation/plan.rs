@@ -109,7 +109,6 @@ fn prepare_planned_op(
         }
         MutationOp::InsertRecord {
             file,
-            sheet,
             actual_type,
             key,
             fields,
@@ -120,7 +119,6 @@ fn prepare_planned_op(
             pending_inserts,
             MutationOp::InsertRecord {
                 file,
-                sheet,
                 actual_type,
                 key,
                 fields,

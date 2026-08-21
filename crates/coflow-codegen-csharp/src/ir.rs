@@ -8,7 +8,7 @@ use crate::names::{
     csharp_type_name, index_param_name, pluralize,
 };
 use crate::CsharpCodegenError;
-use coflow_cft::CftSchema;
+use coflow_language::CftSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

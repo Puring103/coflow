@@ -1,36 +1,36 @@
-use crate::{DiagnosticSet, ResolvedSource};
+use crate::{CfdSource, DiagnosticSet};
 
-/// Provider-owned compensation state for a source transaction.
+/// Writer-owned compensation state for a source transaction.
 ///
 /// `abort` releases state when enlistment fails before writes start.
 /// `compensate` restores staged writes after later failures. Publication is
-/// two phase so every provider remains compensatable until all prepare.
+/// two phase so every compensation remains available until all prepares finish.
 pub trait SourceTransactionCompensation: Send {
     /// Release transaction state before source mutation starts.
     ///
     /// # Errors
     ///
-    /// Returns provider diagnostics when transaction state cannot be released.
+    /// Returns writer diagnostics when transaction state cannot be released.
     fn abort(&mut self) -> Result<(), DiagnosticSet>;
 
     /// Restore the source after a staged mutation.
     ///
     /// # Errors
     ///
-    /// Returns provider diagnostics when the source cannot be restored completely.
+    /// Returns writer diagnostics when the source cannot be restored completely.
     fn compensate(&mut self) -> Result<(), DiagnosticSet>;
 
     /// Publish staged writes while retaining enough state to compensate them.
     ///
-    /// The runtime calls this for every provider before finalizing any provider.
+    /// The runtime calls this for every compensation before finalizing writes.
     /// A successful implementation must remain compensatable until `commit`.
     ///
     /// # Errors
     ///
-    /// Returns provider diagnostics when staged writes cannot be published.
+    /// Returns writer diagnostics when staged writes cannot be published.
     fn prepare_commit(&mut self) -> Result<(), DiagnosticSet>;
 
-    /// Release compensation state after every provider published successfully.
+    /// Release compensation state after every write published successfully.
     fn commit(&mut self);
 }
 
@@ -38,7 +38,7 @@ pub trait SourceTransactionCompensation: Send {
 pub enum SourceTransaction {
     /// Runtime snapshots the local source bytes and restores them on failure.
     RuntimeSnapshot,
-    /// Provider owns transaction state and can compensate writes.
+    /// The writer owns transaction state and can compensate writes.
     Compensation(Box<dyn SourceTransactionCompensation>),
     /// The source cannot participate in an atomic mutation transaction.
     Unsupported,
@@ -55,13 +55,13 @@ impl std::fmt::Debug for SourceTransaction {
 
 impl SourceTransaction {
     #[must_use]
-    pub fn unsupported_diagnostic(source: &ResolvedSource) -> DiagnosticSet {
+    pub fn unsupported_diagnostic(source: &CfdSource) -> DiagnosticSet {
         DiagnosticSet::one(crate::Diagnostic::error(
             "WRITE-TXN-UNSUPPORTED",
             "WRITE",
             format!(
-                "provider `{}` does not declare compensation for source `{}`",
-                source.provider_id, source.display_name
+                "CFD writer does not declare compensation for source `{}`",
+                source.display_name
             ),
         ))
     }

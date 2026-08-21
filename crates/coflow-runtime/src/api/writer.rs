@@ -2,30 +2,29 @@ mod capabilities;
 mod requests;
 mod transaction;
 
-pub use capabilities::{WriterCapabilities, WriterDescriptor};
+pub use capabilities::{CfdWriterDescriptor, WriterCapabilities};
 pub use requests::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-    WriteOutcome, WriteRecordRef,
+    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
-use crate::{Diagnostic, DiagnosticSet, ResolvedSource};
+use crate::{CfdSource, Diagnostic, DiagnosticSet};
 
 /// Trait for source-specific writers that persist field edits.
 ///
-/// Implementations dispatch on [`coflow_data_model::RecordOrigin`] to locate the cell/span and
+/// Implementations dispatch on [`crate::data_model::RecordOrigin`] to locate the cell/span and
 /// write the new value to the source file. The runtime owns
 /// transaction-level mutation reporting and generation rebuilds.
-pub trait SourceWriter: Send + Sync {
-    fn descriptor(&self) -> &'static WriterDescriptor;
+pub trait CfdDocumentWriter: Send + Sync {
+    fn descriptor(&self) -> &'static CfdWriterDescriptor;
 
     /// Return capabilities for one resolved source.
     ///
-    /// Providers whose mutation support depends on the concrete storage
-    /// format should override this instead of advertising provider-wide
-    /// write access for every source they can read.
-    fn capabilities(&self, _source: &ResolvedSource) -> WriterCapabilities {
+    /// The runtime has one concrete CFD storage format; this hook remains an
+    /// internal seam for capability checks during mutation planning.
+    fn capabilities(&self, _source: &CfdSource) -> WriterCapabilities {
         self.descriptor().capabilities.clone()
     }
 
@@ -36,11 +35,11 @@ pub trait SourceWriter: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returns diagnostics when the provider cannot initialize its transaction state.
+    /// Returns diagnostics when the writer cannot initialize its transaction state.
     fn begin_transaction(
         &self,
         _ctx: WriteContext<'_>,
-        source: &ResolvedSource,
+        source: &CfdSource,
     ) -> Result<SourceTransaction, DiagnosticSet> {
         let _ = source;
         Ok(SourceTransaction::RuntimeSnapshot)
@@ -64,7 +63,7 @@ pub trait SourceWriter: Send + Sync {
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet>;
 
-    /// Persist multiple field changes for one resolved source. Providers may
+    /// Persist multiple field changes for one CFD source. The writer may
     /// override this to share source open/save work across the batch.
     ///
     /// # Errors

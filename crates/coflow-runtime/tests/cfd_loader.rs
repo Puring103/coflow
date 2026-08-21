@@ -8,15 +8,15 @@
     clippy::unwrap_used
 )]
 
-use coflow_runtime::{
-    ResolvedSource, SourceLoadContext, SourceLocation, SourceLocationSpec, CfdSourceAdapter,
+use coflow_language::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_data_model::CfdDataModel;
-use coflow_data_model::{CfdValue, LoadedValueDraft};
+use coflow_runtime::CfdDataModel;
 use coflow_runtime::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
 };
+use coflow_runtime::{CfdLoadContext, CfdSource, CfdSourcePath, SourceLocation};
+use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +25,18 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+}
+
+#[test]
+fn loader_rejects_non_cfd_sources_before_reading() {
+    let loader = CfdLoader;
+    let source = CfdSource {
+        location: CfdSourcePath::new("data/items.json"),
+        display_name: "data/items.json".to_string(),
+    };
+
+    let diagnostics = loader.resolve(&source).expect_err("only CFD is supported");
+    assert!(diagnostics.contains("unsupported extension"));
 }
 
 #[test]
@@ -427,7 +439,7 @@ fn schema_free_ast_matches_loader_record_coordinates_for_supported_syntax() -> T
     "#;
 
     let loader_records = parse_cfd_input_records(&schema, source)?;
-    let (ast, diagnostics) = coflow_cfd::parse_cfd(source);
+    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(source);
     assert!(
         diagnostics.is_empty(),
         "schema-free parser diagnostics: {diagnostics:?}"
@@ -525,7 +537,6 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
 
     Ok(())
 }
-
 
 #[test]
 fn cfd_rejects_reserved_id_fields() {
@@ -681,7 +692,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let schema = compile_schema("type Item { value: int; }");
     let schema = &schema;
-    let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
+    let root = std::env::temp_dir().join("coflow-language-loader-origin-spans");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }
@@ -695,17 +706,13 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
     let cfd_loader = CfdLoader;
     let loaded = cfd_loader
         .load(
-            SourceLoadContext {
+            CfdLoadContext {
                 project_root: &root,
                 schema: schema,
                 source_text: None,
             },
-            &ResolvedSource {
-                provider_id: "cfd".to_string(),
-                location: SourceLocationSpec::new(source_path.clone()),
-                options: CfdLoader
-                    .decode_options(&serde_json::Value::Null)
-                    .expect("decode cfd options"),
+            &CfdSource {
+                location: CfdSourcePath::new(source_path.clone()),
                 display_name: source_path.display().to_string(),
             },
         )

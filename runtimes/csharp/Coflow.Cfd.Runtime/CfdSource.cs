@@ -17,16 +17,16 @@ public readonly struct CfdSource : IEquatable<CfdSource>
     public override int GetHashCode() => HashCode.Combine(Path, Text);
 }
 
-public interface ICfdSourceProvider
+public interface ICfdTextLoader
 {
     bool TryLoad(string logicalPath, out string? text);
 }
 
-public sealed class DelegateCfdSourceProvider : ICfdSourceProvider
+public sealed class DelegateCfdTextLoader : ICfdTextLoader
 {
     private readonly Func<string, string?> _loader;
 
-    public DelegateCfdSourceProvider(Func<string, string?> loader) => _loader = loader;
+    public DelegateCfdTextLoader(Func<string, string?> loader) => _loader = loader;
 
     public bool TryLoad(string logicalPath, out string? text)
     {

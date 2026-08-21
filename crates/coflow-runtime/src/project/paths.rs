@@ -1,5 +1,5 @@
-use crate::project::diagnostics::plain_error;
 use crate::api::DiagnosticSet;
+use crate::project::diagnostics::plain_error;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 

@@ -3,10 +3,10 @@
 //! Each function takes the parsed [`CfdAst`] (plus optional compiled schema)
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
-use coflow_cfd::{
+use coflow_language::cfd::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdRecord, CfdSyntaxDiagnostic, CfdValue,
 };
-use coflow_cft::{CftSchema, CftValueType, Span};
+use coflow_language::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
 
 // ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
@@ -37,7 +37,7 @@ pub fn syntax_diagnostics(source: &str, errors: &[CfdSyntaxDiagnostic]) -> Vec<V
             json!({
                 "range": range,
                 "severity": 1,
-                "source": "coflow-cfd",
+                "source": "coflow-language",
                 "message": e.message,
             })
         })

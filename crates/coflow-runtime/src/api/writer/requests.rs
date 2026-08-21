@@ -1,6 +1,6 @@
-use crate::{DiagnosticSet, ResolvedSource};
-use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin};
+use crate::data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin};
+use crate::{CfdSource, DiagnosticSet};
+use coflow_language::CftSchema;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -19,18 +19,16 @@ pub struct WriteCellRequest<'a> {
     /// Optional pre-resolved schema type for the record. Writers that produce
     /// typed source representations (e.g. CFD) use this for serialization.
     pub schema: &'a CftSchema,
-    /// Original `ResolvedSource` that produced the record. Writers consult
-    /// `source.options` to retrieve provider-specific configuration.
-    pub source: &'a ResolvedSource,
+    /// Original CFD source that produced the record.
+    pub source: &'a CfdSource,
 }
 
 /// Request describing a new top-level record insertion.
 #[derive(Debug, Clone)]
 pub struct InsertRecordRequest<'a> {
     /// Target source that should receive the new record.
-    pub source: &'a ResolvedSource,
-    /// Target sheet/table name for table sources. Text writers may ignore it.
-    pub sheet: Option<&'a str>,
+    pub source: &'a CfdSource,
+    /// CFD records are document-addressed; no sheet/table selector is needed.
     pub record_key: &'a str,
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
@@ -45,10 +43,10 @@ pub struct DeleteRecordRequest<'a> {
     pub origin: &'a RecordOrigin,
     pub record_key: &'a str,
     pub actual_type: &'a str,
-    pub source: &'a ResolvedSource,
+    pub source: &'a CfdSource,
 }
 
-/// A stable record identity paired with its provider-owned physical origin.
+/// A stable record identity paired with its CFD physical origin.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteRecordRef<'a> {
     pub origin: &'a RecordOrigin,
@@ -74,7 +72,7 @@ pub enum ReorderRecordsOperation<'a> {
 /// Request describing one atomic top-level record reorder.
 #[derive(Debug, Clone, Copy)]
 pub struct ReorderRecordsRequest<'a> {
-    pub source: &'a ResolvedSource,
+    pub source: &'a CfdSource,
     pub operation: ReorderRecordsOperation<'a>,
 }
 
@@ -85,14 +83,14 @@ pub struct RenameRecordRequest<'a> {
     pub old_key: &'a str,
     pub new_key: &'a str,
     pub actual_type: &'a str,
-    pub source: &'a ResolvedSource,
+    pub source: &'a CfdSource,
     pub schema: &'a CftSchema,
 }
 
-/// Provider diagnostics produced by a successful writer call.
+/// Writer diagnostics produced by a successful CFD writer call.
 ///
 /// The runtime owns mutation lifecycle reporting and rebuilds the published
-/// generation after the complete transaction. Providers therefore report only
+/// generation after the complete transaction. The writer therefore reports only
 /// source-specific diagnostics here, not a second copy of mutation metadata.
 #[derive(Debug, Clone, Default)]
 pub struct WriteOutcome {
@@ -106,13 +104,13 @@ pub struct WriteBatchFailure {
     pub diagnostics: DiagnosticSet,
 }
 
-/// Context passed to writers. Mirrors [`crate::SourceLoadContext`] but for writes.
+/// Context passed to writers. Mirrors [`crate::CfdLoadContext`] but for writes.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteContext<'a> {
     pub project_root: &'a Path,
     pub schema: &'a CftSchema,
     /// The current data model. Writers use it to resolve
-    /// [`coflow_data_model::CfdRecordId`]s
+    /// [`crate::data_model::CfdRecordId`]s
     /// inside the request value (e.g. for ref serialization). May be `None`
     /// when running pre-flight on a value that hasn't been merged into the
     /// model yet.

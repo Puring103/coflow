@@ -1,4 +1,4 @@
-use crate::api::{DiagnosticSet, CfdSourceCatalog, Severity, WriteContext};
+use crate::api::{CfdSourceCatalog, DiagnosticSet, Severity, WriteContext};
 use std::collections::BTreeSet;
 
 use crate::writes::{

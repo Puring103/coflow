@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::api::DiagnosticSet;
 use crate::api::WriteFieldPathSegment;
-use coflow_cft::{CftValueType, RecordKey};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
+use crate::data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
+use coflow_language::{CftValueType, RecordKey};
 
 use crate::write_rules;
 use crate::writes;
@@ -107,7 +107,6 @@ pub(super) fn prepare_one(
     match op {
         MutationOp::InsertRecord {
             file,
-            sheet,
             actual_type,
             key,
             fields,
@@ -134,7 +133,6 @@ pub(super) fn prepare_one(
             let coordinate = validated_record_coordinate(actual_type, key)?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
-                sheet,
                 actual_type: coordinate.actual_type,
                 key: coordinate.key,
                 fields,
@@ -261,7 +259,6 @@ pub(super) fn prepare_one(
         MutationOp::TransferRecord {
             record,
             destination_file,
-            destination_sheet,
             target_index,
             source_file,
         } => {
@@ -276,7 +273,6 @@ pub(super) fn prepare_one(
             Ok(PreparedMutationOp::TransferRecord {
                 record,
                 destination_file,
-                destination_sheet,
                 target_index,
             })
         }
@@ -421,7 +417,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_cft::CftSchema,
+    schema: &coflow_language::CftSchema,
     target_actual_type: &str,
     expected: &CftValueType,
     value: &mut CfdValue,
@@ -555,10 +551,10 @@ fn prepare_insert_fields(
         write_rules::validate_value_semantics(
             session,
             schema,
-            coflow_data_model::ValueValidationRequest::new(
+            crate::data_model::ValueValidationRequest::new(
                 &field.value_type,
                 value,
-                coflow_data_model::ValueValidationMode::Mutation,
+                crate::data_model::ValueValidationMode::Mutation,
             )
             .with_pending_insert(PendingInsertRef { actual_type, key }),
             Some(pending_records),
@@ -739,7 +735,7 @@ fn ensure_record_key_available(
     session: &ProjectSession,
     actual_type: &str,
     key: &str,
-    current_record: Option<coflow_data_model::CfdRecordId>,
+    current_record: Option<crate::data_model::CfdRecordId>,
     code: &'static str,
     conflict_code: &'static str,
 ) -> Result<(), DiagnosticSet> {

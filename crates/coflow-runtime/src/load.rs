@@ -1,14 +1,13 @@
 use crate::api::{
-    map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet,
-    DimensionSourceLoadRequest, DimensionSourceSchema, CfdSourceCatalog, ResolvedSource,
-    SourceLoadContext, TableContext,
+    map_diagnostics_with_origins, origins_of, CfdLoadContext, CfdSource, CfdSourceCatalog,
+    CfdWriteContext, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
 };
-use coflow_cft::{CftSchema, RecordKey};
-use coflow_data_model::{
+use crate::data_model::{
     CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::{path_to_slash, Project};
+use coflow_language::{CftSchema, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -21,7 +20,7 @@ use crate::checks::{
 };
 use crate::dimensions;
 use crate::indexes::{
-    DiagnosticLogicalLocation, PendingRecordRef, RecordIndexBuilder, ResolvedSourceEntry,
+    CfdSourceEntry, DiagnosticLogicalLocation, PendingRecordRef, RecordIndexBuilder,
     SessionIndexBuilder, SourceId,
 };
 use crate::source_resolution::{ResolvedDimensionSource, ResolvedLoaderSource, SourceResolver};
@@ -50,7 +49,7 @@ pub(crate) struct SourceDataCache {
 
 #[derive(Debug, Clone)]
 struct CachedSourceBatch {
-    entry: ResolvedSourceEntry,
+    entry: CfdSourceEntry,
     records: Arc<[LoadedRecordDraft]>,
     dimension_values: Arc<[DimensionValueDraft]>,
     dimension_field: Option<dimensions::DimensionField>,
@@ -59,7 +58,7 @@ struct CachedSourceBatch {
 impl SourceDataCache {
     pub(crate) fn dimension_sources(
         &self,
-    ) -> impl Iterator<Item = (&ResolvedSourceEntry, &dimensions::DimensionField)> {
+    ) -> impl Iterator<Item = (&CfdSourceEntry, &dimensions::DimensionField)> {
         self.batches.iter().filter_map(|batch| {
             batch
                 .dimension_field
@@ -93,7 +92,7 @@ impl SourceDataCache {
         declaring_type: &str,
         field: &str,
         dimension: &str,
-    ) -> Option<&ResolvedSourceEntry> {
+    ) -> Option<&CfdSourceEntry> {
         self.batches.iter().find_map(|batch| {
             let binding = batch.dimension_field.as_ref()?;
             (binding.source_type.as_str() == declaring_type
@@ -159,8 +158,8 @@ pub(crate) fn load_project_data(
     };
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project, catalog);
-    for (source_index, source) in project.config().data.iter().enumerate() {
-        let configured = resolver.configured(source, Some(source_index));
+    for source in &project.config().data {
+        let configured = resolver.configured(source);
         let resolved_sources = match resolver.resolve_for_load(source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
@@ -175,6 +174,7 @@ pub(crate) fn load_project_data(
         diagnostics.extend(load_resolved_sources(
             project,
             schema,
+            catalog,
             &mut state,
             resolved_sources,
             source_overrides,
@@ -244,7 +244,7 @@ pub(crate) fn load_project_data(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: coflow_checker::CheckExecutionStats::default(),
+            statistics: crate::checker::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
@@ -317,17 +317,6 @@ pub(crate) fn reload_project_data_from_cache(
         .collect::<Vec<_>>();
     statistics.sources_reloaded = reload_indexes.len();
 
-    diagnostics.extend(preflight_cached_sources(
-        project,
-        schema,
-        catalog,
-        &source_data,
-        &reload_indexes,
-    ));
-    if !diagnostics.is_empty() {
-        return Err(load_failure(diagnostics));
-    }
-
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
         if let Some(field) = &batch.dimension_field {
@@ -344,12 +333,8 @@ pub(crate) fn reload_project_data_from_cache(
             }
             continue;
         }
-        let Some(loader) = catalog.source_provider(&batch.entry.provider_id) else {
-            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
-            continue;
-        };
-        match loader.load(
-            SourceLoadContext {
+        match catalog.loader().load(
+            CfdLoadContext {
                 project_root: project.root_dir(),
                 schema,
                 source_text: None,
@@ -370,35 +355,6 @@ pub(crate) fn reload_project_data_from_cache(
     build_output_from_cache(schema, indexes, source_data, &options, statistics)
 }
 
-fn preflight_cached_sources(
-    project: &Project,
-    schema: &CftSchema,
-    catalog: &CfdSourceCatalog,
-    source_data: &SourceDataCache,
-    reload_indexes: &[usize],
-) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    for index in reload_indexes {
-        let batch = &source_data.batches[*index];
-        if batch.dimension_field.is_some() {
-            continue;
-        }
-        let Some(loader) = catalog.source_provider(&batch.entry.provider_id) else {
-            diagnostics.push(missing_cached_provider(&batch.entry.provider_id));
-            continue;
-        };
-        diagnostics.extend(loader.preflight(
-            SourceLoadContext {
-                project_root: project.root_dir(),
-                schema,
-                source_text: None,
-            },
-            &batch.entry.source,
-        ));
-    }
-    diagnostics
-}
-
 const fn load_failure(diagnostics: DiagnosticSet) -> LoadDiagnostics {
     LoadDiagnostics {
         diagnostics,
@@ -409,27 +365,14 @@ const fn load_failure(diagnostics: DiagnosticSet) -> LoadDiagnostics {
 fn load_resolved_sources(
     project: &Project,
     schema: &CftSchema,
+    catalog: &CfdSourceCatalog,
     state: &mut LoadState<'_>,
     resolved_sources: Vec<ResolvedLoaderSource>,
     source_overrides: &[DataSourceTextOverride],
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
-    for resolved in &resolved_sources {
-        diagnostics.extend(resolved.provider.preflight(
-            SourceLoadContext {
-                project_root: project.root_dir(),
-                schema,
-                source_text: source_override_text(&resolved.source, source_overrides),
-            },
-            &resolved.source,
-        ));
-    }
-    if !diagnostics.is_empty() {
-        return diagnostics;
-    }
-
+    let loader = catalog.loader();
     for resolved in resolved_sources {
-        let loader = resolved.provider;
         let spec = resolved.source;
         let display_path = display_path_for(project, &spec);
         let source_id = SourceId(state.indexes.sources.entries.len());
@@ -437,14 +380,13 @@ fn load_resolved_sources(
             .indexes
             .files
             .add_source_file(display_path.clone(), source_id);
-        let entry = ResolvedSourceEntry {
-            provider_id: spec.provider_id.clone(),
+        let entry = CfdSourceEntry {
             source: spec.clone(),
             display_path: display_path.clone(),
         };
         state.indexes.sources.push(entry.clone());
         match loader.load(
-            SourceLoadContext {
+            CfdLoadContext {
                 project_root: project.root_dir(),
                 schema,
                 source_text: source_override_text(&spec, source_overrides),
@@ -457,7 +399,6 @@ fn load_resolved_sources(
                     &mut state.records,
                     &mut state.indexes.records,
                     source_id,
-                    &spec,
                     &display_path,
                     &cached_records,
                 );
@@ -475,7 +416,7 @@ fn load_resolved_sources(
 }
 
 fn source_override_text<'a>(
-    source: &ResolvedSource,
+    source: &CfdSource,
     overrides: &'a [DataSourceTextOverride],
 ) -> Option<&'a str> {
     let source_path = crate::project::normalize_path(source.location.path());
@@ -496,8 +437,7 @@ fn load_resolved_dimension_source(
     let mut diagnostics = DiagnosticSet::empty();
     let source = resolved.source;
     let display_path = display_path_for(project, &source);
-    let entry = ResolvedSourceEntry {
-        provider_id: source.provider_id.clone(),
+    let entry = CfdSourceEntry {
         source: source.clone(),
         display_path,
     };
@@ -524,13 +464,11 @@ fn load_dimension_batch(
     project: &Project,
     schema: &CftSchema,
     catalog: &CfdSourceCatalog,
-    source: &ResolvedSource,
+    source: &CfdSource,
     field: &dimensions::DimensionField,
     records: &[LoadedRecordDraft],
 ) -> Result<Vec<DimensionValueDraft>, DiagnosticSet> {
-    let manager = catalog
-        .dimension_source_manager(&source.provider_id)
-        .ok_or_else(|| DiagnosticSet::one(missing_cached_provider(&source.provider_id)))?;
+    let manager = catalog.dimension_source_manager();
     let source_type = schema.resolve_type(&field.source_type).ok_or_else(|| {
         runtime_invariant(format!(
             "dimension source type `{}` disappeared before loading",
@@ -553,7 +491,7 @@ fn load_dimension_batch(
     })?;
     let mut values = manager
         .load_dimension_source(
-            TableContext {
+            CfdWriteContext {
                 project_root: project.root_dir(),
             },
             &DimensionSourceLoadRequest {
@@ -593,7 +531,6 @@ fn push_loaded_records(
     records: &mut Vec<LoadedRecordDraft>,
     records_index: &mut RecordIndexBuilder,
     source_id: SourceId,
-    source: &ResolvedSource,
     display_path: &str,
     loaded_records: &[LoadedRecordDraft],
 ) {
@@ -603,7 +540,6 @@ fn push_loaded_records(
             key: record.key.clone(),
             origin: record.origin.clone(),
             source_id,
-            provider_id: source.provider_id.clone(),
             display_path: display_path.to_string(),
         });
         records.push(record.clone());
@@ -613,12 +549,11 @@ fn push_loaded_records(
 impl SourceDataCache {
     fn contains_source(
         &self,
-        entry: &ResolvedSourceEntry,
+        entry: &CfdSourceEntry,
         dimension_field: Option<&dimensions::DimensionField>,
     ) -> bool {
         self.batches.iter().any(|batch| {
             batch.dimension_field.as_ref() == dimension_field
-                && batch.entry.provider_id == entry.provider_id
                 && batch.entry.source.location == entry.source.location
         })
     }
@@ -643,8 +578,7 @@ fn refresh_dimension_source_plans(
             for resolved in resolved_sources {
                 let source = resolved.source;
                 let display_path = display_path_for(project, &source);
-                let entry = ResolvedSourceEntry {
-                    provider_id: source.provider_id.clone(),
+                let entry = CfdSourceEntry {
                     source,
                     display_path,
                 };
@@ -654,7 +588,6 @@ fn refresh_dimension_source_plans(
                         .iter()
                         .find(|batch| {
                             batch.dimension_field.as_ref() == Some(&field)
-                                && batch.entry.provider_id == entry.provider_id
                                 && batch.entry.source.location == entry.source.location
                         })
                         .map_or_else(Arc::default, |batch| Arc::clone(&batch.dimension_values));
@@ -703,7 +636,6 @@ fn build_output_from_cache(
                 &mut records,
                 &mut indexes.records,
                 source_id,
-                &batch.entry.source,
                 &batch.entry.display_path,
                 &batch.records,
             );
@@ -750,7 +682,7 @@ fn build_output_from_cache(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: coflow_checker::CheckExecutionStats::default(),
+            statistics: crate::checker::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
@@ -812,19 +744,11 @@ fn record_model_work(
         .saturating_add(check.statistics.dimension_projected_records);
 }
 
-fn missing_cached_provider(provider_id: &str) -> Diagnostic {
-    Diagnostic::error(
-        "RUNTIME-SOURCE-CACHE",
-        "RUNTIME",
-        format!("cached source provider `{provider_id}` is no longer registered"),
-    )
-}
-
 fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(Diagnostic::error("RUNTIME-INTERNAL", "RUNTIME", message))
 }
 
-fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
+fn display_path_for(project: &Project, source: &CfdSource) -> String {
     let path = source.location.path();
     let relative = path
         .strip_prefix(project.root_dir())

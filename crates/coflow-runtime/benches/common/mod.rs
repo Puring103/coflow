@@ -1,11 +1,13 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic)]
 
-use coflow_cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId};
-use coflow_checker::CheckTask;
-use coflow_data_model::{CfdDataModel, LoadedDictKeyDraft, LoadedValueDraft};
+use coflow_language::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
+};
 use coflow_runtime::check_benchmark_support::{
     plan_full, plan_incremental, BenchmarkFieldChange, BenchmarkProjection,
 };
+use coflow_runtime::CheckTask;
+use coflow_runtime::{CfdDataModel, LoadedDictKeyDraft, LoadedValueDraft};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]

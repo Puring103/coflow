@@ -1,7 +1,7 @@
+use crate::api::DiagnosticSet;
 use crate::project::diagnostics::file_error;
 use crate::project::path_to_slash;
 use crate::project::paths::resolve_project_relative;
-use crate::api::DiagnosticSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 

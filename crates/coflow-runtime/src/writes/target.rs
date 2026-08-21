@@ -1,5 +1,5 @@
 use crate::api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
-use coflow_data_model::RecordOrigin;
+use crate::data_model::RecordOrigin;
 
 use crate::indexes::{RecordRef, SourceId};
 use crate::{ProjectSession, RecordCoordinate};

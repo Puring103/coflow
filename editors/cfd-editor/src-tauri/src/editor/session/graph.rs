@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-use coflow_data_model::{CfdPath, CfdPathSegment};
 use coflow_runtime::{format_field_path, RecordCoordinate};
+use coflow_runtime::{CfdPath, CfdPathSegment};
 
 use crate::editor::convert::{record_to_row, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode, GraphQuery};

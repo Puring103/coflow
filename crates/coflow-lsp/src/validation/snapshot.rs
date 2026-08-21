@@ -5,8 +5,8 @@ use crate::diagnostics::{
 };
 use crate::state::LspBuild;
 use crate::uri::path_to_file_uri;
+use coflow_language::cfd::parse_cfd;
 use coflow_runtime::DiagnosticSet;
-use coflow_cfd::parse_cfd;
 use coflow_runtime::{discover_directory_files, normalize_path, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
@@ -70,7 +70,7 @@ pub(crate) struct ValidationSnapshot {
 
 pub(super) struct CfdDocumentSnapshot {
     pub(super) source: String,
-    pub(super) ast: coflow_cfd::CfdAst,
+    pub(super) ast: coflow_language::cfd::CfdAst,
 }
 
 impl ValidationSnapshot {

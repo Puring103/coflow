@@ -4,16 +4,16 @@ mod types;
 
 use crate::lowering::{CsharpDimensionTable, CsharpLoweringPlan};
 use crate::model::{
-    CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpParameter,
-    CsharpProperty, CsharpType,
+    CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpLoaderField,
+    CsharpParameter, CsharpProperty, CsharpType,
 };
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftType, CftValueType};
+use coflow_language::{CftEnum, CftField, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;
 use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
-use types::{csharp_field_property_type, csharp_type};
+use types::{csharp_field_property_type, csharp_property_type, csharp_type};
 
 pub fn build_csharp_enum(schema_enum: &CftEnum) -> CsharpEnum {
     CsharpEnum {
@@ -57,12 +57,13 @@ pub fn build_csharp_type(
         );
     }
 
+    let all_fields = view.fields(&ty.name)?.collect::<Vec<_>>();
     let own_field_names = schema_type
         .own_fields()
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
 
-    for field in view.fields(&ty.name)? {
+    for field in &all_fields {
         let local_name = field_local_name(&field.name, &mut HashSet::new())?;
         let property_type = csharp_field_property_type(field, view);
         constructor_parameters.push(CsharpParameter {
@@ -84,8 +85,8 @@ pub fn build_csharp_type(
         );
     }
 
-    let all_field_props = view
-        .fields(&ty.name)?
+    let all_field_props = all_fields
+        .iter()
         .map(|f| csharp_public_member_name(&f.name))
         .collect::<Vec<_>>();
     let equality = (!schema_type.is_abstract).then_some({
@@ -97,6 +98,23 @@ pub fn build_csharp_type(
         }
     });
 
+    let loader_fields = all_fields
+        .iter()
+        .map(|field| CsharpLoaderField {
+            source_name: field.name.to_string(),
+            property_name: csharp_public_member_name(&field.name),
+            reader_expression: if field.dimension.is_some() {
+                format!(
+                    "new Localized<{}>(\"{}\", {})",
+                    csharp_property_type(&field.value_type, view),
+                    field.name,
+                    loader_reader(&field.value_type, view, "VALUE", "CONTEXT")
+                )
+            } else {
+                loader_reader(&field.value_type, view, "VALUE", "CONTEXT")
+            },
+        })
+        .collect();
     Ok(CsharpType {
         name: view.csharp_type_name(&schema_type.name),
         source_name: schema_type.name.to_string(),
@@ -115,6 +133,10 @@ pub fn build_csharp_type(
         base_constructor_args,
         assignments,
         equality,
+        loader_fields,
+        loader_id_type: (!schema_type.is_singleton && !schema_type.is_abstract)
+            .then(|| csharp_type(&view.key_field_type(&schema_type.name), view)),
+        loader_enabled: !schema_type.is_abstract,
     })
 }
 
@@ -158,6 +180,15 @@ pub fn build_csharp_dimension_type(
         );
     }
 
+    let loader_fields = table
+        .fields
+        .iter()
+        .map(|field| CsharpLoaderField {
+            source_name: field.name.to_string(),
+            property_name: csharp_public_member_name(&field.name),
+            reader_expression: loader_reader(&field.value_type, view, "VALUE", "CONTEXT"),
+        })
+        .collect();
     Ok(CsharpType {
         name: name.clone(),
         source_name: table.source_name.clone(),
@@ -176,7 +207,43 @@ pub fn build_csharp_dimension_type(
             by_fields: false,
             fields: Vec::new(),
         }),
+        loader_fields,
+        loader_id_type: Some("string".to_string()),
+        loader_enabled: true,
     })
+}
+
+fn loader_reader(
+    ty: &CftValueType,
+    view: &CsharpLoweringPlan<'_>,
+    node: &str,
+    context: &str,
+) -> String {
+    match ty {
+        CftValueType::Int => format!("CfdValueReader.{}({node})", if view.int_32 { "Int32" } else { "Int64" }),
+        CftValueType::Float => format!("CfdValueReader.{}({node})", if view.float_32 { "Float32" } else { "Float64" }),
+        CftValueType::Bool => format!("CfdValueReader.Boolean({node})"),
+        CftValueType::String => format!("CfdValueReader.String({node})"),
+        CftValueType::Enum(name) => format!("CfdValueReader.Enum<{}>({node})", view.csharp_enum_name(name)),
+        CftValueType::Object(name) => format!("Read{}({node}, {context})", view.csharp_type_name(name)),
+        CftValueType::RecordRef(name) => format!(
+            "CfdValueReader.Reference<{}>({node}, {context}, \"{}\")",
+            view.csharp_type_name(name), name
+        ),
+        CftValueType::Array(inner) => format!(
+            "CfdValueReader.Array({node}, {context}, static (item, context) => {})",
+            loader_reader(inner, view, "item", "context")
+        ),
+        CftValueType::Dict(key, value) => format!(
+            "CfdValueReader.Dictionary({node}, {context}, static (item, context) => {}, static (item, context) => {})",
+            loader_reader(key, view, "item", "context"),
+            loader_reader(value, view, "item", "context")
+        ),
+        CftValueType::Nullable(inner) => {
+            let target = csharp_type(ty, view);
+            format!("({target})({node} is CfdNullValue ? default : {inner})", inner = loader_reader(inner, view, node, context))
+        }
+    }
 }
 
 fn add_id_constructor_member(
@@ -236,7 +303,7 @@ fn add_field_constructor_member(
     });
 }
 
-fn csharp_summary(display: Option<&coflow_cft::CftDisplayMetadata>) -> Option<String> {
+fn csharp_summary(display: Option<&coflow_language::CftDisplayMetadata>) -> Option<String> {
     display
         .and_then(|display| match (&display.label, &display.description) {
             (Some(label), Some(description)) => Some(format!("{label}: {description}")),
