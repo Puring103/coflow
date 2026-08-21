@@ -1,9 +1,7 @@
 //! File-tree view for the project.
 //!
-//! Surfaces directories and files under the project root that either back a
-//! loaded record (`in_sources`) or carry an extension registered by the
-//! configured compensations. Dimension output directories can be grouped under a
-//! display-named virtual folder via [`FileTreeOptions::dimension_groups`].
+//! Surfaces CFD files under the project root and groups managed dimension
+//! directories under a display-named virtual folder.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -27,15 +25,11 @@ pub struct FileTreeNode {
     pub children: Vec<Self>,
 }
 
-/// Internal options for building the default project file tree.
-///
-/// The defaults walk every loader-registered extension and pull dimension
-/// output directories into a sibling virtual folder at the top of the tree.
+/// Internal options for building the project file tree.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FileTreeOptions {
-    pub(crate) extra_extensions: Vec<String>,
     pub(crate) dimension_groups: Vec<DimensionGroup>,
-    /// In-source paths reported by loaders (project-relative, `/`-normalised).
+    /// In-source paths (project-relative, `/`-normalised).
     pub(crate) in_sources: BTreeSet<String>,
 }
 
@@ -51,7 +45,6 @@ pub(crate) struct DimensionGroup {
 pub fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
-    ext_whitelist: &BTreeSet<String>,
     skip_dirs: &BTreeSet<String>,
 ) -> Vec<FileTreeNode> {
     let mut files: Vec<Vec<String>> = Vec::new();
@@ -69,7 +62,7 @@ pub fn build_file_tree(
             .strip_prefix(root)
             .map(path_to_slash)
             .unwrap_or_default();
-        let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
+        let by_extension = ext == "cfd";
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
@@ -105,7 +98,6 @@ pub fn build_dimension_subtree(
     group_name: String,
     dir: &Path,
     in_sources: &BTreeSet<String>,
-    ext_whitelist: &BTreeSet<String>,
 ) -> Option<FileTreeNode> {
     if !dir.is_dir() {
         return None;
@@ -125,7 +117,7 @@ pub fn build_dimension_subtree(
             .strip_prefix(root)
             .map(path_to_slash)
             .unwrap_or_default();
-        let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
+        let by_extension = ext == "cfd";
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
