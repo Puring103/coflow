@@ -1,5 +1,5 @@
 use coflow_api::{DiagnosticSet, WriteFieldPathSegment};
-use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
+use coflow_cfd::ast::{CfdBlock, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cft::Span;
 use coflow_cft::{CftSchema, CftValueType};
 
@@ -24,7 +24,6 @@ pub(super) enum WriteTarget {
         ty: CftValueType,
     },
 }
-
 pub(super) fn locate_target(
     schema: &CftSchema,
     actual_type: &str,
@@ -114,7 +113,6 @@ fn locate_target_in_value(
         ))),
     }
 }
-
 #[allow(clippy::option_if_let_else)]
 fn locate_field_target(
     schema: &CftSchema,
@@ -130,10 +128,7 @@ fn locate_field_target(
             format!("field `{name}` cannot be selected from this value"),
         )));
     };
-    let field = block.entries.iter().find_map(|entry| match entry {
-        CfdBlockEntry::Field(field) if field.name == name => Some(field),
-        _ => None,
-    });
+    let field = block.fields.iter().find(|field| field.name == name);
     match field {
         Some(field) if path.len() == 1 => Ok(WriteTarget::Replace {
             span: full_value_span(&field.value),
@@ -150,14 +145,10 @@ fn locate_field_target(
         }),
         None => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
-            format!(
-                "field `{name}` is inherited from a `...spread` and the editor \
-                 cannot drill further into it; edit the source record directly"
-            ),
+            format!("field `{name}` was not found in the source object"),
         ))),
     }
 }
-
 fn locate_array_target(
     schema: &CftSchema,
     current_type: &CftValueType,
@@ -199,12 +190,11 @@ fn locate_dict_target(
             format!("dict key `{key}` cannot be selected from this value"),
         )));
     };
-    let Some(field) = block.entries.iter().find_map(|entry| match entry {
-        CfdBlockEntry::Field(field) if dict_key_path_matches(&key_type, &field.name, key) => {
-            Some(field)
-        }
-        _ => None,
-    }) else {
+    let Some(field) = block
+        .fields
+        .iter()
+        .find(|field| dict_key_path_matches(&key_type, &field.name, key))
+    else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("dict key `{key}` not found in source block"),
@@ -217,155 +207,5 @@ fn locate_dict_target(
         })
     } else {
         locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
-    }
-}
-
-pub(super) fn spread_entries_at_path<'a>(
-    schema: &CftSchema,
-    actual_type: &str,
-    record: &'a AstRecord,
-    path: &[WriteFieldPathSegment],
-) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
-    if path.is_empty() {
-        return Ok(record.entries.as_slice());
-    }
-    let Some(schema_type) = schema.resolve_type(actual_type) else {
-        return Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            format!("unknown CFT type `{actual_type}`"),
-        )));
-    };
-    let root_type = CftValueType::Object(schema_type.name.clone());
-    let Some((value, value_type)) =
-        value_at_spread_path_segment(schema, record.entries.as_slice(), &root_type, &path[0])?
-    else {
-        return Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            "spread rewrite site was not found",
-        )));
-    };
-    block_entries_at_path(schema, value, &value_type, &path[1..])
-}
-
-pub(super) fn spread_entries_in_value_at_path<'a>(
-    schema: &CftSchema,
-    value: &'a AstValue,
-    value_type: &CftValueType,
-    path: &[WriteFieldPathSegment],
-) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
-    block_entries_at_path(schema, value, value_type, path)
-}
-
-fn block_entries_at_path<'a>(
-    schema: &CftSchema,
-    value: &'a AstValue,
-    ty: &CftValueType,
-    path: &[WriteFieldPathSegment],
-) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
-    if path.is_empty() {
-        let AstValue::Block(block) = value else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "spread rewrite site is not an object block",
-            )));
-        };
-        return Ok(block.entries.as_slice());
-    }
-    match value {
-        AstValue::Block(block) => {
-            let block_type = concrete_type_for_block(
-                schema,
-                ty,
-                block.type_marker.as_ref().map(|t| t.0.as_str()),
-            );
-            let Some((next, next_type)) = value_at_spread_path_segment(
-                schema,
-                block.entries.as_slice(),
-                &block_type,
-                &path[0],
-            )?
-            else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    "spread rewrite site was not found",
-                )));
-            };
-            block_entries_at_path(schema, next, &next_type, &path[1..])
-        }
-        AstValue::Array(items, _) => {
-            let WriteFieldPathSegment::Index(index) = path[0] else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("cannot navigate path segment {:?} in array value", path[0]),
-                )));
-            };
-            let Some(item_type) = type_after_index_segment(ty) else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    "array index cannot be selected from this value",
-                )));
-            };
-            let Some(item) = items.get(index) else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("index {index} out of bounds while locating spread rewrite site"),
-                )));
-            };
-            block_entries_at_path(schema, item, &item_type, &path[1..])
-        }
-        _ => Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            format!("cannot navigate path segment {:?} in value", path[0]),
-        ))),
-    }
-}
-
-fn value_at_spread_path_segment<'a>(
-    schema: &CftSchema,
-    entries: &'a [CfdBlockEntry],
-    current_type: &CftValueType,
-    segment: &WriteFieldPathSegment,
-) -> Result<Option<(&'a AstValue, CftValueType)>, DiagnosticSet> {
-    match segment {
-        WriteFieldPathSegment::Field(field_name) => {
-            let Some(next_type) =
-                type_after_field_segment_for_ref(schema, current_type, field_name)
-            else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("field `{field_name}` cannot be selected from this value"),
-                )));
-            };
-            Ok(entries
-                .iter()
-                .find_map(|entry| match entry {
-                    CfdBlockEntry::Field(field) if field.name == *field_name => Some(&field.value),
-                    _ => None,
-                })
-                .map(|value| (value, next_type)))
-        }
-        WriteFieldPathSegment::DictKey(key) => {
-            let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("dict key `{key}` cannot be selected from this value"),
-                )));
-            };
-            Ok(entries
-                .iter()
-                .find_map(|entry| match entry {
-                    CfdBlockEntry::Field(field)
-                        if dict_key_path_matches(&key_type, &field.name, key) =>
-                    {
-                        Some(&field.value)
-                    }
-                    _ => None,
-                })
-                .map(|value| (value, next_type)))
-        }
-        WriteFieldPathSegment::Index(index) => Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            format!("array index `{index}` cannot be selected from an object block"),
-        ))),
     }
 }

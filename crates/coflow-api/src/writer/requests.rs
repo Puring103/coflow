@@ -89,32 +89,6 @@ pub struct RenameRecordRequest<'a> {
     pub schema: &'a CftSchema,
 }
 
-/// Request to rewrite reference tokens inside one source after a record key
-/// rename.
-///
-/// Engines use this for source syntax that compiles away before the runtime
-/// model is built, such as provider-local spread entries. Direct refs are
-/// rewritten through [`crate::SourceWriter::write_field`] at the exact
-/// [`coflow_data_model::RefEdge`]
-/// site.
-#[derive(Debug, Clone)]
-pub struct RewriteRecordReferencesRequest<'a> {
-    pub source: &'a ResolvedSource,
-    pub old_key: &'a str,
-    pub new_key: &'a str,
-    pub targets: &'a [SpreadRewriteTarget],
-    pub schema: &'a CftSchema,
-}
-
-/// A precise spread-source token to rewrite inside provider source syntax.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpreadRewriteTarget {
-    pub origin: RecordOrigin,
-    pub record_key: String,
-    pub actual_type: String,
-    pub object_path: Vec<WriteFieldPathSegment>,
-}
-
 /// Provider diagnostics produced by a successful writer call.
 ///
 /// The runtime owns mutation lifecycle reporting and rebuilds the published

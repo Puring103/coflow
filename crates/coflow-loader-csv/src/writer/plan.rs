@@ -173,6 +173,60 @@ pub(super) fn apply_plan(plan: &TableWritePlan) -> Result<(), DiagnosticSet> {
     }
 }
 
+pub(super) fn apply_field_plans(plans: &[TableWritePlan]) -> Result<(), (usize, DiagnosticSet)> {
+    let Some(first) = plans.first() else {
+        return Ok(());
+    };
+    let TableWritePlan::SetCells {
+        document: first_document,
+        ..
+    } = first
+    else {
+        return Err((
+            0,
+            DiagnosticSet::one(diag(
+                "CSV-WRITE",
+                "field batch contains a non-field operation",
+            )),
+        ));
+    };
+    let path = local_path(first_document);
+    let mut current_index = 0;
+    mutate_csv(path, |rows| {
+        for (index, plan) in plans.iter().enumerate() {
+            current_index = index;
+            let TableWritePlan::SetCells {
+                document,
+                id_column,
+                expected_key,
+                cells,
+                ..
+            } = plan
+            else {
+                return Err(DiagnosticSet::one(diag(
+                    "CSV-WRITE",
+                    "field batch contains a non-field operation",
+                )));
+            };
+            if local_path(document) != path {
+                return Err(DiagnosticSet::one(diag(
+                    "CSV-WRITE",
+                    "csv field batch must target one source file",
+                )));
+            }
+            let Some(first_cell) = cells.first() else {
+                continue;
+            };
+            ensure_expected_key(rows, path, first_cell.row, *id_column, expected_key)?;
+            for cell in cells {
+                set_csv_cell(rows, cell)?;
+            }
+        }
+        Ok(())
+    })
+    .map_err(|diagnostics| (current_index, diagnostics))
+}
+
 fn row_index(row: usize) -> Result<usize, DiagnosticSet> {
     row.checked_sub(1)
         .ok_or_else(|| DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1")))

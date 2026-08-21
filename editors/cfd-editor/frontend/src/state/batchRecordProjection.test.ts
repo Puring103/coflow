@@ -7,8 +7,6 @@ const cell = (name: string, value: FieldCell['value'], declaredType = 'string'):
   name,
   value,
   annotation: {
-    spread_info: null,
-    ref_target_file: null,
     enum_int_value: null,
     declared_type: declaredType,
     ref_target_type: null,

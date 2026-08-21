@@ -1,7 +1,6 @@
-# Object and dictionary spread. Local fields and entries override spread sources.
+# Additional records with nested objects, dictionaries, and references.
 
 elite_monster: Monster {
-  ...&basic_monster,
   name: "Elite Training Dummy",
   stats: { hp: 250, attack: 5 },
   weaknesses: { Fire: 1.25, Ice: 1.5 },

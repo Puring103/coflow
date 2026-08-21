@@ -207,57 +207,6 @@ type Holder { item: &Item; }\n";
     assert_eq!(result["range"]["end"]["character"], 6);
 }
 
-#[test]
-fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
-    let examples_dir =
-        std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd"))
-            .expect("canonical examples/cfd");
-    let project = Project::open_schema_only(Some(&examples_dir)).expect("open examples/cfd");
-    let source_path = examples_dir.join("data").join("03-spread.cfd");
-    let target_path = examples_dir.join("data").join("01-records.cfd");
-    let source = std::fs::read_to_string(&source_path).expect("read spread cfd");
-    let source_uri = path_to_file_uri(&source_path);
-    let offset = source.find("basic_monster").expect("basic_monster") + 1;
-    let position = position_from_byte(&source, offset);
-    let mut server = LspServer::new(project, Vec::new());
-
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": {
-                    "uri": source_uri,
-                    "text": source
-                }
-            }
-        }))
-        .expect("open cfd document");
-    server.writer.clear();
-
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "id": 9,
-            "method": "textDocument/definition",
-            "params": {
-                "textDocument": { "uri": source_uri },
-                "position": {
-                    "line": position.line,
-                    "character": position.character
-                }
-            }
-        }))
-        .expect("definition request");
-
-    let messages = written_messages(&server.writer);
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0]["id"], 9);
-    assert_eq!(messages[0]["result"]["uri"], path_to_file_uri(&target_path));
-    assert_eq!(messages[0]["result"]["range"]["start"]["line"], 18);
-    assert_eq!(messages[0]["result"]["range"]["start"]["character"], 0);
-    assert_eq!(messages[0]["result"]["range"]["end"]["character"], 13);
-}
 
 #[test]
 fn cfd_definition_request_returns_null_for_invalid_record_references() {
@@ -300,56 +249,6 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
     assert_eq!(hp, Value::Null);
 }
 
-#[test]
-fn cfd_definition_request_returns_null_for_invalid_spread_references() {
-    let schema_source = "type Stats {\n  hp: int;\n}\n\
-type Monster {\n  key: string;\n  stats: Stats;\n}\n";
-    let (_cleanup, project) = test_project_with_config(
-        "lsp-cfd-top-level-spread-path-definition",
-        schema_source,
-        "data",
-    );
-    let data_dir = project.root_dir().join("data");
-    std::fs::create_dir_all(&data_dir).expect("create data dir");
-    let source_path = data_dir.join("monsters.cfd");
-    let source = "base: Monster { stats: { hp: 10 } }\n\
-elite: Monster { ...@Monster.base.stats.hp }\n";
-    std::fs::write(&source_path, source).expect("write source cfd");
-    let source_uri = path_to_file_uri(&source_path);
-    let mut server = LspServer::new(project, Vec::new());
-
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": {
-                    "uri": source_uri,
-                    "text": source
-                }
-            }
-        }))
-        .expect("open cfd document");
-    server.writer.clear();
-
-    let stats = cfd_definition_result_at_context(
-        &mut server,
-        &source_uri,
-        source,
-        "@Monster.base.stats.hp",
-        "stats",
-    );
-    assert_eq!(stats, Value::Null);
-
-    let hp = cfd_definition_result_at_context(
-        &mut server,
-        &source_uri,
-        source,
-        "@Monster.base.stats.hp",
-        "hp",
-    );
-    assert_eq!(hp, Value::Null);
-}
 
 #[test]
 fn cfd_definition_request_resolves_each_nested_object_field() {

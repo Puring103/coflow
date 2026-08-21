@@ -107,37 +107,6 @@ pub(super) fn cfd_definition_result_at(
         .clone()
 }
 
-pub(super) fn cfd_definition_result_at_context(
-    server: &mut LspServer<Vec<u8>>,
-    uri: &str,
-    source: &str,
-    context: &str,
-    needle: &str,
-) -> Value {
-    server.writer.clear();
-    let offset = position_inside(source, context, needle, needle.len().saturating_sub(1));
-    let position = position_from_byte(source, offset);
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "id": 101,
-            "method": "textDocument/definition",
-            "params": {
-                "textDocument": { "uri": uri },
-                "position": {
-                    "line": position.line,
-                    "character": position.character
-                }
-            }
-        }))
-        .expect("definition request");
-    written_messages(&server.writer)
-        .into_iter()
-        .next()
-        .expect("response")["result"]
-        .clone()
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct DecodedSemanticToken {
     pub(super) text: String,

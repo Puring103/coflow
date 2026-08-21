@@ -2,10 +2,8 @@ use coflow_api::{
     byte_range, DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    RewriteDimensionRecordRequest, RewriteDimensionReferencesRequest, TableContext,
-    WriteDimensionValueRequest,
+    RewriteDimensionRecordRequest, TableContext, WriteDimensionValueRequest,
 };
-use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
 use coflow_cft::{CftValueType, RecordKey};
 use coflow_data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
@@ -14,8 +12,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use super::render::serialize_value;
-use super::target::spread_entries_in_value_at_path;
-use super::{collect_spread_ref_key_spans, diag, raw_span, replace_spans, CfdWriter};
+use super::{diag, raw_span, CfdWriter};
 
 pub(super) static CFD_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManagerDescriptor =
     DimensionSourceManagerDescriptor {
@@ -77,10 +74,7 @@ impl DimensionSourceManager for CfdWriter {
                     continue;
                 }
             };
-            for entry in record.entries {
-                let CfdBlockEntry::Field(field) = entry else {
-                    continue;
-                };
+            for field in record.fields {
                 let Some(variant) = request.schema.dimension.variant(&field.name) else {
                     continue;
                 };
@@ -211,64 +205,6 @@ impl DimensionSourceManager for CfdWriter {
         write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
-    fn rewrite_dimension_references(
-        &self,
-        _ctx: TableContext<'_>,
-        request: &RewriteDimensionReferencesRequest<'_>,
-    ) -> Result<DimensionSourceResult, DiagnosticSet> {
-        let path = request.source.location.path();
-        let (source, ast) = CfdWriter::read_or_parse(path)?;
-        let physical_key = if request.schema.source_type.is_singleton {
-            request.schema.source_field.name.as_str()
-        } else {
-            request.source_key.as_str()
-        };
-        let record = ast
-            .records
-            .iter()
-            .find(|record| record.key == physical_key)
-            .ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "CFD-DIMENSION-WRITE",
-                    format!("dimension source has no record `{physical_key}`"),
-                ))
-            })?;
-        let variant = record.entries.iter().find_map(|entry| match entry {
-            CfdBlockEntry::Field(field) if field.name == request.variant.as_str() => Some(field),
-            CfdBlockEntry::Field(_) | CfdBlockEntry::Spread(_, _) => None,
-        });
-        let Some(variant) = variant else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-DIMENSION-WRITE",
-                format!("dimension value has no variant `{}`", request.variant),
-            )));
-        };
-        let entries = spread_entries_in_value_at_path(
-            request.schema.schema,
-            &variant.value,
-            &request.schema.source_field.value_type,
-            request.object_path,
-        )?;
-        let mut spans = Vec::new();
-        collect_spread_ref_key_spans(entries, request.old_key.as_str(), &mut spans);
-        if spans.is_empty() {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-DIMENSION-WRITE",
-                format!(
-                    "spread source `{}` was not found at the requested dimension path",
-                    request.old_key
-                ),
-            )));
-        }
-        let replacements = spans
-            .into_iter()
-            .map(|span| (span, request.new_key.to_string()))
-            .collect::<Vec<_>>();
-        let out = replace_spans(&source, &replacements)?;
-        CfdWriter::write_source(path, &out)?;
-        Ok(DimensionSourceResult { changed: true })
-    }
-
     fn sync_dimension_source(
         &self,
         _ctx: TableContext<'_>,
@@ -377,10 +313,7 @@ fn read_existing_dimension_cfd(
             )));
         }
         let mut row = DimensionCfdRow::default();
-        for entry in record.entries {
-            let CfdBlockEntry::Field(field) = entry else {
-                continue;
-            };
+        for field in record.fields {
             if field.name == "default" {
                 row.default = raw_span(&text, field.value.span());
             } else if variants.iter().any(|variant| variant == &field.name) {

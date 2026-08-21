@@ -113,7 +113,6 @@ pub enum StructureKind {
     SchemaAst,
     SchemaDependency,
     DataValue,
-    SpreadResolution,
     CheckEvaluation,
     QuantifierIteration,
 }
@@ -128,7 +127,6 @@ impl fmt::Display for StructureKind {
             Self::SchemaAst => "schema AST",
             Self::SchemaDependency => "schema dependency",
             Self::DataValue => "data value",
-            Self::SpreadResolution => "spread resolution",
             Self::CheckEvaluation => "check evaluation",
             Self::QuantifierIteration => "quantifier iteration",
         })
@@ -376,16 +374,16 @@ mod tests {
             .expect("root");
 
         budget
-            .check_additional_depth(root, StructureKind::SpreadResolution, 2)
+            .check_additional_depth(root, StructureKind::DataValue, 2)
             .expect("boundary depth");
         assert_eq!(budget.nodes_used(), 1);
         assert_eq!(
-            budget.check_additional_depth(root, StructureKind::SpreadResolution, 3),
+            budget.check_additional_depth(root, StructureKind::DataValue, 3),
             Err(BudgetExceeded {
                 axis: BudgetAxis::Depth,
                 limit: 3,
                 observed: 4,
-                kind: StructureKind::SpreadResolution,
+                kind: StructureKind::DataValue,
             })
         );
     }

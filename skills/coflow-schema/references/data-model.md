@@ -115,21 +115,6 @@ type Node {
 
 这个顺序会反映在数据查询、编辑器列表和导出结果中。
 
-## Spread
-
-CFD 的 `...source` 会先复制来源对象或字典的值，再应用本地覆盖：
-
-```cfd
-elite_monster: Monster {
-  ...&basic_monster,
-  name: "Elite Training Dummy",
-}
-```
-
-对象 spread 可以使用顶层 record 引用或内联对象，来源类型必须能赋值给当前对象类型。字典 spread 使用内联字典，其中的 key 和 value 必须符合当前字典类型。
-
-多个 spread 按出现顺序合并，后面的 spread 覆盖前面的 spread，本地字段或字典条目拥有最高优先级。循环依赖会被拒绝。
-
 ## Singleton
 
 `@singleton` 类型在整个数据集中必须恰好有一条记录：

@@ -6,6 +6,6 @@ import type { FieldAnnotation } from "./FieldAnnotation";
  * One cell in a record row.
  *
  * `value` is the authoritative `CfdValue`, shipped straight from the core
- * model. `annotation` carries spread, ref-target, and enum metadata.
+ * model. `annotation` carries ref-target and enum metadata.
  */
 export type FieldCell = { name: string, value: CfdValue, annotation: FieldAnnotation | null, };

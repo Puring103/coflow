@@ -376,10 +376,6 @@ fn stage_rename_record_key(
         diagnostics.extend(action.execute(session.project.root_dir(), schema, &session.model)?);
         affected_files.insert(action.display_path().to_string());
     }
-    for action in &plan.rewrite_actions {
-        diagnostics.extend(action.execute(session.project.root_dir(), schema, &session.model)?);
-        affected_files.insert(action.display_path().to_string());
-    }
     let old_key = plan.old_coordinate.key.clone();
     let new_dimension_key = RecordKey::new(new_key.to_string())
         .map_err(|_| plan_mismatch("new record key became invalid before dimension staging"))?;

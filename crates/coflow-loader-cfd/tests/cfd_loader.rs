@@ -526,65 +526,6 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
     Ok(())
 }
 
-#[test]
-fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            enum Element { Fire, Ice, }
-            type Stats { hp: int; attack: int; }
-            type Monster {
-                name: string;
-                stats: Stats;
-                weights: {Element: int};
-            }
-        "#,
-    );
-
-    let model = load_cfd_model(
-        &schema,
-        r#"
-            base: Monster {
-                name: "Base",
-                stats: { hp: 100, attack: 20 },
-                weights: { Fire: 10, Ice: 5 },
-            }
-
-            elite: Monster {
-                ...&base,
-                name: "Elite",
-                stats: {
-                    ...{ hp: 100, attack: 15 },
-                    hp: 180,
-                },
-                weights: {
-                    ...{ Fire: 10, Ice: 5 },
-                    Fire: 20,
-                },
-            }
-        "#,
-    )?;
-
-    let elite_id = model
-        .lookup_assignable(&schema, "Monster", "elite")
-        .expect("elite record");
-    let elite = model.record(elite_id).expect("elite");
-    assert_eq!(
-        elite.field("name"),
-        Some(&CfdValue::String("Elite".to_string()))
-    );
-    let Some(CfdValue::Object(stats)) = elite.field("stats") else {
-        panic!("expected stats object");
-    };
-    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
-    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(15)));
-    let Some(CfdValue::Dict(weights)) = elite.field("weights") else {
-        panic!("expected weights dict");
-    };
-    assert_eq!(weights.len(), 2);
-    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(20)));
-    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(5)));
-    Ok(())
-}
 
 #[test]
 fn cfd_rejects_reserved_id_fields() {
@@ -939,7 +880,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     let source = [
         "data/01-records.cfd",
         "data/02-polymorphic-and-paths.cfd",
-        "data/03-spread.cfd",
+        "data/03-elite-records.cfd",
     ]
     .into_iter()
     .map(|path| fs::read_to_string(examples_dir.join(path)))

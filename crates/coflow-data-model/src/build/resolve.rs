@@ -11,7 +11,6 @@ use std::fmt::Write as _;
 struct ValueNode {
     record: CfdRecordId,
     path: CfdPath,
-    branch: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +30,6 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().field(name.as_str()),
-            branch: self.branch.clone(),
         }
     }
 
@@ -39,7 +37,6 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().index(index),
-            branch: self.branch.clone(),
         }
     }
 
@@ -47,17 +44,6 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().dict_key_value(key),
-            branch: self.branch.clone(),
-        }
-    }
-
-    fn spread_branch(&self, index: usize) -> Self {
-        let mut branch = self.branch.clone();
-        branch.push(index);
-        Self {
-            record: self.record,
-            path: self.path.clone(),
-            branch,
         }
     }
 }
@@ -113,7 +99,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let root = ValueNode {
             record,
             path: CfdPath::root(),
-            branch: Vec::new(),
         };
         let cursor = self.enter_node(TraversalCursor::root(), &root, StructureKind::DataValue)?;
         self.resolve_fields(fields, &root, cursor)
@@ -137,7 +122,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let node = ValueNode {
             record,
             path: path.clone(),
-            branch: Vec::new(),
         };
         self.resolve_node(value, node, TraversalCursor::root(), false)
     }
@@ -172,15 +156,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             self.push_cycle(cycle_start);
             return None;
         }
-        let kind = if matches!(
-            value,
-            ValueDraft::PendingSpreadField { .. } | ValueDraft::DictSpread { .. }
-        ) {
-            StructureKind::SpreadResolution
-        } else {
-            StructureKind::DataValue
-        };
-        let cursor = self.enter_node(parent, &node, kind)?;
+        let cursor = self.enter_node(parent, &node, StructureKind::DataValue)?;
         if memoize {
             if let Some(shape) = self.memo.get(&node).map(|memo| memo.shape) {
                 self.charge_cached_shape(cursor, &node, shape)?;
@@ -239,11 +215,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                     None
                 }
             },
-            ValueDraft::PendingSpreadField {
-                source_type,
-                key,
-                field,
-            } => self.resolve_spread_field(source_type, key, field, node, cursor),
             ValueDraft::Object(record_draft) => {
                 let fields = self.resolve_fields(&record_draft.fields, node, cursor)?;
                 Some(CfdValue::Object(Box::new(CfdObject {
@@ -266,9 +237,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             }
             ValueDraft::Dict(entries) => self
                 .resolve_dict_entries(entries, node, cursor)
-                .map(CfdValue::Dict),
-            ValueDraft::DictSpread { spreads, entries } => self
-                .resolve_dict_spread(spreads, entries, node, cursor)
                 .map(CfdValue::Dict),
         }
     }
@@ -383,7 +351,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let target_node = ValueNode {
             record: record_id,
             path: CfdPath::root().field(field_name),
-            branch: Vec::new(),
         };
         let resolved = self.resolve_node(value, target_node, cursor, true)?;
         Some((resolved, field.value_type.clone()))
@@ -511,83 +478,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         (complete && self.diagnostics.len() == diagnostic_start).then_some(out)
     }
 
-    fn resolve_dict_spread(
-        &mut self,
-        spreads: &[ValueDraft],
-        entries: &[(CfdDictKey, ValueDraft)],
-        node: &ValueNode,
-        cursor: TraversalCursor,
-    ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
-        let diagnostic_start = self.diagnostics.len();
-        let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
-        let mut complete = true;
-        for (index, spread) in spreads.iter().enumerate() {
-            let Some(CfdValue::Dict(entries)) =
-                self.resolve_node(spread, node.spread_branch(index), cursor, false)
-            else {
-                if self.diagnostics.len() == diagnostic_start {
-                    self.diagnostics.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            "dict spread requires a dict value",
-                        )
-                        .with_primary(Some(node.record), node.path.clone()),
-                    );
-                }
-                complete = false;
-                continue;
-            };
-            for (key, value) in entries {
-                merged.insert(key, value);
-            }
-        }
-
-        for (key, value) in entries {
-            let Some(value) = self.resolve_node(value, node.dict_key(key), cursor, false) else {
-                complete = false;
-                continue;
-            };
-            merged.insert(key.clone(), value);
-        }
-
-        (complete && self.diagnostics.len() == diagnostic_start)
-            .then(|| merged.into_iter().collect())
-    }
-
-    fn resolve_spread_field(
-        &mut self,
-        source_type: &TypeName,
-        key: &str,
-        field: &FieldName,
-        node: &ValueNode,
-        cursor: TraversalCursor,
-    ) -> Option<CfdValue> {
-        let (source_id, _) = self.resolve_ref_target(source_type, key, node)?;
-        let drafts = self.drafts;
-        let source_draft = drafts.get(source_id.index())?;
-        let Some(value) = source_draft.fields.get(field) else {
-            self.diagnostics.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::UnknownField,
-                    format!("spread field `{field}` was not found"),
-                )
-                .with_primary(Some(node.record), node.path.clone()),
-            );
-            return None;
-        };
-
-        self.resolve_node(
-            value,
-            ValueNode {
-                record: source_id,
-                path: CfdPath::root().field(field.as_str()),
-                branch: Vec::new(),
-            },
-            cursor,
-            true,
-        )
-    }
-
     fn enter_node(
         &mut self,
         parent: TraversalCursor,
@@ -620,14 +510,14 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let additional_nodes = shape.nodes.saturating_sub(1);
         let result = self
             .budget
-            .check_additional_depth(cursor, StructureKind::SpreadResolution, additional_depth)
+            .check_additional_depth(cursor, StructureKind::DataValue, additional_depth)
             .and_then(|()| {
                 self.budget
-                    .charge_nodes(StructureKind::SpreadResolution, additional_nodes)
+                    .charge_nodes(StructureKind::DataValue, additional_nodes)
             })
             .and_then(|()| {
                 self.budget
-                    .charge_work(StructureKind::SpreadResolution, additional_nodes)
+                    .charge_work(StructureKind::DataValue, additional_nodes)
             });
         match result {
             Ok(()) => Some(()),
@@ -656,8 +546,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             .iter()
             .enumerate()
             .min_by(|(left_index, left), (right_index, right)| {
-                left.cmp(right)
-                    .then_with(|| nodes[*left_index].branch.cmp(&nodes[*right_index].branch))
+                left.cmp(right).then_with(|| left_index.cmp(right_index))
             })
             .map_or(0, |(index, _)| index);
         nodes.rotate_left(canonical_start);
@@ -677,7 +566,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         };
         let mut diagnostic = CfdDiagnostic::error(
             CfdErrorCode::ValueDependencyCycle,
-            format!("data spread dependency cycle: {}", path.join(" -> ")),
+            format!("data value dependency cycle: {}", path.join(" -> ")),
         )
         .with_primary(Some(first.record), first.path.clone())
         .with_primary_message("cycle starts here");

@@ -28,10 +28,5 @@
     "prefix": "arr",
     "body": "[${1:item1}, ${2:item2}]",
     "description": "CFD array value."
-  },
-  "Spread": {
-    "prefix": "...",
-    "body": "...${1:source}",
-    "description": "CFD spread operator."
   }
 }

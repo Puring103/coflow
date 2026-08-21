@@ -14,16 +14,13 @@ pub struct CfdRecord {
     pub group_type: Option<(String, Span)>,
     pub type_name: String,
     pub type_span: Span,
-    pub entries: Vec<CfdBlockEntry>,
+    pub fields: Vec<CfdField>,
     pub span: Span,
 }
 
 impl CfdRecord {
     pub fn fields(&self) -> impl Iterator<Item = &CfdField> {
-        self.entries.iter().filter_map(|entry| match entry {
-            CfdBlockEntry::Field(field) => Some(field),
-            CfdBlockEntry::Spread(_, _) => None,
-        })
+        self.fields.iter()
     }
 }
 
@@ -47,7 +44,6 @@ pub enum CfdValue {
     Block(CfdBlock),
     Array(Vec<CfdValue>, Span),
     Ref(CfdRef),
-    Spread(Box<CfdValue>, Span),
 }
 
 impl CfdValue {
@@ -57,8 +53,7 @@ impl CfdValue {
             Self::Scalar(_, s)
             | Self::QuotedString(_, s)
             | Self::Null(s)
-            | Self::Array(_, s)
-            | Self::Spread(_, s) => *s,
+            | Self::Array(_, s) => *s,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
@@ -115,14 +110,8 @@ pub enum CfdBitOp {
 pub struct CfdBlock {
     /// Optional type marker before `{`, e.g. `SubType { ... }`.
     pub type_marker: Option<(String, Span)>,
-    pub entries: Vec<CfdBlockEntry>,
+    pub fields: Vec<CfdField>,
     pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CfdBlockEntry {
-    Field(CfdField),
-    Spread(CfdValue, Span),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

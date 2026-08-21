@@ -12,7 +12,7 @@ mod table_manager;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceWriter,
+    ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter, WriteBatchFailure,
     WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
@@ -28,7 +28,7 @@ use std::path::Path;
 
 use crate::options::{csv_sheet_config_from_options, csv_source_options, CsvSourceOptions};
 use crate::parse;
-use plan::apply_plan;
+use plan::{apply_field_plans, apply_plan};
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "csv",
@@ -77,6 +77,30 @@ impl SourceWriter for CsvWriter {
         .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
         Ok(WriteOutcome::default())
+    }
+
+    fn write_field_batch(
+        &self,
+        ctx: WriteContext<'_>,
+        requests: &[WriteCellRequest<'_>],
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        let mut plans = Vec::with_capacity(requests.len());
+        for (index, request) in requests.iter().enumerate() {
+            let plan = plan_field_write(&TableFieldWrite {
+                origin: request.origin,
+                record_key: request.record_key,
+                actual_type: request.actual_type,
+                field_path: request.field_path,
+                new_value: request.new_value,
+                model: ctx.model,
+            })
+            .map_err(table_write_diagnostics_to_api)
+            .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
+            plans.push(plan);
+        }
+        apply_field_plans(&plans)
+            .map_err(|(index, diagnostics)| WriteBatchFailure { index, diagnostics })?;
+        Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
     fn insert_record(
@@ -145,14 +169,6 @@ impl SourceWriter for CsvWriter {
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome::default())
-    }
-
-    fn rewrite_record_references(
-        &self,
-        _ctx: WriteContext<'_>,
-        _request: &RewriteRecordReferencesRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
     }
 

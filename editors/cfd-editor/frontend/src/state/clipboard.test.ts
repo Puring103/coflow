@@ -12,8 +12,6 @@ import {
 
 const coordinate = { actual_type: 'Item', key: 'one' }
 const annotation = (overrides: Partial<FieldAnnotation> = {}): FieldAnnotation => ({
-  spread_info: null,
-  ref_target_file: null,
   enum_int_value: null,
   declared_type: 'string',
   ref_target_type: null,

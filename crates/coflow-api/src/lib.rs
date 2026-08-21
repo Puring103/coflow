@@ -40,7 +40,7 @@ pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    DimensionSourceSchema, RewriteDimensionRecordRequest, RewriteDimensionReferencesRequest,
+    DimensionSourceSchema, RewriteDimensionRecordRequest,
     SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
     TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
 };
@@ -54,8 +54,8 @@ pub use registry::{
 };
 pub use writer::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceTransaction,
-    SourceTransactionCompensation, SourceWriter, SpreadRewriteTarget, WriteBatchFailure,
+    ReorderRecordsRequest, SourceTransaction, SourceTransactionCompensation, SourceWriter,
+    WriteBatchFailure,
     WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
     WriterCapabilities, WriterDescriptor,
 };

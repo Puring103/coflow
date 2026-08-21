@@ -20,18 +20,9 @@ pub enum LoadedValueDraft {
         actual_type: Option<String>,
         fields: BTreeMap<String, LoadedValueDraft>,
     },
-    ObjectSpread {
-        actual_type: Option<String>,
-        spreads: Vec<LoadedValueDraft>,
-        fields: BTreeMap<String, LoadedValueDraft>,
-    },
     RecordRef(String),
     Array(Vec<LoadedValueDraft>),
     Dict(Vec<(LoadedDictKeyDraft, LoadedValueDraft)>),
-    DictSpread {
-        spreads: Vec<LoadedValueDraft>,
-        entries: Vec<(LoadedDictKeyDraft, LoadedValueDraft)>,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,50 +89,8 @@ impl LoadedValueDraft {
     }
 
     #[must_use]
-    pub fn object_spread(
-        spreads: impl IntoIterator<Item = LoadedValueDraft>,
-        fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
-    ) -> Self {
-        Self::ObjectSpread {
-            actual_type: None,
-            spreads: spreads.into_iter().collect(),
-            fields: fields
-                .into_iter()
-                .map(|(name, value)| (name.into(), value))
-                .collect(),
-        }
-    }
-
-    #[must_use]
-    pub fn object_spread_with_actual_type(
-        actual_type: impl Into<String>,
-        spreads: impl IntoIterator<Item = LoadedValueDraft>,
-        fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
-    ) -> Self {
-        Self::ObjectSpread {
-            actual_type: Some(actual_type.into()),
-            spreads: spreads.into_iter().collect(),
-            fields: fields
-                .into_iter()
-                .map(|(name, value)| (name.into(), value))
-                .collect(),
-        }
-    }
-
-    #[must_use]
     pub fn dict(entries: impl IntoIterator<Item = (LoadedDictKeyDraft, LoadedValueDraft)>) -> Self {
         Self::Dict(entries.into_iter().collect())
-    }
-
-    #[must_use]
-    pub fn dict_spread(
-        spreads: impl IntoIterator<Item = LoadedValueDraft>,
-        entries: impl IntoIterator<Item = (LoadedDictKeyDraft, LoadedValueDraft)>,
-    ) -> Self {
-        Self::DictSpread {
-            spreads: spreads.into_iter().collect(),
-            entries: entries.into_iter().collect(),
-        }
     }
 
     #[must_use]

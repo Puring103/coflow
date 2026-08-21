@@ -18,7 +18,6 @@ pub struct DimensionValueDraft {
 pub struct LoadedRecordDraft {
     pub key: String,
     pub actual_type: String,
-    pub spreads: Vec<LoadedValueDraft>,
     pub fields: BTreeMap<String, LoadedValueDraft>,
     /// Where this top-level record originated. Loaders set this when parsing;
     /// synthetic records leave it as [`RecordOrigin::None`].
@@ -35,26 +34,6 @@ impl LoadedRecordDraft {
         Self {
             key: key.into(),
             actual_type: actual_type.into(),
-            spreads: Vec::new(),
-            fields: fields
-                .into_iter()
-                .map(|(name, value)| (name.into(), value))
-                .collect(),
-            origin: RecordOrigin::None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_spreads(
-        key: impl Into<String>,
-        actual_type: impl Into<String>,
-        spreads: impl IntoIterator<Item = LoadedValueDraft>,
-        fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
-    ) -> Self {
-        Self {
-            key: key.into(),
-            actual_type: actual_type.into(),
-            spreads: spreads.into_iter().collect(),
             fields: fields
                 .into_iter()
                 .map(|(name, value)| (name.into(), value))

@@ -126,7 +126,6 @@ fn rename_record_key_updates_cross_source_references() {
     );
     let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
     let bundles = std::fs::read_to_string(root.join("data/bundles.csv")).expect("read bundles");
-    let spread = std::fs::read_to_string(root.join("data/spread.cfd")).expect("read spread");
     assert!(items.contains("blade: Item"), "items source:\n{items}");
     assert!(!items.contains("sword: Item"), "items source:\n{items}");
     assert!(
@@ -136,10 +135,6 @@ fn rename_record_key_updates_cross_source_references() {
     assert!(
         !bundles.contains("&sword"),
         "csv refs should not keep old key:\n{bundles}"
-    );
-    assert!(
-        spread.contains("...&base_bundle"),
-        "unrelated spread should be preserved:\n{spread}"
     );
     assert!(
         items.contains("&blade"),
@@ -240,14 +235,6 @@ base_bundle: Bundle {
     )
     .expect("write csv source");
     std::fs::write(
-        root.join("data/spread.cfd"),
-        r"spread_bundle: Bundle {
-    ...&base_bundle,
-}
-",
-    )
-    .expect("write spread source");
-    std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/main.cft
 sources:
@@ -257,7 +244,6 @@ sources:
     sheets:
       - sheet: bundles
         type: Bundle
-  - path: data/spread.cfd
 ",
     )
     .expect("write config");

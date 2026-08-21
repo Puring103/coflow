@@ -6,7 +6,6 @@
     { "include": "#comment-slash" },
     { "include": "#comment-hash" },
     { "include": "#string" },
-    { "include": "#spread" },
     { "include": "#ref-direct" },
     { "include": "#record-colon" },
     { "include": "#group-key" },
@@ -33,10 +32,6 @@
       "patterns": [
         { "name": "constant.character.escape.cfd", "match": "\\\\[\"\\\\nrt]" }
       ]
-    },
-    "spread": {
-      "name": "keyword.operator.spread.cfd",
-      "match": "\\.\\.\\."
     },
     "ref-direct": {
       "comment": "&key — direct reference shorthand; & merged into variable capture",

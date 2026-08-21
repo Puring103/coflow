@@ -11,7 +11,6 @@ use crate::RecordCoordinate;
 pub(crate) fn plan_full_checks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     plan_full_checks_with_limit(schema, model, usize::MAX).unwrap_or_default()
 }
-
 pub(super) fn plan_full_checks_with_limit(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -55,7 +54,6 @@ pub(super) fn plan_incremental_checks_with_limit(
     impact: &CheckImpact,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
-    let impact = expand_materialization_changes(model, impact);
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (coordinate, changes) in &impact.records {
         if tasks.overflowed() {
@@ -169,7 +167,6 @@ impl CheckTaskBuilder {
         Ok(tasks)
     }
 }
-
 fn plan_field_change(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -237,7 +234,6 @@ fn plan_field_change(
         insert_owner_tasks(schema, model, info, &changed.projection, tasks);
     }
 }
-
 fn insert_owner_tasks(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -341,20 +337,4 @@ fn owner_fits_host(schema: &CftSchema, owner: &CheckOwner, actual_type: &str) ->
                     .any(|host| host.as_str() == actual_type)
         }
     }
-}
-
-fn expand_materialization_changes(model: &CfdDataModel, impact: &CheckImpact) -> CheckImpact {
-    let source_ids = impact.records.keys().filter_map(|coordinate| {
-        model.record_by_type_key(&coordinate.actual_type, &coordinate.key)
-    });
-    let mut expanded = impact.clone();
-    for id in model.materialization_dependents(source_ids) {
-        if let Some(record) = model.record(id) {
-            expanded
-                .records
-                .entry(record.coordinate())
-                .or_insert(ChangedRecordFields::All);
-        }
-    }
-    expanded
 }

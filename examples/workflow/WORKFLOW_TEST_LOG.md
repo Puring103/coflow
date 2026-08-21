@@ -478,7 +478,7 @@ Fallback：
 - 拆分后 check/build 通过。
 - 指定 file guard 的 patch 正确写入 `quests.cfd`。
 
-## 第 20 轮：输出目录安全、坏单元格和 CFD spread
+## 第 20 轮：输出目录安全和坏单元格
 
 日期：2026-07-10
 
@@ -486,7 +486,7 @@ Fallback：
 
 - 临时把 `outputs.data.dir` 改为 `data/generated`。
 - 用 fallback 把 Excel `Item.potion_small.Rarity` 改成 `BadRarity`。
-- 在 CFD 中新增 `stage_forest_03`，使用 spread 复用 `stage_forest_02`。
+- 在 CFD 中新增 `stage_forest_03`。
 - patch 修改 `stage_forest_03.recommended_power`。
 
 结果：
@@ -494,8 +494,6 @@ Fallback：
 - build 允许输出到 `data/generated`，没有拒绝输出目录位于 source 目录下；已清理该测试产物并恢复配置。
 - 坏 enum 单元格触发 `CELL-InvalidEnumVariant`，定位 `data/workflow.xlsx` / `Item` / `D2`。
 - 在坏单元格状态下，Coflow patch 无法定位 `Item.potion_small` 来修复该单元格，只能 fallback 修复。
-- CFD spread 写 `...stage_forest_02` 会报 `ReferenceNeedsMarker`；改为 `...&stage_forest_02` 后 check 通过。
-- CFD writer 对 spread 派生记录的字段 patch 会保留 spread 结构，只更新覆盖字段。
 
 待修复问题：
 
@@ -785,7 +783,6 @@ Fallback：
 - 截断 `data/progression/main.cfd` 尾部制造语法错误。
 - 将 `monster: &slime_green` 改为 `monster: slime_green`。
 - 在同一文件追加重复 `Stage.stage_forest_02`。
-- 尝试制造 `stage_forest_02` 与 `stage_forest_03` 的 spread 互相引用。
 
 尝试的 Coflow 命令：
 
@@ -797,12 +794,10 @@ Fallback：
 - 截断文件：`CFD-TEXT-Syntax record key is missing`。
 - 无效记录引用：`CFD-TEXT-Syntax invalid record reference`。
 - 同文件重复 key：`CFD-DATA-011 duplicate key in table Stage`，定位新增重复记录行。
-- spread 互相引用：check 仍通过，未观察到循环诊断。
 - 每次异常后均通过 `data write-file --stdin --check` 恢复。
 
 待修复问题：
 
-- spread 互相引用未报错，需要确认这是预期覆盖语义还是缺少循环检测。
 
 ## 第 30 轮：引用图级联删除
 

@@ -21,6 +21,7 @@
 
 ## 兼容性
 
+- CFD 的 `...` spread 语法已移除；现有对象和字典需要展开为完整字段或条目后再升级。
 - JSON C# loader 的入口从 `Load(string dataDir)` 改为 `Load(Func<string, string?> loadText)`；现有调用方需要提供读取文本的回调。
 - JSON、MessagePack 数据格式和 MessagePack C# loader 没有变化。升级现有项目前请运行 `coflow check` 和 `coflow build`。
 

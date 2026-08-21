@@ -14,7 +14,7 @@ use crate::options::{
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, RewriteRecordReferencesRequest, SourceWriter,
+    ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter,
     WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
     WriterDescriptor,
 };
@@ -193,14 +193,6 @@ impl SourceWriter for ExcelWriter {
         let plan = plan_delete_record(request.origin, request.record_key)
             .map_err(table_write_diagnostics_to_api)?;
         apply_plan(&plan)?;
-        Ok(WriteOutcome::default())
-    }
-
-    fn rewrite_record_references(
-        &self,
-        _ctx: WriteContext<'_>,
-        _request: &RewriteRecordReferencesRequest<'_>,
-    ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
     }
 

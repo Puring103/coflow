@@ -14,7 +14,6 @@
 #   字典：{string:int} designer_tags
 #   & 直接引用（跨同类型）
 #   & 记录引用
-#   spread（...& 对象字段覆盖）
 #   多记录同类分组
 #   内联对象（Trigger 直接内嵌）
 
@@ -539,7 +538,7 @@ Card {
 
 }
 
-# ─── Deck（含 spread / DeckSlot 数组 / faction 约束）────────────────────────
+# ─── Deck（含 DeckSlot 数组 / faction 约束）────────────────────────
 
 Deck {
 
@@ -560,9 +559,8 @@ Deck {
     ],
   }
 
-  # 中立快攻牌组（spread 继承 paladin_control 的基础配置，替换核心）
+  # 中立快攻牌组
   deck_neutral_aggro {
-    ...&deck_paladin_control,
     name: "中立快攻",
     faction: Neutral,
     description: "以低费随从快速推进的快攻套路。",

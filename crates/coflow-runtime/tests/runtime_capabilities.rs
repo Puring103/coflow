@@ -81,7 +81,6 @@ fn read_and_build_sessions_expose_generation_queries() {
     assert_eq!(read_stats.records_materialized, 1);
     assert_eq!(read_stats.records_reused, 0);
     assert_eq!(read_stats.ref_edges_rebuilt, 0);
-    assert_eq!(read_stats.spread_edges_rebuilt, 0);
     assert_eq!(read_stats.check_roots_executed, 0);
 
     let build_session = runtime()
@@ -151,7 +150,7 @@ fn execution_stats_count_rebuilt_relation_edges() {
         "relation-stats",
         "type Item { name: string; target: &Item? = null; }\n",
         r#"base: Item { name: "Base" }
-copy: Item { ...&base, name: "Copy", target: &base }
+copy: Item { name: "Copy", target: &base }
 "#,
     );
     let session = runtime()
@@ -162,7 +161,6 @@ copy: Item { ...&base, name: "Copy", target: &base }
     assert_eq!(statistics.draft_records_collected, 2);
     assert_eq!(statistics.records_materialized, 2);
     assert_eq!(statistics.ref_edges_rebuilt, 1);
-    assert_eq!(statistics.spread_edges_rebuilt, 1);
 }
 
 #[test]

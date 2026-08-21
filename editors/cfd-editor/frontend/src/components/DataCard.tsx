@@ -14,7 +14,6 @@ import {
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { FieldDiagnostic as WireFieldDiagnostic } from '../bindings/FieldDiagnostic'
-import type { SpreadInfo } from '../bindings/SpreadInfo'
 import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
@@ -34,7 +33,6 @@ import {
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
-  cellSpreadInfo,
   enumValue,
   fieldPathDictKey,
   fieldPathField,
@@ -136,14 +134,6 @@ const INDENT_PX = 14
 
 function inspectorDepthStyle(depth: number): CSSProperties {
   return { '--dc-indent': `${depth * INDENT_PX}px` } as CSSProperties
-}
-
-function spreadHintText(info: SpreadInfo | undefined): string | undefined {
-  if (!info) return undefined
-  const path = info.source_field_path.length > 0
-    ? `.${info.source_field_path.join('.')}`
-    : ''
-  return `继承自 ${info.source.actual_type}.${info.source.key}${path}\n编辑会写回来源记录`
 }
 
 function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
@@ -566,7 +556,6 @@ export function DataCardExpanded({
     <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc) => {
         const fieldEdit = cellReadOnly(fc) ? undefined : onEdit
-        const spreadInfo = cellSpreadInfo(fc)
         const declaredType = cellDeclaredType(fc)
         const refTargetType = cellRefTargetType(fc)
         const enumType = cellEnumType(fc)
@@ -605,8 +594,6 @@ export function DataCardExpanded({
             depth={depth}
             onEdit={fieldEdit}
             onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
-            isSpread={!!spreadInfo}
-            spreadInfo={spreadInfo}
             declaredType={declaredType}
             refTargetType={refTargetType}
             enumType={enumType}
@@ -661,8 +648,6 @@ function FieldRow({
   depth,
   onEdit,
   onCollectionEdit,
-  isSpread,
-  spreadInfo,
   declaredType,
   refTargetType,
   enumType,
@@ -684,8 +669,6 @@ function FieldRow({
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
-  isSpread?: boolean
-  spreadInfo?: SpreadInfo
   declaredType?: string
   refTargetType?: string
   enumType?: string
@@ -721,7 +704,7 @@ function FieldRow({
   // scalars already expose a "(null)" option in their pill selects, so we
   // don't double up there. Bool doesn't get a clear button unless nullable.
   const commit = onEdit ? (next: FieldValue) => onEdit(fieldPath, next) : undefined
-  const nullControls = !isSpread && commit ? (
+  const nullControls = commit ? (
     <NullableControls
       value={value}
       nullable={!!nullable}
@@ -747,8 +730,6 @@ function FieldRow({
         depth={depth}
         onEdit={onEdit}
         onCollectionEdit={onCollectionEdit}
-        isSpread={isSpread}
-        spreadInfo={spreadInfo}
         declaredType={declaredType}
         refTargetType={refTargetType}
         valueAnnotation={valueAnnotation}
@@ -772,8 +753,6 @@ function FieldRow({
       value={value}
       depth={depth}
       onCommit={commit}
-      isSpread={isSpread}
-      spreadInfo={spreadInfo}
       declaredType={declaredType}
       refTargetType={refTargetType}
       enumType={enumType}
@@ -970,8 +949,6 @@ function ScalarFieldRow({
   value,
   depth,
   onCommit,
-  isSpread,
-  spreadInfo,
   declaredType,
   refTargetType,
   enumType,
@@ -992,8 +969,6 @@ function ScalarFieldRow({
   value: FieldValue
   depth: number
   onCommit?: (newValue: FieldValue) => void
-  isSpread?: boolean
-  spreadInfo?: SpreadInfo
   declaredType?: string
   refTargetType?: string
   enumType?: string
@@ -1015,8 +990,7 @@ function ScalarFieldRow({
   const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
   const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
-  const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = [description, spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+  const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
@@ -1079,7 +1053,7 @@ function ScalarFieldRow({
   const displayedValue = scrubPreview ?? value
 
   return (
-    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div
         className={`dc-row-label${numericScrubEnabled ? ' dc-numeric-scrub-label' : ''}`}
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
@@ -1673,8 +1647,6 @@ function ExpandableRow({
   depth,
   onEdit,
   onCollectionEdit,
-  isSpread,
-  spreadInfo,
   declaredType,
   refTargetType,
   valueAnnotation,
@@ -1693,8 +1665,6 @@ function ExpandableRow({
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
-  isSpread?: boolean
-  spreadInfo?: SpreadInfo
   declaredType?: string
   refTargetType?: string
   valueAnnotation?: FieldAnnotation | null
@@ -1728,8 +1698,7 @@ function ExpandableRow({
   }, [shouldAutoExpand])
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
-  const spreadHint = spreadHintText(spreadInfo)
-  const rowTitle = [description, spreadHint, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+  const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
@@ -1760,7 +1729,7 @@ function ExpandableRow({
 
   return (
     <div className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}>
-      <div className={`dc-row dc-row-structure${staticObjectItem ? ' dc-row-static-group' : ' dc-row-foldout'}${structureClass}${selected ? ' keyboard-selected' : ''}${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={staticObjectItem ? undefined : toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-structure${staticObjectItem ? ' dc-row-static-group' : ' dc-row-foldout'}${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={staticObjectItem ? undefined : toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
           {!staticObjectItem && (

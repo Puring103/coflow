@@ -4,7 +4,7 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdRecord, CfdSyntaxDiagnostic, CfdValue,
 };
 use coflow_cft::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
@@ -93,16 +93,9 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
     for record in &ast.records {
         collector.add(record.key_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
         collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
-        for entry in &record.entries {
-            match entry {
-                CfdBlockEntry::Field(field) => {
-                    collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
-                    collect_value_tokens(&field.value, &mut collector);
-                }
-                CfdBlockEntry::Spread(value, _) => {
-                    collect_value_tokens(value, &mut collector);
-                }
-            }
+        for field in &record.fields {
+            collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
+            collect_value_tokens(&field.value, &mut collector);
         }
     }
 
@@ -122,14 +115,9 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             if let Some((_, span)) = &block.type_marker {
                 c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
             }
-            for entry in &block.entries {
-                match entry {
-                    CfdBlockEntry::Field(f) => {
-                        c.add(f.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
-                        collect_value_tokens(&f.value, c);
-                    }
-                    CfdBlockEntry::Spread(v, _) => collect_value_tokens(v, c),
-                }
+            for field in &block.fields {
+                c.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
+                collect_value_tokens(&field.value, c);
             }
         }
         CfdValue::Array(items, _) => {
@@ -140,10 +128,6 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         CfdValue::Ref(r) => {
             c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
             c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
-        }
-        CfdValue::Spread(inner, span) => {
-            c.add_plain(Span::new(span.start, span.start + 3), SEM_OPERATOR); // ...
-            collect_value_tokens(inner, c);
         }
     }
 }
@@ -294,20 +278,13 @@ pub fn definition_type_name(ast: &CfdAst, offset: usize) -> Option<&str> {
         if span_contains(record.type_span, offset) {
             return Some(&record.type_name);
         }
-        for entry in &record.entries {
-            if let Some(type_name) = type_name_in_entry(entry, offset) {
+        for field in &record.fields {
+            if let Some(type_name) = type_name_in_value(&field.value, offset) {
                 return Some(type_name);
             }
         }
     }
     None
-}
-
-fn type_name_in_entry(entry: &CfdBlockEntry, offset: usize) -> Option<&str> {
-    match entry {
-        CfdBlockEntry::Field(field) => type_name_in_value(&field.value, offset),
-        CfdBlockEntry::Spread(value, _) => type_name_in_value(value, offset),
-    }
 }
 
 fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
@@ -318,8 +295,8 @@ fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
                     return Some(name.as_str());
                 }
             }
-            for entry in &block.entries {
-                if let Some(type_name) = type_name_in_entry(entry, offset) {
+            for field in &block.fields {
+                if let Some(type_name) = type_name_in_value(&field.value, offset) {
                     return Some(type_name);
                 }
             }
@@ -333,7 +310,6 @@ fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
             }
             None
         }
-        CfdValue::Spread(inner, _) => type_name_in_value(inner, offset),
         _ => None,
     }
 }
@@ -347,8 +323,8 @@ pub fn definition_field_name<'a>(
 ) -> Option<(String, &'a str)> {
     for record in &ast.records {
         let type_name = record.type_name.clone();
-        for entry in &record.entries {
-            if let Some(field) = field_name_in_entry(entry, schema, type_name.clone(), offset) {
+        for field in &record.fields {
+            if let Some(field) = field_name_in_field(field, schema, type_name.clone(), offset) {
                 return Some(field);
             }
         }
@@ -356,22 +332,17 @@ pub fn definition_field_name<'a>(
     None
 }
 
-fn field_name_in_entry<'a>(
-    entry: &'a CfdBlockEntry,
+fn field_name_in_field<'a>(
+    field: &'a CfdField,
     schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
 ) -> Option<(String, &'a str)> {
-    match entry {
-        CfdBlockEntry::Field(field) => {
-            field_name_in_fields(std::slice::from_ref(field), schema, owner_type, offset)
-        }
-        CfdBlockEntry::Spread(value, _) => field_name_in_value(value, schema, owner_type, offset),
-    }
+    field_name_in_fields(std::slice::from_ref(field), schema, owner_type, offset)
 }
 
 fn field_name_in_fields<'a>(
-    fields: &'a [coflow_cfd::CfdField],
+    fields: &'a [CfdField],
     schema: Option<&CftSchema>,
     owner_type: String,
     offset: usize,
@@ -409,18 +380,13 @@ fn field_name_in_value<'a>(
                 .type_marker
                 .as_ref()
                 .map_or(owner_type, |(name, _)| name.clone());
-            for entry in &block.entries {
-                let result = match entry {
-                    CfdBlockEntry::Field(field) => field_name_in_fields(
-                        std::slice::from_ref(field),
-                        schema,
-                        owner_type.clone(),
-                        offset,
-                    ),
-                    CfdBlockEntry::Spread(value, _) => {
-                        field_name_in_value(value, schema, owner_type.clone(), offset)
-                    }
-                };
+            for field in &block.fields {
+                let result = field_name_in_fields(
+                    std::slice::from_ref(field),
+                    schema,
+                    owner_type.clone(),
+                    offset,
+                );
                 if result.is_some() {
                     return result;
                 }
@@ -436,7 +402,6 @@ fn field_name_in_value<'a>(
             }
             None
         }
-        CfdValue::Spread(inner, _) => field_name_in_value(inner, schema, owner_type, offset),
         _ => None,
     }
 }
@@ -457,8 +422,8 @@ pub fn definition_ref_target(
 ) -> Option<(String, String)> {
     let schema = schema?;
     for record in &ast.records {
-        for entry in &record.entries {
-            if let Some(target) = ref_target_in_entry(entry, schema, &record.type_name, offset) {
+        for field in &record.fields {
+            if let Some(target) = ref_target_in_field(field, schema, &record.type_name, offset) {
                 return Some(target);
             }
         }
@@ -466,31 +431,18 @@ pub fn definition_ref_target(
     None
 }
 
-fn ref_target_in_entry(
-    entry: &CfdBlockEntry,
+fn ref_target_in_field(
+    field: &CfdField,
     schema: &CftSchema,
     owner_type: &str,
     offset: usize,
 ) -> Option<(String, String)> {
-    match entry {
-        CfdBlockEntry::Field(field) => {
-            let owner = schema.resolve_type(owner_type)?;
-            let field_type = &owner
-                .all_fields()
-                .find(|candidate| candidate.name.as_str() == field.name)?
-                .value_type;
-            ref_target_in_value(&field.value, schema, field_type, offset)
-        }
-        CfdBlockEntry::Spread(value, _) => {
-            let owner = schema.resolve_type(owner_type)?;
-            ref_target_in_value(
-                value,
-                schema,
-                &CftValueType::RecordRef(owner.name.clone()),
-                offset,
-            )
-        }
-    }
+    let owner = schema.resolve_type(owner_type)?;
+    let field_type = &owner
+        .all_fields()
+        .find(|candidate| candidate.name.as_str() == field.name)?
+        .value_type;
+    ref_target_in_value(&field.value, schema, field_type, offset)
 }
 
 fn ref_target_in_value(
@@ -511,12 +463,10 @@ fn ref_target_in_value(
         CfdValue::Block(block) => {
             let expected_type = strip_nullable(expected_type);
             if let CftValueType::Dict(_, value_type) = expected_type {
-                for entry in &block.entries {
-                    let value = match entry {
-                        CfdBlockEntry::Field(field) => &field.value,
-                        CfdBlockEntry::Spread(value, _) => value,
-                    };
-                    if let Some(target) = ref_target_in_value(value, schema, value_type, offset) {
+                for field in &block.fields {
+                    if let Some(target) =
+                        ref_target_in_value(&field.value, schema, value_type, offset)
+                    {
                         return Some(target);
                     }
                 }
@@ -527,8 +477,8 @@ fn ref_target_in_value(
                 .as_ref()
                 .map(|(name, _)| name.as_str())
                 .or_else(|| reference_target_type(expected_type))?;
-            for entry in &block.entries {
-                if let Some(target) = ref_target_in_entry(entry, schema, owner_type, offset) {
+            for field in &block.fields {
+                if let Some(target) = ref_target_in_field(field, schema, owner_type, offset) {
                     return Some(target);
                 }
             }
@@ -545,7 +495,6 @@ fn ref_target_in_value(
             }
             None
         }
-        CfdValue::Spread(inner, _) => ref_target_in_value(inner, schema, expected_type, offset),
         _ => None,
     }
 }

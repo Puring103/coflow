@@ -160,7 +160,7 @@ describe('publishMutationGeneration', () => {
     expect(publishGraphProjection).toHaveBeenCalledWith(2, [refreshed], false)
   })
 
-  it('publishes both the persisted source and a projected spread host', async () => {
+  it('publishes both the persisted source and a projected fallback file', async () => {
     const host = fileRecords(2, 'data/host.cfd')
     const source = fileRecords(2, 'data/source.cfd')
     const publishFileRecords = vi.fn()

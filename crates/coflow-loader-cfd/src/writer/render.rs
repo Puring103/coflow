@@ -1,5 +1,5 @@
 use coflow_api::DiagnosticSet;
-use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
+use coflow_cfd::ast::CfdRecord as AstRecord;
 use coflow_cft::{CftField, CftSchema, CftSchemaDefaultValue, CftValueType};
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -66,14 +66,6 @@ fn render_cfd_record(
         format_record_key(&record.key),
         record.type_name
     );
-    for entry in &record.entries {
-        let CfdBlockEntry::Spread(_, span) = entry else {
-            continue;
-        };
-        out.push_str("  ");
-        out.push_str(raw_span(source, *span).trim());
-        out.push_str(",\n");
-    }
     for (field_name, field) in fields {
         let value = existing
             .get(field_name)
