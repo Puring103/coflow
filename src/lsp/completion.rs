@@ -2,11 +2,11 @@ use coflow_language::syntax::ast::{Item, TypeRef, TypeRefKind};
 use coflow_language::CftConstValue;
 use serde_json::{json, Map, Value};
 
-use crate::documentation::{
+use super::documentation::{
     builtin_functions, AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
 };
-use crate::position::{byte_offset_from_position, LspPosition};
-use crate::{
+use super::position::{byte_offset_from_position, LspPosition};
+use super::{
     current_field_at, current_type_at, is_ident_continue, is_trivia_position, last_ident,
     line_prefix_at, parse_dotted_ident_chain, previous_char, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,

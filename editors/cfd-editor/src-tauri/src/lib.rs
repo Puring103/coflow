@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 pub mod editor;
+mod extension_manifest;
 mod host;
 mod watcher;
 
@@ -19,7 +20,7 @@ use editor::{
     ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
     WriteDimensionValueOutcome, WriteFieldOutcome,
 };
-use extension_api::ExtensionManifest;
+use extension_manifest::ExtensionManifest;
 use host::EditorHost;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};

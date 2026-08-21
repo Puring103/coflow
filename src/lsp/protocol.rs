@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::io::BufRead;
 
-use crate::{position::LspPosition, MAX_LSP_CONTENT_LENGTH};
+use super::{position::LspPosition, MAX_LSP_CONTENT_LENGTH};
 
 #[derive(Debug)]
 pub(crate) struct TextRequest {

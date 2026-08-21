@@ -14,3 +14,6 @@
 #![allow(clippy::multiple_crate_versions)]
 
 pub mod commands;
+
+#[cfg(feature = "cli")]
+pub mod lsp;

@@ -1,6 +1,8 @@
+use super::super::definition::{
+    cft_schema_field_definition_location, cft_type_definition_location,
+};
 use super::common::*;
 use super::*;
-use crate::definition::{cft_schema_field_definition_location, cft_type_definition_location};
 use coflow_language::cfd::parse_cfd;
 
 #[test]

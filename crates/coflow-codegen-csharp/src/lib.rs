@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
-use coflow_codegen_api::{
+use coflow_runtime::codegen::{
     CodeArtifactFile, CodeArtifactSet, CodeGenerator as CfdCodeGeneratorTrait,
     CodegenDescriptor as CfdCodegenDescriptor, CodegenError, CodegenInput as CfdCodegenInput,
 };

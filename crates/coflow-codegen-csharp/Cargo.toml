@@ -2,7 +2,7 @@
 name = "coflow-codegen-csharp"
 version = "0.9.1"
 edition = "2021"
-description = "Shared C# runtime code generator core for Coflow data formats."
+description = "C# source generator for direct CFD loading."
 license = "Apache-2.0"
 repository = "https://github.com/Puring103/coflow"
 keywords = ["config", "game-data", "codegen", "csharp"]
@@ -13,7 +13,6 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-codegen-api = { path = "../coflow-codegen-api" }
 coflow-language = { path = "../coflow-language" }
 coflow-runtime = { path = "../coflow-runtime" }
 serde = { version = "1", features = ["derive"] }

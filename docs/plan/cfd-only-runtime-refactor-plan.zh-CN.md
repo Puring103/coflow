@@ -1,93 +1,126 @@
 # CFD-only 运行时重构计划
 
-## 1. 决策与边界
+## 1. 目标和边界
 
-本次重构直接切换到新的产品模型，不保留旧项目、旧配置、旧 API、旧导出格式或迁移层。旧文档不作为兼容依据；产品文档只描述重构后的行为。
+本次重构直接切换到新架构，不提供旧配置、旧 crate、旧导出格式或旧 API 的迁移层。
 
-最终规则只有三条：
+- 输入只有 CFT schema 和 CFD 文本源；数据源选择、provider 注册和格式探测全部删除。
+- 产品输出只有目标语言代码；JSON、MessagePack、表格文件和通用 `export` 命令全部删除。
+- 代码生成仍然允许多个目标语言。每种语言由独立 generator 和对应的目标语言 runtime
+  组成，但所有 generator 共享同一个只读 schema/model 快照。
+- C# 应用通过 `Coflow.Cfd.Runtime` 直接读取 CFD 文件。生成的 C# binding 负责类型构造，
+  runtime 负责词法/语法、source 清单、引用缓存和诊断；中间不产生 JSON/MessagePack。
+- 编辑器、LSP、CLI 使用同一个 Rust runtime；宿主不能自行选择 provider 或复制一套数据模型。
 
-1. `.cfd` 是唯一数据输入和编辑格式。`coflow.yaml` 的 `data` 只接受 CFD 文件或目录，目录递归发现 `.cfd`。
-2. 数据导出全部移除。构建发布的唯一产物是目标语言代码；目标语言可以继续扩展，不把 C# 写死在 runtime 中。
-3. C# 目标直接加载原始 CFD 文本。生成代码和 `Coflow.Cfd.Runtime` 共同完成解析、类型构造、引用解析和诊断，不经过 JSON、MessagePack 或通用导出模型。
+非目标：不保留旧格式兼容，不增加格式转换工具，不迁移历史文档，不维护第二套导出对象模型。
 
-不考虑以下事项：旧配置字段兼容、旧 provider 名称兼容、导出文件迁移、旧 C# materializer 兼容、旧 crate 的 re-export wrapper、渐进式双架构运行。
+## 2. 最终模块拓扑
 
-## 2. 最终 workspace
+工作区只保留 5 个 Rust package（根应用也计为一个 package）以及一个独立的 C# runtime：
 
-最终 workspace 只保留承担明确职责的 crate：
-
-| crate | 职责 | 允许依赖 |
+| package | 保留职责 | 明确删除 |
 | --- | --- | --- |
-| `coflow-language` | CFT schema、CFD 语法、诊断、结构限制 | parser/schema 基础依赖 |
-| `coflow-runtime` | 项目配置、CFD 解析加载、数据模型、校验、查询、CFD 原地写入、代码生成输入 | `coflow-language` |
-| `coflow-codegen-api` | 多语言生成器描述、生成输入、代码 artifact、生成错误 | `coflow-runtime` |
-| `coflow-codegen-csharp` | C# 类型降低、显式 CFD materializer 代码生成 | `coflow-codegen-api`、`coflow-runtime` |
-| `coflow-lsp` | CFT/CFD 语言服务 | `coflow-runtime` |
-| `cfd-editor` | Tauri host、编辑器 wire DTO、前端交互 | `coflow-runtime`、`coflow-codegen-api` |
+| `coflow-language` | CFT schema、CFD 值语法、AST、span、结构限制 | 独立 `coflow-cft`、`coflow-cfd`、`coflow-structure` |
+| `coflow-runtime` | 项目配置、固定 CFD source resolve/load/write、数据模型、检查、查询、诊断、codegen SPI | `coflow-api`、`coflow-project`、`coflow-data-model`、`coflow-checker`、provider/catalog crate |
+| `coflow-codegen-csharp` | C# 声明、显式 reader、C# 目标描述 | 反射 materializer、JSON/MessagePack writer |
+| `coflow` | CLI、命令编排、LSP、代码生成 staging/发布、应用级错误输出 | 独立 `coflow-lsp`、所有 `export` 子命令 |
+| `cfd-editor` | Tauri backend、编辑器 DTO、图/表视图、写入桥接 | 独立 `extension-api`、编辑器 provider registry |
+| `Coflow.Cfd.Runtime` | C# schema-free CFD parser、source loader、binding context、值读取 | C# JSON/MessagePack loader、反射和构造函数发现 |
 
-以下 crate 已合并或删除，不得以空壳、兼容别名或 feature 形式重新出现：
-
-- `coflow-cft`、`coflow-cfd`、`coflow-structure`：实现并入 `coflow-language`。
-- `coflow-data-model`、`coflow-checker`：实现并入 `coflow-runtime`。
-- 所有 CSV/Excel/table loader、通用 loader core、JSON/MessagePack exporter、exporter core。
-- `coflow-api`、`coflow-project`、`coflow-builtins`：接口按职责并入 runtime 或 codegen-api；不保留通用 provider registry。
-
-删除 crate 时同时删除 Cargo feature、测试 fixture、bench、示例、CI 矩阵和网站导航条目。`cargo tree --workspace` 不得出现已删除名称。
-
-## 3. 目标架构
+依赖方向固定为：
 
 ```text
-coflow.yaml
-  ├─ schema -> coflow-language::CftSchema
-  ├─ data   -> coflow-runtime::CfdSourceCatalog -> CfdDocument -> CfdDataModel
-  └─ codegen[] -> CodegenRegistry -> target generator -> generated source files
-
-CFD editor write: MutationRequest -> CfdWritePlan -> atomic CFD patch -> reload generation
-C# runtime: ICfdTextLoader -> CfdParser -> CfdDocument -> generated Read<Type> -> user model
+coflow-language <- coflow-runtime <- coflow / cfd-editor
+                         ^               ^
+                         |               +-- coflow-codegen-csharp
+                         +-- codegen SPI (runtime::codegen)
 ```
 
-runtime 内部不再根据扩展名竞争 provider，不再解码 provider options，不再探测来源格式。只有一个固定的 CFD reader/writer；未来扩展点是新的目标语言 generator。
+`coflow-runtime` 不依赖具体 generator；根应用显式注册内置 generator。C# runtime 不读取
+CFT 文件，也不依赖 Rust 或生成器。
 
-### 3.1 配置边界
+## 3. 项目配置和数据流
 
-Rust 配置模型：
+`coflow.yaml` 只允许 `schema`、`data` 和 `codegen`：
 
-```rust
-pub struct ProjectConfig {
-    pub schema: SchemaConfig,
-    pub data: Vec<CfdPath>,
-    pub codegen: Vec<CodegenTargetConfig>,
-    pub dimensions: BTreeMap<String, DimensionConfig>,
-}
-
-pub struct CfdPath {
-    pub path: PathBuf,
-}
-
-pub struct CodegenTargetConfig {
-    pub language: String,
-    pub dir: PathBuf,
-    pub options: serde_json::Value,
-}
+```yaml
+schema: schema/
+data: data/
+codegen:
+  - language: csharp
+    dir: generated/csharp
+    namespace: Game.Config
 ```
 
-`data` 的字符串是文件或目录路径；目录只产生 `.cfd` 输入。配置解析遇到 `source_type`、provider options、`outputs.data`、export target 等字段直接报错。
+`data` 可以是 CFD 文件或目录；目录递归发现 `.cfd`，其它扩展名忽略。`codegen` 目标按
+配置顺序生成，但所有目标在发布前必须完成。数据阶段顺序固定为：
 
-### 3.2 Rust CFD 数据结构
+```text
+读取 coflow.yaml
+  -> 发现 schema 和 *.cfd
+  -> 编译 CFT
+  -> 解析/降低 CFD
+  -> 发布不可变 CfdDataModel + indexes
+  -> check 或调用 generator
+  -> 所有目标写 staging
+  -> 一次性备份/原子发布代码目录
+```
 
-语法和语义边界使用 source-neutral 但 CFD 专用的结构：
+任何 schema、source、generator 或发布错误都不得留下部分新代码目录；已有目录必须恢复。
+
+## 4. 核心 Rust 数据结构
+
+以下类型是跨 CLI、编辑器和 LSP 的唯一语义边界，字段名可以继续细化，但不能再退回
+`String + provider id` 的弱类型接口。
+
+### 4.1 Source 和记录身份
 
 ```rust
-pub struct CfdDocument {
-    pub path: PathBuf,
-    pub records: Vec<CfdRecordNode>,
+pub struct SourceId(pub u32);
+pub struct RecordId(pub u32);
+
+pub struct CfdSource {
+    pub id: SourceId,
+    pub logical_path: String,       // 项目相对路径，使用 /
+    pub text: String,
+    pub revision: FileRevision,
 }
 
-pub struct CfdRecordNode {
-    pub key: RecordKey,
+pub struct FileRevision {
+    pub size: u64,
+    pub modified_ns: u128,
+    pub content_hash: [u8; 32],
+}
+
+pub struct RecordCoordinate {
+    pub source: SourceId,
+    pub record: RecordId,
     pub declared_type: TypeName,
-    pub fields: Vec<CfdFieldNode>,
-    pub span: TextSpan,
+    pub key: RecordKey,
+}
+```
+
+`SourceId` 只在一次 runtime generation 内有效；写入计划必须携带 `FileRevision`，发现
+文件被外部修改时返回 `CFD-WRITE-STALE`，不能覆盖新内容。
+
+### 4.2 数据模型和值
+
+`CfdDataModel` 是 schema-guided、不可变、可查询的发布快照：
+
+```rust
+pub struct CfdDataModel {
+    pub sources: Arc<[CfdSourceInfo]>,
+    pub records: Arc<[CfdRecord]>,
+    pub values: Arc<[CfdValue]>,
+    pub source_index: SourceIndex,
+    pub record_index: RecordIndex,
+    pub ref_edges: Arc<[RefEdge]>,
+}
+
+pub struct CfdRecord {
+    pub coordinate: RecordCoordinate,
+    pub origin: RecordOrigin,
+    pub fields: Arc<[CfdField]>,
 }
 
 pub enum CfdValue {
@@ -95,52 +128,21 @@ pub enum CfdValue {
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(String),
-    Enum(VariantName),
-    Ref(RecordKey),
-    Object(BTreeMap<FieldName, CfdValue>),
-    Array(Vec<CfdValue>),
-    Dict(Vec<(CfdValue, CfdValue)>),
-}
-
-pub struct CfdSourceEntry {
-    pub path: PathBuf,
-    pub document: CfdDocument,
-    pub records: Range<usize>,
-}
-
-pub struct CfdSourceCatalog {
-    pub entries: Vec<CfdSourceEntry>,
-    pub by_path: BTreeMap<PathBuf, SourceId>,
-    pub by_record: HashMap<(TypeName, RecordKey), RecordId>,
+    String(CfdFormattedString),
+    Enum(CfdEnumValue),
+    RecordRef { expected: TypeName, key: RecordKey },
+    Object { ty: TypeName, fields: Arc<[CfdValue]> },
+    Array(Arc<[CfdValue]>),
+    Dict(Arc<[(CfdDictKey, CfdValue)]>),
 }
 ```
 
-`CfdSourceCatalog` 是具体数据索引，不是可注册的 SPI。它负责固定 CFD 文件集合、源位置、记录 identity 和反向引用查询。所有成功加载的记录必须带 `RecordOrigin::File { path, span }`；错误不得伪造 artifact 或其它格式来源。
+parser 只负责文本结构；`CfdModelBuilder` 执行默认值、类型、enum、ref、object 和
+dimension 语义校验，再一次性发布 model。失败时返回 `DiagnosticSet`，不暴露半成品索引。
 
-#### 数据不变量
-
-- `SourceId` 只由规范化后的项目相对路径产生；同一路径只能有一个 source entry。
-- `RecordId` 在一次 generation 内稳定，定义为 `(SourceId, record_index)`；重新加载后通过
-  `(declared_type, key)` 建立新的引用索引，不复用旧 generation 的整数 id。
-- `RecordOrigin` 必须保存原始文件路径和字节 span；parser、lowerer、checker 和 writer
-  的诊断都从这个 origin 生成位置，不在下游重新猜测文件。
-- `CfdValue::Ref` 只保存目标 key，目标类型来自 schema 字段；解析器不接受把类型编码到引用
-  文本中的第二套语法。
-- `CfdDataModel` 构建分为 draft、语义校验、索引发布三步。任一步出现错误都只返回
-  `DiagnosticSet`，不能发布半成品 generation。
-
-建议固定以下内部类型，避免继续使用含义宽泛的 `String`：
+### 4.3 诊断
 
 ```rust
-pub struct SourceId(pub u32);
-pub struct RecordId(pub u32);
-pub struct FileRevision {
-    pub size: u64,
-    pub modified_ns: u128,
-    pub content_hash: [u8; 32],
-}
-
 pub struct CfdDiagnostic {
     pub code: CfdErrorCode,
     pub stage: CfdStage,
@@ -148,42 +150,50 @@ pub struct CfdDiagnostic {
     pub path: CfdPath,
     pub message: String,
 }
+
+pub struct DiagnosticSet {
+    pub diagnostics: Vec<Diagnostic>,
+}
 ```
 
-`FileRevision` 是写入计划的乐观锁；只要 size、mtime 或 hash 与计划不一致，commit 必须返回
-`CFD-WRITE-STALE`，不能覆盖外部修改。
+每条诊断必须能定位到项目配置 key、CFD source 和文本 span；禁止用字符串拼接吞掉
+source origin。错误阶段至少包括 `PROJECT`、`SCHEMA`、`PARSE`、`MODEL`、`CHECK`、`WRITE`
+和 `CODEGEN`。
 
-### 3.3 runtime 服务接口
+## 5. Rust runtime 服务和写入接口
 
 ```rust
-pub struct Runtime {
-    cfd: CfdReader,
-    writer: CfdWriter,
-}
+pub struct Runtime;
 
 impl Runtime {
     pub fn new() -> Self;
-    pub fn open_read_only(&self, project: Project)
-        -> Result<ReadOnlyProjectSession, DiagnosticSet>;
-    pub fn open_write(&self, project: Project)
-        -> Result<WriteProjectSession, DiagnosticSet>;
+    pub fn open_read_only_session(
+        &self, project: Project,
+    ) -> Result<ReadOnlyProjectSession, DiagnosticSet>;
+    pub fn open_write_session(
+        &self, project: Project,
+    ) -> Result<WriteProjectSession, DiagnosticSet>;
 }
 
-pub struct ReadOnlyProjectSession { /* immutable schema + model + indexes */ }
-pub struct WriteProjectSession { /* generation + CfdWritePlan + revision */ }
+pub struct ReadOnlyProjectSession {
+    pub fn schema(&self) -> &CftSchema;
+    pub fn model(&self) -> &CfdDataModel;
+    pub fn queries(&self) -> ProjectQueries<'_>;
+}
 
 pub struct ProjectQueries<'a> {
     pub fn source_files(self) -> impl Iterator<Item = &'a str>;
-    pub fn record_views_in_file(self, file: &str) -> impl Iterator<Item = RecordView<'a>>;
-    pub fn field_value(self, coordinate: &RecordCoordinate,
-                       path: &[CfdPathSegment]) -> Option<&'a CfdValue>;
+    pub fn record_views_in_file(self, path: &str) -> impl Iterator<Item = RecordView<'a>>;
+    pub fn field_value(
+        self, coordinate: &RecordCoordinate, path: &[CfdPathSegment],
+    ) -> Option<&'a CfdValue>;
 }
+```
 
+写入路径只接受语义 mutation，不接受任意文件格式：
+
+```rust
 pub struct MutationRequest { pub operations: Vec<MutationOp> }
-pub struct MutationReport {
-    pub generation_changed: bool,
-    pub diagnostics: DiagnosticSet,
-}
 
 pub enum MutationOp {
     SetField { record: RecordCoordinate, path: CfdPath, value: CfdValue },
@@ -192,241 +202,199 @@ pub enum MutationOp {
     RenameRecord { record: RecordCoordinate, new_key: RecordKey },
     ReorderRecords { source: SourceId, order: Vec<RecordId> },
 }
-```
 
-`Runtime::new()` 是唯一公开构造入口。host 不持有 catalog，不传递 provider id，不注册 writer；编辑器的 session 只保存 `WriteProjectSession`。
-
-### 3.4 写入接口
-
-CFD writer 直接消费记录源位置和 mutation plan：
-
-```rust
 pub struct CfdWritePlan {
     pub path: PathBuf,
     pub patches: Vec<CfdTextPatch>,
     pub expected_revision: FileRevision,
 }
 
-pub struct CfdTextPatch {
-    pub span: TextSpan,
-    pub replacement: String,
-}
-
 pub trait CfdDocumentWriter {
-    fn plan(&self, model: &CfdDataModel, request: &MutationRequest)
+    fn plan(&self, request: &MutationRequest)
         -> Result<CfdWritePlan, DiagnosticSet>;
-    fn commit(&self, plan: CfdWritePlan) -> Result<FileRevision, DiagnosticSet>;
+    fn commit(&self, plan: CfdWritePlan)
+        -> Result<FileRevision, DiagnosticSet>;
 }
 ```
 
-这里的 trait 是 runtime 内部的文件写入测试边界，不是第三方格式扩展点。提交必须执行临时文件写入、fsync、原子替换和重新解析；失败时不发布新 generation。
+提交顺序固定为 `validate -> resolve origin -> build patches -> check revision -> write temp /
+fsync -> atomic replace -> reparse/lower -> publish generation`。批量 mutation 任何一步失败都
+回滚，不允许部分提交。
 
-写入执行顺序固定为：`validate request -> resolve origin -> build patches -> check revision ->
-write temp -> fsync -> atomic replace -> parse/lower -> publish generation`。任何后一步失败都
-删除临时文件并保留当前 generation；批量 mutation 不允许部分提交。
+## 6. 多语言代码生成 SPI
 
-## 4. 多语言代码生成
-
-`coflow-codegen-api` 只表达目标语言能力：
+SPI 已并入 `coflow-runtime::codegen`，不是独立 package：
 
 ```rust
+pub struct CodegenTarget {
+    pub id: String,
+    pub output_dir: PathBuf,
+    pub options: serde_json::Value,
+}
+
 pub struct CodegenInput<'a> {
     pub schema: &'a CftSchema,
     pub model: Option<&'a CfdDataModel>,
-    pub sources: &'a [CfdSourceDescriptor],
+    pub sources: &'a [SourceManifestEntry],
     pub target: &'a CodegenTarget,
+    pub id_as_enum_lock: &'a serde_json::Value,
 }
 
-pub trait CodeGenerator: Send + Sync {
+pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
     fn descriptor(&self) -> &'static CodegenDescriptor;
-    fn generate(&self, input: CodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError>;
+    fn generate(&self, input: CodegenInput<'_>)
+        -> Result<CodeArtifactSet, CodegenError>;
 }
+
+pub struct CodeArtifactSet { /* 已排序、无重复、仅项目内相对路径 */ }
 ```
 
-每个 generator 自己决定生成文件和 runtime package。runtime 只负责收集 schema/model、调用 registry、校验输出目录重叠并发布代码文件；不包含任何语言模板。
+`CodeArtifactSet::new` 拒绝绝对路径、`..`、空路径和重复文件。registry 只负责 language id
+查找和重复注册检测，不读取 source、不写文件、不参与 model 构造。新增语言只需新增
+generator package 和根应用注册项。
 
-registry 只按目标语言 id 做静态查找，不参与数据源解析：
+根应用的代码生成事务：
 
-```rust
-pub struct CodegenRegistry {
-    generators: BTreeMap<String, Arc<dyn CodeGenerator>>,
-}
+1. 校验所有 `codegen[].dir` 的规范化路径，拒绝相同或祖先/后代目录。
+2. 顺序调用所有 generator，把 `PendingCodegen` 保存在内存。
+3. 所有目标分别写入唯一 staging 目录，校验 artifact 相对路径。
+4. 统一把旧目录移动到 backup，再逐个 rename staging 到目标目录。
+5. 任一 backup/publish 失败时删除已发布的新目录，按逆序恢复 backup。
+6. 成功后清理 backup，返回所有 `CodegenReport`。
 
-impl CodegenRegistry {
-    pub fn register(&mut self, generator: Arc<dyn CodeGenerator>) -> Result<(), CodegenError>;
-    pub fn get(&self, language: &str) -> Option<&dyn CodeGenerator>;
-    pub fn generate_all(&self, input: CodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError>;
-}
-```
+## 7. C# direct-load runtime 契约
 
-`register` 拒绝重复 language id；`generate_all` 按配置顺序调用目标，合并文件前检查相对路径
-冲突、目录重叠和目标 runtime 版本冲突。新增语言只新增 codegen crate 和注册项，不修改
-CFD parser、runtime source resolution 或数据模型。
-
-### C# 生成契约
-
-`coflow-codegen-csharp` 为每个可实例化 CFT type 生成：
+`Coflow.Cfd.Runtime` 面向 `netstandard2.1` 和 `net8.0`，只包含 schema-free CFD 语法和
+binding 执行：
 
 ```csharp
-private sealed class ItemCfdBinding : ICfdTypeBinding
-{
-    public string DeclaredType => "Item";
-    public object Read(CfdRecordNode record, CfdLoadContext context) =>
-        ReadItem(record, context);
-}
-
-private static Item ReadItem(CfdRecordNode record, CfdLoadContext context) =>
-    new Item(record.Key,
-        CfdValueReader.String(CfdValueReader.Field(record.Fields, "name")));
-```
-
-数组、字典、对象、nullable、枚举和引用均生成显式 reader lambda；生成代码不调用 `Activator`、`ConstructorInfo` 或按字段反射。抽象类型不生成 binding，未找到具体声明类型时返回稳定诊断。
-
-## 5. C# 运行时接口
-
-`Coflow.Cfd.Runtime` 只负责 schema-free CFD 语法、限制、source loading、identity/reference context 和基础值读取：
-
-```csharp
-public interface ICfdTextLoader
-{
+public readonly struct CfdSource(string Path, string Text);
+public sealed class CfdDocument(string Path, IReadOnlyList<CfdRecordNode> Records);
+public interface ICfdTextLoader {
     bool TryLoad(string logicalPath, out string? text);
 }
-
-public sealed class CfdLoadContext
-{
+public interface ICfdTypeBinding {
+    string DeclaredType { get; }
+    object Read(CfdRecordNode record, CfdLoadContext context);
+}
+public sealed class CfdLoadContext {
     public IReadOnlyList<CfdDocument> Documents { get; }
     public IReadOnlyDictionary<string, ICfdTypeBinding> Bindings { get; }
     public T Resolve<T>(string declaredType, string key);
 }
-
-public interface ICfdTypeBinding
-{
-    string DeclaredType { get; }
-    object Read(CfdRecordNode record, CfdLoadContext context);
-}
-
-public static class CfdLoader
-{
+public static class CfdLoader {
     public static IReadOnlyList<CfdDocument> LoadDocuments(
         ICfdTextLoader loader, IEnumerable<string> paths,
         CfdLoadOptions? options = null);
 }
-
-public static class CfdValueReader
-{
-    public static string String(CfdValueNode node);
-    public static T Enum<T>(CfdValueNode node) where T : struct, Enum;
-    public static T Reference<T>(CfdValueNode node, CfdLoadContext context,
-                                 string declaredType);
-    public static IReadOnlyList<T> Array<T>(CfdValueNode node, CfdLoadContext context,
-        Func<CfdValueNode, CfdLoadContext, T> read);
-}
 ```
 
-`CfdLoadContext` 以 `(declaredType, key)` 做 identity cache，并检测循环引用。缺少文件、未知类型、缺少字段、类型不匹配、循环引用、深度/node/source-size 超限都返回 `CfdDiagnostic { code, path, span }`，不吞异常。
+`CfdValueReader` 提供 `String`、`Int32`、`Int64`、`Float32`、`Float64`、`Boolean`、`Enum`、
+`Reference`、`Object`、`Array`、`Dictionary`、`Field`、`ValidateFields` 和 `Nullable`。
+所有 reader 把格式错误转换为 `CfdLoadException`，不泄漏 `FormatException`、
+`OverflowException` 或 `ArgumentException`。
 
-运行时加载的错误契约如下：
+identity cache 的 key 是 `(DeclaredType, Key)`；构造 context 时拒绝跨 document 重复 identity，
+resolve 时检测 resolving 栈，缺失目标返回 `CFD-REF-MISSING`，循环返回 `CFD-REF-CYCLE`。
+parser 在 `CfdLoadOptions` 中限制 source bytes、records、nodes 和 depth，并为每个错误保留
+UTF-16 `CfdSpan`。
 
-| 代码 | 触发条件 | 处理方式 |
-| --- | --- | --- |
-| `CFD-SOURCE-MISSING` | `ICfdTextLoader` 无法提供清单中的文件 | 聚合所有缺失文件后抛出一次 `CfdLoadException` |
-| `CFD-PARSE-*` | token、字符串、key 或结构错误 | 保留 UTF-16 span，停止当前 document |
-| `CFD-REF-MISSING` | 引用 key 不存在 | 记录引用字段 span，继续读取其它独立记录 |
-| `CFD-REF-CYCLE` | identity 正在 resolving 时再次进入 | 报告完整 identity 链，不返回部分对象 |
-| `CFD-VALUE-TYPE` | 生成 reader 与节点类型不匹配 | 报告字段 span 和期望类型 |
-| `CFD-LIMIT-*` | 深度、节点数或源大小超限 | 在达到上限的节点处失败，避免无界分配 |
+C# generator 必须为每个 concrete type 生成 `ICfdTypeBinding`、显式构造函数调用和
+`Read<Type>Fields`；抽象 type 只生成多态 dispatch。生成的数据库类暴露：
 
-`CfdLoadContext.Resolve` 对已完成 identity 返回同一个对象实例；对 resolving identity 只报错
-不缓存异常对象。生成 binding 不得自行扫描其它 document 或自行维护第二份 cache。
+```csharp
+public static IReadOnlyList<string> SourceFiles { get; }
+public static CoflowTables Load(ICfdTextLoader loader, CfdLoadOptions? options = null);
+public static CoflowTables Load(Func<string, string?> loadText, CfdLoadOptions? options = null);
+```
 
-## 6. 删除与合并清单
+生成源码不得出现 `Activator`、`System.Reflection`、JSON 或 MessagePack；C# 真实编译必须
+覆盖 abstract/polymorphic、前向 ref、inline object、array/dictionary、nullable 和 enum。
 
-### Rust
+## 8. 删除和合并清单
 
-1. 删除通用 provider trait、catalog registration、source option decoding、probe confidence、provider descriptor 和动态选择错误。
-2. 删除 `data_files`、`data_read`、table/sheet/header/export 命令路径。
-3. 将 CFD parser/lower/writer 归并到 runtime，公共入口仅保留 `parse_cfd_input_records`、`load_cfd_model`、`CfdDocumentWriter`。
-4. 将 data model/checker 的测试迁入 runtime tests；删除旧 crate 的 Cargo manifest 和 bench。
-5. `Runtime::with_catalog`、`cfd_source_catalog()`、editor registry 字段全部删除。
+### Rust 和 CLI
 
-### C#、文档和工具
+- 删除 `coflow-codegen-api`，把 SPI 移入 `coflow-runtime::codegen`。
+- 删除 `coflow-lsp`，把 LSP 模块移入根 crate 的 `src/lsp/`。
+- 删除 `extension-api`，编辑器 backend 内置 `ExtensionManifest`。
+- 删除 provider trait、catalog、source option decode、probe confidence、动态 source type。
+- 删除 CSV/Excel/table/sheet loader、通用 loader core、JSON/MessagePack exporter 和 exporter core。
+- 删除 `export` 命令、export flags、serialized artifact DTO、旧 C# materializer。
+- 清理 Cargo features、workspace members、bench、fixture 和依赖锁文件。
 
-1. 删除反射 materializer 及其测试；生成器 fixture 必须检查生成文本不含 `Activator`、`System.Reflection`、JSON/MessagePack。
-2. 删除 export CLI、export flags、export docs、JSON/MessagePack fixtures 和网站首页中的非 CFD 示例。
-3. 更新 README、website reference、skills reference、examples 和架构图；不添加迁移章节。
-4. 历史 release note 可以保留，但不能出现在当前导航、安装、配置或 API 文档中。
+### 文档和示例
 
-## 7. 分阶段实施与验收
+- `README`、website reference、程序员指南和架构文档只描述 `schema + data(.cfd) + codegen`。
+- 删除 provider/export/API 入口、JSON/MessagePack 示例和非 CFD 配置片段。
+- 不写迁移章节；历史 release notes 可以保留为历史记录，但不得被当前导航引用。
+
+## 9. 分阶段实施和完成条件
 
 ### 阶段 A：workspace 收敛
 
-- 完成 crate 合并和 Cargo.lock 清理。
-- `rg` 不得找到旧 crate 名称或 exporter 依赖。
-- 通过 `cargo check --workspace`。
-- 输出：新的 workspace 拓扑和依赖边界清单；删除旧 manifest、feature、bench、fixture。
-- 完成条件：`cargo tree --workspace` 只出现最终 crate，任何 host 都只能依赖 runtime/codegen-api。
+- 删除旧 manifest 和依赖，workspace 只出现最终 package。
+- `cargo tree --workspace` 不含旧 provider、loader、exporter、独立 codegen-api/LSP。
+- 完成条件：`cargo check --workspace`、`cargo test --workspace` 通过。
 
 ### 阶段 B：固定 CFD runtime
 
-- 配置只解析 CFD path；固定目录发现和 `.cfd` 诊断。
-- 移除 catalog/provider host API，编辑器改用 `Runtime::new()`。
-- 补充单文件、多文件、目录、重复记录、非法扩展和 source span 测试。
-- 输出：`CfdSourceCatalog`、`CfdDocument`、`CfdDataModel` 的构建入口和统一 diagnostics。
-- 完成条件：配置中出现 provider/source_type/options/export 字段时直接失败；目录只发现 `.cfd`。
+- source resolve 只接受 `.cfd`，目录发现、span、重复 identity 和 limits 统一进入 runtime。
+- editor、LSP、CLI 都通过 `Runtime::new()` 打开 session。
+- 完成条件：非 CFD 扩展、provider 字段、export 字段均产生配置诊断；目录只加载 `.cfd`。
 
-### 阶段 C：写入与 generation
+### 阶段 C：写入和 generation
 
-- mutation 只生成 `CfdWritePlan`，原子提交后重新加载。
-- 验证批量字段、插入、删除、重命名、重排、引用反向更新和并发 revision 冲突。
-- 输出：`CfdWritePlan`/`CfdTextPatch` 测试夹具，覆盖原子替换失败和 stale revision。
-- 完成条件：无部分提交；重新解析后的 generation 与写入文本一致。
+- mutation 生成 `CfdWritePlan`，执行 revision 检查、原子替换和重新 lower。
+- 覆盖批量 set/insert/delete/rename/reorder、引用影响和 stale revision。
+- 完成条件：写入失败没有部分提交，generation 与文本重新解析结果一致。
 
 ### 阶段 D：C# direct load
 
-- 完成 `ICfdTextLoader`、`CfdLoadContext`、`ICfdTypeBinding`、`CfdValueReader`。
-- C# generator 为 primitive/object/array/dict/nullable/enum/ref 生成显式代码。
-- 端到端 fixture：生成 C#、载入多份 CFD、前向引用、循环引用诊断和缺失字段诊断。
-- 输出：不含 `Activator`、`System.Reflection`、JSON/MessagePack 的生成源码快照。
-- 完成条件：仅通过 `ICfdTextLoader` 和 `SourceFiles` 清单即可加载；binding 不依赖 CFT 文件。
+- 完成 parser、loader、context、binding、value reader 和诊断码。
+- 生成器输出 source list、binding、typed readers 和顶层 `Load`。
+- 完成条件：runtime 双目标编译；生成示例通过真实 .NET 编译；负面语义测试通过。
 
-### 阶段 E：产品文档与清理
+### 阶段 E：文档和静态审计
 
-- 当前文档只描述 `data` + `codegen`，不描述 provider、export、table/sheet。
-- 删除无效示例和死链接，运行文档搜索审计。
-- 输出：README、website reference、架构图和本计划中的同一术语表；不添加迁移章节。
-- 完成条件：产品文档搜索不到旧数据源、导出命令和 provider 配置示例。
+- 删除无效文档、死链接和过时示例，统一术语 `CFD source`、`CfdDataModel`、`CodeArtifactSet`。
+- 完成条件：当前文档不出现 provider/export 配置；搜索只剩历史 release notes 中的历史名称。
 
-## 8. 必须执行的验证
+## 10. 验证命令
 
-普通开发检查：
+普通 Rust 检查：
 
 ```text
 cargo check --workspace
 cargo test --workspace
 ```
 
-生成绑定和前端检查：
+发布前额外检查：
 
 ```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --features ts-export -p cfd-editor export_bindings
-git diff --exit-code editors/cfd-editor/frontend/src/bindings
 npm --prefix editors/cfd-editor/frontend test
 npm --prefix editors/cfd-editor/frontend run build
 node editors/vscode-coflow/test/extension-unit.test.js
-```
-
-C# 环境可用时执行：
-
-```text
-dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
-```
-
-最终静态审计：
-
-```text
-rg -n "ProviderRegistry|SourceProvider|DataExporter|MessagePack|coflow export|CSV|Excel|Activator|System.Reflection" .
-cargo tree --workspace
 git diff --check
+cargo tree --workspace
 ```
 
-验收标准是：workspace 无旧数据源/导出 crate；runtime 只有固定 CFD 数据通路；代码生成仍可注册多语言目标；C# 生成代码可直接通过 loader 读取 CFD；Rust 检查、生成绑定检查和可用环境下的 C# 测试全部通过。
+C# 检查（使用已安装 SDK 时）：
+
+```text
+DOTNET_ROOT=/home/wtl/.dotnet DOTNET_ROLL_FORWARD=LatestMajor \
+  /home/wtl/.dotnet/dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
+```
+
+生成示例后，必须把 `examples/cfd/generated/csharp/**/*.cs` 与 runtime 一起执行真实
+`dotnet build`。静态审计：
+
+```text
+rg -n "ProviderRegistry|SourceProvider|DataExporter|MessagePack|coflow export|CSV|Excel|Activator|System.Reflection|coflow-codegen-api|coflow-lsp|extension-api" . --glob '!target/**' --glob '!**/bin/**' --glob '!**/obj/**'
+```
+
+验收结果必须同时满足：固定 CFD 数据通路、无导出 API、多语言 codegen SPI 可注册、C# 可
+直接加载 CFD、所有 Rust/前端检查通过、C# runtime 测试和生成源码编译通过。

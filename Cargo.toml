@@ -14,7 +14,6 @@ workspace = true
 default = ["cli"]
 cli = [
     "dep:clap",
-    "dep:coflow-lsp",
     "dep:dirs",
     "dep:include_dir",
     "dep:self_update",
@@ -28,12 +27,9 @@ required-features = ["cli"]
 [workspace]
 members = [
     "crates/coflow-language",
-    "crates/coflow-codegen-api",
     "crates/coflow-runtime",
     "crates/coflow-codegen-csharp",
-    "crates/coflow-lsp",
     "editors/cfd-editor/src-tauri",
-    "editors/cfd-editor/extension-api",
 ]
 resolver = "2"
 
@@ -63,8 +59,7 @@ redundant_pub_crate = "allow"
 atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"], optional = true }
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
-coflow-codegen-api = { path = "crates/coflow-codegen-api" }
-coflow-lsp = { path = "crates/coflow-lsp", optional = true }
+coflow-language = { path = "crates/coflow-language" }
 coflow-runtime = { path = "crates/coflow-runtime" }
 dirs = { version = "6", optional = true }
 include_dir = { version = "0.7", optional = true }
@@ -73,6 +68,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
-coflow-language = { path = "crates/coflow-language" }
 tempfile = "3"
 toml = "0.9"

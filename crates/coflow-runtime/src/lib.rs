@@ -23,6 +23,7 @@ mod cfd_loader;
 pub mod check_benchmark_support;
 pub mod checker;
 mod checks;
+pub mod codegen;
 pub mod data_model;
 mod dimensions;
 mod files;

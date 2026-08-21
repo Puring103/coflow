@@ -5,6 +5,8 @@ examples/*/generated/**
 !examples/*/generated/
 !examples/*/coflow.enum.lock.json
 node_modules/
+runtimes/csharp/**/bin/
+runtimes/csharp/**/obj/
 website/vitepress-dev*.log
 website/docs/.vitepress/dist/
 website/docs/.vitepress/cache/

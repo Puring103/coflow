@@ -90,7 +90,7 @@ in this file or in `docs/`.
 - The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through staging and active-manifest publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.
 - `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-runtime` and keeps only editor wire DTOs, graph/table views, and write command bridging.
 - `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
-- Code generation contracts live in `coflow-codegen-api`; data export providers and serialized data artifacts are intentionally absent.
+- Code generation contracts live in `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
 
 ### Website Reference Documents
 

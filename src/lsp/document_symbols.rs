@@ -1,7 +1,7 @@
 use coflow_language::{syntax::ast::Item, Span};
 use serde_json::{json, Value};
 
-use crate::{position::range_from_span, LspDocument};
+use super::{position::range_from_span, LspDocument};
 
 const SYMBOL_KIND_CLASS: u8 = 5;
 const SYMBOL_KIND_FIELD: u8 = 8;

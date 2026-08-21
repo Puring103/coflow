@@ -81,7 +81,7 @@ pub(crate) use validation::{
     ValidationWorker,
 };
 
-enum RunEvent {
+pub(crate) enum RunEvent {
     Incoming(Vec<u8>),
     ReadError(String),
     EndOfInput,
@@ -450,7 +450,7 @@ impl<W: Write> LspServer<W> {
                     }
                 },
                 "serverInfo": {
-                    "name": "coflow-lsp",
+                    "name": "coflow",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }),
@@ -723,8 +723,8 @@ fn is_fatal_lsp_handler_error(message: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::too_many_lines)]
 mod tests {
+    use super::position::position_from_byte;
     use super::*;
-    use crate::position::position_from_byte;
 
     mod cfd_tests;
     mod cft;

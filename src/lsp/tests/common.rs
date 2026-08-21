@@ -1,5 +1,5 @@
+use super::super::semantic_tokens::RawSemanticToken;
 use super::*;
-use crate::semantic_tokens::RawSemanticToken;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) struct TempProject(PathBuf);

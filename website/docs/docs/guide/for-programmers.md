@@ -1,5 +1,43 @@
-# 程序视角
+# 面向程序员
 
-runtime 将 CFT schema 和 CFD lower 为不可变 `CfdDataModel`。C# generator 输出声明和 typed binding，`Coflow.Cfd.Runtime` 在游戏进程中直接读取 `SourceFiles`。
+Coflow 项目由 CFT schema、`.cfd` 数据文件和一个或多个代码生成目标组成。Rust host 使用
+`coflow-runtime` 打开只读 session。
 
-需要另一个语言时，实现 `coflow-codegen-api::CodeGenerator` 和目标语言 runtime binding；不添加新的数据源或导出接口。
+## 目标语言生成
+
+目标语言 generator 实现 `coflow_runtime::codegen::CodeGenerator`：
+
+```rust
+pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
+    fn descriptor(&self) -> &'static CodegenDescriptor;
+    fn generate(&self, input: CodegenInput<'_>)
+        -> Result<CodeArtifactSet, CodegenError>;
+}
+```
+
+`CodegenInput` 提供不可变 schema、可选 `CfdDataModel`、CFD source 清单和目标选项；返回的
+`CodeArtifactSet` 只能包含安全的项目内相对路径。generator 不读取文件，也不发布目录。
+
+增加语言时新增 generator 和目标语言 runtime，并在应用层注册 descriptor；不添加新的数据
+源或导出接口。一个项目可以配置多个语言目标，Coflow 会在所有目标生成成功后统一发布。
+
+## C# 进程内加载
+
+`coflow-codegen-csharp` 生成类型声明、`ICfdTypeBinding` 和 `Load(ICfdTextLoader)` 入口。
+游戏或服务进程引用 `Coflow.Cfd.Runtime` 后提供文件读取函数：
+
+```csharp
+var tables = CoflowTables.Load(
+    path => File.Exists(path) ? File.ReadAllText(path) : null);
+```
+
+生成代码会按照 `SourceFiles` 清单调用 loader，runtime 解析 CFD、建立
+`(DeclaredType, Key)` identity cache，并解析跨文件引用。缺少文件、未知字段、非法值、
+循环引用和资源限制都通过 `CfdLoadException.Diagnostics` 返回；生成 binding 直接构造
+目标类型。
+
+## 约束
+
+- 数据文件必须是 `.cfd`；目录发现会忽略其它扩展名。
+- 写入只能通过 runtime mutation/write plan，不能绕过 revision 检查直接覆盖源文件。
+- 当前架构不提供旧配置、旧导出格式或旧 crate 的兼容 API。

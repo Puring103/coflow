@@ -1,7 +1,7 @@
 use coflow_language::Span;
 use serde_json::Value;
 
-use crate::diagnostics::lsp_range;
+use super::diagnostics::lsp_range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LspPosition {

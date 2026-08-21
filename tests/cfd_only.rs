@@ -1,4 +1,4 @@
-use coflow_codegen_api::{CodeArtifactFile, CodeArtifactSet, CodegenError, CodegenRegistry};
+use coflow_runtime::codegen::{CodeArtifactFile, CodeArtifactSet, CodegenError, CodegenRegistry};
 use coflow_runtime::Project;
 use coflow_runtime::Runtime;
 use std::fs;
@@ -101,4 +101,18 @@ fn cli_codegen_dispatches_through_the_language_registry() {
         .path()
         .join("generated/csharp/CoflowTables.Cfd.cs")
         .is_file());
+}
+
+#[test]
+fn codegen_failure_does_not_publish_an_earlier_target() {
+    let project = write_project();
+    fs::write(
+        project.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/first\n    namespace: Game.Config\n  - language: not-installed\n    dir: generated/second\n",
+    )
+    .expect("config");
+    let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
+    assert!(coflow::commands::generate_project_code(&opened).is_err());
+    assert!(!project.path().join("generated/first").exists());
+    assert!(!project.path().join("generated/second").exists());
 }

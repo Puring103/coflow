@@ -1,4 +1,4 @@
-use crate::uri::path_to_file_uri;
+use super::uri::path_to_file_uri;
 use coflow_runtime::normalize_path;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;

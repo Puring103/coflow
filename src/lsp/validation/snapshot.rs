@@ -1,10 +1,10 @@
-use super::{is_cfd_path, OpenDocument};
-use crate::definition::CfdDefinitionIndex;
-use crate::diagnostics::{
+use super::super::definition::CfdDefinitionIndex;
+use super::super::diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
-use crate::state::LspBuild;
-use crate::uri::path_to_file_uri;
+use super::super::state::LspBuild;
+use super::super::uri::path_to_file_uri;
+use super::{is_cfd_path, OpenDocument};
 use coflow_language::cfd::parse_cfd;
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{discover_directory_files, normalize_path, Project};
@@ -201,7 +201,7 @@ fn add_cfd_documents(
         if let Some(document) = input.open_documents.get(&source.path) {
             snapshot.diagnostics.insert(
                 document.uri.clone(),
-                crate::cfd::syntax_diagnostics(&source.text, &errors),
+                super::super::cfd::syntax_diagnostics(&source.text, &errors),
             );
         }
         snapshot.cfd_documents.insert(

@@ -23,4 +23,4 @@ coflow lsp <project>
 coflow skill install -g
 ```
 
-CLI 不再包含 `export`、`data`、table/sheet 操作、provider 选择或数据导出格式参数。
+CLI 项目命令围绕 schema、CFD 数据检查和目标语言代码生成展开。
