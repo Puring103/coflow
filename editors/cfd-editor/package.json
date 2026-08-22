@@ -6,19 +6,11 @@
     "dev": "tauri dev --no-watch",
     "dev:watch": "tauri dev",
     "build": "tauri build",
-    "electron": "npm run electron:prepare && electron electron/main.cjs",
-    "electron:prepare": "npm run frontend:build && cargo build -p cfd-editor-sidecar",
-    "electron:smoke": "CFD_EDITOR_ELECTRON_SMOKE=1 electron electron/main.cjs --headless --disable-gpu",
-    "electron:test": "node electron/sidecar-client.test.cjs",
     "tauri": "tauri",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "electron": "^43.4.1"
-  },
-  "allowScripts": {
-    "electron@43.4.1": true
+    "@tauri-apps/cli": "^2"
   }
 }

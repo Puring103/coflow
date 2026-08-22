@@ -21,7 +21,6 @@ schema/*.cft + data/**/*.cfd
 | `coflow-codegen-csharp` | C# 声明、显式 CFD readers、数据库入口 |
 | `coflow` | CLI、LSP、生成事务和 staging 发布 |
 | `cfd-editor-core` | 宿主无关的编辑器 session、wire DTO、读写操作、文件监听和编辑器事件 |
-| `cfd-editor-sidecar` | 通过 stdio JSON 协议向进程外桌面宿主暴露编辑器核心 |
 | `cfd-editor` | Tauri 命令/事件适配以及窗口、对话框、更新器等原生宿主集成 |
 | `Coflow.Cfd.Runtime` | C# 进程内 CFD parser、source loader、binding context、值转换 |
 

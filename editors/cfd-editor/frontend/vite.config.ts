@@ -4,7 +4,6 @@ import react from '@vitejs/plugin-react'
 const host = process.env.TAURI_DEV_HOST
 
 export default defineConfig({
-  base: './',
   plugins: [react()],
   clearScreen: false,
   server: {
