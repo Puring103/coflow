@@ -8,4 +8,4 @@ codegen:
     dir: generated/csharp
 ```
 
-`schema` discovers `.cft`, `data` discovers `.cfd`, and `codegen` is the only output section. Unknown fields are errors; there is no provider selection or export target.
+`schema` discovers `.cft`, `data` discovers `.cfd`, and `codegen` declares one or more target-language outputs. Unknown fields are errors.

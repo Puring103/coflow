@@ -1,0 +1,4 @@
+Node {
+  a { next: &b }
+  b { next: &a }
+}

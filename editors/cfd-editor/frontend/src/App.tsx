@@ -3293,7 +3293,7 @@ export default function App() {
                 <tr><td>任意可打印字符</td><td>替换输入（直接开始编辑）</td></tr>
                 <tr><td>Delete</td><td>重置为默认值（集合类型清空）</td></tr>
                 <tr><th colSpan={2}>复制 / 粘贴</th></tr>
-                <tr><td>Ctrl+C</td><td>复制选中单元格（TSV）</td></tr>
+                <tr><td>Ctrl+C</td><td>复制选中单元格（CFD）</td></tr>
                 <tr><td>Ctrl+X</td><td>剪切（复制后清空）</td></tr>
                 <tr><td>Ctrl+V</td><td>粘贴</td></tr>
                 <tr><td>Shift+Ctrl+V</td><td>追加粘贴（array 目标）</td></tr>

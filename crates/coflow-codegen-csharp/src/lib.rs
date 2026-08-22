@@ -30,6 +30,7 @@ use std::path::PathBuf;
 use coflow_runtime::codegen::{
     CodeArtifactFile, CodeArtifactSet, CodeGenerator as CfdCodeGeneratorTrait,
     CodegenDescriptor as CfdCodegenDescriptor, CodegenError, CodegenInput as CfdCodegenInput,
+    SourceManifestEntry, SourceOrigin,
 };
 
 pub use ir::{CsharpCodegenOptions, CsharpIdAsEnumVariant};
@@ -99,6 +100,29 @@ pub fn generate_csharp_cfd(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let sources = sources
+        .iter()
+        .map(|logical_path| SourceManifestEntry {
+            logical_path: logical_path.clone(),
+            origin: SourceOrigin::Project,
+        })
+        .collect::<Vec<_>>();
+    generate_csharp_cfd_with_manifest(
+        schema,
+        options,
+        &sources,
+        id_as_enum_variants,
+        non_empty_tables,
+    )
+}
+
+fn generate_csharp_cfd_with_manifest(
+    schema: &CftSchema,
+    options: &CsharpCodegenOptions,
+    sources: &[SourceManifestEntry],
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
+    non_empty_tables: Option<&BTreeSet<String>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
     let mut files = render::render_common_project(&project)?;
     files.push(GeneratedFile {
@@ -135,13 +159,14 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
                 .with_database_class(options.database_class.as_deref().unwrap_or("CoflowTables"))
                 .with_int_32(options.int_32)
                 .with_float_32(options.float_32);
-        let sources = input
-            .sources
-            .iter()
-            .map(|source| source.logical_path.clone())
-            .collect::<Vec<_>>();
-        let files = generate_csharp_cfd(input.schema, &codegen, &sources, BTreeMap::new(), None)
-            .map_err(|error| CodegenError::Message(error.to_string()))?;
+        let files = generate_csharp_cfd_with_manifest(
+            input.schema,
+            &codegen,
+            input.sources,
+            BTreeMap::new(),
+            None,
+        )
+        .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
                 .into_iter()

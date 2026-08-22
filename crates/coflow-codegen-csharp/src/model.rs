@@ -30,6 +30,7 @@ pub struct CsharpSingleton {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnum {
     pub name: String,
+    pub source_name: String,
     pub is_flags: bool,
     pub summary: Option<String>,
     pub obsolete: bool,
@@ -39,6 +40,7 @@ pub struct CsharpEnum {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnumVariant {
     pub name: String,
+    pub source_name: String,
     pub value: i64,
     pub summary: Option<String>,
     pub obsolete: bool,
@@ -61,7 +63,8 @@ pub struct CsharpType {
     pub loader_fields: Vec<CsharpLoaderField>,
     pub loader_id_type: Option<String>,
     pub loader_enabled: bool,
-    pub loader_variants: Vec<String>,
+    pub loader_assignable_to: Vec<String>,
+    pub loader_variants: Vec<CsharpLoaderVariant>,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +72,15 @@ pub struct CsharpLoaderField {
     pub source_name: String,
     pub property_name: String,
     pub reader_expression: String,
+    pub default_expression: Option<String>,
+    pub object_type: Option<String>,
+    pub reference_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpLoaderVariant {
+    pub source_name: String,
+    pub type_name: String,
 }
 
 #[derive(Debug, Serialize)]

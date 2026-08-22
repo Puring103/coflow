@@ -275,6 +275,9 @@ public interface ICfdTextLoader {
 }
 public interface ICfdTypeBinding {
     string DeclaredType { get; }
+    IReadOnlyList<string> AssignableTypes { get; }
+    string? ObjectFieldType(string fieldName);
+    string? ReferenceFieldType(string fieldName);
     object Read(CfdRecordNode record, CfdLoadContext context);
 }
 public sealed class CfdLoadContext {
@@ -290,22 +293,24 @@ public static class CfdLoader {
 ```
 
 `CfdValueReader` 提供 `String`、`Int32`、`Int64`、`Float32`、`Float64`、`Boolean`、`Enum`、
-`Reference`、`Object`、`Array`、`Dictionary`、`Field`、`ValidateFields` 和 `Nullable`。
+`Reference`、`Object`、`Array`、`Dictionary`、`Field`、`FindField`、`ValidateFields` 和 `Nullable`。
 所有 reader 把格式错误转换为 `CfdLoadException`，不泄漏 `FormatException`、
 `OverflowException` 或 `ArgumentException`。
 
-identity cache 的 key 是 `(DeclaredType, Key)`；构造 context 时拒绝跨 document 重复 identity，
+binding 的 `AssignableTypes` 包含 concrete type 自身及全部 ancestor。identity cache 的 key 是
+`(DeclaredType, Key)`；构造 context 时拒绝同一继承域跨 document 重复 identity，
 resolve 时检测 resolving 栈，缺失目标返回 `CFD-REF-MISSING`，循环返回 `CFD-REF-CYCLE`。
 parser 在 `CfdLoadOptions` 中限制 source bytes、records、nodes 和 depth，并为每个错误保留
 UTF-16 `CfdSpan`。
 
-C# generator 必须为每个 concrete type 生成 `ICfdTypeBinding`、显式构造函数调用和
+C# generator 必须为每个 concrete type 生成 `ICfdTypeBinding`、source-name/ancestor 映射、显式构造函数调用和
 `Read<Type>Fields`；抽象 type 只生成多态 dispatch。生成的数据库类暴露：
 
 ```csharp
 public static IReadOnlyList<string> SourceFiles { get; }
 public static CoflowTables Load(ICfdTextLoader loader, CfdLoadOptions? options = null);
 public static CoflowTables Load(Func<string, string?> loadText, CfdLoadOptions? options = null);
+public static CoflowTables Load(IEnumerable<CfdSource> sources, CfdLoadOptions? options = null);
 ```
 
 生成源码不得出现 `Activator`、`System.Reflection`、JSON 或 MessagePack；C# 真实编译必须

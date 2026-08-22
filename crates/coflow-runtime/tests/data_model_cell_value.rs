@@ -258,19 +258,8 @@ fn parses_schema_guided_scalar_values() -> TestResult {
         parse_ok(&schema, "bool", "true")?,
         ParsedCell::Value(LoadedValueDraft::Bool(true))
     );
-    for accepted in ["TRUE", "True", "1", "yes", "Y"] {
-        assert_eq!(
-            parse_ok(&schema, "bool", accepted)?,
-            ParsedCell::Value(LoadedValueDraft::Bool(true)),
-            "{accepted} should parse as true",
-        );
-    }
-    for accepted in ["FALSE", "False", "0", "no", "N"] {
-        assert_eq!(
-            parse_ok(&schema, "bool", accepted)?,
-            ParsedCell::Value(LoadedValueDraft::Bool(false)),
-            "{accepted} should parse as false",
-        );
+    for rejected in ["TRUE", "True", "FALSE", "False", "1", "yes", "Y", "0", "no", "N"] {
+        parse_err(&schema, "bool", rejected)?;
     }
     assert_eq!(
         parse_ok(&schema, "string", "hello world")?,

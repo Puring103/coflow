@@ -16,12 +16,14 @@
 
 {% for field in project.database.context_fields %}        internal readonly Dictionary<{{ field.id_type }}, {{ field.type_name }}>? {{ field.field_name }};
 {% endfor %}
+{% if project.database.context_constructor_parameters | length > 0 %}
         internal LoadContext(
 {% for parameter in project.database.context_constructor_parameters %}            {{ parameter.ty }} {{ parameter.name }} = null{% if not loop.last %},{% endif %}
 {% endfor %}        )
         {
 {% for assignment in project.database.context_assignments %}            {{ assignment.field_name }} = {{ assignment.parameter_name }};
 {% endfor %}        }
+{% endif %}
 
 {% for lookup in project.database.context_lookups %}        internal {{ lookup.return_type }} {{ lookup.method_name }}({{ lookup.id_type }} id)
         {

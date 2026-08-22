@@ -116,3 +116,205 @@ fn codegen_failure_does_not_publish_an_earlier_target() {
     assert!(!project.path().join("generated/first").exists());
     assert!(!project.path().join("generated/second").exists());
 }
+
+#[test]
+fn csharp_codegen_normalizes_and_loads_dimension_cfd_sources() {
+    let dir = tempfile::tempdir().expect("dimension project");
+    fs::write(
+        dir.path().join("schema.cft"),
+        "type UiText { @localized welcome: string; }\n",
+    )
+    .expect("schema");
+    fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
+    fs::write(
+        dir.path().join("data/base.cfd"),
+        "main: UiText { welcome: \"Hello\" }\n",
+    )
+    .expect("base CFD");
+    fs::write(
+        dir.path()
+            .join("data/dimensions/language/UiText_welcome.cfd"),
+        "main: UiText { default: \"Hello\", zh: \"你好\" }\n",
+    )
+    .expect("dimension CFD");
+    fs::write(
+        dir.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n",
+    )
+    .expect("config");
+
+    let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
+    let outcome = coflow::commands::generate_project_code(&project).expect("generate C#");
+    assert!(matches!(outcome, coflow::commands::CommandOutcome::Success(_)));
+    let generated = fs::read_to_string(
+        dir.path().join("generated/csharp/CoflowTables.Cfd.cs"),
+    )
+    .expect("generated CFD binding");
+    assert_eq!(
+        generated
+            .matches("data/dimensions/language/UiText_welcome.cfd")
+            .count(),
+        2,
+        "dimension source appears once in SourceFiles and once in its normalizer"
+    );
+    assert!(generated.contains(
+        "NormalizeDimensionRecord(record, \"UiText\", \"UiText_welcomeVariants\", document.Path)"
+    ));
+    assert!(generated.contains("ReadLocalized("));
+    assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
+    assert!(!generated.contains("LocalizationProvider"));
+    assert!(!generated.contains("TbUiTextWelcomeVariants"));
+}
+
+#[test]
+fn csharp_codegen_dispatches_singleton_dimension_rows_by_field_key() {
+    let dir = tempfile::tempdir().expect("singleton dimension project");
+    fs::write(
+        dir.path().join("schema.cft"),
+        "@singleton type UiText { @localized welcome: string; @localized farewell: string; }\n",
+    )
+    .expect("schema");
+    fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
+    fs::write(
+        dir.path().join("data/base.cfd"),
+        "UiText: UiText { welcome: \"Hello\", farewell: \"Bye\" }\n",
+    )
+    .expect("base CFD");
+    fs::write(
+        dir.path().join("data/dimensions/language/UiText.cfd"),
+        "welcome: UiText { zh: \"你好\" }\nfarewell: UiText { zh: \"再见\" }\n",
+    )
+    .expect("dimension CFD");
+    fs::write(
+        dir.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("config");
+
+    let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
+    let outcome = coflow::commands::generate_project_code(&project).expect("generate C#");
+    assert!(matches!(outcome, coflow::commands::CommandOutcome::Success(_)));
+    let generated = fs::read_to_string(
+        dir.path().join("generated/csharp/CoflowTables.Cfd.cs"),
+    )
+    .expect("generated CFD binding");
+    assert_eq!(
+        generated
+            .matches("data/dimensions/language/UiText.cfd")
+            .count(),
+        2,
+        "shared singleton source is loaded once and normalized once"
+    );
+    assert!(generated.contains(
+        "\"welcome\" => NormalizeDimensionRecord(record, \"UiText\", \"UiText_welcomeVariants\", document.Path)"
+    ));
+    assert!(generated.contains(
+        "\"farewell\" => NormalizeDimensionRecord(record, \"UiText\", \"UiText_farewellVariants\", document.Path)"
+    ));
+    assert!(generated.contains(
+        "\"UiText_welcomeVariants\", \"welcome\", new string[] { \"zh\" }"
+    ));
+    assert!(generated.contains(
+        "\"UiText_farewellVariants\", \"farewell\", new string[] { \"zh\" }"
+    ));
+}
+
+#[test]
+fn rust_runtime_rejects_dimension_record_type_mismatches_like_csharp() {
+    let dir = tempfile::tempdir().expect("dimension project");
+    fs::write(
+        dir.path().join("schema.cft"),
+        "type UiText { @localized welcome: string; } type Other { value: string; }\n",
+    )
+    .expect("schema");
+    fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
+    fs::write(
+        dir.path().join("data/base.cfd"),
+        "main: UiText { welcome: \"Hello\" }\n",
+    )
+    .expect("base CFD");
+    fs::write(
+        dir.path()
+            .join("data/dimensions/language/UiText_welcome.cfd"),
+        "main: Other { zh: \"错误\" }\n",
+    )
+    .expect("invalid dimension CFD");
+    fs::write(
+        dir.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("config");
+
+    let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
+    let diagnostics = match Runtime::new().open_read_only_session(project) {
+        Ok(session) => session.into_diagnostics(),
+        Err(diagnostics) => diagnostics,
+    };
+    let diagnostic = diagnostics
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "CFD-DIMENSION-TYPE")
+        .expect("dimension type diagnostic");
+    let primary = diagnostic.primary.as_ref().expect("dimension type source span");
+    let coflow_runtime::SourceLocation::FileSpan {
+        path,
+        start_line,
+        start_character,
+        end_line,
+        end_character,
+    } = &primary.location
+    else {
+        panic!("dimension type diagnostic should point into the overlay CFD");
+    };
+    assert_eq!(
+        path,
+        &dir.path()
+            .join("data/dimensions/language/UiText_welcome.cfd")
+    );
+    assert_eq!((*start_line, *start_character), (0, 6));
+    assert_eq!((*end_line, *end_character), (0, 11));
+}
+
+#[test]
+fn rust_runtime_rejects_unknown_singleton_dimension_rows_and_variants() {
+    let dir = tempfile::tempdir().expect("dimension project");
+    fs::write(
+        dir.path().join("schema.cft"),
+        "@singleton type UiText { @localized welcome: string; @localized farewell: string; }\n",
+    )
+    .expect("schema");
+    fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
+    fs::write(
+        dir.path().join("data/base.cfd"),
+        "ui: UiText { welcome: \"Hello\", farewell: \"Bye\" }\n",
+    )
+    .expect("base CFD");
+    fs::write(
+        dir.path().join("data/dimensions/language/UiText.cfd"),
+        "welcome: UiText { zh: \"你好\", typo_variant: \"错误\" }\nunknown: UiText { zh: \"错误\" }\n",
+    )
+    .expect("invalid dimension CFD");
+    fs::write(
+        dir.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("config");
+
+    let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
+    let diagnostics = match Runtime::new().open_read_only_session(project) {
+        Ok(session) => session.into_diagnostics(),
+        Err(diagnostics) => diagnostics,
+    };
+    for code in ["CFD-DIMENSION-FIELD", "CFD-DIMENSION-VARIANT"] {
+        let diagnostic = diagnostics
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == code)
+            .unwrap_or_else(|| panic!("missing {code}"));
+        assert!(matches!(
+            diagnostic.primary.as_ref().map(|label| &label.location),
+            Some(coflow_runtime::SourceLocation::FileSpan { path, .. })
+                if path.ends_with("data/dimensions/language/UiText.cfd")
+        ));
+    }
+}

@@ -31,7 +31,7 @@ import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { BatchRecordEditor } from './BatchRecordEditor'
 import { BatchCellEditor } from './BatchCellEditor'
 import { projectBatchCells } from '../state/batchRecordProjection'
-import { parseTsv, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
+import { parseCfdClipboard, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
 
 interface Props {
   open: boolean
@@ -251,7 +251,7 @@ export function InspectorPanel({
     }
     const target = pasteCellAtRecordPath(record, path, !readOnly)
     if (!target) throw new Error('找不到粘贴目标')
-    const result = await planPaste(parseTsv(text), [[target]], {
+    const result = await planPaste(parseCfdClipboard(text), [[target]], {
       mode,
       parse: (coordinate, fieldPath, cellText) => (
         onParseCellText(data.file_path, coordinate, fieldPath, cellText)

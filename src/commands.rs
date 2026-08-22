@@ -1,7 +1,5 @@
 use coflow_codegen_csharp::CsharpCfdCodeGenerator;
-use coflow_runtime::codegen::{
-    CodegenInput, CodegenRegistry, CodegenTarget, SourceManifestEntry, SourceOrigin,
-};
+use coflow_runtime::codegen::{CodegenInput, CodegenRegistry, CodegenTarget};
 use coflow_runtime::Project;
 use coflow_runtime::Runtime;
 use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
@@ -133,14 +131,7 @@ pub fn generate_project_code(
     if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let source_manifest = session
-        .queries()
-        .source_files()
-        .map(|logical_path| SourceManifestEntry {
-            logical_path: logical_path.to_string(),
-            origin: SourceOrigin::Project,
-        })
-        .collect::<Vec<_>>();
+    let source_manifest = session.queries().codegen_source_manifest();
     let mut generators = CodegenRegistry::default();
     generators
         .register(CsharpCfdCodeGenerator)

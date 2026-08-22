@@ -1,8 +1,8 @@
 //! Small, data-only SPI for target-language code generators.
 //!
-//! Source loading and data export are intentionally absent.  A generator gets
-//! one immutable snapshot and returns only source artifacts; publication and
-//! filesystem access stay in the application layer.
+//! A generator receives one immutable schema/model snapshot and returns only
+//! target-language source artifacts; publication and filesystem access stay in
+//! the application layer.
 
 use crate::CfdDataModel;
 use coflow_language::CftSchema;
@@ -21,7 +21,11 @@ pub struct SourceManifestEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceOrigin {
     Project,
-    Dimension { dimension: String, field: String },
+    Dimension {
+        dimension: String,
+        source_type: String,
+        field: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

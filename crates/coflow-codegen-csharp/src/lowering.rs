@@ -90,8 +90,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             }
         }
 
-        let dimension_tables =
-            lower_dimension_tables(schema, &mut csharp_types, &mut declared_tables)?;
+        let dimension_tables = lower_dimension_tables(schema, &mut csharp_types)?;
         declared_tables.sort();
         let dimension_source_types = dimension_tables
             .iter()
@@ -258,8 +257,36 @@ impl<'a> CsharpLoweringPlan<'a> {
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{type_name}`")))
     }
 
+    pub fn assignable_target_names(
+        &self,
+        actual_type: &str,
+    ) -> Result<Vec<String>, CsharpCodegenError> {
+        let ancestors = self
+            .schema
+            .ancestor_type_names(actual_type)
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{actual_type}`")))?;
+        Ok(std::iter::once(actual_type.to_string())
+            .chain(ancestors.iter().map(ToString::to_string))
+            .collect())
+    }
+
     pub fn ref_target_names(&self) -> &[String] {
         &self.ref_targets
+    }
+
+    pub fn dimension_variants(
+        &self,
+        dimension: &str,
+    ) -> Result<Vec<String>, CsharpCodegenError> {
+        self.schema
+            .resolve_dimension(dimension)
+            .map(|dimension| dimension.variants.iter().map(ToString::to_string).collect())
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT dimension `{dimension}`")))
+    }
+
+    pub fn type_is_singleton(&self, type_name: &str) -> Result<bool, CsharpCodegenError> {
+        self.resolve_type(type_name)
+            .map(|schema_type| schema_type.is_singleton)
     }
 }
 
@@ -278,7 +305,6 @@ fn lower_enum_names(enums: &[&CftEnum]) -> BTreeMap<String, String> {
 fn lower_dimension_tables(
     schema: &CftSchema,
     csharp_types: &mut BTreeMap<String, String>,
-    declared_tables: &mut Vec<String>,
 ) -> Result<Vec<CsharpDimensionTable>, CsharpCodegenError> {
     let mut tables = BTreeMap::new();
     for dimension in schema.all_dimensions() {
@@ -314,7 +340,6 @@ fn lower_dimension_tables(
                 });
             }
             csharp_types.insert(source_name.clone(), csharp_type_name(&source_name));
-            declared_tables.push(source_name.clone());
             tables.insert(
                 source_name.clone(),
                 CsharpDimensionTable {

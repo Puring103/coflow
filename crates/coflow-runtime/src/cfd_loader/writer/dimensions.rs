@@ -1,7 +1,8 @@
 use crate::api::{
     byte_range, CfdDimensionWriter, CfdDimensionWriterDescriptor, CfdWriteContext, Diagnostic,
     DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceLoadResult, DimensionSourceRequest,
-    DimensionSourceResult, RewriteDimensionRecordRequest, WriteDimensionValueRequest,
+    DimensionSourceResult, Label, RewriteDimensionRecordRequest, SourceLocation,
+    WriteDimensionValueRequest,
 };
 use crate::data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
 use coflow_language::cfd::parse_cfd;
@@ -64,6 +65,54 @@ impl CfdDimensionWriter for CfdWriter {
             if request.schema.source_type.is_singleton
                 && record.key != request.schema.source_field.name.as_str()
             {
+                if request.validate_singleton_shape
+                    && !request
+                        .singleton_source_fields
+                        .iter()
+                        .any(|field| field.as_str() == record.key)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "CFD-DIMENSION-FIELD",
+                            "CFD",
+                            format!(
+                                "dimension record `{}` does not map to a field on singleton `{}`",
+                                record.key, request.schema.source_type.name
+                            ),
+                        )
+                        .with_primary(file_span_label(
+                            path,
+                            &text,
+                            record.key_span.start,
+                            record.key_span.end,
+                            "unknown singleton dimension field",
+                        )),
+                    );
+                }
+                continue;
+            }
+            if !request
+                .schema
+                .schema
+                .is_assignable(&record.type_name, &request.schema.source_type.name)
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "CFD-DIMENSION-TYPE",
+                        "CFD",
+                        format!(
+                            "dimension record type `{}` is not assignable to `{}`",
+                            record.type_name, request.schema.source_type.name
+                        ),
+                    )
+                    .with_primary(file_span_label(
+                        path,
+                        &text,
+                        record.type_span.start,
+                        record.type_span.end,
+                        "incompatible dimension record type",
+                    )),
+                );
                 continue;
             }
             let source_key = match RecordKey::new(record.key.clone()) {
@@ -75,6 +124,25 @@ impl CfdDimensionWriter for CfdWriter {
             };
             for field in record.fields {
                 let Some(variant) = request.schema.dimension.variant(&field.name) else {
+                    if field.name != "default" {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "CFD-DIMENSION-VARIANT",
+                                "CFD",
+                                format!(
+                                    "unknown variant `{}` for dimension `{}`",
+                                    field.name, request.schema.dimension.name
+                                ),
+                            )
+                            .with_primary(file_span_label(
+                                path,
+                                &text,
+                                field.name_span.start,
+                                field.name_span.end,
+                                "unknown dimension variant",
+                            )),
+                        );
+                    }
                     continue;
                 };
                 let value = match super::super::lower::lower_value(
@@ -225,6 +293,26 @@ impl CfdDimensionWriter for CfdWriter {
             out.push_str("}\n\n");
         }
         write_if_changed(path, &out, "CFD-DIMENSION")
+    }
+}
+
+fn file_span_label(
+    path: &Path,
+    text: &str,
+    start: usize,
+    end: usize,
+    message: &str,
+) -> Label {
+    let range = byte_range(text, start, end);
+    Label {
+        location: SourceLocation::FileSpan {
+            path: path.to_path_buf(),
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
+        },
+        message: Some(message.to_string()),
     }
 }
 

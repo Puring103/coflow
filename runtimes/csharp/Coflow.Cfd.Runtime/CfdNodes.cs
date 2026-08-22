@@ -34,18 +34,25 @@ public sealed class CfdDocument
 
 public sealed class CfdRecordNode
 {
-    public CfdRecordNode(string key, string declaredType, IReadOnlyList<CfdFieldNode> fields, CfdSpan span)
+    public CfdRecordNode(
+        string key,
+        string declaredType,
+        IReadOnlyList<CfdFieldNode> fields,
+        CfdSpan span,
+        string? groupType = null)
     {
         Key = key;
         DeclaredType = declaredType;
         Fields = fields;
         Span = span;
+        GroupType = groupType;
     }
 
     public string Key { get; }
     public string DeclaredType { get; }
     public IReadOnlyList<CfdFieldNode> Fields { get; }
     public CfdSpan Span { get; }
+    public string? GroupType { get; }
 }
 
 public sealed class CfdFieldNode
@@ -97,6 +104,77 @@ public sealed class CfdStringValue : CfdValueNode
 {
     public CfdStringValue(string value, CfdSpan span) : base(span) => Value = value;
     public string Value { get; }
+}
+
+public sealed class CfdFormattedStringValue : CfdValueNode
+{
+    public CfdFormattedStringValue(string source, IReadOnlyList<CfdFormatSegment> segments, CfdSpan span)
+        : base(span)
+    {
+        Source = source;
+        Segments = segments;
+    }
+
+    public string Source { get; }
+    public IReadOnlyList<CfdFormatSegment> Segments { get; }
+}
+
+public abstract record CfdFormatSegment;
+
+public sealed record CfdFormatText(string Text) : CfdFormatSegment;
+
+public sealed record CfdFormatReference(
+    string? TypeName,
+    string? Key,
+    IReadOnlyList<string> Path) : CfdFormatSegment;
+
+public sealed class CfdBitExpressionValue : CfdValueNode
+{
+    public CfdBitExpressionValue(CfdBitExpression expression, CfdSpan span) : base(span) => Expression = expression;
+    public CfdBitExpression Expression { get; }
+}
+
+public sealed class CfdBitExpression
+{
+    private CfdBitExpression(CfdBitExpressionKind kind, CfdSpan span)
+    {
+        Kind = kind;
+        Span = span;
+    }
+
+    public CfdBitExpressionKind Kind { get; }
+    public CfdSpan Span { get; }
+
+    public static CfdBitExpression Value(string value, CfdSpan span) =>
+        new(new CfdBitExpressionKind.Value(value), span);
+
+    public static CfdBitExpression Binary(
+        CfdBitOperator operation,
+        CfdBitExpression left,
+        CfdBitExpression right,
+        CfdSpan span) =>
+        new(new CfdBitExpressionKind.Binary(operation, left, right), span);
+
+    internal CfdBitExpression WithSpan(CfdSpan span) => new(Kind, span);
+}
+
+public abstract record CfdBitExpressionKind
+{
+    private CfdBitExpressionKind() { }
+
+    public sealed record Value(string Text) : CfdBitExpressionKind;
+
+    public sealed record Binary(
+        CfdBitOperator Operator,
+        CfdBitExpression Left,
+        CfdBitExpression Right) : CfdBitExpressionKind;
+}
+
+public enum CfdBitOperator
+{
+    Or,
+    Xor,
+    And,
 }
 
 public sealed class CfdReferenceValue : CfdValueNode
