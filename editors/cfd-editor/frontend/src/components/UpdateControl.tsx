@@ -1,8 +1,10 @@
 import { Icon } from './Icon'
+import { isTauri } from '../api'
 import { useUpdater, type UpdaterState } from '../hooks/useUpdater'
 
 export function UpdateControl() {
   const { state, activate } = useUpdater()
+  if (!isTauri) return null
   const busy = state.phase === 'checking'
     || state.phase === 'downloading'
     || state.phase === 'restarting'

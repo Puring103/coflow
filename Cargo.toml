@@ -30,6 +30,7 @@ members = [
     "crates/coflow-runtime",
     "crates/coflow-codegen-csharp",
     "editors/cfd-editor/core",
+    "editors/cfd-editor/sidecar",
     "editors/cfd-editor/src-tauri",
 ]
 resolver = "2"
