@@ -1,6 +1,8 @@
 use crate::data_model::{CfdValue, DimensionValueDraft};
 use crate::{CfdSource, Diagnostic, DiagnosticSet};
-use coflow_language::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
+use coflow_language::{
+    CftDimension, CftField, CftSchema, CftType, FieldName, RecordKey, VariantName,
+};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +29,8 @@ pub struct DimensionSourceSchema<'a> {
 pub struct DimensionSourceLoadRequest<'a> {
     pub source: &'a CfdSource,
     pub schema: DimensionSourceSchema<'a>,
+    pub singleton_source_fields: &'a [FieldName],
+    pub validate_singleton_shape: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

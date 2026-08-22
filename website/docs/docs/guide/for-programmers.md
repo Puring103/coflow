@@ -18,8 +18,9 @@ pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
 `CodegenInput` 提供不可变 schema、可选 `CfdDataModel`、CFD source 清单和目标选项；返回的
 `CodeArtifactSet` 只能包含安全的项目内相对路径。generator 不读取文件，也不发布目录。
 
-增加语言时新增 generator 和目标语言 runtime，并在应用层注册 descriptor；不添加新的数据
-源或导出接口。一个项目可以配置多个语言目标，Coflow 会在所有目标生成成功后统一发布。
+增加语言时新增 generator 和目标语言 runtime，并在应用层注册 descriptor。一个项目可以配置
+多个语言目标，所有 generator 都读取同一份 schema、`CfdDataModel` 和 CFD source 清单；Coflow
+会在全部目标生成成功后统一发布。
 
 ## C# 进程内加载
 
@@ -36,8 +37,9 @@ var tables = CoflowTables.Load(
 循环引用和资源限制都通过 `CfdLoadException.Diagnostics` 返回；生成 binding 直接构造
 目标类型。
 
+本地化字段生成为 `Localized<T>`。`value.For("zh")` 读取指定 variant，`value.Value` 使用 `Localization.CurrentLanguage`；缺失、`null` 和未知语言自动回退到基础值，不需要注册 localization provider。
+
 ## 约束
 
 - 数据文件必须是 `.cfd`；目录发现会忽略其它扩展名。
 - 写入只能通过 runtime mutation/write plan，不能绕过 revision 检查直接覆盖源文件。
-- 当前架构不提供旧配置、旧导出格式或旧 crate 的兼容 API。

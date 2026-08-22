@@ -11,7 +11,7 @@ mod common;
 use common::*;
 
 #[test]
-fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
+fn cyclic_record_refs_report_the_closing_reference() {
     let schema = compile_schema(
         r#"
             type Person {
@@ -32,21 +32,12 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
         [("parent", LoadedValueDraft::record_ref("alice"))],
     );
 
-    let model = builder.build().expect("cycles should resolve");
-    let alice_id = record_id_at(&model, 0);
-    let bob_id = record_id_at(&model, 1);
-    assert_eq!(
-        model
-            .record(alice_id)
-            .and_then(|record| record.field("parent")),
-        Some(&CfdValue::record_ref("bob").unwrap())
-    );
-    assert_eq!(
-        model
-            .record(bob_id)
-            .and_then(|record| record.field("parent")),
-        Some(&CfdValue::record_ref("alice").unwrap())
-    );
+    let err = builder.build().expect_err("record reference cycle should fail");
+    let diag = diagnostic_with_code(&err, CfdErrorCode::RefCycle);
+    assert_eq!(diag.stage, CfdStage::Reference);
+    let primary = diag.primary.as_ref().expect("closing reference label");
+    assert!(primary.record.is_some());
+    assert_eq!(primary.path, CfdPath::root().field("parent"));
 }
 
 #[test]

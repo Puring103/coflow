@@ -179,9 +179,9 @@ fn lower_float(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics>
 
 fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "bool")?;
-    match text.to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "y" => Ok(LoadedValueDraft::Bool(true)),
-        "false" | "0" | "no" | "n" => Ok(LoadedValueDraft::Bool(false)),
+    match text {
+        "true" => Ok(LoadedValueDraft::Bool(true)),
+        "false" => Ok(LoadedValueDraft::Bool(false)),
         _ => Err(error(CfdTextErrorCode::TypeMismatch, "expected bool", span)),
     }
 }

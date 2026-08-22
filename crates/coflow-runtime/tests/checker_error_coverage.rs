@@ -203,6 +203,13 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_assignable_ref_target,
         },
         Case {
+            name: "record reference cycle",
+            schema: "type Node { next: &Node? = null; }",
+            phase: Phase::Build(build_ref_cycle),
+            code: CfdErrorCode::RefCycle,
+            adjacent: adjacent_acyclic_ref_chain,
+        },
+        Case {
             name: "check failed fallback",
             schema: "",
             phase: Phase::Direct(build_check_failed_fallback),
@@ -635,6 +642,24 @@ fn build_ref_target_type_mismatch(schema: &CftSchema) -> Result<CfdDataModel, Cf
     )
 }
 
+fn build_ref_cycle(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [
+            one_record(
+                "first",
+                "Node",
+                [("next", LoadedValueDraft::record_ref("second"))],
+            ),
+            one_record(
+                "second",
+                "Node",
+                [("next", LoadedValueDraft::record_ref("first"))],
+            ),
+        ],
+    )
+}
+
 fn build_check_failed_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
@@ -1019,6 +1044,20 @@ fn adjacent_assignable_ref_target() {
                 "Drop",
                 [("reward", LoadedValueDraft::record_ref("reward"))],
             ),
+        ],
+    );
+}
+
+fn adjacent_acyclic_ref_chain() {
+    assert_builds(
+        "type Node { next: &Node? = null; }",
+        [
+            one_record(
+                "first",
+                "Node",
+                [("next", LoadedValueDraft::record_ref("second"))],
+            ),
+            one_record("second", "Node", []),
         ],
     );
 }

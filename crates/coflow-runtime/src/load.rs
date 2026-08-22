@@ -317,15 +317,34 @@ pub(crate) fn reload_project_data_from_cache(
         .collect::<Vec<_>>();
     statistics.sources_reloaded = reload_indexes.len();
 
+    let mut validated_dimension_sources = BTreeSet::new();
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
         if let Some(field) = &batch.dimension_field {
+            let source_fields = if field.is_singleton {
+                dimension_plan
+                    .fields()
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.is_singleton
+                            && candidate.dimension == field.dimension
+                            && candidate.source_type == field.source_type
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                vec![field.clone()]
+            };
+            let validate_singleton_shape =
+                validated_dimension_sources.insert(batch.entry.display_path.clone());
             match load_dimension_batch(
                 project,
                 schema,
                 catalog,
                 &batch.entry.source,
                 field,
+                &source_fields,
+                validate_singleton_shape,
                 &ordinary_records,
             ) {
                 Ok(values) => batch.dimension_values = values.into(),
@@ -446,13 +465,23 @@ fn load_resolved_dimension_source(
         .indexes
         .files
         .add_source_file(entry.display_path.clone(), source_id);
-    for field in resolved.fields {
-        match load_dimension_batch(project, schema, catalog, &source, &field, &state.records) {
+    let fields = resolved.fields;
+    for (index, field) in fields.iter().enumerate() {
+        match load_dimension_batch(
+            project,
+            schema,
+            catalog,
+            &source,
+            field,
+            &fields,
+            index == 0,
+            &state.records,
+        ) {
             Ok(values) => state.source_data.batches.push(CachedSourceBatch {
                 entry: entry.clone(),
                 records: Arc::default(),
                 dimension_values: values.into(),
-                dimension_field: Some(field),
+                dimension_field: Some(field.clone()),
             }),
             Err(err) => diagnostics.extend(err),
         }
@@ -466,6 +495,8 @@ fn load_dimension_batch(
     catalog: &CfdSourceCatalog,
     source: &CfdSource,
     field: &dimensions::DimensionField,
+    source_fields: &[dimensions::DimensionField],
+    validate_singleton_shape: bool,
     records: &[LoadedRecordDraft],
 ) -> Result<Vec<DimensionValueDraft>, DiagnosticSet> {
     let manager = catalog.dimension_source_manager();
@@ -489,6 +520,11 @@ fn load_dimension_batch(
             field.dimension
         ))
     })?;
+    let singleton_source_fields = source_fields
+        .iter()
+        .filter(|field| field.is_singleton)
+        .map(|field| field.source_field.clone())
+        .collect::<Vec<_>>();
     let mut values = manager
         .load_dimension_source(
             CfdWriteContext {
@@ -502,6 +538,8 @@ fn load_dimension_batch(
                     source_type,
                     source_field,
                 },
+                singleton_source_fields: &singleton_source_fields,
+                validate_singleton_shape,
             },
         )?
         .values;

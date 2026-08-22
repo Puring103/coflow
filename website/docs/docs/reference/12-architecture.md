@@ -68,6 +68,9 @@ public interface ICfdTextLoader
 public interface ICfdTypeBinding
 {
     string DeclaredType { get; }
+    IReadOnlyList<string> AssignableTypes { get; }
+    string? ObjectFieldType(string fieldName);
+    string? ReferenceFieldType(string fieldName);
     object Read(CfdRecordNode record, CfdLoadContext context);
 }
 
@@ -77,9 +80,14 @@ public sealed class CfdLoadContext
 }
 ```
 
-context 以 `(declaredType, key)` 缓存对象并检测循环引用；parser 保留 `CfdSpan`，值读取器
+`AssignableTypes` 包含 concrete type 自身及其全部 CFT ancestor；两个 field-type 查询用于让
+schema-free parser 沿内联 object 和 record ref 正确求值格式化字符串。context 用这些信息建立继承域内的
+record key identity，以 `(declaredType, key)` 缓存对象并检测循环引用；parser 保留 `CfdSpan`，值读取器
 将未知字段、缺失字段、非法 enum、数值溢出、未知 concrete type、缺少引用和资源限制转成
-稳定的 `CfdDiagnostic`。生成代码使用显式构造函数和 reader lambda，不使用反射或动态构造。
+稳定的 `CfdDiagnostic`。生成 reader 会在字段缺失时应用 CFT 默认值；无默认值的字段仍是必填。
+生成代码使用显式构造函数和 reader lambda，不使用反射或动态构造。
+
+codegen source manifest 为每个逻辑 CFD 路径标记 `Project` 或结构化的 `Dimension { dimension, source_type, field }` origin。一个 singleton 维度文件可对应多个字段 origin，但生成 loader 只读取一次物理路径，并按记录 key 分派到内部 variant binding。该规范化层只服务 direct loading，不改变公开 schema，也不生成可查询的 dimension table。
 
 ## 原子性
 

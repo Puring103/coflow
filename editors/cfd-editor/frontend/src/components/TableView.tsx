@@ -78,10 +78,10 @@ import {
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { useTableCellRangeDrag } from '../hooks/useTableCellRangeDrag'
 import {
-  parseTsv,
+  parseCfdClipboard,
   planPaste,
-  serializeCellMatrix,
-  serializeRecordsToRefColumn,
+  serializeCfdCellMatrix,
+  serializeRecordRefsAsCfd,
   shouldExpandSinglePasteTarget,
   type PasteCell,
 } from '../state/clipboard'
@@ -974,10 +974,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (selection.kind === 'record') {
                   if (shortcut === 'x') throw new Error('不支持剪切整条记录')
                   const coordinates = recordSelectionCoordinates(selection)
-                  await navigator.clipboard.writeText(serializeRecordsToRefColumn(coordinates))
+                  await navigator.clipboard.writeText(serializeRecordRefsAsCfd(coordinates))
                 } else {
                   const matrix = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
-                  const text = await serializeCellMatrix(matrix, onRenderCellText)
+                  const text = await serializeCfdCellMatrix(matrix, onRenderCellText)
                   await navigator.clipboard.writeText(text)
                   if (shortcut === 'x') {
                     if (!onWriteFieldBatch) throw new Error('当前来源不支持批量写入')
@@ -1018,7 +1018,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               clipboardBusyRef.current = true
               try {
-                const source = parseTsv(await navigator.clipboard.readText())
+                const source = parseCfdClipboard(await navigator.clipboard.readText())
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                 const selectedTarget = anchors.length === 1 && anchors[0].length === 1

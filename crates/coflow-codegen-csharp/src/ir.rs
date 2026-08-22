@@ -337,6 +337,7 @@ fn build_id_as_enums(
         if is_flags {
             enum_variants.push(CsharpEnumVariant {
                 name: "None".to_string(),
+                source_name: "None".to_string(),
                 value: 0,
                 summary: None,
                 obsolete: false,
@@ -344,7 +345,8 @@ fn build_id_as_enums(
         }
         for variant in variants.remove(name).unwrap_or_default() {
             enum_variants.push(CsharpEnumVariant {
-                name: variant.name,
+                name: variant.name.clone(),
+                source_name: variant.name,
                 value: variant.value,
                 summary: None,
                 obsolete: false,
@@ -354,6 +356,7 @@ fn build_id_as_enums(
             name.clone(),
             CsharpEnum {
                 name: name.clone(),
+                source_name: name.clone(),
                 is_flags,
                 summary: None,
                 obsolete: false,

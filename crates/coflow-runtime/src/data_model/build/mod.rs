@@ -10,7 +10,7 @@ pub(crate) use draft::{RecordDraft, ValueDraft};
 use crate::data_model::diagnostics::{
     CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin,
 };
-use crate::data_model::indexes::{self, build_ref_indexes};
+use crate::data_model::indexes::{self, build_ref_indexes, first_ref_cycle};
 use crate::data_model::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::data_model::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord, CfdRecordId,
@@ -186,6 +186,10 @@ impl<'a> ModelCompiler<'a> {
         attach_dimension_values(&mut records, dimension_values);
 
         let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, self.schema);
+        if let Some(diagnostic) = first_ref_cycle(&ref_indexes, &records) {
+            self.diagnostics.push(diagnostic);
+        }
+        self.fail_if_diagnostics()?;
 
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {

@@ -15,12 +15,21 @@ use coflow_runtime::CfdDataModel;
 use coflow_runtime::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
 };
-use coflow_runtime::{CfdLoadContext, CfdSource, CfdSourcePath, SourceLocation};
+use coflow_runtime::{CfdErrorCode, CfdLoadContext, CfdSource, CfdSourcePath, SourceLocation};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+fn runtime_parity_fixture(name: &str) -> String {
+    fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/cfd-runtime-parity")
+            .join(name),
+    )
+    .expect("shared CFD runtime parity fixture")
+}
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
@@ -83,6 +92,17 @@ fn string_fields_require_quotes() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.message == "expected string"));
+}
+
+#[test]
+fn bool_fields_accept_only_lowercase_cfd_literals() {
+    let schema = compile_schema("type Item { enabled: bool; }");
+    for value in ["TRUE", "True", "FALSE", "False", "1", "0", "yes", "no"] {
+        let source = format!("item: Item {{ enabled: {value}, }}");
+        let error = parse_cfd_input_records(&schema, &source)
+            .expect_err("non-canonical bool literal must be rejected");
+        assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
+    }
 }
 
 #[test]
@@ -563,38 +583,36 @@ fn cfd_rejects_reserved_id_fields() {
 }
 
 #[test]
-fn cfd_allows_cyclic_record_references() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Node {
-                label: string;
-                next: &Node? = null;
-            }
-        "#,
-    );
+fn cfd_rejects_cyclic_record_references() {
+    let schema = compile_schema(&runtime_parity_fixture("record-references.cft"));
+
+    let error = load_cfd_model(
+        &schema,
+        &runtime_parity_fixture("record-reference-cycle.invalid.cfd"),
+    )
+    .expect_err("record reference cycles must be rejected consistently across runtimes");
+
+    let CfdTextLoadError::DataModel { diagnostics, .. } = error else {
+        panic!("expected a data-model reference diagnostic");
+    };
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == CfdErrorCode::RefCycle));
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| diagnostic
+        .message
+        .contains("Node:a -> Node:b -> Node:a")));
+}
+
+#[test]
+fn cfd_allows_acyclic_record_reference_chains() -> TestResult {
+    let schema = compile_schema(&runtime_parity_fixture("record-references.cft"));
 
     let model = load_cfd_model(
         &schema,
-        r#"
-            a: Node { label: "A", next: &b }
-            b: Node { label: "B", next: &a }
-        "#,
+        &runtime_parity_fixture("record-references.valid.cfd"),
     )?;
-
-    let a_id = model
-        .lookup_assignable(&schema, "Node", "a")
-        .expect("a record");
-    let b_id = model
-        .lookup_assignable(&schema, "Node", "b")
-        .expect("b record");
-    assert_eq!(
-        model.record(a_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::record_ref("b").unwrap())
-    );
-    assert_eq!(
-        model.record(b_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::record_ref("a").unwrap())
-    );
+    assert_eq!(model.record_count(), 2);
     Ok(())
 }
 

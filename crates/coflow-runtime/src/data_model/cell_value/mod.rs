@@ -119,9 +119,9 @@ fn parse_value(
                 Err(type_mismatch("finite float"))
             }
         }
-        CellType::Bool => match text.to_ascii_lowercase().as_str() {
-            "true" | "1" | "yes" | "y" => Ok(LoadedValueDraft::Bool(true)),
-            "false" | "0" | "no" | "n" => Ok(LoadedValueDraft::Bool(false)),
+        CellType::Bool => match text {
+            "true" => Ok(LoadedValueDraft::Bool(true)),
+            "false" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
         CellType::String if text.starts_with("f\"") => {

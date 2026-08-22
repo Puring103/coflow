@@ -1,5 +1,6 @@
 use crate::data_model::build::BuildSchema;
 use crate::data_model::diagnostics::CfdPath;
+use crate::data_model::diagnostics::{CfdDiagnostic, CfdErrorCode};
 use crate::data_model::model::{
     CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite,
 };
@@ -72,6 +73,82 @@ pub(crate) fn build_ref_indexes(
         }
     }
     out
+}
+
+pub(crate) fn first_ref_cycle(
+    indexes: &RefIndexes,
+    records: &[CfdRecord],
+) -> Option<CfdDiagnostic> {
+    let mut states = vec![0_u8; records.len()];
+    let mut record_stack = Vec::new();
+    let mut frames = Vec::new();
+
+    for root in 0..records.len() {
+        if states[root] != 0 {
+            continue;
+        }
+        let root = CfdRecordId::new(root);
+        states[root.index()] = 1;
+        record_stack.push(root);
+        frames.push((root, 0_usize));
+
+        while let Some((host, next_edge)) = frames.last_mut() {
+            let outgoing = indexes.by_host.get(host).map_or(&[][..], Vec::as_slice);
+            let Some(edge_id) = outgoing.get(*next_edge).copied() else {
+                states[host.index()] = 2;
+                frames.pop();
+                record_stack.pop();
+                continue;
+            };
+            *next_edge += 1;
+            let edge = &indexes.edges[edge_id.index()];
+            match states.get(edge.target.index()).copied().unwrap_or(2) {
+                0 => {
+                    states[edge.target.index()] = 1;
+                    record_stack.push(edge.target);
+                    frames.push((edge.target, 0));
+                }
+                1 => {
+                    let cycle_start = record_stack
+                        .iter()
+                        .position(|record| *record == edge.target)
+                        .unwrap_or(0);
+                    let mut cycle = record_stack[cycle_start..]
+                        .iter()
+                        .filter_map(|record| display_record(records, *record))
+                        .collect::<Vec<_>>();
+                    if let Some(first) = cycle.first().cloned() {
+                        cycle.push(first);
+                    }
+                    let mut diagnostic = CfdDiagnostic::error(
+                            CfdErrorCode::RefCycle,
+                            format!("record reference cycle: {}", cycle.join(" -> ")),
+                        )
+                        .with_primary(Some(edge.site.host), edge.site.path.clone())
+                        .with_primary_message("this reference closes the cycle");
+                    if let Some(dimension) = &edge.site.dimension {
+                        if let Some(origin) = records
+                            .get(edge.site.host.index())
+                            .and_then(|record| record.dimension_field(dimension.field.as_str()))
+                            .and_then(|values| values.variants.get(&dimension.variant))
+                            .map(|value| value.origin.clone())
+                        {
+                            diagnostic = diagnostic.with_primary_origin(origin);
+                        }
+                    }
+                    return Some(diagnostic);
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn display_record(records: &[CfdRecord], record: CfdRecordId) -> Option<String> {
+    records
+        .get(record.index())
+        .map(|record| format!("{}:{}", record.actual_type(), record.key()))
 }
 
 struct RefEdgeBuildContext<'a, 'schema> {

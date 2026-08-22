@@ -3,7 +3,7 @@
 CFD 是唯一数据格式。顶层记录使用声明类型和 key，字段值遵循 CFT 类型：
 
 ```cfd
-Item sword {
+sword: Item {
     name: "Fire Sword",
     tags: ["weapon", "fire"],
 }
