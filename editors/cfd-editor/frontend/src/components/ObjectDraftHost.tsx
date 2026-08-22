@@ -44,6 +44,8 @@ export function ObjectDraftHost({
   }, [])
 
   const lookupAccess = useMemo(() => ({
+    cachedEnumVariants: (enumName: string) => lookups.cachedEnumVariants(enumName),
+    cachedRefTargets: (targetType: string) => lookups.cachedRefTargets(targetType),
     loadEnumVariants: (enumName: string) => lookups.loadEnumVariants(enumName),
     loadRefTargets: (targetType: string) => lookups.loadRefTargets(targetType),
     makeDefaultObject: (typeName: string) => lookups.makeDefaultObject(typeName),

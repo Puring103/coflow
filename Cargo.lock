@@ -560,6 +560,7 @@ dependencies = [
 name = "coflow-runtime"
 version = "0.9.1"
 dependencies = [
+ "atomicwrites",
  "coflow-language",
  "regex",
  "serde",
