@@ -17,12 +17,14 @@ use crate::api::{
     WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
 };
 use crate::data_model::RecordOrigin;
+use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_language::Span;
 use patch::{
     append_record_source, apply_patch, delete_record_span, find_record, reorder_record_spans,
     replace_spans, serialize_record, validate_record_key, validate_values,
 };
+use std::io::Write;
 use std::path::Path;
 
 pub static CFD_WRITER_DESCRIPTOR: CfdWriterDescriptor = CfdWriterDescriptor {
@@ -56,36 +58,55 @@ impl CfdWriter {
             ))
         })?;
         let (ast, diagnostics) = parse_cfd(&text);
-        ensure_parse_ok(path, &diagnostics)?;
+        ensure_parse_ok(path, &text, &diagnostics)?;
         Ok((text, ast))
     }
 
     fn write_source(path: &Path, new_source: &str) -> Result<(), DiagnosticSet> {
-        std::fs::write(path, new_source).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                format!("failed to write `{}`: {err}", path.display()),
-            ))
-        })?;
-
         let (_, diagnostics) = parse_cfd(new_source);
-        ensure_parse_ok(path, &diagnostics)?;
+        ensure_parse_ok(path, new_source, &diagnostics)?;
+
+        AtomicFile::new(path, AllowOverwrite)
+            .write(|file| file.write_all(new_source.as_bytes()))
+            .map_err(|err| {
+                DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("failed to write `{}`: {err}", path.display()),
+                ))
+            })?;
         Ok(())
     }
 }
 
-fn ensure_parse_ok(path: &Path, diagnostics: &[CfdSyntaxDiagnostic]) -> Result<(), DiagnosticSet> {
+fn ensure_parse_ok(
+    path: &Path,
+    source: &str,
+    diagnostics: &[CfdSyntaxDiagnostic],
+) -> Result<(), DiagnosticSet> {
     if let Some(diagnostic) = diagnostics.first() {
+        let (line, column) = line_column(source, diagnostic.span.start);
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!(
-                "failed to parse `{}` for write: {}",
+                "failed to parse `{}` for write at {line}:{column}: {}",
                 path.display(),
                 diagnostic.message
             ),
         )));
     }
     Ok(())
+}
+
+fn line_column(source: &str, byte_offset: usize) -> (usize, usize) {
+    let prefix = source.get(..byte_offset).unwrap_or(source);
+    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let column = prefix
+        .rsplit_once('\n')
+        .map_or(prefix, |(_, current_line)| current_line)
+        .chars()
+        .count()
+        + 1;
+    (line, column)
 }
 
 impl CfdDocumentWriter for CfdWriter {
@@ -167,7 +188,7 @@ impl CfdDocumentWriter for CfdWriter {
             source = apply_patch(&source, &ast, request)
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             let (next_ast, diagnostics) = parse_cfd(&source);
-            ensure_parse_ok(path, &diagnostics)
+            ensure_parse_ok(path, &source, &diagnostics)
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             ast = next_ast;
         }

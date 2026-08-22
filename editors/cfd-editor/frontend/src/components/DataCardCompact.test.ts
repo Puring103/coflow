@@ -1,11 +1,52 @@
 import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { DataCardCompact, DataCardExpanded } from './DataCard'
+import { DataCardCompact, DataCardExpanded, EnumDirectSelect, RefDirectSelect } from './DataCard'
 import { ObjectDraftHost } from './ObjectDraftHost'
 import type { FieldValue } from '../wire'
+import { EditorLookupController, type EditorLookupBackend } from '../state/editorLookups'
 
 describe('DataCardCompact complex previews', () => {
+  it('renders cached dropdown options immediately after a revision change', async () => {
+    const lookups = new EditorLookupController({
+      getEnumVariants: async () => [{ name: 'Epic', value: 2n, label: 'Epic', description: null }],
+      getRefTargets: async () => [{
+        coordinate: { actual_type: 'Item', key: 'sword' },
+        file_path: 'data/items.cfd',
+      }],
+      makeDefaultObject: async () => ({ kind: 'null' }),
+      createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
+    } satisfies EditorLookupBackend)
+    lookups.adopt({ sessionId: 1, revision: 1 })
+    await lookups.loadEnumVariants('Rarity')
+    await lookups.loadRefTargets('Item')
+    lookups.adopt({ sessionId: 1, revision: 2 })
+
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups,
+      generationKey: '1:2',
+      onOpenReference: () => {},
+      children: createElement('div', null,
+        createElement(EnumDirectSelect, {
+          value: { kind: 'enum', value: { enum_name: 'Rarity', variant: 'Epic', value: 2n } },
+          onCommit: () => {},
+          variant: 'input',
+        }),
+        createElement(RefDirectSelect, {
+          value: { kind: 'ref', value: '&Item.sword' },
+          targetType: 'Item',
+          onCommit: () => {},
+          variant: 'input',
+        }),
+      ),
+    }))
+
+    expect(html).toContain('value="Epic"')
+    expect(html).toContain('value="sword"')
+    expect(html).not.toContain('加载中')
+    expect(html).not.toContain('disabled')
+  })
+
   it('renders the complete markdown tree while preserving scalar value styles', () => {
     const value: FieldValue = {
       kind: 'object',

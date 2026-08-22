@@ -229,37 +229,54 @@ pub(super) fn reorder_record_spans(
             "record reorder does not cover every document record",
         )));
     }
-    let fragments = records
+    let replacements = records
         .iter()
-        .map(|record| {
-            source
-                .get(record.span.start..record.span.end)
-                .map(ToOwned::to_owned)
+        .zip(order)
+        .map(|(slot, source_index)| -> Result<(Span, String), DiagnosticSet> {
+            let moved = records.get(*source_index).ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    "record reorder index is outside the document",
+                ))
+            })?;
+            let fragment = source
+                .get(moved.span.start..moved.span.end)
                 .ok_or_else(|| {
                     DiagnosticSet::one(diag(
                         "CFD-WRITE",
                         "record span is outside the source document",
                     ))
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let replacements = records
-        .iter()
-        .zip(order)
-        .map(|(slot, source_index)| {
-            fragments
-                .get(*source_index)
-                .cloned()
-                .map(|fragment| (slot.span, fragment))
-                .ok_or_else(|| {
-                    DiagnosticSet::one(diag(
-                        "CFD-WRITE",
-                        "record reorder index is outside the document",
-                    ))
-                })
+                })?;
+            let fragment = if record_container(slot) == record_container(moved) {
+                fragment.to_string()
+            } else {
+                explicit_record_fragment(fragment, moved)?
+            };
+            Ok((slot.span, fragment))
         })
         .collect::<Result<Vec<_>, _>>()?;
     replace_spans(source, &replacements)
+}
+
+fn record_container(record: &AstRecord) -> Option<usize> {
+    record.group_type.as_ref().map(|(_, span)| span.start)
+}
+
+fn explicit_record_fragment(
+    fragment: &str,
+    record: &AstRecord,
+) -> Result<String, DiagnosticSet> {
+    if record.type_span.start >= record.span.start {
+        return Ok(fragment.to_string());
+    }
+    let insert_at = record.key_span.end.saturating_sub(record.span.start);
+    let Some((prefix, suffix)) = fragment.get(..insert_at).zip(fragment.get(insert_at..)) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "record key span is outside the record fragment",
+        )));
+    };
+    Ok(format!("{prefix}: {}{suffix}", record.type_name))
 }
 
 fn find_closing_brace(source: &str, near: usize) -> Result<usize, DiagnosticSet> {

@@ -17,6 +17,7 @@ ts-export = [
 ]
 
 [dependencies]
+atomicwrites = "0.4.4"
 coflow-language = { path = "../coflow-language" }
 regex = "1"
 serde = { version = "1", features = ["derive"] }

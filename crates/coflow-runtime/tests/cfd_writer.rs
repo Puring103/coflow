@@ -124,6 +124,62 @@ fn reorders_records_without_changing_document_slots() {
 }
 
 #[test]
+fn reorders_grouped_and_top_level_records_without_losing_record_types() {
+    let dir = temp_dir("reorder-group-boundary");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        r"Item {
+  grouped {
+    value: 1,
+  }
+}
+
+top: Item {
+  value: 2,
+}
+",
+    )
+    .expect("write seed");
+    let schema = compile_schema("type Item { value: int; }");
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let writer = CfdWriter::new();
+    let ctx = WriteContext {
+        project_root: &dir,
+        schema: &schema,
+        model: None,
+    };
+
+    writer
+        .reorder_records(
+            ctx,
+            &ReorderRecordsRequest {
+                source: &source,
+                operation: ReorderRecordsOperation::Swap {
+                    first: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "grouped",
+                        actual_type: "Item",
+                    },
+                    second: WriteRecordRef {
+                        origin: &origin,
+                        record_key: "top",
+                        actual_type: "Item",
+                    },
+                },
+            },
+        )
+        .expect("swap across group boundary");
+
+    let after = fs::read_to_string(&file).expect("read reordered source");
+    let model = load_cfd_model(&schema, &after).expect("reload reordered source");
+    assert!(model.lookup_assignable(&schema, "Item", "grouped").is_some());
+    assert!(model.lookup_assignable(&schema, "Item", "top").is_some());
+    assert!(after.contains("grouped: Item"), "{after}");
+}
+
+#[test]
 fn writes_scalar_field_and_preserves_siblings() {
     let dir = temp_dir("scalar");
     let file = dir.join("items.cfd");
@@ -959,4 +1015,88 @@ sword: Item {
             .all(|diagnostic| !diagnostic.message.contains("not found in AST")),
         "parse errors should not be masked as missing records: {err:?}"
     );
+}
+
+#[test]
+fn rewrites_chemical_equation_objects_and_arrays_as_valid_cfd() {
+    let dir = temp_dir("chemical-equation-round-trip");
+    let file = dir.join("04-chemical-equations.cfd");
+    let original = include_str!("../../../examples/cfd/data/04-chemical-equations.cfd");
+    fs::write(&file, original).expect("write chemical equation seed");
+    let schema = compile_schema(include_str!("../../../examples/cfd/schema.cft"));
+    let model = load_cfd_model(&schema, original).expect("load chemical equation model");
+    let record_id = model
+        .lookup_assignable(&schema, "ChemicalEquation", "water_synthesis")
+        .expect("chemical equation record");
+    let record = model.record(record_id).expect("chemical equation value");
+    let expression = record.field("expression").expect("expression").clone();
+    let CfdValue::Object(expression_object) = &expression else {
+        panic!("expression should be an object");
+    };
+    let CfdValue::Array(inputs) = expression_object.field("inputs").expect("inputs") else {
+        panic!("inputs should be an array");
+    };
+    let mut appended_inputs = inputs.clone();
+    appended_inputs.push(inputs[0].clone());
+
+    let writer = CfdWriter::new();
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let context = WriteContext {
+        project_root: &dir,
+        schema: &schema,
+        model: Some(&model),
+    };
+    let expression_path = vec![WriteFieldPathSegment::Field("expression".to_string())];
+    writer
+        .write_field(
+            context,
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "water_synthesis",
+                actual_type: "ChemicalEquation",
+                field_path: &expression_path,
+                new_value: &expression,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("rewrite expression object");
+
+    let inputs_path = vec![
+        WriteFieldPathSegment::Field("expression".to_string()),
+        WriteFieldPathSegment::Field("inputs".to_string()),
+    ];
+    writer
+        .write_field(
+            context,
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "water_synthesis",
+                actual_type: "ChemicalEquation",
+                field_path: &inputs_path,
+                new_value: &CfdValue::Array(appended_inputs),
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("rewrite expression inputs");
+
+    let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
+    let rewritten = load_cfd_model(&schema, &after).expect("reload rewritten chemical equation");
+    let rewritten_id = rewritten
+        .lookup_assignable(&schema, "ChemicalEquation", "water_synthesis")
+        .expect("rewritten chemical equation record");
+    let rewritten_record = rewritten.record(rewritten_id).expect("rewritten record");
+    let CfdValue::Object(rewritten_expression) =
+        rewritten_record.field("expression").expect("rewritten expression")
+    else {
+        panic!("rewritten expression should be an object");
+    };
+    let CfdValue::Array(rewritten_inputs) =
+        rewritten_expression.field("inputs").expect("rewritten inputs")
+    else {
+        panic!("rewritten inputs should be an array");
+    };
+    assert_eq!(rewritten_inputs.len(), 3);
 }

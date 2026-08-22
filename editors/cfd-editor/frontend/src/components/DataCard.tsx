@@ -1228,7 +1228,9 @@ export function EnumDirectSelect({
 }) {
   const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
-  const [variants, setVariants] = useState<import('../bindings/EnumVariantOption').EnumVariantOption[] | null>(null)
+  const [variants, setVariants] = useState<import('../bindings/EnumVariantOption').EnumVariantOption[] | null>(
+    () => enumName ? lookups.cachedEnumVariants(enumName) ?? null : [],
+  )
   const [loadError, setLoadError] = useState<string | null>(null)
   const incomingMask = value.kind === 'enum' ? value.value.value : 0n
   const [draftMask, setDraftMask] = useState(incomingMask)
@@ -1239,12 +1241,15 @@ export function EnumDirectSelect({
   useEffect(() => {
     if (!enumName) { setVariants([]); return }
     let alive = true
-    setVariants(null)
+    setVariants(lookups.cachedEnumVariants(enumName) ?? null)
     setLoadError(null)
     lookups.loadEnumVariants(enumName).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.value)
-      else { setVariants([]); setLoadError(r.error ?? null) }
+      else {
+        setVariants(currentVariants => currentVariants ?? [])
+        setLoadError(r.error ?? null)
+      }
     })
     return () => { alive = false }
   }, [enumName, lookups])
@@ -1436,7 +1441,14 @@ export function RefDirectSelect({
 }) {
   const lookups = useEditorLookups()
   const navigation = useEditorNavigation()
-  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
+  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(() => (
+    targetType
+      ? lookups.cachedRefTargets(targetType)?.map(target => ({
+        key: target.coordinate.key,
+        label: target.coordinate.key,
+      })) ?? null
+      : null
+  ))
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
   const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
@@ -1452,7 +1464,10 @@ export function RefDirectSelect({
       return
     }
     let alive = true
-    setTargets(null)
+    setTargets(lookups.cachedRefTargets(targetType)?.map(target => ({
+      key: target.coordinate.key,
+      label: target.coordinate.key,
+    })) ?? null)
     setLoadError(null)
     lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return
@@ -1462,7 +1477,7 @@ export function RefDirectSelect({
           label: target.coordinate.key,
         })))
       } else {
-        setTargets([])
+        setTargets(currentTargets => currentTargets ?? [])
         setLoadError(r.error ?? null)
       }
     })
@@ -2294,16 +2309,24 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
 }) {
   const lookups = useEditorLookups()
   const [text, setText] = useState('')
-  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
+  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(() => (
+    sampleKey.kind === 'enum'
+      ? lookups.cachedEnumVariants(sampleKey.value.enum_name) ?? null
+      : null
+  ))
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     if (sampleKey.kind !== 'enum') return
     let alive = true
+    setVariants(lookups.cachedEnumVariants(sampleKey.value.enum_name) ?? null)
     setLoadError(null)
     lookups.loadEnumVariants(sampleKey.value.enum_name).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.value)
-      else { setVariants([]); setLoadError(r.error ?? null) }
+      else {
+        setVariants(currentVariants => currentVariants ?? [])
+        setLoadError(r.error ?? null)
+      }
     })
     return () => { alive = false }
   }, [sampleKey.kind === 'enum' ? sampleKey.value.enum_name : '', lookups])
