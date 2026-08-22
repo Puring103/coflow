@@ -1,0 +1,27 @@
+[package]
+name = "cfd-editor-core"
+version = "0.9.1"
+edition = "2021"
+description = "Host-independent CFD editor sessions, operations, and file watching"
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+ts-export = ["dep:ts-rs", "coflow-runtime/ts-export"]
+
+[dependencies]
+atomicwrites = "0.4.4"
+coflow = { path = "../../..", default-features = false }
+coflow-runtime = { path = "../../../crates/coflow-runtime" }
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+ts-rs = { version = "10", optional = true }
+
+[dev-dependencies]
+coflow-language = { path = "../../../crates/coflow-language" }

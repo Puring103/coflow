@@ -383,6 +383,22 @@ dependencies = [
 name = "cfd-editor"
 version = "0.9.1"
 dependencies = [
+ "cfd-editor-core",
+ "coflow-runtime",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "ts-rs",
+]
+
+[[package]]
+name = "cfd-editor-core"
+version = "0.9.1"
+dependencies = [
  "atomicwrites",
  "coflow",
  "coflow-language",
@@ -391,11 +407,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-process",
- "tauri-plugin-updater",
  "ts-rs",
 ]
 
