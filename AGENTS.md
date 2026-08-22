@@ -89,7 +89,9 @@ in this file or in `docs/`.
 - The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
 - The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through staging and active-manifest publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.
 - `editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
+- `editors/cfd-editor/sidecar` exposes the editor core to out-of-process desktop hosts over newline-delimited JSON on stdio. Protocol stdout must contain only responses and editor events; logs belong on stderr.
 - `editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
+- `editors/cfd-editor/electron` is the optional Electron preview host. It uses a sandboxed preload bridge and the Rust sidecar; it does not replace the Tauri release host yet.
 - `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
 - Code generation contracts live in `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
 

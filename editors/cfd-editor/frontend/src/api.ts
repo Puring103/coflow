@@ -1,6 +1,3 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
 import type { BatchWriteFieldOutcome } from './bindings/BatchWriteFieldOutcome'
 import type { BatchWriteFieldInput } from './bindings/BatchWriteFieldInput'
@@ -30,9 +27,18 @@ import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueO
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { PluginSchemaType } from './bindings/PluginSchemaType'
+import {
+  invokeDesktop,
+  isDesktop,
+  isElectronDesktop,
+  isTauriDesktop,
+  listenDesktop,
+  openDesktopDialog,
+} from './desktop'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
-export const isTauri = '__TAURI_INTERNALS__' in window
+export const isTauri = isTauriDesktop
+export const isElectron = isElectronDesktop
 
 export interface ProjectChangedEvent {
   session_id: number
@@ -46,27 +52,25 @@ export interface ProjectWatchErrorEvent {
 }
 
 export async function pickProjectYaml(): Promise<string | null> {
-  if (!isTauri) {
-    alert('文件对话框仅在 Tauri 桌面环境可用，浏览器中请使用 mock 数据。')
+  if (!isDesktop) {
+    alert('文件对话框仅在桌面环境可用，浏览器中请使用 mock 数据。')
     return null
   }
-  const path = await openDialog({
-    multiple: false,
+  const path = await openDesktopDialog({
     filters: [{ name: 'Coflow Project', extensions: ['yaml', 'yml'] }],
   })
-  return typeof path === 'string' ? path : null
+  return path
 }
 
 export async function pickProjectDirectory(): Promise<string | null> {
-  if (!isTauri) {
-    alert('文件对话框仅在 Tauri 桌面环境可用。')
+  if (!isDesktop) {
+    alert('文件对话框仅在桌面环境可用。')
     return null
   }
-  const path = await openDialog({
-    multiple: false,
+  const path = await openDesktopDialog({
     directory: true,
   })
-  return typeof path === 'string' ? path : null
+  return path
 }
 
 export async function loadProject(yamlPath: string): Promise<ProjectSnapshot> {
@@ -194,12 +198,11 @@ export interface FrontendPluginBundle {
 }
 
 export async function pickFrontendPluginManifest(): Promise<string | null> {
-  if (!isTauri) return null
-  const path = await openDialog({
-    multiple: false,
+  if (!isDesktop) return null
+  const path = await openDesktopDialog({
     filters: [{ name: 'CFD Editor Plugin', extensions: ['json'] }],
   })
-  return typeof path === 'string' ? path : null
+  return path
 }
 
 export async function installFrontendPlugin(manifestPath: string): Promise<FrontendPluginBundle> {
@@ -449,14 +452,14 @@ export async function transferRecord(
 }
 
 export async function onProjectChanged(handler: (event: ProjectChangedEvent) => void): Promise<() => void> {
-  return listen<ProjectChangedEvent>('project_changed', event => handler(fromIpc(event.payload) as ProjectChangedEvent))
+  return listenDesktop<ProjectChangedEvent>('project_changed', payload => handler(fromIpc(payload) as ProjectChangedEvent))
 }
 
 export async function onProjectWatchError(handler: (event: ProjectWatchErrorEvent) => void): Promise<() => void> {
-  return listen<ProjectWatchErrorEvent>('project_watch_error', event => handler(fromIpc(event.payload) as ProjectWatchErrorEvent))
+  return listenDesktop<ProjectWatchErrorEvent>('project_watch_error', payload => handler(fromIpc(payload) as ProjectWatchErrorEvent))
 }
 
 async function invokeCommand<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
-  const result = await invoke<unknown>(cmd, toIpc(args) as Record<string, unknown>)
+  const result = await invokeDesktop<unknown>(cmd, toIpc(args) as Record<string, unknown>)
   return fromIpc(result) as T
 }
