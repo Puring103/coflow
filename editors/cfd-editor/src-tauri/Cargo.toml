@@ -19,6 +19,7 @@ default = []
 # `export_bindings` test to refresh `editors/cfd-editor/frontend/src/bindings/`.
 ts-export = [
     "dep:ts-rs",
+    "cfd-editor-core/ts-export",
     "coflow-runtime/ts-export",
 ]
 
@@ -26,18 +27,12 @@ ts-export = [
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-atomicwrites = "0.4.4"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
-notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+cfd-editor-core = { path = "../core" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
-coflow = { path = "../../..", default-features = false }
 ts-rs = { version = "10", optional = true }
-
-[dev-dependencies]
-coflow-language = { path = "../../../crates/coflow-language" }

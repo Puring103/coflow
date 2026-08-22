@@ -1,4 +1,4 @@
-//! Session state and Tauri-facing handlers.
+//! Session state and host-facing editor operations.
 //!
 //! `SessionStore` owns a small population of `EditorSession`s — one per
 //! loaded project — and dispatches every editor command through a shared
@@ -184,7 +184,7 @@ impl SessionStore {
         Ok(session.queries().dimensions())
     }
 
-    pub(crate) fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
+    pub fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let root = entry
             .state

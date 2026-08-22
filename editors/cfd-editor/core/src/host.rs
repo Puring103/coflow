@@ -1,63 +1,62 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use tauri::AppHandle;
-
 use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
-use crate::watcher::ProjectWatchRegistry;
+use crate::watcher::{EditorEventSink, ProjectWatchRegistry};
 
-#[derive(Debug, Clone)]
-pub(crate) struct EditorHost {
+#[derive(Clone)]
+pub struct EditorHost {
     sessions: Arc<SessionStore>,
     watchers: Arc<ProjectWatchRegistry>,
+    events: Arc<dyn EditorEventSink>,
+}
+
+impl std::fmt::Debug for EditorHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EditorHost").finish_non_exhaustive()
+    }
 }
 
 impl EditorHost {
-    pub(crate) fn new() -> Result<Self, EditorError> {
+    pub fn new(events: Arc<dyn EditorEventSink>) -> Result<Self, EditorError> {
         Ok(Self {
             sessions: Arc::new(SessionStore::new()?),
             watchers: Arc::new(ProjectWatchRegistry::default()),
+            events,
         })
     }
 
-    pub(crate) fn load_project(
-        &self,
-        app: AppHandle,
-        yaml_path: &Path,
-    ) -> Result<ProjectSnapshot, EditorError> {
+    pub fn load_project(&self, yaml_path: &Path) -> Result<ProjectSnapshot, EditorError> {
         self.load_project_with_watch(yaml_path, |snapshot| {
-            self.watchers.watch_session(app, snapshot)
+            self.watchers.watch_session(
+                Arc::clone(&self.sessions),
+                Arc::clone(&self.events),
+                snapshot,
+            )
         })
     }
 
-    pub(crate) fn init_project(
-        &self,
-        app: AppHandle,
-        dir: &Path,
-    ) -> Result<ProjectSnapshot, EditorError> {
-        self.init_project_with_watch(dir, |snapshot| self.watchers.watch_session(app, snapshot))
+    pub fn init_project(&self, dir: &Path) -> Result<ProjectSnapshot, EditorError> {
+        self.init_project_with_watch(dir, |snapshot| {
+            self.watchers.watch_session(
+                Arc::clone(&self.sessions),
+                Arc::clone(&self.events),
+                snapshot,
+            )
+        })
     }
 
-    pub(crate) fn close_session(&self, session_id: u32) -> Result<(), EditorError> {
+    pub fn close_session(&self, session_id: u32) -> Result<(), EditorError> {
         self.sessions.close_session(session_id)?;
         self.watchers.unwatch_session(session_id);
         Ok(())
     }
 
-    pub(crate) fn reload_session(&self, session_id: u32) -> Result<ProjectSnapshot, EditorError> {
+    pub fn reload_session(&self, session_id: u32) -> Result<ProjectSnapshot, EditorError> {
         self.sessions.reload_session(session_id)
     }
 
-    pub(crate) fn has_external_file_changes(
-        &self,
-        session_id: u32,
-        changed_paths: &[PathBuf],
-    ) -> Result<bool, EditorError> {
-        self.sessions
-            .has_external_file_changes(session_id, changed_paths)
-    }
-
-    pub(crate) fn sessions(&self) -> &SessionStore {
+    pub fn sessions(&self) -> &SessionStore {
         &self.sessions
     }
 
@@ -105,9 +104,11 @@ impl EditorHost {
 mod tests {
     #![allow(clippy::expect_used)]
 
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::editor::EditorError;
+    use crate::watcher::NoopEditorEventSink;
 
     use super::EditorHost;
 
@@ -121,7 +122,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&root).expect("create temp project");
-        let host = EditorHost::new().expect("create editor host");
+        let host = EditorHost::new(Arc::new(NoopEditorEventSink)).expect("create editor host");
 
         let error = host
             .init_project_with_watch(&root, |_| Err(EditorError::other("watch failed")))

@@ -2,12 +2,16 @@
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
-pub mod editor;
 mod extension_manifest;
-mod host;
-mod watcher;
 
+/// Compatibility re-export for generated TypeScript binding tests and host consumers.
+pub mod editor {
+    pub use cfd_editor_core::editor::*;
+}
+
+use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
 use coflow_runtime::{CfdPathSegment, CfdValue};
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
@@ -21,9 +25,29 @@ use editor::{
     WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use extension_manifest::ExtensionManifest;
-use host::EditorHost;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+const PROJECT_CHANGED_EVENT: &str = "project_changed";
+const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
+
+#[derive(Debug, Clone)]
+struct TauriEditorEventSink {
+    app: AppHandle,
+}
+
+impl EditorEventSink for TauriEditorEventSink {
+    fn emit(&self, event: EditorEvent) {
+        match event {
+            EditorEvent::ProjectChanged(payload) => {
+                let _ = self.app.emit(PROJECT_CHANGED_EVENT, payload);
+            }
+            EditorEvent::ProjectWatchError(payload) => {
+                let _ = self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload);
+            }
+        }
+    }
+}
 
 const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
@@ -465,10 +489,9 @@ fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), Edi
 async fn load_project(
     yaml_path: String,
     host: State<'_, EditorHost>,
-    app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.load_project(app, &PathBuf::from(yaml_path))).await
+    run_blocking(move || host.load_project(&PathBuf::from(yaml_path))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -476,10 +499,9 @@ async fn load_project(
 async fn init_project(
     dir: String,
     host: State<'_, EditorHost>,
-    app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.init_project(app, &PathBuf::from(dir))).await
+    run_blocking(move || host.init_project(&PathBuf::from(dir))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -991,7 +1013,10 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let host = EditorHost::new().map_err(|err| err.to_string())?;
+            let events = Arc::new(TauriEditorEventSink {
+                app: app.handle().clone(),
+            });
+            let host = EditorHost::new(events).map_err(|err| err.to_string())?;
             app.manage(host);
             Ok(())
         })

@@ -20,7 +20,8 @@ schema/*.cft + data/**/*.cfd
 | `coflow-runtime` | 项目配置、固定 CFD resolve/load/write、数据模型、查询、检查、诊断和 codegen SPI |
 | `coflow-codegen-csharp` | C# 声明、显式 CFD readers、数据库入口 |
 | `coflow` | CLI、LSP、生成事务和 staging 发布 |
-| `cfd-editor` | Tauri backend 和编辑器 wire DTO |
+| `cfd-editor-core` | 宿主无关的编辑器 session、wire DTO、读写操作、文件监听和编辑器事件 |
+| `cfd-editor` | Tauri 命令/事件适配以及窗口、对话框、更新器等原生宿主集成 |
 | `Coflow.Cfd.Runtime` | C# 进程内 CFD parser、source loader、binding context、值转换 |
 
 LSP 已并入根 `coflow`，extension manifest 已并入 editor backend。
