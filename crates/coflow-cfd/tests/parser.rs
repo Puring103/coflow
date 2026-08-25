@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use coflow_cfd::{
-    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExprKind, CfdBitOp,
-    CfdParseOptions, CfdValue, StructuralLimits,
+    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExprKind, CfdBitOp, CfdParseOptions, CfdValue,
+    StructuralLimits,
 };
 
 fn parse_ok(source: &str) -> CfdAst {

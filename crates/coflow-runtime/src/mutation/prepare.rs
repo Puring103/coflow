@@ -647,7 +647,9 @@ fn effective_write_target_for_set_field(
             coordinate.actual_type, coordinate.key
         ))
     })?;
-    writes::effective_write_target_for_path(session, record_ref, path)
+    Ok(writes::effective_write_target_for_path(
+        session, record_ref, path,
+    ))
 }
 
 fn ensure_source_file(session: &ProjectSession, file: &str) -> Result<(), DiagnosticSet> {

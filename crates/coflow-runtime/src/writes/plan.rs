@@ -587,7 +587,7 @@ fn prepare_write_field(
     let Some(_record) = session.model.record(record_ref.id) else {
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
     };
-    let target = write_target_for_path(session, record_ref, path)?;
+    let target = write_target_for_path(session, record_ref, path);
     write_rules::validate_value_at_write_path(
         session,
         &target.coordinate.actual_type,

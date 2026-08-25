@@ -14,9 +14,8 @@ use crate::options::{
 use calamine::Reader;
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter,
-    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    ReorderRecordsOperation, ReorderRecordsRequest, SourceWriter, WriteBatchFailure,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_data_model::{CfdValue, RecordOrigin, SourceDocument};
 use coflow_loader_table_core::writer::{

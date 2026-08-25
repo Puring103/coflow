@@ -40,9 +40,9 @@ pub use operations::{
     CreateTableRequest, DimensionSourceEntry, DimensionSourceLoadRequest,
     DimensionSourceLoadResult, DimensionSourceManager, DimensionSourceManagerDescriptor,
     DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
-    DimensionSourceSchema, RewriteDimensionRecordRequest,
-    SyncHeaderRequest, TableAddressing, TableContext, TableHeaderOptions, TableManager,
-    TableManagerDescriptor, TableOperationResult, WriteDimensionValueRequest,
+    DimensionSourceSchema, RewriteDimensionRecordRequest, SyncHeaderRequest, TableAddressing,
+    TableContext, TableHeaderOptions, TableManager, TableManagerDescriptor, TableOperationResult,
+    WriteDimensionValueRequest,
 };
 pub use provider::{
     DecodedOutputOptions, DecodedSourceOptions, LoadedSource, ProbeConfidence, ProbeResult,
@@ -55,7 +55,6 @@ pub use registry::{
 pub use writer::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
     ReorderRecordsRequest, SourceTransaction, SourceTransactionCompensation, SourceWriter,
-    WriteBatchFailure,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
-    WriterCapabilities, WriterDescriptor,
+    WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    WriteRecordRef, WriterCapabilities, WriterDescriptor,
 };

@@ -50,10 +50,7 @@ impl CfdValue {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Self::Scalar(_, s)
-            | Self::QuotedString(_, s)
-            | Self::Null(s)
-            | Self::Array(_, s) => *s,
+            Self::Scalar(_, s) | Self::QuotedString(_, s) | Self::Null(s) | Self::Array(_, s) => *s,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,

@@ -5,8 +5,8 @@ mod transaction;
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-    WriteOutcome, WriteRecordRef,
+    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriteRecordRef,
 };
 pub use transaction::{SourceTransaction, SourceTransactionCompensation};
 
