@@ -80,7 +80,6 @@ fn structural_budget_is_independent_for_each_top_level_record() {
     assert_eq!(model.record_count(), 2);
 }
 
-
 #[test]
 fn cached_default_subtree_is_charged_before_it_is_cloned() {
     let schema = compile_schema(

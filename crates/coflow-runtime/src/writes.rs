@@ -210,9 +210,9 @@ pub(crate) fn effective_write_target_for_path(
     session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
-) -> Result<(RecordCoordinate, String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
-    let target = target::write_target_for_path(session, host_ref, path)?;
-    Ok((target.coordinate, target.display_path, target.field_path))
+) -> (RecordCoordinate, String, Vec<WriteFieldPathSegment>) {
+    let target = target::write_target_for_path(session, host_ref, path);
+    (target.coordinate, target.display_path, target.field_path)
 }
 
 pub(crate) fn rebuild_after_mutation(

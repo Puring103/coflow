@@ -269,7 +269,7 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_contains(database, "public GameConfig GameConfig { get; }")?;
     require_contains(
         database,
-        "GameConfig.LoadTable(loadText(\"GameConfig.json\"), LoadContext.Empty)",
+        "GameConfig.LoadTable(loadText(\"GameConfig.json\"), context)",
     )?;
     require_contains(database, "must have exactly 1 record")?;
     require_not_contains(database, "TbGameConfig")?;
@@ -289,6 +289,36 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     // `LoadInline`, which silently skips the wire-side `"id"` key that
     // the JSON exporter writes for each row.
     require_contains(singleton, "result.Add(LoadInline(row, context));")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_loads_singletons_with_the_shared_context() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+
+            @singleton
+            type GameConfig {
+                default_item: &Item;
+            }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(
+        database,
+        "GameConfig.LoadTable(loadText(\"GameConfig.json\"), context)",
+    )?;
+    require_not_contains(
+        database,
+        "GameConfig.LoadTable(loadText(\"GameConfig.json\"), LoadContext.Empty)",
+    )?;
+
+    let singleton = generated_file(&files, "GameConfig.cs")?;
+    require_contains(singleton, "context.GetItem(CoflowJson.ReadString(token))")?;
     Ok(())
 }
 

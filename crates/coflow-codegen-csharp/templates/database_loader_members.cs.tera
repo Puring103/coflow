@@ -6,7 +6,7 @@
     {
 {% endif %}
 {% for step in load_steps %}        {{ step }}
-{% endfor %}{% for s in project.singletons %}        var {{ s.records_var }}List = {{ s.type_name }}.LoadTable({% if data_extension == "json" %}loadText("{{ s.source_name }}.{{ data_extension }}"){% else %}Path.Combine(dataDir, "{{ s.source_name }}.{{ data_extension }}"){% endif %}, LoadContext.Empty);
+{% endfor %}{% for s in project.singletons %}        var {{ s.records_var }}List = {{ s.type_name }}.LoadTable({% if data_extension == "json" %}loadText("{{ s.source_name }}.{{ data_extension }}"){% else %}Path.Combine(dataDir, "{{ s.source_name }}.{{ data_extension }}"){% endif %}, context);
         if ({{ s.records_var }}List.Count != 1)
         {
             throw new InvalidOperationException("singleton `{{ s.source_name }}` must have exactly 1 record, got " + {{ s.records_var }}List.Count);

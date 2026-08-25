@@ -207,7 +207,6 @@ type Holder { item: &Item; }\n";
     assert_eq!(result["range"]["end"]["character"], 6);
 }
 
-
 #[test]
 fn cfd_definition_request_returns_null_for_invalid_record_references() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
@@ -248,7 +247,6 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
     let hp = cfd_definition_result_at(&mut server, &source_uri, source, ".hp");
     assert_eq!(hp, Value::Null);
 }
-
 
 #[test]
 fn cfd_definition_request_resolves_each_nested_object_field() {

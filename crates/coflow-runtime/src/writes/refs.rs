@@ -204,7 +204,9 @@ pub(super) fn reference_update_actions(
                 .unwrap_or(&edge.site.path.segments);
             if let Some(index) = dimension_actions.get(&action_key).copied() {
                 let ReferenceUpdateAction::Dimension { request, .. } = &mut actions[index] else {
-                    unreachable!("dimension action index must point to a dimension write");
+                    return Err(transaction_invariant(
+                        "dimension action index must point to a dimension write",
+                    ));
                 };
                 if !replace_ref_value(&mut request.new_value, relative_path, &new_key) {
                     return Err(transaction_invariant(
@@ -290,7 +292,9 @@ pub(super) fn reference_update_actions(
             };
             if let Some(index) = source_actions.get(&host_ref.source_id).copied() {
                 let ReferenceUpdateAction::Source { requests, .. } = &mut actions[index] else {
-                    unreachable!("source action index must point to a source write");
+                    return Err(transaction_invariant(
+                        "source action index must point to a source write",
+                    ));
                 };
                 requests.push(request);
             } else {

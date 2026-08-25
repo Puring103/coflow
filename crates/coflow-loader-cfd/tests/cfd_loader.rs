@@ -526,7 +526,6 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
     Ok(())
 }
 
-
 #[test]
 fn cfd_rejects_reserved_id_fields() {
     let schema = compile_schema(
