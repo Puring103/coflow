@@ -111,7 +111,10 @@ internal sealed class CoflowRecordTableStorage
 
 internal sealed class CoflowFieldAccess
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        (Type RecordType, string PropertyName), Func<object, long>> IntegerFallbacks = new();
     private readonly ICoflowTypeMetadata _fallback;
+    private readonly Func<object, long>? _integerFallback;
 
     public CoflowFieldAccess(
         ICoflowTypeMetadata fallback,
@@ -125,18 +128,53 @@ internal sealed class CoflowFieldAccess
         RuntimeType = runtimeType;
         Offset = offset;
         IsReference = isReference;
+        _integerFallback = runtimeType == typeof(long)
+            ? CreateIntegerFallback(fallback.RuntimeType, name)
+            : null;
     }
 
     public string Name { get; }
     public Type RuntimeType { get; }
     public int Offset { get; }
     public bool IsReference { get; }
+    public bool IsHost => _fallback.IsHost;
 
     public object? Read(object record)
     {
         if (CoflowGenerationStorage.TryLocation(record, out var storage, out var id))
             return storage.ReadField(id, this);
         return _fallback.GetField(record, Name);
+    }
+
+    public long ReadInteger(object record)
+    {
+        if (RuntimeType != typeof(long))
+            throw new InvalidOperationException("Coflow field is not an integer.");
+        if (CoflowGenerationStorage.TryLocation(record, out var storage, out var id))
+            return storage.ReadIntegerField(id, this);
+        return _integerFallback is not null
+            ? _integerFallback(record)
+            : (long)_fallback.GetField(record, Name)!;
+    }
+
+    private static Func<object, long>? CreateIntegerFallback(Type recordType, string fieldName)
+    {
+        static string Normalize(string value) => string.Concat(
+            value.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant));
+
+        var normalized = Normalize(fieldName);
+        var property = recordType.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .SingleOrDefault(candidate => candidate.PropertyType == typeof(long) &&
+                Normalize(candidate.Name) == normalized);
+        if (property is null) return null;
+        return IntegerFallbacks.GetOrAdd((recordType, property.Name), _ =>
+        {
+            var record = System.Linq.Expressions.Expression.Parameter(typeof(object), "record");
+            return System.Linq.Expressions.Expression.Lambda<Func<object, long>>(
+                System.Linq.Expressions.Expression.Property(
+                    System.Linq.Expressions.Expression.Convert(record, recordType), property),
+                record).Compile();
+        });
     }
 }
 
@@ -250,6 +288,15 @@ internal sealed class CoflowGenerationStorage
         var (table, row) = _records[id.Value];
         return Decode(access.RuntimeType, access.IsReference,
             table.Rows, checked(row * table.Layout.Width + access.Offset));
+    }
+
+    internal long ReadIntegerField(CoflowRecordId id, CoflowFieldAccess access)
+    {
+        var (table, row) = _records[id.Value];
+        var slot = table.Rows[checked(row * table.Layout.Width + access.Offset)];
+        if (slot.Kind != CoflowSlotKind.Int64)
+            throw new InvalidOperationException("A record field window does not contain an integer.");
+        return slot.Value;
     }
 
     private void ValidateCompatibleBaseLayouts(IReadOnlyList<ICoflowTypeMetadata> metadata)

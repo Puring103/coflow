@@ -406,6 +406,54 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void OptimizedIntegerLoopsPreserveResultsAndInstructionBudget()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { flow { evaluate: fn(value: int) -> int { var current = 0; var total = 0; while current < value { total += current; current += 1; } total } } }",
+        }, new TestModule(new RuleMetadata()));
+        var rule = data.Table<Rule>().Get("flow").Value;
+
+        Assert.Equal(499_500, rule.Evaluate(1_000));
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(28))
+        {
+            var error = Assert.Throws<CoflowFaultException>(() => rule.Evaluate(1));
+            Assert.Contains("instruction budget", error.Message);
+        }
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(29))
+            Assert.Equal(0, rule.Evaluate(1));
+    }
+
+    [Fact]
+    public void OptimizedIntegerLoopsPreserveCheckedOverflow()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { overflow { evaluate: fn(value: int) -> int { var current = 0; var total = 9223372036854775807; while current < value { total += 1; current += 1; } total } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        var error = Assert.Throws<CoflowFaultException>(() =>
+            data.Table<Rule>().Get("overflow").Value.Evaluate(1));
+        Assert.Contains("overflow", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReloadRecompilesFoldedNonHostFieldsInIntegerLoops()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { configured { offset: 7, evaluate: fn(value: int) -> int { var current = 0; var total = 0; while current < value { total += offset; current += 1; } total } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        Assert.Equal(14, data.Table<Rule>().Get("configured").Value.Evaluate(2));
+        Assert.True(data.Reload(new[]
+        {
+            "Rule { configured { offset: 8, evaluate: fn(value: int) -> int { var current = 0; var total = 0; while current < value { total += offset; current += 1; } total } } }",
+        }).IsOk);
+        Assert.Equal(16, data.Table<Rule>().Get("configured").Value.Evaluate(2));
+    }
+
+    [Fact]
     public void VmInfersOptionAcrossIfBranches()
     {
         using var data = Coflow.LoadAndCompile(new[]
@@ -450,6 +498,58 @@ public sealed class CoflowModuleTests
 
         Assert.Equal(0, data.Table<Rule>().Get("recursive").Value._evaluate.Invoke<long>(arguments));
         Assert.Equal(10L, arguments[0]);
+    }
+
+    [Fact]
+    public void OptimizedTailIntegerCountdownPreservesBudgetAndOverflow()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { recursive { evaluate: fn(value: int) -> int { if value <= 0 { 7 } else { evaluate(value - 1) } } } }",
+        }, new TestModule(new RuleMetadata()));
+        var rule = data.Table<Rule>().Get("recursive").Value;
+
+        Assert.Equal(7, rule.Evaluate(10_000));
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(13))
+        {
+            var error = Assert.Throws<CoflowFaultException>(() => rule.Evaluate(1));
+            Assert.Contains("instruction budget", error.Message);
+        }
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(14))
+            Assert.Equal(7, rule.Evaluate(1));
+
+        using var overflow = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { recursive { evaluate: fn(value: int) -> int { if value <= 0 { 0 } else { evaluate(value + 1) } } } }",
+        }, new TestModule(new RuleMetadata()));
+        var fault = Assert.Throws<CoflowFaultException>(() =>
+            overflow.Table<Rule>().Get("recursive").Value.Evaluate(long.MaxValue));
+        Assert.Contains("overflow", fault.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void OptimizedSimpleIntegerCallsPreserveBudgetAndFaultIdentity()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { increment { evaluate: fn(value: int) -> int { value + 1 } } caller { evaluate: fn(value: int) -> int { &Rule::increment.evaluate(&Rule::increment.evaluate(&Rule::increment.evaluate(&Rule::increment.evaluate(value)))) } } }",
+        }, new TestModule(new RuleMetadata()));
+        var caller = data.Table<Rule>().Get("caller").Value;
+
+        Assert.Equal(14, caller.Evaluate(10));
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(20))
+        {
+            var error = Assert.Throws<CoflowFaultException>(() => caller.Evaluate(10));
+            Assert.Contains("instruction budget", error.Message);
+        }
+        using (CoflowVm.OverrideInstructionLimitForCurrentThread(21))
+            Assert.Equal(14, caller.Evaluate(10));
+
+        var fault = Assert.Throws<CoflowFaultException>(() => caller.Evaluate(long.MaxValue));
+        Assert.Equal("Rule", fault.Function.DeclaredType);
+        Assert.Equal("increment", fault.Function.RecordKey);
+        Assert.Equal("evaluate", fault.Function.FieldName);
+        Assert.Contains("overflow", fault.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
