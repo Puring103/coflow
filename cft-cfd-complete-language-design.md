@@ -16,11 +16,11 @@
 - CFT 不随 C# 运行时分发；CFT codegen 生成项目类型以及加载 CFD 所需的内部 schema 元数据。
 - 普通配置保持结构化；任意计算表达式只进入函数体和 check。
 - 函数是一等值，可以传递、保存、返回和放入运行时集合。
-- 语言只保留一种 `fn`；CFD 函数与 C# delegate 实现共享函数身份、签名和调用 ABI，调用方不区分
-  具体实现来源。
+- 语言只保留一种 `fn`；CFD 函数与 `@Host` 的 C# delegate 共享函数身份、签名和调用 ABI，调用方
+  不区分具体实现来源。
 - 当前版本只提供同步执行，不提供协程、暂停、恢复、`await`、后台调用或任务句柄。
 - C# Runtime 直接读取一个或多个 CFD 字符串。`LoadData` 只加载数据，`LoadAndCompile` 还会检查并
-  编译函数；二者都发布 generation，其中普通数据和字节码不可变，函数绑定位置只能填充一次。
+  编译函数；二者都发布 generation，其中普通数据和字节码不可变，`@Host` 绑定位置只能填充一次。
 - 当前版本不生成或加载数据 artifact，不计算 CFT contract hash，也不在 C# Runtime 中加载 CFT。
 - C# Runtime 的顶层 API 固定为 `Coflow.LoadData`、`Coflow.LoadAndCompile` 和返回的
   `CoflowData`；codegen 不生成项目级 Runtime 入口或数据根类。
@@ -198,10 +198,11 @@ type Weapon {
 - 默认值在每个 record 的上下文中求值，可以通过字符串插值读取该 record 的其他字段；
   默认值、插值、常量和记录引用共同建立依赖图，依赖环报错。
 - 默认值仍是 generation 构建时确定的只读配置值，不执行普通算术、控制流或宿主调用。
-- 函数实现由 CFD body 或 `LoadAndCompile` 后绑定的 C# delegate 提供；函数不作为字段默认值。
+- 普通函数实现只能由 CFD body 提供；`@Host @singleton` 函数由 `LoadAndCompile` 后绑定的 C#
+  delegate 提供。函数不作为字段默认值。
 - `Option<T>` 的非空默认值显式写 `Some(value)`。
-- 函数类型字段没有 CFT 函数体，必须由 CFD body 或 `LoadAndCompile` 后绑定的 C# delegate
-  提供实现。
+- 函数类型字段没有 CFT 函数体；普通类型必须由 CFD body 提供实现，只有 `@Host @singleton` 的
+  函数字段由宿主绑定。
 
 ### 4.3 继承与多态
 
@@ -273,15 +274,15 @@ enum Permission {
 
 ### 4.6 函数类型与类型别名
 
-函数类型不包含参数名：
+函数类型参数名可选：
 
 ```cft
-type Predicate = fn(int) -> bool;
-type RuleFactory = fn(int) -> fn(int) -> bool;
+type Predicate = fn(value: int) -> bool;
+type RuleFactory = fn(seed: int) -> fn(value: int) -> bool;
 
 type Rules {
   predicate: Predicate;
-  handlers: [fn(Event) -> Result<Action, RuleError>];
+  handlers: [fn(event: Event) -> Result<Action, RuleError>];
   factories: {string: RuleFactory};
 }
 ```
@@ -289,6 +290,8 @@ type Rules {
 - `->` 右结合：`fn(int) -> fn(int) -> bool` 等价于
   `fn(int) -> (fn(int) -> bool)`。
 - 函数类型是结构类型。
+- 参数名只用于文档、生成代码和工具展示，不参与函数类型相等性、逆变/协变或调用 ABI；省略名称
+  时 codegen 才使用目标语言的占位参数名。
 - 参数类型逆变，返回类型协变。
 - 参数数量必须完全匹配。
 - 不支持重载、默认参数、具名参数、可变参数、自动柯里化或自动部分应用。
@@ -531,8 +534,8 @@ explicitItem: &Item::sword_fire,
 ```cft
 type PricingRules {
   rate: float;
-  addTax: fn(int) -> int;
-  apply: fn(int, fn(int) -> int) -> int;
+  addTax: fn(price: int) -> int;
+  apply: fn(value: int, operation: fn(input: int) -> int) -> int;
 }
 ```
 
@@ -544,7 +547,7 @@ pricing: PricingRules {
     int(float(price) * (1.0 + rate))
   },
 
-  apply: fn(value: int, operation: fn(int) -> int) -> int {
+  apply: fn(value: int, operation: fn(input: int) -> int) -> int {
     operation(value)
   },
 }
@@ -554,10 +557,11 @@ pricing: PricingRules {
 - 实现中的参数和返回类型必须完整书写，不能依赖 CFT 位置推断。
 - CFD 没有顶层独立函数声明；持久函数值只能出现在 CFT 声明的函数类型位置。
 - 函数字段、函数数组元素、函数字典 value 都是普通配置值。
-- C# Runtime 的 `LoadData` 识别并跳过函数 body，不执行函数名称解析、类型检查或字节码生成；
+- C# Runtime 的 `LoadData` 识别函数 body 边界并无条件跳过函数检查，不执行函数名称解析、类型检查
+  或字节码生成，也不提供切换参数；
   该 generation 的普通数据可读取，但函数不可调用或绑定。
 - C# Runtime 的 `LoadAndCompile` 对全部函数 body 完成项目级链接、类型检查和字节码生成；只有它
-  返回的 generation 可以调用函数或绑定 C# delegate。
+  返回的 generation 可以调用函数；C# delegate 绑定只属于 `@Host @singleton`。
 
 ### 7.2 所属配置实例与字段名称
 
@@ -848,9 +852,9 @@ public static class Coflow
 }
 ```
 
-`LoadData` 只构建可读取普通数据的 generation，不检查或编译函数，也不能绑定或调用函数。
-`LoadAndCompile` 在加载数据后检查并编译全部 CFD 函数；只有其返回的 generation 可以绑定和调用
-函数。两个入口都不加载 CFT、artifact 或 CFT hash。
+`LoadData` 只构建可读取普通数据的 generation，无条件跳过全部函数检查和编译，也不能绑定或调用
+函数；该行为没有开关参数。`LoadAndCompile` 在加载数据后检查并编译全部 CFD 函数；只有其返回的
+generation 可以调用函数和绑定 `@Host`。两个入口都不加载 CFT、artifact 或 CFT hash。
 
 数据访问也由固定 Runtime 泛型提供，不生成任何项目级 Runtime 入口或数据根类型：
 
@@ -885,8 +889,8 @@ public sealed class CoflowTable<T> : IReadOnlyList<T>
 type Services {
   environment: string;
   limits: Limits;
-  log: fn(string) -> ();
-  moveTo: fn(EntityId, Position) -> Result<(), MoveError>;
+  log: fn(message: string) -> ();
+  moveTo: fn(entity: EntityId, position: Position) -> Result<(), MoveError>;
 }
 ```
 
@@ -895,23 +899,22 @@ type Services {
 - 一个项目可以声明多个 `@Host @singleton` type，不存在名称固定为 `Host` 的特殊类型。
 - 注入不使用 type name、field name、function name 或 record key 字符串。
 - 生成类型直接提供与全部字段对应的强类型 `Bind(...)`；必填字段必须一次性提供，默认字段可省略。
-- `LoadData` 的 generation 不允许绑定 `@Host` 或普通函数；只有 `LoadAndCompile` 的 generation
-  可以绑定。
+- `LoadData` 的 generation 不允许绑定 `@Host`；只有 `LoadAndCompile` 的 generation 可以绑定。
 - 每个 `@Host` singleton 在一个 generation 中最多成功绑定一次；重复绑定产生绑定错误。
 - `@Host` singleton 绑定后通过普通 singleton 字段和方法语义访问。
 
 可恢复业务失败必须通过 CFT 声明的 `Result<T, E>` 返回。C# delegate 抛出的未处理异常、返回值
 不符合签名或其他 ABI 违约都转换为带 Coflow 调用栈的 VM fault。
 
-### 9.2 普通函数字段绑定
+### 9.2 普通函数字段调用
 
-普通记录的持久函数字段也可以由 C# delegate 提供实现。CFT codegen 在对应生成类型上产生以字段名
-命名的强类型绑定方法；应用先通过 `CoflowData.Table<T>()` 和强类型 key 取得记录，再直接绑定：
+普通记录的函数字段只能由 CFD 提供实现。CFT codegen 只生成强类型调用方法，不生成 `BindXxx`；
+应用通过 `CoflowData.Table<T>()` 和强类型 key 取得记录后直接调用：
 
 ```csharp
 Option<Rule> found = data.Table<Rule>().Get("combat");
 if (found.TryGetValue(out Rule rule)) {
-  rule.BindEvaluate(EvaluateCombat);
+  Result<long, RuleError> result = rule.Evaluate(42);
 }
 ```
 
@@ -928,10 +931,9 @@ if (found.TryGetValue(out Rule rule)) {
   类型不匹配立即报 API 使用错误，不按名称或底层整数转换。
 - `Option<T>.TryGetValue(...)` 只负责解包 `Get` 已经返回的 Option，不是 table 的第二种查找入口。
 - 不公开动态函数 descriptor 或字符串函数路径。
-- CFD body 与 C# delegate 不能同时实现同一持久函数位置；重复实现产生绑定错误。
-- 绑定目标使用当前 generation 中的记录身份与生成字段 metadata 定位，不跨 generation 缓存函数索引。
-- 函数数组元素和函数字典 value 不提供按 index 或 key 的独立绑定 API；它们必须由 CFD body 或完整
-  `@Host` singleton 值提供。
+- CFT 函数签名中的可选参数名保留到生成方法；未命名参数才生成 `arg0`、`arg1`。参数名不参与
+  函数类型兼容性或 VM ABI。
+- 函数数组元素和函数字典 value 不提供按 index 或 key 的绑定 API，必须由 CFD body 提供。
 
 VM 的函数调用语义不区分 CFD body 与 C# delegate。函数表内部可以保存不同实现入口，但直接调用、
 间接调用、参数布局、返回布局和 fault 语义完全一致。
@@ -941,9 +943,8 @@ VM 的函数调用语义不区分 CFD body 与 C# delegate。函数表内部可�
 reload 使用新的 CFD 字符串构建候选 generation，不加载 CFT，也不比较 CFT hash。运行中的生成类型
 就是固定 schema 契约，因此 reload 只允许数据和 CFD 函数实现发生变化。
 
-成功 reload 时，Runtime 按生成类型、record key 和函数字段重新解析并复用已有 `@Host` singleton
-输入和普通函数 delegate。任一绑定目标不再存在或无法满足生成签名时，reload 失败并继续保留旧
-generation。活动调用和外部 view 在结束前固定持有启动时的 generation。
+成功 reload 时，Runtime 复用已有 `@Host` singleton 强类型绑定。绑定目标无法满足生成签名时，
+reload 失败并继续保留旧 generation。活动调用和外部 view 在结束前固定持有启动时的 generation。
 
 ## 10. C# Runtime generation 与记录映像
 
@@ -962,8 +963,8 @@ Generation
 
 `LoadData` 和 `LoadAndCompile` 都解析 CFD、按生成 metadata 加载普通字段、解析默认值和记录引用并
 构建 `RecordTables` 与 `DataHeap`。`LoadData` 到此结束；`LoadAndCompile` 继续生成函数表和字节码。
-普通 CFD 数据和字节码在发布后不可变；`LoadAndCompile` 为 `@Host` singleton 和缺少 CFD body 的
-函数字段预留 bind-once slot。后续绑定只填充这些 slot，不改写普通记录或已编译字节码。
+普通 CFD 数据和字节码在发布后不可变；`LoadAndCompile` 只为 `@Host` singleton 预留 bind-once
+slot。后续绑定只填充这些 slot，不改写普通记录或已编译字节码。
 
 `TypeId`、`FieldId`、`RecordId`、`LayoutId` 和 `FunctionId` 等紧凑索引只在一个 generation 内稳定。
 生成 C# 类型不保存这些索引；每个新 generation 都从生成 metadata 重新解析布局和函数位置。
@@ -1030,8 +1031,8 @@ C# Runtime 不读取 CFT。生成代码携带加载 CFD 所需的类型、字段
 metadata。C# 前端只处理 CFD 源语言结构；类型化 HIR 不包含寄存器和字节码布局；VM 只执行
 `LoadAndCompile` 的编译输出，不重新承担源语言类型检查。
 
-`LoadData` 仍必须正确识别函数 body 的边界并报告破坏整个 CFD 结构的词法或分隔符错误，但不解析
-函数 body 内部表达式，也不执行名称解析、类型检查、控制流检查或字节码生成。
+`LoadData` 仍必须正确识别函数 body 的边界并报告破坏整个 CFD 结构的词法或分隔符错误，但无条件
+跳过函数 body 内部表达式解析、名称解析、类型检查、控制流检查和字节码生成；不提供切换参数。
 
 ### 11.2 内部字节码
 
@@ -1074,7 +1075,7 @@ VM 使用自己管理的显式 frame，不使用系统线程栈表达 Coflow 调
 ### 11.5 Generation 与热重载
 
 每次成功加载产生一个 generation。`LoadData` generation 包含生成 metadata 对应的记录表和只读
-数据堆；`LoadAndCompile` generation 还包含函数表、编译模块以及只能填充一次的函数绑定位置。
+数据堆；`LoadAndCompile` generation 还包含函数表、编译模块以及 `@Host` 的一次性绑定位置。
 普通数据和字节码发布后不可变。当前版本不计算 schema hash，也不执行 CFT check。reload 的数据
 加载、函数编译或已有绑定解析失败时继续保留旧 generation。
 

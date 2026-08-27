@@ -8,10 +8,13 @@ use crate::model::{
 };
 use coflow_language::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use crate::CsharpCodegenError;
-use coflow_language::{CftEnum, CftField, CftType, CftValueType};
+use coflow_language::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
-use identifiers::{csharp_public_member_name, csharp_public_type_name, field_local_name};
+use identifiers::{
+    csharp_public_member_name, csharp_public_type_name, field_local_name,
+    function_parameter_name,
+};
 use types::{csharp_field_property_type, csharp_type};
 
 pub fn build_csharp_enum(schema_enum: &CftEnum, view: &CsharpLoweringPlan<'_>) -> CsharpEnum {
@@ -39,6 +42,27 @@ pub fn build_csharp_enum(schema_enum: &CftEnum, view: &CsharpLoweringPlan<'_>) -
             })
             .collect(),
     }
+}
+
+fn function_parameters(
+    parameters: &[CftFunctionParameter],
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<Vec<CsharpParameter>, CsharpCodegenError> {
+    let mut used_names = HashSet::new();
+    parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| {
+            Ok(CsharpParameter {
+                ty: csharp_type(&parameter.value_type, view),
+                name: function_parameter_name(
+                    parameter.name.as_deref(),
+                    index,
+                    &mut used_names,
+                )?,
+            })
+        })
+        .collect()
 }
 
 pub fn build_csharp_type(
@@ -106,14 +130,7 @@ pub fn build_csharp_type(
                 declared_here: !inherited,
                 result_type: csharp_type(result, view),
                 delegate_type: csharp_type(&field.value_type, view),
-                parameters: parameters
-                    .iter()
-                    .enumerate()
-                    .map(|(index, ty)| CsharpParameter {
-                        ty: csharp_type(ty, view),
-                        name: format!("arg{index}"),
-                    })
-                    .collect(),
+                parameters: function_parameters(parameters, view)?,
                 returns_void: matches!(result.as_ref(), CftValueType::Unit),
                 summary: csharp_summary(field.display.as_ref()),
             });
@@ -487,7 +504,9 @@ fn function_loader_reader(
     };
     let parameter_types = parameters
         .iter()
-        .map(|parameter| format!(", typeof({})", csharp_type(parameter, view)))
+        .map(|parameter| {
+            format!(", typeof({})", csharp_type(&parameter.value_type, view))
+        })
         .collect::<String>();
     Some(format!(
         "{context}.Function({node}, \"{}\", typeof({}){parameter_types})",

@@ -18,7 +18,7 @@ pub use plans::{
     ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
-pub use value_type::CftValueType;
+pub use value_type::{CftFunctionParameter, CftValueType};
 
 use self::compiler::SchemaDeclarations;
 use crate::limits::{BudgetExceeded, StructuralBudget};

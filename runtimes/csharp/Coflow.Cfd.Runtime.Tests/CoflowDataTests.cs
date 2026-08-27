@@ -149,17 +149,15 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
-    public void LoadDataKeepsFunctionsUnavailable()
+    public void LoadDataSkipsFunctionChecksAndKeepsFunctionsUnavailable()
     {
         using var data = Coflow.LoadData(new[]
         {
-            "Rule { double { evaluate: fn(value: int) -> int { value * 2 } } }",
+            "Rule { double { evaluate: fn(value: int) -> int { missing(value) + unknown } } }",
         }, new TestModule(new RuleMetadata()));
 
         var rule = data.Table<Rule>().Get("double").Value;
         Assert.Throws<CoflowFunctionNotCompiledException>(() => rule.Evaluate(2));
-        Assert.Equal(FunctionBindError.FunctionsNotCompiled,
-            rule.BindEvaluate(value => value * 3).Error);
     }
 
     [Fact]
@@ -175,35 +173,6 @@ public sealed class CoflowDataTests
         Assert.Equal(18, rule.Evaluate(4));
         Assert.Equal(0, rule.Evaluate(-3));
         Assert.True(rule.Enabled(0));
-    }
-
-    [Fact]
-    public void LoadAndCompileAllowsBindingAFunctionWithoutACfdBody()
-    {
-        using var data = Coflow.LoadAndCompile(new[] { "Rule { external { } }" },
-            new TestModule(new RuleMetadata()));
-        var rule = data.Table<Rule>().Get("external").Value;
-
-        Assert.Equal(Unit.Value, rule.BindEvaluate(value => value + 10).Value);
-        Assert.Equal(15, rule.Evaluate(5));
-        Assert.Equal(FunctionBindError.AlreadyImplemented,
-            rule.BindEvaluate(value => value).Error);
-    }
-
-    [Fact]
-    public void FunctionBindingIsAtomicAcrossConcurrentCallers()
-    {
-        using var data = Coflow.LoadAndCompile(new[] { "Rule { external { } }" },
-            new TestModule(new RuleMetadata()));
-        var rule = data.Table<Rule>().Get("external").Value;
-        var results = new Result<Unit, FunctionBindError>[32];
-
-        Parallel.For(0, results.Length, index =>
-            results[index] = rule.BindEvaluate(value => value + index));
-
-        Assert.Single(results, result => result.IsOk);
-        Assert.Equal(31, results.Count(result =>
-            result.IsErr && result.Error == FunctionBindError.AlreadyImplemented));
     }
 
     [Fact]
@@ -264,53 +233,6 @@ public sealed class CoflowDataTests
         Assert.NotNull(error.SourceSpan);
         Assert.Equal(4, error.SourceSpan.Value.StartLine);
         Assert.Equal(new[] { "evaluate" }, error.CallStack.Select(frame => frame.FieldName));
-    }
-
-    [Fact]
-    public void BoundDelegateFaultPreservesTheOriginalExceptionAndFunctionIdentity()
-    {
-        using var data = Coflow.LoadAndCompile(new[] { "Rule { external { } }" },
-            new TestModule(new RuleMetadata()));
-        var rule = data.Table<Rule>().Get("external").Value;
-        var original = new InvalidOperationException("host failed");
-        Assert.True(rule.BindEvaluate(_ => throw original).IsOk);
-
-        var error = Assert.Throws<CoflowFaultException>(() => rule.Evaluate(1));
-
-        Assert.Same(original, error.InnerException);
-        Assert.Equal("source[0]", error.SourcePath);
-        Assert.NotNull(error.SourceSpan);
-        Assert.Equal(new[] { "external" }, error.CallStack.Select(frame => frame.RecordKey));
-    }
-
-    [Fact]
-    public void VmFaultIncludesBoundTargetAndCfdCallers()
-    {
-        using var data = Coflow.LoadAndCompile(new[]
-        {
-            """
-            Rule {
-              external { }
-              caller {
-                evaluate: fn(value: int) -> int {
-                  &Rule::external.evaluate(value)
-                }
-              }
-            }
-            """,
-        }, new TestModule(new RuleMetadata()));
-        var original = new InvalidOperationException("host failed through VM");
-        Assert.True(data.Table<Rule>().Get("external").Value.BindEvaluate(_ => throw original).IsOk);
-
-        var error = Assert.Throws<CoflowFaultException>(() =>
-            data.Table<Rule>().Get("caller").Value.Evaluate(1));
-
-        Assert.Same(original, error.InnerException);
-        Assert.Equal("source[0]", error.SourcePath);
-        Assert.NotNull(error.SourceSpan);
-        Assert.Equal(5, error.SourceSpan.Value.StartLine);
-        Assert.Equal(new[] { "external", "caller" },
-            error.CallStack.Select(frame => frame.RecordKey));
     }
 
     [Fact]
@@ -592,35 +514,40 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
-    public void ReloadAtomicallyPublishesDataAndReusesDelegateBindings()
+    public void ReloadAtomicallyPublishesDataAndFunctions()
     {
-        using var data = Coflow.LoadAndCompile(new[] { "Rule { external { offset: 1 } }" },
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { external { offset: 1, evaluate: fn(value: int) -> int { value + offset } } }",
+        },
             new TestModule(new RuleMetadata()));
         var old = data.Table<Rule>().Get("external").Value;
-        Assert.True(old.BindEvaluate(value => value + 10).IsOk);
 
-        var reloaded = data.Reload("Rule { external { offset: 2 } }");
+        var reloaded = data.Reload(
+            "Rule { external { offset: 2, evaluate: fn(value: int) -> int { value + offset } } }");
 
         Assert.True(reloaded.IsOk);
         Assert.Equal(2, reloaded.Value.Generation);
-        Assert.Equal(15, old.Evaluate(5));
+        Assert.Equal(6, old.Evaluate(5));
         var current = data.Table<Rule>().Get("external").Value;
         Assert.Equal(2, current.Offset);
-        Assert.Equal(15, current.Evaluate(5));
+        Assert.Equal(7, current.Evaluate(5));
     }
 
     [Fact]
     public void ReloadFailureKeepsThePublishedGeneration()
     {
-        using var data = Coflow.LoadAndCompile(new[] { "Rule { external { offset: 1 } }" },
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { external { offset: 1, evaluate: fn(value: int) -> int { value + offset } } }",
+        },
             new TestModule(new RuleMetadata()));
-        var rule = data.Table<Rule>().Get("external").Value;
-        Assert.True(rule.BindEvaluate(value => value + 1).IsOk);
 
-        var failed = data.Reload("Rule { replacement { offset: 9 } }");
+        var failed = data.Reload(
+            "Rule { replacement { offset: 9, evaluate: fn(value: float) -> int { 1 } } }");
 
         Assert.True(failed.IsErr);
-        Assert.Contains(failed.Error.Diagnostics, item => item.Code == "COFLOW-RELOAD-BINDING");
+        Assert.Contains(failed.Error.Diagnostics, item => item.Code == "COFLOW-FUNCTION-SIGNATURE");
         Assert.Equal(1, data.Table<Rule>().Get("external").Value.Offset);
         Assert.False(data.Table<Rule>().Get("replacement").HasValue);
     }
@@ -1335,8 +1262,6 @@ public sealed class CoflowDataTests
             _validate.Invoke<Result<long, string>>(value);
         public string Describe(long value) => _describe.Invoke<string>(value);
         public IReadOnlyList<Func<long, long>> Handlers { get; }
-        public Result<Unit, FunctionBindError> BindEvaluate(Func<long, long> implementation) =>
-            _evaluate.Bind(implementation);
     }
 
     private sealed class HostServices

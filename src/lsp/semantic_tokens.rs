@@ -437,7 +437,16 @@ fn add_value_type_semantic(
         }
         TypeRefKind::Function(parameters, result) => {
             for parameter in parameters {
-                add_value_type_semantic(build, document, parameter, tokens);
+                if let Some(name) = &parameter.name {
+                    push_semantic_span(
+                        &document.source,
+                        name.span,
+                        SEM_PARAMETER,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
+                }
+                add_value_type_semantic(build, document, &parameter.value_type, tokens);
             }
             add_value_type_semantic(build, document, result, tokens);
         }

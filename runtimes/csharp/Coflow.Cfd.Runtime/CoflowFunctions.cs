@@ -2,13 +2,6 @@ namespace CoflowRuntime;
 
 using System.ComponentModel;
 
-public enum FunctionBindError
-{
-    FunctionsNotCompiled,
-    AlreadyImplemented,
-    HostFunctionRequiresWholeRecord,
-}
-
 public enum HostBindError
 {
     FunctionsNotCompiled,
@@ -253,21 +246,6 @@ public sealed class CoflowFunctionSlot
         {
             _compiled = implementation;
             _functionsCompiled = true;
-        }
-    }
-
-    public Result<Unit, FunctionBindError> Bind<TDelegate>(TDelegate implementation)
-        where TDelegate : Delegate
-    {
-        if (implementation is null) throw new ArgumentNullException(nameof(implementation));
-        lock (_sync)
-        {
-            if (!_functionsCompiled)
-                return Result<Unit, FunctionBindError>.Err(FunctionBindError.FunctionsNotCompiled);
-            if (_compiled is not null || _implementation is not null)
-                return Result<Unit, FunctionBindError>.Err(FunctionBindError.AlreadyImplemented);
-            _implementation = implementation;
-            return Result<Unit, FunctionBindError>.Ok(Unit.Value);
         }
     }
 

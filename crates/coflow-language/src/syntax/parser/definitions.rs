@@ -259,14 +259,26 @@ impl Parser<'_> {
             });
         }
         if self.peek_ident_is("fn") {
+            use crate::syntax::ast::FunctionParameterRef;
+
             let start = self.expect_ident()?.span;
             self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
             let mut parameters = Vec::new();
             let mut depths = Vec::new();
             while !self.at(&TokenKind::RParen) {
-                let parameter = self.parse_value_type()?;
-                depths.push(parameter.depth);
-                parameters.push(parameter.value);
+                let name = if self.next_at(&TokenKind::Colon) {
+                    let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
+                    self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
+                    Some(name)
+                } else {
+                    None
+                };
+                let value_type = self.parse_value_type()?;
+                depths.push(value_type.depth);
+                parameters.push(FunctionParameterRef {
+                    name,
+                    value_type: value_type.value,
+                });
                 if self.eat(&TokenKind::Comma).is_none() {
                     break;
                 }

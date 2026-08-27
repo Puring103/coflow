@@ -44,15 +44,6 @@ namespace {{ type.namespace }}
 {% endif %}        return {{ function.slot_name }}.Invoke<{{ function.result_type }}>({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
     }
 {% endif %}
-{% if not type.is_host %}
-    public Result<Unit, FunctionBindError> {{ function.bind_method_name }}({{ function.delegate_type }} implementation) =>
-{% if type.uses_host_slot %}        _coflowHost is not null
-            ? Result<Unit, FunctionBindError>.Err(FunctionBindError.HostFunctionRequiresWholeRecord)
-            : {{ function.slot_name }}.Bind(implementation);
-{% else %}        {{ function.slot_name }}.Bind(implementation);
-{% endif %}
-{% endif %}
-
 {% endif %}{% endfor %}{% if type.is_host %}    public Result<Unit, HostBindError> Bind(
 {% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
 {% endfor %}    ) => _coflowHost!.Bind(

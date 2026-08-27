@@ -30,7 +30,7 @@ pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> S
         CftValueType::Function(parameters, result) => {
             let mut arguments = parameters
                 .iter()
-                .map(|parameter| csharp_type(parameter, view))
+                .map(|parameter| csharp_type(&parameter.value_type, view))
                 .collect::<Vec<_>>();
             if matches!(result.as_ref(), CftValueType::Unit) {
                 if arguments.is_empty() {
