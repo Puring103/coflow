@@ -231,6 +231,7 @@ public sealed class CoflowData : IDisposable
     private IReadOnlyDictionary<Type, object> _tables;
     private IReadOnlyDictionary<Type, object> _singletons;
     private IReadOnlyList<CoflowFunctionSlot> _functions;
+    private CoflowGenerationStorage _storage;
     private readonly ICoflowGeneratedModule _module;
     private long _generation = 1;
     private bool _disposed;
@@ -239,17 +240,21 @@ public sealed class CoflowData : IDisposable
         IReadOnlyDictionary<Type, object> tables,
         IReadOnlyDictionary<Type, object> singletons,
         IReadOnlyList<CoflowFunctionSlot> functions,
+        CoflowGenerationStorage storage,
         bool functionsCompiled,
         ICoflowGeneratedModule module)
     {
         _tables = tables;
         _singletons = singletons;
         _functions = functions;
+        _storage = storage;
         _module = module;
         FunctionsCompiled = functionsCompiled;
     }
 
     public bool FunctionsCompiled { get; }
+
+    internal CoflowGenerationStorage Storage => _storage;
 
     internal static CoflowData Load(
         IReadOnlyList<CfdDocument> documents,
@@ -322,10 +327,20 @@ public sealed class CoflowData : IDisposable
             var values = records.Select(record => context.Resolve<object>(metadata.DeclaredType, record.Key)).ToArray();
             for (var index = 0; index < records.Length; index++)
                 recordsByIdentity.Add((metadata.DeclaredType, records[index].Key), values[index]);
+        }
+        foreach (var metadata in module.Types.Where(type => !type.IsHost && !type.IsSingleton))
+        {
+            var values = documents.SelectMany(document => document.Records)
+                .Where(record => metadataByName[record.DeclaredType].AssignableTypes
+                    .Contains(metadata.DeclaredType, StringComparer.Ordinal))
+                .Select(record => recordsByIdentity[(record.DeclaredType, record.Key)])
+                .ToArray();
             tables.Add(metadata.RuntimeType, CreateTable(metadata, values));
         }
-        if (functionsCompiled) CoflowCompiler.Compile(context.Functions, module, recordsByIdentity, context);
-        return new CoflowData(tables, singletons, context.Functions, functionsCompiled, module);
+        var storage = CoflowGenerationStorage.Build(module.Types, recordsByIdentity, context.Functions);
+        if (functionsCompiled)
+            CoflowCompiler.Compile(context.Functions, module, recordsByIdentity, context, storage);
+        return new CoflowData(tables, singletons, context.Functions, storage, functionsCompiled, module);
     }
 
     private static object CreateTable(ICoflowTypeMetadata metadata, object[] values)
@@ -420,6 +435,7 @@ public sealed class CoflowData : IDisposable
             _tables = candidate._tables;
             _singletons = candidate._singletons;
             _functions = candidate._functions;
+            _storage = candidate._storage;
             _generation++;
             return Result<ReloadInfo, CoflowReloadError>.Ok(
                 new ReloadInfo(previousGeneration, _generation));

@@ -9,7 +9,8 @@ internal static class CoflowCompiler
         IReadOnlyList<CoflowFunctionSlot> slots,
         ICoflowGeneratedModule module,
         IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
-        CfdLoadContext context)
+        CfdLoadContext context,
+        CoflowGenerationStorage storage)
     {
         var compiled = new List<(CoflowFunctionSlot Slot, CoflowProgram? Body)>();
         var diagnostics = new List<CfdDiagnostic>();
@@ -22,7 +23,7 @@ internal static class CoflowCompiler
             }
             try
             {
-                compiled.Add((slot, new FunctionParser(slot, module, records, context).Parse()));
+                compiled.Add((slot, new FunctionParser(slot, module, records, context, storage).Parse()));
             }
             catch (FunctionCompileException error)
             {
@@ -131,12 +132,14 @@ internal static class CoflowCompiler
 
     private sealed class FunctionParser
     {
+        private const int MaximumParseDepth = 128;
         private readonly CoflowFunctionSlot _slot;
         private readonly IReadOnlyDictionary<(string DeclaredType, string Key), object> _records;
         private readonly IReadOnlyDictionary<string, ICoflowTypeMetadata> _metadata;
         private readonly IReadOnlyDictionary<string, ICoflowEnumMetadata> _enums;
         private readonly IReadOnlyDictionary<string, CoflowConstant> _declaredConstants;
         private readonly CfdLoadContext _context;
+        private readonly CoflowGenerationStorage _storage;
         private readonly HashSet<string> _ownerFieldNames;
         private readonly Dictionary<Type, string> _generatedNames;
         private readonly CfdNameResolver _names;
@@ -154,16 +157,21 @@ internal static class CoflowCompiler
         private int _loopParseDepth;
         private int _localCount;
         private int _index;
+        private int _expressionDepth;
+        private int _binaryDepth;
+        private int _unaryDepth;
 
         internal FunctionParser(
             CoflowFunctionSlot slot,
             ICoflowGeneratedModule module,
             IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
-            CfdLoadContext context)
+            CfdLoadContext context,
+            CoflowGenerationStorage storage)
         {
             _slot = slot;
             _records = records;
             _context = context;
+            _storage = storage;
             _metadata = module.Types.ToDictionary(item => item.DeclaredType, StringComparer.Ordinal);
             _enums = module.Enums.ToDictionary(item => item.DeclaredType, StringComparer.Ordinal);
             _declaredConstants = module.Constants.ToDictionary(
@@ -387,8 +395,17 @@ internal static class CoflowCompiler
 
         private Expr ParseExpression()
         {
-            var offset = Peek().Offset;
-            return ParseExpressionCore().At(offset);
+            if (++_expressionDepth > MaximumParseDepth)
+                Error("COFLOW-FUNCTION-LIMIT", "function expression exceeds the nesting depth limit");
+            try
+            {
+                var offset = Peek().Offset;
+                return ParseExpressionCore().At(offset);
+            }
+            finally
+            {
+                _expressionDepth--;
+            }
         }
 
         private Expr ParseExpressionCore()
@@ -428,42 +445,51 @@ internal static class CoflowCompiler
 
         private Expr ParseBinary(int minimumPrecedence)
         {
-            var left = ParseUnary();
-            while (true)
+            if (++_binaryDepth > MaximumParseDepth)
+                Error("COFLOW-FUNCTION-LIMIT", "binary expression exceeds the nesting depth limit");
+            try
             {
-                if (Peek().Kind == TokenKind.Identifier && Peek().Text == "is" && minimumPrecedence <= 7)
+                var left = ParseUnary();
+                while (true)
                 {
-                    Advance();
-                    var target = ResolveTypeName(ParseTypeName());
-                    if (!_generatedNames.ContainsKey(target))
-                        Error("COFLOW-FUNCTION-TYPE", "`is` target must be a generated object type");
-                    left = new TypeIsExpr(left, target, left switch
+                    if (Peek().Kind == TokenKind.Identifier && Peek().Text == "is" && minimumPrecedence <= 7)
                     {
-                        LocalExpr local => local.Name,
-                        ArgumentExpr argument => argument.Name,
-                        _ => null,
-                    });
-                    continue;
+                        Advance();
+                        var target = ResolveTypeName(ParseTypeName());
+                        if (!_generatedNames.ContainsKey(target))
+                            Error("COFLOW-FUNCTION-TYPE", "`is` target must be a generated object type");
+                        left = new TypeIsExpr(left, target, left switch
+                        {
+                            LocalExpr local => local.Name,
+                            ArgumentExpr argument => argument.Name,
+                            _ => null,
+                        });
+                        continue;
+                    }
+                    if (!TryBinary(Peek().Kind, out var precedence, out var operation) || precedence < minimumPrecedence)
+                        break;
+                    Advance();
+                    var right = ParseBinary(operation == "**" ? precedence : precedence + 1);
+                    if (IsComparison(operation) && left is ComparisonChainExpr chain)
+                    {
+                        left = chain.Append(operation, right, this);
+                    }
+                    else if (IsComparison(operation) && left is BinaryExpr previous && IsComparison(previous.Operation))
+                    {
+                        left = ComparisonChainExpr.Create(previous.Left, previous.Right,
+                            previous.Operation, operation, right, this);
+                    }
+                    else
+                    {
+                        left = CreateBinary(operation, left, right);
+                    }
                 }
-                if (!TryBinary(Peek().Kind, out var precedence, out var operation) || precedence < minimumPrecedence)
-                    break;
-                Advance();
-                var right = ParseBinary(operation == "**" ? precedence : precedence + 1);
-                if (IsComparison(operation) && left is ComparisonChainExpr chain)
-                {
-                    left = chain.Append(operation, right, this);
-                }
-                else if (IsComparison(operation) && left is BinaryExpr previous && IsComparison(previous.Operation))
-                {
-                    left = ComparisonChainExpr.Create(previous.Left, previous.Right,
-                        previous.Operation, operation, right, this);
-                }
-                else
-                {
-                    left = CreateBinary(operation, left, right);
-                }
+                return left;
             }
-            return left;
+            finally
+            {
+                _binaryDepth--;
+            }
         }
 
         private static bool IsComparison(string operation) => operation is "<" or "<=" or ">" or ">=";
@@ -483,54 +509,63 @@ internal static class CoflowCompiler
 
         private Expr ParseUnary()
         {
-            if (Match(TokenKind.Minus)) return UnaryExpr.Create("-", ParseUnary(), this);
-            if (Match(TokenKind.Bang)) return UnaryExpr.Create("!", ParseUnary(), this);
-            if (Match(TokenKind.Tilde)) return UnaryExpr.Create("~", ParseUnary(), this);
-            var expression = ParsePrimary();
-            while (true)
+            if (++_unaryDepth > MaximumParseDepth)
+                Error("COFLOW-FUNCTION-LIMIT", "unary expression exceeds the nesting depth limit");
+            try
             {
-                if (Match(TokenKind.LeftParen))
+                if (Match(TokenKind.Minus)) return UnaryExpr.Create("-", ParseUnary(), this);
+                if (Match(TokenKind.Bang)) return UnaryExpr.Create("!", ParseUnary(), this);
+                if (Match(TokenKind.Tilde)) return UnaryExpr.Create("~", ParseUnary(), this);
+                var expression = ParsePrimary();
+                while (true)
                 {
-                    expression = ParseCall(expression);
-                    continue;
-                }
-                if (Match(TokenKind.LeftBracket))
-                {
-                    var index = ParseExpression();
-                    Expect(TokenKind.RightBracket, "expected `]` after index");
-                    expression = IndexExpr.Create(expression, index, this);
-                    continue;
-                }
-                if (Match(TokenKind.Dot))
-                {
-                    if (Match(TokenKind.Dollar))
+                    if (Match(TokenKind.LeftParen))
                     {
-                        var metadataName = Expect(TokenKind.Identifier,
-                            "expected metadata name after `.$`").Text;
-                        expression = ParseRecordMetadata(expression, metadataName);
+                        expression = ParseCall(expression);
                         continue;
                     }
-                    var field = Expect(TokenKind.Identifier, "expected a field name after `.`").Text;
-                    var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == expression.Type);
-                    if (metadata is not null && metadata.FieldNames.Contains(field, StringComparer.Ordinal))
+                    if (Match(TokenKind.LeftBracket))
                     {
-                        expression = ParseField(expression, field);
+                        var index = ParseExpression();
+                        Expect(TokenKind.RightBracket, "expected `]` after index");
+                        expression = IndexExpr.Create(expression, index, this);
+                        continue;
                     }
-                    else
+                    if (Match(TokenKind.Dot))
                     {
-                        Expect(TokenKind.LeftParen, $"expected `(` after built-in method `{field}`");
-                        expression = ParseBuiltin(expression, field);
+                        if (Match(TokenKind.Dollar))
+                        {
+                            var metadataName = Expect(TokenKind.Identifier,
+                                "expected metadata name after `.$`").Text;
+                            expression = ParseRecordMetadata(expression, metadataName);
+                            continue;
+                        }
+                        var field = Expect(TokenKind.Identifier, "expected a field name after `.`").Text;
+                        var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == expression.Type);
+                        if (metadata is not null && metadata.FieldNames.Contains(field, StringComparer.Ordinal))
+                        {
+                            expression = ParseField(expression, field);
+                        }
+                        else
+                        {
+                            Expect(TokenKind.LeftParen, $"expected `(` after built-in method `{field}`");
+                            expression = ParseBuiltin(expression, field);
+                        }
+                        continue;
                     }
-                    continue;
+                    if (Match(TokenKind.Question))
+                    {
+                        expression = ParsePropagation(expression);
+                        continue;
+                    }
+                    break;
                 }
-                if (Match(TokenKind.Question))
-                {
-                    expression = ParsePropagation(expression);
-                    continue;
-                }
-                break;
+                return expression;
             }
-            return expression;
+            finally
+            {
+                _unaryDepth--;
+            }
         }
 
         private Expr ParseBuiltin(Expr receiver, string name)
@@ -541,8 +576,14 @@ internal static class CoflowCompiler
                 do arguments.Add(ParseExpression()); while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightParen, "expected `)` after built-in arguments");
             }
-            if (name == "matches" && (arguments.Count != 1 || arguments[0] is not ConstantExpr { Value: string }))
-                Error("COFLOW-FUNCTION-BUILTIN", "matches pattern must be a string literal");
+            if (name == "matches")
+            {
+                if (arguments.Count != 1 || arguments[0] is not ConstantExpr { Value: string })
+                    Error("COFLOW-FUNCTION-BUILTIN", "matches pattern must be a string literal");
+                var pattern = (string)((ConstantExpr)arguments[0]).Value!;
+                try { CoflowBuiltinLibrary.ValidateRegexPattern(pattern); }
+                catch (ArgumentException error) { Error("COFLOW-FUNCTION-BUILTIN", error.Message); }
+            }
             if (name is "map" or "filter" or "fold" or "find" or "any" or "all")
                 return ParseHigherOrderBuiltin(receiver, name, arguments);
             try
@@ -648,7 +689,7 @@ internal static class CoflowCompiler
                     $"type `{FormatType(receiver.Type)}` has no field `{fieldName}`");
             var resolved = metadata!;
             return new FieldExpr(receiver, resolved.GetFieldType(fieldName),
-                value => resolved.GetField(value!, fieldName));
+                _storage.BindField(resolved, fieldName));
         }
 
         private Expr ParseCall(Expr target)
@@ -754,7 +795,7 @@ internal static class CoflowCompiler
                         return new FieldExpr(
                             new ConstantExpr(owner, ownerMetadata.RuntimeType),
                             ownerMetadata.GetFieldType(token.Text),
-                            value => ownerMetadata.GetField(value!, token.Text));
+                            _storage.BindField(ownerMetadata, token.Text));
                     }
                     if (_declaredConstants.TryGetValue(_names.Resolve(token.Text), out var constant))
                         return new ConstantExpr(_context.ResolveConstant(constant), constant.RuntimeType);
@@ -798,6 +839,31 @@ internal static class CoflowCompiler
         }
 
         private bool IsInterpolatable(Type type) => IsInterpolatable(type, new HashSet<Type>());
+
+        private bool SupportsEquality(Type type) => SupportsEquality(type, new HashSet<Type>());
+
+        private bool SupportsEquality(Type type, HashSet<Type> visiting)
+        {
+            if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionSlot))
+                return false;
+            var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == type);
+            if (metadata is not null)
+            {
+                if (!visiting.Add(type)) return true;
+                var result = metadata.FieldNames.All(field =>
+                    SupportsEquality(metadata.GetFieldType(field), visiting));
+                visiting.Remove(type);
+                return result;
+            }
+            if (!type.IsGenericType) return true;
+            var definition = type.GetGenericTypeDefinition();
+            var arguments = type.GetGenericArguments();
+            return definition == typeof(Option<>) && SupportsEquality(arguments[0], visiting) ||
+                definition == typeof(Result<,>) && arguments.All(item => SupportsEquality(item, visiting)) ||
+                definition == typeof(IReadOnlyList<>) && SupportsEquality(arguments[0], visiting) ||
+                definition == typeof(IReadOnlyDictionary<,>) &&
+                    arguments.All(item => SupportsEquality(item, visiting));
+        }
 
         private bool IsInterpolatable(Type type, HashSet<Type> visiting)
         {
@@ -915,7 +981,7 @@ internal static class CoflowCompiler
                     receiver.Type.IsAssignableFrom(item.RuntimeType)))
                 Error("COFLOW-FUNCTION-METADATA",
                     $"`${name}` requires a generated record receiver");
-            return new FieldExpr(receiver, typeof(string), value =>
+            return new TransformExpr(receiver, typeof(string), value =>
             {
                 var actual = value ?? throw new InvalidOperationException("record metadata receiver is null");
                 var metadata = _metadata.Values.SingleOrDefault(item => item.RuntimeType == actual.GetType())
@@ -1156,6 +1222,14 @@ internal static class CoflowCompiler
         private MatchPattern ParseMatchPattern(Type subjectType)
         {
             var token = Advance();
+            var negative = false;
+            if (token.Kind == TokenKind.Minus)
+            {
+                negative = true;
+                token = Advance();
+                if (token.Kind is not (TokenKind.Integer or TokenKind.Float))
+                    Error("COFLOW-FUNCTION-MATCH", "`-` in a match pattern must precede a numeric literal");
+            }
             if (token.Kind == TokenKind.Identifier && token.Text == "_")
                 return MatchPattern.CatchAll("_", null, null);
             if (token.Kind == TokenKind.Identifier && token.Text is "Some" or "Ok" or "Err")
@@ -1202,7 +1276,16 @@ internal static class CoflowCompiler
             }
             object? literal = token.Kind switch
             {
-                TokenKind.Integer when long.TryParse(token.Text, out var value) => value,
+                TokenKind.Integer when long.TryParse(
+                    negative ? "-" + token.Text : token.Text,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var value) => value,
+                TokenKind.Float when double.TryParse(
+                    negative ? "-" + token.Text : token.Text,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var value) && double.IsFinite(value) => value,
                 TokenKind.String => token.Text,
                 TokenKind.Identifier when token.Text == "true" => true,
                 TokenKind.Identifier when token.Text == "false" => false,
@@ -1212,7 +1295,9 @@ internal static class CoflowCompiler
             {
                 if (literal.GetType() != subjectType)
                     Error("COFLOW-FUNCTION-TYPE", "match literal type does not match subject type");
-                return MatchPattern.Literal(token.Text, literal);
+                if (literal is double floating && floating == 0) literal = 0d;
+                var canonical = Convert.ToString(literal, CultureInfo.InvariantCulture)!;
+                return MatchPattern.Literal($"literal:{subjectType.FullName}:{canonical}", literal);
             }
             if (token.Kind == TokenKind.Identifier)
             {
@@ -1282,7 +1367,7 @@ internal static class CoflowCompiler
             return new FieldExpr(
                 new ConstantExpr(match.Value, metadata.RuntimeType),
                 metadata.GetFieldType(fieldName),
-                value => metadata.GetField(value!, fieldName));
+                _storage.BindField(metadata, fieldName));
         }
 
         private Expr ParseArrayLiteral()
@@ -2074,14 +2159,24 @@ internal static class CoflowCompiler
             }
         }
 
-        private sealed record FieldExpr(Expr Receiver, Type FieldType, Func<object?, object?> Read)
+        private sealed record FieldExpr(Expr Receiver, Type FieldType, CoflowFieldAccess Access)
             : Expr(FieldType)
         {
             internal override void EmitCore(FunctionParser parser)
             {
                 Receiver.Emit(parser);
+                parser.Emit(CoflowOpCode.LoadField, parser.Constant(Access));
+            }
+        }
+
+        private sealed record TransformExpr(Expr Receiver, Type ResultType, Func<object?, object?> Transform)
+            : Expr(ResultType)
+        {
+            internal override void EmitCore(FunctionParser parser)
+            {
+                Receiver.Emit(parser);
                 parser.Emit(CoflowOpCode.Construct,
-                    parser.Constant(new Func<object?, object?>(Read)));
+                    parser.Constant(new Func<object?, object?>(Transform)));
             }
         }
 
@@ -2676,8 +2771,11 @@ internal static class CoflowCompiler
                         operation == "&&" ? CoflowOpCode.JumpIfFalseKeep : CoflowOpCode.JumpIfTrueKeep);
                 }
                 if (operation is "==" or "!=")
-                    return new BinaryExpr(operation, left, right, typeof(bool),
-                        operation == "==" ? CoflowOpCode.Equal : CoflowOpCode.NotEqual);
+                {
+                    if (!parser.SupportsEquality(left.Type))
+                        parser.Error("COFLOW-FUNCTION-TYPE", "function values cannot be compared");
+                    return new EqualityExpr(left, right, operation == "!=", parser._metadata);
+                }
                 var code = SelectCode(operation, left.Type, parser);
                 var result = operation is "<" or "<=" or ">" or ">=" ? typeof(bool) : left.Type;
                 return new BinaryExpr(operation, left, right, result, code);
@@ -2735,6 +2833,27 @@ internal static class CoflowCompiler
                 }
                 Right.Emit(parser);
                 parser.Emit(Code);
+            }
+        }
+
+        private sealed record EqualityExpr(
+            Expr Left,
+            Expr Right,
+            bool Negated,
+            IReadOnlyDictionary<string, ICoflowTypeMetadata> Metadata) : Expr(typeof(bool))
+        {
+            internal override void EmitCore(FunctionParser parser)
+            {
+                Left.Emit(parser);
+                Right.Emit(parser);
+                var type = Left.Type;
+                var metadata = Metadata.Values.ToArray();
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(values =>
+                    {
+                        var equal = CoflowValueEquality.Equal(values[0], values[1], type, metadata);
+                        return Negated ? !equal : equal;
+                    }, 2)));
             }
         }
 

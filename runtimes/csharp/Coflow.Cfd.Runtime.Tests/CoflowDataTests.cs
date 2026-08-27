@@ -25,6 +25,119 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void EnumKeyTablesOnlyAcceptTheirAssociatedGeneratedEnum()
+    {
+        using var data = Coflow.LoadData(new[]
+        {
+            "EnumItem { Read { name: \"Readable\" } }",
+        }, new TestModule(new EnumItemMetadata()));
+
+        var table = data.Table<EnumItem>();
+        Assert.Equal("Readable", table.Get(TestAccess.Read).Value.Name);
+        Assert.False(table.Get(TestAccess.Write).HasValue);
+        Assert.Throws<ArgumentException>(() => table.Get("Read"));
+        Assert.Throws<ArgumentException>(() => table.Get(DayOfWeek.Monday));
+    }
+
+    [Fact]
+    public void BaseTablesIncludeAssignableDerivedRecordsInSourceOrder()
+    {
+        using var data = Coflow.LoadData(new[]
+        {
+            "CoinReward { first { amount: 4 } }",
+            "CoinReward { second { amount: 7 } }",
+        }, new TestModule(new RewardMetadata(), new CoinRewardMetadata()));
+
+        var rewards = data.Table<Reward>();
+        Assert.Equal(new[] { "first", "second" }, rewards.Select(item => item.Id));
+        Assert.Equal(7, Assert.IsType<CoinReward>(rewards.Get("second").Value).Amount);
+    }
+
+    [Fact]
+    public void GenerationStorageUsesRowsWindowsAndHeapHandles()
+    {
+        using var data = Coflow.LoadData(new[]
+        {
+            "ValueRecord { value { optional: Some(9), outcome: Err(3) } }",
+        }, new TestModule(new ValueRecordMetadata()));
+
+        var table = Assert.Single(data.Storage.Tables);
+        Assert.Equal(4, table.Layout.Width);
+        Assert.Equal(new[] { 2, 2 }, table.Layout.Fields.Select(field => field.Width));
+        Assert.Equal(CoflowSlotKind.Bool, table.Rows[0].Kind);
+        Assert.Equal(CoflowSlotKind.Int64, table.Rows[1].Kind);
+        Assert.Equal(CoflowSlotKind.Bool, table.Rows[2].Kind);
+        Assert.Equal(CoflowSlotKind.Int64, table.Rows[3].Kind);
+        Assert.Equal(0, data.Storage.Heap.Count);
+    }
+
+    [Fact]
+    public void CompiledRecordFieldReadsUseTheGenerationRow()
+    {
+        var metadata = new RuleMetadata();
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { stored { offset: 12, evaluate: fn(value: int) -> int { offset + value } } }",
+        }, new TestModule(metadata));
+        var readsAfterCompilation = metadata.GetFieldCalls;
+
+        Assert.Equal(17, data.Table<Rule>().Get("stored").Value.Evaluate(5));
+        Assert.Equal(readsAfterCompilation, metadata.GetFieldCalls);
+        Assert.Contains(metadata.LastRule!._evaluate.CompiledProgram!.Instructions,
+            instruction => instruction.Code == CoflowOpCode.LoadField);
+    }
+
+    [Fact]
+    public void RecordReferencesUseGenerationRelativeIdsAndVmReadsTheTargetRow()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Target { first { value: 4 } } Link { second { value: 9, next: &first, evaluate: fn(input: int) -> int { next.value + input } } }",
+        }, new TestModule(new TargetMetadata(), new LinkMetadata()));
+
+        var table = Assert.Single(data.Storage.Tables,
+            item => item.Layout.Metadata.DeclaredType == "Link");
+        var next = table.Layout.Field("next");
+        Assert.Equal(1, next.Width);
+        Assert.Equal(CoflowSlotKind.Record, table.Rows[next.Offset].Kind);
+        Assert.Equal(7, data.Table<Link>().Get("second").Value.Evaluate(3));
+    }
+
+    [Fact]
+    public void PolymorphicReferencesReuseTheConcreteRecordInstance()
+    {
+        using var data = Coflow.LoadData(new[]
+        {
+            "RewardHolder { holder { selected: &coin } } CoinReward { coin { amount: 8 } }",
+        }, new TestModule(
+            new RewardHolderMetadata(), new RewardMetadata(), new CoinRewardMetadata()));
+
+        var selected = data.Table<RewardHolder>().Get("holder").Value.Selected;
+        var concrete = data.Table<CoinReward>().Get("coin").Value;
+        Assert.Same(concrete, selected);
+        var holderStorage = Assert.Single(data.Storage.Tables,
+            item => item.Layout.Metadata.DeclaredType == "RewardHolder");
+        Assert.Equal(CoflowSlotKind.Record, holderStorage.Rows[0].Kind);
+    }
+
+    [Fact]
+    public void NestedOptionReferencesEncodeTheirPayloadAsRecordIds()
+    {
+        using var data = Coflow.LoadData(new[]
+        {
+            "OptionalRewardHolder { holder { selected: Some(&coin) } } CoinReward { coin { amount: 8 } }",
+        }, new TestModule(
+            new OptionalRewardHolderMetadata(), new RewardMetadata(), new CoinRewardMetadata()));
+
+        var holder = data.Table<OptionalRewardHolder>().Get("holder").Value;
+        Assert.Same(data.Table<CoinReward>().Get("coin").Value, holder.Selected.Value);
+        var storage = Assert.Single(data.Storage.Tables,
+            item => item.Layout.Metadata.DeclaredType == "OptionalRewardHolder");
+        Assert.Equal(CoflowSlotKind.Bool, storage.Rows[0].Kind);
+        Assert.Equal(CoflowSlotKind.Record, storage.Rows[1].Kind);
+    }
+
+    [Fact]
     public void LoadDataBuildsSingletonsAndRejectsMissingSingletons()
     {
         var module = new TestModule(new SettingsMetadata());
@@ -465,6 +578,20 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void VmMatchesFloatAndNegativeScalarPatterns()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { scalarMatch { evaluate: fn(value: int) -> int { match float(value) { -2.0 => 7, 1.0 => 8, _ => 0, } } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        var rule = data.Table<Rule>().Get("scalarMatch").Value;
+        Assert.Equal(7, rule.Evaluate(-2));
+        Assert.Equal(8, rule.Evaluate(1));
+        Assert.Equal(0, rule.Evaluate(3));
+    }
+
+    [Fact]
     public void ReloadAtomicallyPublishesDataAndReusesDelegateBindings()
     {
         using var data = Coflow.LoadAndCompile(new[] { "Rule { external { offset: 1 } }" },
@@ -577,6 +704,81 @@ public sealed class CoflowDataTests
         var rule = data.Table<Rule>().Get("builtins").Value;
         Assert.Equal(10, rule.Evaluate(4));
         Assert.True(rule.Enabled(0));
+    }
+
+    [Fact]
+    public void VmExecutesTheCompleteBuiltinMethodMatrix()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { matrix { evaluate: fn(value: int) -> int { [3, 1, 2].min() + [3, 1, 2].max() + [1, 2, 3].filter(fn(item: int) -> bool { item > 1 }).sum() + {1: 4, 2: 5}.keys().sum() + {1: 4, 2: 5}.values().sum() + int(9.0.sqrt()) + (-2).abs() }, enabled: fn(value: int) -> bool { [1, 2, 3].contains(2) && [1, 2, 3].isUnique() && [1, 2, 3].isSorted() && [1, 2, 3].intersects([3, 4]) && [1, 2].isDisjoint([3, 4]) && [1, 2].isSubsetOf([1, 2, 3]) && [1, 2, 3].isSupersetOf([2, 3]) && \"coflow\".contains(\"flow\") && \"coflow\".endsWith(\"flow\") && \"   \".isBlank() && \"abc123\".matches(\"[a-z]+[0-9]+\") && {1: 2}.contains(1) && {1: 2}.containsValue(2) && 4.0.isFinite() && 4.0.approxEqual(4.01, 0.02) }, choose: fn(value: int) -> Option<int> { [1, 2, 3].find(fn(item: int) -> bool { item == value }) } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        var rule = data.Table<Rule>().Get("matrix").Value;
+        Assert.Equal(26, rule.Evaluate(0));
+        Assert.True(rule.Enabled(0));
+        Assert.Equal(2, rule.Choose(2).Value);
+        Assert.False(rule.Choose(8).HasValue);
+    }
+
+    [Fact]
+    public void CompilerRequiresALiteralRegexPattern()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { invalid { enabled: fn(value: int) -> bool { var pattern = \"a\"; \"abc\".matches(pattern) } } }",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "COFLOW-FUNCTION-BUILTIN");
+    }
+
+    [Theory]
+    [InlineData("(?=abc)")]
+    [InlineData("(a)\\\\1")]
+    public void CompilerRejectsRegexConstructsUnsupportedByRust(string pattern)
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            $"Rule {{ invalid {{ enabled: fn(value: int) -> bool {{ \"abc\".matches(\"{pattern}\") }} }} }}",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "COFLOW-FUNCTION-BUILTIN");
+    }
+
+    [Fact]
+    public void VmAcceptsRustNamedCaptureSyntax()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { regex { enabled: fn(value: int) -> bool { \"abc\".matches(\"(?P<word>[a-z]+)\") } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        Assert.True(data.Table<Rule>().Get("regex").Value.Enabled(0));
+    }
+
+    [Fact]
+    public void CompilerRejectsExpressionsBeyondTheNestingLimit()
+    {
+        var operators = new string('!', 129);
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            $"Rule {{ invalid {{ enabled: fn(value: int) -> bool {{ {operators}true }} }} }}",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "COFLOW-FUNCTION-LIMIT");
+    }
+
+    [Theory]
+    [InlineData("var entries: [int] = []; var ignored = entries.min();")]
+    [InlineData("var ignored = 4.0.approxEqual(4.0, -1.0);")]
+    public void InvalidBuiltinRuntimeDomainsProduceVmFaults(string statements)
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            $"Rule {{ invalid {{ evaluate: fn(value: int) -> int {{ {statements} 0 }} }} }}",
+        }, new TestModule(new RuleMetadata()));
+
+        Assert.Throws<CoflowFaultException>(() => data.Table<Rule>().Get("invalid").Value.Evaluate(0));
     }
 
     [Fact]
@@ -733,6 +935,55 @@ public sealed class CoflowDataTests
 
         Assert.Contains(error.Diagnostics,
             diagnostic => diagnostic.Code == "COFLOW-FUNCTION-TYPE");
+    }
+
+    [Fact]
+    public void CompilerRejectsFunctionValueComparison()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { invalid { evaluate: fn(value: int) -> int { if evaluate == evaluate { 1 } else { 0 } } } }",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic =>
+            diagnostic.Code == "COFLOW-FUNCTION-TYPE" &&
+            diagnostic.Message.Contains("cannot be compared", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void VmUsesStructuralEqualityForCftValues()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { equality { enabled: fn(value: int) -> bool { var outcomeA: Result<[int], string> = Ok([1, 2]); var outcomeB: Result<[int], string> = Ok([1, 2]); [1, 2] == [1, 2] && {1: [2, 3]} == {1: [2, 3]} && Some([1, 2]) == Some([1, 2]) && outcomeA == outcomeB && Stats { hp: 1, attack: 2 } == Stats { hp: 1, attack: 2 } && selected == selected } } }",
+        }, new TestModule(new RuleMetadata(), new StatsMetadata(),
+            new RewardMetadata(), new CoinRewardMetadata()));
+
+        Assert.True(data.Table<Rule>().Get("equality").Value.Enabled(0));
+    }
+
+    [Fact]
+    public void VmFloatEqualityUsesIeeeNanSemantics()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { nan { enabled: fn(value: int) -> bool { var invalid = (-1.0).sqrt(); invalid != invalid && [invalid] != [invalid] && Some(invalid) != Some(invalid) } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        Assert.True(data.Table<Rule>().Get("nan").Value.Enabled(0));
+    }
+
+    [Fact]
+    public void CompilerRejectsNestedFunctionValueComparison()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { invalid { evaluate: fn(value: int) -> int { if [evaluate] == [evaluate] { 1 } else { 0 } } } }",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic =>
+            diagnostic.Code == "COFLOW-FUNCTION-TYPE" &&
+            diagnostic.Message.Contains("cannot be compared", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -1005,7 +1256,29 @@ public sealed class CoflowDataTests
     }
 
     private sealed record Item(string Id, string Name);
+    private sealed record EnumItem(TestAccess Id, string Name);
     private sealed record Settings(string Id, long Value);
+
+    private sealed record Target(string Id, long Value);
+    private sealed record RewardHolder(string Id, Reward Selected);
+    private sealed record OptionalRewardHolder(string Id, Option<Reward> Selected);
+
+    private sealed class Link
+    {
+        internal Link(string id, long value, Target next, CoflowFunctionSlot evaluate)
+        {
+            Id = id;
+            Value = value;
+            Next = next;
+            _evaluate = evaluate;
+        }
+
+        internal readonly CoflowFunctionSlot _evaluate;
+        public string Id { get; }
+        public long Value { get; }
+        public Target Next { get; }
+        public long Evaluate(long input) => _evaluate.Invoke<long>(input);
+    }
 
     private sealed class Rule
     {
@@ -1096,7 +1369,7 @@ public sealed class CoflowDataTests
     private abstract class Metadata<T> : ICoflowTypeMetadata
     {
         public Type RuntimeType => typeof(T);
-        public Type KeyType => typeof(string);
+        public virtual Type KeyType => typeof(string);
         public virtual bool IsSingleton => false;
         public virtual bool IsHost => false;
         public virtual bool IsAbstract => false;
@@ -1117,9 +1390,9 @@ public sealed class CoflowDataTests
             CfdLoadContext context,
             IReadOnlyDictionary<string, object?> fields) =>
             throw new InvalidOperationException("Test type cannot be constructed as an object.");
-        public string? ObjectFieldType(string fieldName) => null;
-        public string? ReferenceFieldType(string fieldName) => null;
-        public object ParseKey(string key) => key;
+        public virtual string? ObjectFieldType(string fieldName) => null;
+        public virtual string? ReferenceFieldType(string fieldName) => null;
+        public virtual object ParseKey(string key) => key;
         public virtual object CreateHost(CfdLoadContext context) =>
             throw new InvalidOperationException("Test type is not @Host.");
         public virtual void TransferHostState(object source, object target) =>
@@ -1127,7 +1400,12 @@ public sealed class CoflowDataTests
         public object GetKey(object record) => record switch
         {
             Item item => item.Id,
+            EnumItem item => item.Id,
             Settings settings => settings.Id,
+            Link link => link.Id,
+            Target target => target.Id,
+            RewardHolder holder => holder.Id,
+            OptionalRewardHolder holder => holder.Id,
             Rule rule => rule.Id,
             ValueRecord value => value.Id,
             Reward reward => reward.Id,
@@ -1145,6 +1423,21 @@ public sealed class CoflowDataTests
             CfdValueReader.String(CfdValueReader.Field(record.Fields, "name"), context));
     }
 
+    private sealed class EnumItemMetadata : Metadata<EnumItem>
+    {
+        public override string DeclaredType => "EnumItem";
+        public override Type KeyType => typeof(TestAccess);
+        public override object ParseKey(string key) => key switch
+        {
+            "Read" => TestAccess.Read,
+            "Write" => TestAccess.Write,
+            _ => throw new ArgumentException(nameof(key)),
+        };
+        public override object Read(CfdRecordNode record, CfdLoadContext context) => new EnumItem(
+            (TestAccess)ParseKey(record.Key),
+            CfdValueReader.String(CfdValueReader.Field(record.Fields, "name"), context));
+    }
+
     private sealed class SettingsMetadata : Metadata<Settings>
     {
         public override string DeclaredType => "Settings";
@@ -1153,6 +1446,51 @@ public sealed class CoflowDataTests
         public override object Read(CfdRecordNode record, CfdLoadContext context) => new Settings(
             record.Key,
             CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value")));
+    }
+
+    private sealed class LinkMetadata : Metadata<Link>
+    {
+        public override string DeclaredType => "Link";
+        public override IReadOnlyList<string> FieldNames => new[] { "value", "next", "evaluate" };
+        public override Type GetFieldType(string fieldName) => fieldName switch
+        {
+            "value" => typeof(long),
+            "next" => typeof(Target),
+            "evaluate" => typeof(CoflowFunctionSlot),
+            _ => throw new ArgumentException(nameof(fieldName)),
+        };
+        public override string? ReferenceFieldType(string fieldName) => fieldName == "next" ? "Target" : null;
+        public override object GetField(object record, string fieldName) => fieldName switch
+        {
+            "value" => ((Link)record).Value,
+            "next" => ((Link)record).Next!,
+            "evaluate" => ((Link)record)._evaluate,
+            _ => throw new ArgumentException(nameof(fieldName)),
+        };
+        public override object Read(CfdRecordNode record, CfdLoadContext context)
+        {
+            using var scope = context.EnterRecord(record.DeclaredType, record.Key);
+            CfdValueReader.ValidateFields(record.Fields, "value", "next", "evaluate");
+            return new Link(
+                record.Key,
+                CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value")),
+                CfdValueReader.Reference<Target>(
+                    CfdValueReader.Field(record.Fields, "next"), context, "Target"),
+                context.Function(CfdValueReader.FindField(record.Fields, "evaluate"),
+                    "evaluate", typeof(long), typeof(long)));
+        }
+    }
+
+    private sealed class TargetMetadata : Metadata<Target>
+    {
+        public override string DeclaredType => "Target";
+        public override IReadOnlyList<string> FieldNames => new[] { "value" };
+        public override Type GetFieldType(string fieldName) => fieldName == "value"
+            ? typeof(long) : throw new ArgumentException(nameof(fieldName));
+        public override object GetField(object record, string fieldName) => fieldName == "value"
+            ? ((Target)record).Value : throw new ArgumentException(nameof(fieldName));
+        public override object Read(CfdRecordNode record, CfdLoadContext context) => new Target(
+            record.Key, CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value")));
     }
 
     private sealed class StatsMetadata : Metadata<Stats>
@@ -1196,6 +1534,9 @@ public sealed class CoflowDataTests
 
         public RuleMetadata(string declaredType = "Rule") => _declaredType = declaredType;
 
+        public int GetFieldCalls { get; private set; }
+        public Rule? LastRule { get; private set; }
+
         public override string DeclaredType => _declaredType;
         public override IReadOnlyList<string> FieldNames => new[]
             { "offset", "selected", "callbacks", "evaluate", "enabled", "choose", "validate", "describe", "handlers" };
@@ -1211,6 +1552,7 @@ public sealed class CoflowDataTests
 
         public override object GetField(object record, string fieldName)
         {
+            GetFieldCalls++;
             var rule = (Rule)record;
             return fieldName switch
             {
@@ -1231,7 +1573,7 @@ public sealed class CoflowDataTests
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);
             CfdValueReader.ValidateFields(record.Fields, "offset", "evaluate", "enabled", "choose", "validate", "describe", "handlers");
-            return new Rule(
+            return LastRule = new Rule(
                 record.Key,
                 CfdValueReader.FindField(record.Fields, "offset") is { } offset
                     ? CfdValueReader.Int64(offset)
@@ -1264,6 +1606,37 @@ public sealed class CoflowDataTests
             throw new InvalidOperationException();
     }
 
+    private sealed class RewardHolderMetadata : Metadata<RewardHolder>
+    {
+        public override string DeclaredType => "RewardHolder";
+        public override IReadOnlyList<string> FieldNames => new[] { "selected" };
+        public override Type GetFieldType(string fieldName) => fieldName == "selected"
+            ? typeof(Reward) : throw new ArgumentException(nameof(fieldName));
+        public override string? ReferenceFieldType(string fieldName) => fieldName == "selected"
+            ? "Reward" : null;
+        public override object GetField(object record, string fieldName) => fieldName == "selected"
+            ? ((RewardHolder)record).Selected : throw new ArgumentException(nameof(fieldName));
+        public override object Read(CfdRecordNode record, CfdLoadContext context) => new RewardHolder(
+            record.Key,
+            CfdValueReader.Reference<Reward>(
+                CfdValueReader.Field(record.Fields, "selected"), context, "Reward"));
+    }
+
+    private sealed class OptionalRewardHolderMetadata : Metadata<OptionalRewardHolder>
+    {
+        public override string DeclaredType => "OptionalRewardHolder";
+        public override IReadOnlyList<string> FieldNames => new[] { "selected" };
+        public override Type GetFieldType(string fieldName) => fieldName == "selected"
+            ? typeof(Option<Reward>) : throw new ArgumentException(nameof(fieldName));
+        public override object GetField(object record, string fieldName) => fieldName == "selected"
+            ? ((OptionalRewardHolder)record).Selected : throw new ArgumentException(nameof(fieldName));
+        public override object Read(CfdRecordNode record, CfdLoadContext context) => new OptionalRewardHolder(
+            record.Key,
+            CfdValueReader.Option(
+                CfdValueReader.Field(record.Fields, "selected"), context,
+                (node, loadContext) => CfdValueReader.Reference<Reward>(node, loadContext, "Reward")));
+    }
+
     private sealed class CoinRewardMetadata : Metadata<CoinReward>
     {
         public override string DeclaredType => "CoinReward";
@@ -1273,8 +1646,12 @@ public sealed class CoflowDataTests
             ? typeof(long) : throw new ArgumentException(nameof(fieldName));
         public override object GetField(object record, string fieldName) => fieldName == "amount"
             ? ((CoinReward)record).Amount : throw new ArgumentException(nameof(fieldName));
-        public override object Read(CfdRecordNode record, CfdLoadContext context) =>
-            throw new InvalidOperationException();
+        public override object Read(CfdRecordNode record, CfdLoadContext context)
+        {
+            CfdValueReader.ValidateFields(record.Fields, "amount");
+            return new CoinReward(record.Key,
+                CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "amount")));
+        }
     }
 
     private sealed class HostServicesMetadata : Metadata<HostServices>
@@ -1319,6 +1696,19 @@ public sealed class CoflowDataTests
     private sealed class ValueRecordMetadata : Metadata<ValueRecord>
     {
         public override string DeclaredType => "ValueRecord";
+        public override IReadOnlyList<string> FieldNames => new[] { "optional", "outcome" };
+        public override Type GetFieldType(string fieldName) => fieldName switch
+        {
+            "optional" => typeof(Option<long>),
+            "outcome" => typeof(Result<string, long>),
+            _ => throw new ArgumentException(nameof(fieldName)),
+        };
+        public override object GetField(object record, string fieldName) => fieldName switch
+        {
+            "optional" => ((ValueRecord)record).Optional,
+            "outcome" => ((ValueRecord)record).Outcome,
+            _ => throw new ArgumentException(nameof(fieldName)),
+        };
 
         public override object Read(CfdRecordNode record, CfdLoadContext context) => new ValueRecord(
             record.Key,
