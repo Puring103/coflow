@@ -1,5 +1,6 @@
 use coflow_language::{
-    build_schema, parse_modules, CftDimensionInputs, CftErrorCode, CftFile, CftValueType,
+    build_schema, parse_modules, CftDimensionInputs, CftErrorCode, CftFile,
+    CftFunctionParameter, CftValueType,
     EnumName, ModuleId,
 };
 
@@ -14,8 +15,8 @@ fn aliases_expand_in_fields_constants_and_nested_function_results() {
         r#"
             enum Kind { First }
             type Key = Kind;
-            type Predicate = fn(int) -> bool;
-            type RuleFactory = fn(int) -> Predicate;
+            type Predicate = fn(value: int) -> bool;
+            type RuleFactory = fn(seed: int) -> Predicate;
             type Scores = {Key: int};
             const EMPTY: Scores = {};
 
@@ -31,9 +32,9 @@ fn aliases_expand_in_fields_constants_and_nested_function_results() {
     assert_eq!(
         rule.field("create").expect("create").value_type,
         CftValueType::Function(
-            vec![CftValueType::Int],
+            vec![CftFunctionParameter::named("seed", CftValueType::Int)],
             Box::new(CftValueType::Function(
-                vec![CftValueType::Int],
+                vec![CftFunctionParameter::named("value", CftValueType::Int)],
                 Box::new(CftValueType::Bool),
             )),
         )

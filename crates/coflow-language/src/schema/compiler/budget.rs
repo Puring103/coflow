@@ -177,7 +177,12 @@ fn walk_value_type(
             }
             TypeRefKind::Function(parameters, result) => {
                 pending.push((result, cursor));
-                pending.extend(parameters.iter().rev().map(|parameter| (parameter, cursor)));
+                pending.extend(
+                    parameters
+                        .iter()
+                        .rev()
+                        .map(|parameter| (&parameter.value_type, cursor)),
+                );
             }
             TypeRefKind::Int
             | TypeRefKind::Float

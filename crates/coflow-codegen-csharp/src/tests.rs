@@ -50,7 +50,7 @@ fn expands_type_aliases_without_emitting_alias_declarations() {
     let files = generate_csharp_cfd(
         &schema(
             r#"
-type Predicate = fn(int) -> bool;
+type Predicate = fn(input: int) -> bool;
 type OptionalName = Option<string>;
 type Rule {
     predicate: Predicate;
@@ -75,8 +75,8 @@ type Rule {
             "Predicate.cs" | "OptionalName.cs"
         )
     }));
-    assert!(output.contains("public bool Predicate(long arg0)"));
-    assert!(output.contains("BindPredicate(Func<long, bool> implementation)"));
+    assert!(output.contains("public bool Predicate(long input)"));
+    assert!(!output.contains("BindPredicate"));
     assert!(output.contains("Option<string> Name"));
     assert!(!output.contains("class Predicate"));
     assert!(!output.contains("class OptionalName"));
@@ -310,7 +310,7 @@ fn host_binding_includes_inherited_fields_and_functions() {
 fn maps_option_result_unit_and_function_types() {
     let files = generate_csharp(
         &schema(
-            "type Failure { code: int; } type Api { optional: Option<int>; run: fn(string) -> Result<(), Failure>; }",
+            "type Failure { code: int; } type Api { optional: Option<int>; run: fn(input: string) -> Result<(), Failure>; }",
         ),
         &CsharpCodegenOptions::new("CoflowConfig"),
     )
@@ -318,11 +318,9 @@ fn maps_option_result_unit_and_function_types() {
     let output = all(&files);
     assert!(output.contains("Option<long> Optional"));
     assert!(output.contains("internal readonly CoflowFunctionSlot _coflowRun;"));
-    assert!(output.contains("public Result<Unit, global::CoflowConfig.Failure> Run(string arg0)"));
-    assert!(output.contains(
-        "public Result<Unit, FunctionBindError> BindRun(Func<string, Result<Unit, global::CoflowConfig.Failure>> implementation)"
-    ));
-    assert!(output.contains("_coflowRun.Invoke<Result<Unit, global::CoflowConfig.Failure>>(arg0)"));
+    assert!(output.contains("public Result<Unit, global::CoflowConfig.Failure> Run(string input)"));
+    assert!(!output.contains("BindRun"));
+    assert!(output.contains("_coflowRun.Invoke<Result<Unit, global::CoflowConfig.Failure>>(input)"));
     assert!(output.contains("internal Api("));
     assert!(!output.contains("Func<string, Result<Unit, Failure>> Run { get;"));
 }
@@ -351,7 +349,7 @@ fn loads_function_values_nested_in_collections_and_option() {
 #[test]
 fn function_loader_creates_a_slot_when_the_cfd_body_is_omitted() {
     let files = generate_csharp_cfd(
-        &schema("type Rule { evaluate: fn(int) -> int; notify: fn(string) -> (); }"),
+        &schema("type Rule { evaluate: fn(value: int) -> int; notify: fn(message: string) -> (); }"),
         &CsharpCodegenOptions::new("CoflowConfig"),
         &[],
         BTreeMap::new(),
@@ -362,9 +360,10 @@ fn function_loader_creates_a_slot_when_the_cfd_body_is_omitted() {
     assert!(output.contains(
         "context.Function(CfdValueReader.FindField(fields, \"evaluate\"), \"evaluate\", typeof(long), typeof(long))"
     ));
-    assert!(output.contains("public long Evaluate(long arg0)"));
-    assert!(output.contains("public void Notify(string arg0)"));
-    assert!(output.contains("public Result<Unit, FunctionBindError> BindNotify(Action<string> implementation)"));
+    assert!(output.contains("public long Evaluate(long value)"));
+    assert!(output.contains("public void Notify(string message)"));
+    assert!(!output.contains("BindEvaluate"));
+    assert!(!output.contains("BindNotify"));
 }
 
 #[test]

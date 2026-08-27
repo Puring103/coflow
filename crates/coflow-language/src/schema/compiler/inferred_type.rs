@@ -1,4 +1,4 @@
-use crate::schema::CftValueType;
+use crate::schema::{CftFunctionParameter, CftValueType};
 use crate::{EnumName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,10 +73,15 @@ impl InferredType {
         }
     }
 
-    pub(super) fn function(parameters: Vec<Self>, result: Self) -> Self {
+    pub(super) fn function(parameters: Vec<(Option<String>, Self)>, result: Self) -> Self {
         let Some(parameters) = parameters
             .into_iter()
-            .map(|parameter| parameter.value_type().cloned())
+            .map(|(name, parameter)| {
+                parameter.value_type().cloned().map(|value_type| CftFunctionParameter {
+                    name,
+                    value_type,
+                })
+            })
             .collect::<Option<Vec<_>>>()
         else {
             return Self::Unknown;

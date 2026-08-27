@@ -329,7 +329,10 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
             error: Box::new(value_type_info(error)),
         },
         CftValueType::Function(parameters, result) => SchemaTypeRefInfo::Function {
-            parameters: parameters.iter().map(value_type_info).collect(),
+            parameters: parameters
+                .iter()
+                .map(|parameter| value_type_info(&parameter.value_type))
+                .collect(),
             result: Box::new(value_type_info(result)),
         },
         CftValueType::Unit => SchemaTypeRefInfo::Unit,

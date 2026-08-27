@@ -7,19 +7,19 @@ use integration::domain::ScenarioConfig;
 @singleton
 type HostServices {
   environment: string;
-  trace: fn(string) -> ();
-  adjust: fn(int, fn(int) -> int) -> int;
-  decorate: fn(string) -> string;
+  trace: fn(message: string) -> ();
+  adjust: fn(value: int, operation: fn(input: int) -> int) -> int;
+  decorate: fn(value: string) -> string;
 }
 
 type Scenario {
   hero: &Character;
   config: ScenarioConfig;
-  stages: [fn(int) -> int];
+  stages: [fn(value: int) -> int];
 
-  execute: fn(int) -> int;
-  callHost: fn(int) -> int;
-  makeScaler: fn(int) -> fn(int) -> int;
-  apply: fn(int, fn(int) -> int) -> int;
-  compose: fn(fn(int) -> int, fn(int) -> int) -> fn(int) -> int;
+  execute: fn(value: int) -> int;
+  callHost: fn(value: int) -> int;
+  makeScaler: fn(scale: int) -> fn(value: int) -> int;
+  apply: fn(value: int, operation: fn(input: int) -> int) -> int;
+  compose: fn(first: fn(value: int) -> int, second: fn(value: int) -> int) -> fn(value: int) -> int;
 }

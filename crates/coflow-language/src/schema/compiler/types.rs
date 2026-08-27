@@ -156,7 +156,12 @@ impl SchemaCompiler<'_> {
             TypeRefKind::Function(parameters, result) => InferredType::function(
                 parameters
                     .iter()
-                    .map(|parameter| self.resolve_alias_target(module, parameter, visiting))
+                    .map(|parameter| {
+                        (
+                            parameter.name.as_ref().map(|name| name.name.clone()),
+                            self.resolve_alias_target(module, &parameter.value_type, visiting),
+                        )
+                    })
                     .collect(),
                 self.resolve_alias_target(module, result, visiting),
             ),
@@ -309,7 +314,12 @@ impl SchemaCompiler<'_> {
             TypeRefKind::Function(parameters, result) => InferredType::function(
                 parameters
                     .iter()
-                    .map(|ty| self.resolve_field_type(module, ty))
+                    .map(|parameter| {
+                        (
+                            parameter.name.as_ref().map(|name| name.name.clone()),
+                            self.resolve_field_type(module, &parameter.value_type),
+                        )
+                    })
                     .collect(),
                 self.resolve_field_type(module, result),
             ),
@@ -427,7 +437,12 @@ impl SchemaCompiler<'_> {
             TypeRefKind::Function(parameters, result) => {
                 let parameters = parameters
                     .iter()
-                    .map(|parameter| self.validate_field_type(module, parameter))
+                    .map(|parameter| {
+                        (
+                            parameter.name.as_ref().map(|name| name.name.clone()),
+                            self.validate_field_type(module, &parameter.value_type),
+                        )
+                    })
                     .collect();
                 let result = self.validate_field_type(module, result);
                 InferredType::function(parameters, result)

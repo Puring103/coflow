@@ -207,8 +207,14 @@ pub enum TypeRefKind {
     Dict(Box<TypeRef>, Box<TypeRef>),
     Option(Box<TypeRef>),
     Result(Box<TypeRef>, Box<TypeRef>),
-    Function(Vec<TypeRef>, Box<TypeRef>),
+    Function(Vec<FunctionParameterRef>, Box<TypeRef>),
     Unit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionParameterRef {
+    pub name: Option<NameRef>,
+    pub value_type: TypeRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

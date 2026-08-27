@@ -41,6 +41,39 @@ pub(super) fn field_local_name(
     Ok(local_name)
 }
 
+pub(super) fn function_parameter_name(
+    source_name: Option<&str>,
+    index: usize,
+    used_names: &mut HashSet<String>,
+) -> Result<String, CsharpCodegenError> {
+    let candidate = source_name.map_or_else(
+        || format!("arg{index}"),
+        |name| camel_case(&pascal_case(name)),
+    );
+    let keyword = csharp_ident_error(&candidate)
+        .is_some_and(|reason| reason == "identifier is a C# keyword");
+    if !keyword {
+        if let Some(reason) = csharp_ident_error(&candidate) {
+            return Err(CsharpCodegenError::new(format!(
+                "invalid C# function parameter name `{candidate}`: {reason}"
+            )));
+        }
+    }
+    let base_name = if keyword {
+        format!("@{candidate}")
+    } else {
+        candidate
+    };
+    let mut name = base_name.clone();
+    let mut suffix = 2;
+    while used_names.contains(&name) {
+        name = format!("{base_name}{suffix}");
+        suffix += 1;
+    }
+    used_names.insert(name.clone());
+    Ok(name)
+}
+
 fn is_reserved_local_name(value: &str) -> bool {
     matches!(
         value,

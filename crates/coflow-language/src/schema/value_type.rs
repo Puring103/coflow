@@ -14,8 +14,40 @@ pub enum CftValueType {
     Dict(Box<CftValueType>, Box<CftValueType>),
     Option(Box<CftValueType>),
     Result(Box<CftValueType>, Box<CftValueType>),
-    Function(Vec<CftValueType>, Box<CftValueType>),
+    Function(Vec<CftFunctionParameter>, Box<CftValueType>),
     Unit,
+}
+
+#[derive(Debug, Clone)]
+pub struct CftFunctionParameter {
+    pub name: Option<String>,
+    pub value_type: CftValueType,
+}
+
+impl PartialEq for CftFunctionParameter {
+    fn eq(&self, other: &Self) -> bool {
+        self.value_type == other.value_type
+    }
+}
+
+impl Eq for CftFunctionParameter {}
+
+impl CftFunctionParameter {
+    #[must_use]
+    pub fn unnamed(value_type: CftValueType) -> Self {
+        Self {
+            name: None,
+            value_type,
+        }
+    }
+
+    #[must_use]
+    pub fn named(name: impl Into<String>, value_type: CftValueType) -> Self {
+        Self {
+            name: Some(name.into()),
+            value_type,
+        }
+    }
 }
 
 impl CftValueType {
@@ -45,7 +77,10 @@ impl fmt::Display for CftValueType {
                     if index != 0 {
                         formatter.write_str(", ")?;
                     }
-                    parameter.fmt(formatter)?;
+                    if let Some(name) = &parameter.name {
+                        write!(formatter, "{name}: ")?;
+                    }
+                    parameter.value_type.fmt(formatter)?;
                 }
                 write!(formatter, ") -> {result}")
             }

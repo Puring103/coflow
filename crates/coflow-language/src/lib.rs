@@ -44,10 +44,10 @@ pub use schema::{
     CftSchemaCheckFormatSegment, CftSchemaCheckMessage, CftSchemaCheckMessageKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue, CftSchemaQuantifierBindings,
     CftSchemaQuantifierKind, CftSchemaSource, CftSchemaTypePredicate, CftSchemaUnaryOp,
-    CftTopLevelCheck, CftType, CftValueType, CheckDependency, CheckField, CheckName, CheckOwner,
-    CheckStatementId, CheckStatementInfo, CheckStatementRef, ConstName, DimensionName, EnumName,
-    EnumVariantName, FieldName, RecordKey, TypeName, ValueDependencyCycle, ValueDependencyMode,
-    ValueDependencyPlan, ValueDependencyStep, VariantName,
+    CftFunctionParameter, CftTopLevelCheck, CftType, CftValueType, CheckDependency, CheckField,
+    CheckName, CheckOwner, CheckStatementId, CheckStatementInfo, CheckStatementRef, ConstName,
+    DimensionName, EnumName, EnumVariantName, FieldName, RecordKey, TypeName, ValueDependencyCycle,
+    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep, VariantName,
 };
 pub use syntax::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error, Span};
 
