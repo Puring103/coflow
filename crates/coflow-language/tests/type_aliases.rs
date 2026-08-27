@@ -138,3 +138,25 @@ fn type_aliases_do_not_accept_annotations_or_object_modifiers() {
     assert!(compile("sealed type Identifier = string;").is_err());
     assert!(compile("abstract type Identifier = string;").is_err());
 }
+
+#[test]
+fn object_aliases_are_transparent_in_check_type_positions() {
+    compile(
+        r#"
+            type Item { value: int; }
+            type ItemAlias = Item;
+            type Holder { target: Item; check { target is ItemAlias; } }
+        "#,
+    )
+    .expect("object aliases should work in is predicates");
+    compile(
+        r#"
+            type Item { value: int; }
+            type ItemAlias = Item;
+            check AllItems {
+                all item in records(ItemAlias) { item.value >= 0; }
+            }
+        "#,
+    )
+    .expect("object aliases should work in records queries");
+}

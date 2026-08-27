@@ -107,13 +107,17 @@ internal static class CoflowFunctionDelegates
 {
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowFunctionSlot>
         Slots = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowClosure>
+        Closures = new();
 
     internal static TDelegate Create<TDelegate>(CoflowFunctionSlot slot)
         where TDelegate : Delegate
+        => (TDelegate)Create(typeof(TDelegate), slot);
+
+    private static Delegate Create(Type delegateType, CoflowFunctionSlot slot)
     {
-        var delegateType = typeof(TDelegate);
         var invoke = delegateType.GetMethod("Invoke") ?? throw new ArgumentException(
-            "The requested function value type is not a delegate.", nameof(TDelegate));
+            "The requested function value type is not a delegate.", nameof(delegateType));
         var parameters = invoke.GetParameters()
             .Select(parameter => System.Linq.Expressions.Expression.Parameter(
                 parameter.ParameterType, parameter.Name))
@@ -133,7 +137,7 @@ internal static class CoflowFunctionDelegates
                     .MakeGenericMethod(invoke.ReturnType),
                 arguments);
         var implementation = System.Linq.Expressions.Expression
-            .Lambda<TDelegate>(body, parameters)
+            .Lambda(delegateType, body, parameters)
             .Compile();
         Slots.Add(implementation, slot);
         return implementation;
@@ -141,6 +145,44 @@ internal static class CoflowFunctionDelegates
 
     internal static bool TryGetSlot(Delegate implementation, out CoflowFunctionSlot slot) =>
         Slots.TryGetValue(implementation, out slot!);
+
+    internal static bool TryGetClosure(Delegate implementation, out CoflowClosure closure) =>
+        Closures.TryGetValue(implementation, out closure!);
+
+    internal static object? Adapt(Type expectedType, object? value)
+    {
+        if (!typeof(Delegate).IsAssignableFrom(expectedType))
+            return value;
+        if (value is CoflowFunctionSlot slot) return Create(expectedType, slot);
+        if (value is not CoflowClosure closure) return value;
+        var invoke = expectedType.GetMethod("Invoke") ?? throw new ArgumentException(
+            "The requested function value type is not a delegate.", nameof(expectedType));
+        var parameters = invoke.GetParameters()
+            .Select(parameter => System.Linq.Expressions.Expression.Parameter(
+                parameter.ParameterType, parameter.Name))
+            .ToArray();
+        var arguments = System.Linq.Expressions.Expression.NewArrayInit(
+            typeof(object),
+            parameters.Select(parameter => System.Linq.Expressions.Expression.Convert(
+                parameter, typeof(object))));
+        System.Linq.Expressions.Expression body = invoke.ReturnType == typeof(void)
+            ? System.Linq.Expressions.Expression.Call(
+                System.Linq.Expressions.Expression.Constant(closure),
+                typeof(CoflowClosure).GetMethod(nameof(CoflowClosure.InvokeVoid))!,
+                arguments)
+            : System.Linq.Expressions.Expression.Call(
+                System.Linq.Expressions.Expression.Constant(closure),
+                typeof(CoflowClosure).GetMethod(nameof(CoflowClosure.Invoke))!
+                    .MakeGenericMethod(invoke.ReturnType),
+                arguments);
+        var implementation = System.Linq.Expressions.Expression
+            .Lambda(expectedType, body, parameters)
+            .Compile();
+        Closures.Add(implementation, closure);
+        return implementation;
+    }
+
+    internal static T Adapt<T>(object? value) => (T)Adapt(typeof(T), value)!;
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -232,9 +274,12 @@ public sealed class CoflowFunctionSlot
     public TResult Invoke<TResult>(params object?[] arguments)
     {
         var value = InvokeCore(arguments);
-        return value is TResult result
-            ? result
-            : throw new InvalidOperationException($"Coflow function returned `{value?.GetType()}` instead of `{typeof(TResult)}`.");
+        try { return CoflowFunctionDelegates.Adapt<TResult>(value); }
+        catch (InvalidCastException)
+        {
+            throw new InvalidOperationException(
+                $"Coflow function returned `{value?.GetType()}` instead of `{typeof(TResult)}`.");
+        }
     }
 
     public void InvokeVoid(params object?[] arguments) => InvokeCore(arguments);

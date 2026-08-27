@@ -378,7 +378,7 @@ impl SchemaCompiler<'_> {
             return None;
         };
         let mut seen = BTreeSet::new();
-        let mut values = Vec::with_capacity(fields.len());
+        let mut values = Vec::with_capacity(field_types.len());
         for (name, value) in fields {
             if !seen.insert(name.name.clone()) {
                 self.push_diag(
@@ -402,6 +402,52 @@ impl SchemaCompiler<'_> {
             let (_, value) =
                 self.resolve_static_value(module, value, Some(&expected), visiting)?;
             values.push((FieldName::from_validated(name.name.clone()), value));
+        }
+        let resolving_constant = visiting.iter().any(|name| self.consts.contains_key(name));
+        for (name, field) in &field_types {
+            if seen.contains(name) {
+                continue;
+            }
+            if !resolving_constant {
+                continue;
+            }
+            let expected = field.inferred_type.value_type()?.clone();
+            let declaring_type = self.types.get(field.declaring_type.as_str())?.clone();
+            let default = declaring_type
+                .def
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == *name)
+                .and_then(|candidate| candidate.default.clone());
+            let Some(default) = default else {
+                self.push_diag(
+                    CftErrorCode::InvalidConstValue,
+                    module,
+                    expression.span,
+                    format!("constant object `{type_name}` is missing field `{name}`"),
+                );
+                return None;
+            };
+            let identity = format!("<default:{}.{name}>", field.declaring_type);
+            if visiting.contains(&identity) {
+                self.push_diag(
+                    CftErrorCode::InvalidDefaultExpression,
+                    &declaring_type.module,
+                    default.span,
+                    format!("default dependency cycle at `{}.{name}`", field.declaring_type),
+                );
+                return None;
+            }
+            visiting.push(identity);
+            let resolved = self.resolve_static_value(
+                &declaring_type.module,
+                &default,
+                Some(&expected),
+                visiting,
+            );
+            visiting.pop();
+            let (_, value) = resolved?;
+            values.push((FieldName::from_validated(name.clone()), value));
         }
         Some((
             CftValueType::Object(type_name.clone()),

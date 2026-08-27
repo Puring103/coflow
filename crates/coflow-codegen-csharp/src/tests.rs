@@ -118,11 +118,11 @@ fn emits_strongly_typed_compound_constants_and_deferred_record_references() {
         &schema(
             r#"
 enum Mode { Primary = 1 }
-sealed type Stats { hp: int; mode: Mode; }
+sealed type Stats { hp: int; mode: Mode = Mode::Primary; }
 type Item { name: string; }
 const VALUES: [int] = [1, 2];
 const WEIGHTS: {string: int} = { "fire": 10 };
-const STATS: Stats = { hp: 100, mode: Mode::Primary };
+const STATS: Stats = { hp: 100 };
 const ITEM: Option<&Item> = Some(&Item::sword);
 "#,
         ),

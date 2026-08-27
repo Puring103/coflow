@@ -2,6 +2,7 @@ using CoflowRuntime;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -353,6 +354,19 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void CompilerRejectsUnsupportedDictionaryKeyTypes()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { invalid { evaluate: fn(value: int) -> int { var mapping = {true: value}; 0 } } }",
+        }, new TestModule(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, diagnostic =>
+            diagnostic.Code == "COFLOW-FUNCTION-TYPE" &&
+            diagnostic.Message.Contains("dictionary keys", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void VmStopsFunctionsThatExceedTheInstructionBudget()
     {
         using var data = Coflow.LoadAndCompile(new[]
@@ -396,6 +410,17 @@ public sealed class CoflowDataTests
         }, new TestModule(new RuleMetadata()));
 
         Assert.Equal(11, data.Table<Rule>().Get("caller").Value.Evaluate(5));
+    }
+
+    [Fact]
+    public void PersistentFunctionReferencesRemainCallableInsideVmCollections()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { base { evaluate: fn(value: int) -> int { value * 2 } } caller { evaluate: fn(value: int) -> int { var operations = [&Rule::base.evaluate]; match operations[0] { Some(operation) => operation(value), None => 0, } } } }",
+        }, new TestModule(new RuleMetadata()));
+
+        Assert.Equal(8, data.Table<Rule>().Get("caller").Value.Evaluate(4));
     }
 
     [Fact]
@@ -499,6 +524,35 @@ public sealed class CoflowDataTests
         Assert.Equal(new[] { "current", "previous" }, logged);
         Assert.Equal(12, data.Table<Rule>().Get("host").Value.Evaluate(1));
         Assert.Equal(11, previousRule.Evaluate(0));
+    }
+
+    [Fact]
+    public async Task ActiveVmCallKeepsItsGenerationAcrossReload()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { active { offset: 1, evaluate: fn(value: int) -> int { &HostServices.log(\"wait\"); offset } } }",
+        }, new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var calls = 0;
+        Assert.True(data.Singleton<HostServices>().Bind("development", _ =>
+        {
+            if (Interlocked.Increment(ref calls) != 1) return;
+            entered.Set();
+            release.Wait(TimeSpan.FromSeconds(5));
+        }).IsOk);
+        var previous = data.Table<Rule>().Get("active").Value;
+        var activeCall = Task.Run(() => previous.Evaluate(0));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+
+        var reload = data.Reload(
+            "Rule { active { offset: 2, evaluate: fn(value: int) -> int { &HostServices.log(\"wait\"); offset } } }");
+        Assert.True(reload.IsOk);
+        release.Set();
+
+        Assert.Equal(1, await activeCall);
+        Assert.Equal(2, data.Table<Rule>().Get("active").Value.Evaluate(0));
     }
 
     [Fact]
@@ -623,6 +677,18 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void CompilerRejectsInterpolationOfInlineObjectsContainingFunctions()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { text { describe: fn(value: int) -> string { \"{callbacks}\" } } }",
+        }, new TestModule(new RuleMetadata(), new StatsMetadata(includeFunctionField: true))));
+
+        Assert.Contains(error.Diagnostics,
+            diagnostic => diagnostic.Code == "COFLOW-FUNCTION-INTERPOLATION");
+    }
+
+    [Fact]
     public void NestedFunctionValuesExecuteInsideTheCurrentVmCallStack()
     {
         using var data = Coflow.LoadAndCompile(new[]
@@ -633,6 +699,40 @@ public sealed class CoflowDataTests
         var rule = data.Table<Rule>().Get("nested").Value;
         Assert.Equal(5, rule.Evaluate(5));
         Assert.Equal(3, rule.Handlers[0](3));
+    }
+
+    [Fact]
+    public void FunctionValuesUseContravariantParametersAndCovariantResults()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { variance { evaluate: fn(value: int) -> int { var transform: fn(CoinReward) -> Reward = fn(reward: Reward) -> CoinReward { match reward { CoinReward coin => coin, } }; var current = selected; if current is CoinReward { transform(current).$id.len() } else { 0 } } } }",
+        }, new TestModule(new RuleMetadata(), new RewardMetadata(), new CoinRewardMetadata()));
+
+        Assert.Equal(4, data.Table<Rule>().Get("variance").Value.Evaluate(0));
+    }
+
+    [Fact]
+    public void FunctionVarianceAppliesRecursivelyAndDuringArrayInference()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { variance { evaluate: fn(value: int) -> int { var factory: fn(Reward) -> fn(CoinReward) -> Reward = fn(reward: Reward) -> fn(Reward) -> CoinReward { fn(inner: Reward) -> CoinReward { match inner { CoinReward coin => coin, } } }; var operations = [fn(reward: Reward) -> CoinReward { match reward { CoinReward coin => coin, } }, fn(reward: CoinReward) -> Reward { reward }]; var current = selected; if current is CoinReward { var total = 0; for operation in operations { total += operation(current).$id.len(); } factory(current)(current).$id.len() + total } else { 0 } } } }",
+        }, new TestModule(new RuleMetadata(), new RewardMetadata(), new CoinRewardMetadata()));
+
+        Assert.Equal(12, data.Table<Rule>().Get("variance").Value.Evaluate(0));
+    }
+
+    [Fact]
+    public void CompilerRejectsFunctionVarianceInTheUnsafeDirection()
+    {
+        var error = Assert.Throws<CoflowLoadException>(() => Coflow.LoadAndCompile(new[]
+        {
+            "Rule { variance { evaluate: fn(value: int) -> int { var transform: fn(Reward) -> CoinReward = fn(reward: CoinReward) -> Reward { reward }; 0 } } }",
+        }, new TestModule(new RuleMetadata(), new RewardMetadata(), new CoinRewardMetadata())));
+
+        Assert.Contains(error.Diagnostics,
+            diagnostic => diagnostic.Code == "COFLOW-FUNCTION-TYPE");
     }
 
     [Theory]
@@ -940,6 +1040,7 @@ public sealed class CoflowDataTests
         public string Id { get; }
         public long Offset { get; }
         public Reward Selected { get; }
+        public Stats Callbacks { get; } = new(0, 0);
         public long Evaluate(long value) => _evaluate.Invoke<long>(value);
         public bool Enabled(long value) => _enabled.Invoke<bool>(value);
         public Option<long> Choose(long value) => _choose.Invoke<Option<long>>(value);
@@ -1056,18 +1157,27 @@ public sealed class CoflowDataTests
 
     private sealed class StatsMetadata : Metadata<Stats>
     {
+        private readonly bool _includeFunctionField;
+
+        public StatsMetadata(bool includeFunctionField = false) =>
+            _includeFunctionField = includeFunctionField;
+
         public override string DeclaredType => "Stats";
         public override bool IsRecord => false;
-        public override IReadOnlyList<string> FieldNames => new[] { "hp", "attack" };
+        public override IReadOnlyList<string> FieldNames => _includeFunctionField
+            ? new[] { "hp", "attack", "callback" }
+            : new[] { "hp", "attack" };
         public override Type GetFieldType(string fieldName) => fieldName switch
         {
             "hp" or "attack" => typeof(long),
+            "callback" when _includeFunctionField => typeof(CoflowFunctionSlot),
             _ => throw new ArgumentException(nameof(fieldName)),
         };
         public override object GetField(object record, string fieldName) => fieldName switch
         {
             "hp" => ((Stats)record).Hp,
             "attack" => ((Stats)record).Attack,
+            "callback" when _includeFunctionField => throw new InvalidOperationException(),
             _ => throw new ArgumentException(nameof(fieldName)),
         };
         public override bool HasFieldDefault(string fieldName) => fieldName == "attack";
@@ -1088,11 +1198,12 @@ public sealed class CoflowDataTests
 
         public override string DeclaredType => _declaredType;
         public override IReadOnlyList<string> FieldNames => new[]
-            { "offset", "selected", "evaluate", "enabled", "choose", "validate", "describe", "handlers" };
+            { "offset", "selected", "callbacks", "evaluate", "enabled", "choose", "validate", "describe", "handlers" };
         public override Type GetFieldType(string fieldName) => fieldName switch
         {
             "offset" => typeof(long),
             "selected" => typeof(Reward),
+            "callbacks" => typeof(Stats),
             "handlers" => typeof(IReadOnlyList<Func<long, long>>),
             "evaluate" or "enabled" or "choose" or "validate" or "describe" => typeof(CoflowFunctionSlot),
             _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
@@ -1105,6 +1216,7 @@ public sealed class CoflowDataTests
             {
                 "offset" => rule.Offset,
                 "selected" => rule.Selected,
+                "callbacks" => rule.Callbacks,
                 "evaluate" => rule._evaluate,
                 "enabled" => rule._enabled,
                 "choose" => rule._choose,
