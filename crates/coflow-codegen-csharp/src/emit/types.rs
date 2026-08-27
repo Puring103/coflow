@@ -3,35 +3,47 @@ use coflow_language::CftValueType;
 use crate::lowering::CsharpLoweringPlan;
 use coflow_language::CftField;
 
-pub(super) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
+pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
     match ty {
-        CftValueType::Int => {
-            if view.int_32 {
-                "int".to_string()
-            } else {
-                "long".to_string()
-            }
-        }
-        CftValueType::Float => {
-            if view.float_32 {
-                "float".to_string()
-            } else {
-                "double".to_string()
-            }
-        }
+        CftValueType::Int => "long".to_string(),
+        CftValueType::Float => "double".to_string(),
         CftValueType::Bool => "bool".to_string(),
         CftValueType::String => "string".to_string(),
-        CftValueType::Object(name) | CftValueType::RecordRef(name) => view.csharp_type_name(name),
-        CftValueType::Enum(name) => view.csharp_enum_name(name),
-        CftValueType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
+        CftValueType::Object(name) | CftValueType::RecordRef(name) => view.csharp_type_ref(name),
+        CftValueType::Enum(name) => view.csharp_enum_ref(name),
+        CftValueType::Array(inner) => {
+            format!("IReadOnlyList<{}>", csharp_type(inner, view))
+        }
         CftValueType::Dict(key, value) => {
             format!(
-                "Dictionary<{}, {}>",
+                "IReadOnlyDictionary<{}, {}>",
                 csharp_type(key, view),
                 csharp_type(value, view)
             )
         }
-        CftValueType::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
+        CftValueType::Option(inner) => format!("Option<{}>", csharp_type(inner, view)),
+        CftValueType::Result(value, error) => format!(
+            "Result<{}, {}>",
+            csharp_type(value, view),
+            csharp_type(error, view)
+        ),
+        CftValueType::Function(parameters, result) => {
+            let mut arguments = parameters
+                .iter()
+                .map(|parameter| csharp_type(parameter, view))
+                .collect::<Vec<_>>();
+            if matches!(result.as_ref(), CftValueType::Unit) {
+                if arguments.is_empty() {
+                    "Action".to_string()
+                } else {
+                    format!("Action<{}>", arguments.join(", "))
+                }
+            } else {
+                arguments.push(csharp_type(result, view));
+                format!("Func<{}>", arguments.join(", "))
+            }
+        }
+        CftValueType::Unit => "Unit".to_string(),
     }
 }
 
@@ -53,15 +65,13 @@ pub(super) fn csharp_field_property_type(
 
 pub(super) fn csharp_property_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
     match ty {
-        CftValueType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
-        CftValueType::Dict(key, value) => {
-            format!(
-                "IReadOnlyDictionary<{}, {}>",
-                csharp_type(key, view),
-                csharp_type(value, view)
-            )
-        }
-        CftValueType::Nullable(inner) => format!("{}?", csharp_property_type(inner, view)),
+        CftValueType::Array(_) | CftValueType::Dict(_, _) => csharp_type(ty, view),
+        CftValueType::Option(inner) => format!("Option<{}>", csharp_property_type(inner, view)),
+        CftValueType::Result(value, error) => format!(
+            "Result<{}, {}>",
+            csharp_property_type(value, view),
+            csharp_property_type(error, view)
+        ),
         other => csharp_type(other, view),
     }
 }

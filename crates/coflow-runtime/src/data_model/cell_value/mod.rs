@@ -32,6 +32,7 @@ use diagnostics::type_mismatch;
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
 use objects::parse_object;
 use refs::parse_ref;
+use scan::strip_outer_pair;
 pub use render::{render_cell_value, CellRenderError};
 use strings::{parse_automatic_formatted_string, parse_formatted_string, parse_string};
 use types::CellType;
@@ -97,17 +98,21 @@ fn parse_value(
     context: ValueContext,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let text = text.trim();
-    if let CellType::Nullable(inner) = ty {
-        return if text == "null" {
-            Ok(LoadedValueDraft::Null)
-        } else {
-            parse_value(schema, inner, text, context)
-        };
-    }
-    if text == "null" {
-        return Err(type_mismatch(&ty.display()));
-    }
     match ty {
+        CellType::Option(_) if text == "None" => Ok(LoadedValueDraft::OptionNone),
+        CellType::Option(inner) => {
+            let value = constructor_inner(text, "Some").unwrap_or(text);
+            parse_value(schema, inner, value, ValueContext::Nested)
+                .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
+        }
+        CellType::Result(ok, _) if text.starts_with("Ok") => constructor_inner(text, "Ok")
+            .ok_or_else(|| type_mismatch(&ty.display()))
+            .and_then(|value| parse_value(schema, ok, value, ValueContext::Nested))
+            .map(|value| LoadedValueDraft::ResultOk(Box::new(value))),
+        CellType::Result(_, error) => constructor_inner(text, "Err")
+            .ok_or_else(|| type_mismatch(&ty.display()))
+            .and_then(|value| parse_value(schema, error, value, ValueContext::Nested))
+            .map(|value| LoadedValueDraft::ResultErr(Box::new(value))),
         CellType::Int => Ok(LoadedValueDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
@@ -138,8 +143,13 @@ fn parse_value(
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
         CellType::Array(inner) => parse_array(schema, inner, text, context),
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
-        CellType::Nullable(inner) => parse_value(schema, inner, text, context),
+        CellType::Unsupported(display) => Err(type_mismatch(display)),
     }
+}
+
+fn constructor_inner<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    let rest = text.strip_prefix(name)?.trim_start();
+    strip_outer_pair(rest, '(', ')')
 }
 
 pub(crate) fn parse_enum(
@@ -165,7 +175,7 @@ pub(crate) fn parse_enum_variant(
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let variant = text
         .strip_prefix(enum_name)
-        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_prefix("::"))
         .map_or(text, |variant| variant);
     let Some(schema_enum) = schema.resolve_enum(enum_name) else {
         return Err(type_mismatch(enum_name));
@@ -180,7 +190,7 @@ pub(crate) fn parse_enum_variant(
         Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::InvalidEnumVariant,
-                message: format!("unknown enum variant `{enum_name}.{variant}`"),
+                message: format!("unknown enum variant `{enum_name}::{variant}`"),
             }],
         })
     }

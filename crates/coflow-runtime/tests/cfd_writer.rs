@@ -826,7 +826,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
     fs::write(
         &file,
         r"starter: Loot {
-  resistances: { Fire: 10 },
+  resistances: { Element::Fire: 10 },
 }
 ",
     )
@@ -850,7 +850,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
     let new_value = CfdValue::Int(20);
     let segments = vec![
         WriteFieldPathSegment::Field("resistances".to_string()),
-        WriteFieldPathSegment::DictKey("Element.Fire".to_string()),
+        WriteFieldPathSegment::DictKey("Element::Fire".to_string()),
     ];
     let source = empty_source(&file);
     let origin = origin_for(&file);

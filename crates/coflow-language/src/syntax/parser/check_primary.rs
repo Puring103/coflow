@@ -12,11 +12,15 @@ impl Parser<'_> {
         loop {
             if let Some(opener) = self.eat(&TokenKind::LParen) {
                 let CheckExpr { kind, span } = expr.value;
-                let CheckExprKind::Name(name) = kind else {
+                let name = match kind {
+                    CheckExprKind::Name(name) => name,
+                    CheckExprKind::StaticPath(path) => path.canonical(),
+                    _ => {
                     return self.err(
                         CftErrorCode::UnexpectedToken,
                         "only named functions can be called",
                     );
+                    }
                 };
                 let call_name = NameRef { name, span };
                 let (args, end) = self.nested(StructureKind::CheckAst, opener, |parser| {
@@ -41,10 +45,14 @@ impl Parser<'_> {
                     span: Span::new(call_name.span.start, end),
                     kind: if call_name.name == "records" && args.len() == 1 {
                         let argument = &args[0].value;
-                        if let CheckExprKind::Name(name) = &argument.kind {
+                        if let Some(name) = match &argument.kind {
+                            CheckExprKind::Name(name) => Some(name.clone()),
+                            CheckExprKind::StaticPath(path) => Some(path.canonical()),
+                            _ => None,
+                        } {
                             CheckExprKind::Records {
                                 type_name: NameRef {
-                                    name: name.clone(),
+                                    name,
                                     span: argument.span,
                                 },
                             }
@@ -59,38 +67,6 @@ impl Parser<'_> {
                             name: call_name,
                             args: args.into_iter().map(|arg| arg.value).collect(),
                         }
-                    },
-                })?;
-            } else if self.at(&TokenKind::Question) && self.next_at(&TokenKind::Dot) {
-                let question = self.bump().span;
-                self.bump();
-                let name = self.expect_ident()?;
-                let span = Span::new(expr.value.span.start, name.span.end);
-                let depth = expr.depth;
-                expr = self.node(StructureKind::CheckAst, question, [depth], || CheckExpr {
-                    span,
-                    kind: CheckExprKind::SafeField {
-                        expr: Box::new(expr.value),
-                        name,
-                    },
-                })?;
-            } else if self.at(&TokenKind::Question) && self.next_at(&TokenKind::LBracket) {
-                let question = self.bump().span;
-                let opener = self.bump().span;
-                let (index, end) = self.nested(StructureKind::CheckAst, opener, |parser| {
-                    let index = parser.parse_or_expr()?;
-                    let end = parser
-                        .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
-                        .end;
-                    Ok((index, end))
-                })?;
-                let span = Span::new(expr.value.span.start, end);
-                let depths = [expr.depth, index.depth];
-                expr = self.node(StructureKind::CheckAst, question, depths, || CheckExpr {
-                    span,
-                    kind: CheckExprKind::SafeIndex {
-                        expr: Box::new(expr.value),
-                        index: Box::new(index.value),
                     },
                 })?;
             } else if let Some(dot) = self.eat(&TokenKind::Dot) {
@@ -189,13 +165,6 @@ impl Parser<'_> {
                     span: token.span,
                 })
             }
-            TokenKind::Null => {
-                self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
-                    kind: CheckExprKind::Null,
-                    span: token.span,
-                })
-            }
             TokenKind::String(value) => {
                 self.bump();
                 self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
@@ -206,9 +175,28 @@ impl Parser<'_> {
             TokenKind::FormattedStringStart => self.parse_formatted_string(),
             TokenKind::Ident(value) => {
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
-                    kind: CheckExprKind::Name(value),
+                let first = NameRef {
+                    name: value,
                     span: token.span,
+                };
+                let mut segments = vec![first];
+                let mut end = token.span.end;
+                while self.eat(&TokenKind::DoubleColon).is_some() {
+                    let segment = self.expect_ident()?;
+                    end = segment.span.end;
+                    segments.push(segment);
+                }
+                let span = Span::new(token.span.start, end);
+                self.node(StructureKind::CheckAst, span, [], || CheckExpr {
+                    kind: if segments.len() == 1 {
+                        CheckExprKind::Name(segments.remove(0).name)
+                    } else {
+                        CheckExprKind::StaticPath(crate::syntax::ast::QualifiedName {
+                            segments,
+                            span,
+                        })
+                    },
+                    span,
                 })
             }
             TokenKind::LParen => {
@@ -284,9 +272,6 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_type_predicate(&mut self) -> Result<TypePredicate, CftDiagnostics> {
-        if let Some(span) = self.eat(&TokenKind::Null) {
-            return Ok(TypePredicate::Null(span));
-        }
-        self.expect_ident().map(TypePredicate::Type)
+        self.expect_qualified_name_ref().map(TypePredicate::Type)
     }
 }

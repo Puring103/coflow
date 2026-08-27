@@ -65,7 +65,7 @@ pub(crate) struct CheckProjectionView {
 
 enum ProjectedDimensionField {
     Value(CftValueType),
-    ExplicitNull,
+    ExplicitNone,
     Error {
         message: String,
         traverse_nested: bool,
@@ -115,8 +115,8 @@ impl CheckProjectionView {
                 Ok(DimensionValueLookup::Value { .. }) => {
                     ProjectedDimensionField::Value(field.value_type.clone())
                 }
-                Ok(DimensionValueLookup::ExplicitNull { .. }) => {
-                    ProjectedDimensionField::ExplicitNull
+                Ok(DimensionValueLookup::ExplicitNone { .. }) => {
+                    ProjectedDimensionField::ExplicitNone
                 }
                 Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
                     message: dimension_lookup_error_message(
@@ -153,7 +153,7 @@ impl CheckProjectionView {
         };
         let field_type = match projection {
             ProjectedDimensionField::Value(field_type) => field_type,
-            ProjectedDimensionField::ExplicitNull => {
+            ProjectedDimensionField::ExplicitNone => {
                 return Err(DimensionVariantAbort::Skipped);
             }
             ProjectedDimensionField::Error {
@@ -183,7 +183,7 @@ impl CheckProjectionView {
                 message: "dimension overlay value disappeared during check execution".to_string(),
             });
         };
-        if matches!(value, CfdValue::Null) {
+        if matches!(value, CfdValue::OptionNone) {
             return Err(DimensionVariantAbort::Skipped);
         }
         Ok(Some(MaterializedDimensionValue {

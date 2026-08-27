@@ -44,14 +44,7 @@ pub(crate) fn completion_items(
     }
 
     if is_type_predicate_context(line_prefix) {
-        let mut items = named_type_completion_items(build);
-        items.push(completion_item(
-            "null",
-            COMPLETION_KIND_KEYWORD,
-            "Null predicate",
-            Some("Nullable value."),
-        ));
-        return items;
+        return named_type_completion_items(build);
     }
 
     if is_annotation_completion_context(line_prefix) {
@@ -122,7 +115,7 @@ pub(crate) fn check_expression_completion_items(
 
     let mut items = Vec::new();
     items.extend(keyword_completion_items(&["when", "all", "any", "none"]));
-    items.extend(literal_completion_items(true));
+    items.extend(literal_completion_items());
     items.extend(const_completion_items(build));
 
     if let Some(current_type) = current_type_at(build, document, offset) {
@@ -193,10 +186,9 @@ fn keyword_completion_items(labels: &[&str]) -> Vec<Value> {
         .collect()
 }
 
-fn literal_completion_items(include_null: bool) -> Vec<Value> {
+fn literal_completion_items() -> Vec<Value> {
     LITERALS
         .iter()
-        .filter(|(label, _)| include_null || *label != "null")
         .map(|(label, documentation)| {
             completion_item(
                 label,
@@ -234,7 +226,7 @@ fn is_method_completion_context(source: &str, offset: usize) -> bool {
 }
 
 fn const_value_completion_items() -> Vec<Value> {
-    literal_completion_items(false)
+    literal_completion_items()
 }
 
 fn field_default_completion_items(
@@ -243,7 +235,7 @@ fn field_default_completion_items(
 ) -> Vec<Value> {
     let mut items = Vec::new();
     let Some(field) = field else {
-        items.extend(literal_completion_items(true));
+        items.extend(literal_completion_items());
         items.extend(const_completion_items(build));
         return items;
     };
@@ -255,7 +247,7 @@ fn field_default_completion_items(
 
 fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
     match &ty.kind {
-        TypeRefKind::Bool => items.extend(literal_completion_items(false)),
+        TypeRefKind::Bool => items.extend(literal_completion_items()),
         TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
@@ -263,7 +255,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 .and_then(|container| container.resolve_enum(name))
             {
                 items.extend(enum_def.variants.iter().map(|variant| {
-                    let label = format!("{}.{}", enum_def.name, variant.name);
+                    let label = format!("{}::{}", enum_def.name, variant.name);
                     completion_item(
                         &label,
                         COMPLETION_KIND_ENUM_MEMBER,
@@ -289,15 +281,16 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 None,
             ));
         }
-        TypeRefKind::Nullable(inner) => {
+        TypeRefKind::Option(inner) => {
             items.push(completion_item(
-                "null",
+                "None",
                 COMPLETION_KIND_KEYWORD,
-                "CFT literal",
-                Some("Nullable value."),
+                "CFT Option value",
+                Some("Option without a value."),
             ));
             collect_default_items_for_type(build, inner, items);
         }
+        TypeRefKind::Result(_, _) | TypeRefKind::Function(_, _) | TypeRefKind::Unit => {}
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
@@ -398,7 +391,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
                             "CFT enum",
                             None,
                         )),
-                        Item::Const(_) | Item::Check(_) => {}
+                        Item::Const(_) | Item::TypeAlias(_) | Item::Check(_) => {}
                     }
                 }
             }
@@ -458,11 +451,11 @@ fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value>
 
 fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
     match (&ty.kind, value) {
+        (TypeRefKind::Option(inner), value) => const_value_assignable_to_type(value, inner),
         (TypeRefKind::Int, CftConstValue::Int(_))
         | (TypeRefKind::Float, CftConstValue::Float(_))
         | (TypeRefKind::Bool, CftConstValue::Bool(_))
         | (TypeRefKind::String, CftConstValue::String(_)) => true,
-        (TypeRefKind::Nullable(inner), value) => const_value_assignable_to_type(value, inner),
         _ => false,
     }
 }
@@ -536,7 +529,11 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
             Item::Check(check) if check.span.start <= offset && offset <= check.span.end => {
                 return CompletionScope::CheckBlock;
             }
-            Item::Const(_) | Item::Enum(_) | Item::Type(_) | Item::Check(_) => {}
+            Item::Const(_)
+            | Item::Enum(_)
+            | Item::Type(_)
+            | Item::TypeAlias(_)
+            | Item::Check(_) => {}
         }
     }
 

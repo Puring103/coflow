@@ -22,6 +22,7 @@ mod names;
 mod render;
 
 use coflow_language::CftSchema;
+use coflow_runtime::CfdDataModel;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -125,9 +126,10 @@ fn generate_csharp_cfd_with_manifest(
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
     let mut files = render::render_common_project(&project)?;
+    let _ = (sources, schema);
     files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{}.Cfd.cs", project.database_class)),
-        contents: render::render_cfd_loader(&project, sources, schema),
+        relative_path: PathBuf::from("Coflow.Metadata.cs"),
+        contents: render::render_cfd_metadata(&project),
     });
     Ok(files)
 }
@@ -155,15 +157,17 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
             CodegenError::Message(format!("invalid C# output options: {error}"))
         })?;
         let codegen =
-            CsharpCodegenOptions::new(options.namespace.as_deref().unwrap_or("Game.Config"))
-                .with_database_class(options.database_class.as_deref().unwrap_or("CoflowTables"))
-                .with_int_32(options.int_32)
-                .with_float_32(options.float_32);
+            CsharpCodegenOptions::new(options.namespace.as_deref().unwrap_or("CoflowGenerated"));
+        let model = input.model.ok_or_else(|| {
+            CodegenError::Message("C# code generation requires a validated CFD data model".to_string())
+        })?;
+        let id_as_enum_variants = id_as_enum_variants(input.schema, model)
+            .map_err(CodegenError::Message)?;
         let files = generate_csharp_cfd_with_manifest(
             input.schema,
             &codegen,
             input.sources,
-            BTreeMap::new(),
+            id_as_enum_variants,
             None,
         )
         .map_err(|error| CodegenError::Message(error.to_string()))?;
@@ -177,6 +181,41 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
                 .collect(),
         )
     }
+}
+
+fn id_as_enum_variants(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+) -> Result<BTreeMap<String, Vec<CsharpIdAsEnumVariant>>, String> {
+    let mut result = BTreeMap::new();
+    for schema_enum in schema.all_enums() {
+        let Some(record_type) = schema.type_for_id_as_enum(&schema_enum.name) else {
+            continue;
+        };
+        let keys = model
+            .records_assignable_to(schema, &record_type.name)
+            .map(|(_, record)| record.key().to_string())
+            .collect::<BTreeSet<_>>();
+        let variants = keys
+            .into_iter()
+            .enumerate()
+            .map(|(index, source_name)| {
+                let value = i64::try_from(index).map_err(|_| {
+                    format!(
+                        "@idAsEnum enum `{}` has too many record keys",
+                        schema_enum.name
+                    )
+                })?;
+                Ok(CsharpIdAsEnumVariant {
+                    name: names::pascal_case(&source_name),
+                    source_name,
+                    value,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        result.insert(schema_enum.name.to_string(), variants);
+    }
+    Ok(result)
 }
 
 fn generate_common_with_id_as_enum_variants(
@@ -193,9 +232,6 @@ fn generate_common_with_id_as_enum_variants(
 #[serde(default, deny_unknown_fields)]
 struct CsharpOutputOptionsConfig {
     namespace: Option<String>,
-    database_class: Option<String>,
-    int_32: bool,
-    float_32: bool,
 }
 
 #[cfg(test)]

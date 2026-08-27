@@ -1,4 +1,4 @@
-namespace Coflow.Cfd.Runtime;
+namespace CoflowRuntime;
 
 public readonly struct CfdSpan : IEquatable<CfdSpan>
 {
@@ -22,15 +22,25 @@ public readonly struct CfdSpan : IEquatable<CfdSpan>
 
 public sealed class CfdDocument
 {
-    public CfdDocument(string path, IReadOnlyList<CfdRecordNode> records)
+    public CfdDocument(
+        string path,
+        string? declaredNamespace,
+        IReadOnlyList<CfdUseDirective> uses,
+        IReadOnlyList<CfdRecordNode> records)
     {
         Path = path;
+        Namespace = declaredNamespace;
+        Uses = uses;
         Records = records;
     }
 
     public string Path { get; }
+    public string? Namespace { get; }
+    public IReadOnlyList<CfdUseDirective> Uses { get; }
     public IReadOnlyList<CfdRecordNode> Records { get; }
 }
+
+public sealed record CfdUseDirective(string Path, string LocalName, CfdSpan Span);
 
 public sealed class CfdRecordNode
 {
@@ -89,15 +99,46 @@ public abstract class CfdValueNode
     public CfdSpan Span { get; }
 }
 
-public sealed class CfdNullValue : CfdValueNode
+internal sealed class CfdInvalidValue : CfdValueNode
 {
-    public CfdNullValue(CfdSpan span) : base(span) { }
+    internal CfdInvalidValue(CfdSpan span) : base(span) { }
+}
+
+public sealed class CfdNoneValue : CfdValueNode
+{
+    public CfdNoneValue(CfdSpan span) : base(span) { }
+}
+
+public sealed class CfdSomeValue : CfdValueNode
+{
+    public CfdSomeValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
+    public CfdValueNode Value { get; }
+}
+
+public sealed class CfdOkValue : CfdValueNode
+{
+    public CfdOkValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
+    public CfdValueNode Value { get; }
+}
+
+public sealed class CfdErrValue : CfdValueNode
+{
+    public CfdErrValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
+    public CfdValueNode Value { get; }
 }
 
 public sealed class CfdScalarValue : CfdValueNode
 {
     public CfdScalarValue(string value, CfdSpan span) : base(span) => Value = value;
     public string Value { get; }
+}
+
+internal sealed class CfdConstantValue : CfdValueNode
+{
+    internal CfdConstantValue(CoflowConstant constant, CfdSpan span) : base(span) =>
+        Constant = constant;
+
+    internal CoflowConstant Constant { get; }
 }
 
 public sealed class CfdStringValue : CfdValueNode
@@ -117,6 +158,12 @@ public sealed class CfdFormattedStringValue : CfdValueNode
 
     public string Source { get; }
     public IReadOnlyList<CfdFormatSegment> Segments { get; }
+}
+
+public sealed class CfdFunctionValue : CfdValueNode
+{
+    public CfdFunctionValue(string source, CfdSpan span) : base(span) => Source = source;
+    public string Source { get; }
 }
 
 public abstract record CfdFormatSegment;
@@ -179,7 +226,13 @@ public enum CfdBitOperator
 
 public sealed class CfdReferenceValue : CfdValueNode
 {
-    public CfdReferenceValue(string key, CfdSpan span) : base(span) => Key = key;
+    public CfdReferenceValue(string? typeName, string key, CfdSpan span) : base(span)
+    {
+        TypeName = typeName;
+        Key = key;
+    }
+
+    public string? TypeName { get; }
     public string Key { get; }
 }
 

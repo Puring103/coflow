@@ -726,7 +726,7 @@ fn apply_collection_edit(
         (CfdValue::Array(mut items), CollectionEdit::ArrayAppend { value }) => {
             let seed = value
                 .or_else(|| items.last().cloned().or(default_item))
-                .unwrap_or(CfdValue::Null);
+                .ok_or_else(|| EditorError::write("array item requires an explicit value"))?;
             items.push(seed);
             Ok(CfdValue::Array(items))
         }
@@ -758,7 +758,7 @@ fn apply_collection_edit(
                         .map(|(_, value)| value.clone())
                         .or(default_item)
                 })
-                .unwrap_or(CfdValue::Null);
+                .ok_or_else(|| EditorError::write("dict value requires an explicit value"))?;
             entries.push((key, seed));
             Ok(CfdValue::Dict(entries))
         }

@@ -180,8 +180,8 @@ fn dimension_path_type(
         "MUTATION-DIMENSION-PATH",
         "MUTATION",
     )?;
-    if path.is_empty() && !matches!(expected_type, CftValueType::Nullable(_)) {
-        expected_type = CftValueType::Nullable(Box::new(expected_type));
+    if path.is_empty() && !matches!(expected_type, CftValueType::Option(_)) {
+        expected_type = CftValueType::Option(Box::new(expected_type));
     }
     Ok(expected_type)
 }
@@ -199,7 +199,7 @@ fn current_dimension_root(
             target.variant.as_str(),
         ) {
             Ok(DimensionValueLookup::Value { value, .. }) => Some(value.clone()),
-            Ok(DimensionValueLookup::ExplicitNull { .. }) => Some(CfdValue::Null),
+            Ok(DimensionValueLookup::ExplicitNone { .. }) => Some(CfdValue::OptionNone),
             Ok(DimensionValueLookup::Missing) => None,
             Err(_) => {
                 return Err(one_mutation_error(
@@ -255,7 +255,7 @@ fn build_dimension_value(
             Ok(Some(value))
         } else {
             let mut root = match current_root {
-                Some(CfdValue::Null) | None => {
+                Some(CfdValue::OptionNone) | None => {
                     return Err(one_path_error(
                         "nested dimension writes require a materialized variant value",
                     ));

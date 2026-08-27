@@ -92,7 +92,6 @@ fn parse_dict_key(
             };
             Ok(LoadedDictKeyDraft::enum_variant(enum_name, variant))
         }
-        CellType::Nullable(inner) => parse_dict_key(schema, inner, text),
         other => Err(type_mismatch(&format!("dict key {}", other.display()))),
     }
 }

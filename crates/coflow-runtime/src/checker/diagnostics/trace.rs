@@ -47,7 +47,6 @@ pub(crate) struct TraceFact {
     pub(crate) display: Option<String>,
     pub(crate) bool_value: Option<bool>,
     pub(crate) actual_type: Option<String>,
-    pub(crate) is_null: bool,
     pub(crate) location: Option<ValueLocation>,
 }
 
@@ -97,9 +96,6 @@ impl EvaluationTrace {
                 expr: inner,
                 predicate,
             } => match predicate {
-                CftSchemaTypePredicate::Null => {
-                    trace.request(inner, CaptureRequest::DISPLAY);
-                }
                 CftSchemaTypePredicate::Type(_) => {
                     trace.request(inner, CaptureRequest::ACTUAL_TYPE);
                 }
@@ -200,7 +196,6 @@ fn trace_fact(
             .actual_type
             .then(|| value.value.actual_type(model).map(str::to_string))
             .flatten(),
-        is_null: matches!(value.value.scalar(), Some(ScalarValue::Null)),
         location: value.location.clone(),
     }
 }

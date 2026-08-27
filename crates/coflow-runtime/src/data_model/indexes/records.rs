@@ -108,6 +108,7 @@ pub(crate) fn validate_singletons(
 ) {
     let singleton_names: Vec<TypeName> = schema
         .singleton_types()
+        .filter(|meta| !meta.is_host)
         .map(|meta| meta.name.clone())
         .collect();
 

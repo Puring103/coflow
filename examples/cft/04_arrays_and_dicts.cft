@@ -11,7 +11,7 @@ type ExampleLootTable {
     item_ids.len() == weights.len();
     weights.sum() >= 0;
     item_ids.isUnique();
-    resistances.contains(ExampleDamageType.Fire);
+    resistances.contains(ExampleDamageType::Fire);
 
     all entry in named_weights {
       entry.key != "";
@@ -19,7 +19,7 @@ type ExampleLootTable {
     }
 
     all entry in resistances {
-      entry.key >= ExampleDamageType.Physical;
+      entry.key >= ExampleDamageType::Physical;
       0.0 <= entry.value <= 1.0;
     }
   }

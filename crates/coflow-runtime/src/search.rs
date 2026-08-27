@@ -167,7 +167,9 @@ fn find_value_match(value: &CfdValue, query: &str, path: &str) -> Option<FieldMa
 
 fn scalar_text(value: &CfdValue) -> Option<String> {
     match value {
-        CfdValue::Null => Some("null".to_string()),
+        CfdValue::OptionNone => Some("None".to_string()),
+        CfdValue::OptionSome(value) => scalar_text(value),
+        CfdValue::ResultOk(value) | CfdValue::ResultErr(value) => scalar_text(value),
         CfdValue::Bool(value) => Some(value.to_string()),
         CfdValue::Int(value) => Some(value.to_string()),
         CfdValue::Float(value) => Some(value.to_string()),

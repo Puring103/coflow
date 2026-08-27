@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Coflow.Cfd.Runtime;
+namespace CoflowRuntime;
 
 /// <summary>Schema-free parser shared by generated target models.</summary>
 public static class CfdParser
@@ -42,11 +42,42 @@ public static class CfdParser
 
         public CfdDocument ParseDocument()
         {
+            string? declaredNamespace = null;
+            var uses = new List<CfdUseDirective>();
             var records = new List<CfdRecordNode>();
+            SkipTrivia();
+            if (MatchKeyword("namespace"))
+            {
+                declaredNamespace = ParseQualifiedPath("namespace path", requireQualified: false);
+                Expect(';', "expected `;` after namespace declaration");
+                SkipTrivia();
+            }
+            while (MatchKeyword("use"))
+            {
+                var start = Cursor;
+                var path = ParseQualifiedPath("use path", requireQualified: true);
+                SkipTrivia();
+                var localName = path[(path.LastIndexOf("::", StringComparison.Ordinal) + 2)..];
+                if (MatchKeyword("as"))
+                {
+                    localName = ParseName("use alias");
+                    if (!IsIdentifier(localName))
+                        Error("CFD-SYNTAX-USE", $"invalid use alias `{localName}`", SpanFrom(start));
+                }
+                Expect(';', "expected `;` after use declaration");
+                uses.Add(new CfdUseDirective(path, localName, SpanFrom(start)));
+                SkipTrivia();
+            }
             while (!End)
             {
                 SkipTrivia();
                 if (End) break;
+                if (MatchKeyword("namespace") || MatchKeyword("use"))
+                {
+                    Error("CFD-SYNTAX-HEADER", "namespace and use declarations must appear before all CFD records", CurrentSpan());
+                    RecoverTopLevel();
+                    continue;
+                }
                 var start = Cursor;
                 var firstWasQuoted = Peek() == '"';
                 var first = ParseKey("record key or type");
@@ -71,7 +102,17 @@ public static class CfdParser
                 }
             }
             ThrowIfErrors();
-            return new CfdDocument(_source.Path, records);
+            return new CfdDocument(_source.Path, declaredNamespace, uses, records);
+        }
+
+        private string ParseQualifiedPath(string expected, bool requireQualified)
+        {
+            var start = Cursor;
+            var path = ParseName(expected);
+            var segments = path.Split(new[] { "::" }, StringSplitOptions.None);
+            if ((requireQualified && segments.Length < 2) || segments.Any(segment => !IsIdentifier(segment)))
+                Error("CFD-SYNTAX-HEADER", $"invalid {expected} `{path}`", SpanFrom(start));
+            return path;
         }
 
         private void ParseGroupedRecords(List<CfdRecordNode> records, string groupType, Position start)
@@ -105,13 +146,7 @@ public static class CfdParser
 
         private static bool IsRecordKey(string value)
         {
-            if (string.IsNullOrEmpty(value) || value is "_" or "id" or "Id" or "ID" or "const" or
-                "enum" or "type" or "abstract" or "sealed" or "check" or "when" or "all" or
-                "any" or "none" or "in" or "is" or "true" or "false" or "null" or "int" or
-                "float" or "bool" or "string" or "len" or "contains" or "isUnique" or "min" or
-                "max" or "sum" or "keys" or "values" or "matches" or "if" or "else" or "match" or
-                "case" or "for" or "while" or "let" or "module" or "import" or "export" or "from" or
-                "as" or "use")
+            if (string.IsNullOrEmpty(value) || IsReservedIdentifier(value))
                 return false;
             var index = 0;
             if (!ReadIdentifierCodePoint(value, ref index, true)) return false;
@@ -120,42 +155,10 @@ public static class CfdParser
             return true;
         }
 
-        private static bool ReadIdentifierCodePoint(string value, ref int index, bool start)
-        {
-            int codePoint = value[index];
-            var width = 1;
-            if (char.IsHighSurrogate(value[index]) &&
-                index + 1 < value.Length &&
-                char.IsLowSurrogate(value[index + 1]))
-            {
-                codePoint = char.ConvertToUtf32(value[index], value[index + 1]);
-                width = 2;
-            }
-            else if (char.IsSurrogate(value[index]))
-            {
-                index++;
-                return false;
-            }
+        private static bool IsReservedIdentifier(string value) => CfdIdentifiers.IsReserved(value);
 
-            var category = CharUnicodeInfo.GetUnicodeCategory(value, index);
-            index += width;
-            var identifierStart = category is
-                UnicodeCategory.UppercaseLetter or
-                UnicodeCategory.LowercaseLetter or
-                UnicodeCategory.TitlecaseLetter or
-                UnicodeCategory.ModifierLetter or
-                UnicodeCategory.OtherLetter or
-                UnicodeCategory.LetterNumber ||
-                codePoint is 0x1885 or 0x1886 or 0x2118 or 0x212e or 0x309b or 0x309c;
-            if (start) return codePoint == '_' || identifierStart;
-            return codePoint == '_' || identifierStart || category is
-                UnicodeCategory.NonSpacingMark or
-                UnicodeCategory.SpacingCombiningMark or
-                UnicodeCategory.DecimalDigitNumber or
-                UnicodeCategory.ConnectorPunctuation ||
-                codePoint is 0x00b7 or 0x0387 or 0x1369 or 0x136a or 0x136b or 0x136c or
-                    0x136d or 0x136e or 0x136f or 0x1370 or 0x1371 or 0x19da;
-        }
+        private static bool ReadIdentifierCodePoint(string value, ref int index, bool start) =>
+            CfdIdentifiers.ReadCodePoint(value, ref index, start);
 
         private CfdRecordNode ParseRecord(
             string key,
@@ -211,7 +214,8 @@ public static class CfdParser
         {
             SkipTrivia();
             var start = Cursor;
-            if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdNullValue(CurrentSpan()); }
+            var sourceStart = _index;
+            if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdInvalidValue(CurrentSpan()); }
             if (Match("f\"")) return ParseFormattedString(start, true);
             if (Match('"'))
             {
@@ -221,15 +225,26 @@ public static class CfdParser
             }
             if (Match('&'))
             {
-                var quoted = !End && Peek() == '"';
-                var key = ParseKey("reference key");
-                if (quoted || !IsRecordKey(key))
+                var reference = ParseName("reference key");
+                var separator = reference.LastIndexOf("::", StringComparison.Ordinal);
+                var typeName = separator < 0 ? null : reference[..separator];
+                var key = separator < 0 ? reference : reference[(separator + 2)..];
+                if (!IsRecordKey(key) || (typeName is not null && !IsQualifiedName(typeName)))
                     Error("CFD-SYNTAX-RECORD-KEY", $"invalid record key `{key}`", SpanFrom(start));
-                return new CfdReferenceValue(key, SpanFrom(start));
+                return new CfdReferenceValue(typeName, key, SpanFrom(start));
             }
             if (Match('[')) return ParseArray(start);
             if (Match('{')) return ParseDictionary(start);
-            if (MatchKeyword("null")) return new CfdNullValue(SpanFrom(start));
+            if (MatchKeyword("None")) return new CfdNoneValue(SpanFrom(start));
+            if (MatchKeyword("Some")) return ParseValueConstructor(start, "Some", static (value, span) => new CfdSomeValue(value, span));
+            if (MatchKeyword("Ok")) return ParseValueConstructor(start, "Ok", static (value, span) => new CfdOkValue(value, span));
+            if (MatchKeyword("Err")) return ParseValueConstructor(start, "Err", static (value, span) => new CfdErrValue(value, span));
+            if (MatchKeyword("null"))
+            {
+                Error("CFD-SYNTAX-NULL", "`null` is not part of the language; use `None` for Option values", SpanFrom(start));
+                return new CfdInvalidValue(SpanFrom(start));
+            }
+            if (MatchKeyword("fn")) return ParseFunction(start, sourceStart);
 
             // A type marker followed by a block is an inline object. Rewind and
             // parse a bit expression for all other unquoted values.
@@ -253,6 +268,101 @@ public static class CfdParser
             return isExpression
                 ? new CfdBitExpressionValue(expression, SpanFrom(start))
                 : new CfdScalarValue(((CfdBitExpressionKind.Value)expression.Kind).Text, SpanFrom(start));
+        }
+
+        private CfdValueNode ParseValueConstructor(
+            Position start,
+            string name,
+            Func<CfdValueNode, CfdSpan, CfdValueNode> create)
+        {
+            SkipTrivia();
+            if (!Match('('))
+                Error("CFD-SYNTAX-CONSTRUCTOR", $"expected `(` after `{name}`", CurrentSpan());
+            var value = ParseValue();
+            SkipTrivia();
+            if (!Match(')'))
+                Error("CFD-SYNTAX-CONSTRUCTOR", $"expected `)` after `{name}` value", CurrentSpan());
+            return create(value, SpanFrom(start));
+        }
+
+        private CfdFunctionValue ParseFunction(Position start, int sourceStart)
+        {
+            SkipTrivia();
+            if (!Match('('))
+                Error("CFD-FUNCTION-SIGNATURE", "expected `(` after `fn`", CurrentSpan());
+
+            var signatureDepth = 1;
+            while (!End && signatureDepth != 0)
+            {
+                var current = Read();
+                if (current == '(') signatureDepth++;
+                else if (current == ')') signatureDepth--;
+            }
+            if (signatureDepth != 0)
+                Error("CFD-FUNCTION-SIGNATURE", "unterminated function parameter list", SpanFrom(start));
+
+            SkipTrivia();
+            if (!Match("->"))
+                Error("CFD-FUNCTION-SIGNATURE", "expected `->` after function parameters", CurrentSpan());
+            SkipTrivia();
+            var returnStarted = false;
+            var angleDepth = 0;
+            var bracketDepth = 0;
+            while (!End)
+            {
+                var current = Peek();
+                if (current == '{' && (angleDepth != 0 || !returnStarted))
+                {
+                    returnStarted = true;
+                    var typeBraceDepth = 0;
+                    do
+                    {
+                        var typeCharacter = Read();
+                        if (typeCharacter == '{') typeBraceDepth++;
+                        else if (typeCharacter == '}') typeBraceDepth--;
+                    }
+                    while (!End && typeBraceDepth != 0);
+                    continue;
+                }
+                if (current == '{' && angleDepth == 0 && bracketDepth == 0) break;
+                current = Read();
+                if (!char.IsWhiteSpace(current)) returnStarted = true;
+                if (current == '<') angleDepth++;
+                else if (current == '>') angleDepth--;
+                else if (current == '[') bracketDepth++;
+                else if (current == ']') bracketDepth--;
+            }
+            if (!Match('{'))
+            {
+                Error("CFD-FUNCTION-BODY", "expected function body", CurrentSpan());
+                return new CfdFunctionValue(_source.Text[sourceStart.._index], SpanFrom(start));
+            }
+
+            var bodyDepth = 1;
+            while (!End && bodyDepth != 0)
+            {
+                var current = Read();
+                if (current == '"')
+                {
+                    while (!End)
+                    {
+                        var text = Read();
+                        if (text == '\\' && !End) Read();
+                        else if (text == '"') break;
+                    }
+                    continue;
+                }
+                if (current == '#')
+                {
+                    while (!End && Read() != '\n') { }
+                    continue;
+                }
+                if (current == '{') bodyDepth++;
+                else if (current == '}') bodyDepth--;
+            }
+            if (bodyDepth != 0)
+                Error("CFD-FUNCTION-BODY", "unterminated function body", SpanFrom(start));
+            return new CfdFunctionValue(_source.Text[sourceStart.._index], SpanFrom(start));
         }
 
         private CfdValueNode ParseDictionary(Position start)
@@ -418,7 +528,7 @@ public static class CfdParser
             string? key = null;
             if (reference.Contains("::", StringComparison.Ordinal))
             {
-                var separator = reference.IndexOf("::", StringComparison.Ordinal);
+                var separator = reference.LastIndexOf("::", StringComparison.Ordinal);
                 typeName = reference[..separator];
                 reference = reference[(separator + 2)..];
             }
@@ -469,13 +579,18 @@ public static class CfdParser
             expression.Length != 0 && !expression.Any(char.IsWhiteSpace) && path.Count != 0 &&
             (expression.StartsWith('&') ? key is not null : key is null) &&
             (typeName is null || expression.StartsWith('&')) &&
-            (typeName is null || IsReferenceName(typeName)) &&
+            (typeName is null || IsQualifiedName(typeName)) &&
             (key is null || IsReferenceName(key)) && path.All(IsReferenceName);
 
         private static bool IsReferenceName(string value) =>
             !string.IsNullOrEmpty(value) &&
             (value[0] == '_' || char.IsLetter(value[0])) &&
             value.Skip(1).All(character => character == '_' || char.IsLetterOrDigit(character));
+
+        private static bool IsQualifiedName(string value) =>
+            value.Split(new[] { "::" }, StringSplitOptions.None).All(IsIdentifier);
+
+        private static bool IsIdentifier(string value) => CfdIdentifiers.IsIdentifier(value);
 
         private (CfdBitExpression Expression, bool IsExpression) ParseBitOrExpression() =>
             ParseBitBinary(ParseBitXorExpression, '|', CfdBitOperator.Or);
@@ -566,6 +681,11 @@ public static class CfdParser
             while (!End)
             {
                 var character = Peek();
+                if (character == ':' && _source.Text.AsSpan(_index).StartsWith("::"))
+                {
+                    builder.Append(Read()).Append(Read());
+                    continue;
+                }
                 if (char.IsWhiteSpace(character) || "{}[],:=#;|^&()@\"".Contains(character)) break;
                 builder.Append(Read());
             }

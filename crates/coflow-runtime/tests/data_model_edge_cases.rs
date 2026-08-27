@@ -15,7 +15,7 @@ fn cyclic_record_refs_report_the_closing_reference() {
     let schema = compile_schema(
         r#"
             type Person {
-                parent: &Person?;
+                parent: Option<&Person>;
             }
         "#,
     );
@@ -24,12 +24,18 @@ fn cyclic_record_refs_report_the_closing_reference() {
     builder.add_record(
         "alice",
         "Person",
-        [("parent", LoadedValueDraft::record_ref("bob"))],
+        [(
+            "parent",
+            LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("bob"))),
+        )],
     );
     builder.add_record(
         "bob",
         "Person",
-        [("parent", LoadedValueDraft::record_ref("alice"))],
+        [(
+            "parent",
+            LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("alice"))),
+        )],
     );
 
     let err = builder.build().expect_err("record reference cycle should fail");

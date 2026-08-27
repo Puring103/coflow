@@ -41,15 +41,15 @@ enum ExamplePermission {
 type ExampleEnumUsage {
   @label("稀有度")
   @description("物品的品质层级。")
-  rarity: ExampleRarity = ExampleRarity.Common;
+  rarity: ExampleRarity = ExampleRarity::Common;
   @label("伤害属性")
-  damage_type: ExampleDamageType = ExampleDamageType.Fire;
+  damage_type: ExampleDamageType = ExampleDamageType::Fire;
   @label("可用权限")
-  permissions: ExamplePermission = ExamplePermission.Read;
+  permissions: ExamplePermission = ExamplePermission::Read;
 
   check {
-    rarity >= ExampleRarity.Common;
-    damage_type != ExampleDamageType.Physical;
-    (permissions & ExamplePermission.Read) != ExamplePermission(0);
+    rarity >= ExampleRarity::Common;
+    damage_type != ExampleDamageType::Physical;
+    (permissions & ExamplePermission::Read) != ExamplePermission(0);
   }
 }

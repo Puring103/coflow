@@ -20,7 +20,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
             enum Rarity { Common = 0, Rare = 10, }
             type Item {
                 name: string = DEFAULT_NAME;
-                rarity: Rarity = Rarity.Common;
+                rarity: Rarity = Rarity::Common;
                 tags: [string] = [];
                 attrs: {string: int} = {};
                 check { id != ""; }
@@ -518,7 +518,7 @@ fn semantic_edges_report_data_model_diagnostics() {
             enum Rarity { Common, Rare, }
             type Item {
                 rarity: Rarity;
-                maybe: int?;
+                maybe: Option<int>;
                 attrs: {string: int};
             }
         "#,

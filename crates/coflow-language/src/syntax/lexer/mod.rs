@@ -108,6 +108,10 @@ impl<'a> Lexer<'a> {
                     self.pos += 1;
                     TokenKind::RParen
                 }
+                ':' if self.starts_with("::") => {
+                    self.pos += 2;
+                    TokenKind::DoubleColon
+                }
                 ':' => {
                     self.pos += 1;
                     TokenKind::Colon
@@ -127,6 +131,10 @@ impl<'a> Lexer<'a> {
                 '+' => {
                     self.pos += 1;
                     TokenKind::Plus
+                }
+                '-' if self.starts_with("->") => {
+                    self.pos += 2;
+                    TokenKind::Arrow
                 }
                 '-' => {
                     self.pos += 1;
@@ -192,14 +200,6 @@ impl<'a> Lexer<'a> {
                     self.pos += 1;
                     TokenKind::Bang
                 }
-                '?' if self.starts_with("??") => {
-                    self.pos += 2;
-                    TokenKind::QuestionQuestion
-                }
-                '?' => {
-                    self.pos += 1;
-                    TokenKind::Question
-                }
                 '&' if self.starts_with("&&") => {
                     self.pos += 2;
                     TokenKind::AmpAmp
@@ -258,6 +258,9 @@ impl<'a> Lexer<'a> {
             }
         }
         match &self.source[start..self.pos] {
+            "namespace" => TokenKind::Namespace,
+            "use" => TokenKind::Use,
+            "as" => TokenKind::As,
             "const" => TokenKind::Const,
             "enum" => TokenKind::Enum,
             "type" => TokenKind::Type,
@@ -272,7 +275,6 @@ impl<'a> Lexer<'a> {
             "is" => TokenKind::Is,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
-            "null" => TokenKind::Null,
             text => TokenKind::Ident(text.to_string()),
         }
     }

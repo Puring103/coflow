@@ -59,14 +59,25 @@ impl SchemaCompiler<'_> {
                     );
                 }
             }
+            if let Some(host) = find_annotation(&info.def.annotations, "Host") {
+                if info.def.is_abstract || find_annotation(&info.def.annotations, "singleton").is_none() {
+                    this.push_diag(
+                        CftErrorCode::InvalidAnnotatedFieldType,
+                        &info.module,
+                        host.span,
+                        "@Host requires a concrete type with an explicit @singleton annotation",
+                    );
+                }
+            }
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
                 if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
-                    this.validate_id_as_enum_name(&info.module, &enum_name.name, enum_name.span);
+                    let resolved_name = this.resolve_name(&info.module, &enum_name.name);
+                    this.validate_id_as_enum_name(&info.module, &resolved_name, enum_name.span);
                     this.register_id_as_enum_name(
                         &mut id_as_enum_names,
                         &info.module,
                         annotation,
-                        &enum_name.name,
+                        &resolved_name,
                     );
                 }
             }
@@ -118,15 +129,6 @@ impl SchemaCompiler<'_> {
     ) {
         let mut seen = BTreeMap::<&str, Span>::new();
         for annotation in annotations {
-            let Some(spec) = AnnotationSpec::for_name(&annotation.name) else {
-                self.push_diag(
-                    CftErrorCode::UnknownAnnotation,
-                    module,
-                    annotation.name_span,
-                    format!("unknown annotation `{}`", annotation.name),
-                );
-                continue;
-            };
             if let Some(first) = seen.get(annotation.name.as_str()) {
                 self.diagnostics.push(
                     CftDiagnostic::error(
@@ -144,6 +146,9 @@ impl SchemaCompiler<'_> {
             } else {
                 seen.insert(&annotation.name, annotation.span);
             }
+            let Some(spec) = AnnotationSpec::for_name(&annotation.name) else {
+                continue;
+            };
             if !spec.targets.contains(&target) {
                 let code = if annotation.name == "localized" {
                     CftErrorCode::LocalizedOnInvalidTarget
@@ -230,17 +235,17 @@ impl SchemaCompiler<'_> {
         }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
             // @expand requires an inline concrete object field. Arrays, dicts,
-            // primitives, enums, nullable wrappers, refs, abstract objects, and
+            // primitives, enums, option wrappers, refs, abstract objects, and
             // singleton objects don't make sense because the loader needs one
             // known inline set of inner field names to consume from adjacent
             // header columns.
-            let resolved = self.resolve_field_type(&field.ty);
+            let resolved = self.resolve_field_type(module, &field.ty);
             if !self.expand_target_is_concrete_inline_object(&resolved) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
-                    "@expand fields must reference an inline concrete type (no refs, abstract/singleton types, nullable, arrays, dicts, enums, or primitives)",
+                    "@expand fields must reference an inline concrete type (no refs, abstract/singleton types, Option, arrays, dicts, enums, or primitives)",
                 );
             }
         }
@@ -329,7 +334,7 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" | "singleton" => Self {
+            "struct" | "singleton" | "Host" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },

@@ -39,12 +39,12 @@ fn hover_and_definition_cover_symbol_resolution_boundaries() {
 type Target { key: string; value: int; }\n\
 enum Kind { One = 1, Two = 2, }\n\
 type Item {\n\
-  kind: Kind = Kind.One;\n\
+  kind: Kind = Kind::One;\n\
   target: Target;\n\
   count: int = LIMIT;\n\
   check {\n\
     target.value >= LIMIT;\n\
-    kind == Kind.Two;\n\
+    kind == Kind::Two;\n\
     count > 0;\n\
     true;\n\
   }\n\
@@ -55,7 +55,7 @@ type Item {\n\
     let hover_cases = [
         (position_inside(source, "type Target", "type", 1), "Define"),
         (
-            position_inside(source, "Kind.Two", "Two", 1),
+            position_inside(source, "Kind::Two", "Two", 1),
             "enum variant",
         ),
         (
@@ -89,7 +89,7 @@ type Item {\n\
     }
 
     for offset in [
-        position_inside(source, "Kind.Two", "Two", 1),
+        position_inside(source, "Kind::Two", "Two", 1),
         position_inside(source, "target.value", "value", 1),
         position_inside(source, "LIMIT;", "LIMIT", 1),
         position_inside(source, "count > 0", "count", 1),
@@ -252,7 +252,7 @@ type Item {\n\
     let labels = completion_labels(completion_items(&build, document, &predicate_position));
     assert!(labels.contains(&"Target".to_string()));
     assert!(labels.contains(&"Item".to_string()));
-    assert!(labels.contains(&"null".to_string()));
+    assert!(!labels.contains(&"null".to_string()));
     assert!(!labels.contains(&"when".to_string()));
     assert!(!labels.contains(&"check".to_string()));
 }
@@ -265,8 +265,8 @@ enum Kind { One = 1, Two = 2, }\n\
 type Target { key: string; value: int; }\n\
 type Item {\n\
   enabled: bool = true;\n\
-  kind: Kind = Kind.One;\n\
-  maybe: int? = null;\n\
+  kind: Kind = Kind::One;\n\
+  maybe: Option<int> = None;\n\
   xs: [int] = [];\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
@@ -331,21 +331,22 @@ type Item {\n\
 
     let enum_position = position_from_byte(
         source,
-        source.find("kind: Kind = Kind.One").expect("kind") + "kind: Kind = ".len(),
+        source.find("kind: Kind = Kind::One").expect("kind") + "kind: Kind = ".len(),
     );
     let enum_labels = completion_labels(completion_items(&build, document, &enum_position));
-    assert!(enum_labels.contains(&"Kind.One".to_string()));
-    assert!(enum_labels.contains(&"Kind.Two".to_string()));
+    assert!(enum_labels.contains(&"Kind::One".to_string()));
+    assert!(enum_labels.contains(&"Kind::Two".to_string()));
     assert!(!enum_labels.contains(&"LIMIT".to_string()));
 
-    let nullable_position = position_from_byte(
+    let option_position = position_from_byte(
         source,
-        source.find("maybe: int? = null").expect("nullable") + "maybe: int? = ".len(),
+        source.find("maybe: Option<int> = None").expect("Option")
+            + "maybe: Option<int> = ".len(),
     );
-    let nullable_labels = completion_labels(completion_items(&build, document, &nullable_position));
-    assert!(nullable_labels.contains(&"null".to_string()));
-    assert!(nullable_labels.contains(&"LIMIT".to_string()));
-    assert!(!nullable_labels.contains(&"NAME".to_string()));
+    let option_labels = completion_labels(completion_items(&build, document, &option_position));
+    assert!(option_labels.contains(&"None".to_string()));
+    assert!(option_labels.contains(&"LIMIT".to_string()));
+    assert!(!option_labels.contains(&"NAME".to_string()));
 
     let array_position = position_from_byte(
         source,

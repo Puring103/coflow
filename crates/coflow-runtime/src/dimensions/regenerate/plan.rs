@@ -248,7 +248,7 @@ fn dimension_entries(
                     .fields()
                     .get(field.source_field.as_str())
                     .cloned()
-                    .unwrap_or(CfdValue::Null),
+                    .unwrap_or(CfdValue::OptionNone),
             })
             .into_iter()
             .collect()
@@ -262,7 +262,7 @@ fn dimension_entries(
                     .fields()
                     .get(field.source_field.as_str())
                     .cloned()
-                    .unwrap_or(CfdValue::Null),
+                    .unwrap_or(CfdValue::OptionNone),
             })
             .collect()
     }

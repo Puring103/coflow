@@ -12,23 +12,13 @@ pub enum CftValueType {
     RecordRef(TypeName),
     Array(Box<CftValueType>),
     Dict(Box<CftValueType>, Box<CftValueType>),
-    Nullable(Box<CftValueType>),
+    Option(Box<CftValueType>),
+    Result(Box<CftValueType>, Box<CftValueType>),
+    Function(Vec<CftValueType>, Box<CftValueType>),
+    Unit,
 }
 
 impl CftValueType {
-    #[must_use]
-    pub const fn is_nullable(&self) -> bool {
-        matches!(self, Self::Nullable(_))
-    }
-
-    #[must_use]
-    pub fn non_nullable(&self) -> &Self {
-        match self {
-            Self::Nullable(inner) => inner.non_nullable(),
-            other => other,
-        }
-    }
-
     #[must_use]
     pub fn display_label(&self) -> String {
         self.to_string()
@@ -47,7 +37,19 @@ impl fmt::Display for CftValueType {
             Self::RecordRef(name) => write!(formatter, "&{name}"),
             Self::Array(inner) => write!(formatter, "[{inner}]"),
             Self::Dict(key, value) => write!(formatter, "{{{key}: {value}}}"),
-            Self::Nullable(inner) => write!(formatter, "{inner}?"),
+            Self::Option(inner) => write!(formatter, "Option<{inner}>"),
+            Self::Result(value, error) => write!(formatter, "Result<{value}, {error}>"),
+            Self::Function(parameters, result) => {
+                formatter.write_str("fn(")?;
+                for (index, parameter) in parameters.iter().enumerate() {
+                    if index != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    parameter.fmt(formatter)?;
+                }
+                write!(formatter, ") -> {result}")
+            }
+            Self::Unit => formatter.write_str("()"),
         }
     }
 }

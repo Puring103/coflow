@@ -201,6 +201,15 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<CfdValue> {
         match value {
             ValueDraft::Value(value) => Some(value.clone()),
+            ValueDraft::OptionSome(value) => self
+                .resolve_value(value, node, cursor)
+                .map(|value| CfdValue::OptionSome(Box::new(value))),
+            ValueDraft::ResultOk(value) => self
+                .resolve_value(value, node, cursor)
+                .map(|value| CfdValue::ResultOk(Box::new(value))),
+            ValueDraft::ResultErr(value) => self
+                .resolve_value(value, node, cursor)
+                .map(|value| CfdValue::ResultErr(Box::new(value))),
             ValueDraft::FormattedString(value) => {
                 self.resolve_formatted_string(value, node, cursor)
             }
@@ -321,7 +330,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 )?
             };
             current_type = field_type;
-            current_record = match (&value, current_type.non_nullable()) {
+            current_record = match (&value, &current_type) {
                 (CfdValue::Ref(key), CftValueType::RecordRef(target_type)) => self
                     .resolve_ref_target(target_type, key.as_str(), node)
                     .map(|(record_id, _)| record_id),
@@ -366,7 +375,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<(CfdValue, CftValueType)> {
-        match (value, ty.non_nullable()) {
+        match (value, ty) {
             (CfdValue::Object(object), CftValueType::Object(declared_type)) => {
                 let actual_type = if object.actual_type().is_empty() {
                     declared_type.as_str()
@@ -616,6 +625,9 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
         depth = depth.max(value_depth);
         let child_depth = value_depth.saturating_add(1);
         match value {
+            CfdValue::OptionSome(value)
+            | CfdValue::ResultOk(value)
+            | CfdValue::ResultErr(value) => pending.push((value, child_depth)),
             CfdValue::Object(object) => {
                 pending.extend(object.fields().values().map(|value| (value, child_depth)));
             }
@@ -625,7 +637,7 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
             CfdValue::Dict(entries) => {
                 pending.extend(entries.iter().map(|(_, value)| (value, child_depth)));
             }
-            CfdValue::Null
+            CfdValue::OptionNone
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
             | CfdValue::Float(_)

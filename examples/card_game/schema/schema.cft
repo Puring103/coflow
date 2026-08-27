@@ -28,7 +28,7 @@ enum CardType {
 }
 
 enum TargetMode {
-  None     = 0,
+  Empty    = 0,
   Single   = 1,
   All      = 2,
   Random   = 3,
@@ -50,7 +50,7 @@ enum TriggerEvent {
 # @flag 枚举：卡牌关键字，可组合
 @flag
 enum Keyword {
-  None     = 0,
+  Empty    = 0,
   Taunt    = 1,
   Charge   = 2,
   DivineShield = 4,
@@ -134,11 +134,11 @@ type DamageEffect : Effect {
   pierce_divine: bool = false;
 
   check {
-    target != TargetMode.None;
+    target != TargetMode::Empty;
     damage.hi > 0;
 
     when pierce_divine {
-      target == TargetMode.Single || target == TargetMode.All;
+      target == TargetMode::Single || target == TargetMode::All;
     }
   }
 }
@@ -149,9 +149,9 @@ type HealEffect : Effect {
   target: TargetMode;
 
   check {
-    target != TargetMode.None;
+    target != TargetMode::Empty;
     heal.hi > 0;
-    target == TargetMode.Single || target == TargetMode.Friendly;
+    target == TargetMode::Single || target == TargetMode::Friendly;
   }
 }
 
@@ -161,7 +161,7 @@ type SummonEffect : Effect {
   count: int = 1;
 
   check {
-    token.card_type == CardType.Minion;
+    token.card_type == CardType::Minion;
     1 <= count <= 4;
   }
 }
@@ -184,10 +184,10 @@ type DrawEffect : Effect {
 type BuffEffect : Effect {
   stat_delta: StatLine;
   target: TargetMode;
-  keywords_add: Keyword = Keyword.Taunt;
+  keywords_add: Keyword = Keyword::Taunt;
 
   check {
-    target != TargetMode.None;
+    target != TargetMode::Empty;
     stat_delta.attack + stat_delta.health > 0;
   }
 }
@@ -222,13 +222,13 @@ sealed type Trigger {
 type Card {
   name_text: &CardText;
   card_type: CardType;
-  faction: Faction = Faction.Neutral;
-  rarity: Rarity   = Rarity.Common;
+  faction: Faction = Faction::Neutral;
+  rarity: Rarity   = Rarity::Common;
   cost: int;
 
   # 随从专属
   base_stats: StatLine? = null;
-  keywords: Keyword     = Keyword.Taunt;
+  keywords: Keyword     = Keyword::Taunt;
 
   # 武器专属
   durability: int = 0;
@@ -253,41 +253,41 @@ type Card {
     id.matches("^card_[a-z][a-z0-9_]*$");
     name_text.id != "";
     0 <= cost <= MAX_COST;
-    rarity >= Rarity.Common;
+    rarity >= Rarity::Common;
 
     # 随从：必须有基础属性
-    when card_type == CardType.Minion {
+    when card_type == CardType::Minion {
       base_stats != null;
       base_stats.health > 0;
     }
 
     # 法术/奥秘：不能有随从属性
-    when card_type == CardType.Spell || card_type == CardType.Secret {
+    when card_type == CardType::Spell || card_type == CardType::Secret {
       base_stats == null;
       durability == 0;
-      (keywords & Keyword.Taunt)   == Keyword(0);
-      (keywords & Keyword.Charge)  == Keyword(0);
+      (keywords & Keyword::Taunt)   == Keyword(0);
+      (keywords & Keyword::Charge)  == Keyword(0);
     }
 
     # 武器
-    when card_type == CardType.Weapon {
+    when card_type == CardType::Weapon {
       base_stats != null;
       durability > 0;
     }
 
     # 突袭（Rush）不能与冲锋（Charge）共存
-    when (keywords & Keyword.Rush) != Keyword(0) {
-      (keywords & Keyword.Charge) == Keyword(0);
+    when (keywords & Keyword::Rush) != Keyword(0) {
+      (keywords & Keyword::Charge) == Keyword(0);
     }
 
     # 神圣护盾通常在 Rare+ 稀有度
-    when (keywords & Keyword.DivineShield) != Keyword(0) {
-      rarity >= Rarity.Rare;
+    when (keywords & Keyword::DivineShield) != Keyword(0) {
+      rarity >= Rarity::Rare;
     }
 
     # 武器耐久
     when durability > 0 {
-      card_type == CardType.Weapon;
+      card_type == CardType::Weapon;
       durability <= 10;
     }
 
@@ -335,7 +335,7 @@ sealed type DeckSlot {
     1 <= count <= 2;
 
     # 传说卡限一张
-    when card.rarity == Rarity.Legendary {
+    when card.rarity == Rarity::Legendary {
       count == 1;
     }
   }
@@ -357,7 +357,7 @@ type Deck {
     slots.len() <= 30;
 
     all slot in slots {
-      slot.card.faction == faction || slot.card.faction == Faction.Neutral;
+      slot.card.faction == faction || slot.card.faction == Faction::Neutral;
       slot.count >= 1;
     }
   }

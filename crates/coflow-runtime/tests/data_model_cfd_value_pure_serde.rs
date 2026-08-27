@@ -51,6 +51,19 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
         "child".to_string(),
         CfdValue::Object(Box::new(CfdObject::try_new("Item", BTreeMap::new())?)),
     );
+    fields.insert("option_none".to_string(), CfdValue::OptionNone);
+    fields.insert(
+        "some".to_string(),
+        CfdValue::OptionSome(Box::new(CfdValue::OptionNone)),
+    );
+    fields.insert(
+        "ok".to_string(),
+        CfdValue::ResultOk(Box::new(CfdValue::OptionSome(Box::new(CfdValue::Int(3))))),
+    );
+    fields.insert(
+        "err".to_string(),
+        CfdValue::ResultErr(Box::new(CfdValue::String("bad".to_string()))),
+    );
 
     let record = CfdRecord {
         key: RecordCoordinate::try_new("Item", "potion")?.key,

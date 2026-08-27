@@ -16,6 +16,6 @@ type ExampleFormula {
     0 <= a <= EXAMPLE_MAX_LEVEL;
     c ** 2.0 >= 0.0;
     !(a < 0);
-    (flags | ExamplePermission.Write) != ExamplePermission(0);
+    (flags | ExamplePermission::Write) != ExamplePermission(0);
   }
 }

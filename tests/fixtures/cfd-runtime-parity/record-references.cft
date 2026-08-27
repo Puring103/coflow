@@ -1,3 +1,3 @@
 type Node {
-  next: &Node? = null;
+  next: Option<&Node> = None;
 }

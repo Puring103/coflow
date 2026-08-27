@@ -211,55 +211,6 @@ mod tests {
     }
 
     #[test]
-    fn same_type_record_reference_change_fans_out_to_every_owner_record() {
-        let schema = schema(
-            r"
-                type Item {
-                    value: int;
-                    target: &Item? = null;
-                    check { target == null || target.value > 0; }
-                }
-            ",
-        );
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "one",
-            "Item",
-            [("value", 1_i64.into()), ("target", LoadedValueDraft::Null)],
-        );
-        builder.add_record(
-            "two",
-            "Item",
-            [
-                ("value", 2_i64.into()),
-                ("target", LoadedValueDraft::record_ref("one")),
-            ],
-        );
-        let model = builder.build().expect("model");
-        let impact = CheckImpact {
-            records: BTreeMap::from([(
-                coordinate("Item", "one"),
-                field("value", ChangedProjection::Base),
-            )]),
-            record_sets: BTreeSet::new(),
-        };
-
-        let tasks = plan_incremental_checks(&schema, &model, &impact);
-
-        assert_eq!(tasks.len(), 2);
-        assert_eq!(
-            tasks
-                .iter()
-                .map(|task| task.target)
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from([
-                CheckTarget::Record(model.record_by_type_key("Item", "one").unwrap()),
-                CheckTarget::Record(model.record_by_type_key("Item", "two").unwrap()),
-            ])
-        );
-    }
-
-    #[test]
     fn nested_field_change_plans_the_nested_statement_on_only_its_host() {
         let schema = schema(
             r"
@@ -641,7 +592,7 @@ mod tests {
                 field: FieldName::new("name").unwrap(),
                 dimension: DimensionName::new("language").unwrap(),
                 variant: VariantName::new("zh").unwrap(),
-                value: zh.into(),
+                value: LoadedValueDraft::OptionSome(Box::new(zh.into())),
                 origin: RecordOrigin::None,
             });
             builder.build().expect("model")

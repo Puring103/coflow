@@ -19,7 +19,7 @@ pub(crate) fn index_value<'model>(
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             target.location,
             format!(
                 "不能索引 null: 尝试在 null 上读取 [{}]",
@@ -181,7 +181,7 @@ pub(crate) fn field_value<'model>(
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             target.location,
             format!("不能访问 null 的字段: 尝试在 null 上读取 `.{name}`"),
         ));

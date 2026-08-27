@@ -64,6 +64,7 @@ fn validate_module(
                 if let Some(ty) = &definition.ty {
                     walk_value_type(budget, module, ty)?;
                 }
+                walk_default(budget, module, &definition.value)?;
             }
             Item::Enum(definition) => {
                 charge_annotations(budget, module, &definition.annotations)?;
@@ -87,6 +88,10 @@ fn validate_module(
                 if let Some(check) = &definition.check {
                     walk_check(budget, module, check)?;
                 }
+            }
+            Item::TypeAlias(definition) => {
+                charge_annotations(budget, module, &definition.annotations)?;
+                walk_value_type(budget, module, &definition.target)?;
             }
             Item::Check(definition) => {
                 charge_annotations(budget, module, &definition.annotations)?;
@@ -161,17 +166,24 @@ fn walk_value_type(
     while let Some((ty, parent)) = pending.pop() {
         let cursor = enter(budget, module, ty.span, parent, StructureKind::TypeRef)?;
         match &ty.kind {
-            TypeRefKind::Ref(inner) | TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
+            TypeRefKind::Ref(inner)
+            | TypeRefKind::Array(inner)
+            | TypeRefKind::Option(inner) => {
                 pending.push((inner, cursor));
             }
-            TypeRefKind::Dict(key, value) => {
+            TypeRefKind::Dict(key, value) | TypeRefKind::Result(key, value) => {
                 pending.push((value, cursor));
                 pending.push((key, cursor));
+            }
+            TypeRefKind::Function(parameters, result) => {
+                pending.push((result, cursor));
+                pending.extend(parameters.iter().rev().map(|parameter| (parameter, cursor)));
             }
             TypeRefKind::Int
             | TypeRefKind::Float
             | TypeRefKind::Bool
             | TypeRefKind::String
+            | TypeRefKind::Unit
             | TypeRefKind::Named(_) => {}
         }
     }
@@ -199,13 +211,24 @@ fn walk_default(
             DefaultExprKind::Object(fields) => {
                 pending.extend(fields.iter().rev().map(|(_, value)| (value, cursor)));
             }
+            DefaultExprKind::Dictionary(entries) => {
+                for (key, value) in entries.iter().rev() {
+                    pending.push((value, cursor));
+                    pending.push((key, cursor));
+                }
+            }
             DefaultExprKind::Int(_)
             | DefaultExprKind::Float(_)
             | DefaultExprKind::Bool(_)
-            | DefaultExprKind::Null
+            | DefaultExprKind::OptionNone
             | DefaultExprKind::String(_)
-            | DefaultExprKind::Name(_)
-            | DefaultExprKind::EnumVariant { .. } => {}
+            | DefaultExprKind::StaticPath(_)
+            | DefaultExprKind::RecordReference(_) => {}
+            DefaultExprKind::OptionSome(value)
+            | DefaultExprKind::ResultOk(value)
+            | DefaultExprKind::ResultErr(value) => {
+                pending.push((value, cursor));
+            }
         }
     }
     Ok(())
@@ -280,13 +303,12 @@ fn walk_check(
 fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
     match &expr.kind {
         CheckExprKind::Field { expr, .. }
-        | CheckExprKind::SafeField { expr, .. }
         | CheckExprKind::Is { expr, .. }
         | CheckExprKind::Unary { expr, .. } => vec![CheckNode::Expr(expr)],
-        CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
+        CheckExprKind::Index { expr, index } => {
             vec![CheckNode::Expr(expr), CheckNode::Expr(index)]
         }
-        CheckExprKind::BinOp { lhs, rhs, .. } | CheckExprKind::Coalesce { lhs, rhs } => {
+        CheckExprKind::BinOp { lhs, rhs, .. } => {
             vec![CheckNode::Expr(lhs), CheckNode::Expr(rhs)]
         }
         CheckExprKind::CmpChain { first, rest } => std::iter::once(CheckNode::Expr(first))
@@ -308,9 +330,9 @@ fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
         CheckExprKind::Int(_)
         | CheckExprKind::Float(_)
         | CheckExprKind::Bool(_)
-        | CheckExprKind::Null
         | CheckExprKind::String(_)
         | CheckExprKind::Name(_)
+        | CheckExprKind::StaticPath(_)
         | CheckExprKind::Records { .. } => Vec::new(),
     }
 }

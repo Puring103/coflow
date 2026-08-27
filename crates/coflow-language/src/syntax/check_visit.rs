@@ -72,20 +72,19 @@ pub trait CheckVisitor {
             CheckExprKind::Int(_)
             | CheckExprKind::Float(_)
             | CheckExprKind::Bool(_)
-            | CheckExprKind::Null
             | CheckExprKind::String(_)
             | CheckExprKind::Name(_)
+            | CheckExprKind::StaticPath(_)
             | CheckExprKind::Records { .. } => {}
             CheckExprKind::FormattedString(segments) => self.visit_segments(segments)?,
             CheckExprKind::Field { expr, .. }
-            | CheckExprKind::SafeField { expr, .. }
             | CheckExprKind::Is { expr, .. }
             | CheckExprKind::Unary { expr, .. } => self.visit_expr(expr)?,
-            CheckExprKind::Index { expr, index } | CheckExprKind::SafeIndex { expr, index } => {
+            CheckExprKind::Index { expr, index } => {
                 self.visit_expr(expr)?;
                 self.visit_expr(index)?;
             }
-            CheckExprKind::Coalesce { lhs, rhs } | CheckExprKind::BinOp { lhs, rhs, .. } => {
+            CheckExprKind::BinOp { lhs, rhs, .. } => {
                 self.visit_expr(lhs)?;
                 self.visit_expr(rhs)?;
             }

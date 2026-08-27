@@ -1,6 +1,7 @@
 mod annotations;
 mod budget;
 mod checks;
+mod constants;
 mod defaults;
 mod entry;
 mod enums;
@@ -14,13 +15,14 @@ mod types;
 pub use entry::build_schema;
 
 use self::checks::CheckTypeAnalyzer;
-use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeInfo};
+use self::state::{
+    CheckInfo, ConstInfo, EnumInfo, FieldInfo, ModuleScope, Symbol, TypeAliasInfo, TypeInfo,
+};
 use crate::limits::{StructuralBudget, StructuralLimits};
 use crate::module::{CftModuleSet, ModuleId};
 use crate::schema::{
     CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
 };
-use crate::syntax::ast::{ConstLiteral, TypeRefKind};
 use crate::syntax::Span;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use std::collections::BTreeMap;
@@ -40,9 +42,13 @@ pub(super) struct SchemaCompiler<'a> {
     symbols: BTreeMap<String, Symbol>,
     consts: BTreeMap<String, ConstInfo<'a>>,
     types: BTreeMap<String, TypeInfo<'a>>,
+    aliases: BTreeMap<String, TypeAliasInfo<'a>>,
+    resolved_aliases: BTreeMap<String, inferred_type::InferredType>,
     enums: BTreeMap<String, EnumInfo<'a>>,
     checks: BTreeMap<String, CheckInfo<'a>>,
+    module_scopes: BTreeMap<ModuleId, ModuleScope>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
+    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
     quantifier_bindings:
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
@@ -61,9 +67,13 @@ impl<'a> SchemaCompiler<'a> {
             symbols: BTreeMap::new(),
             consts: BTreeMap::new(),
             types: BTreeMap::new(),
+            aliases: BTreeMap::new(),
+            resolved_aliases: BTreeMap::new(),
             enums: BTreeMap::new(),
             checks: BTreeMap::new(),
+            module_scopes: BTreeMap::new(),
             full_fields: BTreeMap::new(),
+            resolved_defaults: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
             quantifier_bindings: BTreeMap::new(),
             check_dimensions: BTreeMap::new(),
@@ -79,60 +89,22 @@ impl<'a> SchemaCompiler<'a> {
         self.report_dangling_annotations();
         self.collect_symbols();
         self.validate_enums();
-        self.validate_const_type_annotations();
         self.validate_type_headers();
+        self.validate_type_aliases();
         self.validate_field_shapes();
         if !self.validate_inheritance() {
             return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
         }
         self.validate_annotations();
-        self.validate_defaults();
         self.build_full_fields();
+        self.resolve_constants();
+        self.validate_defaults();
         self.validate_checks();
 
         if !self.diagnostics.is_empty() {
             return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
         }
         Ok(self.lower_declarations())
-    }
-
-    fn validate_const_type_annotations(&mut self) {
-        self.each_const(|this, info| {
-            let Some(ty) = &info.def.ty else {
-                return;
-            };
-            let type_name = match &ty.kind {
-                TypeRefKind::Int => "int",
-                TypeRefKind::Float => "float",
-                TypeRefKind::Bool => "bool",
-                TypeRefKind::String => "string",
-                _ => {
-                    this.push_diag(
-                        CftErrorCode::InvalidConstValue,
-                        &info.module,
-                        ty.span,
-                        "const type annotation must be int, float, bool, or string",
-                    );
-                    return;
-                }
-            };
-            let matches = matches!(
-                (&ty.kind, &info.def.value),
-                (TypeRefKind::Int, ConstLiteral::Int(..))
-                    | (TypeRefKind::Float, ConstLiteral::Float(..))
-                    | (TypeRefKind::Bool, ConstLiteral::Bool(..))
-                    | (TypeRefKind::String, ConstLiteral::String(..))
-            );
-            if !matches {
-                let value_span = info.def.value.span();
-                this.push_diag(
-                    CftErrorCode::InvalidConstValue,
-                    &info.module,
-                    value_span,
-                    format!("const value does not match type annotation `{type_name}`"),
-                );
-            }
-        });
     }
 
     fn validate_checks(&mut self) {
@@ -209,12 +181,4 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn each_const<F: FnMut(&mut Self, &ConstInfo<'a>)>(&mut self, mut body: F) {
-        let keys: Vec<String> = self.consts.keys().cloned().collect();
-        for key in keys {
-            if let Some(info) = self.consts.get(&key).cloned() {
-                body(self, &info);
-            }
-        }
-    }
 }

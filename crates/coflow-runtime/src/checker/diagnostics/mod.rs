@@ -222,7 +222,6 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Int(value) => value.to_string(),
         CftSchemaCheckExprKind::Float(value) => value.to_string(),
         CftSchemaCheckExprKind::Bool(value) => value.to_string(),
-        CftSchemaCheckExprKind::Null => "null".to_string(),
         CftSchemaCheckExprKind::String(value) => format!("\"{value}\""),
         CftSchemaCheckExprKind::FormattedString(segments) => render_formatted_string(segments),
         CftSchemaCheckExprKind::Name(name) => name.clone(),
@@ -230,22 +229,12 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Field { expr, name } => {
             format!("{}.{}", render_expr(expr), name)
         }
-        CftSchemaCheckExprKind::SafeField { expr, name } => {
-            format!("{}?.{}", render_expr(expr), name)
-        }
         CftSchemaCheckExprKind::Index { expr, index } => {
             format!("{}[{}]", render_expr(expr), render_expr(index))
-        }
-        CftSchemaCheckExprKind::SafeIndex { expr, index } => {
-            format!("{}?[{}]", render_expr(expr), render_expr(index))
-        }
-        CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
-            format!("{} ?? {}", render_expr(lhs), render_expr(rhs))
         }
         CftSchemaCheckExprKind::Is { expr, predicate } => {
             let predicate = match predicate {
                 CftSchemaTypePredicate::Type(name) => name.as_str(),
-                CftSchemaTypePredicate::Null => "null",
             };
             format!("{} is {predicate}", render_expr(expr))
         }
@@ -356,6 +345,13 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }
+        EvalValue::Constant(coflow_language::CftConstValue::Array(items)) => {
+            format!("<array constant len={}>", items.len())
+        }
+        EvalValue::Constant(coflow_language::CftConstValue::Dictionary(entries)) => {
+            format!("<dict constant len={}>", entries.len())
+        }
+        EvalValue::Constant(_) => "<constant>".to_string(),
         EvalValue::EnumNamespace(name) => name.to_string(),
         EvalValue::Record(_) => "<record>".to_string(),
         EvalValue::Entry(entry) => {
@@ -369,7 +365,6 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
 pub(crate) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
     match ty {
         Some(CftValueType::Float) => true,
-        Some(CftValueType::Nullable(inner)) => value_type_is_float(Some(inner)),
         _ => false,
     }
 }

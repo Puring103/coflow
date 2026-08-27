@@ -67,7 +67,7 @@ impl ProjectSession {
             "MUTATION-PATH",
             "MUTATION",
         )?;
-        let item_ty = match ty.non_nullable() {
+        let item_ty = match &ty {
             CftValueType::Array(item) | CftValueType::Dict(_, item) => item.as_ref(),
             _ => {
                 return Err(one_path_error(
@@ -75,7 +75,7 @@ impl ProjectSession {
                 ));
             }
         };
-        match item_ty.non_nullable() {
+        match item_ty {
             CftValueType::RecordRef(target_type) => self
                 .ref_targets(target_type)
                 .into_iter()
@@ -425,14 +425,21 @@ fn rename_pending_value_references(
     new_key: &RecordKey,
 ) {
     match (expected, value) {
-        (CftValueType::Nullable(inner), value) => rename_pending_value_references(
-            schema,
-            target_actual_type,
-            inner,
-            value,
-            old_key,
-            new_key,
-        ),
+        (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, inner, value, old_key, new_key,
+            );
+        }
+        (CftValueType::Result(ok, _), CfdValue::ResultOk(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, ok, value, old_key, new_key,
+            );
+        }
+        (CftValueType::Result(_, error), CfdValue::ResultErr(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, error, value, old_key, new_key,
+            );
+        }
         (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
             if key.as_str() == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {

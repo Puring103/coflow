@@ -110,7 +110,13 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
         CfdValue::QuotedString(_, span) => c.add_plain(*span, SEM_STRING),
         CfdValue::FormattedString(value) => c.add_plain(value.span, SEM_STRING),
-        CfdValue::Null(span) => c.add_plain(*span, SEM_KEYWORD),
+        CfdValue::OptionNone(span) => c.add_plain(*span, SEM_KEYWORD),
+        CfdValue::OptionSome(value, span)
+        | CfdValue::ResultOk(value, span)
+        | CfdValue::ResultErr(value, span) => {
+            c.add_plain(*span, SEM_KEYWORD);
+            collect_value_tokens(value, c);
+        }
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {
                 c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
@@ -409,7 +415,6 @@ fn field_name_in_value<'a>(
 fn named_type_name(ty: &CftValueType) -> Option<&str> {
     match ty {
         CftValueType::Object(name) => Some(name),
-        CftValueType::Nullable(inner) => named_type_name(inner),
         _ => None,
     }
 }
@@ -461,7 +466,6 @@ fn ref_target_in_value(
             }
         }
         CfdValue::Block(block) => {
-            let expected_type = strip_nullable(expected_type);
             if let CftValueType::Dict(_, value_type) = expected_type {
                 for field in &block.fields {
                     if let Some(target) =
@@ -485,7 +489,7 @@ fn ref_target_in_value(
             None
         }
         CfdValue::Array(items, _) => {
-            let CftValueType::Array(item_type) = strip_nullable(expected_type) else {
+            let CftValueType::Array(item_type) = expected_type else {
                 return None;
             };
             for item in items {
@@ -495,19 +499,30 @@ fn ref_target_in_value(
             }
             None
         }
+        CfdValue::OptionSome(value, _) => {
+            let CftValueType::Option(inner) = expected_type else {
+                return None;
+            };
+            ref_target_in_value(value, schema, inner, offset)
+        }
+        CfdValue::ResultOk(value, _) => {
+            let CftValueType::Result(ok, _) = expected_type else {
+                return None;
+            };
+            ref_target_in_value(value, schema, ok, offset)
+        }
+        CfdValue::ResultErr(value, _) => {
+            let CftValueType::Result(_, error) = expected_type else {
+                return None;
+            };
+            ref_target_in_value(value, schema, error, offset)
+        }
         _ => None,
     }
 }
 
-fn strip_nullable(ty: &CftValueType) -> &CftValueType {
-    match ty {
-        CftValueType::Nullable(inner) => strip_nullable(inner),
-        _ => ty,
-    }
-}
-
 fn reference_target_type(ty: &CftValueType) -> Option<&str> {
-    match strip_nullable(ty) {
+    match ty {
         CftValueType::Object(name) | CftValueType::RecordRef(name) => Some(name),
         _ => None,
     }

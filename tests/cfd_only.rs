@@ -99,8 +99,25 @@ fn cli_codegen_dispatches_through_the_language_registry() {
     assert_eq!(report.targets.len(), 1);
     assert!(project
         .path()
-        .join("generated/csharp/CoflowTables.Cfd.cs")
+        .join("generated/csharp/Coflow.Metadata.cs")
         .is_file());
+}
+
+#[test]
+fn csharp_codegen_rejects_removed_numeric_width_options() {
+    let project = write_project();
+    fs::write(
+        project.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n    int_32: true\n",
+    )
+    .expect("config");
+    let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
+
+    let error = coflow::commands::generate_project_code(&opened)
+        .expect_err("removed C# options must not be accepted");
+
+    assert!(error.to_string().contains("unknown field `int_32`"));
+    assert!(!project.path().join("generated/csharp").exists());
 }
 
 #[test]
@@ -118,7 +135,7 @@ fn codegen_failure_does_not_publish_an_earlier_target() {
 }
 
 #[test]
-fn csharp_codegen_normalizes_and_loads_dimension_cfd_sources() {
+fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     let dir = tempfile::tempdir().expect("dimension project");
     fs::write(
         dir.path().join("schema.cft"),
@@ -146,19 +163,11 @@ fn csharp_codegen_normalizes_and_loads_dimension_cfd_sources() {
     let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
     let outcome = coflow::commands::generate_project_code(&project).expect("generate C#");
     assert!(matches!(outcome, coflow::commands::CommandOutcome::Success(_)));
-    let generated = fs::read_to_string(
-        dir.path().join("generated/csharp/CoflowTables.Cfd.cs"),
-    )
+    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
     .expect("generated CFD binding");
-    assert_eq!(
-        generated
-            .matches("data/dimensions/language/UiText_welcome.cfd")
-            .count(),
-        2,
-        "dimension source appears once in SourceFiles and once in its normalizer"
-    );
+    assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
     assert!(generated.contains(
-        "NormalizeDimensionRecord(record, \"UiText\", \"UiText_welcomeVariants\", document.Path)"
+        "Cft_5569546578745F77656C636F6D6556617269616E7473CoflowMetadata"
     ));
     assert!(generated.contains("ReadLocalized("));
     assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
@@ -167,7 +176,7 @@ fn csharp_codegen_normalizes_and_loads_dimension_cfd_sources() {
 }
 
 #[test]
-fn csharp_codegen_dispatches_singleton_dimension_rows_by_field_key() {
+fn csharp_codegen_emits_each_singleton_dimension_type_in_metadata() {
     let dir = tempfile::tempdir().expect("singleton dimension project");
     fs::write(
         dir.path().join("schema.cft"),
@@ -194,22 +203,14 @@ fn csharp_codegen_dispatches_singleton_dimension_rows_by_field_key() {
     let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
     let outcome = coflow::commands::generate_project_code(&project).expect("generate C#");
     assert!(matches!(outcome, coflow::commands::CommandOutcome::Success(_)));
-    let generated = fs::read_to_string(
-        dir.path().join("generated/csharp/CoflowTables.Cfd.cs"),
-    )
+    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
     .expect("generated CFD binding");
-    assert_eq!(
-        generated
-            .matches("data/dimensions/language/UiText.cfd")
-            .count(),
-        2,
-        "shared singleton source is loaded once and normalized once"
-    );
+    assert!(!generated.contains("data/dimensions/language/UiText.cfd"));
     assert!(generated.contains(
-        "\"welcome\" => NormalizeDimensionRecord(record, \"UiText\", \"UiText_welcomeVariants\", document.Path)"
+        "Cft_5569546578745F77656C636F6D6556617269616E7473CoflowMetadata"
     ));
     assert!(generated.contains(
-        "\"farewell\" => NormalizeDimensionRecord(record, \"UiText\", \"UiText_farewellVariants\", document.Path)"
+        "Cft_5569546578745F6661726577656C6C56617269616E7473CoflowMetadata"
     ));
     assert!(generated.contains(
         "\"UiText_welcomeVariants\", \"welcome\", new string[] { \"zh\" }"

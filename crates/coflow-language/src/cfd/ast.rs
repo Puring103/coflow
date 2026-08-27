@@ -2,7 +2,35 @@ use crate::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdAst {
+    pub namespace: Option<CfdNamespaceDecl>,
+    pub uses: Vec<CfdUseDecl>,
     pub records: Vec<CfdRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CfdNamespaceDecl {
+    pub path: String,
+    pub path_span: Span,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CfdUseDecl {
+    pub path: String,
+    pub path_span: Span,
+    pub alias: Option<(String, Span)>,
+    pub span: Span,
+}
+
+impl CfdUseDecl {
+    #[must_use]
+    pub fn local_name(&self) -> &str {
+        self.alias
+            .as_ref()
+            .map_or_else(|| self.path.rsplit("::").next().unwrap_or(&self.path), |alias| {
+                alias.0.as_str()
+            })
+    }
 }
 
 /// A top-level record or a record inside a group.
@@ -39,7 +67,10 @@ pub enum CfdValue {
     BitExpr(CfdBitExpr),
     QuotedString(String, Span),
     FormattedString(CfdFormattedString),
-    Null(Span),
+    OptionNone(Span),
+    OptionSome(Box<CfdValue>, Span),
+    ResultOk(Box<CfdValue>, Span),
+    ResultErr(Box<CfdValue>, Span),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
     Array(Vec<CfdValue>, Span),
@@ -50,7 +81,13 @@ impl CfdValue {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Self::Scalar(_, s) | Self::QuotedString(_, s) | Self::Null(s) | Self::Array(_, s) => *s,
+            Self::Scalar(_, s)
+            | Self::QuotedString(_, s)
+            | Self::OptionNone(s)
+            | Self::OptionSome(_, s)
+            | Self::ResultOk(_, s)
+            | Self::ResultErr(_, s)
+            | Self::Array(_, s) => *s,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
@@ -113,6 +150,7 @@ pub struct CfdBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdRef {
+    pub type_name: Option<(String, Span)>,
     pub key: (String, Span),
     pub span: Span,
 }

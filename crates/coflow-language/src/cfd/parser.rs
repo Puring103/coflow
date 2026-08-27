@@ -2,7 +2,8 @@ mod tokens;
 
 use super::ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdNamespaceDecl, CfdRecord, CfdRef, CfdUseDecl,
+    CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
@@ -35,9 +36,50 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_root(&mut self) -> CfdAst {
+        let mut namespace = None;
+        let mut uses = Vec::new();
         let mut records = Vec::new();
         self.skip_ws_and_comments();
+
+        if self.peek_keyword("namespace") {
+            match self.parse_namespace_decl() {
+                Ok(declaration) => namespace = Some(declaration),
+                Err(diagnostic) => {
+                    self.diagnostics.push(diagnostic);
+                    self.recover_to_next_record();
+                }
+            }
+            self.skip_ws_and_comments();
+        }
+
+        while self.peek_keyword("use") {
+            match self.parse_use_decl() {
+                Ok(declaration) => uses.push(declaration),
+                Err(diagnostic) => {
+                    self.diagnostics.push(diagnostic);
+                    self.recover_to_next_record();
+                }
+            }
+            self.skip_ws_and_comments();
+        }
+
         while !self.is_eof() {
+            if self.peek_keyword("namespace") || self.peek_keyword("use") {
+                let start = self.pos;
+                let keyword = if self.peek_keyword("namespace") {
+                    "namespace"
+                } else {
+                    "use"
+                };
+                self.diagnostics.push(CfdSyntaxDiagnostic {
+                    message: format!("`{keyword}` must appear before all CFD records"),
+                    span: Span::new(start, start + keyword.len()),
+                });
+                self.pos += keyword.len();
+                self.recover_to_next_record();
+                self.skip_ws_and_comments();
+                continue;
+            }
             match self.parse_top_level() {
                 Ok(new) => records.extend(new),
                 Err(diag) => {
@@ -47,7 +89,73 @@ impl<'a> Parser<'a> {
             }
             self.skip_ws_and_comments();
         }
-        CfdAst { records }
+        CfdAst {
+            namespace,
+            uses,
+            records,
+        }
+    }
+
+    fn parse_namespace_decl(&mut self) -> Result<CfdNamespaceDecl, CfdSyntaxDiagnostic> {
+        let start = self.pos;
+        if !self.eat_keyword("namespace") {
+            return Err(self.error("expected `namespace`"));
+        }
+        let path = self.parse_qualified_path("namespace path", false)?;
+        self.expect_char(';', "`;` after namespace declaration")?;
+        Ok(CfdNamespaceDecl {
+            path: path.text,
+            path_span: path.span,
+            span: Span::new(start, self.pos),
+        })
+    }
+
+    fn parse_use_decl(&mut self) -> Result<CfdUseDecl, CfdSyntaxDiagnostic> {
+        let start = self.pos;
+        if !self.eat_keyword("use") {
+            return Err(self.error("expected `use`"));
+        }
+        let path = self.parse_qualified_path("use path", true)?;
+        self.skip_ws_and_comments();
+        let alias = if self.eat_keyword("as") {
+            let alias = self.parse_name_token("use alias")?;
+            if alias.text.contains("::") || !crate::is_cft_identifier(&alias.text) {
+                return Err(CfdSyntaxDiagnostic {
+                    message: format!("invalid use alias `{}`", alias.text),
+                    span: alias.span,
+                });
+            }
+            Some((alias.text, alias.span))
+        } else {
+            None
+        };
+        self.expect_char(';', "`;` after use declaration")?;
+        Ok(CfdUseDecl {
+            path: path.text,
+            path_span: path.span,
+            alias,
+            span: Span::new(start, self.pos),
+        })
+    }
+
+    fn parse_qualified_path(
+        &mut self,
+        label: &str,
+        require_qualified: bool,
+    ) -> Result<Token, CfdSyntaxDiagnostic> {
+        let token = self.parse_name_token(label)?;
+        let segments = token.text.split("::").collect::<Vec<_>>();
+        if (require_qualified && segments.len() < 2)
+            || segments
+                .iter()
+                .any(|segment| !crate::is_cft_identifier(segment))
+        {
+            return Err(CfdSyntaxDiagnostic {
+                message: format!("invalid {label} `{}`", token.text),
+                span: token.span,
+            });
+        }
+        Ok(token)
     }
 
     /// Skip to a record candidate only after malformed nested syntax has
@@ -259,11 +367,31 @@ impl<'a> Parser<'a> {
             Some('@') => Err(self.error("invalid record reference")),
             Some('&') => self.parse_ref_direct(),
             _ => {
-                // Could be: null, scalar, or a block (with optional type marker).
-                if self.peek_keyword("null") {
+                if self.peek_keyword("None") {
                     let start = self.pos;
-                    self.eat_keyword("null");
-                    return Ok(CfdValue::Null(Span::new(start, self.pos)));
+                    self.eat_keyword("None");
+                    return Ok(CfdValue::OptionNone(Span::new(start, self.pos)));
+                }
+                for (name, constructor) in [
+                    ("Some", 0_u8),
+                    ("Ok", 1_u8),
+                    ("Err", 2_u8),
+                ] {
+                    if self.peek_keyword(name) {
+                        let start = self.pos;
+                        self.eat_keyword(name);
+                        self.skip_ws_and_comments();
+                        self.expect_char('(', "constructor argument `(`")?;
+                        let value = self.parse_value()?;
+                        self.skip_ws_and_comments();
+                        self.expect_char(')', "constructor end `)`")?;
+                        let span = Span::new(start, self.pos);
+                        return Ok(match constructor {
+                            0 => CfdValue::OptionSome(Box::new(value), span),
+                            1 => CfdValue::ResultOk(Box::new(value), span),
+                            _ => CfdValue::ResultErr(Box::new(value), span),
+                        });
+                    }
                 }
                 // Peek ahead: if after a name token there is `{`, it's a block.
                 let saved = self.pos;
@@ -493,15 +621,26 @@ impl<'a> Parser<'a> {
     fn parse_ref_direct(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         let start = self.pos;
         self.expect_char('&', "`&`")?;
-        let key_start = self.pos;
-        let key = self.parse_ref_name("reference key")?;
-        let key_span = Span::new(key_start, self.pos);
+        let reference_start = self.pos;
+        let reference = self.parse_ref_name("reference key")?;
+        let reference_span = Span::new(reference_start, self.pos);
         if matches!(self.peek_char(), Some('.' | '[')) {
             return Err(self.error("invalid record reference"));
         }
+        let (type_name, key) = if let Some((type_name, key)) = reference.rsplit_once("::") {
+            let type_end = reference_start + type_name.len();
+            let key_start = type_end + 2;
+            (
+                Some((type_name.to_string(), Span::new(reference_start, type_end))),
+                (key.to_string(), Span::new(key_start, self.pos)),
+            )
+        } else {
+            (None, (reference, reference_span))
+        };
         let span = Span::new(start, self.pos);
         Ok(CfdValue::Ref(CfdRef {
-            key: (key, key_span),
+            type_name,
+            key,
             span,
         }))
     }
@@ -616,7 +755,7 @@ fn parse_field_reference_text(
         },
         |reference| {
             let (type_name, record) = reference
-                .split_once("::")
+                .rsplit_once("::")
                 .map_or((None, reference), |(type_name, record)| {
                     (Some(type_name.to_string()), record)
                 });
@@ -631,7 +770,7 @@ fn parse_field_reference_text(
         || key.as_deref().is_some_and(str::is_empty)
         || type_name
             .as_deref()
-            .is_some_and(|name| !is_reference_name(name))
+            .is_some_and(|name| !is_qualified_reference_name(name))
         || key.as_deref().is_some_and(|name| !is_reference_name(name))
         || path.iter().any(|name| !is_reference_name(name))
         || expression.chars().any(char::is_whitespace)
@@ -657,6 +796,10 @@ fn is_reference_name(value: &str) -> bool {
         .next()
         .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
+}
+
+fn is_qualified_reference_name(value: &str) -> bool {
+    value.split("::").all(is_reference_name)
 }
 
 #[derive(Default)]

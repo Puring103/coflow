@@ -37,7 +37,7 @@ pub use diagnostics::{
 };
 pub use module::{parse_modules, CftFile, CftModule, CftModuleSet, ModuleId};
 pub use schema::{
-    build_schema, BucketName, CftCheckBuiltin, CftConst, CftConstValue, CftDimension,
+    build_schema, BucketName, CftAnnotation, CftAnnotationValue, CftCheckBuiltin, CftConst, CftConstValue, CftDimension,
     CftDimensionInput, CftDimensionInputError, CftDimensionInputs, CftDisplayMetadata, CftEnum,
     CftEnumValue, CftEnumVariant, CftField, CftFieldDimension, CftNameError, CftSchema,
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,

@@ -62,7 +62,7 @@ fn resolve_reference<'a>(
     let mut ty = field_type(schema, record.actual_type(), first)?;
 
     for field in reference.path.iter().skip(1) {
-        match (value, ty.non_nullable()) {
+        match (value, &ty) {
             (CfdValue::Object(object), CftValueType::Object(declared_type)) => {
                 let actual_type = if object.actual_type().is_empty() {
                     declared_type.as_str()
@@ -108,7 +108,10 @@ fn field_type(schema: &CftSchema, type_name: &str, field: &str) -> Result<CftVal
 
 pub fn stringify_value(value: &CfdValue) -> String {
     match value {
-        CfdValue::Null => "null".to_string(),
+        CfdValue::OptionNone => "None".to_string(),
+        CfdValue::OptionSome(value) => format!("Some({})", stringify_value(value)),
+        CfdValue::ResultOk(value) => format!("Ok({})", stringify_value(value)),
+        CfdValue::ResultErr(value) => format!("Err({})", stringify_value(value)),
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),

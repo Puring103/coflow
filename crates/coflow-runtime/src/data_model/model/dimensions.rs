@@ -16,7 +16,7 @@ pub enum DimensionValueLookup<'a> {
         value: &'a CfdValue,
         origin: &'a RecordOrigin,
     },
-    ExplicitNull {
+    ExplicitNone {
         origin: &'a RecordOrigin,
     },
     Missing,
@@ -65,8 +65,8 @@ impl CfdDataModel {
         let Some(value) = values.variants.get(variant) else {
             return Ok(DimensionValueLookup::Missing);
         };
-        if matches!(value.value, CfdValue::Null) {
-            Ok(DimensionValueLookup::ExplicitNull {
+        if matches!(value.value, CfdValue::OptionNone) {
+            Ok(DimensionValueLookup::ExplicitNone {
                 origin: &value.origin,
             })
         } else {

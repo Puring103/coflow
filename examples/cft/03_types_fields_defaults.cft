@@ -8,7 +8,7 @@ sealed type ExampleVector2 {
 type ExampleItem {
   name: string;
 
-  rarity: ExampleRarity = ExampleRarity.Common;
+  rarity: ExampleRarity = ExampleRarity::Common;
 
   price: int = 0;
   tags: [string] = [];

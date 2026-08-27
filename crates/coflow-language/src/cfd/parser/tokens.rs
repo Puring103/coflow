@@ -32,6 +32,10 @@ impl Parser<'_> {
         self.skip_ws_and_comments();
         let start = self.pos;
         while let Some(ch) = self.peek_char() {
+            if ch == ':' && self.source[self.pos..].starts_with("::") {
+                self.pos += 2;
+                continue;
+            }
             if ch.is_whitespace()
                 || matches!(
                     ch,
@@ -72,6 +76,10 @@ impl Parser<'_> {
         self.skip_ws_and_comments();
         let start = self.pos;
         while let Some(ch) = self.peek_char() {
+            if ch == ':' && self.source[self.pos..].starts_with("::") {
+                self.pos += 2;
+                continue;
+            }
             if ch.is_whitespace()
                 || matches!(
                     ch,
@@ -205,5 +213,5 @@ impl Parser<'_> {
 }
 
 fn is_value_boundary(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | ')' | '|' | '^' | '&' | ':')
+    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '(' | ')' | '|' | '^' | '&' | ':')
 }

@@ -1,14 +1,11 @@
-use crate::schema::{CftConstValue, CftValueType};
+use crate::schema::CftValueType;
 use crate::{EnumName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum InferredType {
     Value(CftValueType),
-    Null,
     EnumNamespace(EnumName),
     Entry(Box<InferredType>, Box<InferredType>),
-    EmptyArray,
-    EmptyObject,
     Unknown,
 }
 
@@ -60,33 +57,49 @@ impl InferredType {
         }
     }
 
-    pub(super) fn nullable(inner: Self) -> Self {
+    pub(super) fn option(inner: Self) -> Self {
         match inner {
-            Self::Value(CftValueType::Nullable(inner)) => {
-                Self::Value(CftValueType::Nullable(inner))
-            }
-            Self::Value(inner) => Self::Value(CftValueType::Nullable(Box::new(inner))),
+            Self::Value(inner) => Self::Value(CftValueType::Option(Box::new(inner))),
             _ => Self::Unknown,
         }
     }
 
-    pub(super) fn from_const(value: &CftConstValue) -> Self {
-        match value {
-            CftConstValue::Int(_) => Self::int(),
-            CftConstValue::Float(_) => Self::float(),
-            CftConstValue::Bool(_) => Self::bool(),
-            CftConstValue::String(_) => Self::string(),
+    pub(super) fn result(value: Self, error: Self) -> Self {
+        match (value, error) {
+            (Self::Value(value), Self::Value(error)) => {
+                Self::Value(CftValueType::Result(Box::new(value), Box::new(error)))
+            }
+            _ => Self::Unknown,
         }
+    }
+
+    pub(super) fn function(parameters: Vec<Self>, result: Self) -> Self {
+        let Some(parameters) = parameters
+            .into_iter()
+            .map(|parameter| parameter.value_type().cloned())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Self::Unknown;
+        };
+        match result {
+            Self::Value(result) => Self::Value(CftValueType::Function(parameters, Box::new(result))),
+            _ => Self::Unknown,
+        }
+    }
+
+    pub(super) const fn unit() -> Self {
+        Self::Value(CftValueType::Unit)
+    }
+
+    pub(super) fn from_const(value_type: Option<&CftValueType>) -> Self {
+        value_type.map_or(Self::Unknown, |value_type| Self::Value(value_type.clone()))
     }
 
     pub(super) const fn value_type(&self) -> Option<&CftValueType> {
         match self {
             Self::Value(value_type) => Some(value_type),
-            Self::Null
-            | Self::EnumNamespace(_)
+            Self::EnumNamespace(_)
             | Self::Entry(_, _)
-            | Self::EmptyArray
-            | Self::EmptyObject
             | Self::Unknown => None,
         }
     }
@@ -125,18 +138,6 @@ impl InferredType {
         matches!(self, Self::Unknown)
     }
 
-    pub(super) fn is_nullable(&self) -> bool {
-        matches!(self, Self::Value(CftValueType::Nullable(_)))
-    }
-}
-
-pub(super) fn unwrap_nullable(ty: &InferredType) -> InferredType {
-    match ty {
-        InferredType::Value(CftValueType::Nullable(inner)) => {
-            InferredType::Value((**inner).clone())
-        }
-        other => other.clone(),
-    }
 }
 
 pub(super) fn unwrap_reference(ty: &InferredType) -> InferredType {
@@ -155,47 +156,13 @@ pub(super) fn is_valid_dict_key(ty: &InferredType) -> bool {
     ) || ty.is_unknown()
 }
 
-pub(super) fn types_assignable(expected: &InferredType, actual: &InferredType) -> bool {
-    if expected.is_unknown() || actual.is_unknown() {
-        return true;
-    }
-    match (expected, actual) {
-        (InferredType::Value(CftValueType::Nullable(_)), InferredType::Null)
-        | (InferredType::Value(CftValueType::Array(_)), InferredType::EmptyArray)
-        | (
-            InferredType::Value(CftValueType::Dict(_, _) | CftValueType::Object(_)),
-            InferredType::EmptyObject,
-        ) => true,
-        (InferredType::Value(CftValueType::Nullable(inner)), other) => {
-            types_assignable(&InferredType::Value((**inner).clone()), other)
-        }
-        (InferredType::Value(expected), InferredType::Value(actual)) => expected == actual,
-        _ => expected == actual,
-    }
-}
-
 pub(super) fn types_comparable(left: &InferredType, right: &InferredType) -> bool {
     if left.is_unknown() || right.is_unknown() {
         return true;
     }
-    if matches!((left, right), (InferredType::Null, InferredType::Null)) {
-        return true;
-    }
-    if matches!(
-        (left, right),
-        (
-            InferredType::Null,
-            InferredType::Value(CftValueType::Nullable(_))
-        ) | (
-            InferredType::Value(CftValueType::Nullable(_)),
-            InferredType::Null
-        )
-    ) {
-        return true;
-    }
-    match (unwrap_nullable(left), unwrap_nullable(right)) {
+    match (left, right) {
         (InferredType::Value(left), InferredType::Value(right)) => {
-            comparable_value_types(&left, &right)
+            comparable_value_types(left, right)
         }
         _ => false,
     }
@@ -215,9 +182,9 @@ fn comparable_value_types(left: &CftValueType, right: &CftValueType) -> bool {
 }
 
 pub(super) fn ordered_comparable(left: &InferredType, right: &InferredType) -> bool {
-    match (unwrap_nullable(left), unwrap_nullable(right)) {
+    match (left, right) {
         (InferredType::Unknown, _) | (_, InferredType::Unknown) => true,
-        (InferredType::Value(left), InferredType::Value(right)) => match (&left, &right) {
+        (InferredType::Value(left), InferredType::Value(right)) => match (left, right) {
             (CftValueType::Int, CftValueType::Int) | (CftValueType::Float, CftValueType::Float) => {
                 true
             }
@@ -230,34 +197,33 @@ pub(super) fn ordered_comparable(left: &InferredType, right: &InferredType) -> b
 
 pub(super) fn unique_supported(ty: &InferredType) -> bool {
     matches!(
-        unwrap_nullable(ty).value_type(),
+        ty.value_type(),
         Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
     )
 }
 
 pub(super) fn min_max_supported(ty: &InferredType) -> bool {
     matches!(
-        unwrap_nullable(ty).value_type(),
+        ty.value_type(),
         Some(CftValueType::Int | CftValueType::Float | CftValueType::Enum(_))
     )
 }
 
 pub(super) fn set_element_supported(ty: &InferredType) -> bool {
     matches!(
-        unwrap_nullable(ty).value_type(),
+        ty.value_type(),
         Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
     )
 }
 
 pub(super) fn sorted_element_supported(ty: &InferredType) -> bool {
-    !ty.is_nullable()
-        && matches!(
-            ty.value_type(),
-            Some(
-                CftValueType::Int
-                    | CftValueType::Bool
-                    | CftValueType::String
-                    | CftValueType::Enum(_)
-            )
+    matches!(
+        ty.value_type(),
+        Some(
+            CftValueType::Int
+                | CftValueType::Bool
+                | CftValueType::String
+                | CftValueType::Enum(_)
         )
+    )
 }
