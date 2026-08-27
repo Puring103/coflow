@@ -1,0 +1,24 @@
+namespace integration::domain;
+
+Character {
+  guardian {
+    stats: Stats {
+      health: 120,
+      attack: 8,
+      resistances: { "fire": 7, "ice": 4 },
+    },
+    tags: ["tank", "starter"],
+    attributes: { "level": 5, "rarity": 2 },
+  }
+
+  arcanist {
+    stats: Stats {
+      health: 75,
+      attack: 19,
+      resistances: { "fire": 2, "ice": 9 },
+    },
+    tags: ["caster", "advanced"],
+    attributes: { "level": 8, "rarity": 4 },
+    fallback: Some(&Character::guardian),
+  }
+}

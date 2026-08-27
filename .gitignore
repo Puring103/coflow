@@ -4,6 +4,8 @@ dist/
 examples/*/generated/**
 !examples/*/generated/
 !examples/*/coflow.enum.lock.json
+examples/*/app/bin/
+examples/*/app/obj/
 node_modules/
 runtimes/csharp/**/bin/
 runtimes/csharp/**/obj/

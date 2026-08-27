@@ -328,7 +328,7 @@ public static class CfdParser
                 current = Read();
                 if (!char.IsWhiteSpace(current)) returnStarted = true;
                 if (current == '<') angleDepth++;
-                else if (current == '>') angleDepth--;
+                else if (current == '>' && angleDepth > 0) angleDepth--;
                 else if (current == '[') bracketDepth++;
                 else if (current == ']') bracketDepth--;
             }
