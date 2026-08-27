@@ -117,9 +117,9 @@ internal sealed class CoflowProgram
         Identity = identity;
         SourcePath = sourcePath;
         SourceSpan = sourceSpan;
-        Instructions = instructions;
-        InstructionSpans = instructionSpans;
-        Constants = constants;
+        Instructions = instructions as CoflowInstruction[] ?? instructions.ToArray();
+        InstructionSpans = instructionSpans as CfdSpan?[] ?? instructionSpans.ToArray();
+        Constants = constants as object?[] ?? constants.ToArray();
         ParameterCount = parameterCount;
         LocalCount = localCount;
     }
@@ -127,9 +127,9 @@ internal sealed class CoflowProgram
     internal CoflowFunctionIdentity Identity { get; }
     internal string SourcePath { get; }
     internal CfdSpan? SourceSpan { get; }
-    internal IReadOnlyList<CoflowInstruction> Instructions { get; }
-    internal IReadOnlyList<CfdSpan?> InstructionSpans { get; }
-    internal IReadOnlyList<object?> Constants { get; }
+    internal CoflowInstruction[] Instructions { get; }
+    internal CfdSpan?[] InstructionSpans { get; }
+    internal object?[] Constants { get; }
     internal int ParameterCount { get; }
     internal int LocalCount { get; }
 }
@@ -200,9 +200,10 @@ internal static class CoflowVm
                 $"function expected {program.ParameterCount} arguments but received {arguments.Length}");
 
         var previousExecution = _currentExecution;
-        var execution = previousExecution ?? new CoflowExecutionContext();
+        var execution = previousExecution ?? new CoflowExecutionContext(
+            _instructionLimitOverride ?? MaximumInstructions);
         var initialStackSize = Math.Min(MaximumStackValues,
-            Math.Max(16, program.Instructions.Count / 2));
+            Math.Max(16, program.Instructions.Length / 2));
         var stack = ArrayPool<object?>.Shared.Rent(initialStackSize);
         var frames = new Stack<Frame>();
         _currentExecution = execution;
@@ -239,7 +240,7 @@ internal static class CoflowVm
             {
                 var frame = frames.Peek();
                 execution.ChargeInstruction();
-                if (frame.Pc >= frame.Program.Instructions.Count)
+                if (frame.Pc >= frame.Program.Instructions.Length)
                     throw new InvalidOperationException("Coflow function ended without a return instruction.");
                 var instruction = frame.Program.Instructions[frame.Pc++];
                 switch (instruction.Code)
@@ -412,7 +413,7 @@ internal static class CoflowVm
                         if (target is not null)
                         {
                             execution.EnterFrame(target.Identity);
-                            frames.Push(new Frame(target, callArguments, stackCount));
+                            frames.Push(new Frame(target, callArguments, stackCount, ownsArguments: true));
                         }
                         else
                             Push(call.Slot.InvokeBoundFromVm(callArguments));
@@ -431,7 +432,8 @@ internal static class CoflowVm
                     case CoflowOpCode.TailCall:
                     {
                         var call = (CoflowCallSite)frame.Program.Constants[instruction.Operand]!;
-                        var callArguments = new object?[call.ArgumentCount];
+                        var callArguments = frame.ReusableArguments(call.ArgumentCount)
+                            ?? new object?[call.ArgumentCount];
                         for (var index = callArguments.Length - 1; index >= 0; index--)
                             callArguments[index] = Pop();
                         var target = call.Slot.CompiledProgram;
@@ -471,7 +473,7 @@ internal static class CoflowVm
         {
             var caller = frames.TryPeek(out var frame) ? frame : null;
             var callerSpan = caller is not null && caller.Pc > 0 &&
-                caller.Pc <= caller.Program.InstructionSpans.Count
+                caller.Pc <= caller.Program.InstructionSpans.Length
                 ? caller.Program.InstructionSpans[caller.Pc - 1]
                 : null;
             throw error.WithCallers(
@@ -483,7 +485,7 @@ internal static class CoflowVm
         {
             var failed = frames.TryPeek(out var frame) ? frame.Program : program;
             var instructionSpan = frames.TryPeek(out frame) && frame.Pc > 0 &&
-                frame.Pc <= frame.Program.InstructionSpans.Count
+                frame.Pc <= frame.Program.InstructionSpans.Length
                 ? frame.Program.InstructionSpans[frame.Pc - 1]
                 : null;
             throw Fault(
@@ -623,7 +625,7 @@ internal static class CoflowVm
             }
         Schedule:
             execution.EnterFrame(target.Identity);
-            frames.Push(new Frame(target, targetArguments, stackCount, continuation));
+            frames.Push(new Frame(target, targetArguments, stackCount, continuation, ownsArguments: true));
             immediate = null;
             return true;
         }
@@ -680,7 +682,8 @@ internal static class CoflowVm
             var replaced = frames.Pop();
             while (stackCount > replaced.StackBase) Pop();
             execution.ReplaceFrame(target.Identity);
-            frames.Push(new Frame(target, targetArguments, replaced.StackBase, replaced.Continuation));
+            replaced.Reset(target, targetArguments);
+            frames.Push(replaced);
         }
 
         void RunHigherOrder(HigherOrderState state, object? callbackResult, bool hasResult)
@@ -768,21 +771,39 @@ internal static class CoflowVm
             CoflowProgram program,
             object?[] arguments,
             int stackBase,
-            Action<object?>? continuation = null)
+            Action<object?>? continuation = null,
+            bool ownsArguments = false)
         {
             Program = program;
             Arguments = arguments;
             Locals = new object?[program.LocalCount];
             StackBase = stackBase;
             Continuation = continuation;
+            OwnsArguments = ownsArguments;
         }
 
-        internal CoflowProgram Program { get; }
-        internal object?[] Arguments { get; }
-        internal object?[] Locals { get; }
+        internal CoflowProgram Program { get; private set; }
+        internal object?[] Arguments { get; private set; }
+        internal object?[] Locals { get; private set; }
         internal int StackBase { get; }
         internal Action<object?>? Continuation { get; }
+        internal bool OwnsArguments { get; private set; }
         internal int Pc { get; set; }
+
+        internal object?[]? ReusableArguments(int count) =>
+            OwnsArguments && Arguments.Length == count ? Arguments : null;
+
+        internal void Reset(CoflowProgram program, object?[] arguments)
+        {
+            Program = program;
+            Arguments = arguments;
+            OwnsArguments = true;
+            if (Locals.Length == program.LocalCount)
+                Array.Clear(Locals, 0, Locals.Length);
+            else
+                Locals = new object?[program.LocalCount];
+            Pc = 0;
+        }
     }
 
     private sealed class HigherOrderState(
@@ -811,9 +832,10 @@ internal static class CoflowVm
         internal void ClearArguments() => Array.Clear(CallbackArguments, 0, CallbackArguments.Length);
     }
 
-    private sealed class CoflowExecutionContext
+    private sealed class CoflowExecutionContext(long instructionLimit)
     {
         private readonly List<CoflowFunctionIdentity> _callStack = new();
+        private readonly long _instructionLimit = instructionLimit;
         private long _instructions;
         private int _stackValues;
 
@@ -827,8 +849,7 @@ internal static class CoflowVm
 
         internal void ChargeInstructions(long count)
         {
-            var limit = _instructionLimitOverride ?? MaximumInstructions;
-            if (count < 0 || _instructions > limit - count)
+            if (count < 0 || _instructions > _instructionLimit - count)
                 throw new InvalidOperationException("Coflow VM instruction budget exceeded.");
             _instructions += count;
         }
