@@ -135,7 +135,9 @@ public readonly record struct CoflowFunctionIdentity(
 internal static class CoflowFunctionDelegates
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type,
-        Func<Delegate, object?[], object?>> Invokers = new();
+        AdaptedInvoker> Invokers = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type,
+        Func<CoflowClosure, Delegate>> ClosureFactories = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowFunctionSlot>
         Slots = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowClosure>
@@ -186,8 +188,16 @@ internal static class CoflowFunctionDelegates
             return value;
         if (value is CoflowFunctionSlot slot) return Create(expectedType, slot);
         if (value is not CoflowClosure closure) return value;
-        var invoke = expectedType.GetMethod("Invoke") ?? throw new ArgumentException(
-            "The requested function value type is not a delegate.", nameof(expectedType));
+        var implementation = ClosureFactories.GetOrAdd(expectedType, CreateClosureFactory)(closure);
+        Closures.Add(implementation, closure);
+        return implementation;
+    }
+
+    private static Func<CoflowClosure, Delegate> CreateClosureFactory(Type delegateType)
+    {
+        var invoke = delegateType.GetMethod("Invoke") ?? throw new ArgumentException(
+            "The requested function value type is not a delegate.", nameof(delegateType));
+        var closure = System.Linq.Expressions.Expression.Parameter(typeof(CoflowClosure), "closure");
         var parameters = invoke.GetParameters()
             .Select(parameter => System.Linq.Expressions.Expression.Parameter(
                 parameter.ParameterType, parameter.Name))
@@ -198,40 +208,46 @@ internal static class CoflowFunctionDelegates
                 parameter, typeof(object))));
         System.Linq.Expressions.Expression body = invoke.ReturnType == typeof(void)
             ? System.Linq.Expressions.Expression.Call(
-                System.Linq.Expressions.Expression.Constant(closure),
+                closure,
                 typeof(CoflowClosure).GetMethod(nameof(CoflowClosure.InvokeVoid))!,
                 arguments)
             : System.Linq.Expressions.Expression.Call(
-                System.Linq.Expressions.Expression.Constant(closure),
+                closure,
                 typeof(CoflowClosure).GetMethod(nameof(CoflowClosure.Invoke))!
                     .MakeGenericMethod(invoke.ReturnType),
                 arguments);
-        var implementation = System.Linq.Expressions.Expression
-            .Lambda(expectedType, body, parameters)
-            .Compile();
-        Closures.Add(implementation, closure);
-        return implementation;
+        return System.Linq.Expressions.Expression.Lambda<Func<CoflowClosure, Delegate>>(
+            System.Linq.Expressions.Expression.Convert(
+                System.Linq.Expressions.Expression.Lambda(delegateType, body, parameters),
+                typeof(Delegate)),
+            closure).Compile();
     }
 
     internal static T Adapt<T>(object? value) => (T)Adapt(typeof(T), value)!;
 
     internal static object? InvokeAdapted(Delegate implementation, object?[] arguments)
     {
-        var parameterTypes = implementation.GetType().GetMethod("Invoke")!.GetParameters();
-        var adaptedArguments = new object?[arguments.Length];
-        for (var index = 0; index < arguments.Length; index++)
-            adaptedArguments[index] = Adapt(parameterTypes[index].ParameterType, arguments[index]);
-        return Invokers.GetOrAdd(implementation.GetType(), CreateInvoker)(implementation, adaptedArguments);
+        var invoker = Invokers.GetOrAdd(implementation.GetType(), CreateInvoker);
+        object?[]? adaptedArguments = null;
+        foreach (var index in invoker.DelegateParameterIndexes)
+        {
+            var adapted = Adapt(invoker.ParameterTypes[index], arguments[index]);
+            if (ReferenceEquals(adapted, arguments[index])) continue;
+            adaptedArguments ??= (object?[])arguments.Clone();
+            adaptedArguments[index] = adapted;
+        }
+        return invoker.Invoke(implementation, adaptedArguments ?? arguments);
     }
 
-    private static Func<Delegate, object?[], object?> CreateInvoker(Type delegateType)
+    private static AdaptedInvoker CreateInvoker(Type delegateType)
     {
         var implementation = System.Linq.Expressions.Expression.Parameter(typeof(Delegate), "implementation");
         var arguments = System.Linq.Expressions.Expression.Parameter(typeof(object[]), "arguments");
         var invoke = delegateType.GetMethod("Invoke")!;
+        var parameters = invoke.GetParameters();
         var call = System.Linq.Expressions.Expression.Invoke(
             System.Linq.Expressions.Expression.Convert(implementation, delegateType),
-            invoke.GetParameters().Select((parameter, index) =>
+            parameters.Select((parameter, index) =>
                 System.Linq.Expressions.Expression.Convert(
                     System.Linq.Expressions.Expression.ArrayIndex(arguments,
                         System.Linq.Expressions.Expression.Constant(index)),
@@ -241,9 +257,20 @@ internal static class CoflowFunctionDelegates
                 System.Linq.Expressions.Expression.Convert(
                     System.Linq.Expressions.Expression.Constant(Unit.Value), typeof(object)))
             : System.Linq.Expressions.Expression.Convert(call, typeof(object));
-        return System.Linq.Expressions.Expression.Lambda<Func<Delegate, object?[], object?>>(
-            body, implementation, arguments).Compile();
+        return new AdaptedInvoker(
+            System.Linq.Expressions.Expression.Lambda<Func<Delegate, object?[], object?>>(
+                body, implementation, arguments).Compile(),
+            parameters.Select(parameter => parameter.ParameterType).ToArray(),
+            parameters.Select((parameter, index) => (parameter, index))
+                .Where(item => typeof(Delegate).IsAssignableFrom(item.parameter.ParameterType))
+                .Select(item => item.index)
+                .ToArray());
     }
+
+    private sealed record AdaptedInvoker(
+        Func<Delegate, object?[], object?> Invoke,
+        Type[] ParameterTypes,
+        int[] DelegateParameterIndexes);
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -307,7 +334,7 @@ public sealed class CoflowFunctionSlot
         {
             if (!_functionsCompiled || _compiled is not null || _implementation is not null)
                 throw new InvalidOperationException("The Coflow host function slot cannot be bound.");
-            _implementation = implementation;
+            System.Threading.Volatile.Write(ref _implementation, implementation);
         }
     }
 
@@ -315,8 +342,8 @@ public sealed class CoflowFunctionSlot
     {
         lock (_sync)
         {
-            _compiled = implementation;
-            _functionsCompiled = true;
+            System.Threading.Volatile.Write(ref _compiled, implementation);
+            System.Threading.Volatile.Write(ref _functionsCompiled, true);
         }
     }
 
@@ -335,14 +362,10 @@ public sealed class CoflowFunctionSlot
 
     private object? InvokeCore(object?[] arguments)
     {
-        CoflowProgram? compiled;
-        Delegate? implementation;
-        lock (_sync)
-        {
-            if (!_functionsCompiled) throw new CoflowFunctionNotCompiledException();
-            compiled = _compiled;
-            implementation = _implementation;
-        }
+        if (!System.Threading.Volatile.Read(ref _functionsCompiled))
+            throw new CoflowFunctionNotCompiledException();
+        var compiled = System.Threading.Volatile.Read(ref _compiled);
+        var implementation = System.Threading.Volatile.Read(ref _implementation);
         if (compiled is not null) return CoflowVm.Execute(compiled, arguments);
         if (implementation is not null)
         {
@@ -371,11 +394,11 @@ public sealed class CoflowFunctionSlot
 
     internal CoflowProgram? CompiledProgram
     {
-        get { lock (_sync) return _compiled; }
+        get => System.Threading.Volatile.Read(ref _compiled);
     }
     internal bool HasBoundImplementation
     {
-        get { lock (_sync) return _implementation is not null; }
+        get => System.Threading.Volatile.Read(ref _implementation) is not null;
     }
 
     internal bool TransferBindingTo(CoflowFunctionSlot target)
@@ -391,15 +414,14 @@ public sealed class CoflowFunctionSlot
         {
             if (!target._functionsCompiled || target._compiled is not null || target._implementation is not null)
                 return false;
-            target._implementation = implementation;
+            System.Threading.Volatile.Write(ref target._implementation, implementation);
             return true;
         }
     }
 
     internal object? InvokeBoundFromVm(object?[] arguments)
     {
-        Delegate? implementation;
-        lock (_sync) implementation = _implementation;
+        var implementation = System.Threading.Volatile.Read(ref _implementation);
         if (implementation is not null)
         {
             try

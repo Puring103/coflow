@@ -440,6 +440,19 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void TailCallsDoNotMutateCallerOwnedArgumentArrays()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { recursive { evaluate: fn(value: int) -> int { if value <= 0 { 0 } else { evaluate(value - 1) } } } }",
+        }, new TestModule(new RuleMetadata()));
+        var arguments = new object?[] { 10L };
+
+        Assert.Equal(0, data.Table<Rule>().Get("recursive").Value._evaluate.Invoke<long>(arguments));
+        Assert.Equal(10L, arguments[0]);
+    }
+
+    [Fact]
     public void VmBuildsCollectionsAndReturnsOptionFromIndexes()
     {
         using var data = Coflow.LoadAndCompile(new[]
