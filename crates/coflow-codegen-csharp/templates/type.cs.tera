@@ -45,7 +45,8 @@ namespace {{ type.namespace }}
     }
 {% endif %}
 {% endif %}{% endfor %}{% if type.is_host %}    public Result<Unit, HostBindError> Bind(
-{% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
+{% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},
+{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
 {% endfor %}    ) => _coflowHost!.Bind(
         () =>
         {

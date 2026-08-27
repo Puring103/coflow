@@ -211,7 +211,7 @@ pub fn build_csharp_type(
     let loader_fields = all_fields
         .iter()
         .map(|field| {
-            let reader = function_loader_reader(field, view, "VALUE", "CONTEXT")
+            let reader = function_loader_reader(field, view, "VALUE", "CONTEXT", !schema_type.is_host)
                 .unwrap_or_else(|| loader_reader(&field.value_type, view, "VALUE", "CONTEXT"));
             let default = field
                 .default
@@ -395,7 +395,7 @@ pub fn build_csharp_dimension_type(
             property_name: csharp_public_member_name(&field.name),
             value_type: csharp_type(&field.value_type, view),
             is_function: matches!(field.value_type, CftValueType::Function(_, _)),
-            reader_expression: function_loader_reader(field, view, "VALUE", "CONTEXT")
+            reader_expression: function_loader_reader(field, view, "VALUE", "CONTEXT", true)
                 .unwrap_or_else(|| loader_reader(&field.value_type, view, "VALUE", "CONTEXT")),
             default_expression: None,
             object_type: match &field.value_type {
@@ -498,6 +498,7 @@ fn function_loader_reader(
     view: &CsharpLoweringPlan<'_>,
     node: &str,
     context: &str,
+    required: bool,
 ) -> Option<String> {
     let CftValueType::Function(parameters, result) = &field.value_type else {
         return None;
@@ -508,8 +509,9 @@ fn function_loader_reader(
             format!(", typeof({})", csharp_type(&parameter.value_type, view))
         })
         .collect::<String>();
+    let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
-        "{context}.Function({node}, \"{}\", typeof({}){parameter_types})",
+        "{context}.{method}({node}, \"{}\", typeof({}){parameter_types})",
         escape_csharp_literal(&field.name),
         csharp_type(result, view),
     ))
