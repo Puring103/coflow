@@ -3,15 +3,13 @@ using Integration.Config.integration.runtime;
 using CoflowRuntime;
 
 var exampleRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
-var cfdSources = Directory.GetFiles(Path.Combine(exampleRoot, "data"), "*.cfd")
-    .OrderBy(path => path, StringComparer.Ordinal)
-    .Select(File.ReadAllText)
-    .ToArray();
-
-using var data = Load(cfdSources);
+var charactersSource = File.ReadAllText(Path.Combine(exampleRoot, "data", "characters.cfd"));
+var scenarioSource = File.ReadAllText(Path.Combine(exampleRoot, "data", "scenario.cfd"));
+using var charactersModule = Coflow.LoadData(charactersSource);
+using var root = Load(new[] { scenarioSource }, charactersModule);
 var traces = new List<string>();
 var hostCalls = 0;
-var host = data.Singleton<HostServices>();
+var host = root.Singleton<HostServices>();
 AssertOk(host.Bind(
     "integration",
     traces.Add,
@@ -22,10 +20,10 @@ AssertOk(host.Bind(
     },
     value => $"[integration] {value}"));
 
-var characters = data.Table<Character>();
+var characters = root.Table<Character>();
 var arcanist = Require(characters.Get(CharacterId.Arcanist), "arcanist");
 var guardian = Require(characters.Get(CharacterId.Guardian), "guardian");
-var scenario = Require(data.Table<Scenario>().Get("fullRoundTrip"), "fullRoundTrip");
+var scenario = Require(root.Table<Scenario>().Get("fullRoundTrip"), "fullRoundTrip");
 
 Assert(arcanist.Stats.Attack == 19, "nested object was not loaded");
 Assert(arcanist.Stats.Resistances["ice"] == 9, "nested dictionary was not loaded");
@@ -61,6 +59,16 @@ Assert(composed(5) == 40, "mixed host/VM composition returned the wrong result")
 Assert(scenario.Apply(5, composed) == 65,
     "composed higher-order function could not complete a second host/VM round trip");
 
+// Reload one CFD child module. The root relinks its data and recompiles parent functions.
+var updatedCharacters = charactersSource.Replace("attack: 19", "attack: 20", StringComparison.Ordinal);
+var reload = root.Reload(charactersModule, updatedCharacters);
+Assert(reload.IsOk, "child module reload failed");
+var reloadedScenario = Require(root.Table<Scenario>().Get("fullRoundTrip"), "fullRoundTrip");
+Assert(reloadedScenario.Execute(5) == 90,
+    "parent CFD functions were not recompiled after child module reload");
+Assert(reloadedScenario.MakeScaler(3)(4) == 32,
+    "reloaded parent closure did not capture child module data");
+
 Console.WriteLine("csharp-runtime-integration-ok");
 
 static T Require<T>(Option<T> value, string key) => value.HasValue
@@ -78,11 +86,11 @@ static void AssertOk<TError>(Result<Unit, TError> result)
         throw new InvalidOperationException($"Host binding failed: {result.Error}");
 }
 
-static CoflowData Load(string[] sources)
+static CoflowModule Load(string[] sources, params CoflowModule[] children)
 {
     try
     {
-        return Coflow.LoadAndCompile(sources);
+        return Coflow.LoadAndCompile(sources, children);
     }
     catch (CoflowLoadException error)
     {

@@ -20,6 +20,7 @@ public sealed class CfdLoadContext
     private readonly bool _functionsCompiled;
     private readonly Dictionary<CoflowConstant, object> _constantCache = new();
     private readonly HashSet<CoflowConstant> _resolvingConstants = new();
+    internal CoflowGenerationGate GenerationGate { get; set; } = new();
 
     public CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
@@ -101,7 +102,7 @@ public sealed class CfdLoadContext
     public List<CfdDiagnostic> Diagnostics { get; } = new();
     internal IReadOnlyList<CoflowFunctionSlot> Functions => _functions;
 
-    public CoflowHostSlot Host() => new(_functionsCompiled);
+    public CoflowHostSlot Host() => new(_functionsCompiled, GenerationGate);
 
     internal object ResolveConstant(CoflowConstant constant)
     {
@@ -133,7 +134,23 @@ public sealed class CfdLoadContext
                 CurrentPath,
                 node.Span) });
         return CreateFunctionSlot(node as CfdFunctionValue, fieldName, fieldName,
-            resultType, parameterTypes);
+            resultType, parameterTypes, requiresCfdBody: false);
+    }
+
+    public CoflowFunctionSlot RequiredFunction(
+        CfdValueNode? node,
+        string fieldName,
+        Type resultType,
+        params Type[] parameterTypes)
+    {
+        if (node is not null && node is not CfdFunctionValue)
+            throw new CfdLoadException(new[] { new CfdDiagnostic(
+                "CFD-VALUE-FUNCTION",
+                "expected a CFD function body",
+                CurrentPath,
+                node.Span) });
+        return CreateFunctionSlot(node as CfdFunctionValue, fieldName, fieldName,
+            resultType, parameterTypes, requiresCfdBody: true);
     }
 
     public TDelegate FunctionValue<TDelegate>(CfdValueNode node)
@@ -155,7 +172,8 @@ public sealed class CfdLoadContext
             location.FieldName,
             location.ValuePath,
             resultType,
-            invoke.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+            invoke.GetParameters().Select(parameter => parameter.ParameterType).ToArray(),
+            requiresCfdBody: true);
         return CoflowFunctionDelegates.Create<TDelegate>(slot);
     }
 
@@ -164,7 +182,8 @@ public sealed class CfdLoadContext
         string fieldName,
         string valuePath,
         Type resultType,
-        IReadOnlyList<Type> parameterTypes)
+        IReadOnlyList<Type> parameterTypes,
+        bool requiresCfdBody)
     {
         var declaredType = CurrentRecordType ?? throw new InvalidOperationException(
             "A persistent Coflow function slot must be created while reading a record.");
@@ -175,7 +194,8 @@ public sealed class CfdLoadContext
             source,
             _currentNames.Peek(),
             CurrentPath,
-            source?.Span ?? CurrentSpan);
+            source?.Span ?? CurrentSpan,
+            requiresCfdBody);
         _functions.Add(slot);
         return slot;
     }

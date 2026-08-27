@@ -22,8 +22,12 @@
 - C# Runtime 直接读取一个或多个 CFD 字符串。`LoadData` 只加载数据，`LoadAndCompile` 还会检查并
   编译函数；二者都发布 generation，其中普通数据和字节码不可变，`@Host` 绑定位置只能填充一次。
 - 当前版本不生成或加载数据 artifact，不计算 CFT contract hash，也不在 C# Runtime 中加载 CFT。
-- C# Runtime 的顶层 API 固定为 `Coflow.LoadData`、`Coflow.LoadAndCompile` 和返回的
-  `CoflowData`；codegen 不生成项目级 Runtime 入口或数据根类。
+- C# Runtime 的顶层 API 固定为 `Coflow.LoadData`、`Coflow.LoadAndCompile`、`Coflow.Combine` 和
+  返回的 `CoflowModule`；codegen 不生成项目级 Runtime 入口或数据根类。
+- `CoflowModule` 只表示 CFD source part 及其 generation，可以自由组合、编译和定向替换；固定的
+  生成 CFT metadata 称为 generated contract，不属于可替换 module。
+- 同一进程可以由 module initializer 注册多个 generated contract 片段；首次 Runtime 加载时将它们
+  合并并冻结，名称冲突报错。此后不能动态增加或替换 CFT 合同，也不使用字符串选择合同。
 - 记录按 key 查找统一使用 `CoflowTable<T>.Get(...) -> Option<T>`；命中返回 `Some(record)`，
   未命中返回 `None`，记录缺失不是异常。
 
@@ -203,6 +207,8 @@ type Weapon {
 - `Option<T>` 的非空默认值显式写 `Some(value)`。
 - 函数类型字段没有 CFT 函数体；普通类型必须由 CFD body 提供实现，只有 `@Host @singleton` 的
   函数字段由宿主绑定。
+- 上一条“必须”在 `LoadAndCompile` 的函数阶段检查，缺失产生 `COFLOW-FUNCTION-MISSING`；`LoadData`
+  无条件跳过函数检查，因此允许数据中暂时没有普通函数 body，但该 module 不能调用或绑定函数。
 
 ### 4.3 继承与多态
 
@@ -845,10 +851,15 @@ C# Runtime 是固定库，不是 codegen 产物。顶层加载入口固定如下
 ```csharp
 public static class Coflow
 {
-    public static CoflowData LoadData(string cfd);
-    public static CoflowData LoadData(string[] cfdSources);
-    public static CoflowData LoadAndCompile(string cfd);
-    public static CoflowData LoadAndCompile(string[] cfdSources);
+    public static CoflowModule LoadData(string cfd);
+    public static CoflowModule LoadData(string cfd, params CoflowModule[] children);
+    public static CoflowModule LoadData(string[] cfdSources);
+    public static CoflowModule LoadData(string[] cfdSources, params CoflowModule[] children);
+    public static CoflowModule LoadAndCompile(string cfd);
+    public static CoflowModule LoadAndCompile(string cfd, params CoflowModule[] children);
+    public static CoflowModule LoadAndCompile(string[] cfdSources);
+    public static CoflowModule LoadAndCompile(string[] cfdSources, params CoflowModule[] children);
+    public static CoflowModule Combine(params CoflowModule[] modules);
 }
 ```
 
@@ -859,10 +870,16 @@ generation 可以调用函数和绑定 `@Host`。两个入口都不加载 CFT、
 数据访问也由固定 Runtime 泛型提供，不生成任何项目级 Runtime 入口或数据根类型：
 
 ```csharp
-public sealed class CoflowData : IDisposable
+public sealed class CoflowModule : IDisposable
 {
+    public bool FunctionsCompiled { get; }
     public CoflowTable<T> Table<T>();
     public T Singleton<T>();
+    public CoflowModule Compile();
+    public Result<ReloadInfo, CoflowReloadError> Reload(string cfd);
+    public Result<ReloadInfo, CoflowReloadError> Reload(string[] cfdSources);
+    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string cfd);
+    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string[] cfdSources);
 }
 
 public sealed class CoflowTable<T> : IReadOnlyList<T>
@@ -895,10 +912,11 @@ type Services {
 ```
 
 - `@Host` type 是普通 CFT type，字段类型、namespace 和函数签名都由 CFT 决定。
-- CFD 不得为 `@Host` type 声明记录；其唯一 singleton 由 C# 应用通过生成类型完整注入。
+- CFD 不得为 `@Host` type 声明记录或函数 body；其唯一 singleton 由 C# 应用通过生成类型完整注入。
 - 一个项目可以声明多个 `@Host @singleton` type，不存在名称固定为 `Host` 的特殊类型。
 - 注入不使用 type name、field name、function name 或 record key 字符串。
-- 生成类型直接提供与全部字段对应的强类型 `Bind(...)`；必填字段必须一次性提供，默认字段可省略。
+- 生成类型直接提供与全部字段对应的强类型 `Bind(...)`；它表示完整记录注入，普通字段和函数都必须
+  一次性提供，CFT 默认值不形成隐式宿主读取或省略参数的重载。
 - `LoadData` 的 generation 不允许绑定 `@Host`；只有 `LoadAndCompile` 的 generation 可以绑定。
 - 每个 `@Host` singleton 在一个 generation 中最多成功绑定一次；重复绑定产生绑定错误。
 - `@Host` singleton 绑定后通过普通 singleton 字段和方法语义访问。
@@ -909,7 +927,7 @@ type Services {
 ### 9.2 普通函数字段调用
 
 普通记录的函数字段只能由 CFD 提供实现。CFT codegen 只生成强类型调用方法，不生成 `BindXxx`；
-应用通过 `CoflowData.Table<T>()` 和强类型 key 取得记录后直接调用：
+应用通过 `CoflowModule.Table<T>()` 和强类型 key 取得记录后直接调用：
 
 ```csharp
 Option<Rule> found = data.Table<Rule>().Get("combat");
@@ -940,11 +958,35 @@ VM 的函数调用语义不区分 CFD body 与 C# delegate。函数表内部可�
 
 ### 9.3 Reload
 
+每个 `CoflowModule` 保存一个或多个带稳定内部 identity 的 CFD source part。模块操作遵循以下规则：
+
+- `Combine(a, b, ...)` 合并 source part 并重新链接数据；同一个 part 不能重复加入，不同 generated
+  contract 的模块不能组合。
+- 全部输入模块均已编译时，Combine 重新编译合并后的函数图；否则产生 data-only module，可以再用
+  `Compile()` 生成新的已编译模块。
+- `LoadData(sources, children)` 与 `LoadAndCompile(sources, children)` 可以在加载父 CFD 的同时组合
+  已有子模块，使父记录可以在第一次加载时引用子记录。
+- `Compile()` 和 `Combine()` 返回新模块，不修改输入模块。
+
 reload 使用新的 CFD 字符串构建候选 generation，不加载 CFT，也不比较 CFT hash。运行中的生成类型
-就是固定 schema 契约，因此 reload 只允许数据和 CFD 函数实现发生变化。
+就是固定 schema 契约，因此 reload 只允许数据和 CFD 函数实现发生变化。`root.Reload(child, sources)`
+按稳定 identity 替换组合根中的 child source part，并自动重建记录引用及重新链接、编译根函数图；
+父模块的 CFD source 本身不变，调用方也不需要额外调用“重新编译父模块”的 API。
+
+`module.Reload(sources)` 替换该 module 的完整 CFD 内容；定向的 `root.Reload(child, sources)` 只替换
+组合根中归属于 child 的内容。child 本身可以是由多个 source part 组成的组合模块，并可连续替换。
+
+Runtime 不建立 child 指向所有组合根的反向订阅。一个 child 可以参与多个互不相关的根；直接调用
+child 自身的 Reload 只更新 child，不会隐式修改其他根。需要替换某个根中的 child 时，必须在该根
+上调用定向 Reload，这避免反向强引用、级联更新歧义和模块生命周期泄漏。
 
 成功 reload 时，Runtime 复用已有 `@Host` singleton 强类型绑定。绑定目标无法满足生成签名时，
 reload 失败并继续保留旧 generation。活动调用和外部 view 在结束前固定持有启动时的 generation。
+
+Host Bind 与 Reload 使用 generation gate 串行化。先完成的 Bind 被迁移到候选 generation；先完成
+发布的 Reload 将旧 generation 标记为 retired，旧对象上尚未完成的 Bind 返回
+`HostBindError.GenerationRetired`。候选 generation 只有在加载、编译、Host 状态迁移全部成功后才
+原子发布。
 
 ## 10. C# Runtime generation 与记录映像
 
@@ -1000,7 +1042,7 @@ arena 中的值。两者可以共享 layout width 和字段 window 规则，但�
 一次读取；宽值复制连续 slot window。VM 不保留 execution-local 的记录字段物化 HashMap。
 
 生成类型的内部 reader 使用已知字段 metadata 构造强类型 C# 对象。应用侧只通过
-`CoflowData.Table<T>()`、`CoflowData.Singleton<T>()` 和生成属性访问，不公开按字符串读取 type、
+`CoflowModule.Table<T>()`、`CoflowModule.Singleton<T>()` 和生成属性访问，不公开按字符串读取 type、
 field 或 function 的 API。普通 record key 仍是语言数据，可以是 `string`；`@idAsEnum` type 的 key
 使用生成 enum。
 
@@ -1061,16 +1103,20 @@ environment handle。
 
 ### 11.4 栈帧与执行值
 
-VM 使用自己管理的显式 frame，不使用系统线程栈表达 Coflow 调用栈。每个活动
-同步调用拥有独立的：
+VM 使用自己管理的显式 frame，不使用系统线程栈表达 Coflow 调用栈。每个最外层同步调用拥有一份：
 
 - frame、参数、局部变量和值栈；
 - string、object、array、dict 和 closure 执行值；
 - 指令、调用深度和值栈预算；
 - generation lease 和简洁诊断信息。
 
+VM → Host → VM 的同步重入继续使用同一份执行上下文、调用链和预算，不创建新的“最外层调用”；
+因此 Host 反复调用收到的 VM 闭包不能重置预算。默认指令预算为 10,000,000，frame 上限为 4,096，
+值栈上限为 1,000,000。
+
 当前 VM 只执行到正常返回或 fault，不保存可恢复机器状态，也不拥有 completion queue 或后台
-调度器。完成的 frame 窗口可以清零并按尺寸复用。
+调度器。值栈使用清零后归还的池化数组；高阶数组操作直接遍历原始 `IReadOnlyList<T>`，不先复制
+为 `object[]`，线性集合内建操作的工作量计入同一指令预算。
 
 ### 11.5 Generation 与热重载
 
@@ -1081,6 +1127,11 @@ VM 使用自己管理的显式 frame，不使用系统线程栈表达 Coflow 调
 
 活动同步调用在结束前固定持有启动时的 generation，避免执行过程中记录、函数或宿主槽位被
 替换。generation 只有在所有调用和外部 lease 释放后才能回收。
+
+模块本身不进入按 CFD 内容或 reload 次数增长的全局缓存。成功发布后，旧 generation 只会被已经
+取得的旧记录、闭包或活动调用持有；外部引用释放后即可由 GC 回收。`Dispose()` 清除模块持有的
+table、singleton、function、storage 和 source part，并阻止 retired generation 上新的 Host Bind。
+失败 reload 的候选 generation 不发布，并立即释放 Runtime 持有的根引用。
 
 ### 11.6 诊断与调试边界
 

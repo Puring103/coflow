@@ -32,6 +32,7 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(output.contains("ICoflowTypeMetadata"));
     assert!(output.contains("[ModuleInitializer]"));
     assert!(output.contains("CoflowGeneratedRegistry.Register"));
+    assert!(output.contains("CoflowGeneratedContract : ICoflowGeneratedContract"));
     assert!(output.contains("DeclaredType => \"Item\""));
     assert!(output.contains("CfdValueReader.String"));
     assert!(output.contains("ReadCft_4974656DFields"));
@@ -281,6 +282,7 @@ fn preserves_host_singleton_in_generated_metadata() {
     assert!(output.contains("public bool IsSingleton => true;"));
     assert!(output.contains("public bool IsHost => true;"));
     assert!(output.contains("public Result<Unit, HostBindError> Bind("));
+    assert!(output.contains("string environment,\n        Action<string> log"));
     assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog, log)"));
     assert!(output.contains("CreateHostCft_417069(context)"));
     assert!(!output.contains("BindLog(Action<string> implementation)"));
@@ -347,7 +349,7 @@ fn loads_function_values_nested_in_collections_and_option() {
 }
 
 #[test]
-fn function_loader_creates_a_slot_when_the_cfd_body_is_omitted() {
+fn ordinary_function_loader_marks_the_cfd_body_as_required() {
     let files = generate_csharp_cfd(
         &schema("type Rule { evaluate: fn(value: int) -> int; notify: fn(message: string) -> (); }"),
         &CsharpCodegenOptions::new("CoflowConfig"),
@@ -358,10 +360,11 @@ fn function_loader_creates_a_slot_when_the_cfd_body_is_omitted() {
     .expect("generate");
     let output = all(&files);
     assert!(output.contains(
-        "context.Function(CfdValueReader.FindField(fields, \"evaluate\"), \"evaluate\", typeof(long), typeof(long))"
+        "context.RequiredFunction(CfdValueReader.FindField(fields, \"evaluate\"), \"evaluate\", typeof(long), typeof(long))"
     ));
     assert!(output.contains("public long Evaluate(long value)"));
     assert!(output.contains("public void Notify(string message)"));
+    assert!(!output.contains("public Result<Unit, HostBindError> Bind("));
     assert!(!output.contains("BindEvaluate"));
     assert!(!output.contains("BindNotify"));
 }

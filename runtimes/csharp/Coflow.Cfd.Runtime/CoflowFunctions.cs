@@ -7,6 +7,7 @@ public enum HostBindError
     FunctionsNotCompiled,
     AlreadyBound,
     FunctionAlreadyImplemented,
+    GenerationRetired,
 }
 
 public sealed class CoflowFunctionNotCompiledException : InvalidOperationException
@@ -33,13 +34,36 @@ public readonly record struct CoflowHostFunctionBinding(
     Delegate Implementation);
 
 [EditorBrowsable(EditorBrowsableState.Never)]
+public readonly record struct CoflowHostFunctionTransfer(
+    CoflowFunctionSlot Source,
+    CoflowFunctionSlot Target);
+
+internal sealed class CoflowGenerationGate
+{
+    internal object Sync { get; } = new();
+    internal bool IsActive { get; private set; } = true;
+
+    internal void Retire()
+    {
+        if (!Monitor.IsEntered(Sync))
+            throw new SynchronizationLockException("The generation gate must be locked before it is retired.");
+        IsActive = false;
+    }
+}
+
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowHostSlot
 {
     private readonly object _sync = new();
+    private readonly CoflowGenerationGate _generationGate;
     private readonly bool _functionsCompiled;
     private bool _bound;
 
-    internal CoflowHostSlot(bool functionsCompiled) => _functionsCompiled = functionsCompiled;
+    internal CoflowHostSlot(bool functionsCompiled, CoflowGenerationGate generationGate)
+    {
+        _functionsCompiled = functionsCompiled;
+        _generationGate = generationGate;
+    }
 
     public void EnsureBound()
     {
@@ -55,26 +79,35 @@ public sealed class CoflowHostSlot
     {
         if (assignFields is null) throw new ArgumentNullException(nameof(assignFields));
         if (functions is null) throw new ArgumentNullException(nameof(functions));
-        lock (_sync)
+        lock (_generationGate.Sync)
         {
-            if (!_functionsCompiled)
-                return Result<Unit, HostBindError>.Err(HostBindError.FunctionsNotCompiled);
-            if (_bound)
-                return Result<Unit, HostBindError>.Err(HostBindError.AlreadyBound);
-            if (functions.Any(function => !function.Slot.CanBind))
-                return Result<Unit, HostBindError>.Err(HostBindError.FunctionAlreadyImplemented);
-            foreach (var function in functions)
-                function.Slot.BindHost(function.Implementation);
-            assignFields();
-            _bound = true;
-            return Result<Unit, HostBindError>.Ok(Unit.Value);
+            lock (_sync)
+            {
+                if (!_generationGate.IsActive)
+                    return Result<Unit, HostBindError>.Err(HostBindError.GenerationRetired);
+                if (!_functionsCompiled)
+                    return Result<Unit, HostBindError>.Err(HostBindError.FunctionsNotCompiled);
+                if (_bound)
+                    return Result<Unit, HostBindError>.Err(HostBindError.AlreadyBound);
+                if (functions.Any(function => !function.Slot.CanBind))
+                    return Result<Unit, HostBindError>.Err(HostBindError.FunctionAlreadyImplemented);
+                foreach (var function in functions)
+                    function.Slot.BindHost(function.Implementation);
+                assignFields();
+                _bound = true;
+                return Result<Unit, HostBindError>.Ok(Unit.Value);
+            }
         }
     }
 
-    public void TransferStateTo(CoflowHostSlot target, Action copyFields)
+    public void TransferStateTo(
+        CoflowHostSlot target,
+        Action copyFields,
+        params CoflowHostFunctionTransfer[] functions)
     {
         if (target is null) throw new ArgumentNullException(nameof(target));
         if (copyFields is null) throw new ArgumentNullException(nameof(copyFields));
+        if (functions is null) throw new ArgumentNullException(nameof(functions));
         lock (_sync)
         {
             if (!_bound) return;
@@ -82,6 +115,9 @@ public sealed class CoflowHostSlot
             {
                 if (!target._functionsCompiled || target._bound)
                     throw new InvalidOperationException("The target Coflow host slot cannot receive binding state.");
+                foreach (var function in functions)
+                    if (!function.Source.TransferBindingTo(function.Target))
+                        throw new InvalidOperationException("A Coflow host function binding cannot be transferred.");
                 copyFields();
                 target._bound = true;
             }
@@ -98,6 +134,8 @@ public readonly record struct CoflowFunctionIdentity(
 
 internal static class CoflowFunctionDelegates
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type,
+        Func<Delegate, object?[], object?>> Invokers = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowFunctionSlot>
         Slots = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowClosure>
@@ -176,6 +214,36 @@ internal static class CoflowFunctionDelegates
     }
 
     internal static T Adapt<T>(object? value) => (T)Adapt(typeof(T), value)!;
+
+    internal static object? InvokeAdapted(Delegate implementation, object?[] arguments)
+    {
+        var parameterTypes = implementation.GetType().GetMethod("Invoke")!.GetParameters();
+        var adaptedArguments = new object?[arguments.Length];
+        for (var index = 0; index < arguments.Length; index++)
+            adaptedArguments[index] = Adapt(parameterTypes[index].ParameterType, arguments[index]);
+        return Invokers.GetOrAdd(implementation.GetType(), CreateInvoker)(implementation, adaptedArguments);
+    }
+
+    private static Func<Delegate, object?[], object?> CreateInvoker(Type delegateType)
+    {
+        var implementation = System.Linq.Expressions.Expression.Parameter(typeof(Delegate), "implementation");
+        var arguments = System.Linq.Expressions.Expression.Parameter(typeof(object[]), "arguments");
+        var invoke = delegateType.GetMethod("Invoke")!;
+        var call = System.Linq.Expressions.Expression.Invoke(
+            System.Linq.Expressions.Expression.Convert(implementation, delegateType),
+            invoke.GetParameters().Select((parameter, index) =>
+                System.Linq.Expressions.Expression.Convert(
+                    System.Linq.Expressions.Expression.ArrayIndex(arguments,
+                        System.Linq.Expressions.Expression.Constant(index)),
+                    parameter.ParameterType)));
+        System.Linq.Expressions.Expression body = invoke.ReturnType == typeof(void)
+            ? System.Linq.Expressions.Expression.Block(call,
+                System.Linq.Expressions.Expression.Convert(
+                    System.Linq.Expressions.Expression.Constant(Unit.Value), typeof(object)))
+            : System.Linq.Expressions.Expression.Convert(call, typeof(object));
+        return System.Linq.Expressions.Expression.Lambda<Func<Delegate, object?[], object?>>(
+            body, implementation, arguments).Compile();
+    }
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -205,7 +273,8 @@ public sealed class CoflowFunctionSlot
         CfdFunctionValue? source,
         CfdNameResolver names,
         string sourcePath,
-        CfdSpan? sourceSpan)
+        CfdSpan? sourceSpan,
+        bool requiresCfdBody = false)
     {
         Identity = identity;
         Signature = signature;
@@ -213,6 +282,7 @@ public sealed class CoflowFunctionSlot
         Names = names;
         SourcePath = sourcePath;
         SourceSpan = sourceSpan;
+        RequiresCfdBody = requiresCfdBody;
     }
 
     internal CoflowFunctionIdentity Identity { get; }
@@ -221,6 +291,7 @@ public sealed class CoflowFunctionSlot
     internal CfdNameResolver Names { get; }
     internal string SourcePath { get; }
     internal CfdSpan? SourceSpan { get; }
+    internal bool RequiresCfdBody { get; }
     internal bool CanBind
     {
         get
@@ -262,16 +333,6 @@ public sealed class CoflowFunctionSlot
 
     public void InvokeVoid(params object?[] arguments) => InvokeCore(arguments);
 
-    private static object? InvokeAdapted(Delegate implementation, object?[] arguments)
-    {
-        var parameterTypes = implementation.GetType().GetMethod("Invoke")!.GetParameters();
-        var adaptedArguments = new object?[arguments.Length];
-        for (var index = 0; index < arguments.Length; index++)
-            adaptedArguments[index] = CoflowFunctionDelegates.Adapt(
-                parameterTypes[index].ParameterType, arguments[index]);
-        return implementation.DynamicInvoke(adaptedArguments);
-    }
-
     private object? InvokeCore(object?[] arguments)
     {
         CoflowProgram? compiled;
@@ -287,13 +348,15 @@ public sealed class CoflowFunctionSlot
         {
             try
             {
-                return InvokeAdapted(implementation, arguments);
+                return CoflowFunctionDelegates.InvokeAdapted(implementation, arguments);
             }
             catch (Exception error)
             {
                 var inner = error is System.Reflection.TargetInvocationException { InnerException: { } target }
                     ? target
                     : error;
+                if (inner is CoflowFaultException fault)
+                    throw fault.WithCallers(new[] { Identity }, SourcePath, SourceSpan);
                 throw new CoflowFaultException(
                     Identity,
                     SourcePath,
@@ -341,13 +404,15 @@ public sealed class CoflowFunctionSlot
         {
             try
             {
-                return InvokeAdapted(implementation, arguments);
+                return CoflowFunctionDelegates.InvokeAdapted(implementation, arguments);
             }
             catch (Exception error)
             {
                 var inner = error is System.Reflection.TargetInvocationException { InnerException: { } target }
                     ? target
                     : error;
+                if (inner is CoflowFaultException fault)
+                    throw fault.WithCallers(new[] { Identity }, SourcePath, SourceSpan);
                 throw new CoflowFaultException(
                     Identity,
                     SourcePath,

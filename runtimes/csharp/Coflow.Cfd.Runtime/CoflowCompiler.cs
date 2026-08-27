@@ -7,7 +7,7 @@ internal static class CoflowCompiler
 {
     internal static void Compile(
         IReadOnlyList<CoflowFunctionSlot> slots,
-        ICoflowGeneratedModule module,
+        ICoflowGeneratedContract module,
         IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
         CfdLoadContext context,
         CoflowGenerationStorage storage)
@@ -18,6 +18,15 @@ internal static class CoflowCompiler
         {
             if (slot.Source is null)
             {
+                if (slot.RequiresCfdBody)
+                {
+                    diagnostics.Add(new CfdDiagnostic(
+                        "COFLOW-FUNCTION-MISSING",
+                        $"{slot.Identity.DeclaredType}.{slot.Identity.RecordKey}.{slot.Identity.FieldName}: ordinary functions require a CFD body",
+                        slot.SourcePath,
+                        slot.SourceSpan));
+                    continue;
+                }
                 compiled.Add((slot, null));
                 continue;
             }
@@ -163,7 +172,7 @@ internal static class CoflowCompiler
 
         internal FunctionParser(
             CoflowFunctionSlot slot,
-            ICoflowGeneratedModule module,
+            ICoflowGeneratedContract module,
             IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
             CfdLoadContext context,
             CoflowGenerationStorage storage)
@@ -576,11 +585,13 @@ internal static class CoflowCompiler
                 do arguments.Add(ParseExpression()); while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightParen, "expected `)` after built-in arguments");
             }
+            string? regexPattern = null;
             if (name == "matches")
             {
                 if (arguments.Count != 1 || arguments[0] is not ConstantExpr { Value: string })
                     Error("COFLOW-FUNCTION-BUILTIN", "matches pattern must be a string literal");
                 var pattern = (string)((ConstantExpr)arguments[0]).Value!;
+                regexPattern = pattern;
                 try { CoflowBuiltinLibrary.ValidateRegexPattern(pattern); }
                 catch (ArgumentException error) { Error("COFLOW-FUNCTION-BUILTIN", error.Message); }
             }
@@ -588,8 +599,10 @@ internal static class CoflowCompiler
                 return ParseHigherOrderBuiltin(receiver, name, arguments);
             try
             {
-                var builtin = CoflowBuiltinLibrary.Resolve(name, receiver.Type,
-                    arguments.Select(argument => argument.Type).ToArray());
+                var builtin = regexPattern is null
+                    ? CoflowBuiltinLibrary.Resolve(name, receiver.Type,
+                        arguments.Select(argument => argument.Type).ToArray())
+                    : CoflowBuiltinLibrary.ResolveRegex(regexPattern);
                 return new BuiltinExpr(receiver, arguments, builtin);
             }
             catch (ArgumentException error)
@@ -2495,7 +2508,11 @@ internal static class CoflowCompiler
             private static readonly System.Reflection.MethodInfo ArrayIndexMethod = Method(nameof(IndexArray));
             private static readonly System.Reflection.MethodInfo DictionaryIndexMethod = Method(nameof(IndexDictionary));
             private static readonly System.Reflection.MethodInfo PrepareArrayLoopMethod = Method(nameof(PrepareArrayLoop));
+            private static readonly System.Reflection.MethodInfo ArrayLoopCountMethod = Method(nameof(ArrayLoopCount));
+            private static readonly System.Reflection.MethodInfo ArrayLoopItemMethod = Method(nameof(ArrayLoopItem));
             private static readonly System.Reflection.MethodInfo PrepareDictionaryLoopMethod = Method(nameof(PrepareDictionaryLoop));
+            private static readonly System.Reflection.MethodInfo ArrayCountMethod = Method(nameof(ArrayCount));
+            private static readonly System.Reflection.MethodInfo ArrayItemMethod = Method(nameof(ArrayItem));
             private static readonly System.Reflection.MethodInfo OptionPropagationMethod = Method(nameof(PropagateOption));
             private static readonly System.Reflection.MethodInfo ResultPropagationMethod = Method(nameof(PropagateResult));
             private static readonly System.Reflection.MethodInfo OptionMatchMethod = Method(nameof(MatchOption));
@@ -2519,8 +2536,8 @@ internal static class CoflowCompiler
             internal static Func<object?[], object?> DictionaryIndex(Type key, Type value) => Generic(DictionaryIndexMethod, key, value);
             internal static CoflowLoopAccess ArrayLoop(Type element) => new(
                 GenericUnary(PrepareArrayLoopMethod, element),
-                static value => (long)((object?[])value!).Length,
-                static values => ((object?[])values[0]!)[checked((int)(long)values[1]!)],
+                GenericUnary(ArrayLoopCountMethod, element),
+                Generic(ArrayLoopItemMethod, element),
                 null);
             internal static CoflowLoopAccess DictionaryLoop(Type key, Type value) => new(
                 GenericUnary(PrepareDictionaryLoopMethod, key, value),
@@ -2540,7 +2557,10 @@ internal static class CoflowCompiler
                 string name, Type element, Type outputElement, Type resultType) => new(
                     name,
                     resultType,
-                    GenericUnary(PrepareArrayLoopMethod, element),
+                    (Func<object?, int>)ArrayCountMethod.MakeGenericMethod(element)
+                        .CreateDelegate(typeof(Func<object?, int>)),
+                    (Func<object?, int, object?>)ArrayItemMethod.MakeGenericMethod(element)
+                        .CreateDelegate(typeof(Func<object?, int, object?>)),
                     Array(outputElement),
                     OptionSome(outputElement),
                     Activator.CreateInstance(typeof(Option<>).MakeGenericType(outputElement)));
@@ -2604,7 +2624,15 @@ internal static class CoflowCompiler
                     ? Option<TValue>.Some(value) : Option<TValue>.None;
             }
             private static object PrepareArrayLoop<T>(object? value) =>
-                ((IReadOnlyList<T>)value!).Cast<object?>().ToArray();
+                (IReadOnlyList<T>)value!;
+            private static object ArrayLoopCount<T>(object? value) =>
+                (long)((IReadOnlyList<T>)value!).Count;
+            private static object? ArrayLoopItem<T>(object?[] values) =>
+                ((IReadOnlyList<T>)values[0]!)[checked((int)(long)values[1]!)];
+            private static int ArrayCount<T>(object? value) =>
+                ((IReadOnlyList<T>)value!).Count;
+            private static object? ArrayItem<T>(object? value, int index) =>
+                ((IReadOnlyList<T>)value!)[index];
             private static object PrepareDictionaryLoop<TKey, TValue>(object? value) where TKey : notnull =>
                 ((IReadOnlyDictionary<TKey, TValue>)value!)
                     .Select(entry => new object?[] { entry.Key, entry.Value }).ToArray();

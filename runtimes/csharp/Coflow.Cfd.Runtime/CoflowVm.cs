@@ -1,5 +1,7 @@
 namespace CoflowRuntime;
 
+using System.Buffers;
+
 internal enum CoflowOpCode : byte
 {
     Constant,
@@ -78,15 +80,24 @@ internal sealed record CoflowClosure(CoflowProgram Program, object?[] Captures)
 {
     public TResult Invoke<TResult>(object?[] arguments) =>
         CoflowFunctionDelegates.Adapt<TResult>(CoflowVm.Execute(
-            Program, arguments.Concat(Captures).ToArray()));
+            Program, Append(arguments, Captures)));
 
     public void InvokeVoid(object?[] arguments) =>
-        CoflowVm.Execute(Program, arguments.Concat(Captures).ToArray());
+        CoflowVm.Execute(Program, Append(arguments, Captures));
+
+    internal static object?[] Append(object?[] arguments, object?[] captures)
+    {
+        var combined = new object?[arguments.Length + captures.Length];
+        Array.Copy(arguments, combined, arguments.Length);
+        Array.Copy(captures, 0, combined, arguments.Length, captures.Length);
+        return combined;
+    }
 }
 internal readonly record struct CoflowHigherOrderOperation(
     string Name,
     Type ResultType,
-    Func<object?, object?> Prepare,
+    Func<object?, int> Count,
+    Func<object?, int, object?> Item,
     Func<object?[], object?> CreateArray,
     Func<object?, object?> CreateSome,
     object? None);
@@ -166,9 +177,21 @@ public sealed class CoflowFaultException : Exception
 
 internal static class CoflowVm
 {
-    private const long MaximumInstructions = 1_000_000;
+    private const long MaximumInstructions = 10_000_000;
     private const int MaximumFrames = 4096;
     private const int MaximumStackValues = 1_000_000;
+    [ThreadStatic]
+    private static CoflowExecutionContext? _currentExecution;
+    [ThreadStatic]
+    private static long? _instructionLimitOverride;
+
+    internal static IDisposable OverrideInstructionLimitForCurrentThread(long limit)
+    {
+        if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
+        var previous = _instructionLimitOverride;
+        _instructionLimitOverride = limit;
+        return new InstructionLimitScope(previous);
+    }
 
     internal static object? Execute(CoflowProgram program, object?[] arguments)
     {
@@ -176,16 +199,26 @@ internal static class CoflowVm
             throw Fault(program,
                 $"function expected {program.ParameterCount} arguments but received {arguments.Length}");
 
-        var stack = new object?[Math.Max(16, program.Instructions.Count / 2)];
+        var previousExecution = _currentExecution;
+        var execution = previousExecution ?? new CoflowExecutionContext();
+        var initialStackSize = Math.Min(MaximumStackValues,
+            Math.Max(16, program.Instructions.Count / 2));
+        var stack = ArrayPool<object?>.Shared.Rent(initialStackSize);
         var frames = new Stack<Frame>();
-        frames.Push(new Frame(program, arguments, stackBase: 0));
+        _currentExecution = execution;
         var stackCount = 0;
-        long instructionsExecuted = 0;
         void Push(object? value)
         {
-            if (stackCount >= MaximumStackValues)
-                throw new InvalidOperationException("Coflow VM value stack budget exceeded.");
-            if (stackCount == stack.Length) Array.Resize(ref stack, checked(stack.Length * 2));
+            execution.PushValue();
+            if (stackCount == stack.Length)
+            {
+                var replacement = ArrayPool<object?>.Shared.Rent(
+                    Math.Min(MaximumStackValues, checked(stack.Length * 2)));
+                Array.Copy(stack, replacement, stackCount);
+                Array.Clear(stack, 0, stackCount);
+                ArrayPool<object?>.Shared.Return(stack);
+                stack = replacement;
+            }
             stack[stackCount++] = value;
         }
         object? Pop()
@@ -193,16 +226,19 @@ internal static class CoflowVm
             if (stackCount == 0) throw new InvalidOperationException("VM stack underflow.");
             var value = stack[--stackCount];
             stack[stackCount] = null;
+            execution.PopValue();
             return value;
         }
 
         try
         {
+            var initialFrame = new Frame(program, arguments, stackBase: 0);
+            execution.EnterFrame(program.Identity);
+            frames.Push(initialFrame);
             while (frames.Count != 0)
             {
                 var frame = frames.Peek();
-                if (++instructionsExecuted > MaximumInstructions)
-                    throw new InvalidOperationException("Coflow VM instruction budget exceeded.");
+                execution.ChargeInstruction();
                 if (frame.Pc >= frame.Program.Instructions.Count)
                     throw new InvalidOperationException("Coflow function ended without a return instruction.");
                 var instruction = frame.Program.Instructions[frame.Pc++];
@@ -271,7 +307,7 @@ internal static class CoflowVm
                         {
                             callable = Pop();
                         }
-                        var items = (object?[])operation.Prepare(Pop())!;
+                        var items = Pop();
                         RunHigherOrder(new HigherOrderState(operation, items, callable!, accumulator), null, false);
                         break;
                     }
@@ -375,8 +411,7 @@ internal static class CoflowVm
                         var target = call.Slot.CompiledProgram;
                         if (target is not null)
                         {
-                            if (frames.Count >= MaximumFrames)
-                                throw new InvalidOperationException("Coflow VM call depth budget exceeded.");
+                            execution.EnterFrame(target.Identity);
                             frames.Push(new Frame(target, callArguments, stackCount));
                         }
                         else
@@ -459,8 +494,26 @@ internal static class CoflowVm
                 error is System.Reflection.TargetInvocationException { InnerException: { } target }
                     ? target
                     : error,
-                frames.Select(item => item.Program.Identity),
+                execution.CallStack,
                 instructionSpan);
+        }
+        finally
+        {
+            try
+            {
+                while (frames.Count != 0)
+                {
+                    frames.Pop();
+                    execution.ExitFrame();
+                }
+                while (stackCount != 0) Pop();
+            }
+            finally
+            {
+                if (stackCount != 0) Array.Clear(stack, 0, stackCount);
+                ArrayPool<object?>.Shared.Return(stack);
+                _currentExecution = previousExecution;
+            }
         }
 
         void BinaryLong(Func<long, long, long> operation)
@@ -510,6 +563,7 @@ internal static class CoflowVm
         bool CompleteFrame(object? result, out object? rootResult)
         {
             var completed = frames.Pop();
+            execution.ExitFrame();
             while (stackCount > completed.StackBase) Pop();
             if (frames.Count == 0)
             {
@@ -542,7 +596,7 @@ internal static class CoflowVm
             else if (callable is CoflowClosure closure)
             {
                 target = closure.Program;
-                targetArguments = callArguments.Concat(closure.Captures).ToArray();
+                targetArguments = CoflowClosure.Append(callArguments, closure.Captures);
             }
             else if (callable is Delegate implementation)
             {
@@ -557,10 +611,10 @@ internal static class CoflowVm
                 if (CoflowFunctionDelegates.TryGetClosure(implementation, out var delegateClosure))
                 {
                     target = delegateClosure.Program;
-                    targetArguments = callArguments.Concat(delegateClosure.Captures).ToArray();
+                    targetArguments = CoflowClosure.Append(callArguments, delegateClosure.Captures);
                     goto Schedule;
                 }
-                immediate = implementation.DynamicInvoke(callArguments) ?? Unit.Value;
+                immediate = CoflowFunctionDelegates.InvokeAdapted(implementation, callArguments) ?? Unit.Value;
                 return false;
             }
             else
@@ -568,8 +622,7 @@ internal static class CoflowVm
                 throw new InvalidOperationException("Coflow indirect call target is not callable.");
             }
         Schedule:
-            if (frames.Count >= MaximumFrames)
-                throw new InvalidOperationException("Coflow VM call depth budget exceeded.");
+            execution.EnterFrame(target.Identity);
             frames.Push(new Frame(target, targetArguments, stackCount, continuation));
             immediate = null;
             return true;
@@ -591,7 +644,7 @@ internal static class CoflowVm
             else if (callable is CoflowClosure closure)
             {
                 target = closure.Program;
-                targetArguments = callArguments.Concat(closure.Captures).ToArray();
+                targetArguments = CoflowClosure.Append(callArguments, closure.Captures);
             }
             else if (callable is Delegate implementation)
             {
@@ -606,10 +659,10 @@ internal static class CoflowVm
                 if (CoflowFunctionDelegates.TryGetClosure(implementation, out var delegateClosure))
                 {
                     target = delegateClosure.Program;
-                    targetArguments = callArguments.Concat(delegateClosure.Captures).ToArray();
+                    targetArguments = CoflowClosure.Append(callArguments, delegateClosure.Captures);
                     goto Replace;
                 }
-                immediate = implementation.DynamicInvoke(callArguments) ?? Unit.Value;
+                immediate = CoflowFunctionDelegates.InvokeAdapted(implementation, callArguments) ?? Unit.Value;
                 return false;
             }
             else
@@ -626,6 +679,7 @@ internal static class CoflowVm
         {
             var replaced = frames.Pop();
             while (stackCount > replaced.StackBase) Pop();
+            execution.ReplaceFrame(target.Identity);
             frames.Push(new Frame(target, targetArguments, replaced.StackBase, replaced.Continuation));
         }
 
@@ -635,41 +689,57 @@ internal static class CoflowVm
             {
                 if (hasResult)
                 {
-                    var item = state.Items[state.Index - 1];
+                    var item = state.Operation.Item(state.Items, state.Index - 1);
                     switch (state.Operation.Name)
                     {
-                        case "map": state.Output.Add(callbackResult); break;
-                        case "filter": if ((bool)callbackResult!) state.Output.Add(item); break;
+                        case "map": state.Output!.Add(callbackResult); break;
+                        case "filter": if ((bool)callbackResult!) state.Output!.Add(item); break;
                         case "fold": state.Accumulator = callbackResult; break;
                         case "find":
-                            if ((bool)callbackResult!) { Push(state.Operation.CreateSome(item)); return; }
+                            if ((bool)callbackResult!)
+                            {
+                                state.ClearArguments();
+                                Push(state.Operation.CreateSome(item));
+                                return;
+                            }
                             break;
                         case "any":
-                            if ((bool)callbackResult!) { Push(true); return; }
+                            if ((bool)callbackResult!)
+                            {
+                                state.ClearArguments();
+                                Push(true);
+                                return;
+                            }
                             break;
                         case "all":
-                            if (!(bool)callbackResult!) { Push(false); return; }
+                            if (!(bool)callbackResult!)
+                            {
+                                state.ClearArguments();
+                                Push(false);
+                                return;
+                            }
                             break;
                     }
                 }
-                if (state.Index >= state.Items.Length)
+                if (state.Index >= state.Count)
                 {
-                    Push(state.Operation.Name switch
+                    var result = state.Operation.Name switch
                     {
-                        "map" or "filter" => state.Operation.CreateArray(state.Output.ToArray()),
+                        "map" or "filter" => state.Operation.CreateArray(state.Output!.ToArray()),
                         "fold" => state.Accumulator,
                         "find" => state.Operation.None,
                         "any" => false,
                         "all" => true,
                         _ => throw new InvalidOperationException("unknown higher-order operation"),
-                    });
+                    };
+                    state.ClearArguments();
+                    Push(result);
                     return;
                 }
-                var current = state.Items[state.Index++];
-                var callbackArguments = state.Operation.Name == "fold"
-                    ? new[] { state.Accumulator, current }
-                    : new[] { current };
-                if (TryScheduleCall(state.Callable, callbackArguments,
+                var current = state.Operation.Item(state.Items, state.Index++);
+                execution.ChargeInstruction();
+                state.SetArguments(current);
+                if (TryScheduleCall(state.Callable, state.CallbackArguments,
                         result => RunHigherOrder(state, result, true), out var immediate))
                     return;
                 callbackResult = immediate;
@@ -717,15 +787,102 @@ internal static class CoflowVm
 
     private sealed class HigherOrderState(
         CoflowHigherOrderOperation operation,
-        object?[] items,
+        object? items,
         object callable,
         object? accumulator)
     {
         internal CoflowHigherOrderOperation Operation { get; } = operation;
-        internal object?[] Items { get; } = items;
+        internal object? Items { get; } = items;
+        internal int Count { get; } = operation.Count(items);
         internal object Callable { get; } = callable;
         internal object? Accumulator { get; set; } = accumulator;
-        internal List<object?> Output { get; } = new();
+        internal List<object?>? Output { get; } = operation.Name is "map" or "filter"
+            ? new List<object?>(operation.Count(items))
+            : null;
+        internal object?[] CallbackArguments { get; } = new object?[operation.Name == "fold" ? 2 : 1];
         internal int Index { get; set; }
+
+        internal void SetArguments(object? current)
+        {
+            if (CallbackArguments.Length == 2) CallbackArguments[0] = Accumulator;
+            CallbackArguments[^1] = current;
+        }
+
+        internal void ClearArguments() => Array.Clear(CallbackArguments, 0, CallbackArguments.Length);
+    }
+
+    private sealed class CoflowExecutionContext
+    {
+        private readonly List<CoflowFunctionIdentity> _callStack = new();
+        private long _instructions;
+        private int _stackValues;
+
+        internal IReadOnlyList<CoflowFunctionIdentity> CallStack =>
+            _callStack.AsEnumerable().Reverse().Distinct().Take(32).ToArray();
+
+        internal void ChargeInstruction()
+        {
+            ChargeInstructions(1);
+        }
+
+        internal void ChargeInstructions(long count)
+        {
+            var limit = _instructionLimitOverride ?? MaximumInstructions;
+            if (count < 0 || _instructions > limit - count)
+                throw new InvalidOperationException("Coflow VM instruction budget exceeded.");
+            _instructions += count;
+        }
+
+        internal void EnterFrame(CoflowFunctionIdentity identity)
+        {
+            if (_callStack.Count >= MaximumFrames)
+                throw new InvalidOperationException("Coflow VM call depth budget exceeded.");
+            _callStack.Add(identity);
+        }
+
+        internal void ExitFrame()
+        {
+            if (_callStack.Count == 0)
+                throw new InvalidOperationException("Coflow VM frame budget underflow.");
+            _callStack.RemoveAt(_callStack.Count - 1);
+        }
+
+        internal void ReplaceFrame(CoflowFunctionIdentity identity)
+        {
+            if (_callStack.Count == 0)
+                throw new InvalidOperationException("Coflow VM frame budget underflow.");
+            _callStack[^1] = identity;
+        }
+
+        internal void PushValue()
+        {
+            if (_stackValues >= MaximumStackValues)
+                throw new InvalidOperationException("Coflow VM value stack budget exceeded.");
+            _stackValues++;
+        }
+
+        internal void PopValue()
+        {
+            if (_stackValues == 0)
+                throw new InvalidOperationException("Coflow VM value stack budget underflow.");
+            _stackValues--;
+        }
+    }
+
+    private sealed class InstructionLimitScope(long? previous) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _instructionLimitOverride = previous;
+            _disposed = true;
+        }
+    }
+
+    internal static void ChargeWork(long units)
+    {
+        if (units > 0) _currentExecution?.ChargeInstructions(units);
     }
 }

@@ -1,6 +1,5 @@
 namespace CoflowRuntime;
 
-using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
@@ -8,7 +7,6 @@ internal readonly record struct CoflowBuiltin(Type ResultType, Func<object?[], o
 
 internal static class CoflowBuiltinLibrary
 {
-    private static readonly ConcurrentDictionary<string, Regex> RegexCache = new(StringComparer.Ordinal);
     private static readonly BindingFlags StaticPrivate = BindingFlags.Static | BindingFlags.NonPublic;
 
     internal static CoflowBuiltin Resolve(string name, Type receiver, IReadOnlyList<Type> arguments)
@@ -24,7 +22,7 @@ internal static class CoflowBuiltinLibrary
             "len" when arguments.Count == 0 && dictionary is not null =>
                 Generic(nameof(DictionaryCount), dictionary, typeof(long)),
             "contains" when receiver == typeof(string) && Matches(arguments, typeof(string)) =>
-                Builtin(typeof(bool), values => ((string)values[0]!).Contains((string)values[1]!, StringComparison.Ordinal)),
+                Builtin(typeof(bool), StringContains),
             "contains" when listElement is not null && Matches(arguments, listElement) =>
                 Generic(nameof(ListContains), new[] { listElement }, typeof(bool)),
             "contains" when dictionary is not null && Matches(arguments, dictionary[0]) =>
@@ -36,9 +34,9 @@ internal static class CoflowBuiltinLibrary
             "max" when listElement is not null && arguments.Count == 0 && IsOrdered(listElement) =>
                 Generic(nameof(ListMax), new[] { listElement }, listElement),
             "sum" when listElement == typeof(long) && arguments.Count == 0 =>
-                Builtin(typeof(long), values => checked(((IReadOnlyList<long>)values[0]!).Aggregate(0L, checked((sum, item) => sum + item)))),
+                Builtin(typeof(long), SumInt64),
             "sum" when listElement == typeof(double) && arguments.Count == 0 =>
-                Builtin(typeof(double), values => ((IReadOnlyList<double>)values[0]!).Sum()),
+                Builtin(typeof(double), SumFloat64),
             "keys" when dictionary is not null && arguments.Count == 0 =>
                 Generic(nameof(DictionaryKeys), dictionary, typeof(IReadOnlyList<>).MakeGenericType(dictionary[0])),
             "values" when dictionary is not null && arguments.Count == 0 =>
@@ -48,15 +46,13 @@ internal static class CoflowBuiltinLibrary
             "containsValue" when dictionary is not null && Matches(arguments, dictionary[1]) =>
                 Generic(nameof(DictionaryContainsValue), dictionary, typeof(bool)),
             "startsWith" when receiver == typeof(string) && Matches(arguments, typeof(string)) =>
-                Builtin(typeof(bool), values => ((string)values[0]!).StartsWith((string)values[1]!, StringComparison.Ordinal)),
+                Builtin(typeof(bool), StringStartsWith),
             "endsWith" when receiver == typeof(string) && Matches(arguments, typeof(string)) =>
-                Builtin(typeof(bool), values => ((string)values[0]!).EndsWith((string)values[1]!, StringComparison.Ordinal)),
+                Builtin(typeof(bool), StringEndsWith),
             "isBlank" when receiver == typeof(string) && arguments.Count == 0 =>
-                Builtin(typeof(bool), values => string.IsNullOrWhiteSpace((string)values[0]!)),
+                Builtin(typeof(bool), StringIsBlank),
             "matches" when receiver == typeof(string) && Matches(arguments, typeof(string)) =>
-                Builtin(typeof(bool), values => RegexCache.GetOrAdd((string)values[1]!,
-                    static pattern => new Regex(TranslateRustRegex(pattern), RegexOptions.CultureInvariant))
-                    .IsMatch((string)values[0]!)),
+                throw new ArgumentException("matches must be resolved with its literal pattern"),
             "abs" when receiver == typeof(long) && arguments.Count == 0 =>
                 Builtin(typeof(long), values => checked(Math.Abs((long)values[0]!))),
             "abs" when receiver == typeof(double) && arguments.Count == 0 =>
@@ -87,14 +83,27 @@ internal static class CoflowBuiltinLibrary
     {
         try
         {
-            RegexCache.GetOrAdd(pattern, static source => new Regex(
-                TranslateRustRegex(source), RegexOptions.CultureInvariant));
+            _ = CompileRegex(pattern);
         }
         catch (ArgumentException error)
         {
             throw new ArgumentException($"invalid Rust regex pattern: {error.Message}", error);
         }
     }
+
+    internal static CoflowBuiltin ResolveRegex(string pattern)
+    {
+        var regex = CompileRegex(pattern);
+        return Builtin(typeof(bool), values =>
+        {
+            var input = (string)values[0]!;
+            CoflowVm.ChargeWork((long)input.Length + pattern.Length);
+            return regex.IsMatch(input);
+        });
+    }
+
+    private static Regex CompileRegex(string pattern) =>
+        new(TranslateRustRegex(pattern), RegexOptions.CultureInvariant);
 
     private static CoflowBuiltin Builtin(Type result, Func<object?[], object?> invoke) => new(result, invoke);
 
@@ -163,6 +172,7 @@ internal static class CoflowBuiltinLibrary
 
     private static long RuneCount(string value)
     {
+        CoflowVm.ChargeWork(value.Length);
         long count = 0;
         for (var index = 0; index < value.Length; index++, count++)
             if (char.IsHighSurrogate(value[index]) && index + 1 < value.Length &&
@@ -173,20 +183,33 @@ internal static class CoflowBuiltinLibrary
     private static object ListCount<T>(object?[] values) => (long)((IReadOnlyList<T>)values[0]!).Count;
     private static object DictionaryCount<TKey, TValue>(object?[] values) where TKey : notnull =>
         (long)((IReadOnlyDictionary<TKey, TValue>)values[0]!).Count;
-    private static object ListContains<T>(object?[] values) =>
-        ((IReadOnlyList<T>)values[0]!).Contains((T)values[1]!);
+    private static object ListContains<T>(object?[] values)
+    {
+        var list = (IReadOnlyList<T>)values[0]!;
+        CoflowVm.ChargeWork(list.Count);
+        return list.Contains((T)values[1]!);
+    }
     private static object DictionaryContainsKey<TKey, TValue>(object?[] values) where TKey : notnull =>
         ((IReadOnlyDictionary<TKey, TValue>)values[0]!).ContainsKey((TKey)values[1]!);
-    private static object DictionaryContainsValue<TKey, TValue>(object?[] values) where TKey : notnull =>
-        ((IReadOnlyDictionary<TKey, TValue>)values[0]!).Values.Contains((TValue)values[1]!);
-    private static object ListUnique<T>(object?[] values) =>
-        ((IReadOnlyList<T>)values[0]!).Distinct().Count() == ((IReadOnlyList<T>)values[0]!).Count;
+    private static object DictionaryContainsValue<TKey, TValue>(object?[] values) where TKey : notnull
+    {
+        var dictionary = (IReadOnlyDictionary<TKey, TValue>)values[0]!;
+        CoflowVm.ChargeWork(dictionary.Count);
+        return dictionary.Values.Contains((TValue)values[1]!);
+    }
+    private static object ListUnique<T>(object?[] values)
+    {
+        var list = (IReadOnlyList<T>)values[0]!;
+        CoflowVm.ChargeWork(list.Count);
+        return list.Distinct().Count() == list.Count;
+    }
     private static object ListMin<T>(object?[] values) => AggregateOrdered<T>(values, minimum: true)!;
     private static object ListMax<T>(object?[] values) => AggregateOrdered<T>(values, minimum: false)!;
     private static T AggregateOrdered<T>(object?[] values, bool minimum)
     {
         var list = (IReadOnlyList<T>)values[0]!;
         if (list.Count == 0) throw new InvalidOperationException("aggregate requires a non-empty array");
+        CoflowVm.ChargeWork(list.Count);
         var result = list[0];
         var comparer = Comparer<T>.Default;
         for (var index = 1; index < list.Count; index++)
@@ -194,14 +217,23 @@ internal static class CoflowBuiltinLibrary
                 result = list[index];
         return result;
     }
-    private static object DictionaryKeys<TKey, TValue>(object?[] values) where TKey : notnull =>
-        Array.AsReadOnly(((IReadOnlyDictionary<TKey, TValue>)values[0]!).Keys.ToArray());
-    private static object DictionaryValues<TKey, TValue>(object?[] values) where TKey : notnull =>
-        Array.AsReadOnly(((IReadOnlyDictionary<TKey, TValue>)values[0]!).Values.ToArray());
+    private static object DictionaryKeys<TKey, TValue>(object?[] values) where TKey : notnull
+    {
+        var dictionary = (IReadOnlyDictionary<TKey, TValue>)values[0]!;
+        CoflowVm.ChargeWork(dictionary.Count);
+        return Array.AsReadOnly(dictionary.Keys.ToArray());
+    }
+    private static object DictionaryValues<TKey, TValue>(object?[] values) where TKey : notnull
+    {
+        var dictionary = (IReadOnlyDictionary<TKey, TValue>)values[0]!;
+        CoflowVm.ChargeWork(dictionary.Count);
+        return Array.AsReadOnly(dictionary.Values.ToArray());
+    }
     private static object ListSorted<T>(object?[] values) => Sorted((IReadOnlyList<T>)values[0]!, strict: false);
     private static object ListStrictlySorted<T>(object?[] values) => Sorted((IReadOnlyList<T>)values[0]!, strict: true);
     private static bool Sorted<T>(IReadOnlyList<T> values, bool strict)
     {
+        CoflowVm.ChargeWork(values.Count);
         var comparer = Comparer<T>.Default;
         for (var index = 1; index < values.Count; index++)
         {
@@ -210,13 +242,71 @@ internal static class CoflowBuiltinLibrary
         }
         return true;
     }
-    private static object ListIntersects<T>(object?[] values) =>
-        new HashSet<T>((IReadOnlyList<T>)values[0]!).Overlaps((IReadOnlyList<T>)values[1]!);
+    private static object ListIntersects<T>(object?[] values)
+    {
+        ChargeLists<T>(values);
+        return new HashSet<T>((IReadOnlyList<T>)values[0]!).Overlaps((IReadOnlyList<T>)values[1]!);
+    }
     private static object ListDisjoint<T>(object?[] values) => !(bool)ListIntersects<T>(values);
-    private static object ListSubset<T>(object?[] values) =>
-        new HashSet<T>((IReadOnlyList<T>)values[0]!).IsSubsetOf((IReadOnlyList<T>)values[1]!);
-    private static object ListSuperset<T>(object?[] values) =>
-        new HashSet<T>((IReadOnlyList<T>)values[0]!).IsSupersetOf((IReadOnlyList<T>)values[1]!);
+    private static object ListSubset<T>(object?[] values)
+    {
+        ChargeLists<T>(values);
+        return new HashSet<T>((IReadOnlyList<T>)values[0]!).IsSubsetOf((IReadOnlyList<T>)values[1]!);
+    }
+    private static object ListSuperset<T>(object?[] values)
+    {
+        ChargeLists<T>(values);
+        return new HashSet<T>((IReadOnlyList<T>)values[0]!).IsSupersetOf((IReadOnlyList<T>)values[1]!);
+    }
+
+    private static void ChargeLists<T>(object?[] values) => CoflowVm.ChargeWork(
+        (long)((IReadOnlyList<T>)values[0]!).Count + ((IReadOnlyList<T>)values[1]!).Count);
+
+    private static object SumInt64(object?[] values)
+    {
+        var list = (IReadOnlyList<long>)values[0]!;
+        CoflowVm.ChargeWork(list.Count);
+        var result = 0L;
+        foreach (var item in list) result = checked(result + item);
+        return result;
+    }
+
+    private static object SumFloat64(object?[] values)
+    {
+        var list = (IReadOnlyList<double>)values[0]!;
+        CoflowVm.ChargeWork(list.Count);
+        var result = 0.0;
+        foreach (var item in list) result += item;
+        return result;
+    }
+
+    private static object StringContains(object?[] values)
+    {
+        var value = (string)values[0]!;
+        CoflowVm.ChargeWork(value.Length);
+        return value.Contains((string)values[1]!, StringComparison.Ordinal);
+    }
+
+    private static object StringStartsWith(object?[] values)
+    {
+        var value = (string)values[0]!;
+        CoflowVm.ChargeWork(Math.Min(value.Length, ((string)values[1]!).Length));
+        return value.StartsWith((string)values[1]!, StringComparison.Ordinal);
+    }
+
+    private static object StringEndsWith(object?[] values)
+    {
+        var value = (string)values[0]!;
+        CoflowVm.ChargeWork(Math.Min(value.Length, ((string)values[1]!).Length));
+        return value.EndsWith((string)values[1]!, StringComparison.Ordinal);
+    }
+
+    private static object StringIsBlank(object?[] values)
+    {
+        var value = (string)values[0]!;
+        CoflowVm.ChargeWork(value.Length);
+        return string.IsNullOrWhiteSpace(value);
+    }
 
     private static object ApproxEqual(object?[] values)
     {

@@ -8,8 +8,59 @@ using Xunit;
 
 namespace CoflowRuntime.Tests;
 
-public sealed class CoflowDataTests
+public sealed class CoflowModuleTests
 {
+    [Fact]
+    public void GeneratedRegistryCombinesMultipleFragmentsAndFreezesOnFirstLoad()
+    {
+        var registry = new CoflowGeneratedContractRegistry();
+        var items = new TestModule(new ItemMetadata());
+        var settings = new TestModule(new SettingsMetadata());
+        registry.Register(items);
+        registry.Register(settings);
+        registry.Register(items);
+
+        var resolved = registry.RequireContract();
+
+        Assert.Equal(2, resolved.Types.Count);
+        Assert.Throws<InvalidOperationException>(() =>
+            registry.Register(new TestModule(new RuleMetadata())));
+    }
+
+    [Fact]
+    public void MultipleGeneratedContractFragmentsLoadAsOneFixedContract()
+    {
+        var contract = new CoflowCompositeGeneratedContract(new ICoflowGeneratedContract[]
+        {
+            new TestModule(new ItemMetadata()),
+            new TestModule(new SettingsMetadata()),
+        });
+
+        using var module = Coflow.LoadData(new[]
+        {
+            "Item { one { name: \"One\" } } settings: Settings { value: 42 }",
+        }, contract);
+
+        Assert.Equal("One", module.Table<Item>().Get("one").Value.Name);
+        Assert.Equal(42, module.Singleton<Settings>().Value);
+    }
+
+    [Fact]
+    public void CompositeGeneratedContractRejectsDuplicateGeneratedNames()
+    {
+        var contract = new CoflowCompositeGeneratedContract(new ICoflowGeneratedContract[]
+        {
+            new TestModule(new ItemMetadata()),
+            new TestModule(new ItemMetadata()),
+        });
+
+        var error = Assert.Throws<CoflowLoadException>(() =>
+            Coflow.LoadData(Array.Empty<string>(), contract));
+
+        Assert.Contains(error.Diagnostics,
+            diagnostic => diagnostic.Code == "COFLOW-METADATA-DUPLICATE-NAME");
+    }
+
     [Fact]
     public void LoadDataBuildsStronglyTypedTablesAndReturnsOptionFromGet()
     {
@@ -158,6 +209,19 @@ public sealed class CoflowDataTests
 
         var rule = data.Table<Rule>().Get("double").Value;
         Assert.Throws<CoflowFunctionNotCompiledException>(() => rule.Evaluate(2));
+    }
+
+    [Fact]
+    public void OrdinaryRequiredFunctionsMayBeSkippedByLoadDataButMustCompileFromCfd()
+    {
+        var contract = new TestModule(new RuleMetadata(requireEvaluate: true));
+        using var dataOnly = Coflow.LoadData(new[] { "Rule { missing { } }" }, contract);
+        Assert.Throws<CoflowFunctionNotCompiledException>(() =>
+            dataOnly.Table<Rule>().Get("missing").Value.Evaluate(1));
+
+        var error = Assert.Throws<CoflowLoadException>(() =>
+            Coflow.LoadAndCompile(new[] { "Rule { missing { } }" }, contract));
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "COFLOW-FUNCTION-MISSING");
     }
 
     [Fact]
@@ -404,6 +468,7 @@ public sealed class CoflowDataTests
     [Fact]
     public void VmStopsFunctionsThatExceedTheInstructionBudget()
     {
+        using var budget = CoflowVm.OverrideInstructionLimitForCurrentThread(100);
         using var data = Coflow.LoadAndCompile(new[]
         {
             "Rule { infinite { evaluate: fn(value: int) -> int { while true { } 0 } } }",
@@ -411,6 +476,21 @@ public sealed class CoflowDataTests
 
         var error = Assert.Throws<CoflowFaultException>(() =>
             data.Table<Rule>().Get("infinite").Value.Evaluate(0));
+        Assert.Contains("instruction budget", error.Message);
+    }
+
+    [Fact]
+    public void LinearCollectionBuiltinsChargeTheInstructionBudget()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { total { evaluate: fn(value: int) -> int { [1, 2, 3, 4, 5, 6, 7, 8].sum() } } }",
+        }, new TestModule(new RuleMetadata()));
+        using var budget = CoflowVm.OverrideInstructionLimitForCurrentThread(15);
+
+        var error = Assert.Throws<CoflowFaultException>(() =>
+            data.Table<Rule>().Get("total").Value.Evaluate(0));
+
         Assert.Contains("instruction budget", error.Message);
     }
 
@@ -553,6 +633,76 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void CombinedModulesCompileCrossModuleCallsAndReloadOneChildAtomically()
+    {
+        var contract = new TestModule(new RuleMetadata(requireEvaluate: true));
+        using var parent = Coflow.LoadData(new[]
+        {
+            "Rule { parent { evaluate: fn(value: int) -> int { &Rule::child.evaluate(value) + 1 } } }",
+        }, contract);
+        using var child = Coflow.LoadData(new[]
+        {
+            "Rule { child { evaluate: fn(value: int) -> int { value * 2 } } }",
+        }, contract);
+        using var combinedData = Coflow.Combine(parent, child);
+        Assert.False(combinedData.FunctionsCompiled);
+        using var root = combinedData.Compile();
+        Assert.Equal(7, root.Table<Rule>().Get("parent").Value.Evaluate(3));
+
+        var reload = root.Reload(child,
+            "Rule { child { evaluate: fn(value: int) -> int { value * 3 } } }");
+
+        Assert.True(reload.IsOk);
+        Assert.Equal(10, root.Table<Rule>().Get("parent").Value.Evaluate(3));
+        Assert.True(root.Table<Rule>().Get("child").HasValue);
+    }
+
+    [Fact]
+    public void CompositeChildCanBeLoadedAndReloadedRepeatedlyAsOneModule()
+    {
+        var contract = new TestModule(new RuleMetadata(requireEvaluate: true));
+        using var left = Coflow.LoadData(new[]
+        {
+            "Rule { left { evaluate: fn(value: int) -> int { value + 1 } } }",
+        }, contract);
+        using var right = Coflow.LoadData(new[]
+        {
+            "Rule { right { evaluate: fn(value: int) -> int { value + 2 } } }",
+        }, contract);
+        using var child = CoflowModule.Combine(new[] { left, right });
+        using var parent = Coflow.LoadData(new[]
+        {
+            "Rule { parent { evaluate: fn(value: int) -> int { &Rule::left.evaluate(value) + &Rule::right.evaluate(value) } } }",
+        }, contract);
+        using var combined = CoflowModule.Combine(new[] { child, parent });
+        using var root = combined.Compile();
+
+        Assert.Equal(9, root.Table<Rule>().Get("parent").Value.Evaluate(3));
+        Assert.True(root.Reload(child,
+            "Rule { left { evaluate: fn(value: int) -> int { value * 2 } } right { evaluate: fn(value: int) -> int { value * 3 } } }").IsOk);
+        Assert.Equal(15, root.Table<Rule>().Get("parent").Value.Evaluate(3));
+
+        Assert.True(root.Reload(child,
+            "Rule { left { evaluate: fn(value: int) -> int { value * 4 } } right { evaluate: fn(value: int) -> int { value * 5 } } }").IsOk);
+        Assert.Equal(27, root.Table<Rule>().Get("parent").Value.Evaluate(3));
+
+        var duplicate = Assert.Throws<ArgumentException>(() => Coflow.Combine(root, child));
+        Assert.Contains("more than once", duplicate.Message);
+    }
+
+    [Fact]
+    public void CombineRejectsDuplicateModuleProvenance()
+    {
+        var contract = new TestModule(new ItemMetadata());
+        using var module = Coflow.LoadData(new[] { "Item { one { name: \"One\" } }" }, contract);
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            CoflowModule.Combine(new[] { module, module }));
+
+        Assert.Contains("more than once", error.Message);
+    }
+
+    [Fact]
     public void ReloadCreatesANewHostGenerationAndTransfersStronglyTypedBindings()
     {
         using var data = Coflow.LoadAndCompile(new[]
@@ -578,6 +728,41 @@ public sealed class CoflowDataTests
         Assert.Equal(new[] { "current", "previous" }, logged);
         Assert.Equal(12, data.Table<Rule>().Get("host").Value.Evaluate(1));
         Assert.Equal(11, previousRule.Evaluate(0));
+    }
+
+    [Fact]
+    public async Task ReloadRetiresAnUnboundHostBeforeAWaitingBindCanSucceed()
+    {
+        using var transferEntered = new ManualResetEventSlim();
+        using var releaseTransfer = new ManualResetEventSlim();
+        var metadata = new HostServicesMetadata(() =>
+        {
+            transferEntered.Set();
+            Assert.True(releaseTransfer.Wait(TimeSpan.FromSeconds(5)));
+        });
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { host { evaluate: fn(value: int) -> int { value } } }",
+        }, new TestModule(new RuleMetadata(), metadata));
+        var previousHost = data.Singleton<HostServices>();
+
+        var reload = Task.Run(() => data.Reload(
+            "Rule { host { evaluate: fn(value: int) -> int { value + 1 } } }"));
+        Assert.True(transferEntered.Wait(TimeSpan.FromSeconds(5)));
+
+        using var bindStarted = new ManualResetEventSlim();
+        var bind = Task.Run(() =>
+        {
+            bindStarted.Set();
+            return previousHost.Bind("stale", _ => { });
+        });
+        Assert.True(bindStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(bind.IsCompleted);
+
+        releaseTransfer.Set();
+        Assert.True((await reload).IsOk);
+        Assert.Equal(HostBindError.GenerationRetired, (await bind).Error);
+        Assert.True(data.Singleton<HostServices>().Bind("current", _ => { }).IsOk);
     }
 
     [Fact]
@@ -978,6 +1163,84 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void ReentrantVmClosureFaultKeepsTheHostAndCfdCallChain()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { reentrant { evaluate: fn(value: int) -> int { &HostServices.adjust(value, fn(input: int) -> int { 1 / (input - input) }) } } }",
+        }, new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        Assert.True(data.Singleton<HostServices>().Bind(
+            "development", _ => { }, static (value, operation) => operation(value)).IsOk);
+
+        var error = Assert.Throws<CoflowFaultException>(() =>
+            data.Table<Rule>().Get("reentrant").Value.Evaluate(4));
+
+        Assert.Contains(error.CallStack, frame => frame.FieldName == "adjust");
+        Assert.Contains(error.CallStack, frame => frame.FieldName == "evaluate");
+    }
+
+    [Fact]
+    public void ReentrantVmCallsShareOneInstructionBudget()
+    {
+        using var budget = CoflowVm.OverrideInstructionLimitForCurrentThread(200);
+        const string source =
+            "Rule { reentrant { evaluate: fn(value: int) -> int { &HostServices.adjust(value, fn(input: int) -> int { input + 1 }) } } }";
+
+        using var baseline = Coflow.LoadAndCompile(new[] { source },
+            new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        Assert.True(baseline.Singleton<HostServices>().Bind(
+            "baseline", _ => { }, static (value, operation) => operation(value)).IsOk);
+        Assert.Equal(2, baseline.Table<Rule>().Get("reentrant").Value.Evaluate(1));
+
+        using var repeated = Coflow.LoadAndCompile(new[] { source },
+            new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        Assert.True(repeated.Singleton<HostServices>().Bind(
+            "repeated", _ => { }, static (value, operation) =>
+            {
+                for (var index = 0; index < 100; index++) value = operation(value);
+                return value;
+            }).IsOk);
+
+        var error = Assert.Throws<CoflowFaultException>(() =>
+            repeated.Table<Rule>().Get("reentrant").Value.Evaluate(1));
+        Assert.Contains("instruction budget", error.Message);
+        Assert.Contains(error.CallStack, frame => frame.FieldName == "adjust");
+    }
+
+    [Fact]
+    public void ReloadAndDisposeDoNotRetainOldGenerationRecords()
+    {
+        var (data, retiredRecords) = ReloadManyAndCaptureOldRecords();
+        CollectGarbage();
+        Assert.All(retiredRecords, reference => Assert.False(reference.IsAlive));
+        data.Dispose();
+
+        var disposedRecord = DisposeAndCaptureRecord();
+        CollectGarbage();
+        Assert.False(disposedRecord.IsAlive);
+
+        var (closureModule, retiredClosure) = ReloadAndCaptureOldClosure();
+        CollectGarbage();
+        Assert.False(retiredClosure.IsAlive);
+        closureModule.Dispose();
+    }
+
+    [Fact]
+    public void DisposeRetiresUnboundHostObjectsAlreadyReturnedToTheCaller()
+    {
+        var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { current { evaluate: fn(value: int) -> int { value } } }",
+        }, new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        var host = data.Singleton<HostServices>();
+
+        data.Dispose();
+
+        Assert.Equal(HostBindError.GenerationRetired,
+            host.Bind("disposed", _ => { }).Error);
+    }
+
+    [Fact]
     public void NamespacesAndUsesApplyInsideCompiledFunctions()
     {
         var module = new TestModule(
@@ -1156,7 +1419,7 @@ public sealed class CoflowDataTests
             diagnostic.Code is "COFLOW-FUNCTION-NAME" or "COFLOW-FUNCTION-ASSIGN");
     }
 
-    private sealed class TestModule : ICoflowGeneratedModule
+    private sealed class TestModule : ICoflowGeneratedContract
     {
         public TestModule(params ICoflowTypeMetadata[] types) : this(
             Array.Empty<ICoflowEnumMetadata>(), Array.Empty<CoflowConstant>(), types) { }
@@ -1479,8 +1742,13 @@ public sealed class CoflowDataTests
     private sealed class RuleMetadata : Metadata<Rule>
     {
         private readonly string _declaredType;
+        private readonly bool _requireEvaluate;
 
-        public RuleMetadata(string declaredType = "Rule") => _declaredType = declaredType;
+        public RuleMetadata(string declaredType = "Rule", bool requireEvaluate = false)
+        {
+            _declaredType = declaredType;
+            _requireEvaluate = requireEvaluate;
+        }
 
         public int GetFieldCalls { get; private set; }
         public Rule? LastRule { get; private set; }
@@ -1527,8 +1795,11 @@ public sealed class CoflowDataTests
                     ? CfdValueReader.Int64(offset)
                     : 0,
                 new CoinReward("coin", 4),
-                context.Function(CfdValueReader.FindField(record.Fields, "evaluate"),
-                    "evaluate", typeof(long), typeof(long)),
+                _requireEvaluate
+                    ? context.RequiredFunction(CfdValueReader.FindField(record.Fields, "evaluate"),
+                        "evaluate", typeof(long), typeof(long))
+                    : context.Function(CfdValueReader.FindField(record.Fields, "evaluate"),
+                        "evaluate", typeof(long), typeof(long)),
                 context.Function(CfdValueReader.FindField(record.Fields, "enabled"),
                     "enabled", typeof(bool), typeof(long)),
                 context.Function(CfdValueReader.FindField(record.Fields, "choose"),
@@ -1604,6 +1875,11 @@ public sealed class CoflowDataTests
 
     private sealed class HostServicesMetadata : Metadata<HostServices>
     {
+        private readonly Action? _beforeTransfer;
+
+        internal HostServicesMetadata(Action? beforeTransfer = null) =>
+            _beforeTransfer = beforeTransfer;
+
         public override string DeclaredType => "HostServices";
         public override bool IsSingleton => true;
         public override bool IsHost => true;
@@ -1634,14 +1910,72 @@ public sealed class CoflowDataTests
 
         public override void TransferHostState(object source, object target)
         {
+            _beforeTransfer?.Invoke();
             var previous = (HostServices)source;
             var candidate = (HostServices)target;
             previous._host.TransferStateTo(candidate._host,
-                () => candidate._environment = previous._environment);
+                () => candidate._environment = previous._environment,
+                new CoflowHostFunctionTransfer(previous._log, candidate._log),
+                new CoflowHostFunctionTransfer(previous._adjust, candidate._adjust));
         }
 
         public override object Read(CfdRecordNode record, CfdLoadContext context) =>
             throw new InvalidOperationException("Host records are not read from CFD.");
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static (CoflowModule Data, IReadOnlyList<WeakReference> Records)
+        ReloadManyAndCaptureOldRecords()
+    {
+        var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { current { offset: 0, evaluate: fn(value: int) -> int { value + offset } } }",
+        }, new TestModule(new RuleMetadata()));
+        var records = new List<WeakReference>();
+        for (var generation = 1; generation <= 16; generation++)
+        {
+            records.Add(new WeakReference(data.Table<Rule>().Get("current").Value));
+            Assert.True(data.Reload(
+                $"Rule {{ current {{ offset: {generation}, evaluate: fn(value: int) -> int {{ value + offset }} }} }}").IsOk);
+        }
+        return (data, records);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference DisposeAndCaptureRecord()
+    {
+        var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { disposed { evaluate: fn(value: int) -> int { value } } }",
+        }, new TestModule(new RuleMetadata()));
+        var record = data.Table<Rule>().Get("disposed").Value;
+        data.Dispose();
+        return new WeakReference(record);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static (CoflowModule Data, WeakReference Closure) ReloadAndCaptureOldClosure()
+    {
+        var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { current { handlers: [fn(value: int) -> int { value + 1 }] } }",
+        }, new TestModule(new RuleMetadata()));
+        var closure = data.Table<Rule>().Get("current").Value.Handlers[0];
+        Assert.True(data.Reload("Rule { current { handlers: [] } }").IsOk);
+        return (data, new WeakReference(closure));
+    }
+
+    private static void CollectGarbage()
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
     }
 
     private sealed class ValueRecordMetadata : Metadata<ValueRecord>
