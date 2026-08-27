@@ -218,13 +218,26 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
         SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
-            format!(
-                "dict<{}, {}>",
-                display_value_type(key),
-                display_value_type(value)
-            )
+            format!("{{{}: {}}}", display_value_type(key), display_value_type(value))
         }
-        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_value_type(inner)),
+        SchemaTypeRefInfo::Option { inner } => {
+            format!("Option<{}>", display_value_type(inner))
+        }
+        SchemaTypeRefInfo::Result { value, error } => format!(
+            "Result<{}, {}>",
+            display_value_type(value),
+            display_value_type(error)
+        ),
+        SchemaTypeRefInfo::Function { parameters, result } => format!(
+            "fn({}) -> {}",
+            parameters
+                .iter()
+                .map(display_value_type)
+                .collect::<Vec<_>>()
+                .join(", "),
+            display_value_type(result)
+        ),
+        SchemaTypeRefInfo::Unit => "()".to_string(),
     }
 }
 

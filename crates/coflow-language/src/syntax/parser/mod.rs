@@ -14,7 +14,7 @@ use self::tokens::{reserved_keyword_name, token_name};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::limits::StructuralBudget;
 use crate::module::ModuleId;
-use crate::syntax::ast::{ModuleAst, NameRef};
+use crate::syntax::ast::{ModuleAst, NameRef, QualifiedName};
 use crate::syntax::lexer::{lex, Token, TokenKind};
 use crate::syntax::Span;
 
@@ -70,6 +70,30 @@ impl<'a> Parser<'a> {
         code: CftErrorCode,
     ) -> Result<NameRef, CftDiagnostics> {
         self.expect_name(code, false)
+    }
+
+    pub(super) fn expect_qualified_name(&mut self) -> Result<QualifiedName, CftDiagnostics> {
+        let first = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
+        let start = first.span.start;
+        let mut end = first.span.end;
+        let mut segments = vec![first];
+        while self.eat(&TokenKind::DoubleColon).is_some() {
+            let segment = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
+            end = segment.span.end;
+            segments.push(segment);
+        }
+        Ok(QualifiedName {
+            segments,
+            span: Span::new(start, end),
+        })
+    }
+
+    pub(super) fn expect_qualified_name_ref(&mut self) -> Result<NameRef, CftDiagnostics> {
+        let path = self.expect_qualified_name()?;
+        Ok(NameRef {
+            name: path.canonical(),
+            span: path.span,
+        })
     }
 
     fn expect_name(

@@ -88,13 +88,19 @@ pub enum SchemaTypeRefInfo {
     Ref { target: String },
     Array { item: Box<Self> },
     Dict { key: Box<Self>, value: Box<Self> },
-    Nullable { inner: Box<Self> },
+    Option { inner: Box<Self> },
+    Result { value: Box<Self>, error: Box<Self> },
+    Function { parameters: Vec<Self>, result: Box<Self> },
+    Unit,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaDefaultValueInfo {
-    Null,
+    OptionNone,
+    OptionSome(Box<Self>),
+    ResultOk(Box<Self>),
+    ResultErr(Box<Self>),
     Int(#[serde(with = "crate::data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
@@ -107,6 +113,16 @@ pub enum SchemaDefaultValueInfo {
     },
     EmptyArray,
     EmptyObject,
+    Array(Vec<Self>),
+    Dictionary(Vec<(Self, Self)>),
+    Object {
+        type_name: String,
+        fields: Vec<(String, Self)>,
+    },
+    RecordReference {
+        type_name: String,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,6 +139,26 @@ pub enum SchemaConstValueInfo {
     Float(f64),
     Bool(bool),
     String(String),
+    Enum {
+        enum_name: String,
+        variant: String,
+        #[serde(with = "crate::data_model::serde_i64")]
+        value: i64,
+    },
+    OptionNone,
+    OptionSome(Box<SchemaConstValueInfo>),
+    ResultOk(Box<SchemaConstValueInfo>),
+    ResultErr(Box<SchemaConstValueInfo>),
+    Array(Vec<SchemaConstValueInfo>),
+    Dictionary(Vec<(SchemaConstValueInfo, SchemaConstValueInfo)>),
+    Object {
+        type_name: String,
+        fields: Vec<(String, SchemaConstValueInfo)>,
+    },
+    RecordReference {
+        type_name: String,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -285,15 +321,33 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
             key: Box::new(value_type_info(key)),
             value: Box::new(value_type_info(value)),
         },
-        CftValueType::Nullable(inner) => SchemaTypeRefInfo::Nullable {
+        CftValueType::Option(inner) => SchemaTypeRefInfo::Option {
             inner: Box::new(value_type_info(inner)),
         },
+        CftValueType::Result(value, error) => SchemaTypeRefInfo::Result {
+            value: Box::new(value_type_info(value)),
+            error: Box::new(value_type_info(error)),
+        },
+        CftValueType::Function(parameters, result) => SchemaTypeRefInfo::Function {
+            parameters: parameters.iter().map(value_type_info).collect(),
+            result: Box::new(value_type_info(result)),
+        },
+        CftValueType::Unit => SchemaTypeRefInfo::Unit,
     }
 }
 
 fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
     match value {
-        CftSchemaDefaultValue::Null => SchemaDefaultValueInfo::Null,
+        CftSchemaDefaultValue::OptionNone => SchemaDefaultValueInfo::OptionNone,
+        CftSchemaDefaultValue::OptionSome(value) => {
+            SchemaDefaultValueInfo::OptionSome(Box::new(default_value_info(value)))
+        }
+        CftSchemaDefaultValue::ResultOk(value) => {
+            SchemaDefaultValueInfo::ResultOk(Box::new(default_value_info(value)))
+        }
+        CftSchemaDefaultValue::ResultErr(error) => {
+            SchemaDefaultValueInfo::ResultErr(Box::new(default_value_info(error)))
+        }
         CftSchemaDefaultValue::Int(value) => SchemaDefaultValueInfo::Int(*value),
         CftSchemaDefaultValue::Float(value) => SchemaDefaultValueInfo::Float(*value),
         CftSchemaDefaultValue::Bool(value) => SchemaDefaultValueInfo::Bool(*value),
@@ -309,6 +363,30 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         },
         CftSchemaDefaultValue::EmptyArray => SchemaDefaultValueInfo::EmptyArray,
         CftSchemaDefaultValue::EmptyObject => SchemaDefaultValueInfo::EmptyObject,
+        CftSchemaDefaultValue::Array(values) => {
+            SchemaDefaultValueInfo::Array(values.iter().map(default_value_info).collect())
+        }
+        CftSchemaDefaultValue::Dictionary(entries) => SchemaDefaultValueInfo::Dictionary(
+            entries
+                .iter()
+                .map(|(key, value)| (default_value_info(key), default_value_info(value)))
+                .collect(),
+        ),
+        CftSchemaDefaultValue::Object { type_name, fields } => {
+            SchemaDefaultValueInfo::Object {
+                type_name: type_name.to_string(),
+                fields: fields
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), default_value_info(value)))
+                    .collect(),
+            }
+        }
+        CftSchemaDefaultValue::RecordReference { type_name, key } => {
+            SchemaDefaultValueInfo::RecordReference {
+                type_name: type_name.to_string(),
+                key: key.clone(),
+            }
+        }
     }
 }
 
@@ -318,5 +396,46 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::Float(value) => SchemaConstValueInfo::Float(*value),
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
+        CftConstValue::Enum {
+            enum_name,
+            variant,
+            value,
+        } => SchemaConstValueInfo::Enum {
+            enum_name: enum_name.to_string(),
+            variant: variant.to_string(),
+            value: *value,
+        },
+        CftConstValue::OptionNone => SchemaConstValueInfo::OptionNone,
+        CftConstValue::OptionSome(value) => {
+            SchemaConstValueInfo::OptionSome(Box::new(const_value_info(value)))
+        }
+        CftConstValue::ResultOk(value) => {
+            SchemaConstValueInfo::ResultOk(Box::new(const_value_info(value)))
+        }
+        CftConstValue::ResultErr(value) => {
+            SchemaConstValueInfo::ResultErr(Box::new(const_value_info(value)))
+        }
+        CftConstValue::Array(values) => {
+            SchemaConstValueInfo::Array(values.iter().map(const_value_info).collect())
+        }
+        CftConstValue::Dictionary(entries) => SchemaConstValueInfo::Dictionary(
+            entries
+                .iter()
+                .map(|(key, value)| (const_value_info(key), const_value_info(value)))
+                .collect(),
+        ),
+        CftConstValue::Object { type_name, fields } => SchemaConstValueInfo::Object {
+            type_name: type_name.to_string(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| (name.to_string(), const_value_info(value)))
+                .collect(),
+        },
+        CftConstValue::RecordReference { type_name, key } => {
+            SchemaConstValueInfo::RecordReference {
+                type_name: type_name.to_string(),
+                key: key.clone(),
+            }
+        }
     }
 }

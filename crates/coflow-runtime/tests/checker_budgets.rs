@@ -47,13 +47,17 @@ fn expression_depth_limit_stops_the_current_record_with_a_stable_diagnostic() {
 
 #[test]
 fn nested_data_traversal_uses_the_same_depth_contract() {
-    let schema = compile_schema("type Node { child: Node? = null; check { true; } }");
-    let child = |value| LoadedValueDraft::object_with_declared_type([("child", value)]);
+    let schema = compile_schema("type Node { child: Option<Node> = None; check { true; } }");
+    let child = |value| {
+        LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::object_with_declared_type([
+            ("child", value),
+        ])))
+    };
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "root",
         "Node",
-        [("child", child(child(LoadedValueDraft::Null)))],
+        [("child", child(child(LoadedValueDraft::OptionNone)))],
     );
     let model = builder.build().expect("model builds");
 

@@ -195,8 +195,13 @@ impl<'a> RecordCheckWalker<'a> {
                     );
                 }
             }
+            CfdValue::OptionSome(value)
+            | CfdValue::ResultOk(value)
+            | CfdValue::ResultErr(value) => {
+                self.visit_value(value, location, statement, project_dimension, cursor);
+            }
             CfdValue::Ref(_)
-            | CfdValue::Null
+            | CfdValue::OptionNone
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
             | CfdValue::Float(_)

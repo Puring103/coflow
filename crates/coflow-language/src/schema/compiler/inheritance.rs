@@ -41,12 +41,12 @@ impl<'a> SchemaCompiler<'a> {
                     return None;
                 }
 
-                let Some(parent) = self
-                    .types
-                    .get(&current)
-                    .and_then(|info| info.def.parent.as_ref())
-                    .filter(|parent| self.types.contains_key(&parent.name))
-                    .map(|parent| parent.name.clone())
+                let Some(parent) = self.types.get(&current).and_then(|info| {
+                    info.def.parent.as_ref().and_then(|parent| {
+                        let resolved = self.resolve_name(&info.module, &parent.name);
+                        self.types.contains_key(&resolved).then_some(resolved)
+                    })
+                })
                 else {
                     break None;
                 };
@@ -109,14 +109,15 @@ impl<'a> SchemaCompiler<'a> {
                 continue;
             };
             if let Some(parent) = &info.def.parent {
-                if let Some(parent_info) = self.types.get(&parent.name) {
+                let parent_name = self.resolve_name(&info.module, &parent.name);
+                if let Some(parent_info) = self.types.get(&parent_name) {
                     if parent_info.def.is_sealed {
                         self.diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::InheritSealedType,
                                 info.module.clone(),
                                 parent.span,
-                                format!("cannot inherit sealed type `{}`", parent.name),
+                                format!("cannot inherit sealed type `{parent_name}`"),
                             )
                             .with_related(
                                 parent_info.module.clone(),
@@ -125,7 +126,7 @@ impl<'a> SchemaCompiler<'a> {
                             ),
                         );
                     }
-                    let inherited = self.collect_ancestor_fields(Some(&parent.name));
+                    let inherited = self.collect_ancestor_fields(Some(&parent_name));
                     for field in &info.def.fields {
                         if let Some(first) = inherited.get(&field.name) {
                             self.diagnostics.push(

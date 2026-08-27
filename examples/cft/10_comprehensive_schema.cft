@@ -15,7 +15,7 @@ type ExampleMonsterStats {
 type ExampleMonster {
   name: string;
   level: int;
-  rarity: ExampleRarity = ExampleRarity.Common;
+  rarity: ExampleRarity = ExampleRarity::Common;
   stats: ExampleMonsterStats;
   loot: ExampleLootTable;
   skill: ExampleSkill? = null;

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
-    <RootNamespace>Coflow.Cfd.Runtime</RootNamespace>
+    <RootNamespace>CoflowRuntime</RootNamespace>
     <AssemblyName>Coflow.Cfd.Runtime</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Coflow.Cfd.Runtime</PackageId>
-    <Description>Schema-free CFD parser and diagnostics for generated Coflow models.</Description>
+    <Description>Strongly typed CFD loading, compilation, function binding, reload, and virtual machine runtime.</Description>
     <PackageVersion>0.9.1</PackageVersion>
   </PropertyGroup>
 </Project>

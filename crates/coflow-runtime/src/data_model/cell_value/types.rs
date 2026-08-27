@@ -15,7 +15,9 @@ pub(super) enum CellType {
     Enum(String),
     Array(Box<CellType>),
     Dict(Box<CellType>, Box<CellType>),
-    Nullable(Box<CellType>),
+    Option(Box<CellType>),
+    Result(Box<CellType>, Box<CellType>),
+    Unsupported(String),
 }
 
 impl CellType {
@@ -33,9 +35,13 @@ impl CellType {
                 Box::new(Self::from_schema_type(key)),
                 Box::new(Self::from_schema_type(value)),
             ),
-            CftValueType::Nullable(inner) => {
-                Self::Nullable(Box::new(Self::from_schema_type(inner)))
-            }
+            CftValueType::Option(inner) => Self::Option(Box::new(Self::from_schema_type(inner))),
+            CftValueType::Result(ok, error) => Self::Result(
+                Box::new(Self::from_schema_type(ok)),
+                Box::new(Self::from_schema_type(error)),
+            ),
+            CftValueType::Function(_, _)
+            | CftValueType::Unit => Self::Unsupported(ty.to_string()),
         }
     }
 
@@ -60,7 +66,9 @@ impl CellType {
             Self::Ref(name) => format!("&{name}"),
             Self::Array(inner) => format!("[{}]", inner.display()),
             Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
-            Self::Nullable(inner) => format!("{}?", inner.display()),
+            Self::Option(inner) => format!("Option<{}>", inner.display()),
+            Self::Result(ok, error) => format!("Result<{}, {}>", ok.display(), error.display()),
+            Self::Unsupported(display) => display.clone(),
         }
     }
 }
@@ -82,13 +90,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_type(&mut self) -> Result<CellType, CellValueDiagnostics> {
         self.skip_ws();
-        let mut ty = self.parse_primary()?;
-        self.skip_ws();
-        while self.eat('?') {
-            ty = CellType::Nullable(Box::new(ty));
-            self.skip_ws();
-        }
-        Ok(ty)
+        self.parse_primary()
     }
 
     fn parse_primary(&mut self) -> Result<CellType, CellValueDiagnostics> {
@@ -133,6 +135,29 @@ impl<'a> TypeParser<'a> {
         if name.is_empty() {
             return Err(invalid_declared_type("expected type name"));
         }
+        if matches!(name.as_str(), "Option" | "Result") {
+            self.skip_ws();
+            if !self.eat('<') {
+                return Err(invalid_declared_type(format!("`{name}` is missing `<`")));
+            }
+            let first = self.parse_type()?;
+            self.skip_ws();
+            if name == "Option" {
+                if !self.eat('>') {
+                    return Err(invalid_declared_type("Option type is missing `>`"));
+                }
+                return Ok(CellType::Option(Box::new(first)));
+            }
+            if !self.eat(',') {
+                return Err(invalid_declared_type("Result type is missing `,`"));
+            }
+            let second = self.parse_type()?;
+            self.skip_ws();
+            if !self.eat('>') {
+                return Err(invalid_declared_type("Result type is missing `>`"));
+            }
+            return Ok(CellType::Result(Box::new(first), Box::new(second)));
+        }
         Ok(match name.as_str() {
             "int" => CellType::Int,
             "float" => CellType::Float,
@@ -149,7 +174,7 @@ impl<'a> TypeParser<'a> {
         while let Some(ch) = self.peek() {
             if matches!(
                 ch,
-                '[' | ']' | '{' | '}' | ':' | '?' | ' ' | '\t' | '\r' | '\n'
+                '[' | ']' | '{' | '}' | ':' | '<' | '>' | ',' | ' ' | '\t' | '\r' | '\n'
             ) {
                 break;
             }

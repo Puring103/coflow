@@ -87,7 +87,7 @@ pub trait CfdDimensionWriter: Send + Sync {
     /// Write or clear one variant value in a managed dimension source.
     ///
     /// `None` clears the physical value so the overlay becomes missing;
-    /// `Some(CfdValue::Null)` stores an explicit null.
+    /// `Some(CfdValue::OptionNone)` stores an explicit `None` value.
     ///
     /// # Errors
     ///

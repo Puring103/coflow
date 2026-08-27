@@ -57,15 +57,21 @@ pub(crate) fn parse_cell_text_value(
 pub(crate) fn render_cell_text_value(
     value: &CfdValue,
 ) -> Result<String, crate::api::DiagnosticSet> {
-    if matches!(value, CfdValue::Null) {
-        return Ok("null".to_string());
-    }
     render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
 }
 
 fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::DiagnosticSet> {
     match value {
-        LoadedValueDraft::Null => Ok(Value::Null),
+        LoadedValueDraft::OptionNone => Ok(tagged_json("$none", Value::Bool(true))),
+        LoadedValueDraft::OptionSome(value) => {
+            Ok(tagged_json("$some", input_value_to_json(*value)?))
+        }
+        LoadedValueDraft::ResultOk(value) => {
+            Ok(tagged_json("$ok", input_value_to_json(*value)?))
+        }
+        LoadedValueDraft::ResultErr(value) => {
+            Ok(tagged_json("$err", input_value_to_json(*value)?))
+        }
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
         LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
             Ok(Value::Number(Number::from(value)))
@@ -116,6 +122,12 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
             Ok(Value::Object(object))
         }
     }
+}
+
+fn tagged_json(tag: &str, value: Value) -> Value {
+    let mut object = Map::new();
+    object.insert(tag.to_string(), value);
+    Value::Object(object)
 }
 
 fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {

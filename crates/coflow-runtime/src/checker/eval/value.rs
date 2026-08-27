@@ -13,6 +13,7 @@ pub(crate) enum EvalValue<'a> {
     Model(&'a CfdValue),
     DictKey(&'a CfdDictKey),
     Temporary(TemporaryValue),
+    Constant(CftConstValue),
     EnumNamespace(EnumName),
     Record(EvalRecordRef),
     Entry(Box<EvalEntry<'a>>),
@@ -49,12 +50,24 @@ pub(crate) enum ScalarValue<'a> {
 
 impl<'a> EvalValue<'a> {
     pub(crate) fn from_const(value: &CftConstValue) -> Self {
-        Self::Temporary(match value {
-            CftConstValue::Int(value) => TemporaryValue::Int(*value),
-            CftConstValue::Float(value) => TemporaryValue::Float(*value),
-            CftConstValue::Bool(value) => TemporaryValue::Bool(*value),
-            CftConstValue::String(value) => TemporaryValue::String(value.clone()),
-        })
+        match value {
+            CftConstValue::Int(value) => Self::Temporary(TemporaryValue::Int(*value)),
+            CftConstValue::Float(value) => Self::Temporary(TemporaryValue::Float(*value)),
+            CftConstValue::Bool(value) => Self::Temporary(TemporaryValue::Bool(*value)),
+            CftConstValue::String(value) => {
+                Self::Temporary(TemporaryValue::String(value.clone()))
+            }
+            CftConstValue::Enum {
+                enum_name,
+                variant,
+                value,
+            } => Self::Temporary(TemporaryValue::Enum(CfdEnumValue {
+                enum_name: enum_name.clone(),
+                variant: Some(variant.clone()),
+                value: *value,
+            })),
+            other => Self::Constant(other.clone()),
+        }
     }
 
     pub(crate) fn from_cfd_value(
@@ -72,7 +85,10 @@ impl<'a> EvalValue<'a> {
                 location: Box::new(Some(location.clone())),
             })?;
         Ok(match value {
-            CfdValue::Null
+            CfdValue::OptionNone
+            | CfdValue::OptionSome(_)
+            | CfdValue::ResultOk(_)
+            | CfdValue::ResultErr(_)
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
             | CfdValue::Float(_)
@@ -127,6 +143,8 @@ impl<'a> EvalValue<'a> {
         match self {
             Self::Array { items, .. } => Some(items.len()),
             Self::Dict { entries, .. } => Some(entries.len()),
+            Self::Constant(CftConstValue::Array(items)) => Some(items.len()),
+            Self::Constant(CftConstValue::Dictionary(entries)) => Some(entries.len()),
             _ => match self.scalar() {
                 Some(ScalarValue::String(value)) => Some(value.chars().count()),
                 _ => None,
@@ -150,6 +168,13 @@ impl<'a> EvalValue<'a> {
                 TemporaryValue::String(value) => ScalarValue::String(value),
                 TemporaryValue::Enum(value) => ScalarValue::Enum(value),
             }),
+            Self::Constant(value) => match value {
+                CftConstValue::Int(value) => Some(ScalarValue::Int(*value)),
+                CftConstValue::Float(value) => Some(ScalarValue::Float(*value)),
+                CftConstValue::Bool(value) => Some(ScalarValue::Bool(*value)),
+                CftConstValue::String(value) => Some(ScalarValue::String(value)),
+                _ => None,
+            },
             Self::EnumNamespace(_)
             | Self::Record(_)
             | Self::Entry(_)
@@ -185,14 +210,20 @@ impl<'a> EvalValue<'a> {
 
 fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
     match value {
-        CfdValue::Null => Some(ScalarValue::Null),
+        CfdValue::OptionNone => Some(ScalarValue::Null),
         CfdValue::Bool(value) => Some(ScalarValue::Bool(*value)),
         CfdValue::Int(value) => Some(ScalarValue::Int(*value)),
         CfdValue::Float(value) => Some(ScalarValue::Float(*value)),
         CfdValue::String(value) => Some(ScalarValue::String(value)),
         CfdValue::FormattedString(value) => Some(ScalarValue::String(&value.rendered)),
         CfdValue::Enum(value) => Some(ScalarValue::Enum(value)),
-        CfdValue::Object(_) | CfdValue::Ref(_) | CfdValue::Array(_) | CfdValue::Dict(_) => None,
+        CfdValue::OptionSome(_)
+        | CfdValue::ResultOk(_)
+        | CfdValue::ResultErr(_)
+        | CfdValue::Object(_)
+        | CfdValue::Ref(_)
+        | CfdValue::Array(_)
+        | CfdValue::Dict(_) => None,
     }
 }
 
@@ -406,7 +437,6 @@ pub(crate) fn model_value<'a>(
 
 fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => array_element_type(Some(inner)),
         Some(CftValueType::Array(inner)) => Some(inner),
         _ => None,
     }
@@ -414,7 +444,6 @@ fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
 
 fn dict_value_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => dict_value_type(Some(inner)),
         Some(CftValueType::Dict(_, value)) => Some(value),
         _ => None,
     }
@@ -422,7 +451,6 @@ fn dict_value_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
 
 fn dict_key_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => dict_key_type(Some(inner)),
         Some(CftValueType::Dict(key, _)) => Some(key),
         _ => None,
     }

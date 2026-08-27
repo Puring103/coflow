@@ -36,6 +36,90 @@ fn compile_schema(source: &str) -> CftSchema {
     build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
 }
 
+fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
+    let modules = parse_modules(files.iter().map(|(name, source)| {
+        CftFile::from_source(ModuleId::from(*name), *source)
+    }));
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+}
+
+#[test]
+fn cfd_namespace_and_uses_resolve_types_enums_dict_keys_and_references() -> TestResult {
+    let schema = compile_schema_files(&[
+        (
+            "common.cft",
+            "namespace shared::common; enum Rarity { Common, Rare }",
+        ),
+        (
+            "items.cft",
+            r#"
+namespace game::items;
+use shared::common::Rarity;
+type Item {
+  rarity: Rarity;
+  weights: {Rarity: int};
+  backup: Option<&Item> = None;
+}
+"#,
+        ),
+    ]);
+
+    let records = parse_cfd_input_records(
+        &schema,
+        r#"
+namespace game::items;
+use shared::common::Rarity as Quality;
+
+Item {
+  sword {
+    rarity: Quality::Rare,
+    weights: { Quality::Common: 1 },
+  }
+  shield {
+    rarity: shared::common::Rarity::Common,
+    weights: { shared::common::Rarity::Rare: 2 },
+    backup: &Item::sword,
+  }
+}
+"#,
+    )?;
+
+    assert_eq!(records.len(), 2);
+    assert!(records
+        .iter()
+        .all(|record| record.actual_type == "game::items::Item"));
+    assert_eq!(
+        records[1].fields.get("backup"),
+        Some(&LoadedValueDraft::OptionSome(Box::new(
+            LoadedValueDraft::record_ref("sword")
+        )))
+    );
+    Ok(())
+}
+
+#[test]
+fn cfd_rejects_unknown_or_conflicting_uses_without_name_fallback() {
+    let schema = compile_schema_files(&[
+        ("root.cft", "type Item {}"),
+        ("local.cft", "namespace game; type Item {}"),
+        ("shared.cft", "namespace shared; type Item {}"),
+    ]);
+
+    let unknown = parse_cfd_input_records(
+        &schema,
+        "use missing::Item; Item { value {} }",
+    )
+    .expect_err("unknown use target");
+    assert_has_text_code(&unknown, CfdTextErrorCode::Syntax);
+
+    let conflict = parse_cfd_input_records(
+        &schema,
+        "namespace game; use shared::Item; Item { value {} }",
+    )
+    .expect_err("unqualified use path or local declaration conflict");
+    assert_has_text_code(&conflict, CfdTextErrorCode::Syntax);
+}
+
 #[test]
 fn loader_rejects_non_cfd_sources_before_reading() {
     let loader = CfdLoader;
@@ -75,6 +159,42 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
         Some(&LoadedValueDraft::from("Iron Sword"))
     );
     assert!(!records[0].fields.contains_key("id"));
+    Ok(())
+}
+
+#[test]
+fn nested_option_and_result_tags_survive_loading() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                nested: Option<Option<int>>;
+                outcome: Result<Option<int>, string>;
+            }
+        "#,
+    );
+    let model = load_cfd_model(
+        &schema,
+        r#"
+            item: Item {
+                nested: Some(None),
+                outcome: Ok(Some(3)),
+            }
+        "#,
+    )?;
+    let item_id = model
+        .lookup_assignable(&schema, "Item", "item")
+        .expect("item record");
+    let item = model.record(item_id).expect("item record");
+    assert_eq!(
+        item.field("nested"),
+        Some(&CfdValue::OptionSome(Box::new(CfdValue::OptionNone)))
+    );
+    assert_eq!(
+        item.field("outcome"),
+        Some(&CfdValue::ResultOk(Box::new(CfdValue::OptionSome(
+            Box::new(CfdValue::Int(3))
+        ))))
+    );
     Ok(())
 }
 
@@ -259,14 +379,14 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
 fn flag_enum_fields_accept_expressions_and_integer_masks() -> TestResult {
     let schema = compile_schema(
         r#"
-            @flag enum Access { None = 0, Read = 1, Write = 2, Execute = 4, Admin = 8 }
+            @flag enum Access { Empty = 0, Read = 1, Write = 2, Execute = 4, Admin = 8 }
             type User { access: Access; }
         "#,
     );
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            alice: User { access: Read | Write & (Execute | Access.Admin) }
+            alice: User { access: Read | Write & (Execute | Access::Admin) }
             bob: User { access: 5 }
         "#,
     )?;
@@ -303,7 +423,7 @@ fn flag_enum_fields_reject_invalid_operands_and_non_flag_expressions() {
     );
     for source in [
         "alice: User { access: Missing | Read, rarity: Common }",
-        "alice: User { access: Other.Read | Write, rarity: Common }",
+        "alice: User { access: Other::Read | Write, rarity: Common }",
         "alice: User { access: -1, rarity: Common }",
         "alice: User { access: 4, rarity: Common }",
         "alice: User { access: Read, rarity: Common | Rare }",
@@ -848,7 +968,7 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
             CfdTextErrorCode::InvalidEnumVariant,
             "enum Rarity { Common, Rare, } type Item { rarity: Rarity; }",
             r#"sword: Item { rarity: Missing }"#,
-            r#"sword: Item { rarity: Rarity.Rare }"#,
+            r#"sword: Item { rarity: Rarity::Rare }"#,
         ),
         (
             CfdTextErrorCode::Syntax,

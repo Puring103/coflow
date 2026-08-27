@@ -1,4 +1,4 @@
 Node {
-  a { next: &b }
+  a { next: Some(&b) }
   b {}
 }

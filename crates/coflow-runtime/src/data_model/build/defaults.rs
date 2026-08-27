@@ -1,7 +1,7 @@
 use super::validate::CachedDefaultObject;
 use super::Validator;
 use crate::data_model::build::{RecordDraft, ValueDraft};
-use crate::data_model::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
+use crate::data_model::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, RecordOrigin};
 use crate::data_model::model::{CfdEnumValue, CfdRecordId, CfdValue};
 use coflow_language::limits::TraversalCursor;
 use coflow_language::{CftField, CftSchemaDefaultValue, CftValueType};
@@ -17,7 +17,7 @@ impl Validator<'_, '_> {
         parent: TraversalCursor,
     ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
-            if let CftValueType::Object(type_name) = field.value_type.non_nullable() {
+            if let CftValueType::Object(type_name) = &field.value_type {
                 if let Some(cycle) = crate::data_model::dependencies::schema_default_cycle(
                     self.schema.cft(),
                     type_name,
@@ -46,7 +46,7 @@ impl Validator<'_, '_> {
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
-            return match ty.non_nullable() {
+            return match ty {
                 CftValueType::Dict(_, _) => Some(ValueDraft::Value(CfdValue::Dict(Vec::new()))),
                 CftValueType::Object(type_name) => {
                     self.default_object_value(type_name, record, path, cursor)
@@ -59,7 +59,36 @@ impl Validator<'_, '_> {
         }
 
         let out = match value {
-            CftSchemaDefaultValue::Null if ty.is_nullable() => CfdValue::Null,
+            CftSchemaDefaultValue::OptionNone if matches!(ty, CftValueType::Option(_)) => {
+                CfdValue::OptionNone
+            }
+            CftSchemaDefaultValue::OptionSome(value) => {
+                let CftValueType::Option(inner) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                return self
+                    .default_value(inner, value, record, path, cursor)
+                    .map(|value| ValueDraft::OptionSome(Box::new(value)));
+            }
+            CftSchemaDefaultValue::ResultOk(value) => {
+                let CftValueType::Result(ok, _) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                return self
+                    .default_value(ok, value, record, path, cursor)
+                    .map(|value| ValueDraft::ResultOk(Box::new(value)));
+            }
+            CftSchemaDefaultValue::ResultErr(value) => {
+                let CftValueType::Result(_, error) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                return self
+                    .default_value(error, value, record, path, cursor)
+                    .map(|value| ValueDraft::ResultErr(Box::new(value)));
+            }
             CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CftValueType::Int) => {
                 CfdValue::Int(*value)
             }
@@ -80,7 +109,7 @@ impl Validator<'_, '_> {
                 enum_name,
                 variant,
                 value,
-            } if matches!(ty.non_nullable(), CftValueType::Enum(name) if name == enum_name) => {
+            } if matches!(ty, CftValueType::Enum(name) if name == enum_name) => {
                 let variant = (!self
                     .schema
                     .cft()
@@ -94,9 +123,99 @@ impl Validator<'_, '_> {
                 })
             }
             CftSchemaDefaultValue::EmptyArray
-                if matches!(ty.non_nullable(), CftValueType::Array(_)) =>
+                if matches!(ty, CftValueType::Array(_)) =>
             {
                 CfdValue::Array(Vec::new())
+            }
+            CftSchemaDefaultValue::Array(values) => {
+                let CftValueType::Array(inner) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                let mut out = Vec::with_capacity(values.len());
+                for (index, value) in values.iter().enumerate() {
+                    let value = self.default_value(
+                        inner,
+                        value,
+                        record,
+                        path.clone().index(index),
+                        cursor,
+                    )?;
+                    out.push(value);
+                }
+                return Some(ValueDraft::Array(out));
+            }
+            CftSchemaDefaultValue::Dictionary(entries) => {
+                let CftValueType::Dict(key_type, value_type) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                let mut out = Vec::with_capacity(entries.len());
+                for (index, (key, value)) in entries.iter().enumerate() {
+                    let key_path = path.clone().index(index);
+                    let key = self.default_value(
+                        key_type,
+                        key,
+                        record,
+                        key_path.clone(),
+                        cursor,
+                    )?;
+                    let key = match key {
+                        ValueDraft::Value(CfdValue::Int(value)) => {
+                            crate::data_model::CfdDictKey::Int(value)
+                        }
+                        ValueDraft::Value(CfdValue::String(value)) => {
+                            crate::data_model::CfdDictKey::String(value)
+                        }
+                        ValueDraft::Value(CfdValue::Enum(value)) => {
+                            crate::data_model::CfdDictKey::Enum(value)
+                        }
+                        _ => {
+                            self.push_default_type_mismatch(record, key_path);
+                            return None;
+                        }
+                    };
+                    let value = self.default_value(
+                        value_type,
+                        value,
+                        record,
+                        path.clone().index(index),
+                        cursor,
+                    )?;
+                    out.push((key, value));
+                }
+                return Some(ValueDraft::Dict(out));
+            }
+            CftSchemaDefaultValue::Object { type_name, fields } => {
+                let CftValueType::Object(expected) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                if expected != type_name {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                }
+                return self.default_explicit_object_value(
+                    type_name,
+                    fields,
+                    record,
+                    path,
+                    cursor,
+                );
+            }
+            CftSchemaDefaultValue::RecordReference { type_name, key } => {
+                let CftValueType::RecordRef(expected) = ty else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                };
+                if expected != type_name {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
+                }
+                return Some(ValueDraft::PendingRef {
+                    expected_type: type_name.clone(),
+                    key: key.clone(),
+                });
             }
             _ => {
                 self.push_default_type_mismatch(record, path);
@@ -105,6 +224,62 @@ impl Validator<'_, '_> {
         };
         self.validate_materialized_value(ty, &out, record, path)?;
         Some(ValueDraft::Value(out))
+    }
+
+    fn default_explicit_object_value(
+        &mut self,
+        type_name: &coflow_language::TypeName,
+        supplied: &[(coflow_language::FieldName, CftSchemaDefaultValue)],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+        cursor: TraversalCursor,
+    ) -> Option<ValueDraft> {
+        let schema = self.schema;
+        let Some(schema_type) = schema.resolve_type(type_name) else {
+            self.push_default_type_mismatch(record, path);
+            return None;
+        };
+        if schema_type.is_abstract {
+            self.push_default_type_mismatch(record, path);
+            return None;
+        }
+        let supplied = supplied
+            .iter()
+            .map(|(name, value)| (name, value))
+            .collect::<BTreeMap<_, _>>();
+        let mut fields = BTreeMap::new();
+        for field in schema.full_fields(type_name).collect::<Vec<_>>() {
+            let field_path = path.clone().field(field.name.as_str());
+            let value = if let Some(value) = supplied.get(&field.name) {
+                self.default_value(
+                    &field.value_type,
+                    value,
+                    record,
+                    field_path,
+                    cursor,
+                )
+            } else if let Some(default) = &field.default {
+                self.default_field_value(field, default, record, field_path, cursor)
+            } else {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::MissingRequiredField,
+                        format!("missing required field `{}`", field.name),
+                    )
+                    .with_primary(record, field_path),
+                );
+                None
+            };
+            if let Some(value) = value {
+                fields.insert(field.name.clone(), value);
+            }
+        }
+        Some(ValueDraft::Object(Box::new(RecordDraft {
+            key: String::new(),
+            actual_type: type_name.clone(),
+            fields,
+            origin: RecordOrigin::None,
+        })))
     }
 
     fn default_object_value(
@@ -200,6 +375,11 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                         .map(|value| (DraftNode::Value(value), child_depth)),
                 );
             }
+            DraftNode::Value(
+                ValueDraft::OptionSome(value)
+                | ValueDraft::ResultOk(value)
+                | ValueDraft::ResultErr(value),
+            ) => pending.push((DraftNode::Value(value), child_depth)),
             DraftNode::Value(ValueDraft::Array(items)) => {
                 pending.extend(
                     items
@@ -225,8 +405,5 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
 }
 
 fn type_accepts_default(expected: &CftValueType, actual: &CftValueType) -> bool {
-    match expected {
-        CftValueType::Nullable(inner) => type_accepts_default(inner, actual),
-        _ => expected == actual,
-    }
+    expected == actual
 }

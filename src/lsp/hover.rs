@@ -37,11 +37,11 @@ pub(crate) fn hover_at(
     }
 
     if let Some(chain) = dotted_chain_at(&document.source, &word) {
-        if chain.len() == 2 {
+        if chain.len() >= 2 {
             if let Some((enum_def, variant)) = enum_variant_by_chain(build, &chain) {
                 return Some(hover_response(
                     &format!(
-                        "CFT enum variant `{}`.`{}` = `{}`.",
+                        "CFT enum variant `{}`::`{}` = `{}`.",
                         enum_def.name, variant.name, variant.value
                     ),
                     &byte_range(&document.source, word.start, word.end),
@@ -135,6 +135,39 @@ fn const_value_to_string(value: &CftConstValue) -> String {
         CftConstValue::Float(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
+        CftConstValue::Enum {
+            enum_name,
+            variant,
+            ..
+        } => format!("{enum_name}::{variant}"),
+        CftConstValue::OptionNone => "None".to_string(),
+        CftConstValue::OptionSome(value) => format!("Some({})", const_value_to_string(value)),
+        CftConstValue::ResultOk(value) => format!("Ok({})", const_value_to_string(value)),
+        CftConstValue::ResultErr(value) => format!("Err({})", const_value_to_string(value)),
+        CftConstValue::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(const_value_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        CftConstValue::Dictionary(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    const_value_to_string(key),
+                    const_value_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        CftConstValue::Object { type_name, .. } => format!("{type_name} {{ ... }}"),
+        CftConstValue::RecordReference { type_name, key } => {
+            format!("&{type_name}::{key}")
+        }
     }
 }
 
@@ -190,6 +223,7 @@ fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {
                     }
                 }
             }
+            Item::TypeAlias(_) => {}
             Item::Check(check) => {
                 if let Some(annotation) = find_in(&check.annotations, offset) {
                     return Some(annotation);

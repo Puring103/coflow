@@ -22,7 +22,19 @@ pub(super) fn serialize_value_for_type(
     let indent = "  ".repeat(depth);
     let outer = "  ".repeat(depth.saturating_sub(1));
     match v {
-        CfdValue::Null => "null".to_string(),
+        CfdValue::OptionNone => "None".to_string(),
+        CfdValue::OptionSome(value) => format!(
+            "Some({})",
+            serialize_value_for_type(value, schema, option_inner(expected), depth)
+        ),
+        CfdValue::ResultOk(value) => format!(
+            "Ok({})",
+            serialize_value_for_type(value, schema, result_ok(expected), depth)
+        ),
+        CfdValue::ResultErr(value) => format!(
+            "Err({})",
+            serialize_value_for_type(value, schema, result_error(expected), depth)
+        ),
         CfdValue::Bool(v) => v.to_string(),
         CfdValue::Int(v) => v.to_string(),
         CfdValue::Float(v) => {
@@ -38,7 +50,7 @@ pub(super) fn serialize_value_for_type(
         CfdValue::Enum(e) => render_enum_value(e, schema, expected),
         CfdValue::Ref(target_key)
             if matches!(
-                expected.map(CftValueType::non_nullable),
+                expected,
                 Some(CftValueType::RecordRef(_))
             ) =>
         {
@@ -66,7 +78,7 @@ pub(super) fn serialize_value_for_type(
             format!("{} {{\n{body}{outer}}}", boxed.actual_type)
         }
         CfdValue::Array(items) => {
-            let item_type = expected.and_then(|ty| match ty.non_nullable() {
+            let item_type = expected.and_then(|ty| match ty {
                 CftValueType::Array(inner) => Some(inner.as_ref()),
                 _ => None,
             });
@@ -77,7 +89,7 @@ pub(super) fn serialize_value_for_type(
             format!("[{}]", elems.join(", "))
         }
         CfdValue::Dict(entries) => {
-            let item_type = expected.and_then(|ty| match ty.non_nullable() {
+            let item_type = expected.and_then(|ty| match ty {
                 CftValueType::Dict(_, item) => Some(item.as_ref()),
                 _ => None,
             });
@@ -108,7 +120,7 @@ fn render_enum_value(
     schema: Option<&CftSchema>,
     expected: Option<&CftValueType>,
 ) -> String {
-    let expected_name = expected.and_then(|ty| match ty.non_nullable() {
+    let expected_name = expected.and_then(|ty| match ty {
         CftValueType::Enum(name) => Some(name.as_str()),
         _ => None,
     });
@@ -145,6 +157,27 @@ fn render_enum_value(
     )
 }
 
+fn option_inner(expected: Option<&CftValueType>) -> Option<&CftValueType> {
+    match expected {
+        Some(CftValueType::Option(inner)) => Some(inner),
+        _ => None,
+    }
+}
+
+fn result_ok(expected: Option<&CftValueType>) -> Option<&CftValueType> {
+    match expected {
+        Some(CftValueType::Result(ok, _)) => Some(ok),
+        _ => None,
+    }
+}
+
+fn result_error(expected: Option<&CftValueType>) -> Option<&CftValueType> {
+    match expected {
+        Some(CftValueType::Result(_, error)) => Some(error),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::serialize_value_for_type;
@@ -157,7 +190,7 @@ mod tests {
     fn serializes_flag_masks_in_schema_order() -> Result<(), String> {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "@flag enum Access { None = 0, Read = 1, Write = 2, Execute = 4 }",
+            "@flag enum Access { Empty = 0, Read = 1, Write = 2, Execute = 4 }",
         )]);
         let schema = build_schema(&modules, &CftDimensionInputs::default())
             .map_err(|error| format!("{error:?}"))?;
@@ -181,7 +214,7 @@ mod tests {
                 .map_err(|error| error.to_string())?,
         );
         let rendered = serialize_value_for_type(&zero, Some(&schema), Some(&ty), 0);
-        if rendered != "None" {
+        if rendered != "Empty" {
             return Err(format!("expected the zero flag name, got `{rendered}`"));
         }
         Ok(())

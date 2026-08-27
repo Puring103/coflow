@@ -147,10 +147,10 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
 
     let cases = vec![
         Case {
-            name: "nullable null",
-            schema: "type Root { value: int?; }",
-            source_value: LoadedValueDraft::Null,
-            mutation_value: CfdValue::Null,
+            name: "option none",
+            schema: "type Root { value: Option<int>; }",
+            source_value: LoadedValueDraft::OptionNone,
+            mutation_value: CfdValue::OptionNone,
             context_records: Vec::new(),
             valid: true,
         },

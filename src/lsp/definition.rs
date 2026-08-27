@@ -72,7 +72,7 @@ pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) ->
             let (name, name_span) = match item {
                 Item::Type(t) => (t.name.as_str(), t.name_span),
                 Item::Enum(e) => (e.name.as_str(), e.name_span),
-                Item::Const(_) | Item::Check(_) => continue,
+                Item::Const(_) | Item::TypeAlias(_) | Item::Check(_) => continue,
             };
             if name == type_name {
                 let range = byte_range(document.source(), name_span.start, name_span.end);
@@ -112,7 +112,7 @@ pub(crate) fn definitions_at(
     }
 
     if let Some(chain) = dotted_chain_at(&document.source, &word) {
-        if chain.len() == 2 {
+        if chain.len() >= 2 {
             if let Some(location) = enum_variant_location_by_chain(build, &chain) {
                 return vec![location];
             }
@@ -268,7 +268,11 @@ fn ast_global_location(build: &LspBuild, name: &str) -> Option<Value> {
                 Item::Type(ty) if ty.name == name => {
                     return Some(location(document, ty.name_span));
                 }
-                Item::Const(_) | Item::Enum(_) | Item::Type(_) | Item::Check(_) => {}
+                Item::Const(_)
+                | Item::Enum(_)
+                | Item::Type(_)
+                | Item::TypeAlias(_)
+                | Item::Check(_) => {}
             }
         }
     }

@@ -2,7 +2,7 @@ use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
 use crate::schema::compiler::inferred_type::{
     min_max_supported, set_element_supported, sorted_element_supported, types_comparable,
-    unique_supported, unwrap_nullable, InferredType,
+    unique_supported, InferredType,
 };
 use crate::schema::{CftCheckBuiltin, CftValueType};
 use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
@@ -16,7 +16,8 @@ impl CheckTypeAnalyzer<'_, '_> {
         args: &[CheckExpr],
         span: Span,
     ) -> InferredType {
-        if self.compiler.enums.contains_key(&name.name) {
+        let resolved_name = self.compiler.resolve_name(&self.module, &name.name);
+        if self.compiler.enums.contains_key(&resolved_name) {
             if args.len() != 1 {
                 self.diag(
                     CftErrorCode::FunctionArityMismatch,
@@ -33,7 +34,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                     "enum constructor argument must be int",
                 );
             }
-            return InferredType::enum_value(crate::EnumName::from_validated(name.name.clone()));
+            return InferredType::enum_value(crate::EnumName::from_validated(resolved_name));
         }
 
         self.diag(
@@ -135,7 +136,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if receiver_ty.array_element().is_none()
             && receiver_ty.dict_types().is_none()
             && !matches!(receiver_ty.value_type(), Some(CftValueType::String))
@@ -164,7 +165,7 @@ impl CheckTypeAnalyzer<'_, '_> {
             return InferredType::bool();
         }
         let value_ty = self.check_expr_value(&args[0]);
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if matches!(receiver_ty.value_type(), Some(CftValueType::String)) {
             if !types_comparable(&value_ty, &InferredType::string()) && !value_ty.is_unknown() {
                 self.diag(
@@ -212,7 +213,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::bool();
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some(elem) = receiver_ty.array_element() {
             if !unique_supported(&elem) {
                 self.diag(
@@ -244,10 +245,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some(elem) = receiver_ty.array_element() {
             if min_max_supported(&elem) {
-                unwrap_nullable(&elem)
+                elem
             } else {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
@@ -281,9 +282,9 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some(elem) = receiver_ty.array_element() {
-            let elem = unwrap_nullable(&elem);
+            let elem = elem;
             if let Some(CftValueType::Int | CftValueType::Float) = elem.value_type() {
                 elem
             } else {
@@ -319,7 +320,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some((key, _)) = receiver_ty.dict_types() {
             InferredType::array(key)
         } else if receiver_ty.is_unknown() {
@@ -347,7 +348,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some((_, value)) = receiver_ty.dict_types() {
             InferredType::array(value)
         } else if receiver_ty.is_unknown() {
@@ -425,7 +426,7 @@ impl CheckTypeAnalyzer<'_, '_> {
             return InferredType::bool();
         }
         let arg_ty = self.check_expr_value(&args[0]);
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if !types_comparable(&receiver_ty, &InferredType::string()) && !receiver_ty.is_unknown() {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
@@ -455,7 +456,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         if self.expect_arity(args, 0, span).is_err() {
             return InferredType::bool();
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if !supports(&receiver_ty) && !receiver_ty.is_unknown() {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
@@ -476,7 +477,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         if self.expect_arity(args, 0, span).is_err() {
             return InferredType::Unknown;
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if matches!(
             receiver_ty.value_type(),
             Some(CftValueType::Int | CftValueType::Float)
@@ -504,7 +505,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         if self.expect_arity(args, 2, span).is_err() {
             return InferredType::bool();
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if !types_comparable(&receiver_ty, &InferredType::float()) && !receiver_ty.is_unknown() {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
@@ -537,7 +538,7 @@ impl CheckTypeAnalyzer<'_, '_> {
             return InferredType::bool();
         }
         let arg_ty = self.check_expr_value(&args[0]);
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some((key_ty, value_ty)) = receiver_ty.dict_types() {
             let expected = if key { key_ty } else { value_ty };
             if !types_comparable(&expected, &arg_ty) && !arg_ty.is_unknown() {
@@ -567,13 +568,13 @@ impl CheckTypeAnalyzer<'_, '_> {
         if self.expect_arity(args, 0, span).is_err() {
             return InferredType::bool();
         }
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let receiver_ty = receiver_ty.clone();
         if let Some(element) = receiver_ty.array_element() {
             if !sorted_element_supported(&element) {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     receiver.span,
-                    "sorting requires a non-nullable int, bool, string, or enum array",
+                    "sorting requires an int, bool, string, or enum array",
                 );
             }
         } else if !receiver_ty.is_unknown() {
@@ -596,8 +597,8 @@ impl CheckTypeAnalyzer<'_, '_> {
         if self.expect_arity(args, 1, span).is_err() {
             return InferredType::bool();
         }
-        let other_ty = unwrap_nullable(&self.check_expr_value(&args[0]));
-        let receiver_ty = unwrap_nullable(receiver_ty);
+        let other_ty = self.check_expr_value(&args[0]);
+        let receiver_ty = receiver_ty.clone();
         let arrays = match (receiver_ty.array_element(), other_ty.array_element()) {
             (Some(left), Some(right)) => {
                 if !set_element_supported(&left) || !types_comparable(&left, &right) {

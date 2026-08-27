@@ -212,23 +212,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
-        let lhs = self.parse_logical_or_expr()?;
-        if let Some(operator) = self.eat(&TokenKind::QuestionQuestion) {
-            let rhs = self.nested(StructureKind::CheckAst, operator, |parser| {
-                parser.parse_or_expr()
-            })?;
-            let span = Span::new(lhs.value.span.start, rhs.value.span.end);
-            let depths = [lhs.depth, rhs.depth];
-            self.node(StructureKind::CheckAst, operator, depths, || CheckExpr {
-                span,
-                kind: CheckExprKind::Coalesce {
-                    lhs: Box::new(lhs.value),
-                    rhs: Box::new(rhs.value),
-                },
-            })
-        } else {
-            Ok(lhs)
-        }
+        self.parse_logical_or_expr()
     }
 
     fn parse_logical_or_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
@@ -253,10 +237,8 @@ impl Parser<'_> {
         let mut expr = self.parse_cmp_chain()?;
         while let Some(operator) = self.eat(&TokenKind::Is) {
             let predicate = self.parse_type_predicate()?;
-            let end = match &predicate {
-                TypePredicate::Type(name) => name.span.end,
-                TypePredicate::Null(span) => span.end,
-            };
+            let TypePredicate::Type(name) = &predicate;
+            let end = name.span.end;
             let span = Span::new(expr.value.span.start, end);
             let depth = expr.depth;
             expr = self.node(StructureKind::CheckAst, operator, [depth], || CheckExpr {

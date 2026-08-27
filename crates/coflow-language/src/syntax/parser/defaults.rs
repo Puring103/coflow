@@ -45,15 +45,6 @@ impl Parser<'_> {
                     }
                 })
             }
-            TokenKind::Null => {
-                self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
-                    DefaultExpr {
-                        kind: DefaultExprKind::Null,
-                        span: token.span,
-                    }
-                })
-            }
             TokenKind::String(value) => {
                 self.bump();
                 self.node(StructureKind::DefaultValue, token.span, [], || {
@@ -65,7 +56,8 @@ impl Parser<'_> {
             }
             TokenKind::Ident(_) => self.parse_name_or_enum_default(),
             TokenKind::LBracket => self.parse_array_default(),
-            TokenKind::LBrace => self.parse_object_default(),
+            TokenKind::LBrace => self.parse_braced_default(),
+            TokenKind::Amp => self.parse_record_reference_default(),
             TokenKind::Minus => self.parse_negative_default(token.span.start),
             TokenKind::UIntOverflow(_) => self.err(
                 CftErrorCode::InvalidIntLiteral,
@@ -76,6 +68,27 @@ impl Parser<'_> {
                 "expected default expression",
             ),
         }
+    }
+
+    fn parse_record_reference_default(
+        &mut self,
+    ) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Amp, CftErrorCode::ExpectedToken)?
+            .start;
+        let path = self.expect_qualified_name()?;
+        if path.segments.len() < 2 {
+            return self.err_at(
+                CftErrorCode::InvalidDefaultExpression,
+                path.span,
+                "record reference must contain a type and key separated by `::`",
+            );
+        }
+        let span = Span::new(start, path.span.end);
+        self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
+            kind: DefaultExprKind::RecordReference(path),
+            span,
+        })
     }
 
     fn parse_negative_default(
@@ -130,24 +143,49 @@ impl Parser<'_> {
 
     fn parse_name_or_enum_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let first = self.expect_ident()?;
-        if self.eat(&TokenKind::Dot).is_some() {
-            let variant = self.expect_ident()?;
-            let span = first.span.join(variant.span);
-            self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
-                span,
-                kind: DefaultExprKind::EnumVariant {
-                    enum_name: first,
-                    variant,
-                },
-            })
-        } else {
-            self.node(StructureKind::DefaultValue, first.span, [], || {
-                DefaultExpr {
-                    span: first.span,
-                    kind: DefaultExprKind::Name(first),
-                }
-            })
+        if first.name == "None" {
+            return self.node(StructureKind::DefaultValue, first.span, [], || DefaultExpr {
+                span: first.span,
+                kind: DefaultExprKind::OptionNone,
+            });
         }
+        if matches!(first.name.as_str(), "Some" | "Ok" | "Err") {
+            self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
+            let inner_span = self.peek().span;
+            let inner = self.nested(StructureKind::DefaultValue, inner_span, |parser| {
+                parser.parse_default_expr()
+            })?;
+            let end = self
+                .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
+                .end;
+            let span = Span::new(first.span.start, end);
+            let depth = inner.depth;
+            return self.node(StructureKind::DefaultValue, first.span, [depth], || DefaultExpr {
+                span,
+                kind: match first.name.as_str() {
+                    "Some" => DefaultExprKind::OptionSome(Box::new(inner.value)),
+                    "Ok" => DefaultExprKind::ResultOk(Box::new(inner.value)),
+                    "Err" => DefaultExprKind::ResultErr(Box::new(inner.value)),
+                    _ => unreachable!(),
+                },
+            });
+        }
+        let start = first.span.start;
+        let mut end = first.span.end;
+        let mut segments = vec![first];
+        while self.eat(&TokenKind::DoubleColon).is_some() {
+            let segment = self.expect_ident()?;
+            end = segment.span.end;
+            segments.push(segment);
+        }
+        let span = Span::new(start, end);
+        self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
+            span,
+            kind: DefaultExprKind::StaticPath(crate::syntax::ast::QualifiedName {
+                segments,
+                span,
+            }),
+        })
     }
 
     fn parse_array_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
@@ -181,9 +219,22 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_object_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
+    fn parse_braced_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let start = opener.start;
+        if self.at(&TokenKind::RBrace) {
+            let end = self.bump().span.end;
+            let span = Span::new(start, end);
+            return self.node(StructureKind::DefaultValue, opener, [], || DefaultExpr {
+                kind: DefaultExprKind::Object(Vec::new()),
+                span,
+            });
+        }
+        if !matches!(self.peek().kind, TokenKind::Ident(_))
+            || self.next_at(&TokenKind::DoubleColon)
+        {
+            return self.parse_dictionary_default_after_opener(opener);
+        }
         let mut fields = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
@@ -218,6 +269,49 @@ impl Parser<'_> {
                 ),
                 span,
             }
+        })
+    }
+
+    fn parse_dictionary_default_after_opener(
+        &mut self,
+        opener: Span,
+    ) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
+        let start = opener.start;
+        let mut entries = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated dictionary default");
+            }
+            let key_span = self.peek().span;
+            let key = self.nested(StructureKind::DefaultValue, key_span, |parser| {
+                parser.parse_default_expr()
+            })?;
+            self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
+            let value_span = self.peek().span;
+            let value = self.nested(StructureKind::DefaultValue, value_span, |parser| {
+                parser.parse_default_expr()
+            })?;
+            entries.push((key, value));
+            if self.eat(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
+        let span = Span::new(start, end);
+        let depths = entries
+            .iter()
+            .flat_map(|(key, value)| [key.depth, value.depth])
+            .collect::<Vec<_>>();
+        self.node(StructureKind::DefaultValue, opener, depths, || DefaultExpr {
+            kind: DefaultExprKind::Dictionary(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key.value, value.value))
+                    .collect(),
+            ),
+            span,
         })
     }
 }

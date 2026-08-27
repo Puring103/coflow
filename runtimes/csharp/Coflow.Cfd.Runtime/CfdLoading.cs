@@ -1,4 +1,4 @@
-namespace Coflow.Cfd.Runtime;
+namespace CoflowRuntime;
 
 using System.Globalization;
 
@@ -12,15 +12,25 @@ public sealed class CfdLoadContext
     private readonly Dictionary<(string DeclaredType, string Key), object> _cache = new();
     private readonly HashSet<(string DeclaredType, string Key)> _resolving = new();
     private readonly Stack<(string DeclaredType, string Key)> _currentRecords = new();
+    private readonly IReadOnlyDictionary<CfdRecordNode, CfdNameResolver> _recordNames;
+    private readonly IReadOnlyDictionary<CfdRecordNode, string> _recordPaths;
+    private readonly Stack<CfdNameResolver> _currentNames = new();
     private readonly HashSet<CfdFormattedStringValue> _formatting = new();
+    private readonly List<CoflowFunctionSlot> _functions = new();
+    private readonly bool _functionsCompiled;
+    private readonly Dictionary<CoflowConstant, object> _constantCache = new();
+    private readonly HashSet<CoflowConstant> _resolvingConstants = new();
 
     public CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
         CfdLoadOptions? options = null,
-        IEnumerable<ICfdTypeBinding>? bindings = null)
+        IEnumerable<ICfdTypeBinding>? bindings = null,
+        IEnumerable<ICoflowEnumMetadata>? enums = null,
+        IEnumerable<CoflowConstant>? constants = null,
+        bool functionsCompiled = false)
     {
-        Documents = documents;
         Options = options ?? new CfdLoadOptions();
+        _functionsCompiled = functionsCompiled;
         var bindingMap = new Dictionary<string, ICfdTypeBinding>(StringComparer.Ordinal);
         foreach (var binding in bindings ?? Array.Empty<ICfdTypeBinding>())
         {
@@ -36,6 +46,17 @@ public sealed class CfdLoadContext
             }
         }
         Bindings = bindingMap;
+        var constantMap = (constants ?? Array.Empty<CoflowConstant>())
+            .ToDictionary(item => item.DeclaredName, StringComparer.Ordinal);
+        var bound = CfdNameBinder.Bind(
+            documents,
+            bindingMap.Keys.Concat((enums ?? Array.Empty<ICoflowEnumMetadata>())
+                .Select(item => item.DeclaredType))
+                .Concat(constantMap.Keys),
+            constantMap);
+        Documents = bound.Documents;
+        _recordNames = bound.RecordNames;
+        _recordPaths = bound.RecordPaths;
         var seen = new HashSet<(string DomainType, string Key)>();
         var diagnostics = new List<CfdDiagnostic>();
         foreach (var document in documents)
@@ -78,11 +99,149 @@ public sealed class CfdLoadContext
     public CfdLoadOptions Options { get; }
     public IReadOnlyDictionary<string, ICfdTypeBinding> Bindings { get; }
     public List<CfdDiagnostic> Diagnostics { get; } = new();
+    internal IReadOnlyList<CoflowFunctionSlot> Functions => _functions;
+
+    public CoflowHostSlot Host() => new(_functionsCompiled);
+
+    internal object ResolveConstant(CoflowConstant constant)
+    {
+        if (_constantCache.TryGetValue(constant, out var cached)) return cached;
+        if (!_resolvingConstants.Add(constant))
+            throw Error("COFLOW-CONSTANT-CYCLE", $"constant `{constant.DeclaredName}` has a runtime dependency cycle");
+        try
+        {
+            var value = constant.Resolve(this);
+            _constantCache.Add(constant, value);
+            return value;
+        }
+        finally
+        {
+            _resolvingConstants.Remove(constant);
+        }
+    }
+
+    public CoflowFunctionSlot Function(
+        CfdValueNode? node,
+        string fieldName,
+        Type resultType,
+        params Type[] parameterTypes)
+    {
+        if (node is not null && node is not CfdFunctionValue)
+            throw new CfdLoadException(new[] { new CfdDiagnostic(
+                "CFD-VALUE-FUNCTION",
+                "expected a CFD function body",
+                CurrentPath,
+                node.Span) });
+        return CreateFunctionSlot(node as CfdFunctionValue, fieldName, fieldName,
+            resultType, parameterTypes);
+    }
+
+    public TDelegate FunctionValue<TDelegate>(CfdValueNode node)
+        where TDelegate : Delegate
+    {
+        if (node is not CfdFunctionValue source)
+            throw new CfdLoadException(new[] { new CfdDiagnostic(
+                "CFD-VALUE-FUNCTION",
+                "expected a CFD function body",
+                CurrentPath,
+                node.Span) });
+        var invoke = typeof(TDelegate).GetMethod("Invoke") ?? throw new ArgumentException(
+            "The generated function value type is not a delegate.", nameof(TDelegate));
+        var location = LocateFunctionValue(node) ?? throw new InvalidOperationException(
+            "A persistent function value must belong to the current CFD record.");
+        var resultType = invoke.ReturnType == typeof(void) ? typeof(Unit) : invoke.ReturnType;
+        var slot = CreateFunctionSlot(
+            source,
+            location.FieldName,
+            location.ValuePath,
+            resultType,
+            invoke.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        return CoflowFunctionDelegates.Create<TDelegate>(slot);
+    }
+
+    private CoflowFunctionSlot CreateFunctionSlot(
+        CfdFunctionValue? source,
+        string fieldName,
+        string valuePath,
+        Type resultType,
+        IReadOnlyList<Type> parameterTypes)
+    {
+        var declaredType = CurrentRecordType ?? throw new InvalidOperationException(
+            "A persistent Coflow function slot must be created while reading a record.");
+        var recordKey = CurrentRecordKey ?? string.Empty;
+        var slot = new CoflowFunctionSlot(
+            new CoflowFunctionIdentity(declaredType, recordKey, fieldName, valuePath),
+            new CoflowFunctionSignature(resultType, parameterTypes),
+            source,
+            _currentNames.Peek(),
+            CurrentPath,
+            source?.Span ?? CurrentSpan);
+        _functions.Add(slot);
+        return slot;
+    }
+
+    private (string FieldName, string ValuePath)? LocateFunctionValue(CfdValueNode target)
+    {
+        var record = CurrentRecordType is { } type && CurrentRecordKey is { } key
+            ? FindRecord(type, key)
+            : null;
+        if (record is null) return null;
+        foreach (var field in record.Fields)
+        {
+            if (TryLocateValue(field.Value, target, field.Name, out var path))
+                return (field.Name, path);
+        }
+        return null;
+    }
+
+    private static bool TryLocateValue(
+        CfdValueNode current,
+        CfdValueNode target,
+        string path,
+        out string result)
+    {
+        if (ReferenceEquals(current, target))
+        {
+            result = path;
+            return true;
+        }
+        switch (current)
+        {
+            case CfdSomeValue some:
+                return TryLocateValue(some.Value, target, $"{path}.Some", out result);
+            case CfdOkValue ok:
+                return TryLocateValue(ok.Value, target, $"{path}.Ok", out result);
+            case CfdErrValue error:
+                return TryLocateValue(error.Value, target, $"{path}.Err", out result);
+            case CfdArrayValue array:
+                for (var index = 0; index < array.Items.Count; index++)
+                    if (TryLocateValue(array.Items[index], target, $"{path}[{index}]", out result))
+                        return true;
+                break;
+            case CfdDictionaryValue dictionary:
+                for (var index = 0; index < dictionary.Entries.Count; index++)
+                    if (TryLocateValue(dictionary.Entries[index].Value, target,
+                            $"{path}[{index}]", out result))
+                        return true;
+                break;
+            case CfdObjectValue objectValue:
+                foreach (var field in objectValue.Fields)
+                    if (TryLocateValue(field.Value, target, $"{path}.{field.Name}", out result))
+                        return true;
+                break;
+        }
+        result = string.Empty;
+        return false;
+    }
 
     public IDisposable EnterRecord(string declaredType, string key)
     {
         _currentRecords.Push((declaredType, key));
-        return new RecordScope(_currentRecords);
+        var record = FindRecord(declaredType, key);
+        if (record is null && key.Length != 0)
+            throw new InvalidOperationException($"Cannot enter unknown CFD record `{declaredType}::{key}`.");
+        _currentNames.Push(record is null ? CfdNameResolver.Root : _recordNames[record]);
+        return new RecordScope(_currentRecords, _currentNames);
     }
 
     internal string? CurrentRecordType => _currentRecords.Count == 0 ? null : _currentRecords.Peek().DeclaredType;
@@ -91,15 +250,23 @@ public sealed class CfdLoadContext
     private sealed class RecordScope : IDisposable
     {
         private readonly Stack<(string DeclaredType, string Key)> _records;
+        private readonly Stack<CfdNameResolver> _names;
         private bool _disposed;
 
-        public RecordScope(Stack<(string DeclaredType, string Key)> records) => _records = records;
+        public RecordScope(
+            Stack<(string DeclaredType, string Key)> records,
+            Stack<CfdNameResolver> names)
+        {
+            _records = records;
+            _names = names;
+        }
 
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
             if (_records.Count != 0) _records.Pop();
+            if (_names.Count != 0) _names.Pop();
         }
     }
 
@@ -188,10 +355,25 @@ public sealed class CfdLoadContext
         {
             if (_currentRecords.Count == 0) return string.Empty;
             var current = _currentRecords.Peek();
-            return Documents.FirstOrDefault(document => document.Records.Any(record =>
-                record.DeclaredType == current.DeclaredType && record.Key == current.Key))?.Path ?? string.Empty;
+            var record = FindRecord(current.DeclaredType, current.Key);
+            return record is not null && _recordPaths.TryGetValue(record, out var path) ? path : string.Empty;
         }
     }
+
+    private CfdSpan? CurrentSpan
+    {
+        get
+        {
+            if (_currentRecords.Count == 0) return null;
+            var current = _currentRecords.Peek();
+            return FindRecord(current.DeclaredType, current.Key)?.Span;
+        }
+    }
+
+    internal bool IsAssignableType(string actualType, string expectedType) =>
+        string.Equals(actualType, expectedType, StringComparison.Ordinal) ||
+        Bindings.TryGetValue(actualType, out var binding) &&
+        binding.AssignableTypes.Contains(expectedType, StringComparer.Ordinal);
 
     private CfdLoadException Error(string code, string message) =>
         new(new[] { new CfdDiagnostic(code, message, CurrentPath) });
@@ -290,7 +472,8 @@ public sealed class CfdLoadContext
         string? declaredType,
         out ICfdTypeBinding? binding)
     {
-        var record = declaredType is null ? null : FindAssignableRecord(declaredType, value.Key);
+        var actualType = value.TypeName ?? declaredType;
+        var record = actualType is null ? null : FindAssignableRecord(actualType, value.Key);
         binding = record is not null && Bindings.TryGetValue(record.DeclaredType, out var selected)
             ? selected
             : null;
@@ -299,7 +482,7 @@ public sealed class CfdLoadContext
 
     private string Stringify(CfdValueNode value) => value switch
     {
-        CfdNullValue => "null",
+        CfdInvalidValue => "<invalid>",
         CfdScalarValue scalar => scalar.Value,
         CfdStringValue text => text.Value,
         CfdFormattedStringValue formatted => RenderFormatted(formatted),
@@ -350,6 +533,7 @@ public static class CfdValueReader
     {
         CfdStringValue value => value.Value,
         CfdFormattedStringValue value => value.Source,
+        CfdConstantValue { Constant.Value: string value } => value,
         _ => throw Invalid(node, "string"),
     };
 
@@ -358,30 +542,44 @@ public static class CfdValueReader
             ? context.RenderFormatted(formatted)
             : String(node);
 
-    public static int Int32(CfdValueNode node) =>
-        int.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : throw Invalid(node, "32-bit integer", "CFD-VALUE-NUMERIC");
+    public static int Int32(CfdValueNode node) => node switch
+    {
+        CfdConstantValue { Constant.Value: int value } => value,
+        CfdConstantValue { Constant.Value: long value } when value is >= int.MinValue and <= int.MaxValue => (int)value,
+        _ when int.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) => value,
+        _ => throw Invalid(node, "32-bit integer", "CFD-VALUE-NUMERIC"),
+    };
 
-    public static long Int64(CfdValueNode node) =>
-        long.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : throw Invalid(node, "64-bit integer", "CFD-VALUE-NUMERIC");
+    public static long Int64(CfdValueNode node) => node switch
+    {
+        CfdConstantValue { Constant.Value: long value } => value,
+        CfdConstantValue { Constant.Value: int value } => value,
+        _ when long.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) => value,
+        _ => throw Invalid(node, "64-bit integer", "CFD-VALUE-NUMERIC"),
+    };
 
-    public static float Float32(CfdValueNode node) =>
-        float.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            && !float.IsNaN(value) && !float.IsInfinity(value)
-                ? value
-                : throw Invalid(node, "32-bit finite number", "CFD-VALUE-NUMERIC");
+    public static float Float32(CfdValueNode node) => node switch
+    {
+        CfdConstantValue { Constant.Value: float value } when float.IsFinite(value) => value,
+        CfdConstantValue { Constant.Value: double value } when double.IsFinite(value) &&
+            value is >= -float.MaxValue and <= float.MaxValue => (float)value,
+        _ when float.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            && float.IsFinite(value) => value,
+        _ => throw Invalid(node, "32-bit finite number", "CFD-VALUE-NUMERIC"),
+    };
 
-    public static double Float64(CfdValueNode node) =>
-        double.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            && !double.IsNaN(value) && !double.IsInfinity(value)
-                ? value
-                : throw Invalid(node, "64-bit finite number", "CFD-VALUE-NUMERIC");
+    public static double Float64(CfdValueNode node) => node switch
+    {
+        CfdConstantValue { Constant.Value: double value } when double.IsFinite(value) => value,
+        CfdConstantValue { Constant.Value: float value } when float.IsFinite(value) => value,
+        _ when double.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            && double.IsFinite(value) => value,
+        _ => throw Invalid(node, "64-bit finite number", "CFD-VALUE-NUMERIC"),
+    };
 
     public static bool Boolean(CfdValueNode node)
     {
+        if (node is CfdConstantValue { Constant.Value: bool constant }) return constant;
         if (node is not CfdScalarValue scalar)
             throw Invalid(node, "boolean", "CFD-VALUE-BOOLEAN");
         if (scalar.Value.Equals("true", StringComparison.Ordinal)) return true;
@@ -390,7 +588,9 @@ public static class CfdValueReader
     }
 
     public static T Enum<T>(CfdValueNode node) where T : struct, System.Enum =>
-        typeof(T).IsDefined(typeof(FlagsAttribute), false)
+        node is CfdConstantValue { Constant.Value: T constant }
+            ? constant
+            : typeof(T).IsDefined(typeof(FlagsAttribute), false)
             ? Flags<T>(node, typeof(T).Name, DeclaredMask<T>(), ResolveEnumValue<T>)
             : EnumToken(node, typeof(T).Name, ResolveEnumToken<T>);
 
@@ -400,6 +600,7 @@ public static class CfdValueReader
     public static T Enum<T>(CfdValueNode node, string enumName, Func<string, T?> resolve)
         where T : struct, System.Enum
     {
+        if (node is CfdConstantValue { Constant.Value: T constant }) return constant;
         var token = EnumToken(node, enumName);
         return resolve(token) ?? throw Invalid(node, $"enum `{enumName}`", "CFD-VALUE-ENUM");
     }
@@ -422,9 +623,22 @@ public static class CfdValueReader
     }
 
     public static T Reference<T>(CfdValueNode node, CfdLoadContext context, string declaredType) =>
-        node is CfdReferenceValue reference
-            ? context.Resolve<T>(declaredType, reference.Key)
+        node is CfdConstantValue constant
+            ? (T)context.ResolveConstant(constant.Constant)
+            : node is CfdReferenceValue reference
+            ? context.Resolve<T>(ReferenceType(reference, context, declaredType), reference.Key)
             : throw Invalid(node, $"reference to {declaredType}");
+
+    private static string ReferenceType(
+        CfdReferenceValue reference,
+        CfdLoadContext context,
+        string expectedType)
+    {
+        if (reference.TypeName is null) return expectedType;
+        if (!context.IsAssignableType(reference.TypeName, expectedType))
+            throw Invalid(reference, $"reference assignable to `{expectedType}`", "CFD-REF-TYPE");
+        return reference.TypeName;
+    }
 
     public static T Object<T>(CfdValueNode node, CfdLoadContext context,
         Func<IReadOnlyList<CfdFieldNode>, string, CfdLoadContext, T> read) =>
@@ -433,10 +647,12 @@ public static class CfdValueReader
     public static T Object<T>(CfdValueNode node, CfdLoadContext context, string? expectedType,
         Func<IReadOnlyList<CfdFieldNode>, string, CfdLoadContext, T> read)
     {
+        if (node is CfdConstantValue constant)
+            return (T)context.ResolveConstant(constant.Constant);
         if (node is CfdObjectValue objectValue)
         {
             if (expectedType is not null && objectValue.DeclaredType is not null &&
-                !string.Equals(expectedType, objectValue.DeclaredType, StringComparison.Ordinal))
+                !context.IsAssignableType(objectValue.DeclaredType, expectedType))
                 throw Invalid(node, $"object `{expectedType}`", "CFD-VALUE-OBJECT-TYPE");
             return read(objectValue.Fields, string.Empty, context);
         }
@@ -446,9 +662,36 @@ public static class CfdValueReader
     }
 
     public static IReadOnlyList<T> Array<T>(CfdValueNode node, CfdLoadContext context,
-        Func<CfdValueNode, CfdLoadContext, T> read) => node is CfdArrayValue value
-            ? value.Items.Select(item => read(item, context)).ToList()
-            : throw Invalid(node, "array");
+        Func<CfdValueNode, CfdLoadContext, T> read) => node switch
+        {
+            CfdConstantValue constant =>
+                (IReadOnlyList<T>)context.ResolveConstant(constant.Constant),
+            CfdArrayValue value => value.Items.Select(item => read(item, context)).ToList(),
+            _ => throw Invalid(node, "array"),
+        };
+
+    public static Option<T> Option<T>(CfdValueNode node, CfdLoadContext context,
+        Func<CfdValueNode, CfdLoadContext, T> read) => node switch
+        {
+            CfdConstantValue constant =>
+                (Option<T>)context.ResolveConstant(constant.Constant),
+            CfdNoneValue => global::CoflowRuntime.Option<T>.None,
+            CfdSomeValue some => global::CoflowRuntime.Option<T>.Some(read(some.Value, context)),
+            _ => global::CoflowRuntime.Option<T>.Some(read(node, context)),
+        };
+
+    public static Result<T, TError> Result<T, TError>(
+        CfdValueNode node,
+        CfdLoadContext context,
+        Func<CfdValueNode, CfdLoadContext, T> readValue,
+        Func<CfdValueNode, CfdLoadContext, TError> readError) => node switch
+        {
+            CfdConstantValue constant =>
+                (Result<T, TError>)context.ResolveConstant(constant.Constant),
+            CfdOkValue ok => global::CoflowRuntime.Result<T, TError>.Ok(readValue(ok.Value, context)),
+            CfdErrValue error => global::CoflowRuntime.Result<T, TError>.Err(readError(error.Value, context)),
+            _ => throw Invalid(node, "Result value `Ok(value)` or `Err(error)`"),
+        };
 
     public static IReadOnlyDictionary<TKey, TValue> Dictionary<TKey, TValue>(CfdValueNode node,
         CfdLoadContext context,
@@ -456,6 +699,8 @@ public static class CfdValueReader
         Func<CfdValueNode, CfdLoadContext, TValue> readValue)
         where TKey : notnull
     {
+        if (node is CfdConstantValue constant)
+            return (IReadOnlyDictionary<TKey, TValue>)context.ResolveConstant(constant.Constant);
         if (node is not CfdDictionaryValue value)
             throw Invalid(node, "dictionary");
         var result = new Dictionary<TKey, TValue>();
@@ -512,10 +757,6 @@ public static class CfdValueReader
         }
     }
 
-    public static T Nullable<T>(CfdValueNode node, CfdLoadContext context,
-        Func<CfdValueNode, CfdLoadContext, T> read) where T : struct =>
-        node is CfdNullValue ? default : read(node, context);
-
     private static string ScalarText(CfdValueNode node) => node is CfdScalarValue value
         ? value.Value
         : throw Invalid(node, "scalar value");
@@ -535,8 +776,8 @@ public static class CfdValueReader
     private static T? ResolveEnumToken<T>(string value) where T : struct, System.Enum
     {
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) return null;
-        var token = value.StartsWith(typeof(T).Name + ".", StringComparison.Ordinal)
-            ? value[(typeof(T).Name.Length + 1)..]
+        var token = value.StartsWith(typeof(T).Name + "::", StringComparison.Ordinal)
+            ? value[(typeof(T).Name.Length + 2)..]
             : value;
         return System.Enum.TryParse<T>(token, ignoreCase: false, out var result) &&
             System.Enum.GetNames(typeof(T)).Contains(token, StringComparer.Ordinal)
@@ -546,8 +787,8 @@ public static class CfdValueReader
 
     private static long? ResolveEnumValue<T>(string value) where T : struct, System.Enum
     {
-        var token = value.StartsWith(typeof(T).Name + ".", StringComparison.Ordinal)
-            ? value[(typeof(T).Name.Length + 1)..]
+        var token = value.StartsWith(typeof(T).Name + "::", StringComparison.Ordinal)
+            ? value[(typeof(T).Name.Length + 2)..]
             : value;
         if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) return number;
         return ResolveEnumToken<T>(token) is { } result ? Convert.ToInt64(result, CultureInfo.InvariantCulture) : null;

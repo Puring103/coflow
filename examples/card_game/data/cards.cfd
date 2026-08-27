@@ -333,7 +333,7 @@ Card {
     rarity: Common,
     cost: 1,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_execute_damage, condition: "target is damaged" },
@@ -354,7 +354,7 @@ Card {
     rarity: Common,
     cost: 4,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_blessing_of_kings_buff, condition: "" },
@@ -372,7 +372,7 @@ Card {
     rarity: Rare,
     cost: 3,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_divine_favor_draw, condition: "opponent has more cards" },
@@ -422,7 +422,7 @@ Card {
   attack: 0,
   health: 0,
 },
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_fireball_damage, condition: "" },
@@ -443,7 +443,7 @@ Card {
     rarity: Common,
     cost: 3,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_arcane_intellect_draw, condition: "" },
@@ -461,7 +461,7 @@ Card {
     rarity: Common,
     cost: 3,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_frost_nova_damage, condition: "" },
@@ -525,7 +525,7 @@ Card {
     rarity: Legendary,
     cost: 2,
     base_stats: null,
-    keywords: None,
+    keywords: Empty,
     durability: 0,
     triggers: [
       { event: OnPlay, effect: &eff_ysera_awakens_damage, condition: "" },

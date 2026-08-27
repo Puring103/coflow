@@ -63,8 +63,15 @@ fn coerce_json_value(
             .as_str()
             .map(|text| CfdValue::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string")),
-        CftValueType::Nullable(_) if value.is_null() => Ok(CfdValue::Null),
-        CftValueType::Nullable(inner) => coerce_json_value(session, inner, value),
+        CftValueType::Option(inner) => {
+            let object = single_tag_object(value, "Option", &["$none", "$some"])?;
+            if object.contains_key("$none") {
+                Ok(CfdValue::OptionNone)
+            } else {
+                coerce_json_value(session, inner, &object["$some"])
+                    .map(|value| CfdValue::OptionSome(Box::new(value)))
+            }
+        }
         CftValueType::Array(inner) => {
             let items = value
                 .as_array()
@@ -111,6 +118,35 @@ fn coerce_json_value(
             enum_value(session, name, variant).map(CfdValue::Enum)
         }
         CftValueType::Object(name) => coerce_json_named_value(session, name, value),
+        CftValueType::Result(ok, error) => {
+            let object = single_tag_object(value, "Result", &["$ok", "$err"])?;
+            if let Some(value) = object.get("$ok") {
+                coerce_json_value(session, ok, value)
+                    .map(|value| CfdValue::ResultOk(Box::new(value)))
+            } else {
+                coerce_json_value(session, error, &object["$err"])
+                    .map(|value| CfdValue::ResultErr(Box::new(value)))
+            }
+        }
+        CftValueType::Function(_, _) | CftValueType::Unit => {
+            Err(one_value_error(format!("JSON coercion for `{expected}` is not supported")))
+        }
+    }
+}
+
+fn single_tag_object<'a>(
+    value: &'a Value,
+    expected: &str,
+    tags: &[&str],
+) -> Result<&'a Map<String, Value>, DiagnosticSet> {
+    let object = value
+        .as_object()
+        .filter(|object| object.len() == 1)
+        .ok_or_else(|| one_value_error(format!("expected tagged {expected} object")))?;
+    if tags.iter().any(|tag| object.contains_key(*tag)) {
+        Ok(object)
+    } else {
+        Err(one_value_error(format!("expected tagged {expected} object")))
     }
 }
 
@@ -130,6 +166,12 @@ fn normalize_cfd_value(
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     match value {
+        CfdValue::OptionSome(value) => normalize_cfd_value(session, *value)
+            .map(|value| CfdValue::OptionSome(Box::new(value))),
+        CfdValue::ResultOk(value) => normalize_cfd_value(session, *value)
+            .map(|value| CfdValue::ResultOk(Box::new(value))),
+        CfdValue::ResultErr(value) => normalize_cfd_value(session, *value)
+            .map(|value| CfdValue::ResultErr(Box::new(value))),
         CfdValue::Array(items) => items
             .into_iter()
             .map(|item| normalize_cfd_value(session, item))
@@ -297,7 +339,6 @@ fn coerce_dict_key(
             })?;
             enum_value(session, enum_name, variant).map(CfdDictKey::Enum)
         }
-        CftValueType::Nullable(inner) => coerce_dict_key(session, inner, value),
         _ => Err(one_value_error(
             "dict keys support only string, int, and enum types",
         )),

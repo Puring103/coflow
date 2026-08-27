@@ -1,4 +1,4 @@
-namespace Coflow.Cfd.Runtime;
+namespace CoflowRuntime;
 
 /// <summary>Logical project path and UTF-16 source text for one CFD file.</summary>
 public readonly struct CfdSource : IEquatable<CfdSource>

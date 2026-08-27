@@ -188,7 +188,10 @@ impl CfdObject {
 )]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdValue {
-    Null,
+    OptionNone,
+    OptionSome(Box<CfdValue>),
+    ResultOk(Box<CfdValue>),
+    ResultErr(Box<CfdValue>),
     Bool(bool),
     Int(
         #[serde(with = "crate::data_model::serde_i64")]

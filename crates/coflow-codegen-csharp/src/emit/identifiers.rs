@@ -1,27 +1,14 @@
 use std::collections::HashSet;
 
-use crate::names::{camel_case, csharp_ident_error, pascal_case};
+use crate::names::{camel_case, csharp_ident_error, csharp_type_name, pascal_case};
 use crate::CsharpCodegenError;
 
 pub(super) fn csharp_public_type_name(name: &str) -> String {
-    pascal_case(name)
+    csharp_type_name(name)
 }
 
 pub(super) fn csharp_public_member_name(name: &str) -> String {
     pascal_case(name)
-}
-
-pub(super) fn plural_records_var(table_name: &str) -> String {
-    let base = camel_case(&pascal_case(table_name));
-    if base.ends_with('s') {
-        format!("{base}Rows")
-    } else {
-        format!("{base}s")
-    }
-}
-
-pub(super) fn context_index_field_name(type_name: &str) -> String {
-    format!("{type_name}Index")
 }
 
 pub(super) fn field_local_name(

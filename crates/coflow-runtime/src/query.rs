@@ -259,9 +259,9 @@ impl<'a> ProjectQueries<'a> {
                 ),
                 origin: DimensionValueOrigin::from_record_origin(origin),
             }),
-            DimensionValueLookup::ExplicitNull { origin } => {
+            DimensionValueLookup::ExplicitNone { origin } => {
                 coordinate.path.is_empty().then(|| DimensionValueView {
-                    state: DimensionValueState::Value(CfdValue::Null),
+                    state: DimensionValueState::Value(CfdValue::OptionNone),
                     origin: DimensionValueOrigin::from_record_origin(origin),
                 })
             }
@@ -442,12 +442,11 @@ fn dimension_value_at_path<'a>(
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
-    let non_nullable = ty.non_nullable();
-    let ref_target_type = match non_nullable {
+    let ref_target_type = match ty {
         CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
-    let enum_type = match non_nullable {
+    let enum_type = match ty {
         CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
@@ -455,7 +454,7 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         .as_deref()
         .and_then(|name| schema.resolve_enum(name))
         .is_some_and(|schema_enum| schema_enum.is_flag);
-    let polymorphic_types = match non_nullable {
+    let polymorphic_types = match ty {
         CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
@@ -467,20 +466,20 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     .into_iter()
     .map(|name| name.to_string())
     .collect();
-    let collection_item = match non_nullable {
+    let collection_item = match ty {
         CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
         }
         _ => None,
     };
-    let object_type = match non_nullable {
+    let object_type = match ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .filter(|meta| !meta.is_abstract)
             .map(|meta| meta.name.to_string()),
         _ => None,
     };
-    let field_order = match non_nullable {
+    let field_order = match ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .map(|meta| {
@@ -498,7 +497,7 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         ref_target_type,
         enum_type,
         enum_is_flag,
-        nullable: matches!(ty, CftValueType::Nullable(_)),
+        nullable: matches!(ty, CftValueType::Option(_)),
         polymorphic_types,
         collection_item,
         object_type,

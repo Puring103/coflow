@@ -95,6 +95,7 @@ pub struct CftSchemaSource {
 pub struct CftConst {
     pub module: ModuleId,
     pub name: ConstName,
+    pub value_type: CftValueType,
     pub value: CftConstValue,
     pub span: Span,
 }
@@ -113,6 +114,25 @@ pub enum CftConstValue {
     Float(f64),
     Bool(bool),
     String(String),
+    Enum {
+        enum_name: EnumName,
+        variant: EnumVariantName,
+        value: i64,
+    },
+    OptionNone,
+    OptionSome(Box<CftConstValue>),
+    ResultOk(Box<CftConstValue>),
+    ResultErr(Box<CftConstValue>),
+    Array(Vec<CftConstValue>),
+    Dictionary(Vec<(CftConstValue, CftConstValue)>),
+    Object {
+        type_name: TypeName,
+        fields: Vec<(FieldName, CftConstValue)>,
+    },
+    RecordReference {
+        type_name: TypeName,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,7 +145,9 @@ pub struct CftType {
     pub is_sealed: bool,
     pub is_struct: bool,
     pub is_singleton: bool,
+    pub is_host: bool,
     pub id_as_enum: Option<EnumName>,
+    pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub(crate) own_fields: Vec<Arc<CftField>>,
     pub(crate) all_fields: Vec<Arc<CftField>>,
@@ -148,13 +170,17 @@ pub struct CftField {
     pub default: Option<CftSchemaDefaultValue>,
     pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
+    pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CftSchemaDefaultValue {
-    Null,
+    OptionNone,
+    OptionSome(Box<CftSchemaDefaultValue>),
+    ResultOk(Box<CftSchemaDefaultValue>),
+    ResultErr(Box<CftSchemaDefaultValue>),
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -166,6 +192,16 @@ pub enum CftSchemaDefaultValue {
     },
     EmptyArray,
     EmptyObject,
+    Array(Vec<CftSchemaDefaultValue>),
+    Dictionary(Vec<(CftSchemaDefaultValue, CftSchemaDefaultValue)>),
+    Object {
+        type_name: TypeName,
+        fields: Vec<(FieldName, CftSchemaDefaultValue)>,
+    },
+    RecordReference {
+        type_name: TypeName,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,7 +269,6 @@ pub enum CftSchemaCheckExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Null,
     String(String),
     FormattedString(Vec<CftSchemaCheckFormatSegment>),
     Name(String),
@@ -244,21 +279,9 @@ pub enum CftSchemaCheckExprKind {
         expr: Box<CftSchemaCheckExpr>,
         name: FieldName,
     },
-    SafeField {
-        expr: Box<CftSchemaCheckExpr>,
-        name: FieldName,
-    },
     Index {
         expr: Box<CftSchemaCheckExpr>,
         index: Box<CftSchemaCheckExpr>,
-    },
-    SafeIndex {
-        expr: Box<CftSchemaCheckExpr>,
-        index: Box<CftSchemaCheckExpr>,
-    },
-    Coalesce {
-        lhs: Box<CftSchemaCheckExpr>,
-        rhs: Box<CftSchemaCheckExpr>,
     },
     Is {
         expr: Box<CftSchemaCheckExpr>,
@@ -291,7 +314,6 @@ pub enum CftSchemaCheckExprKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CftSchemaTypePredicate {
     Type(TypeName),
-    Null,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,7 +358,7 @@ pub enum CftSchemaCmpOp {
     Ge,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CftEnum {
     pub module: ModuleId,
     pub name: EnumName,
@@ -344,16 +366,33 @@ pub struct CftEnum {
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
     pub is_flag: bool,
+    pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CftEnumVariant {
     pub name: EnumVariantName,
     pub value: i64,
+    pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftAnnotation {
+    pub name: String,
+    pub arguments: Vec<CftAnnotationValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftAnnotationValue {
+    Name(String),
+    String(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
 }
 
 /// Human-facing metadata which never changes schema identity or stored data.

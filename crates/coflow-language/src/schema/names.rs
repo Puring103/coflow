@@ -36,6 +36,14 @@ fn standard_name(value: &str) -> bool {
     is_cft_identifier(value)
 }
 
+fn qualified_name(value: &str) -> bool {
+    let mut segments = value.split("::");
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    !first.is_empty() && is_cft_identifier(first) && segments.all(is_cft_identifier)
+}
+
 fn variant_name(value: &str) -> bool {
     value != "default" && is_cft_identifier(value)
 }
@@ -146,12 +154,12 @@ macro_rules! cft_name {
     };
 }
 
-cft_name!(TypeName, "type name", standard_name, trusted);
+cft_name!(TypeName, "type name", qualified_name, trusted);
 cft_name!(FieldName, "field name", standard_name, trusted);
-cft_name!(EnumName, "enum name", standard_name, trusted);
+cft_name!(EnumName, "enum name", qualified_name, trusted);
 cft_name!(EnumVariantName, "enum variant name", standard_name, trusted);
-cft_name!(ConstName, "const name", standard_name, trusted);
-cft_name!(CheckName, "check name", standard_name, trusted);
+cft_name!(ConstName, "const name", qualified_name, trusted);
+cft_name!(CheckName, "check name", qualified_name, trusted);
 cft_name!(DimensionName, "dimension name", standard_name, trusted);
 cft_name!(BucketName, "dimension bucket", standard_name, trusted);
 cft_name!(RecordKey, "record key", standard_name);

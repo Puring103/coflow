@@ -115,6 +115,16 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         }
+        if expected_type.is_none() && actual_type_meta.is_host {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::HostRecordType,
+                    format!("@Host type `{actual_type}` cannot be declared by CFD"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        }
         if let Some(expected) = expected_type {
             if let Err(error) = crate::data_model::semantics::validate_object_type_assignable(
                 schema.cft(),
@@ -220,15 +230,22 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
-        if let CftValueType::Nullable(inner) = ty {
-            return if matches!(value, LoadedValueDraft::Null) {
-                Some(ValueDraft::Value(CfdValue::Null))
-            } else {
-                self.validate_value_inner(inner, value, record, path, cursor)
-            };
-        }
-
         match (ty, value) {
+            (CftValueType::Option(_), LoadedValueDraft::OptionNone) => {
+                Some(ValueDraft::Value(CfdValue::OptionNone))
+            }
+            (CftValueType::Option(inner), LoadedValueDraft::OptionSome(value)) => self
+                .validate_value_inner(inner, value, record, path, cursor)
+                .map(|value| ValueDraft::OptionSome(Box::new(value))),
+            (CftValueType::Option(inner), value) => self
+                .validate_value_inner(inner, value, record, path, cursor)
+                .map(|value| ValueDraft::OptionSome(Box::new(value))),
+            (CftValueType::Result(ok, _), LoadedValueDraft::ResultOk(value)) => self
+                .validate_value_inner(ok, value, record, path, cursor)
+                .map(|value| ValueDraft::ResultOk(Box::new(value))),
+            (CftValueType::Result(_, error), LoadedValueDraft::ResultErr(value)) => self
+                .validate_value_inner(error, value, record, path, cursor)
+                .map(|value| ValueDraft::ResultErr(Box::new(value))),
             (CftValueType::Int, LoadedValueDraft::Int(value)) => {
                 Some(ValueDraft::Value(CfdValue::Int(*value)))
             }
@@ -549,7 +566,10 @@ fn display_value_type(ty: &CftValueType) -> String {
 
 fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
     match value {
-        LoadedValueDraft::Null => "null",
+        LoadedValueDraft::OptionNone => "None",
+        LoadedValueDraft::OptionSome(_) => "Some",
+        LoadedValueDraft::ResultOk(_) => "Ok",
+        LoadedValueDraft::ResultErr(_) => "Err",
         LoadedValueDraft::Bool(_) => "bool",
         LoadedValueDraft::Int(_) => "int",
         LoadedValueDraft::Float(_) => "float",

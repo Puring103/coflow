@@ -294,7 +294,7 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
         ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     assert_eq!(
-        parse_ok(&schema, "Rarity", "Rarity.Rare")?,
+        parse_ok(&schema, "Rarity", "Rarity::Rare")?,
         ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     Ok(())
@@ -354,7 +354,7 @@ fn parses_formatted_string_cell_references() -> TestResult {
 fn flag_enum_cells_use_integer_masks() -> TestResult {
     let schema = compile_schema(
         r#"
-            @flag enum Permission { None = 0, Read = 1, Write = 2, Execute = 4 }
+            @flag enum Permission { Empty = 0, Read = 1, Write = 2, Execute = 4 }
             type Role { permissions: Permission; }
         "#,
     )?;
@@ -576,17 +576,29 @@ fn rejects_empty_object_field_values() -> TestResult {
 }
 
 #[test]
-fn parses_omitted_and_nullable_cells() -> TestResult {
+fn parses_omitted_and_option_cells() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(parse_ok(&schema, "int", "")?, ParsedCell::Omitted);
     assert_eq!(parse_ok(&schema, "int", "_")?, ParsedCell::Omitted);
     assert_eq!(
-        parse_ok(&schema, "int?", "null")?,
-        ParsedCell::Value(LoadedValueDraft::Null)
+        parse_ok(&schema, "Option<int>", "None")?,
+        ParsedCell::Value(LoadedValueDraft::OptionNone)
     );
-    let non_nullable_null = parse_err(&schema, "int", "null")?;
-    assert_has_code(&non_nullable_null, CellValueErrorCode::TypeMismatch);
+    assert_eq!(
+        parse_ok(&schema, "Option<int>", "Some(3)")?,
+        ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
+            LoadedValueDraft::Int(3)
+        )))
+    );
+    assert_eq!(
+        parse_ok(&schema, "Option<int>", "3")?,
+        ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
+            LoadedValueDraft::Int(3)
+        )))
+    );
+    let bare_none = parse_err(&schema, "int", "None")?;
+    assert_has_code(&bare_none, CellValueErrorCode::TypeMismatch);
     Ok(())
 }
 
@@ -1005,7 +1017,7 @@ fn string_values_accept_standard_escapes_and_reject_bare_boundaries() -> TestRes
     );
 
     let null_err = parse_err(&schema, "string", "null")?;
-    assert_has_code(&null_err, CellValueErrorCode::TypeMismatch);
+    assert_has_code(&null_err, CellValueErrorCode::StringNeedsQuotes);
 
     let lone_quote = parse_err(&schema, "string", "\"")?;
     assert_has_code(&lone_quote, CellValueErrorCode::Syntax);
@@ -1089,10 +1101,10 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
             type Stats { hp: int; attack: int; }
             type Drop {
                 names: [string] = [];
-                item: &Item? = null;
+                item: Option<&Item> = None;
                 stats: Stats;
                 weights: {string: int} = {};
-                rarity: Rarity = Rarity.Common;
+                rarity: Rarity = Rarity::Common;
             }
         "#,
     )?;
@@ -1285,8 +1297,8 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
         LoadedValueDraft::record_ref("item_1")
     );
     assert_eq!(
-        parse_value(&schema, "&Item?", "&item_1")?,
-        LoadedValueDraft::record_ref("item_1")
+        parse_value(&schema, "Option<&Item>", "Some(&item_1)")?,
+        LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("item_1")))
     );
     assert_eq!(
         parse_value(&schema, "[&Item]", "&item_1 | &item_2")?,

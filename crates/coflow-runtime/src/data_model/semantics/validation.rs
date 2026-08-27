@@ -197,10 +197,6 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
     match expected {
-        CftValueType::Nullable(_) if matches!(value, CfdValue::Null) => Ok(()),
-        CftValueType::Nullable(inner) => {
-            validate_value_inner(schema, context, inner, value, pending_insert, mode, path)
-        }
         CftValueType::Int => match value {
             CfdValue::Int(_) => Ok(()),
             _ => Err(type_mismatch("int", value, path)),
@@ -251,6 +247,43 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value, path),
             _ => Err(type_mismatch(&format!("enum `{name}`"), value, path)),
         },
+        CftValueType::Option(inner) => match value {
+            CfdValue::OptionNone => Ok(()),
+            CfdValue::OptionSome(value) => validate_value_inner(
+                schema,
+                context,
+                inner,
+                value,
+                pending_insert,
+                mode,
+                path,
+            ),
+            _ => Err(type_mismatch(&expected.to_string(), value, path)),
+        },
+        CftValueType::Result(ok, error) => match value {
+            CfdValue::ResultOk(value) => validate_value_inner(
+                schema,
+                context,
+                ok,
+                value,
+                pending_insert,
+                mode,
+                path,
+            ),
+            CfdValue::ResultErr(value) => validate_value_inner(
+                schema,
+                context,
+                error,
+                value,
+                pending_insert,
+                mode,
+                path,
+            ),
+            _ => Err(type_mismatch(&expected.to_string(), value, path)),
+        },
+        CftValueType::Function(_, _) | CftValueType::Unit => {
+            Err(type_mismatch(&expected.to_string(), value, path))
+        }
     }
 }
 
@@ -433,7 +466,7 @@ fn validate_dict_key(
     value: &CfdDictKey,
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
-    match (expected.non_nullable(), value) {
+    match (expected, value) {
         (CftValueType::String, CfdDictKey::String(_)) | (CftValueType::Int, CfdDictKey::Int(_)) => {
             Ok(())
         }
@@ -586,7 +619,10 @@ fn ref_not_found(expected_type: &str, target_key: &str, path: CfdPath) -> CfdVal
 
 const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
-        CfdValue::Null => "null",
+        CfdValue::OptionNone => "None",
+        CfdValue::OptionSome(_) => "Some",
+        CfdValue::ResultOk(_) => "Ok",
+        CfdValue::ResultErr(_) => "Err",
         CfdValue::Bool(_) => "bool",
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",

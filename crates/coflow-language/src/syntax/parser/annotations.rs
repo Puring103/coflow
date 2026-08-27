@@ -48,7 +48,7 @@ impl Parser<'_> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Ident(_) => self
-                .expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)
+                .expect_qualified_name_ref()
                 .map(AnnotationArg::Name),
             TokenKind::String(value) => {
                 self.bump();
@@ -69,10 +69,6 @@ impl Parser<'_> {
             TokenKind::False => {
                 self.bump();
                 Ok(AnnotationArg::Bool(false, token.span))
-            }
-            TokenKind::Null => {
-                self.bump();
-                Ok(AnnotationArg::Null(token.span))
             }
             TokenKind::UIntOverflow(_) => self.err(
                 CftErrorCode::InvalidIntLiteral,

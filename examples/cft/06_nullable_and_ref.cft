@@ -12,7 +12,7 @@ type ExampleQuestStep {
     required_item.id != "";
 
     when optional_target != null {
-      optional_target.rarity >= ExampleRarity.Common;
+      optional_target.rarity >= ExampleRarity::Common;
     }
   }
 }

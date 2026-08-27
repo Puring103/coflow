@@ -3,9 +3,7 @@ mod functions;
 #[path = "check_operators.rs"]
 mod operators;
 
-use super::inferred_type::{
-    types_assignable, types_comparable, unwrap_nullable, unwrap_reference, InferredType,
-};
+use super::inferred_type::{types_comparable, unwrap_reference, InferredType};
 use super::state::{SymbolKind, TypeInfo};
 use super::SchemaCompiler;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
@@ -15,7 +13,7 @@ use crate::schema::{
 };
 use crate::syntax::ast::{
     CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
-    TypePredicate,
+    QualifiedName, TypePredicate,
 };
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -36,8 +34,7 @@ enum CheckScope {
 
 fn is_formattable(ty: &InferredType) -> bool {
     match ty {
-        InferredType::Null
-        | InferredType::Unknown
+        InferredType::Unknown
         | InferredType::Value(
             CftValueType::Int
             | CftValueType::Float
@@ -45,19 +42,18 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::String
             | CftValueType::Enum(_),
         ) => true,
-        InferredType::Value(CftValueType::Nullable(inner)) => {
-            is_formattable(&InferredType::Value((**inner).clone()))
-        }
         InferredType::Value(
             CftValueType::Array(_)
             | CftValueType::Dict(_, _)
+            | CftValueType::Option(_)
+            | CftValueType::Result(_, _)
+            | CftValueType::Function(_, _)
+            | CftValueType::Unit
             | CftValueType::Object(_)
             | CftValueType::RecordRef(_),
         )
         | InferredType::EnumNamespace(_)
-        | InferredType::Entry(_, _)
-        | InferredType::EmptyArray
-        | InferredType::EmptyObject => false,
+        | InferredType::Entry(_, _) => false,
     }
 }
 
@@ -66,7 +62,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         Self {
             compiler,
             module: type_info.module.clone(),
-            scope: CheckScope::Record(type_info.def.name.clone()),
+            scope: CheckScope::Record(type_info.name.clone()),
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
             dependencies: CheckStatementDependencies::default(),
@@ -172,7 +168,6 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     }
                 }
                 let col_ty = self.check_expr_value(collection);
-                let col_ty = unwrap_nullable(&col_ty);
                 let (scope, layout) = match (col_ty, bindings.as_slice()) {
                     (InferredType::Value(CftValueType::Array(inner)), [binding]) => (
                         HashMap::from([(binding.name.clone(), InferredType::Value(*inner))]),
@@ -273,13 +268,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             CheckExprKind::Int(_) => InferredType::int(),
             CheckExprKind::Float(_) => InferredType::float(),
             CheckExprKind::Bool(_) => InferredType::bool(),
-            CheckExprKind::Null => InferredType::Null,
             CheckExprKind::String(_) => InferredType::string(),
             CheckExprKind::FormattedString(segments) => {
                 self.check_format_segments(segments);
                 InferredType::string()
             }
             CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
+            CheckExprKind::StaticPath(path) => self.resolve_static_path(path),
             CheckExprKind::Records { type_name } => self.check_records(type_name),
             CheckExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr_value(inner);
@@ -290,7 +285,6 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 let rhs_ty = self.check_expr_value(rhs);
                 self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
             }
-            CheckExprKind::Coalesce { lhs, rhs } => self.check_coalesce(lhs, rhs, expr.span),
             CheckExprKind::CmpChain { first, rest } => {
                 let mut lhs_ty = self.check_expr_value(first);
                 for (op, rhs) in rest {
@@ -301,14 +295,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 InferredType::bool()
             }
             CheckExprKind::Field { expr: inner, name } => self.check_field(inner, name, expr.span),
-            CheckExprKind::SafeField { expr: inner, name } => {
-                self.check_safe_field(inner, name, expr.span)
-            }
             CheckExprKind::Index { expr: inner, index } => {
                 self.check_index(inner, index, expr.span)
-            }
-            CheckExprKind::SafeIndex { expr: inner, index } => {
-                self.check_safe_index(inner, index, expr.span)
             }
             CheckExprKind::Is {
                 expr: inner,
@@ -348,7 +336,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 self.diag(
                     CftErrorCode::OperatorTypeMismatch,
                     expr.span,
-                    "formatted string interpolation requires a scalar, enum, or null value",
+                    "formatted string interpolation requires a scalar or enum value",
                 );
             }
         }
@@ -407,16 +395,55 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 return InferredType::string();
             }
         }
-        if let Some(info) = self.compiler.consts.get(name) {
-            return InferredType::from_const(&info.value);
+        let resolved_name = self.compiler.resolve_name(&self.module, name);
+        if let Some(info) = self.compiler.consts.get(&resolved_name) {
+            return InferredType::from_const(info.value_type.as_ref());
         }
-        if self.compiler.enums.contains_key(name) {
-            return InferredType::EnumNamespace(crate::EnumName::from_validated(name.to_string()));
+        if self.compiler.enums.contains_key(&resolved_name) {
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
         }
         self.diag(
             CftErrorCode::UnknownValueName,
             span,
             format!("unknown value `{name}`"),
+        );
+        InferredType::Unknown
+    }
+
+    fn resolve_static_path(&mut self, path: &QualifiedName) -> InferredType {
+        let raw_name = path.canonical();
+        let resolved_name = self.compiler.resolve_name(&self.module, &raw_name);
+        if let Some(info) = self.compiler.consts.get(&resolved_name) {
+            return InferredType::from_const(info.value_type.as_ref());
+        }
+        if self.compiler.enums.contains_key(&resolved_name) {
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
+        }
+        if let Some((variant, owner)) = path.segments.split_last() {
+            if !owner.is_empty() {
+                let owner = owner
+                    .iter()
+                    .map(|segment| segment.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                let enum_name = self.compiler.resolve_name(&self.module, &owner);
+                if let Some(info) = self.compiler.enums.get(&enum_name) {
+                    if info.variants.contains(&variant.name) {
+                        return InferredType::enum_value(crate::EnumName::from_validated(enum_name));
+                    }
+                    self.diag(
+                        CftErrorCode::TypeUnknownEnumVariant,
+                        variant.span,
+                        format!("unknown enum variant `{}`", variant.name),
+                    );
+                    return InferredType::Unknown;
+                }
+            }
+        }
+        self.diag(
+            CftErrorCode::UnknownValueName,
+            path.span,
+            format!("unknown static path `{raw_name}`"),
         );
         InferredType::Unknown
     }
@@ -430,64 +457,38 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
-        if !self.compiler.types.contains_key(&type_name.name) {
+        let resolved_name = self.compiler.resolve_name(&self.module, &type_name.name);
+        if !self.compiler.types.contains_key(&resolved_name) {
             self.diag(
                 CftErrorCode::InvalidRecordSetQuery,
                 type_name.span,
-                format!("`{}` is not an object type", type_name.name),
+                format!("`{resolved_name}` is not an object type"),
             );
             return InferredType::Unknown;
         }
         self.dependencies.insert(
-            CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.name.clone())),
+            CheckDependency::RecordSet(crate::TypeName::from_validated(resolved_name.clone())),
             CheckDependencyLocality::Local,
         );
         InferredType::array(InferredType::record_ref(InferredType::object(
-            crate::TypeName::from_validated(type_name.name.clone()),
+            crate::TypeName::from_validated(resolved_name),
         )))
     }
 
     fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {
-        if let CheckExprKind::Name(enum_name) = &inner.kind {
-            if let Some(enum_info) = self.compiler.enums.get(enum_name) {
-                if enum_info.variants.contains(&name.name) {
-                    return InferredType::enum_value(crate::EnumName::from_validated(
-                        enum_name.clone(),
-                    ));
-                }
-                self.diag(
-                    CftErrorCode::TypeUnknownEnumVariant,
-                    name.span,
-                    format!("unknown enum variant `{}`", name.name),
-                );
-                return InferredType::Unknown;
-            }
-            if let Some(symbol) = self.compiler.symbols.get(enum_name) {
-                if symbol.kind != SymbolKind::Enum {
-                    self.diag(
-                        CftErrorCode::TypeEnumVariantOnNonEnum,
-                        inner.span,
-                        "enum variant access used on a non-enum name",
-                    );
-                    return InferredType::Unknown;
-                }
-            }
-        }
-
         let inner_ty = self.check_expr_value(inner);
         self.note_referenced_field(&inner_ty, name);
-        self.check_field_type(&unwrap_nullable(&inner_ty), name, span)
+        self.check_field_type(&inner_ty, name, span)
     }
 
     fn note_referenced_field(&mut self, receiver: &InferredType, name: &NameRef) {
-        let receiver = unwrap_nullable(receiver);
         let InferredType::Value(CftValueType::RecordRef(target)) = receiver else {
             return;
         };
         let type_name = target;
         if name.name == "id" {
             self.dependencies.insert(
-                CheckDependency::RecordSet(type_name),
+                CheckDependency::RecordSet(type_name.clone()),
                 CheckDependencyLocality::CrossRecord,
             );
             return;
@@ -563,26 +564,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
-    fn check_safe_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {
-        let inner_ty = self.check_expr_value(inner);
-        if !inner_ty.is_nullable() {
-            if !inner_ty.is_unknown() {
-                self.diag(
-                    CftErrorCode::OperatorTypeMismatch,
-                    inner.span,
-                    "safe field access requires a nullable receiver",
-                );
-            }
-            return InferredType::Unknown;
-        }
-        self.note_referenced_field(&inner_ty, name);
-        let projected = self.check_field_type(&unwrap_nullable(&inner_ty), name, span);
-        InferredType::nullable(projected)
-    }
-
     fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> InferredType {
         let inner_ty = self.check_expr_value(inner);
-        self.check_index_type(&unwrap_nullable(&inner_ty), index, span)
+        self.check_index_type(&inner_ty, index, span)
     }
 
     fn check_index_type(
@@ -622,76 +606,22 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
-    fn check_safe_index(
-        &mut self,
-        inner: &CheckExpr,
-        index: &CheckExpr,
-        span: Span,
-    ) -> InferredType {
-        let inner_ty = self.check_expr_value(inner);
-        if !inner_ty.is_nullable() {
-            if !inner_ty.is_unknown() {
-                self.diag(
-                    CftErrorCode::OperatorTypeMismatch,
-                    inner.span,
-                    "safe index access requires a nullable receiver",
-                );
-            }
-            self.check_expr_value(index);
-            return InferredType::Unknown;
-        }
-        let projected = self.check_index_type(&unwrap_nullable(&inner_ty), index, span);
-        InferredType::nullable(projected)
-    }
-
-    fn check_coalesce(&mut self, lhs: &CheckExpr, rhs: &CheckExpr, span: Span) -> InferredType {
-        let lhs_ty = self.check_expr_value(lhs);
-        let rhs_ty = self.check_expr_value(rhs);
-        if !lhs_ty.is_nullable() {
-            if !lhs_ty.is_unknown() {
-                self.diag(
-                    CftErrorCode::OperatorTypeMismatch,
-                    span,
-                    "left operand of `??` must be nullable",
-                );
-            }
-            return InferredType::Unknown;
-        }
-        let result = unwrap_nullable(&lhs_ty);
-        if !types_assignable(&result, &rhs_ty) {
-            self.diag(
-                CftErrorCode::OperatorTypeMismatch,
-                rhs.span,
-                "right operand of `??` must match the non-null left operand type",
-            );
-        }
-        result
-    }
-
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
-            TypePredicate::Null(_) => {
-                if !lhs.is_nullable() && !lhs.is_unknown() {
-                    self.diag(
-                        CftErrorCode::OperatorTypeMismatch,
-                        span,
-                        "`is null` requires a nullable operand",
-                    );
-                }
-            }
             TypePredicate::Type(name) => {
-                match self.compiler.symbols.get(&name.name) {
+                let resolved_name = self.compiler.resolve_name(&self.module, &name.name);
+                match self.compiler.symbols.get(&resolved_name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}
                     _ => {
                         self.diag(
                             CftErrorCode::InvalidIsPredicate,
                             name.span,
-                            "is predicate must name a type or null",
+                            "is predicate must name a type",
                         );
                         return;
                     }
                 }
-                let operand = unwrap_reference(&unwrap_nullable(lhs));
+                let operand = unwrap_reference(lhs);
                 if operand.object_name().is_none() && !operand.is_unknown() {
                     self.diag(
                         CftErrorCode::OperatorTypeMismatch,

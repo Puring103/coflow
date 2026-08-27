@@ -5,7 +5,8 @@ mod parser;
 
 pub use ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdNamespaceDecl, CfdRecord, CfdRef, CfdUseDecl,
+    CfdValue,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

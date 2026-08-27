@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoadedValueDraft {
-    Null,
+    OptionNone,
+    OptionSome(Box<LoadedValueDraft>),
+    ResultOk(Box<LoadedValueDraft>),
+    ResultErr(Box<LoadedValueDraft>),
     Bool(bool),
     Int(i64),
     Float(f64),

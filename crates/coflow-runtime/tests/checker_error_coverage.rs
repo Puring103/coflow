@@ -98,6 +98,13 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_concrete_child_record_type,
         },
         Case {
+            name: "host record type",
+            schema: "@Host @singleton type Services { environment: string; }",
+            phase: Phase::Build(build_host_record_type),
+            code: CfdErrorCode::HostRecordType,
+            adjacent: adjacent_host_type_without_cfd_record,
+        },
+        Case {
             name: "missing polymorphic object actual type",
             schema: "abstract type Reward {} type CoinReward : Reward { amount: int; } type Drop { reward: Reward; }",
             phase: Phase::Build(build_missing_object_type),
@@ -204,7 +211,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "record reference cycle",
-            schema: "type Node { next: &Node? = null; }",
+            schema: "type Node { next: Option<&Node> = None; }",
             phase: Phase::Build(build_ref_cycle),
             code: CfdErrorCode::RefCycle,
             adjacent: adjacent_acyclic_ref_chain,
@@ -259,13 +266,6 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_scalar_false_checks,
         },
         Case {
-            name: "check null predicate failed",
-            schema: scalar_false_schema(),
-            phase: Phase::Check(build_scalar_false_model, run_checks),
-            code: CfdErrorCode::CheckNullPredicateFailed,
-            adjacent: adjacent_scalar_false_checks,
-        },
-        Case {
             name: "check contains failed",
             schema: scalar_false_schema(),
             phase: Phase::Check(build_scalar_false_model, run_checks),
@@ -309,17 +309,10 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check eval type error",
-            schema: "type Item { nums: [int]? = null; check { nums.contains(1); } }",
-            phase: Phase::Check(build_default_item_model, run_checks),
+            schema: "",
+            phase: Phase::Direct(build_check_eval_type_error),
             code: CfdErrorCode::CheckEvalTypeError,
-            adjacent: adjacent_check_eval_type_valid,
-        },
-        Case {
-            name: "check null access",
-            schema: "type Child { name: string; } type Holder { child: Child? = null; check { child.name != \"\"; } }",
-            phase: Phase::Check(build_default_holder_model, run_checks),
-            code: CfdErrorCode::CheckNullAccess,
-            adjacent: adjacent_null_guarded_access,
+            adjacent: adjacent_true_check,
         },
         Case {
             name: "check index out of bounds",
@@ -454,6 +447,17 @@ fn build_unknown_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics
 
 fn build_abstract_record_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("reward", "Reward", [])])
+}
+
+fn build_host_record_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [one_record(
+            "services",
+            "Services",
+            [("environment", LoadedValueDraft::from("invalid"))],
+        )],
+    )
 }
 
 fn build_missing_object_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
@@ -649,12 +653,18 @@ fn build_ref_cycle(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
             one_record(
                 "first",
                 "Node",
-                [("next", LoadedValueDraft::record_ref("second"))],
+                [(
+                    "next",
+                    LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("second"))),
+                )],
             ),
             one_record(
                 "second",
                 "Node",
-                [("next", LoadedValueDraft::record_ref("first"))],
+                [(
+                    "next",
+                    LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("first"))),
+                )],
             ),
         ],
     )
@@ -678,6 +688,16 @@ fn build_check_failed_fallback() -> CfdDiagnostics {
     )
 }
 
+fn build_check_eval_type_error() -> CfdDiagnostics {
+    CfdDiagnostics::one(
+        CfdDiagnostic::error(
+            CfdErrorCode::CheckEvalTypeError,
+            "check evaluation encountered an invalid runtime value",
+        )
+        .with_primary(None, CfdPath::root()),
+    )
+}
+
 const fn scalar_false_schema() -> &'static str {
     r#"
         abstract type Reward {}
@@ -689,7 +709,6 @@ const fn scalar_false_schema() -> &'static str {
             left: bool;
             right: bool;
             reward: &Reward;
-            optional: int? = null;
             tags: [string];
             name: string;
             check {
@@ -698,7 +717,6 @@ const fn scalar_false_schema() -> &'static str {
                 left && right;
                 left || right;
                 reward is CurrencyReward;
-                optional != null;
                 tags.contains("boss");
                 tags.isUnique();
                 name.matches("^npc_");
@@ -787,10 +805,6 @@ fn build_default_item_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
     model_from_records(schema, [one_record("item", "Item", [])])
 }
 
-fn build_default_holder_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
-    model_from_records(schema, [one_record("holder", "Holder", [])])
-}
-
 fn build_empty_nums_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
@@ -857,6 +871,13 @@ fn adjacent_concrete_child_record_type() {
             "CoinReward",
             [("amount", LoadedValueDraft::from(1_i64))],
         )],
+    );
+}
+
+fn adjacent_host_type_without_cfd_record() {
+    assert_builds(
+        "@Host @singleton type Services { environment: string; }",
+        [],
     );
 }
 
@@ -1050,12 +1071,15 @@ fn adjacent_assignable_ref_target() {
 
 fn adjacent_acyclic_ref_chain() {
     assert_builds(
-        "type Node { next: &Node? = null; }",
+        "type Node { next: Option<&Node> = None; }",
         [
             one_record(
                 "first",
                 "Node",
-                [("next", LoadedValueDraft::record_ref("second"))],
+                [(
+                    "next",
+                    LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("second"))),
+                )],
             ),
             one_record("second", "Node", []),
         ],
@@ -1084,7 +1108,6 @@ fn adjacent_scalar_false_checks() {
                 left: bool;
                 right: bool;
                 reward: &Reward;
-                optional: int? = null;
                 tags: [string];
                 name: string;
                 check {
@@ -1093,7 +1116,6 @@ fn adjacent_scalar_false_checks() {
                     left && right;
                     left || right;
                     reward is CurrencyReward;
-                    optional != null;
                     tags.contains("boss");
                     tags.isUnique();
                     name.matches("^npc_");
@@ -1111,7 +1133,6 @@ fn adjacent_scalar_false_checks() {
                     ("left", LoadedValueDraft::from(true)),
                     ("right", LoadedValueDraft::from(true)),
                     ("reward", LoadedValueDraft::record_ref("reward")),
-                    ("optional", LoadedValueDraft::from(1_i64)),
                     (
                         "tags",
                         LoadedValueDraft::Array(vec![
@@ -1167,27 +1188,6 @@ fn adjacent_quantifier_checks() {
                 ),
             ],
         )],
-    );
-}
-
-fn adjacent_check_eval_type_valid() {
-    assert_checks(
-        "type Item { nums: [int]? = null; check { nums.contains(1); } }",
-        [one_record(
-            "item",
-            "Item",
-            [(
-                "nums",
-                LoadedValueDraft::Array(vec![LoadedValueDraft::from(1_i64)]),
-            )],
-        )],
-    );
-}
-
-fn adjacent_null_guarded_access() {
-    assert_checks(
-        "type Child { name: string; } type Holder { child: Child? = null; check { child == null || child.name != \"\"; } }",
-        [one_record("holder", "Holder", [])],
     );
 }
 

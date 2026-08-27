@@ -33,7 +33,10 @@ impl std::error::Error for CellRenderError {}
 /// schema context.
 pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
     match value {
-        CfdValue::Null => Ok(String::new()),
+        CfdValue::OptionNone => Ok("None".to_string()),
+        CfdValue::OptionSome(value) => Ok(format!("Some({})", render_cell_value(value)?)),
+        CfdValue::ResultOk(value) => Ok(format!("Ok({})", render_cell_value(value)?)),
+        CfdValue::ResultErr(value) => Ok(format!("Err({})", render_cell_value(value)?)),
         CfdValue::Bool(value) => Ok(value.to_string()),
         CfdValue::Int(value) => Ok(value.to_string()),
         CfdValue::Float(value) => Ok(value.to_string()),

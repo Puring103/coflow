@@ -1,5 +1,5 @@
 use coflow_language::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
 use coflow_language::syntax::lexer::{lex, TokenKind};
@@ -206,8 +206,7 @@ fn add_lex_semantic_token(
         | TokenKind::In
         | TokenKind::Is
         | TokenKind::True
-        | TokenKind::False
-        | TokenKind::Null => SEM_KEYWORD,
+        | TokenKind::False => SEM_KEYWORD,
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
         TokenKind::String(_)
         | TokenKind::FormattedStringStart
@@ -267,7 +266,7 @@ fn add_ast_semantic_tokens(
                 if let Some(ty) = &constant.ty {
                     add_value_type_semantic(build, document, ty, tokens);
                 }
-                add_const_literal_semantic(document, &constant.value, tokens);
+                add_default_expr_semantic(document, &constant.value, tokens);
             }
             Item::Enum(enum_def) => {
                 for annotation in &enum_def.annotations {
@@ -344,6 +343,7 @@ fn add_ast_semantic_tokens(
                     }
                 }
             }
+            Item::TypeAlias(_) => {}
             Item::Check(check) => {
                 for annotation in &check.annotations {
                     add_annotation_semantic(document, annotation, tokens);
@@ -385,7 +385,7 @@ fn add_annotation_semantic(
             AnnotationArg::Int(_, span) | AnnotationArg::Float(_, span) => {
                 push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
             }
-            AnnotationArg::Bool(_, span) | AnnotationArg::Null(span) => {
+            AnnotationArg::Bool(_, span) => {
                 push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         }
@@ -422,7 +422,8 @@ fn add_value_type_semantic(
                 tokens,
             );
         }
-        TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
+        TypeRefKind::Array(inner)
+        | TypeRefKind::Option(inner) => {
             add_value_type_semantic(build, document, inner, tokens);
         }
         TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
@@ -430,24 +431,17 @@ fn add_value_type_semantic(
             add_value_type_semantic(build, document, key, tokens);
             add_value_type_semantic(build, document, value, tokens);
         }
-    }
-}
-
-fn add_const_literal_semantic(
-    document: &LspDocument,
-    literal: &ConstLiteral,
-    tokens: &mut Vec<RawSemanticToken>,
-) {
-    match literal {
-        ConstLiteral::Int(_, span) | ConstLiteral::Float(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
+        TypeRefKind::Result(value, error) => {
+            add_value_type_semantic(build, document, value, tokens);
+            add_value_type_semantic(build, document, error, tokens);
         }
-        ConstLiteral::Bool(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
+        TypeRefKind::Function(parameters, result) => {
+            for parameter in parameters {
+                add_value_type_semantic(build, document, parameter, tokens);
+            }
+            add_value_type_semantic(build, document, result, tokens);
         }
-        ConstLiteral::String(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_STRING, tokens);
-        }
+        TypeRefKind::Unit => {}
     }
 }
 
@@ -460,36 +454,51 @@ fn add_default_expr_semantic(
         DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
-        DefaultExprKind::Bool(_) | DefaultExprKind::Null => {
+        DefaultExprKind::Bool(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
+        }
+        DefaultExprKind::OptionNone => {
+            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
+        }
+        DefaultExprKind::OptionSome(value)
+        | DefaultExprKind::ResultOk(value)
+        | DefaultExprKind::ResultErr(value) => {
+            let keyword_len = match &expr.kind {
+                DefaultExprKind::OptionSome(_) => 4,
+                _ => 3,
+            };
+            push_semantic_span_plain(
+                &document.source,
+                Span::new(expr.span.start, expr.span.start + keyword_len),
+                SEM_KEYWORD,
+                tokens,
+            );
+            add_default_expr_semantic(document, value, tokens);
         }
         DefaultExprKind::String(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
-        DefaultExprKind::Name(name) => {
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_VARIABLE,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
+        DefaultExprKind::StaticPath(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
         }
-        DefaultExprKind::EnumVariant { enum_name, variant } => {
-            push_semantic_span(
-                &document.source,
-                enum_name.span,
-                SEM_ENUM,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
-            push_semantic_span(
-                &document.source,
-                variant.span,
-                SEM_ENUM_MEMBER,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
+        DefaultExprKind::RecordReference(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
         }
         DefaultExprKind::Array(items) => {
             for item in items {
@@ -505,6 +514,12 @@ fn add_default_expr_semantic(
                     MOD_DECLARATION | MOD_SCHEMA,
                     tokens,
                 );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::Dictionary(entries) => {
+            for (key, value) in entries {
+                add_default_expr_semantic(document, key, tokens);
                 add_default_expr_semantic(document, value, tokens);
             }
         }
@@ -569,7 +584,7 @@ fn classify_check_expr(
         CheckExprKind::Int(_) | CheckExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
-        CheckExprKind::Bool(_) | CheckExprKind::Null => {
+        CheckExprKind::Bool(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
         CheckExprKind::String(_) => {
@@ -577,9 +592,7 @@ fn classify_check_expr(
         }
         CheckExprKind::FormattedString(_)
         | CheckExprKind::Index { .. }
-        | CheckExprKind::SafeIndex { .. }
         | CheckExprKind::BinOp { .. }
-        | CheckExprKind::Coalesce { .. }
         | CheckExprKind::Unary { .. }
         | CheckExprKind::CmpChain { .. } => {}
         CheckExprKind::Name(_) => {
@@ -590,6 +603,17 @@ fn classify_check_expr(
                 MOD_REFERENCE,
                 tokens,
             );
+        }
+        CheckExprKind::StaticPath(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+                    tokens,
+                );
+            }
         }
         CheckExprKind::Records { type_name } => {
             push_semantic_span(
@@ -628,15 +652,6 @@ fn classify_check_expr(
                 tokens,
             );
         }
-        CheckExprKind::SafeField { name, .. } => {
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_PROPERTY,
-                MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
-                tokens,
-            );
-        }
         CheckExprKind::Is { predicate, .. } => match predicate {
             coflow_language::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(
@@ -646,9 +661,6 @@ fn classify_check_expr(
                     MOD_REFERENCE | MOD_SCHEMA,
                     tokens,
                 );
-            }
-            coflow_language::syntax::ast::TypePredicate::Null(span) => {
-                push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         },
         CheckExprKind::Call { name, .. } => {

@@ -133,7 +133,7 @@ type ChemicalTermParameters {
   @label("系数")
   coefficient: int = 1;
   @label("物态")
-  state: MaterialState = MaterialState.Gas;
+  state: MaterialState = MaterialState::Gas;
 }
 
 @label("化学项")

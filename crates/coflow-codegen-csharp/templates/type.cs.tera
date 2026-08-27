@@ -2,21 +2,65 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using CoflowRuntime;
 
-namespace {{ project.namespace }}
+namespace {{ type.namespace }}
 {
 
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
 {% endif %}{% if type.obsolete %}[Obsolete]
 {% endif %}{{ type.declaration }}
 {
-{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
+{% if type.declares_host_slot %}    internal readonly CoflowHostSlot? _coflowHost;
+
+{% endif %}{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
 
 {% endif %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
 {% endif %}{% if property.obsolete %}    [Obsolete]
-{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get{% if property.backing_field %} => {{ property.backing_field }}{% endif %}; }
+{% endif %}{% if property.backing_field %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }}
+    {
+        get
+        {
+{% if property.guard_host %}            _coflowHost?.EnsureBound();
+{% endif %}            return {{ property.backing_field }};
+        }
+    }
+{% else %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; }
+{% endif %}
 {% if not loop.last %}
 {% endif %}{% endfor %}{% if type.properties | length > 0 %}
+
+{% endif %}{% for function in type.functions %}{% if function.declared_here %}    internal readonly CoflowFunctionSlot {{ function.slot_name }};
+
+{% if function.summary %}    /// <summary>{{ function.summary }}</summary>
+{% endif %}{% if function.returns_void %}    public void {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {
+{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
+{% endif %}        {{ function.slot_name }}.InvokeVoid({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+    }
+{% else %}    public {{ function.result_type }} {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {
+{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
+{% endif %}        return {{ function.slot_name }}.Invoke<{{ function.result_type }}>({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+    }
+{% endif %}
+{% if not type.is_host %}
+    public Result<Unit, FunctionBindError> {{ function.bind_method_name }}({{ function.delegate_type }} implementation) =>
+{% if type.uses_host_slot %}        _coflowHost is not null
+            ? Result<Unit, FunctionBindError>.Err(FunctionBindError.HostFunctionRequiresWholeRecord)
+            : {{ function.slot_name }}.Bind(implementation);
+{% else %}        {{ function.slot_name }}.Bind(implementation);
+{% endif %}
+{% endif %}
+
+{% endif %}{% endfor %}{% if type.is_host %}    public Result<Unit, HostBindError> Bind(
+{% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
+{% endfor %}    ) => _coflowHost!.Bind(
+        () =>
+        {
+{% for field in type.host_fields %}            {{ field.target }} = {{ field.parameter.name }};
+{% endfor %}        }{% for function in type.functions %},
+        new CoflowHostFunctionBinding({{ function.slot_name }}, {{ function.bind_parameter_name }}){% endfor %});
 
 {% endif %}    {{ type.constructor_visibility }} {{ type.name }}(
 {% for parameter in type.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}

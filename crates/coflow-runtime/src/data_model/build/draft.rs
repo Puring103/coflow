@@ -15,6 +15,9 @@ pub(crate) struct RecordDraft {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ValueDraft {
     Value(CfdValue),
+    OptionSome(Box<ValueDraft>),
+    ResultOk(Box<ValueDraft>),
+    ResultErr(Box<ValueDraft>),
     FormattedString(LoadedFormattedString),
     Object(Box<RecordDraft>),
     PendingRef {

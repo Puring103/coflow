@@ -1,4 +1,4 @@
-namespace Coflow.Cfd.Runtime;
+namespace CoflowRuntime;
 
 public sealed class CfdDiagnostic
 {

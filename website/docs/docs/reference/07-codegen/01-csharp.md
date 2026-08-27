@@ -23,4 +23,6 @@ source 清单区分普通项目 CFD 与维度 overlay。生成 loader 对物理�
 
 Rust 项目加载与 C# direct loader 都拒绝不可赋值的 overlay declared type、重复 record identity、缺失引用和引用环。引用环分别以稳定的 Rust `REF-003` 与 C# `CFD-REF-CYCLE` 诊断报告。
 
-目标语言选项写在 `codegen` target 中，例如 `namespace`、`database_class`、`int_32` 和 `float_32`。新增其他语言只需实现同一个 codegen contract 和对应 runtime binding。
+目标语言选项写在 `codegen` target 中。C# 目标只接受 `namespace`；CFT `int` 固定映射为 C#
+`long`，`float` 固定映射为 C# `double`。新增其他语言只需实现同一个 codegen contract 和对应
+runtime binding。

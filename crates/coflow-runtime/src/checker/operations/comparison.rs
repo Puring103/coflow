@@ -121,7 +121,7 @@ pub(crate) fn compare_order(
         || matches!(rhs.scalar(), Some(ScalarValue::Null))
     {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             location,
             format!(
                 "不能对 null 做有序比较: {} cmp {}",
@@ -212,7 +212,7 @@ pub(crate) fn eager_bin_op<'model>(
         || matches!(rhs.scalar(), Some(ScalarValue::Null))
     {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             location,
             format!(
                 "不能对 null 执行二元运算: {} {} {}",

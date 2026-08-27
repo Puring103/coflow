@@ -52,6 +52,7 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "Id"
             | "ID"
             | "const"
+            | "namespace"
             | "enum"
             | "type"
             | "abstract"
@@ -92,5 +93,35 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "from"
             | "as"
             | "use"
+            | "fn"
+            | "var"
+            | "return"
+            | "break"
+            | "continue"
+            | "Host"
+            | "None"
+            | "Some"
+            | "Ok"
+            | "Err"
+            | "Option"
+            | "Result"
+            | "alert"
+            | "records"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_cft_identifier;
+
+    #[test]
+    fn rejects_all_target_language_reserved_identifiers() {
+        for name in [
+            "namespace", "use", "as", "fn", "var", "return", "if", "else", "match",
+            "for", "while", "break", "continue", "None", "Some", "Ok", "Err", "Option",
+            "Result", "Host", "alert", "records",
+        ] {
+            assert!(!is_cft_identifier(name), "`{name}` must be reserved");
+        }
+    }
 }

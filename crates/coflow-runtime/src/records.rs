@@ -162,7 +162,10 @@ pub struct EffectiveFieldWrite {
 #[must_use]
 pub fn value_summary(value: &CfdValue) -> String {
     match value {
-        CfdValue::Null => "-".to_string(),
+        CfdValue::OptionNone => "None".to_string(),
+        CfdValue::OptionSome(value) => format!("Some({})", value_summary(value)),
+        CfdValue::ResultOk(value) => format!("Ok({})", value_summary(value)),
+        CfdValue::ResultErr(value) => format!("Err({})", value_summary(value)),
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
@@ -221,7 +224,10 @@ fn previous_char_boundary(value: &str, preferred_end: usize) -> usize {
 
 const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
-        CfdValue::Null => "null",
+        CfdValue::OptionNone => "None",
+        CfdValue::OptionSome(_) => "Some",
+        CfdValue::ResultOk(_) => "Ok",
+        CfdValue::ResultErr(_) => "Err",
         CfdValue::Bool(_) => "bool",
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",

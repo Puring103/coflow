@@ -1,7 +1,7 @@
 use super::inferred_type::InferredType;
 use crate::module::ModuleId;
-use crate::schema::CftConstValue;
-use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeDef};
+use crate::schema::{CftConstValue, CftValueType};
+use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeAliasDef, TypeDef};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,13 +9,21 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct ConstInfo<'a> {
     pub(super) module: ModuleId,
     pub(super) def: &'a ConstDef,
-    pub(super) value: CftConstValue,
+    pub(super) value_type: Option<CftValueType>,
+    pub(super) value: Option<CftConstValue>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct TypeInfo<'a> {
+    pub(super) name: String,
     pub(super) module: ModuleId,
     pub(super) def: &'a TypeDef,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TypeAliasInfo<'a> {
+    pub(super) module: ModuleId,
+    pub(super) def: &'a TypeAliasDef,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +40,12 @@ pub(super) struct EnumInfo<'a> {
     pub(super) values: BTreeMap<i64, (ModuleId, Span)>,
     pub(super) values_by_name: BTreeMap<String, i64>,
     pub(super) is_flag: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct ModuleScope {
+    pub(super) namespace: Option<String>,
+    pub(super) uses: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,5 +72,6 @@ pub(super) struct Symbol {
 pub(super) enum SymbolKind {
     Const,
     Type,
+    TypeAlias,
     Enum,
 }

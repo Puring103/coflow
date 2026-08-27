@@ -51,13 +51,8 @@ impl CfdDimensionWriter for CfdWriter {
                     .join("; "),
             )));
         }
-        let nullable_type = CftValueType::Nullable(Box::new(
-            request
-                .schema
-                .source_field
-                .value_type
-                .non_nullable()
-                .clone(),
+        let optional_type = CftValueType::Option(Box::new(
+            request.schema.source_field.value_type.clone(),
         ));
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();
@@ -148,7 +143,7 @@ impl CfdDimensionWriter for CfdWriter {
                 let value = match super::super::lower::lower_value(
                     request.schema.schema,
                     &field.value,
-                    &nullable_type,
+                    &optional_type,
                 ) {
                     Ok(value) => value,
                     Err(err) => {

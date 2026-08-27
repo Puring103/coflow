@@ -9,12 +9,11 @@ pub(super) fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::LParen => "(",
         TokenKind::RParen => ")",
         TokenKind::Colon => ":",
+        TokenKind::DoubleColon => "::",
         TokenKind::Semicolon => ";",
         TokenKind::Comma => ",",
         TokenKind::Dot => ".",
         TokenKind::Equal => "=",
-        TokenKind::Question => "?",
-        TokenKind::QuestionQuestion => "??",
         TokenKind::FormattedStringStart => "formatted string",
         TokenKind::FormattedStringEnd => "\"",
         TokenKind::In => "in",
@@ -24,6 +23,9 @@ pub(super) fn token_name(kind: &TokenKind) -> &'static str {
 
 pub(super) fn reserved_keyword_name(kind: &TokenKind) -> Option<&'static str> {
     match kind {
+        TokenKind::Namespace => Some("namespace"),
+        TokenKind::Use => Some("use"),
+        TokenKind::As => Some("as"),
         TokenKind::Const => Some("const"),
         TokenKind::Enum => Some("enum"),
         TokenKind::Type => Some("type"),
@@ -38,7 +40,6 @@ pub(super) fn reserved_keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::Is => Some("is"),
         TokenKind::True => Some("true"),
         TokenKind::False => Some("false"),
-        TokenKind::Null => Some("null"),
         _ => None,
     }
 }

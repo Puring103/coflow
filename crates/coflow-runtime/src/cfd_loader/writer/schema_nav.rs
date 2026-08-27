@@ -15,7 +15,7 @@ pub(super) fn type_after_field_segment_for_ref(
     current_type: &CftValueType,
     field_name: &str,
 ) -> Option<CftValueType> {
-    match current_type.non_nullable() {
+    match current_type {
         CftValueType::Object(type_name) => type_after_field_segment(schema, type_name, field_name),
         _ => None,
     }
@@ -29,7 +29,7 @@ pub(super) fn concrete_type_for_block(
     let Some(type_marker) = type_marker else {
         return expected_type.clone();
     };
-    let CftValueType::Object(expected_name) = expected_type.non_nullable() else {
+    let CftValueType::Object(expected_name) = expected_type else {
         return expected_type.clone();
     };
     schema
@@ -45,7 +45,7 @@ pub(super) fn object_type_name<'a>(
     expected: Option<&'a CftValueType>,
     actual_type: &'a str,
 ) -> Option<&'a str> {
-    match expected.map(CftValueType::non_nullable) {
+    match expected {
         Some(CftValueType::Object(type_name)) => Some(type_name.as_str()),
         Some(CftValueType::RecordRef(_)) => None,
         Some(_) | None => Some(actual_type),
@@ -53,7 +53,7 @@ pub(super) fn object_type_name<'a>(
 }
 
 pub(super) fn type_after_index_segment(current_type: &CftValueType) -> Option<CftValueType> {
-    match current_type.non_nullable() {
+    match current_type {
         CftValueType::Array(inner) => Some((**inner).clone()),
         _ => None,
     }
@@ -62,7 +62,7 @@ pub(super) fn type_after_index_segment(current_type: &CftValueType) -> Option<Cf
 pub(super) fn type_after_dict_key_segment(
     current_type: &CftValueType,
 ) -> Option<(CftValueType, CftValueType)> {
-    match current_type.non_nullable() {
+    match current_type {
         CftValueType::Dict(key, item) => Some(((**key).clone(), (**item).clone())),
         _ => None,
     }
@@ -76,7 +76,7 @@ pub(super) fn dict_key_path_matches(
     if source_key == path_key {
         return true;
     }
-    match key_type.non_nullable() {
+    match key_type {
         CftValueType::String if path_key.starts_with('"') => {
             serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
         }

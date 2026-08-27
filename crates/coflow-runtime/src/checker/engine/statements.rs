@@ -383,7 +383,6 @@ fn rewrite_all_failures(
             && diagnostic.diagnostic.code != CfdErrorCode::CheckAndFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckOrFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckTypePredicateFailed
-            && diagnostic.diagnostic.code != CfdErrorCode::CheckNullPredicateFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckContainsFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckUniqueFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckMatchesFailed

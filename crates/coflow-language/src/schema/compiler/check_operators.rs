@@ -1,8 +1,6 @@
 use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
-use crate::schema::compiler::inferred_type::{
-    ordered_comparable, types_comparable, unwrap_nullable, InferredType,
-};
+use crate::schema::compiler::inferred_type::{ordered_comparable, types_comparable, InferredType};
 use crate::schema::CftValueType;
 use crate::syntax::ast::{BinOp, CmpOp, UnaryOp};
 use crate::syntax::Span;
@@ -17,7 +15,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         if ty.is_unknown() {
             return InferredType::Unknown;
         }
-        let unwrapped = unwrap_nullable(ty);
+        let unwrapped = ty;
         match op {
             UnaryOp::Not if matches!(unwrapped.value_type(), Some(CftValueType::Bool)) => {
                 InferredType::bool()
@@ -161,7 +159,7 @@ impl CheckTypeAnalyzer<'_, '_> {
     }
 
     fn is_flag_enum(&self, ty: &InferredType) -> bool {
-        let Some(name) = unwrap_nullable(ty).enum_name().cloned() else {
+        let Some(name) = ty.enum_name().cloned() else {
             return false;
         };
         self.compiler

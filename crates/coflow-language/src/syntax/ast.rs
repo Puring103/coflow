@@ -7,8 +7,55 @@ use crate::syntax::Span;
 
 #[derive(Debug, Clone)]
 pub struct ModuleAst {
+    pub namespace: Option<NamespaceDecl>,
+    pub uses: Vec<UseDecl>,
     pub items: Vec<Item>,
     pub dangling_annotations: Vec<Annotation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NamespaceDecl {
+    pub path: QualifiedName,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct UseDecl {
+    pub path: QualifiedName,
+    pub alias: Option<NameRef>,
+    pub span: Span,
+}
+
+impl UseDecl {
+    #[must_use]
+    pub fn local_name(&self) -> &NameRef {
+        self.alias
+            .as_ref()
+            .unwrap_or_else(|| self.path.last())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QualifiedName {
+    pub segments: Vec<NameRef>,
+    pub span: Span,
+}
+
+impl QualifiedName {
+    #[must_use]
+    pub fn last(&self) -> &NameRef {
+        // A qualified name is only constructed after parsing its first segment.
+        &self.segments[self.segments.len() - 1]
+    }
+
+    #[must_use]
+    pub fn canonical(&self) -> String {
+        self.segments
+            .iter()
+            .map(|segment| segment.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -16,6 +63,7 @@ pub enum Item {
     Const(ConstDef),
     Enum(EnumDef),
     Type(TypeDef),
+    TypeAlias(TypeAliasDef),
     Check(TopLevelCheckDef),
 }
 
@@ -26,6 +74,7 @@ impl Item {
             Self::Const(definition) => definition.span,
             Self::Enum(definition) => definition.span,
             Self::Type(definition) => definition.span,
+            Self::TypeAlias(definition) => definition.span,
             Self::Check(definition) => definition.span,
         }
     }
@@ -45,7 +94,7 @@ pub struct ConstDef {
     pub name: String,
     pub name_span: Span,
     pub ty: Option<TypeRef>,
-    pub value: ConstLiteral,
+    pub value: DefaultExpr,
     pub annotations: Vec<Annotation>,
     pub span: Span,
 }
@@ -86,6 +135,15 @@ pub struct TypeDef {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeAliasDef {
+    pub name: String,
+    pub name_span: Span,
+    pub target: TypeRef,
+    pub annotations: Vec<Annotation>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
 pub struct FieldDef {
     pub name: String,
     pub name_span: Span,
@@ -95,7 +153,7 @@ pub struct FieldDef {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameRef {
     pub name: String,
     pub span: Span,
@@ -116,7 +174,6 @@ pub enum AnnotationArg {
     Int(i64, Span),
     Float(f64, Span),
     Bool(bool, Span),
-    Null(Span),
 }
 
 impl AnnotationArg {
@@ -127,8 +184,7 @@ impl AnnotationArg {
             Self::String(_, span)
             | Self::Int(_, span)
             | Self::Float(_, span)
-            | Self::Bool(_, span)
-            | Self::Null(span) => *span,
+            | Self::Bool(_, span) => *span,
         }
     }
 }
@@ -137,26 +193,6 @@ impl AnnotationArg {
 pub struct SignedInt {
     pub value: i64,
     pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum ConstLiteral {
-    Int(i64, Span),
-    Float(f64, Span),
-    Bool(bool, Span),
-    String(String, Span),
-}
-
-impl ConstLiteral {
-    #[must_use]
-    pub fn span(&self) -> Span {
-        match self {
-            Self::Int(_, span)
-            | Self::Float(_, span)
-            | Self::Bool(_, span)
-            | Self::String(_, span) => *span,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,7 +205,10 @@ pub enum TypeRefKind {
     Ref(Box<TypeRef>),
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
-    Nullable(Box<TypeRef>),
+    Option(Box<TypeRef>),
+    Result(Box<TypeRef>, Box<TypeRef>),
+    Function(Vec<TypeRef>, Box<TypeRef>),
+    Unit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,15 +228,16 @@ pub enum DefaultExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Null,
+    OptionNone,
+    OptionSome(Box<DefaultExpr>),
+    ResultOk(Box<DefaultExpr>),
+    ResultErr(Box<DefaultExpr>),
     String(String),
-    Name(NameRef),
-    EnumVariant {
-        enum_name: NameRef,
-        variant: NameRef,
-    },
+    StaticPath(QualifiedName),
+    RecordReference(QualifiedName),
     Array(Vec<DefaultExpr>),
     Object(Vec<(NameRef, DefaultExpr)>),
+    Dictionary(Vec<(DefaultExpr, DefaultExpr)>),
 }
 
 #[derive(Debug, Clone)]
@@ -274,10 +314,10 @@ pub enum CheckExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Null,
     String(String),
     FormattedString(Vec<CheckFormatSegment>),
     Name(String),
+    StaticPath(QualifiedName),
     Records {
         type_name: NameRef,
     },
@@ -285,21 +325,9 @@ pub enum CheckExprKind {
         expr: Box<CheckExpr>,
         name: NameRef,
     },
-    SafeField {
-        expr: Box<CheckExpr>,
-        name: NameRef,
-    },
     Index {
         expr: Box<CheckExpr>,
         index: Box<CheckExpr>,
-    },
-    SafeIndex {
-        expr: Box<CheckExpr>,
-        index: Box<CheckExpr>,
-    },
-    Coalesce {
-        lhs: Box<CheckExpr>,
-        rhs: Box<CheckExpr>,
     },
     Is {
         expr: Box<CheckExpr>,
@@ -332,7 +360,6 @@ pub enum CheckExprKind {
 #[derive(Debug, Clone)]
 pub enum TypePredicate {
     Type(NameRef),
-    Null(Span),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

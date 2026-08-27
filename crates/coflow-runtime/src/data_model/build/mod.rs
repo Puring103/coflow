@@ -421,12 +421,12 @@ impl<'a> ModelCompiler<'a> {
             ));
             return None;
         }
-        let nullable_ty = CftValueType::Nullable(Box::new(field.value_type.non_nullable().clone()));
+        let optional_ty = CftValueType::Option(Box::new(field.value_type.clone()));
         let path = CfdPath::root().field(input.field.as_str());
         let diagnostic_start = self.diagnostics.len();
         let draft = Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits)
             .validate_value(
-                &nullable_ty,
+                &optional_ty,
                 &input.value,
                 Some(record_id),
                 path.clone(),
@@ -460,6 +460,10 @@ impl<'a> ModelCompiler<'a> {
             for (record_id, input, draft, path) in validated {
                 let start = resolver.diagnostic_count();
                 if let Some(value) = resolver.resolve_dimension_value(record_id, &draft, &path) {
+                    let value = match value {
+                        CfdValue::OptionSome(value) => *value,
+                        value => value,
+                    };
                     values.push((record_id, input.clone(), value));
                 }
                 origins.push((

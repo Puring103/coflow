@@ -12,7 +12,7 @@ pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("any", "Require at least one collection item to pass."),
     ("none", "Require no collection item to pass."),
     ("in", "Bind a quantifier variable to a collection."),
-    ("is", "Check the runtime type or null value."),
+    ("is", "Check the runtime object type."),
 ];
 
 pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
@@ -25,7 +25,6 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
 pub(crate) const LITERALS: &[(&str, &str)] = &[
     ("true", "Boolean true."),
     ("false", "Boolean false."),
-    ("null", "Nullable value."),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(

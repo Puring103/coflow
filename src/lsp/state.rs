@@ -180,7 +180,6 @@ fn field_receiver_type(field: &CftField) -> CftValueType {
 pub(crate) fn type_name_of_schema_ref(ty: &CftValueType) -> Option<&str> {
     match ty {
         CftValueType::Object(name) => Some(name),
-        CftValueType::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
 }
@@ -202,14 +201,16 @@ pub(crate) fn enum_variant_by_chain<'a>(
     build: &'a LspBuild,
     chain: &[String],
 ) -> Option<(&'a CftEnum, &'a CftEnumVariant)> {
-    if chain.len() != 2 {
+    if chain.len() < 2 {
         return None;
     }
-    let enum_def = build.schema()?.resolve_enum(&chain[0])?;
+    let (variant_name, owner) = chain.split_last()?;
+    let enum_name = owner.join("::");
+    let enum_def = build.schema()?.resolve_enum(&enum_name)?;
     let variant = enum_def
         .variants
         .iter()
-        .find(|variant| variant.name.as_str() == chain[1])?;
+        .find(|variant| variant.name.as_str() == variant_name)?;
     Some((enum_def, variant))
 }
 
@@ -282,7 +283,7 @@ pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> V
                 let result = visitor.visit_block(&check.block);
                 debug_assert!(result.is_ok());
             }
-            Item::Const(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Enum(_) | Item::TypeAlias(_) => {}
         }
     }
     visitor.bindings

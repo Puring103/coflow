@@ -89,7 +89,8 @@ impl ScanState {
             '"' => self.in_string = true,
             '{' => self.stack.push('}'),
             '[' => self.stack.push(']'),
-            '}' | ']' if self.stack.pop() != Some(ch) => {
+            '(' => self.stack.push(')'),
+            '}' | ']' | ')' if self.stack.pop() != Some(ch) => {
                 return Err(syntax("mismatched brackets"));
             }
             _ => {}
