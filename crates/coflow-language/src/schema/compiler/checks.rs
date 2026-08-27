@@ -458,20 +458,29 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             return InferredType::Unknown;
         }
         let resolved_name = self.compiler.resolve_name(&self.module, &type_name.name);
-        if !self.compiler.types.contains_key(&resolved_name) {
+        let object_name = if self.compiler.types.contains_key(&resolved_name) {
+            Some(resolved_name.clone())
+        } else {
+            self.compiler
+                .resolved_aliases
+                .get(&resolved_name)
+                .and_then(InferredType::object_name)
+                .map(ToString::to_string)
+        };
+        let Some(object_name) = object_name else {
             self.diag(
                 CftErrorCode::InvalidRecordSetQuery,
                 type_name.span,
                 format!("`{resolved_name}` is not an object type"),
             );
             return InferredType::Unknown;
-        }
+        };
         self.dependencies.insert(
-            CheckDependency::RecordSet(crate::TypeName::from_validated(resolved_name.clone())),
+            CheckDependency::RecordSet(crate::TypeName::from_validated(object_name.clone())),
             CheckDependencyLocality::Local,
         );
         InferredType::array(InferredType::record_ref(InferredType::object(
-            crate::TypeName::from_validated(resolved_name),
+            crate::TypeName::from_validated(object_name),
         )))
     }
 
@@ -610,16 +619,20 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         match predicate {
             TypePredicate::Type(name) => {
                 let resolved_name = self.compiler.resolve_name(&self.module, &name.name);
-                match self.compiler.symbols.get(&resolved_name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => {}
-                    _ => {
+                let is_object = matches!(
+                    self.compiler.symbols.get(&resolved_name),
+                    Some(symbol) if symbol.kind == SymbolKind::Type
+                ) || self.compiler
+                    .resolved_aliases
+                    .get(&resolved_name)
+                    .is_some_and(|alias| alias.object_name().is_some());
+                if !is_object {
                         self.diag(
                             CftErrorCode::InvalidIsPredicate,
                             name.span,
                             "is predicate must name a type",
                         );
                         return;
-                    }
                 }
                 let operand = unwrap_reference(lhs);
                 if operand.object_name().is_none() && !operand.is_unknown() {

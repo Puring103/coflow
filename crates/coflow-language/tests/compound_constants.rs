@@ -85,3 +85,28 @@ fn infers_unambiguous_constant_types_and_rejects_dependency_cycles() {
         .iter()
         .any(|diagnostic| diagnostic.code == CftErrorCode::InvalidConstValue));
 }
+
+#[test]
+fn object_constants_apply_field_defaults_and_reject_missing_required_fields() {
+    let schema = compile(
+        r#"
+sealed type Stats { hp: int; attack: int = 3; }
+const DEFAULT_STATS: Stats = { hp: 10 };
+"#,
+    )
+    .expect("object field defaults apply to constants");
+    assert!(matches!(
+        &schema.resolve_const("DEFAULT_STATS").expect("DEFAULT_STATS").value,
+        CftConstValue::Object { fields, .. }
+            if fields.iter().any(|(name, value)| name.as_str() == "attack" &&
+                matches!(value, CftConstValue::Int(3)))
+    ));
+
+    let diagnostics = compile(
+        "sealed type Stats { hp: int; attack: int; } const DEFAULT_STATS: Stats = { hp: 10 };",
+    )
+    .expect_err("missing required object fields must fail during schema compilation");
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic|
+        diagnostic.code == CftErrorCode::InvalidConstValue &&
+        diagnostic.message.contains("missing field `attack`")));
+}

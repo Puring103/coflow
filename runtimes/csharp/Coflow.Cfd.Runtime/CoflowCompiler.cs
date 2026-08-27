@@ -572,9 +572,9 @@ internal static class CoflowCompiler
                     Error("COFLOW-FUNCTION-BUILTIN", "fold requires an initial value and a function");
                 callable = arguments[1];
                 var signature = callable.CallableSignature;
-                if (signature is null || signature.ParameterTypes.Count != 2 ||
-                    signature.ParameterTypes[0] != arguments[0].Type ||
-                    signature.ParameterTypes[1] != element || signature.ResultType != arguments[0].Type)
+                var expected = new CoflowFunctionSignature(
+                    arguments[0].Type, new[] { arguments[0].Type, element });
+                if (signature is null || !IsFunctionAssignable(signature, expected))
                     Error("COFLOW-FUNCTION-BUILTIN", "fold function must have signature fn(A, T) -> A");
                 result = arguments[0].Type;
                 outputElement = result;
@@ -585,7 +585,8 @@ internal static class CoflowCompiler
                     Error("COFLOW-FUNCTION-BUILTIN", $"{name} requires exactly one function");
                 callable = arguments[0];
                 var signature = callable.CallableSignature;
-                if (signature is null || signature.ParameterTypes.Count != 1 || signature.ParameterTypes[0] != element)
+                if (signature is null || signature.ParameterTypes.Count != 1 ||
+                    !IsAssignable(element, signature.ParameterTypes[0]))
                     Error("COFLOW-FUNCTION-BUILTIN", $"{name} function must accept the array element type");
                 if (name is "filter" or "find" or "any" or "all")
                 {
@@ -796,21 +797,32 @@ internal static class CoflowCompiler
             return new InterpolatedStringExpr(parts);
         }
 
-        private bool IsInterpolatable(Type type)
+        private bool IsInterpolatable(Type type) => IsInterpolatable(type, new HashSet<Type>());
+
+        private bool IsInterpolatable(Type type, HashSet<Type> visiting)
         {
             if (type == typeof(long) || type == typeof(double) || type == typeof(bool) ||
                 type == typeof(string) || type == typeof(Unit) || type.IsEnum)
                 return true;
             if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionSlot))
                 return false;
-            if (_metadata.Values.Any(metadata => metadata.RuntimeType == type)) return true;
+            var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == type);
+            if (metadata is not null)
+            {
+                if (metadata.IsRecord || !visiting.Add(type)) return true;
+                var result = metadata.FieldNames.All(field =>
+                    IsInterpolatable(metadata.GetFieldType(field), visiting));
+                visiting.Remove(type);
+                return result;
+            }
             if (!type.IsGenericType) return false;
             var definition = type.GetGenericTypeDefinition();
             var arguments = type.GetGenericArguments();
-            return definition == typeof(Option<>) && IsInterpolatable(arguments[0]) ||
-                   definition == typeof(Result<,>) && arguments.All(IsInterpolatable) ||
-                   definition == typeof(IReadOnlyList<>) && IsInterpolatable(arguments[0]) ||
-                   definition == typeof(IReadOnlyDictionary<,>) && arguments.All(IsInterpolatable);
+            return definition == typeof(Option<>) && IsInterpolatable(arguments[0], visiting) ||
+                   definition == typeof(Result<,>) && arguments.All(argument => IsInterpolatable(argument, visiting)) ||
+                   definition == typeof(IReadOnlyList<>) && IsInterpolatable(arguments[0], visiting) ||
+                   definition == typeof(IReadOnlyDictionary<,>) &&
+                       arguments.All(argument => IsInterpolatable(argument, visiting));
         }
 
         private bool StartsObjectConstructor(string first)
@@ -1035,7 +1047,7 @@ internal static class CoflowCompiler
             }
             if (name.StartsWith("fn(", StringComparison.Ordinal))
             {
-                var arrow = name.LastIndexOf(")->", StringComparison.Ordinal);
+                var arrow = FindFunctionParameterEnd(name);
                 var parameterText = name[3..arrow];
                 var parameterTypes = parameterText.Length == 0
                     ? Array.Empty<Type>()
@@ -1045,6 +1057,19 @@ internal static class CoflowCompiler
             }
             Error("COFLOW-FUNCTION-TYPE", $"unknown type `{name}`");
             return null!;
+        }
+
+        private static int FindFunctionParameterEnd(string name)
+        {
+            var depth = 0;
+            for (var index = 2; index < name.Length; index++)
+            {
+                if (name[index] == '(') depth++;
+                else if (name[index] == ')' && --depth == 0 &&
+                    name.AsSpan(index).StartsWith(")->", StringComparison.Ordinal))
+                    return index;
+            }
+            throw new InvalidOperationException($"invalid function type `{name}`");
         }
 
         private static string[] SplitTypeArguments(string value, char separator)
@@ -1112,9 +1137,20 @@ internal static class CoflowCompiler
             if (!exhaustive) Error("COFLOW-FUNCTION-MATCH", "match is not exhaustive");
             var resultType = arms[0].Body.Type;
             foreach (var arm in arms.Skip(1))
-                if (arm.Body.Type != resultType)
+            {
+                if (IsAssignable(arm.Body.Type, resultType)) continue;
+                if (IsAssignable(resultType, arm.Body.Type))
+                {
+                    resultType = arm.Body.Type;
+                    continue;
+                }
+                else
                     Error("COFLOW-FUNCTION-TYPE", "match arms must have the same result type");
-            return new MatchExpr(subject, subjectLocal, arms, !hasCatchAll);
+            }
+            var typedArms = arms
+                .Select(arm => arm with { Body = arm.Body.WithExpected(resultType, this) })
+                .ToArray();
+            return new MatchExpr(subject, subjectLocal, typedArms, !hasCatchAll);
         }
 
         private MatchPattern ParseMatchPattern(Type subjectType)
@@ -1259,8 +1295,18 @@ internal static class CoflowCompiler
             }
             if (values.Count == 0) return new EmptyArrayExpr();
             var elementType = values[0].Type;
-            foreach (var value in values.Skip(1)) value.WithExpected(elementType, this);
-            return new ArrayExpr(values, typeof(IReadOnlyList<>).MakeGenericType(elementType));
+            foreach (var value in values.Skip(1))
+            {
+                if (IsAssignable(value.Type, elementType)) continue;
+                if (IsAssignable(elementType, value.Type))
+                {
+                    elementType = value.Type;
+                    continue;
+                }
+                value.WithExpected(elementType, this);
+            }
+            var typedValues = values.Select(value => value.WithExpected(elementType, this)).ToArray();
+            return new ArrayExpr(typedValues, typeof(IReadOnlyList<>).MakeGenericType(elementType));
         }
 
         private Expr ParseDictionaryLiteral()
@@ -1281,10 +1327,23 @@ internal static class CoflowCompiler
             var valueType = entries[0].Value.Type;
             foreach (var entry in entries.Skip(1))
             {
-                entry.Key.WithExpected(keyType, this);
-                entry.Value.WithExpected(valueType, this);
+                if (!IsAssignable(entry.Key.Type, keyType))
+                {
+                    if (IsAssignable(keyType, entry.Key.Type)) keyType = entry.Key.Type;
+                    else entry.Key.WithExpected(keyType, this);
+                }
+                if (!IsAssignable(entry.Value.Type, valueType))
+                {
+                    if (IsAssignable(valueType, entry.Value.Type)) valueType = entry.Value.Type;
+                    else entry.Value.WithExpected(valueType, this);
+                }
             }
-            return new DictionaryExpr(entries,
+            if (keyType != typeof(long) && keyType != typeof(string) && !keyType.IsEnum)
+                Error("COFLOW-FUNCTION-TYPE", "dictionary keys must be int, string, or enum");
+            var typedEntries = entries.Select(entry => (
+                entry.Key.WithExpected(keyType, this),
+                entry.Value.WithExpected(valueType, this))).ToArray();
+            return new DictionaryExpr(typedEntries,
                 typeof(IReadOnlyDictionary<,>).MakeGenericType(keyType, valueType));
         }
 
@@ -1344,8 +1403,15 @@ internal static class CoflowCompiler
                 whenFalse = whenFalse.WithExpected(resultType, this);
             }
             if (whenTrue.Type != whenFalse.Type)
-                Error("COFLOW-FUNCTION-TYPE",
-                    $"if branches have different types `{FormatType(whenTrue.Type)}` and `{FormatType(whenFalse.Type)}`");
+            {
+                if (IsAssignable(whenTrue.Type, whenFalse.Type))
+                    whenTrue = whenTrue.WithExpected(whenFalse.Type, this);
+                else if (IsAssignable(whenFalse.Type, whenTrue.Type))
+                    whenFalse = whenFalse.WithExpected(whenTrue.Type, this);
+                else
+                    Error("COFLOW-FUNCTION-TYPE",
+                        $"if branches have different types `{FormatType(whenTrue.Type)}` and `{FormatType(whenFalse.Type)}`");
+            }
             return new IfExpr(condition, whenTrue, whenFalse);
 
             static ResultBranchExpr? ResultBranch(Expr expression) => expression switch
@@ -1556,10 +1622,10 @@ internal static class CoflowCompiler
 
             internal virtual Expr WithExpected(Type expected, FunctionParser parser)
             {
-                if (Type != expected)
+                if (!IsAssignable(Type, expected))
                     parser.Error("COFLOW-FUNCTION-TYPE",
                         $"expression has type `{parser.FormatType(Type)}` but `{parser.FormatType(expected)}` is required");
-                return this;
+                return Type == expected ? this : new RetypedExpr(this, expected);
             }
         }
 
@@ -1571,6 +1637,28 @@ internal static class CoflowCompiler
             return new CoflowFunctionSignature(
                 invoke.ReturnType == typeof(void) ? typeof(Unit) : invoke.ReturnType,
                 invoke.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        }
+
+        private static bool IsAssignable(Type source, Type target)
+        {
+            if (source == target) return true;
+            var sourceFunction = DelegateSignature(source);
+            var targetFunction = DelegateSignature(target);
+            if (sourceFunction is not null || targetFunction is not null)
+                return sourceFunction is not null && targetFunction is not null &&
+                    IsFunctionAssignable(sourceFunction, targetFunction);
+            return target.IsAssignableFrom(source);
+        }
+
+        private static bool IsFunctionAssignable(
+            CoflowFunctionSignature source,
+            CoflowFunctionSignature target)
+        {
+            if (source.ParameterTypes.Count != target.ParameterTypes.Count) return false;
+            for (var index = 0; index < source.ParameterTypes.Count; index++)
+                if (!IsAssignable(target.ParameterTypes[index], source.ParameterTypes[index]))
+                    return false;
+            return IsAssignable(source.ResultType, target.ResultType);
         }
 
         private static Type DelegateType(CoflowFunctionSignature signature)
@@ -1924,11 +2012,6 @@ internal static class CoflowCompiler
 
         private sealed record ArrayExpr(IReadOnlyList<Expr> Values, Type ArrayType) : Expr(ArrayType)
         {
-            internal override Expr WithExpected(Type expected, FunctionParser parser)
-            {
-                if (expected != Type) return base.WithExpected(expected, parser);
-                return this;
-            }
             internal override void EmitCore(FunctionParser parser)
             {
                 foreach (var value in Values) value.Emit(parser);
@@ -2396,18 +2479,21 @@ internal static class CoflowCompiler
                 return null!;
             }
 
-            private static object CreateOptionSome<T>(object? value) => Option<T>.Some((T)value!);
+            private static object CreateOptionSome<T>(object? value) =>
+                Option<T>.Some(CoflowFunctionDelegates.Adapt<T>(value));
             private static object CreateResultOk<T, TError>(object? value) =>
-                Result<T, TError>.Ok((T)value!);
+                Result<T, TError>.Ok(CoflowFunctionDelegates.Adapt<T>(value));
             private static object CreateResultErr<T, TError>(object? error) =>
-                Result<T, TError>.Err((TError)error!);
+                Result<T, TError>.Err(CoflowFunctionDelegates.Adapt<TError>(error));
             private static object CreateArray<T>(object?[] values) =>
-                System.Array.AsReadOnly(values.Cast<T>().ToArray());
+                System.Array.AsReadOnly(values.Select(CoflowFunctionDelegates.Adapt<T>).ToArray());
             private static object CreateDictionary<TKey, TValue>(object?[] values) where TKey : notnull
             {
                 var result = new Dictionary<TKey, TValue>();
                 for (var index = 0; index < values.Length; index += 2)
-                    result.Add((TKey)values[index]!, (TValue)values[index + 1]!);
+                    result.Add(
+                        CoflowFunctionDelegates.Adapt<TKey>(values[index]),
+                        CoflowFunctionDelegates.Adapt<TValue>(values[index + 1]));
                 return new System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>(result);
             }
             private static object IndexArray<T>(object?[] values)

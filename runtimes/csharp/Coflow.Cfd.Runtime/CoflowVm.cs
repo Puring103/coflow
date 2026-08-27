@@ -75,7 +75,15 @@ internal readonly record struct CoflowRange(long Start, long End, bool Inclusive
         : checked(End - Start + (Inclusive ? 1 : 0));
 }
 internal readonly record struct CoflowClosureTemplate(CoflowProgram Program, int CaptureCount);
-internal sealed record CoflowClosure(CoflowProgram Program, object?[] Captures);
+internal sealed record CoflowClosure(CoflowProgram Program, object?[] Captures)
+{
+    public TResult Invoke<TResult>(object?[] arguments) =>
+        CoflowFunctionDelegates.Adapt<TResult>(CoflowVm.Execute(
+            Program, arguments.Concat(Captures).ToArray()));
+
+    public void InvokeVoid(object?[] arguments) =>
+        CoflowVm.Execute(Program, arguments.Concat(Captures).ToArray());
+}
 internal readonly record struct CoflowHigherOrderOperation(
     string Name,
     Type ResultType,
@@ -558,6 +566,12 @@ internal static class CoflowVm
                     immediate = delegateSlot.InvokeBoundFromVm(callArguments);
                     return false;
                 }
+                if (CoflowFunctionDelegates.TryGetClosure(implementation, out var delegateClosure))
+                {
+                    target = delegateClosure.Program;
+                    targetArguments = callArguments.Concat(delegateClosure.Captures).ToArray();
+                    goto Schedule;
+                }
                 immediate = implementation.DynamicInvoke(callArguments) ?? Unit.Value;
                 return false;
             }
@@ -600,6 +614,12 @@ internal static class CoflowVm
                         goto Replace;
                     immediate = delegateSlot.InvokeBoundFromVm(callArguments);
                     return false;
+                }
+                if (CoflowFunctionDelegates.TryGetClosure(implementation, out var delegateClosure))
+                {
+                    target = delegateClosure.Program;
+                    targetArguments = callArguments.Concat(delegateClosure.Captures).ToArray();
+                    goto Replace;
                 }
                 immediate = implementation.DynamicInvoke(callArguments) ?? Unit.Value;
                 return false;
