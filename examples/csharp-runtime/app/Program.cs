@@ -59,6 +59,15 @@ Assert(composed(5) == 40, "mixed host/VM composition returned the wrong result")
 Assert(scenario.Apply(5, composed) == 65,
     "composed higher-order function could not complete a second host/VM round trip");
 
+// Dedicated VM workloads are also used by the runtime benchmark project.
+Assert(scenario.IntegerLoop(1_000) == 499_500, "integer loop returned the wrong result");
+Assert(scenario.DirectCallChain(10) == 14, "direct CFD call chain returned the wrong result");
+Assert(scenario.TailRecursion(1_000) == 0, "tail recursion returned the wrong result");
+Assert(scenario.FieldReadLoop(10) == 190, "generated field loop returned the wrong result");
+Assert(scenario.CollectionPipeline(6) == 30, "collection pipeline returned the wrong result");
+Assert(scenario.HostCall(7) == 7 && traces[^1] == "benchmark",
+    "direct CFD-to-host call returned the wrong result");
+
 // Reload one CFD child module. The root relinks its data and recompiles parent functions.
 var updatedCharacters = charactersSource.Replace("attack: 19", "attack: 20", StringComparison.Ordinal);
 var reload = root.Reload(charactersModule, updatedCharacters);

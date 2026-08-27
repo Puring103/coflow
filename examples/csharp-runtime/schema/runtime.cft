@@ -22,4 +22,12 @@ type Scenario {
   makeScaler: fn(scale: int) -> fn(value: int) -> int;
   apply: fn(value: int, operation: fn(input: int) -> int) -> int;
   compose: fn(first: fn(value: int) -> int, second: fn(value: int) -> int) -> fn(value: int) -> int;
+
+  integerLoop: fn(iterations: int) -> int;
+  increment: fn(value: int) -> int;
+  directCallChain: fn(value: int) -> int;
+  tailRecursion: fn(iterations: int) -> int;
+  fieldReadLoop: fn(iterations: int) -> int;
+  collectionPipeline: fn(value: int) -> int;
+  hostCall: fn(value: int) -> int;
 }

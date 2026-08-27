@@ -76,5 +76,53 @@ Scenario {
         second(first(value))
       }
     },
+
+    integerLoop: fn(iterations: int) -> int {
+      var current = 0;
+      var total = 0;
+      while current < iterations {
+        total += current;
+        current += 1;
+      }
+      total
+    },
+
+    increment: fn(value: int) -> int {
+      value + 1
+    },
+
+    directCallChain: fn(value: int) -> int {
+      increment(increment(increment(increment(value))))
+    },
+
+    tailRecursion: fn(iterations: int) -> int {
+      if iterations <= 0 {
+        0
+      } else {
+        tailRecursion(iterations - 1)
+      }
+    },
+
+    fieldReadLoop: fn(iterations: int) -> int {
+      var current = 0;
+      var total = 0;
+      while current < iterations {
+        total += hero.stats.attack;
+        current += 1;
+      }
+      total
+    },
+
+    collectionPipeline: fn(value: int) -> int {
+      config.samples
+        .map(fn(item: int) -> int { item + value })
+        .filter(fn(item: int) -> bool { item % 2 == 0 })
+        .fold(0, fn(total: int, item: int) -> int { total + item })
+    },
+
+    hostCall: fn(value: int) -> int {
+      &HostServices.trace("benchmark");
+      value
+    },
   }
 }
