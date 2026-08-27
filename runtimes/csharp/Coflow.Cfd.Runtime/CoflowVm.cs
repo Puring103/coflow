@@ -6,6 +6,7 @@ internal enum CoflowOpCode : byte
     Argument,
     Local,
     StoreLocal,
+    LoadField,
     Construct,
     Native,
     Propagate,
@@ -34,8 +35,6 @@ internal enum CoflowOpCode : byte
     BitAnd,
     BitXor,
     BitOr,
-    Equal,
-    NotEqual,
     LessInt,
     LessFloat,
     LessString,
@@ -221,6 +220,9 @@ internal static class CoflowVm
                     case CoflowOpCode.StoreLocal:
                         frame.Locals[instruction.Operand] = Pop();
                         break;
+                    case CoflowOpCode.LoadField:
+                        Push(((CoflowFieldAccess)frame.Program.Constants[instruction.Operand]!).Read(Pop()!));
+                        break;
                     case CoflowOpCode.Construct:
                         Push(((Func<object?, object?>)frame.Program.Constants[instruction.Operand]!)(Pop()));
                         break;
@@ -336,20 +338,6 @@ internal static class CoflowVm
                         var right = (string)Pop()!;
                         var left = (string)Pop()!;
                         Push(left + right);
-                        break;
-                    }
-                    case CoflowOpCode.Equal:
-                    {
-                        var right = Pop();
-                        var left = Pop();
-                        Push(Equals(left, right));
-                        break;
-                    }
-                    case CoflowOpCode.NotEqual:
-                    {
-                        var right = Pop();
-                        var left = Pop();
-                        Push(!Equals(left, right));
                         break;
                     }
                     case CoflowOpCode.LessInt: CompareLong((left, right) => left < right); break;

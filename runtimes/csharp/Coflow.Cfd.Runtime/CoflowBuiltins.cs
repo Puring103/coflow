@@ -55,7 +55,8 @@ internal static class CoflowBuiltinLibrary
                 Builtin(typeof(bool), values => string.IsNullOrWhiteSpace((string)values[0]!)),
             "matches" when receiver == typeof(string) && Matches(arguments, typeof(string)) =>
                 Builtin(typeof(bool), values => RegexCache.GetOrAdd((string)values[1]!,
-                    static pattern => new Regex(pattern, RegexOptions.CultureInvariant)).IsMatch((string)values[0]!)),
+                    static pattern => new Regex(TranslateRustRegex(pattern), RegexOptions.CultureInvariant))
+                    .IsMatch((string)values[0]!)),
             "abs" when receiver == typeof(long) && arguments.Count == 0 =>
                 Builtin(typeof(long), values => checked(Math.Abs((long)values[0]!))),
             "abs" when receiver == typeof(double) && arguments.Count == 0 =>
@@ -82,7 +83,67 @@ internal static class CoflowBuiltinLibrary
         };
     }
 
+    internal static void ValidateRegexPattern(string pattern)
+    {
+        try
+        {
+            RegexCache.GetOrAdd(pattern, static source => new Regex(
+                TranslateRustRegex(source), RegexOptions.CultureInvariant));
+        }
+        catch (ArgumentException error)
+        {
+            throw new ArgumentException($"invalid Rust regex pattern: {error.Message}", error);
+        }
+    }
+
     private static CoflowBuiltin Builtin(Type result, Func<object?[], object?> invoke) => new(result, invoke);
+
+    private static string TranslateRustRegex(string pattern)
+    {
+        var translated = new System.Text.StringBuilder(pattern.Length);
+        var escaped = false;
+        var characterClass = false;
+        for (var index = 0; index < pattern.Length; index++)
+        {
+            var current = pattern[index];
+            if (escaped)
+            {
+                if (!characterClass && (char.IsDigit(current) || current == 'k'))
+                    throw new ArgumentException("backreferences are not supported by Rust regex");
+                translated.Append(current);
+                escaped = false;
+                continue;
+            }
+            if (current == '\\')
+            {
+                translated.Append(current);
+                escaped = true;
+                continue;
+            }
+            if (current == '[') characterClass = true;
+            else if (current == ']' && characterClass) characterClass = false;
+            if (!characterClass && current == '(' && index + 2 < pattern.Length && pattern[index + 1] == '?')
+            {
+                var marker = pattern[index + 2];
+                if (marker is '=' or '!' or '<' or '>' or '(')
+                    throw new ArgumentException(
+                        "lookaround, atomic, conditional, and balancing groups are not supported by Rust regex");
+                if (marker == 'P' && index + 3 < pattern.Length && pattern[index + 3] == '<')
+                {
+                    var nameEnd = pattern.IndexOf('>', index + 4);
+                    if (nameEnd < 0) throw new ArgumentException("unterminated named capture group");
+                    translated.Append("(?:");
+                    index = nameEnd;
+                    continue;
+                }
+                if (marker != ':' && marker is not ('i' or 'm' or 's' or 'x' or '-'))
+                    throw new ArgumentException($"group construct `(?{marker}` is not supported by Rust regex");
+            }
+            translated.Append(current);
+        }
+        if (escaped) throw new ArgumentException("unterminated escape");
+        return translated.ToString();
+    }
 
     private static CoflowBuiltin Generic(string method, Type[] types, Type result)
     {

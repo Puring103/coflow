@@ -293,12 +293,21 @@ public sealed class CfdLoadContext
             if (node is null)
                 throw Error("CFD-REF-MISSING", $"CFD reference `{key}` could not be resolved as `{declaredType}`");
 
+            if (_cache.TryGetValue((node.DeclaredType, key), out var actualCached))
+            {
+                if (actualCached is not T actualTyped)
+                    throw Error("CFD-REF-TYPE", $"CFD reference `{key}` is not a `{typeof(T).Name}`");
+                _cache[(declaredType, key)] = actualTyped;
+                return actualTyped;
+            }
+
             var binding = Bindings.TryGetValue(node.DeclaredType, out var selected)
                 ? selected
                 : throw Error("CFD-REF-UNKNOWN-TYPE", $"CFD reference `{key}` uses unknown type `{node.DeclaredType}`");
             var value = WithRecordPath(node, () => binding.Read(node, this));
             if (value is not T typed)
                 throw Error("CFD-REF-TYPE", $"CFD reference `{key}` produced an incompatible `{typeof(T).Name}` value");
+            _cache[(node.DeclaredType, key)] = typed;
             _cache[(declaredType, key)] = typed;
             return typed;
         }
