@@ -1037,6 +1037,20 @@ public sealed class CoflowDataTests
     }
 
     [Fact]
+    public void VmClosuresAreAdaptedForStronglyTypedHostFunctionParameters()
+    {
+        using var data = Coflow.LoadAndCompile(new[]
+        {
+            "Rule { host { evaluate: fn(value: int) -> int { &HostServices.adjust(value, fn(item: int) -> int { item * 3 }) } } }",
+        }, new TestModule(new RuleMetadata(), new HostServicesMetadata()));
+        var services = data.Singleton<HostServices>();
+        Assert.True(services.Bind("test", _ => { },
+            (value, operation) => operation(value + 1) + 2).IsOk);
+
+        Assert.Equal(14, data.Table<Rule>().Get("host").Value.Evaluate(3));
+    }
+
+    [Fact]
     public void NamespacesAndUsesApplyInsideCompiledFunctions()
     {
         var module = new TestModule(
@@ -1329,12 +1343,14 @@ public sealed class CoflowDataTests
     {
         internal readonly CoflowHostSlot _host;
         internal readonly CoflowFunctionSlot _log;
+        internal readonly CoflowFunctionSlot _adjust;
         internal string _environment = string.Empty;
 
-        internal HostServices(CoflowHostSlot host, CoflowFunctionSlot log)
+        internal HostServices(CoflowHostSlot host, CoflowFunctionSlot log, CoflowFunctionSlot adjust)
         {
             _host = host;
             _log = log;
+            _adjust = adjust;
         }
 
         public string Environment
@@ -1353,9 +1369,16 @@ public sealed class CoflowDataTests
         }
 
         public Result<Unit, HostBindError> Bind(string environment, Action<string> log) =>
+            Bind(environment, log, static (value, operation) => operation(value));
+
+        public Result<Unit, HostBindError> Bind(
+            string environment,
+            Action<string> log,
+            Func<long, Func<long, long>, long> adjust) =>
             _host.Bind(
                 () => _environment = environment,
-                new CoflowHostFunctionBinding(_log, log));
+                new CoflowHostFunctionBinding(_log, log),
+                new CoflowHostFunctionBinding(_adjust, adjust));
     }
 
     private sealed record ValueRecord(
@@ -1659,17 +1682,19 @@ public sealed class CoflowDataTests
         public override string DeclaredType => "HostServices";
         public override bool IsSingleton => true;
         public override bool IsHost => true;
-        public override IReadOnlyList<string> FieldNames => new[] { "environment", "log" };
+        public override IReadOnlyList<string> FieldNames => new[] { "environment", "log", "adjust" };
         public override Type GetFieldType(string fieldName) => fieldName switch
         {
             "environment" => typeof(string),
             "log" => typeof(CoflowFunctionSlot),
+            "adjust" => typeof(CoflowFunctionSlot),
             _ => throw new ArgumentException(nameof(fieldName)),
         };
         public override object GetField(object record, string fieldName) => fieldName switch
         {
             "environment" => ((HostServices)record).Environment,
             "log" => ((HostServices)record)._log,
+            "adjust" => ((HostServices)record)._adjust,
             _ => throw new ArgumentException(nameof(fieldName)),
         };
 
@@ -1678,7 +1703,8 @@ public sealed class CoflowDataTests
             using var scope = context.EnterRecord(DeclaredType, string.Empty);
             return new HostServices(
                 context.Host(),
-                context.Function(null, "log", typeof(Unit), typeof(string)));
+                context.Function(null, "log", typeof(Unit), typeof(string)),
+                context.Function(null, "adjust", typeof(long), typeof(long), typeof(Func<long, long>)));
         }
 
         public override void TransferHostState(object source, object target)

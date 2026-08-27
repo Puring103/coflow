@@ -143,6 +143,24 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void LoadParserPreservesFunctionsReturningFunctions()
+    {
+        var document = CfdParser.Parse(new CfdSource("rules.cfd", """
+            Rule {
+              higherOrder {
+                make: fn(scale: int) -> fn(int) -> int {
+                  fn(value: int) -> int { value * scale }
+                },
+              }
+            }
+            """));
+
+        var function = Assert.IsType<CfdFunctionValue>(document.Records[0].Fields[0].Value);
+        Assert.Contains("-> fn(int) -> int", function.Source);
+        Assert.Contains("value * scale", function.Source);
+    }
+
+    [Fact]
     public void ParsesExplicitOptionAndResultConstructorsAndRejectsNull()
     {
         var document = CfdParser.Parse(new CfdSource("values.cfd",

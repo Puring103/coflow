@@ -284,6 +284,16 @@ public sealed class CoflowFunctionSlot
 
     public void InvokeVoid(params object?[] arguments) => InvokeCore(arguments);
 
+    private static object? InvokeAdapted(Delegate implementation, object?[] arguments)
+    {
+        var parameterTypes = implementation.GetType().GetMethod("Invoke")!.GetParameters();
+        var adaptedArguments = new object?[arguments.Length];
+        for (var index = 0; index < arguments.Length; index++)
+            adaptedArguments[index] = CoflowFunctionDelegates.Adapt(
+                parameterTypes[index].ParameterType, arguments[index]);
+        return implementation.DynamicInvoke(adaptedArguments);
+    }
+
     private object? InvokeCore(object?[] arguments)
     {
         CoflowProgram? compiled;
@@ -299,7 +309,7 @@ public sealed class CoflowFunctionSlot
         {
             try
             {
-                return implementation.DynamicInvoke(arguments);
+                return InvokeAdapted(implementation, arguments);
             }
             catch (Exception error)
             {
@@ -353,7 +363,7 @@ public sealed class CoflowFunctionSlot
         {
             try
             {
-                return implementation.DynamicInvoke(arguments);
+                return InvokeAdapted(implementation, arguments);
             }
             catch (Exception error)
             {

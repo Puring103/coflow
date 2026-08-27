@@ -1,0 +1,25 @@
+namespace integration::domain;
+
+enum CharacterId {}
+
+sealed type Stats {
+  health: int;
+  attack: int;
+  resistances: {string: int};
+}
+
+sealed type ScenarioConfig {
+  label: string;
+  samples: [int];
+  checkpoints: {string: Stats};
+  optionalBonus: Option<Stats>;
+  validation: Result<Option<Stats>, string>;
+}
+
+@idAsEnum(CharacterId)
+type Character {
+  stats: Stats;
+  tags: [string];
+  attributes: {string: int};
+  fallback: Option<&Character> = None;
+}

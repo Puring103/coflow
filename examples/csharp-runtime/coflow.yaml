@@ -1,0 +1,7 @@
+schema: schema/
+data:
+  - data/characters.cfd
+codegen:
+  - language: csharp
+    dir: generated
+    namespace: Integration.Config

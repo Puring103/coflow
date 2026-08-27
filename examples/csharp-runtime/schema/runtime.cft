@@ -1,0 +1,25 @@
+namespace integration::runtime;
+
+use integration::domain::Character;
+use integration::domain::ScenarioConfig;
+
+@Host
+@singleton
+type HostServices {
+  environment: string;
+  trace: fn(string) -> ();
+  adjust: fn(int, fn(int) -> int) -> int;
+  decorate: fn(string) -> string;
+}
+
+type Scenario {
+  hero: &Character;
+  config: ScenarioConfig;
+  stages: [fn(int) -> int];
+
+  execute: fn(int) -> int;
+  callHost: fn(int) -> int;
+  makeScaler: fn(int) -> fn(int) -> int;
+  apply: fn(int, fn(int) -> int) -> int;
+  compose: fn(fn(int) -> int, fn(int) -> int) -> fn(int) -> int;
+}

@@ -1,0 +1,80 @@
+namespace integration::runtime;
+
+use integration::domain::Character;
+use integration::domain::Stats;
+use integration::domain::ScenarioConfig;
+
+Scenario {
+  fullRoundTrip {
+    hero: &Character::arcanist,
+    config: ScenarioConfig {
+      label: "higher-order",
+      samples: [2, 4, 6],
+      checkpoints: {
+        "start": Stats {
+          health: 100,
+          attack: 10,
+          resistances: { "fire": 1 },
+        },
+        "finish": Stats {
+          health: 60,
+          attack: 25,
+          resistances: { "ice": 5 },
+        },
+      },
+      optionalBonus: Some(Stats {
+        health: 3,
+        attack: 5,
+        resistances: { "arcane": 11 },
+      }),
+      validation: Ok(Some(Stats {
+        health: 1,
+        attack: 2,
+        resistances: {},
+      })),
+    },
+    stages: [
+      fn(value: int) -> int { value + 3 },
+      fn(value: int) -> int { value * 2 },
+    ],
+
+    execute: fn(value: int) -> int {
+      &HostServices.trace(&HostServices.decorate(config.label));
+      var stageTotal = stages.map(fn(stage: fn(int) -> int) -> int {
+        stage(value)
+      }).sum();
+      var sampleTotal = config.samples.map(fn(sample: int) -> int {
+        sample + hero.stats.attack
+      }).sum();
+      stageTotal + sampleTotal
+    },
+
+    callHost: fn(value: int) -> int {
+      &HostServices.adjust(value, fn(item: int) -> int {
+        match hero.attributes["rarity"] {
+          Some(rarity) => item * rarity,
+          None => 0,
+        }
+      })
+    },
+
+    makeScaler: fn(scale: int) -> fn(int) -> int {
+      fn(value: int) -> int {
+        value * scale + hero.stats.attack
+      }
+    },
+
+    apply: fn(value: int, operation: fn(int) -> int) -> int {
+      match config.checkpoints["finish"] {
+        Some(checkpoint) => operation(value) + checkpoint.attack,
+        None => operation(value),
+      }
+    },
+
+    compose: fn(first: fn(int) -> int, second: fn(int) -> int) -> fn(int) -> int {
+      fn(value: int) -> int {
+        second(first(value))
+      }
+    },
+  }
+}
