@@ -24,6 +24,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
       - name: Validate release version
         shell: pwsh
         run: |
@@ -55,6 +60,19 @@ jobs:
 
       - name: Test workspace
         run: cargo test --workspace
+
+      - name: Test C# runtime
+        run: dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj --configuration Release
+
+      - name: Build all C# runtime targets
+        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj --configuration Release
+
+      - name: Regenerate and run C# integration
+        shell: pwsh
+        run: |
+          cargo run -- codegen examples/csharp-runtime
+          dotnet run --project examples/csharp-runtime/app/Coflow.Runtime.Example.csproj --configuration Release
+          dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release
 
       - name: Check TypeScript bindings
         shell: pwsh

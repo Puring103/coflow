@@ -267,11 +267,12 @@ fn rust_runtime_rejects_dimension_record_type_mismatches_like_csharp() {
     else {
         panic!("dimension type diagnostic should point into the overlay CFD");
     };
-    assert_eq!(
-        path,
-        &dir.path()
-            .join("data/dimensions/language/UiText_welcome.cfd")
-    );
+    let expected_path = fs::canonicalize(
+        dir.path()
+            .join("data/dimensions/language/UiText_welcome.cfd"),
+    )
+    .expect("canonical dimension CFD path");
+    assert_eq!(path, &expected_path);
     assert_eq!((*start_line, *start_character), (0, 6));
     assert_eq!((*end_line, *end_character), (0, 11));
 }

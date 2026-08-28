@@ -6,47 +6,46 @@ using System.Diagnostics.CodeAnalysis;
 internal static class CoflowCompiler
 {
     internal static void Compile(
-        IReadOnlyList<CoflowFunctionSlot> slots,
+        IReadOnlyList<CoflowFunctionEntry> entries,
         ICoflowGeneratedContract module,
         IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
-        CfdLoadContext context,
-        CoflowGenerationStorage storage)
+        CfdLoadContext context)
     {
-        var compiled = new List<(CoflowFunctionSlot Slot, CoflowProgram? Body)>();
+        var compiled = new List<(CoflowFunctionEntry Entry, CoflowProgram? Body)>();
         var diagnostics = new List<CfdDiagnostic>();
-        foreach (var slot in slots)
+        foreach (var entry in entries)
         {
-            if (slot.Source is null)
+            if (entry.Source is null)
             {
-                if (slot.RequiresCfdBody)
+                if (entry.RequiresCfdBody)
                 {
                     diagnostics.Add(new CfdDiagnostic(
                         "COFLOW-FUNCTION-MISSING",
-                        $"{slot.Identity.DeclaredType}.{slot.Identity.RecordKey}.{slot.Identity.FieldName}: ordinary functions require a CFD body",
-                        slot.SourcePath,
-                        slot.SourceSpan));
+                        $"{entry.Identity.DeclaredType}.{entry.Identity.RecordKey}.{entry.Identity.FieldName}: ordinary functions require a CFD body",
+                        entry.SourcePath,
+                        entry.SourceSpan));
                     continue;
                 }
-                compiled.Add((slot, null));
+                compiled.Add((entry, null));
                 continue;
             }
             try
             {
-                compiled.Add((slot, new FunctionParser(slot, module, records, context, storage).Parse()));
+                compiled.Add((entry, new FunctionParser(entry, module, records, context).Parse()));
             }
             catch (FunctionCompileException error)
             {
                 diagnostics.Add(new CfdDiagnostic(
                     error.Code,
-                    $"{slot.Identity.DeclaredType}.{slot.Identity.RecordKey}.{slot.Identity.FieldName}: {error.Message}",
-                    slot.SourcePath,
+                    $"{entry.Identity.DeclaredType}.{entry.Identity.RecordKey}.{entry.Identity.FieldName}: {error.Message}",
+                    entry.SourcePath,
                     error.Offset is { } offset
-                        ? FunctionSpan(slot.Source, offset)
-                        : slot.Source.Span));
+                        ? FunctionSpan(entry.Source, offset)
+                        : entry.Source.Span));
             }
         }
         if (diagnostics.Count != 0) throw new CoflowLoadException(diagnostics);
-        foreach (var item in compiled) item.Slot.PublishCompiled(item.Body);
+        foreach (var item in compiled) item.Entry.PublishCompiled(item.Body);
     }
 
     private static CfdSpan FunctionSpan(CfdFunctionValue function, int offset)
@@ -142,13 +141,12 @@ internal static class CoflowCompiler
     private sealed class FunctionParser
     {
         private const int MaximumParseDepth = 128;
-        private readonly CoflowFunctionSlot _slot;
+        private readonly CoflowFunctionEntry _entry;
         private readonly IReadOnlyDictionary<(string DeclaredType, string Key), object> _records;
         private readonly IReadOnlyDictionary<string, ICoflowTypeMetadata> _metadata;
         private readonly IReadOnlyDictionary<string, ICoflowEnumMetadata> _enums;
         private readonly IReadOnlyDictionary<string, CoflowConstant> _declaredConstants;
         private readonly CfdLoadContext _context;
-        private readonly CoflowGenerationStorage _storage;
         private readonly HashSet<string> _ownerFieldNames;
         private readonly Dictionary<Type, string> _generatedNames;
         private readonly CfdNameResolver _names;
@@ -171,29 +169,27 @@ internal static class CoflowCompiler
         private int _unaryDepth;
 
         internal FunctionParser(
-            CoflowFunctionSlot slot,
+            CoflowFunctionEntry entry,
             ICoflowGeneratedContract module,
             IReadOnlyDictionary<(string DeclaredType, string Key), object> records,
-            CfdLoadContext context,
-            CoflowGenerationStorage storage)
+            CfdLoadContext context)
         {
-            _slot = slot;
+            _entry = entry;
             _records = records;
             _context = context;
-            _storage = storage;
             _metadata = module.Types.ToDictionary(item => item.DeclaredType, StringComparer.Ordinal);
             _enums = module.Enums.ToDictionary(item => item.DeclaredType, StringComparer.Ordinal);
             _declaredConstants = module.Constants.ToDictionary(
                 item => item.DeclaredName, StringComparer.Ordinal);
-            _ownerFieldNames = _metadata.TryGetValue(slot.Identity.DeclaredType, out var owner)
+            _ownerFieldNames = _metadata.TryGetValue(entry.Identity.DeclaredType, out var owner)
                 ? owner.FieldNames.ToHashSet(StringComparer.Ordinal)
                 : new HashSet<string>(StringComparer.Ordinal);
             _generatedNames = module.Types
                 .Select(item => (item.RuntimeType, item.DeclaredType))
                 .Concat(module.Enums.Select(item => (item.RuntimeType, item.DeclaredType)))
                 .ToDictionary(item => item.RuntimeType, item => item.DeclaredType);
-            _names = slot.Names;
-            _tokens = Lex(slot.Source!.Source);
+            _names = entry.Names;
+            _tokens = Lex(entry.Source!.Source);
         }
 
         internal CoflowProgram Parse()
@@ -208,10 +204,10 @@ internal static class CoflowCompiler
                     var name = ExpectBindingIdentifier("expected a parameter name").Text;
                     Expect(TokenKind.Colon, "expected `:` after the parameter name");
                     var declaredName = ParseTypeName();
-                    if (parameterIndex >= _slot.Signature.ParameterTypes.Count)
+                    if (parameterIndex >= _entry.Signature.ParameterTypes.Count)
                         Error("COFLOW-FUNCTION-SIGNATURE", "CFD function declares too many parameters");
                     var declared = ResolveTypeName(declaredName);
-                    var expectedType = _slot.Signature.ParameterTypes[parameterIndex];
+                    var expectedType = _entry.Signature.ParameterTypes[parameterIndex];
                     var expected = FormatType(expectedType);
                     if (declared != expectedType)
                         Error("COFLOW-FUNCTION-SIGNATURE",
@@ -222,31 +218,32 @@ internal static class CoflowCompiler
                 } while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightParen, "expected `)` after function parameters");
             }
-            if (parameterIndex != _slot.Signature.ParameterTypes.Count)
+            if (parameterIndex != _entry.Signature.ParameterTypes.Count)
                 Error("COFLOW-FUNCTION-SIGNATURE",
-                    $"CFD function declares {parameterIndex} parameters but CFT requires {_slot.Signature.ParameterTypes.Count}");
+                    $"CFD function declares {parameterIndex} parameters but CFT requires {_entry.Signature.ParameterTypes.Count}");
             Expect(TokenKind.Arrow, "expected `->` after function parameters");
             var resultName = ParseTypeName();
-            var expectedResult = FormatType(_slot.Signature.ResultType);
-            _returnType = _slot.Signature.ResultType;
-            if (ResolveTypeName(resultName) != _slot.Signature.ResultType)
+            var expectedResult = FormatType(_entry.Signature.ResultType);
+            _returnType = _entry.Signature.ResultType;
+            if (ResolveTypeName(resultName) != _entry.Signature.ResultType)
                 Error("COFLOW-FUNCTION-SIGNATURE",
                     $"function returns `{resultName}` but CFT requires `{expectedResult}`");
             Expect(TokenKind.LeftBrace, "expected a function body");
-            var expression = ParseBlockContents().WithExpected(_slot.Signature.ResultType, this);
+            var expression = ParseBlockContents().WithExpected(_entry.Signature.ResultType, this);
             Expect(TokenKind.End, "unexpected content after the function body");
-            if (expression.Type != _slot.Signature.ResultType && !expression.AlwaysTerminates)
+            if (expression.Type != _entry.Signature.ResultType && !expression.AlwaysTerminates)
                 Error("COFLOW-FUNCTION-RETURN",
                     $"body has type `{FormatType(expression.Type)}` but function returns `{expectedResult}`");
             expression.EmitTail(this);
             return new CoflowProgram(
-                _slot.Identity,
-                _slot.SourcePath,
-                _slot.SourceSpan,
+                _entry.Identity,
+                _entry.SourcePath,
+                _entry.SourceSpan,
                 _instructions,
                 _instructionSpans,
                 _constants,
-                parameterIndex,
+                _entry.Signature.ParameterTypes,
+                _entry.Signature.ResultType,
                 _localCount);
         }
 
@@ -674,16 +671,14 @@ internal static class CoflowCompiler
             {
                 if (!_returnType.IsGenericType || _returnType.GetGenericTypeDefinition() != typeof(Option<>))
                     Error("COFLOW-FUNCTION-PROPAGATE", "Option can only propagate from an Option-returning function");
-                return new PropagateExpr(operand, arguments[0],
-                    ValueFactories.OptionPropagation(arguments[0], _returnType.GetGenericArguments()[0]));
+                return new PropagateExpr(operand, arguments[0]);
             }
             if (definition == typeof(Result<,>))
             {
                 if (!_returnType.IsGenericType || _returnType.GetGenericTypeDefinition() != typeof(Result<,>) ||
                     _returnType.GetGenericArguments()[1] != arguments[1])
                     Error("COFLOW-FUNCTION-PROPAGATE", "Result can only propagate to a Result with the same error type");
-                return new PropagateExpr(operand, arguments[0],
-                    ValueFactories.ResultPropagation(arguments[0], arguments[1], _returnType.GetGenericArguments()[0]));
+                return new PropagateExpr(operand, arguments[0]);
             }
             return Invalid();
 
@@ -702,7 +697,7 @@ internal static class CoflowCompiler
                     $"type `{FormatType(receiver.Type)}` has no field `{fieldName}`");
             var resolved = metadata!;
             return new FieldExpr(receiver, resolved.GetFieldType(fieldName),
-                _storage.BindField(resolved, fieldName));
+                CoflowFieldAccess.Bind(resolved, fieldName));
         }
 
         private Expr ParseCall(Expr target)
@@ -779,7 +774,7 @@ internal static class CoflowCompiler
                         var enumInteger = ParseExpression().WithExpected(typeof(long), this);
                         Expect(TokenKind.RightParen, "expected `)` after enum integer value");
                         return new ConversionExpr(enumInteger, enumConstructor.RuntimeType,
-                            value => enumConstructor.FromInt64((long)value!));
+                            CoflowOpCode.Reinterpret);
                     }
                     if (_lambdaContexts.TryPeek(out var lambda) &&
                         lambda.Parameters.TryGetValue(token.Text, out var lambdaParameter))
@@ -799,16 +794,16 @@ internal static class CoflowCompiler
                         return lambda is null ? argument : lambda.Capture($"A:{parameter.Index}", argument);
                     }
                     if (_records.TryGetValue(
-                            (_slot.Identity.DeclaredType, _slot.Identity.RecordKey), out var owner) &&
-                        _metadata.TryGetValue(_slot.Identity.DeclaredType, out var ownerMetadata) &&
+                            (_entry.Identity.DeclaredType, _entry.Identity.RecordKey), out var owner) &&
+                        _metadata.TryGetValue(_entry.Identity.DeclaredType, out var ownerMetadata) &&
                         ownerMetadata.FieldNames.Contains(token.Text, StringComparer.Ordinal))
                     {
-                        if (ownerMetadata.GetFieldType(token.Text) == typeof(CoflowFunctionSlot))
-                            return new FunctionReferenceExpr((CoflowFunctionSlot)ownerMetadata.GetField(owner, token.Text));
+                        if (ownerMetadata.GetFieldType(token.Text) == typeof(CoflowFunctionEntry))
+                            return new FunctionReferenceExpr((CoflowFunctionEntry)ownerMetadata.GetField(owner, token.Text));
                         return new FieldExpr(
                             new ConstantExpr(owner, ownerMetadata.RuntimeType),
                             ownerMetadata.GetFieldType(token.Text),
-                            _storage.BindField(ownerMetadata, token.Text));
+                            CoflowFieldAccess.Bind(ownerMetadata, token.Text));
                     }
                     if (_declaredConstants.TryGetValue(_names.Resolve(token.Text), out var constant))
                         return new ConstantExpr(_context.ResolveConstant(constant), constant.RuntimeType);
@@ -857,7 +852,7 @@ internal static class CoflowCompiler
 
         private bool SupportsEquality(Type type, HashSet<Type> visiting)
         {
-            if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionSlot))
+            if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionEntry))
                 return false;
             var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == type);
             if (metadata is not null)
@@ -883,12 +878,12 @@ internal static class CoflowCompiler
             if (type == typeof(long) || type == typeof(double) || type == typeof(bool) ||
                 type == typeof(string) || type == typeof(Unit) || type.IsEnum)
                 return true;
-            if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionSlot))
+            if (typeof(Delegate).IsAssignableFrom(type) || type == typeof(CoflowFunctionEntry))
                 return false;
             var metadata = _metadata.Values.FirstOrDefault(item => item.RuntimeType == type);
             if (metadata is not null)
             {
-                if (metadata.IsRecord || !visiting.Add(type)) return true;
+                if (metadata is ICoflowRecordMetadata || !visiting.Add(type)) return true;
                 var result = metadata.FieldNames.All(field =>
                     IsInterpolatable(metadata.GetFieldType(field), visiting));
                 visiting.Remove(type);
@@ -931,9 +926,9 @@ internal static class CoflowCompiler
                 Error("COFLOW-FUNCTION-OBJECT", $"unknown object type `{declaredName}`");
             if (metadata.IsAbstract)
                 Error("COFLOW-FUNCTION-OBJECT", $"abstract type `{declaredName}` cannot be constructed");
-            if (metadata.IsHost || metadata.IsSingleton)
+            if (metadata is ICoflowHostMetadata || metadata.IsSingleton)
                 Error("COFLOW-FUNCTION-OBJECT", $"singleton type `{declaredName}` cannot be constructed as a value");
-            if (metadata.FieldNames.Any(field => metadata.GetFieldType(field) == typeof(CoflowFunctionSlot)))
+            if (metadata.FieldNames.Any(field => metadata.GetFieldType(field) == typeof(CoflowFunctionEntry)))
                 Error("COFLOW-FUNCTION-OBJECT", $"type `{declaredName}` has function fields and cannot be constructed as an object");
 
             Expect(TokenKind.LeftBrace, "expected `{` after an object type");
@@ -947,7 +942,7 @@ internal static class CoflowCompiler
                 if (!metadata.FieldNames.Contains(field.Text, StringComparer.Ordinal))
                     Error("COFLOW-FUNCTION-OBJECT", $"type `{declaredName}` has no field `{field.Text}`");
                 var fieldType = metadata.GetFieldType(field.Text);
-                if (fieldType == typeof(CoflowFunctionSlot))
+                if (fieldType == typeof(CoflowFunctionEntry))
                     Error("COFLOW-FUNCTION-OBJECT", $"function field `{field.Text}` cannot be supplied by an object constructor");
                 Expect(TokenKind.Colon, "expected `:` after an object field name");
                 fields.Add((field.Text, ParseExpression().WithExpected(fieldType, this)));
@@ -960,7 +955,7 @@ internal static class CoflowCompiler
             }
             foreach (var field in metadata.FieldNames)
             {
-                if (metadata.GetFieldType(field) != typeof(CoflowFunctionSlot) &&
+                if (metadata.GetFieldType(field) != typeof(CoflowFunctionEntry) &&
                     !seen.Contains(field) &&
                     !metadata.HasFieldDefault(field))
                     Error("COFLOW-FUNCTION-OBJECT", $"object `{declaredName}` is missing required field `{field}`");
@@ -973,11 +968,11 @@ internal static class CoflowCompiler
             var name = Expect(TokenKind.Identifier, "expected metadata name after `$`").Text;
             var value = name switch
             {
-                "id" => _slot.Identity.RecordKey,
-                "path" => $"{_slot.Identity.DeclaredType}::{_slot.Identity.RecordKey}",
-                "type" => _slot.Identity.DeclaredType,
-                "field" => _slot.Identity.FieldName,
-                "function" => _slot.Identity.FieldName,
+                "id" => _entry.Identity.RecordKey,
+                "path" => $"{_entry.Identity.DeclaredType}::{_entry.Identity.RecordKey}",
+                "type" => _entry.Identity.DeclaredType,
+                "field" => _entry.Identity.FieldName,
+                "function" => _entry.Identity.FieldName,
                 _ => null,
             };
             if (value is null)
@@ -994,24 +989,8 @@ internal static class CoflowCompiler
                     receiver.Type.IsAssignableFrom(item.RuntimeType)))
                 Error("COFLOW-FUNCTION-METADATA",
                     $"`${name}` requires a generated record receiver");
-            return new TransformExpr(receiver, typeof(string), value =>
-            {
-                var actual = value ?? throw new InvalidOperationException("record metadata receiver is null");
-                var metadata = _metadata.Values.SingleOrDefault(item => item.RuntimeType == actual.GetType())
-                    ?? throw new InvalidOperationException(
-                        $"generated record type `{actual.GetType()}` has no Coflow metadata");
-                var key = RenderRecordKey(metadata.GetKey(actual));
-                return name == "id" ? key : $"{metadata.DeclaredType}::{key}";
-            });
-        }
-
-        private string RenderRecordKey(object key)
-        {
-            if (key is string text) return text;
-            var metadata = _enums.Values.SingleOrDefault(item => item.RuntimeType == key.GetType())
-                ?? throw new InvalidOperationException(
-                    $"generated record key type `{key.GetType()}` has no enum metadata");
-            return metadata.Variants.Single(pair => Equals(pair.Value, key)).Key;
+            return new TransformExpr(receiver, typeof(string),
+                CoflowFormatting.RecordMetadata(name, _metadata, _enums));
         }
 
         private Expr ParseStaticValue(Token first)
@@ -1051,13 +1030,13 @@ internal static class CoflowCompiler
             var result = target == "int" ? typeof(long) : typeof(double);
             if (value.Type is not null && value.Type != typeof(long) && value.Type != typeof(double))
                 Error("COFLOW-FUNCTION-TYPE", $"{target} conversion requires int or float");
-            Func<object?, object?> convert = (value.Type, result) switch
+            var convert = (value.Type, result) switch
             {
-                (var source, var destination) when source == destination => static value => value,
-                (var source, _) when source == typeof(long) => static value => (double)(long)value!,
-                _ => static value => checked((long)(double)value!),
+                (var source, var destination) when source == destination => CoflowOpCode.Reinterpret,
+                (var source, _) when source == typeof(long) => CoflowOpCode.ConvertIntToFloat,
+                _ => CoflowOpCode.ConvertFloatToInt,
             };
-            return new ConversionExpr(value, result, convert);
+            return ConversionExpr.Create(value, result, convert);
         }
 
         private Expr ParseAnonymousFunction()
@@ -1207,7 +1186,10 @@ internal static class CoflowCompiler
                 }
                 arms.Add(new MatchArm(pattern, bindingLocal, body));
                 if (!Match(TokenKind.Comma))
+                {
                     Expect(TokenKind.RightBrace, "expected `,` or `}` after match arm");
+                    break;
+                }
                 else if (Match(TokenKind.RightBrace))
                     break;
             }
@@ -1281,7 +1263,7 @@ internal static class CoflowCompiler
                     if (!subjectType.IsAssignableFrom(generated.RuntimeType))
                         Error("COFLOW-FUNCTION-TYPE", $"type pattern `{typeName}` is not assignable to match subject");
                     return new MatchPattern($"type:{typeName}", false, binding, generated.RuntimeType,
-                        value => value is not null && generated.RuntimeType.IsInstanceOfType(value), static value => value);
+                        TypeTarget: generated.RuntimeType);
                 }
 
                 if (segments.Count > 1)
@@ -1375,12 +1357,12 @@ internal static class CoflowCompiler
                 Error("COFLOW-FUNCTION-REFERENCE", $"record reference `{key}.{fieldName}` is ambiguous");
             var match = matches[0];
             var metadata = _metadata[match.Key.DeclaredType];
-            if (metadata.GetFieldType(fieldName) == typeof(CoflowFunctionSlot))
-                return new FunctionReferenceExpr((CoflowFunctionSlot)metadata.GetField(match.Value, fieldName));
+            if (metadata.GetFieldType(fieldName) == typeof(CoflowFunctionEntry))
+                return new FunctionReferenceExpr((CoflowFunctionEntry)metadata.GetField(match.Value, fieldName));
             return new FieldExpr(
                 new ConstantExpr(match.Value, metadata.RuntimeType),
                 metadata.GetFieldType(fieldName),
-                _storage.BindField(metadata, fieldName));
+                CoflowFieldAccess.Bind(metadata, fieldName));
         }
 
         private Expr ParseArrayLiteral()
@@ -1510,7 +1492,7 @@ internal static class CoflowCompiler
                     Error("COFLOW-FUNCTION-TYPE",
                         $"if branches have different types `{FormatType(whenTrue.Type)}` and `{FormatType(whenFalse.Type)}`");
             }
-            return new IfExpr(condition, whenTrue, whenFalse);
+            return IfExpr.Create(condition, whenTrue, whenFalse);
 
             static ResultBranchExpr? ResultBranch(Expr expression) => expression switch
             {
@@ -1603,14 +1585,25 @@ internal static class CoflowCompiler
         private int Emit(CoflowOpCode code, int operand = 0)
         {
             var index = _instructions.Count;
-            _instructions.Add(new CoflowInstruction(code, operand));
-            _instructionSpans.Add(_emissionOffset < 0 || _slot.Source is null
+            _instructions.Add(new CoflowInstruction(code, operand, ValueType: _emissionType));
+            _instructionSpans.Add(_emissionOffset < 0 || _entry.Source is null
                 ? null
-                : FunctionSpan(_slot.Source, _emissionOffset));
+                : FunctionSpan(_entry.Source, _emissionOffset));
+            return index;
+        }
+
+        private int Emit(CoflowOpCode code, int operand, Type valueType)
+        {
+            var index = _instructions.Count;
+            _instructions.Add(new CoflowInstruction(code, operand, ValueType: valueType));
+            _instructionSpans.Add(_emissionOffset < 0 || _entry.Source is null
+                ? null
+                : FunctionSpan(_entry.Source, _emissionOffset));
             return index;
         }
 
         private int _emissionOffset = -1;
+        private Type? _emissionType;
 
         private int SetEmissionOffset(int offset)
         {
@@ -1621,12 +1614,21 @@ internal static class CoflowCompiler
 
         private void RestoreEmissionOffset(int offset) => _emissionOffset = offset;
 
+        private Type? SetEmissionType(Type type)
+        {
+            var previous = _emissionType;
+            _emissionType = type;
+            return previous;
+        }
+
+        private void RestoreEmissionType(Type? type) => _emissionType = type;
+
         private void Patch(int index, int target) => _instructions[index] =
             _instructions[index] with { Operand = target };
 
         private CoflowProgram CompileLambda(
             CoflowFunctionSignature signature,
-            int captureCount,
+            IReadOnlyList<Expr> captures,
             Expr body)
         {
             var outerInstructions = _instructions.ToArray();
@@ -1637,13 +1639,14 @@ internal static class CoflowCompiler
             _constants.Clear();
             body.EmitTail(this);
             var program = new CoflowProgram(
-                _slot.Identity,
-                _slot.SourcePath,
-                _slot.SourceSpan,
+                _entry.Identity,
+                _entry.SourcePath,
+                _entry.SourceSpan,
                 _instructions.ToArray(),
                 _instructionSpans.ToArray(),
                 _constants.ToArray(),
-                signature.ParameterTypes.Count + captureCount,
+                signature.ParameterTypes.Concat(captures.Select(value => value.Type)).ToArray(),
+                signature.ResultType,
                 _localCount);
             _instructions.Clear();
             _instructions.AddRange(outerInstructions);
@@ -1679,7 +1682,7 @@ internal static class CoflowCompiler
                 Error("COFLOW-FUNCTION-NAME", $"`{token.Text}` is reserved and cannot be used as a binding");
             if (_ownerFieldNames.Contains(token.Text))
                 Error("COFLOW-FUNCTION-NAME",
-                    $"binding `{token.Text}` conflicts with a field on `{_slot.Identity.DeclaredType}`");
+                    $"binding `{token.Text}` conflicts with a field on `{_entry.Identity.DeclaredType}`");
         }
         private void ExpectIdentifier(string value)
         {
@@ -1699,14 +1702,24 @@ internal static class CoflowCompiler
             internal void Emit(FunctionParser parser)
             {
                 var previous = parser.SetEmissionOffset(SourceOffset);
+                var previousType = parser.SetEmissionType(Type);
                 try { EmitCore(parser); }
-                finally { parser.RestoreEmissionOffset(previous); }
+                finally
+                {
+                    parser.RestoreEmissionType(previousType);
+                    parser.RestoreEmissionOffset(previous);
+                }
             }
             internal void EmitTail(FunctionParser parser)
             {
                 var previous = parser.SetEmissionOffset(SourceOffset);
+                var previousType = parser.SetEmissionType(Type);
                 try { EmitTailCore(parser); }
-                finally { parser.RestoreEmissionOffset(previous); }
+                finally
+                {
+                    parser.RestoreEmissionType(previousType);
+                    parser.RestoreEmissionOffset(previous);
+                }
             }
             internal abstract void EmitCore(FunctionParser parser);
             internal virtual void EmitTailCore(FunctionParser parser)
@@ -1778,7 +1791,11 @@ internal static class CoflowCompiler
 
         private sealed record RetypedExpr(Expr Value, Type ExpectedType) : Expr(ExpectedType)
         {
-            internal override void EmitCore(FunctionParser parser) => Value.Emit(parser);
+            internal override void EmitCore(FunctionParser parser)
+            {
+                Value.Emit(parser);
+                parser.Emit(CoflowOpCode.Reinterpret, 0, ExpectedType);
+            }
         }
 
         private sealed record InterpolationPart(string? Text, Expr? Value);
@@ -1790,108 +1807,12 @@ internal static class CoflowCompiler
             {
                 var values = Parts.Where(part => part.Value is not null).ToArray();
                 foreach (var part in values) part.Value!.Emit(parser);
-                var metadata = parser._metadata;
-                var enums = parser._enums;
-                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(arguments =>
-                {
-                    var rendered = new System.Text.StringBuilder();
-                    var argument = 0;
-                    foreach (var part in Parts)
-                    {
-                        if (part.Text is not null)
-                            rendered.Append(part.Text);
-                        else
-                        {
-                            var expression = part.Value!;
-                            rendered.Append(RenderInterpolatedValue(
-                                arguments[argument++], expression.Type, metadata, enums, false));
-                        }
-                    }
-                    return rendered.ToString();
-                }, values.Length)));
+                parser.Emit(CoflowOpCode.Native, parser.Constant(CoflowFormatting.Interpolation(
+                    Parts.Select(part => part.Text).ToArray(),
+                    Parts.Select(part => part.Value?.Type).ToArray(),
+                    parser._metadata, parser._enums)));
             }
         }
-
-        private static string RenderInterpolatedValue(
-            object? value,
-            Type type,
-            IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata,
-            IReadOnlyDictionary<string, ICoflowEnumMetadata> enums,
-            bool nested)
-        {
-            if (value is null) throw new InvalidOperationException("Coflow values cannot be null.");
-            if (type == typeof(string))
-                return nested ? $"\"{EscapeInterpolatedString((string)value)}\"" : (string)value;
-            if (type == typeof(long)) return ((long)value).ToString(CultureInfo.InvariantCulture);
-            if (type == typeof(double)) return ((double)value).ToString("R", CultureInfo.InvariantCulture);
-            if (type == typeof(bool)) return (bool)value ? "true" : "false";
-            if (type == typeof(Unit)) return "()";
-            if (type.IsEnum)
-            {
-                var enumMetadata = enums.Values.Single(item => item.RuntimeType == type);
-                return enumMetadata.Variants.FirstOrDefault(item => Equals(item.Value, value)).Key
-                    ?? Convert.ToInt64(value, CultureInfo.InvariantCulture)
-                        .ToString(CultureInfo.InvariantCulture);
-            }
-            if (type.IsGenericType)
-            {
-                var definition = type.GetGenericTypeDefinition();
-                var arguments = type.GetGenericArguments();
-                if (definition == typeof(Option<>))
-                {
-                    var hasValue = (bool)type.GetProperty("HasValue")!.GetValue(value)!;
-                    return hasValue
-                        ? $"Some({RenderInterpolatedValue(type.GetProperty("Value")!.GetValue(value), arguments[0], metadata, enums, true)})"
-                        : "None";
-                }
-                if (definition == typeof(Result<,>))
-                {
-                    var isOk = (bool)type.GetProperty("IsOk")!.GetValue(value)!;
-                    var property = type.GetProperty(isOk ? "Value" : "Error")!;
-                    return $"{(isOk ? "Ok" : "Err")}({RenderInterpolatedValue(property.GetValue(value), arguments[isOk ? 0 : 1], metadata, enums, true)})";
-                }
-                if (definition == typeof(IReadOnlyList<>))
-                {
-                    var items = ((System.Collections.IEnumerable)value).Cast<object?>()
-                        .Select(item => RenderInterpolatedValue(
-                            item, arguments[0], metadata, enums, true));
-                    return $"[{string.Join(", ", items)}]";
-                }
-                if (definition == typeof(IReadOnlyDictionary<,>))
-                {
-                    var entries = ((System.Collections.IEnumerable)value).Cast<object>().Select(entry =>
-                    {
-                        var entryType = entry.GetType();
-                        var key = entryType.GetProperty("Key")!.GetValue(entry);
-                        var item = entryType.GetProperty("Value")!.GetValue(entry);
-                        return $"{RenderInterpolatedValue(key, arguments[0], metadata, enums, true)}: {RenderInterpolatedValue(item, arguments[1], metadata, enums, true)}";
-                    });
-                    return $"{{ {string.Join(", ", entries)} }}";
-                }
-            }
-            var objectMetadata = metadata.Values.SingleOrDefault(item => item.RuntimeType == type)
-                ?? throw new InvalidOperationException($"type `{type}` has no interpolation renderer");
-            if (objectMetadata.IsRecord)
-            {
-                var key = objectMetadata.GetKey(value);
-                var renderedKey = key is string text
-                    ? text
-                    : enums.Values.Single(item => item.RuntimeType == key.GetType())
-                        .Variants.Single(item => Equals(item.Value, key)).Key;
-                if (renderedKey.Length != 0)
-                    return $"&{objectMetadata.DeclaredType}::{renderedKey}";
-            }
-            var fields = objectMetadata.FieldNames.Select(field =>
-                $"{field}: {RenderInterpolatedValue(objectMetadata.GetField(value, field), objectMetadata.GetFieldType(field), metadata, enums, true)}");
-            return $"{objectMetadata.DeclaredType} {{ {string.Join(", ", fields)} }}";
-        }
-
-        private static string EscapeInterpolatedString(string value) => value
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal)
-            .Replace("\n", "\\n", StringComparison.Ordinal)
-            .Replace("\r", "\\r", StringComparison.Ordinal)
-            .Replace("\t", "\\t", StringComparison.Ordinal);
 
         private sealed record ObjectExpr(
             ICoflowTypeMetadata Metadata,
@@ -1907,15 +1828,20 @@ internal static class CoflowCompiler
 
             internal override void EmitCore(FunctionParser parser)
             {
-                foreach (var field in Fields) field.Value.Emit(parser);
-                var names = Fields.Select(field => field.Name).ToArray();
-                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(values =>
+                var supplied = Fields.ToDictionary(field => field.Name, StringComparer.Ordinal);
+                foreach (var name in Metadata.FieldNames)
                 {
-                    var supplied = new Dictionary<string, object?>(StringComparer.Ordinal);
-                    for (var index = 0; index < names.Length; index++)
-                        supplied.Add(names[index], values[index]);
-                    return Metadata.CreateObject(Context, supplied);
-                }, Fields.Count)));
+                    if (Metadata.GetFieldType(name) == typeof(CoflowFunctionEntry)) continue;
+                    if (supplied.TryGetValue(name, out var field)) field.Value.Emit(parser);
+                    else
+                    {
+                        var factory = Metadata.CreateVmDefaultFactory(name, Context);
+                        parser.Emit(CoflowOpCode.Native,
+                            parser.Constant(new CoflowNativeCall(factory)), Metadata.GetFieldType(name));
+                    }
+                }
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(Metadata.CreateVmObjectFactory(Context))));
             }
         }
 
@@ -1925,11 +1851,17 @@ internal static class CoflowCompiler
             {
                 if (!expected.IsGenericType || expected.GetGenericTypeDefinition() != typeof(Option<>))
                     parser.Error("COFLOW-FUNCTION-TYPE", "`None` requires an Option result type");
-                return new ConstantExpr(Activator.CreateInstance(expected), expected);
+                return new TypedNoneExpr(expected);
             }
 
             internal override void EmitCore(FunctionParser parser) =>
                 throw new InvalidOperationException("None must be resolved against an expected type.");
+        }
+
+        private sealed record TypedNoneExpr(Type OptionType) : Expr(OptionType)
+        {
+            internal override void EmitCore(FunctionParser parser) =>
+                parser.Emit(CoflowOpCode.MakeOptionNone, 0, OptionType);
         }
 
         private sealed record SomeExpr(Expr Value) : Expr(typeof(Option<>).MakeGenericType(Value.Type))
@@ -1945,7 +1877,7 @@ internal static class CoflowCompiler
             internal override void EmitCore(FunctionParser parser)
             {
                 Value.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(ValueFactories.OptionSome(Value.Type)));
+                parser.Emit(CoflowOpCode.MakeOptionSome);
             }
         }
 
@@ -1972,10 +1904,7 @@ internal static class CoflowCompiler
             {
                 Value.Emit(parser);
                 var arguments = ResultType.GetGenericArguments();
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(
-                    IsOk
-                        ? ValueFactories.ResultOk(arguments[0], arguments[1])
-                        : ValueFactories.ResultErr(arguments[0], arguments[1])));
+                parser.Emit(IsOk ? CoflowOpCode.MakeResultOk : CoflowOpCode.MakeResultErr);
             }
         }
 
@@ -1994,16 +1923,15 @@ internal static class CoflowCompiler
             internal override void EmitCore(FunctionParser parser)
             {
                 Value.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(
-                    new Func<object?, object?>(value => value is not null && TargetType.IsInstanceOfType(value))));
+                parser.Emit(CoflowOpCode.IsType, parser.Constant(TargetType), typeof(bool));
             }
         }
 
-        private sealed record FunctionReferenceExpr(CoflowFunctionSlot Slot) : Expr(DelegateType(Slot.Signature))
+        private sealed record FunctionReferenceExpr(CoflowFunctionEntry Entry) : Expr(DelegateType(Entry.Signature))
         {
-            internal override CoflowFunctionSignature CallableSignature => Slot.Signature;
+            internal override CoflowFunctionSignature CallableSignature => Entry.Signature;
             internal override void EmitCore(FunctionParser parser) =>
-                parser.Emit(CoflowOpCode.Constant, parser.Constant(Slot));
+                parser.Emit(CoflowOpCode.Constant, parser.Constant(Entry));
         }
 
         private sealed record LambdaExpr(
@@ -2016,7 +1944,7 @@ internal static class CoflowCompiler
             internal override void EmitCore(FunctionParser parser)
             {
                 foreach (var capture in Captures) capture.Emit(parser);
-                var program = parser.CompileLambda(Signature, Captures.Count, Body);
+                var program = parser.CompileLambda(Signature, Captures, Body);
                 parser.Emit(CoflowOpCode.MakeClosure,
                     parser.Constant(new CoflowClosureTemplate(program, Captures.Count)));
             }
@@ -2058,7 +1986,7 @@ internal static class CoflowCompiler
                 {
                     foreach (var argument in Arguments) argument.Emit(parser);
                     parser.Emit(CoflowOpCode.Call,
-                        parser.Constant(new CoflowCallSite(direct.Slot, Arguments.Count)));
+                        parser.Constant(new CoflowCallSite(direct.Entry, Arguments.Count)));
                     return;
                 }
                 Target.Emit(parser);
@@ -2072,7 +2000,7 @@ internal static class CoflowCompiler
                 {
                     foreach (var argument in Arguments) argument.Emit(parser);
                     parser.Emit(CoflowOpCode.TailCall,
-                        parser.Constant(new CoflowCallSite(direct.Slot, Arguments.Count)));
+                        parser.Constant(new CoflowCallSite(direct.Entry, Arguments.Count)));
                     return;
                 }
                 Target.Emit(parser);
@@ -2114,8 +2042,8 @@ internal static class CoflowCompiler
             {
                 foreach (var value in Values) value.Emit(parser);
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(
-                        ValueFactories.Array(ArrayType.GetGenericArguments()[0]), Values.Count)));
+                    parser.Constant(CoflowNativeCallFactory.Array(
+                        ArrayType.GetGenericArguments()[0], Values.Count)));
             }
         }
 
@@ -2128,12 +2056,12 @@ internal static class CoflowCompiler
                 foreach (var entry in Entries) { entry.Key.Emit(parser); entry.Value.Emit(parser); }
                 var types = DictionaryType.GetGenericArguments();
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(
-                        ValueFactories.Dictionary(types[0], types[1]), Entries.Count * 2)));
+                    parser.Constant(CoflowNativeCallFactory.Dictionary(
+                        types[0], types[1], Entries.Count)));
             }
         }
 
-        private sealed record IndexExpr(Expr Receiver, Expr Index, Type ResultType, Func<object?[], object?> Invoke)
+        private sealed record IndexExpr(Expr Receiver, Expr Index, Type ResultType, Delegate Invoke)
             : Expr(ResultType)
         {
             internal static Expr Create(Expr receiver, Expr index, FunctionParser parser)
@@ -2168,7 +2096,7 @@ internal static class CoflowCompiler
                 Receiver.Emit(parser);
                 Index.Emit(parser);
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Invoke, 2)));
+                    parser.Constant(new CoflowNativeCall(Invoke)));
             }
         }
 
@@ -2182,26 +2110,23 @@ internal static class CoflowCompiler
             }
         }
 
-        private sealed record TransformExpr(Expr Receiver, Type ResultType, Func<object?, object?> Transform)
+        private sealed record TransformExpr(Expr Receiver, Type ResultType, Delegate Transform)
             : Expr(ResultType)
         {
             internal override void EmitCore(FunctionParser parser)
             {
                 Receiver.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct,
-                    parser.Constant(new Func<object?, object?>(Transform)));
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(Transform)));
             }
         }
 
-        private sealed record PropagateExpr(
-            Expr Operand,
-            Type ValueType,
-            Func<object?, CoflowPropagationResult> Propagate) : Expr(ValueType)
+        private sealed record PropagateExpr(Expr Operand, Type ValueType) : Expr(ValueType)
         {
             internal override void EmitCore(FunctionParser parser)
             {
                 Operand.Emit(parser);
-                parser.Emit(CoflowOpCode.Propagate, parser.Constant(Propagate));
+                parser.Emit(CoflowOpCode.Propagate);
             }
         }
 
@@ -2230,13 +2155,36 @@ internal static class CoflowCompiler
                     if (!(index == Arms.Count - 1 && (arm.Pattern.IsCatchAll || LastIsComplement)))
                     {
                         parser.Emit(CoflowOpCode.Local, SubjectLocal);
-                        parser.Emit(CoflowOpCode.Construct, parser.Constant(arm.Pattern.Test));
+                        if (arm.Pattern.TagValue is { } tag)
+                        {
+                            parser.Emit(CoflowOpCode.ReadValueTag, 0, typeof(bool));
+                            if (!tag) parser.Emit(CoflowOpCode.Not, 0, typeof(bool));
+                        }
+                        else if (arm.Pattern.TypeTarget is { } targetType)
+                            parser.Emit(CoflowOpCode.IsType, parser.Constant(targetType), typeof(bool));
+                        else
+                        {
+                            parser.Emit(CoflowOpCode.Constant,
+                                parser.Constant(arm.Pattern.LiteralValue), Subject.Type);
+                            var equal = CoflowValueShape.Scalar(Subject.Type) switch
+                            {
+                                CoflowRegisterKind.Integer => CoflowOpCode.EqualInteger,
+                                CoflowRegisterKind.Float => CoflowOpCode.EqualFloat,
+                                _ => CoflowOpCode.EqualReference,
+                            };
+                            parser.Emit(equal, 0, typeof(bool));
+                        }
                         next = parser.Emit(CoflowOpCode.JumpIfFalse);
                     }
                     if (arm.BindingLocal is { } binding)
                     {
                         parser.Emit(CoflowOpCode.Local, SubjectLocal);
-                        parser.Emit(CoflowOpCode.Construct, parser.Constant(arm.Pattern.Extract!));
+                        if (arm.Pattern.Payload is { } payload)
+                            parser.Emit(payload == 0 ? CoflowOpCode.ReadFirstPayload : CoflowOpCode.ReadSecondPayload,
+                                0, arm.Pattern.BindingType!);
+                        else if (arm.Pattern.TypeTarget is not null)
+                            parser.Emit(CoflowOpCode.Reinterpret, 0,
+                                arm.Pattern.BindingType ?? Subject.Type);
                         parser.Emit(CoflowOpCode.StoreLocal, binding);
                     }
                     arm.Body.Emit(parser);
@@ -2253,13 +2201,15 @@ internal static class CoflowCompiler
             bool IsCatchAll,
             string? BindingName,
             Type? BindingType,
-            Func<object?, object?> Test,
-            Func<object?, object?>? Extract)
+            object? LiteralValue = null,
+            Type? TypeTarget = null,
+            bool? TagValue = null,
+            int? Payload = null)
         {
             internal static MatchPattern CatchAll(string kind, string? name, Type? type) =>
-                new(kind, true, name, type, static _ => true, static value => value);
+                new(kind, true, name, type);
             internal static MatchPattern Literal(string kind, object value) =>
-                new(kind, false, null, null, candidate => Equals(candidate, value), null);
+                new(kind, false, null, null, value);
         }
 
         private sealed record BuiltinExpr(
@@ -2272,7 +2222,7 @@ internal static class CoflowCompiler
                 Receiver.Emit(parser);
                 foreach (var argument in Arguments) argument.Emit(parser);
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Builtin.Invoke, Arguments.Count + 1)));
+                    parser.Constant(new CoflowNativeCall(Builtin.Invoke)));
             }
         }
 
@@ -2283,9 +2233,123 @@ internal static class CoflowCompiler
         {
             internal override void EmitCore(FunctionParser parser)
             {
+                var collection = parser._localCount++;
+                var callable = parser._localCount++;
+                var index = parser._localCount++;
+                var item = parser._localCount++;
+                var result = parser._localCount++;
+                var callbackResult = parser._localCount++;
+                var fold = Operation.Name == "fold";
+
                 Receiver.Emit(parser);
-                foreach (var argument in Arguments) argument.Emit(parser);
-                parser.Emit(CoflowOpCode.HigherOrder, parser.Constant(Operation));
+                parser.Emit(CoflowOpCode.StoreLocal, collection);
+                if (fold)
+                {
+                    Arguments[0].Emit(parser);
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                    Arguments[1].Emit(parser);
+                }
+                else Arguments[0].Emit(parser);
+                parser.Emit(CoflowOpCode.StoreLocal, callable);
+
+                if (Operation.Name is "map" or "filter")
+                {
+                    parser.Emit(CoflowOpCode.Native,
+                        parser.Constant(new CoflowNativeCall(Operation.CreateBuilder!)),
+                        Operation.CreateBuilder!.GetType().GetMethod("Invoke")!.ReturnType);
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                }
+                else if (Operation.Name == "find")
+                {
+                    parser.Emit(CoflowOpCode.MakeOptionNone, 0, Operation.ResultType);
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                }
+                else if (Operation.Name is "any" or "all")
+                {
+                    parser.Emit(CoflowOpCode.Constant,
+                        parser.Constant(Operation.Name == "all"), typeof(bool));
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                }
+                parser.Emit(CoflowOpCode.Constant, parser.Constant(0L), typeof(long));
+                parser.Emit(CoflowOpCode.StoreLocal, index);
+
+                var condition = parser._instructions.Count;
+                parser.Emit(CoflowOpCode.Local, index);
+                parser.Emit(CoflowOpCode.Local, collection);
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(Operation.Count)), typeof(long));
+                parser.Emit(CoflowOpCode.LessInt, 0, typeof(bool));
+                var done = parser.Emit(CoflowOpCode.JumpIfFalse);
+
+                parser.Emit(CoflowOpCode.Local, collection);
+                parser.Emit(CoflowOpCode.Local, index);
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(Operation.Item)), Operation.ElementType);
+                parser.Emit(CoflowOpCode.StoreLocal, item);
+
+                parser.Emit(CoflowOpCode.Local, callable);
+                if (fold) parser.Emit(CoflowOpCode.Local, result);
+                parser.Emit(CoflowOpCode.Local, item);
+                var callbackType = Operation.Name == "map" || fold
+                    ? Operation.OutputElementType : typeof(bool);
+                parser.Emit(CoflowOpCode.CallIndirect, fold ? 2 : 1, callbackType);
+                parser.Emit(CoflowOpCode.StoreLocal, callbackResult);
+
+                int? earlyDone = null;
+                if (Operation.Name == "map")
+                {
+                    parser.Emit(CoflowOpCode.Local, result);
+                    parser.Emit(CoflowOpCode.Local, callbackResult);
+                    parser.Emit(CoflowOpCode.Native,
+                        parser.Constant(new CoflowNativeCall(Operation.Add!)), typeof(Unit));
+                    parser.Emit(CoflowOpCode.Pop);
+                }
+                else if (Operation.Name == "filter")
+                {
+                    parser.Emit(CoflowOpCode.Local, callbackResult);
+                    var skip = parser.Emit(CoflowOpCode.JumpIfFalse);
+                    parser.Emit(CoflowOpCode.Local, result);
+                    parser.Emit(CoflowOpCode.Local, item);
+                    parser.Emit(CoflowOpCode.Native,
+                        parser.Constant(new CoflowNativeCall(Operation.Add!)), typeof(Unit));
+                    parser.Emit(CoflowOpCode.Pop);
+                    parser.Patch(skip, parser._instructions.Count);
+                }
+                else if (fold)
+                {
+                    parser.Emit(CoflowOpCode.Local, callbackResult);
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                }
+                else
+                {
+                    parser.Emit(CoflowOpCode.Local, callbackResult);
+                    if (Operation.Name == "all") parser.Emit(CoflowOpCode.Not, 0, typeof(bool));
+                    var keepGoing = parser.Emit(CoflowOpCode.JumpIfFalse);
+                    if (Operation.Name == "find")
+                    {
+                        parser.Emit(CoflowOpCode.Local, item);
+                        parser.Emit(CoflowOpCode.MakeOptionSome, 0, Operation.ResultType);
+                    }
+                    else parser.Emit(CoflowOpCode.Constant,
+                        parser.Constant(Operation.Name == "any"), typeof(bool));
+                    parser.Emit(CoflowOpCode.StoreLocal, result);
+                    earlyDone = parser.Emit(CoflowOpCode.Jump);
+                    parser.Patch(keepGoing, parser._instructions.Count);
+                }
+
+                parser.Emit(CoflowOpCode.Local, index);
+                parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
+                parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
+                parser.Emit(CoflowOpCode.StoreLocal, index);
+                parser.Emit(CoflowOpCode.Jump, condition);
+                var end = parser._instructions.Count;
+                parser.Patch(done, end);
+                if (earlyDone is { } jump) parser.Patch(jump, end);
+
+                parser.Emit(CoflowOpCode.Local, result);
+                if (Operation.Name is "map" or "filter")
+                    parser.Emit(CoflowOpCode.Native,
+                        parser.Constant(new CoflowNativeCall(Operation.Finish!)), Operation.ResultType);
             }
         }
 
@@ -2363,21 +2427,21 @@ internal static class CoflowCompiler
             internal override void EmitCore(FunctionParser parser)
             {
                 Collection.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(Access.Prepare));
+                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(Access.Prepare)), Access.PreparedType);
                 parser.Emit(CoflowOpCode.StoreLocal, CollectionLocal);
                 parser.Emit(CoflowOpCode.Constant, parser.Constant(0L));
                 parser.Emit(CoflowOpCode.StoreLocal, IndexLocal);
                 var condition = parser._instructions.Count;
                 parser.Emit(CoflowOpCode.Local, IndexLocal);
                 parser.Emit(CoflowOpCode.Local, CollectionLocal);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(Access.Count));
+                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(Access.Count)), typeof(long));
                 parser.Emit(CoflowOpCode.LessInt);
                 var done = parser.Emit(CoflowOpCode.JumpIfFalse);
 
                 parser.Emit(CoflowOpCode.Local, CollectionLocal);
                 parser.Emit(CoflowOpCode.Local, IndexLocal);
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Access.First, 2)));
+                    parser.Constant(new CoflowNativeCall(Access.First)));
                 parser.Emit(CoflowOpCode.StoreLocal, FirstLocal);
                 if (SecondLocal is { } second)
                 {
@@ -2390,7 +2454,7 @@ internal static class CoflowCompiler
                         parser.Emit(CoflowOpCode.Local, CollectionLocal);
                         parser.Emit(CoflowOpCode.Local, IndexLocal);
                         parser.Emit(CoflowOpCode.Native,
-                            parser.Constant(new CoflowNativeCall(Access.Second!, 2)));
+                            parser.Constant(new CoflowNativeCall(Access.Second!)));
                     }
                     parser.Emit(CoflowOpCode.StoreLocal, second);
                 }
@@ -2420,8 +2484,10 @@ internal static class CoflowCompiler
             {
                 Start.Emit(parser);
                 End.Emit(parser);
-                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(
-                    values => new CoflowRange((long)values[0]!, (long)values[1]!, Inclusive), 2)));
+                Func<long, long, CoflowRange> create = Inclusive
+                    ? static (start, end) => new CoflowRange(start, end, true)
+                    : static (start, end) => new CoflowRange(start, end, false);
+                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(create)));
             }
         }
 
@@ -2450,20 +2516,33 @@ internal static class CoflowCompiler
 
             internal override void EmitCore(FunctionParser parser)
             {
-                foreach (var statement in Statements) statement.Emit(parser);
+                foreach (var statement in Statements)
+                {
+                    statement.Emit(parser);
+                    if (statement.AlwaysTerminates) return;
+                }
                 Result.Emit(parser);
             }
 
 
             internal override void EmitTailCore(FunctionParser parser)
             {
-                foreach (var statement in Statements) statement.Emit(parser);
+                foreach (var statement in Statements)
+                {
+                    statement.Emit(parser);
+                    if (statement.AlwaysTerminates) return;
+                }
                 Result.EmitTail(parser);
             }
         }
 
         private sealed record IfExpr(Expr Condition, Expr WhenTrue, Expr WhenFalse) : Expr(WhenTrue.Type)
         {
+            internal static Expr Create(Expr condition, Expr whenTrue, Expr whenFalse) =>
+                condition is ConstantExpr { Value: bool value }
+                    ? value ? whenTrue : whenFalse
+                    : new IfExpr(condition, whenTrue, whenFalse);
+
             internal override bool AlwaysTerminates => WhenTrue.AlwaysTerminates && WhenFalse.AlwaysTerminates;
             internal override Expr WithExpected(Type expected, FunctionParser parser) =>
                 new IfExpr(
@@ -2494,196 +2573,136 @@ internal static class CoflowCompiler
 
         private static class ValueFactories
         {
-            private static readonly System.Reflection.MethodInfo OptionSomeMethod =
-                typeof(ValueFactories).GetMethod(nameof(CreateOptionSome),
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-            private static readonly System.Reflection.MethodInfo ResultOkMethod =
-                typeof(ValueFactories).GetMethod(nameof(CreateResultOk),
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-            private static readonly System.Reflection.MethodInfo ResultErrMethod =
-                typeof(ValueFactories).GetMethod(nameof(CreateResultErr),
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-            private static readonly System.Reflection.MethodInfo ArrayMethod = Method(nameof(CreateArray));
-            private static readonly System.Reflection.MethodInfo DictionaryMethod = Method(nameof(CreateDictionary));
             private static readonly System.Reflection.MethodInfo ArrayIndexMethod = Method(nameof(IndexArray));
             private static readonly System.Reflection.MethodInfo DictionaryIndexMethod = Method(nameof(IndexDictionary));
             private static readonly System.Reflection.MethodInfo PrepareArrayLoopMethod = Method(nameof(PrepareArrayLoop));
             private static readonly System.Reflection.MethodInfo ArrayLoopCountMethod = Method(nameof(ArrayLoopCount));
             private static readonly System.Reflection.MethodInfo ArrayLoopItemMethod = Method(nameof(ArrayLoopItem));
             private static readonly System.Reflection.MethodInfo PrepareDictionaryLoopMethod = Method(nameof(PrepareDictionaryLoop));
+            private static readonly System.Reflection.MethodInfo DictionaryLoopCountMethod = Method(nameof(DictionaryLoopCount));
+            private static readonly System.Reflection.MethodInfo DictionaryLoopKeyMethod = Method(nameof(DictionaryLoopKey));
+            private static readonly System.Reflection.MethodInfo DictionaryLoopValueMethod = Method(nameof(DictionaryLoopValue));
             private static readonly System.Reflection.MethodInfo ArrayCountMethod = Method(nameof(ArrayCount));
             private static readonly System.Reflection.MethodInfo ArrayItemMethod = Method(nameof(ArrayItem));
-            private static readonly System.Reflection.MethodInfo OptionPropagationMethod = Method(nameof(PropagateOption));
-            private static readonly System.Reflection.MethodInfo ResultPropagationMethod = Method(nameof(PropagateResult));
-            private static readonly System.Reflection.MethodInfo OptionMatchMethod = Method(nameof(MatchOption));
-            private static readonly System.Reflection.MethodInfo ResultMatchMethod = Method(nameof(MatchResult));
+            private static readonly System.Reflection.MethodInfo CreateListMethod = Method(nameof(CreateList));
+            private static readonly System.Reflection.MethodInfo AddListMethod = Method(nameof(AddList));
+            private static readonly System.Reflection.MethodInfo FinishListMethod = Method(nameof(FinishList));
 
-            internal static Func<object?, object?> OptionSome(Type value) =>
-                (Func<object?, object?>)OptionSomeMethod.MakeGenericMethod(value)
-                    .CreateDelegate(typeof(Func<object?, object?>));
-
-            internal static Func<object?, object?> ResultOk(Type value, Type error) =>
-                (Func<object?, object?>)ResultOkMethod.MakeGenericMethod(value, error)
-                    .CreateDelegate(typeof(Func<object?, object?>));
-
-            internal static Func<object?, object?> ResultErr(Type value, Type error) =>
-                (Func<object?, object?>)ResultErrMethod.MakeGenericMethod(value, error)
-                    .CreateDelegate(typeof(Func<object?, object?>));
-
-            internal static Func<object?[], object?> Array(Type element) => Generic(ArrayMethod, element);
-            internal static Func<object?[], object?> Dictionary(Type key, Type value) => Generic(DictionaryMethod, key, value);
-            internal static Func<object?[], object?> ArrayIndex(Type element) => Generic(ArrayIndexMethod, element);
-            internal static Func<object?[], object?> DictionaryIndex(Type key, Type value) => Generic(DictionaryIndexMethod, key, value);
+            internal static Delegate ArrayIndex(Type element) => Closed(ArrayIndexMethod, element);
+            internal static Delegate DictionaryIndex(Type key, Type value) => Closed(DictionaryIndexMethod, key, value);
             internal static CoflowLoopAccess ArrayLoop(Type element) => new(
-                GenericUnary(PrepareArrayLoopMethod, element),
-                GenericUnary(ArrayLoopCountMethod, element),
-                Generic(ArrayLoopItemMethod, element),
+                Closed(PrepareArrayLoopMethod, element),
+                typeof(IReadOnlyList<>).MakeGenericType(element),
+                Closed(ArrayLoopCountMethod, element),
+                Closed(ArrayLoopItemMethod, element),
                 null);
             internal static CoflowLoopAccess DictionaryLoop(Type key, Type value) => new(
-                GenericUnary(PrepareDictionaryLoopMethod, key, value),
-                static entries => (long)((object?[][])entries!).Length,
-                static values => ((object?[][])values[0]!)[checked((int)(long)values[1]!)][0],
-                static values => ((object?[][])values[0]!)[checked((int)(long)values[1]!)][1]);
+                Closed(PrepareDictionaryLoopMethod, key, value),
+                typeof(KeyValuePair<,>).MakeGenericType(key, value).MakeArrayType(),
+                Closed(DictionaryLoopCountMethod, key, value),
+                Closed(DictionaryLoopKeyMethod, key, value),
+                Closed(DictionaryLoopValueMethod, key, value));
             internal static CoflowLoopAccess RangeLoop() => new(
-                static value => value,
-                static value => ((CoflowRange)value!).Count,
-                static values => checked(((CoflowRange)values[0]!).Start + (long)values[1]!),
+                new Func<CoflowRange, CoflowRange>(static value => value),
+                typeof(CoflowRange),
+                new Func<CoflowRange, long>(static value => value.Count),
+                new Func<CoflowRange, long, long>(static (value, index) => checked(value.Start + index)),
                 null);
-            internal static Func<object?, CoflowPropagationResult> OptionPropagation(Type value, Type result) =>
-                GenericPropagation(OptionPropagationMethod, value, result);
-            internal static Func<object?, CoflowPropagationResult> ResultPropagation(Type value, Type error, Type result) =>
-                GenericPropagation(ResultPropagationMethod, value, error, result);
             internal static CoflowHigherOrderOperation HigherOrder(
                 string name, Type element, Type outputElement, Type resultType) => new(
                     name,
+                    element,
+                    outputElement,
                     resultType,
-                    (Func<object?, int>)ArrayCountMethod.MakeGenericMethod(element)
-                        .CreateDelegate(typeof(Func<object?, int>)),
-                    (Func<object?, int, object?>)ArrayItemMethod.MakeGenericMethod(element)
-                        .CreateDelegate(typeof(Func<object?, int, object?>)),
-                    Array(outputElement),
-                    OptionSome(outputElement),
-                    Activator.CreateInstance(typeof(Option<>).MakeGenericType(outputElement)));
+                    Closed(ArrayCountMethod, element),
+                    Closed(ArrayItemMethod, element),
+                    name is "map" or "filter" ? Closed(CreateListMethod, outputElement) : null,
+                    name is "map" or "filter" ? Closed(AddListMethod, outputElement) : null,
+                    name is "map" or "filter" ? Closed(FinishListMethod, outputElement) : null);
             internal static MatchPattern MatchNone(Type subject, FunctionParser parser)
             {
                 if (!subject.IsGenericType || subject.GetGenericTypeDefinition() != typeof(Option<>))
                     parser.Error("COFLOW-FUNCTION-TYPE", "None pattern requires Option");
-                var access = GenericMatch(OptionMatchMethod, subject.GetGenericArguments()[0]);
-                return new MatchPattern("None", false, null, null,
-                    value => !(bool)access(value)[0]!, null);
+                return new MatchPattern("None", false, null, null, TagValue: false);
             }
             internal static MatchPattern MatchBranch(Type subject, string kind, string binding, FunctionParser parser)
             {
                 if (subject.IsGenericType && subject.GetGenericTypeDefinition() == typeof(Option<>) && kind == "Some")
                 {
                     var type = subject.GetGenericArguments()[0];
-                    var access = GenericMatch(OptionMatchMethod, type);
                     return new MatchPattern(kind, false, binding, type,
-                        value => (bool)access(value)[0]!, value => access(value)[1]);
+                        TagValue: true, Payload: 0);
                 }
                 if (subject.IsGenericType && subject.GetGenericTypeDefinition() == typeof(Result<,>) && kind is "Ok" or "Err")
                 {
                     var types = subject.GetGenericArguments();
-                    var access = GenericMatch(ResultMatchMethod, types);
                     var ok = kind == "Ok";
                     return new MatchPattern(kind, false, binding, types[ok ? 0 : 1],
-                        value => (bool)access(value)[0]! == ok,
-                        value => access(value)[ok ? 1 : 2]);
+                        TagValue: ok, Payload: ok ? 0 : 1);
                 }
                 parser.Error("COFLOW-FUNCTION-TYPE", $"{kind} pattern does not match subject type");
                 return null!;
             }
 
-            private static object CreateOptionSome<T>(object? value) =>
-                Option<T>.Some(CoflowFunctionDelegates.Adapt<T>(value));
-            private static object CreateResultOk<T, TError>(object? value) =>
-                Result<T, TError>.Ok(CoflowFunctionDelegates.Adapt<T>(value));
-            private static object CreateResultErr<T, TError>(object? error) =>
-                Result<T, TError>.Err(CoflowFunctionDelegates.Adapt<TError>(error));
-            private static object CreateArray<T>(object?[] values) =>
-                System.Array.AsReadOnly(values.Select(CoflowFunctionDelegates.Adapt<T>).ToArray());
-            private static object CreateDictionary<TKey, TValue>(object?[] values) where TKey : notnull
+            private static Option<T> IndexArray<T>(IReadOnlyList<T> array, long index)
             {
-                var result = new Dictionary<TKey, TValue>();
-                for (var index = 0; index < values.Length; index += 2)
-                    result.Add(
-                        CoflowFunctionDelegates.Adapt<TKey>(values[index]),
-                        CoflowFunctionDelegates.Adapt<TValue>(values[index + 1]));
-                return new System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>(result);
-            }
-            private static object IndexArray<T>(object?[] values)
-            {
-                var array = (IReadOnlyList<T>)values[0]!;
-                var index = (long)values[1]!;
                 return index >= 0 && index < array.Count ? Option<T>.Some(array[(int)index]) : Option<T>.None;
             }
-            private static object IndexDictionary<TKey, TValue>(object?[] values) where TKey : notnull
+            private static Option<TValue> IndexDictionary<TKey, TValue>(
+                IReadOnlyDictionary<TKey, TValue> dictionary, TKey key) where TKey : notnull
             {
-                var dictionary = (IReadOnlyDictionary<TKey, TValue>)values[0]!;
-                return dictionary.TryGetValue((TKey)values[1]!, out var value)
+                return dictionary.TryGetValue(key, out var value)
                     ? Option<TValue>.Some(value) : Option<TValue>.None;
             }
-            private static object PrepareArrayLoop<T>(object? value) =>
-                (IReadOnlyList<T>)value!;
-            private static object ArrayLoopCount<T>(object? value) =>
-                (long)((IReadOnlyList<T>)value!).Count;
-            private static object? ArrayLoopItem<T>(object?[] values) =>
-                ((IReadOnlyList<T>)values[0]!)[checked((int)(long)values[1]!)];
-            private static int ArrayCount<T>(object? value) =>
-                ((IReadOnlyList<T>)value!).Count;
-            private static object? ArrayItem<T>(object? value, int index) =>
-                ((IReadOnlyList<T>)value!)[index];
-            private static object PrepareDictionaryLoop<TKey, TValue>(object? value) where TKey : notnull =>
-                ((IReadOnlyDictionary<TKey, TValue>)value!)
-                    .Select(entry => new object?[] { entry.Key, entry.Value }).ToArray();
-            private static CoflowPropagationResult PropagateOption<T, TResult>(object? value)
-            {
-                var option = (Option<T>)value!;
-                return option.HasValue
-                    ? new CoflowPropagationResult(true, option.Value)
-                    : new CoflowPropagationResult(false, Option<TResult>.None);
-            }
-            private static CoflowPropagationResult PropagateResult<T, TError, TResult>(object? value)
-            {
-                var result = (Result<T, TError>)value!;
-                return result.IsOk
-                    ? new CoflowPropagationResult(true, result.Value)
-                    : new CoflowPropagationResult(false, Result<TResult, TError>.Err(result.Error));
-            }
-            private static object?[] MatchOption<T>(object? value)
-            {
-                var option = (Option<T>)value!;
-                return new object?[] { option.HasValue, option.HasValue ? option.Value : default };
-            }
-            private static object?[] MatchResult<T, TError>(object? value)
-            {
-                var result = (Result<T, TError>)value!;
-                return new object?[] { result.IsOk, result.IsOk ? result.Value : default, result.IsErr ? result.Error : default };
-            }
+            private static IReadOnlyList<T> PrepareArrayLoop<T>(IReadOnlyList<T> value) => value;
+            private static long ArrayLoopCount<T>(IReadOnlyList<T> value) => value.Count;
+            private static T ArrayLoopItem<T>(IReadOnlyList<T> values, long index) =>
+                values[checked((int)index)];
+            private static long ArrayCount<T>(IReadOnlyList<T> value) => value.Count;
+            private static T ArrayItem<T>(IReadOnlyList<T> value, long index) => value[checked((int)index)];
+            private static List<T> CreateList<T>() => new();
+            private static void AddList<T>(List<T> values, T value) => values.Add(value);
+            private static IReadOnlyList<T> FinishList<T>(List<T> values) => values.AsReadOnly();
+            private static KeyValuePair<TKey, TValue>[] PrepareDictionaryLoop<TKey, TValue>(
+                IReadOnlyDictionary<TKey, TValue> value) where TKey : notnull => value.ToArray();
+            private static long DictionaryLoopCount<TKey, TValue>(KeyValuePair<TKey, TValue>[] value)
+                where TKey : notnull => value.LongLength;
+            private static TKey DictionaryLoopKey<TKey, TValue>(KeyValuePair<TKey, TValue>[] value, long index)
+                where TKey : notnull => value[checked((int)index)].Key;
+            private static TValue DictionaryLoopValue<TKey, TValue>(KeyValuePair<TKey, TValue>[] value, long index)
+                where TKey : notnull => value[checked((int)index)].Value;
 
             private static System.Reflection.MethodInfo Method(string name) =>
                 typeof(ValueFactories).GetMethod(name,
                     System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-            private static Func<object?[], object?> Generic(System.Reflection.MethodInfo method, params Type[] arguments) =>
-                (Func<object?[], object?>)method.MakeGenericMethod(arguments)
-                    .CreateDelegate(typeof(Func<object?[], object?>));
-            private static Func<object?, object?> GenericUnary(System.Reflection.MethodInfo method, params Type[] arguments) =>
-                (Func<object?, object?>)method.MakeGenericMethod(arguments)
-                    .CreateDelegate(typeof(Func<object?, object?>));
-            private static Func<object?, CoflowPropagationResult> GenericPropagation(
-                System.Reflection.MethodInfo method, params Type[] arguments) =>
-                (Func<object?, CoflowPropagationResult>)method.MakeGenericMethod(arguments)
-                    .CreateDelegate(typeof(Func<object?, CoflowPropagationResult>));
-            private static Func<object?, object?[]> GenericMatch(
-                System.Reflection.MethodInfo method, params Type[] arguments) =>
-                (Func<object?, object?[]>)method.MakeGenericMethod(arguments)
-                    .CreateDelegate(typeof(Func<object?, object?[]>));
+            private static Delegate Closed(System.Reflection.MethodInfo method, params Type[] arguments)
+            {
+                var closed = method.MakeGenericMethod(arguments);
+                var signature = closed.GetParameters().Select(parameter => parameter.ParameterType)
+                    .Append(closed.ReturnType).ToArray();
+                return closed.CreateDelegate(System.Linq.Expressions.Expression.GetDelegateType(signature));
+            }
         }
 
         private sealed record UnaryExpr(string Operation, Expr Operand, Type ResultType, CoflowOpCode Code) : Expr(ResultType)
         {
             internal static Expr Create(string operation, Expr operand, FunctionParser parser)
             {
+                if (operand is ConstantExpr constant)
+                {
+                    try
+                    {
+                        if (operation == "!" && constant.Value is bool boolean)
+                            return new ConstantExpr(!boolean, typeof(bool));
+                        if (operation == "-" && constant.Value is long integer)
+                            return new ConstantExpr(checked(-integer), typeof(long));
+                        if (operation == "-" && constant.Value is double floating)
+                            return new ConstantExpr(-floating, typeof(double));
+                        if (operation == "~" && constant.Value is long bits)
+                            return new ConstantExpr(~bits, typeof(long));
+                    }
+                    catch (OverflowException) { }
+                }
                 if (operation == "!" && operand.Type == typeof(bool))
                     return new UnaryExpr(operation, operand, typeof(bool), CoflowOpCode.Not);
                 if (operation == "-" && operand.Type == typeof(long))
@@ -2716,8 +2735,7 @@ internal static class CoflowCompiler
             internal override void EmitCore(FunctionParser parser)
             {
                 Operand.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(
-                    new Func<object?, object?>(value => Metadata.FromInt64(~Convert.ToInt64(value)))));
+                parser.Emit(CoflowOpCode.BitNot);
             }
         }
 
@@ -2726,7 +2744,7 @@ internal static class CoflowCompiler
             Expr Left,
             Expr Right,
             Type ResultType,
-            Func<object?[], object?> Invoke) : Expr(ResultType)
+            CoflowOpCode Code) : Expr(ResultType)
         {
             internal static Expr Create(
                 string operation,
@@ -2741,22 +2759,15 @@ internal static class CoflowCompiler
                 {
                     if (!metadata.IsFlags)
                         parser.Error("COFLOW-FUNCTION-TYPE", "bit operators require a flag enum");
-                    return new EnumBinaryExpr(operation, left, right, left.Type, values =>
-                    {
-                        var lhs = Convert.ToInt64(values[0]);
-                        var rhs = Convert.ToInt64(values[1]);
-                        return metadata.FromInt64(operation switch { "&" => lhs & rhs, "|" => lhs | rhs, _ => lhs ^ rhs });
-                    });
+                    return new EnumBinaryExpr(operation, left, right, left.Type, operation switch
+                    { "&" => CoflowOpCode.BitAnd, "|" => CoflowOpCode.BitOr, _ => CoflowOpCode.BitXor });
                 }
                 if (operation is "==" or "!=")
-                    return new EnumBinaryExpr(operation, left, right, typeof(bool), values =>
-                        operation == "==" ? Equals(values[0], values[1]) : !Equals(values[0], values[1]));
+                    return new EqualityExpr(left, right, operation == "!=", parser._metadata);
                 if (operation is "<" or "<=" or ">" or ">=")
-                    return new EnumBinaryExpr(operation, left, right, typeof(bool), values =>
-                    {
-                        var order = Convert.ToInt64(values[0]).CompareTo(Convert.ToInt64(values[1]));
-                        return operation switch { "<" => order < 0, "<=" => order <= 0, ">" => order > 0, _ => order >= 0 };
-                    });
+                    return new EnumBinaryExpr(operation, left, right, typeof(bool), operation switch
+                    { "<" => CoflowOpCode.LessInt, "<=" => CoflowOpCode.LessOrEqualInt,
+                        ">" => CoflowOpCode.GreaterInt, _ => CoflowOpCode.GreaterOrEqualInt });
                 parser.Error("COFLOW-FUNCTION-TYPE", $"operator `{operation}` cannot be applied to enum");
                 return null!;
             }
@@ -2765,18 +2776,33 @@ internal static class CoflowCompiler
             {
                 Left.Emit(parser);
                 Right.Emit(parser);
-                parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Invoke, 2)));
+                parser.Emit(Code);
             }
         }
 
-        private sealed record ConversionExpr(Expr Value, Type ResultType, Func<object?, object?> Convert)
+        private sealed record ConversionExpr(Expr Value, Type ResultType, CoflowOpCode Code)
             : Expr(ResultType)
         {
+            internal static Expr Create(Expr value, Type resultType, CoflowOpCode code)
+            {
+                if (value is ConstantExpr constant)
+                {
+                    try
+                    {
+                        if (resultType == typeof(double) && constant.Value is long integer)
+                            return new ConstantExpr((double)integer, resultType);
+                        if (resultType == typeof(long) && constant.Value is double floating)
+                            return new ConstantExpr(checked((long)floating), resultType);
+                    }
+                    catch (OverflowException) { }
+                }
+                return new ConversionExpr(value, resultType, code);
+            }
+
             internal override void EmitCore(FunctionParser parser)
             {
                 Value.Emit(parser);
-                parser.Emit(CoflowOpCode.Construct, parser.Constant(Convert));
+                parser.Emit(Code);
             }
         }
 
@@ -2795,6 +2821,11 @@ internal static class CoflowCompiler
                 if (operation is "&&" or "||")
                 {
                     if (left.Type != typeof(bool)) parser.Error("COFLOW-FUNCTION-TYPE", $"operator `{operation}` requires bool operands");
+                    if (left is ConstantExpr { Value: bool leftBoolean })
+                    {
+                        if (operation == "&&") return leftBoolean ? right : left;
+                        return leftBoolean ? left : right;
+                    }
                     return new BinaryExpr(operation, left, right, typeof(bool),
                         operation == "&&" ? CoflowOpCode.JumpIfFalseKeep : CoflowOpCode.JumpIfTrueKeep);
                 }
@@ -2806,7 +2837,71 @@ internal static class CoflowCompiler
                 }
                 var code = SelectCode(operation, left.Type, parser);
                 var result = operation is "<" or "<=" or ">" or ">=" ? typeof(bool) : left.Type;
+                if (left is ConstantExpr leftConstant && right is ConstantExpr rightConstant &&
+                    TryFold(operation, leftConstant.Value, rightConstant.Value, out var folded))
+                    return new ConstantExpr(folded, result);
                 return new BinaryExpr(operation, left, right, result, code);
+            }
+
+            private static bool TryFold(string operation, object? left, object? right, out object? result)
+            {
+                result = null;
+                try
+                {
+                    if (left is long leftInteger && right is long rightInteger)
+                    {
+                        result = operation switch
+                        {
+                            "+" => checked(leftInteger + rightInteger), "-" => checked(leftInteger - rightInteger),
+                            "*" => checked(leftInteger * rightInteger), "/" or "//" => checked(leftInteger / rightInteger),
+                            "%" => checked(leftInteger % rightInteger), "**" => FoldPower(leftInteger, rightInteger),
+                            "<<" => checked(leftInteger << checked((int)rightInteger)),
+                            ">>" => leftInteger >> checked((int)rightInteger),
+                            "&" => leftInteger & rightInteger, "^" => leftInteger ^ rightInteger, "|" => leftInteger | rightInteger,
+                            "<" => leftInteger < rightInteger, "<=" => leftInteger <= rightInteger,
+                            ">" => leftInteger > rightInteger, ">=" => leftInteger >= rightInteger,
+                            _ => null,
+                        };
+                        return result is not null;
+                    }
+                    if (left is double leftFloat && right is double rightFloat)
+                    {
+                        result = operation switch
+                        {
+                            "+" => leftFloat + rightFloat, "-" => leftFloat - rightFloat,
+                            "*" => leftFloat * rightFloat, "/" => leftFloat / rightFloat,
+                            "**" => Math.Pow(leftFloat, rightFloat), "<" => leftFloat < rightFloat,
+                            "<=" => leftFloat <= rightFloat, ">" => leftFloat > rightFloat,
+                            ">=" => leftFloat >= rightFloat, _ => null,
+                        };
+                        return result is not null;
+                    }
+                    if (left is string leftString && right is string rightString)
+                    {
+                        var comparison = string.CompareOrdinal(leftString, rightString);
+                        result = operation switch
+                        {
+                            "+" => leftString + rightString, "<" => comparison < 0,
+                            "<=" => comparison <= 0, ">" => comparison > 0,
+                            ">=" => comparison >= 0, _ => null,
+                        };
+                        return result is not null;
+                    }
+                }
+                catch (ArithmeticException) { }
+                return false;
+            }
+
+            private static long FoldPower(long value, long exponent)
+            {
+                if (exponent < 0) throw new ArithmeticException();
+                var result = 1L;
+                for (var factor = value; exponent != 0; exponent >>= 1)
+                {
+                    if ((exponent & 1) != 0) result = checked(result * factor);
+                    if (exponent > 1) factor = checked(factor * factor);
+                }
+                return result;
             }
 
             private static CoflowOpCode SelectCode(string operation, Type type, FunctionParser parser)
@@ -2874,14 +2969,9 @@ internal static class CoflowCompiler
             {
                 Left.Emit(parser);
                 Right.Emit(parser);
-                var type = Left.Type;
-                var metadata = Metadata.Values.ToArray();
                 parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(values =>
-                    {
-                        var equal = CoflowValueEquality.Equal(values[0], values[1], type, metadata);
-                        return Negated ? !equal : equal;
-                    }, 2)));
+                    parser.Constant(new CoflowNativeCall(CoflowEquality.Create(Left.Type, Metadata))));
+                if (Negated) parser.Emit(CoflowOpCode.Not, 0, typeof(bool));
             }
         }
 

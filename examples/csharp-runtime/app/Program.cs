@@ -5,12 +5,11 @@ using CoflowRuntime;
 var exampleRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
 var charactersSource = File.ReadAllText(Path.Combine(exampleRoot, "data", "characters.cfd"));
 var scenarioSource = File.ReadAllText(Path.Combine(exampleRoot, "data", "scenario.cfd"));
-using var charactersModule = Coflow.LoadData(charactersSource);
-using var root = Load(new[] { scenarioSource }, charactersModule);
+var root = Load(charactersSource, scenarioSource);
 var traces = new List<string>();
 var hostCalls = 0;
-var host = root.Singleton<HostServices>();
-AssertOk(host.Bind(
+var host = Require(root.Singleton<HostServices>(), "HostServices");
+host.Configure(
     "integration",
     traces.Add,
     (value, operation) =>
@@ -18,12 +17,15 @@ AssertOk(host.Bind(
         hostCalls++;
         return operation(value + 1) + 100;
     },
-    value => $"[integration] {value}"));
+    value => $"[integration] {value}",
+    value => value.HasValue
+        ? Result<long, string>.Ok(value.Value + 1)
+        : Result<long, string>.Err("missing"));
 
-var characters = root.Table<Character>();
+var characters = root.Table(Character.Table);
 var arcanist = Require(characters.Get(CharacterId.Arcanist), "arcanist");
 var guardian = Require(characters.Get(CharacterId.Guardian), "guardian");
-var scenario = Require(root.Table<Scenario>().Get("fullRoundTrip"), "fullRoundTrip");
+var scenario = Require(root.Table(Scenario.Table).Get("fullRoundTrip"), "fullRoundTrip");
 
 Assert(arcanist.Stats.Attack == 19, "nested object was not loaded");
 Assert(arcanist.Stats.Resistances["ice"] == 9, "nested dictionary was not loaded");
@@ -61,22 +63,110 @@ Assert(scenario.Apply(5, composed) == 65,
 
 // Dedicated VM workloads are also used by the runtime benchmark project.
 Assert(scenario.IntegerLoop(1_000) == 499_500, "integer loop returned the wrong result");
+Assert(scenario.FloatLoop(1_000) == 500.0, "floating-point loop returned the wrong result");
+Assert(scenario.NumericConversions(4, 5.75) == 5 && scenario.NumericConversions(6, 5.75) == 6,
+    "numeric conversions or floating-point comparison returned the wrong result");
+Assert(scenario.EnumRoundTrip(CharacterId.Arcanist) && !scenario.EnumRoundTrip(CharacterId.Guardian),
+    "enum VM boundary or equality returned the wrong result");
 Assert(scenario.DirectCallChain(10) == 14, "direct CFD call chain returned the wrong result");
 Assert(scenario.TailRecursion(1_000) == 0, "tail recursion returned the wrong result");
+Assert(scenario.TailAccumulator(1_000, 0) == 500_500,
+    "tail-call argument copying corrupted overlapping register windows");
 Assert(scenario.FieldReadLoop(10) == 190, "generated field loop returned the wrong result");
 Assert(scenario.CollectionPipeline(6) == 30, "collection pipeline returned the wrong result");
 Assert(scenario.HostCall(7) == 7 && traces[^1] == "benchmark",
     "direct CFD-to-host call returned the wrong result");
+Assert(scenario.HostComposite(Option<long>.Some(4)).Value == 5 &&
+       scenario.HostComposite(Option<long>.None).Error == "missing",
+    "Host composite argument/result layouts were not preserved");
+Assert(!scenario.PropagateOption(Option<long>.None).HasValue &&
+       scenario.PropagateOption(Option<long>.Some(4)).Value == 5,
+    "Option propagation did not preserve the structural tag/payload layout");
+Assert(scenario.PropagateResult(Result<long, string>.Err("failed")).Error == "failed" &&
+       scenario.PropagateResult(Result<long, string>.Ok(4)).Value == 5,
+    "Result propagation did not preserve the structural error/value layout");
+Assert(scenario.PropagateNested(Result<Result<long, string>, string>.Err("outer")).Error == "outer" &&
+       scenario.PropagateNested(Result<Result<long, string>, string>.Ok(
+           Result<long, string>.Err("inner"))).Error == "inner" &&
+       scenario.PropagateNested(Result<Result<long, string>, string>.Ok(
+           Result<long, string>.Ok(4))).Value == 5,
+    "nested propagation did not handle differing structural payload widths");
+Assert(scenario.MakeOptionalAdder(Option<long>.Some(3))(4) == 7 &&
+       scenario.MakeOptionalAdder(Option<long>.None)(4) == 4,
+    "closure capture did not preserve an Option payload layout");
+Assert(scenario.CollectionQueries(4) == 114 && scenario.CollectionQueries(8) == 100,
+    "find/any/all lowering returned the wrong result");
+Assert(scenario.EmptyCollectionQueries() == 107,
+    "higher-order lowering returned the wrong empty-collection identities");
 
-// Reload one CFD child module. The root relinks its data and recompiles parent functions.
+for (var index = 0; index < 32; index++)
+{
+    _ = scenario.IntegerLoop(10);
+    _ = scenario.DirectCallChain(10);
+    _ = scaler(4);
+}
+var allocationStart = GC.GetAllocatedBytesForCurrentThread();
+for (var index = 0; index < 1_000; index++)
+{
+    _ = scenario.IntegerLoop(10);
+    _ = scenario.DirectCallChain(10);
+    _ = scaler(4);
+}
+var hotPathAllocations = GC.GetAllocatedBytesForCurrentThread() - allocationStart;
+Assert(hotPathAllocations == 0,
+    $"warmed VM calls allocated {hotPathAllocations} managed bytes");
+
+var constructedStats = scenario.MakeStats(7);
+Assert(constructedStats.Health == 7 && constructedStats.Attack == 8 &&
+       constructedStats.Resistances["typed"] == 9,
+    "typed object construction returned the wrong object");
+var defaultStats = scenario.MakeDefaultStats(7);
+Assert(defaultStats.Health == 7 && defaultStats.Attack == 8 && defaultStats.Resistances.Count == 0,
+    "typed object construction did not apply a generated field default");
+var formatted = scenario.FormatValues(4, 1.5, true, Option<long>.Some(6));
+Assert(formatted ==
+       "value=4, ratio=1.5, enabled=true, optional=Some(6), stats=Some(integration::domain::Stats { health: 3, attack: 5, resistances: { \"arcane\": 11 } })",
+    $"typed interpolation returned the wrong text: {formatted}");
+host.Configure(
+    "reconfigured",
+    traces.Add,
+    static (value, operation) => operation(value) + 7,
+    static value => $"[reconfigured] {value}",
+    static value => value.HasValue
+        ? Result<long, string>.Ok(value.Value + 2)
+        : Result<long, string>.Err("reconfigured-missing"));
+Assert(scenario.CallHost(4) == 23,
+    "reconfigured Host delegates were not observed by the existing module");
+Assert(scenario.HostComposite(Option<long>.Some(4)).Value == 6,
+    "reconfigured composite Host delegate was not observed");
+host.Configure(
+    "integration",
+    traces.Add,
+    (value, operation) => operation(value + 1) + 100,
+    value => $"[integration] {value}",
+    value => value.HasValue
+        ? Result<long, string>.Ok(value.Value + 1)
+        : Result<long, string>.Err("missing"));
+
+// Replacement publishes a new immutable module/set and leaves the old snapshot valid.
 var updatedCharacters = charactersSource.Replace("attack: 19", "attack: 20", StringComparison.Ordinal);
-var reload = root.Reload(charactersModule, updatedCharacters);
-Assert(reload.IsOk, "child module reload failed");
-var reloadedScenario = Require(root.Table<Scenario>().Get("fullRoundTrip"), "fullRoundTrip");
+var updated = Load(updatedCharacters, scenarioSource);
+Require(updated.Singleton<HostServices>(), "HostServices").Configure(
+    "integration", traces.Add,
+    (value, operation) => operation(value + 1) + 100,
+    value => $"[integration] {value}",
+    value => value.HasValue
+        ? Result<long, string>.Ok(value.Value + 1)
+        : Result<long, string>.Err("missing"));
+var oldSet = Coflow.Modules(root);
+var newSet = oldSet.Replace(root, updated);
+var reloadedScenario = Require(newSet.Table(Scenario.Table).Get("fullRoundTrip"), "fullRoundTrip");
 Assert(reloadedScenario.Execute(5) == 90,
-    "parent CFD functions were not recompiled after child module reload");
+    "replacement snapshot did not contain the updated data");
 Assert(reloadedScenario.MakeScaler(3)(4) == 32,
-    "reloaded parent closure did not capture child module data");
+    "replacement closure did not capture updated data");
+Assert(Require(oldSet.Table(Scenario.Table).Get("fullRoundTrip"), "fullRoundTrip").Execute(5) == 87,
+    "replacement mutated the old module set");
 
 Console.WriteLine("csharp-runtime-integration-ok");
 
@@ -89,17 +179,11 @@ static void Assert(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
 }
 
-static void AssertOk<TError>(Result<Unit, TError> result)
-{
-    if (result.IsErr)
-        throw new InvalidOperationException($"Host binding failed: {result.Error}");
-}
-
-static CoflowModule Load(string[] sources, params CoflowModule[] children)
+static CoflowModule Load(params string[] sources)
 {
     try
     {
-        return Coflow.LoadAndCompile(sources, children);
+        return Coflow.LoadAndCompile(sources);
     }
     catch (CoflowLoadException error)
     {

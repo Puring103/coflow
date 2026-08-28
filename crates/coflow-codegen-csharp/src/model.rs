@@ -73,11 +73,13 @@ pub struct CsharpType {
     pub equality: Option<CsharpEquality>,
     pub loader_fields: Vec<CsharpLoaderField>,
     pub loader_id_type: Option<String>,
+    pub table_token_type: Option<String>,
     pub loader_id_reader: Option<String>,
     pub loader_enabled: bool,
     pub is_host: bool,
     pub is_abstract: bool,
     pub is_sealed: bool,
+    pub is_struct: bool,
     pub loader_assignable_to: Vec<String>,
     pub loader_variants: Vec<CsharpLoaderVariant>,
 }
@@ -94,7 +96,7 @@ pub struct CsharpFunction {
     pub method_name: String,
     pub bind_method_name: String,
     pub bind_parameter_name: String,
-    pub slot_name: String,
+    pub entry_name: String,
     pub declared_here: bool,
     pub result_type: String,
     pub delegate_type: String,
@@ -165,6 +167,12 @@ pub struct CsharpEquality {
     /// When true, equality compares all fields (used for inline-only types
     /// without an Id). When false, compares only `key_property`.
     pub by_fields: bool,
-    /// Property names participating in by-fields equality.
-    pub fields: Vec<String>,
+    /// Precisely typed properties participating in by-fields equality.
+    pub fields: Vec<CsharpEqualityField>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpEqualityField {
+    pub name: String,
+    pub ty: String,
 }

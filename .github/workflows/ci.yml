@@ -21,3 +21,34 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  csharp-runtime:
+    name: C# runtime test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test C# runtime
+        run: dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj --configuration Release
+
+      - name: Build all C# runtime targets
+        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj --configuration Release
+
+      - name: Regenerate C# integration contract
+        run: cargo run -- codegen examples/csharp-runtime
+
+      - name: Run C# integration
+        run: dotnet run --project examples/csharp-runtime/app/Coflow.Runtime.Example.csproj --configuration Release
+
+      - name: Build C# benchmarks
+        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release

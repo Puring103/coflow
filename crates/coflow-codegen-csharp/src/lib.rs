@@ -76,6 +76,23 @@ fn build_csharp_project(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<model::CsharpProject, CsharpCodegenError> {
+    let unsupported = schema
+        .all_types()
+        .flat_map(|schema_type| schema_type.own_fields().map(move |field| (schema_type, field)))
+        .find_map(|(schema_type, field)| match &field.value_type {
+            coflow_language::CftValueType::Function(parameters, _) if parameters.len() > 8 => Some(
+                format!(
+                    "C# runtime functions support at most 8 parameters; `{}.{}` declares {}",
+                    schema_type.name,
+                    field.name,
+                    parameters.len()
+                ),
+            ),
+            _ => None,
+        });
+    if let Some(message) = unsupported {
+        return Err(CsharpCodegenError::new(message));
+    }
     ir::build_project(schema, options, id_as_enum_variants, non_empty_tables)
 }
 
@@ -129,7 +146,7 @@ fn generate_csharp_cfd_with_manifest(
     let _ = (sources, schema);
     files.push(GeneratedFile {
         relative_path: PathBuf::from("Coflow.Metadata.cs"),
-        contents: render::render_cfd_metadata(&project),
+        contents: render::render_cfd_metadata_template(&project)?,
     });
     Ok(files)
 }
