@@ -100,6 +100,17 @@ internal readonly record struct CoflowValueRegister(
             : new(child, IntegerBase + integerOffset, FloatBase + floatOffset, ReferenceBase + referenceOffset);
 }
 
+internal readonly record struct CoflowExecutableInstruction(
+    CoflowOpCode Code,
+    int Operand,
+    int Operand2,
+    int Operand3,
+    Type? ValueType,
+    int StackDepth,
+    int BlockCharge,
+    object? Operation,
+    CoflowEncodedValue? Constant);
+
 internal sealed class CoflowRegisterProgram
 {
     internal CoflowRegisterProgram(
@@ -107,32 +118,107 @@ internal sealed class CoflowRegisterProgram
         CoflowValueRegister[] parameters,
         CoflowValueRegister[] locals,
         CoflowValueRegister[] temporaries,
+        int[] blockCharges,
+        IReadOnlyList<CoflowInstruction> instructions,
+        IReadOnlyList<object?> operations,
+        IReadOnlyList<CoflowEncodedValue?> encodedConstants,
         int integerRegisterCount,
         int floatRegisterCount,
         int referenceRegisterCount)
     {
         Stacks = stacks;
+        StackDepths = stacks.Select(stack => stack.Length).ToArray();
         Parameters = parameters;
         Locals = locals;
         Temporaries = temporaries;
+        BlockCharges = blockCharges;
+        StackRegisters = stacks.Select(stack => stack.Select((type, depth) =>
+        {
+            var temporary = temporaries[depth];
+            return new CoflowValueRegister(
+                CoflowValueShape.Of(type),
+                temporary.IntegerBase,
+                temporary.FloatBase,
+                temporary.ReferenceBase);
+        }).ToArray()).ToArray();
+        NativeCallSites = BuildNativeCallSites(instructions, operations);
+        Instructions = BuildInstructions(instructions, operations, encodedConstants);
+        ParameterIntegerCount = parameters.Sum(value => value.Shape.IntegerCount);
+        ParameterFloatCount = parameters.Sum(value => value.Shape.FloatCount);
+        ParameterReferenceCount = parameters.Sum(value => value.Shape.ReferenceCount);
         IntegerRegisterCount = integerRegisterCount;
         FloatRegisterCount = floatRegisterCount;
         ReferenceRegisterCount = referenceRegisterCount;
     }
 
     internal Type[][] Stacks { get; }
+    internal int[] StackDepths { get; }
+    internal CoflowValueRegister[][] StackRegisters { get; }
     internal CoflowValueRegister[] Parameters { get; }
     internal CoflowValueRegister[] Locals { get; }
     internal CoflowValueRegister[] Temporaries { get; }
+    internal int[] BlockCharges { get; }
+    internal CoflowNativeCallSite?[] NativeCallSites { get; }
+    internal CoflowExecutableInstruction[] Instructions { get; }
     internal int IntegerRegisterCount { get; }
     internal int FloatRegisterCount { get; }
     internal int ReferenceRegisterCount { get; }
-    internal CoflowValueRegister Stack(int pc, int depth) =>
-        Temporary(CoflowValueShape.Of(Stacks[pc][depth]), depth);
+    internal int ParameterIntegerCount { get; }
+    internal int ParameterFloatCount { get; }
+    internal int ParameterReferenceCount { get; }
+    internal CoflowValueRegister Stack(int pc, int depth) => StackRegisters[pc][depth];
     internal CoflowValueRegister Temporary(CoflowValueShape shape, int depth)
     {
         var temporary = Temporaries[depth];
         return new(shape, temporary.IntegerBase, temporary.FloatBase, temporary.ReferenceBase);
+    }
+
+    private CoflowNativeCallSite?[] BuildNativeCallSites(
+        IReadOnlyList<CoflowInstruction> instructions,
+        IReadOnlyList<object?> operations)
+    {
+        var sites = new CoflowNativeCallSite?[instructions.Count];
+        for (var pc = 0; pc < instructions.Count; pc++)
+        {
+            var instruction = instructions[pc];
+            if (instruction.Code != CoflowOpCode.Native) continue;
+            var call = (CoflowNativeCall)operations[instruction.Operand]!;
+            var depth = StackDepths[pc];
+            var arguments = new CoflowValueRegister[call.ArgumentCount];
+            for (var index = 0; index < arguments.Length; index++)
+                arguments[index] = StackRegisters[pc][depth - arguments.Length + index];
+            sites[pc] = new CoflowNativeCallSite(
+                call,
+                arguments,
+                Temporary(CoflowValueShape.Of(instruction.ValueType!), depth - arguments.Length));
+        }
+        return sites;
+    }
+
+    private CoflowExecutableInstruction[] BuildInstructions(
+        IReadOnlyList<CoflowInstruction> instructions,
+        IReadOnlyList<object?> operations,
+        IReadOnlyList<CoflowEncodedValue?> encodedConstants)
+    {
+        var decoded = new CoflowExecutableInstruction[instructions.Count];
+        for (var pc = 0; pc < instructions.Count; pc++)
+        {
+            var instruction = instructions[pc];
+            decoded[pc] = new CoflowExecutableInstruction(
+                instruction.Code,
+                instruction.Operand,
+                instruction.Operand2,
+                instruction.Operand3,
+                instruction.ValueType,
+                StackDepths[pc],
+                BlockCharges[pc],
+                instruction.Code == CoflowOpCode.Constant ? null :
+                    instruction.Operand >= 0 && instruction.Operand < operations.Count
+                        ? operations[instruction.Operand] : null,
+                instruction.Code == CoflowOpCode.Constant
+                    ? encodedConstants[instruction.Operand] : null);
+        }
+        return decoded;
     }
 }
 
@@ -185,9 +271,45 @@ internal static class CoflowRegisterLowering
             parameters,
             localRegisters,
             temporaries,
+            BuildBlockCharges(instructions),
+            instructions,
+            program.Operations,
+            program.EncodedConstants,
             integer,
             floating,
             reference);
+    }
+
+    private static int[] BuildBlockCharges(IReadOnlyList<CoflowInstruction> instructions)
+    {
+        var leaders = new bool[instructions.Count + 1];
+        leaders[0] = true;
+        for (var pc = 0; pc < instructions.Count; pc++)
+        {
+            var instruction = instructions[pc];
+            var boundary = instruction.Code is CoflowOpCode.Native or CoflowOpCode.Call or
+                CoflowOpCode.CallIndirect or CoflowOpCode.TailCall or CoflowOpCode.TailCallIndirect or
+                CoflowOpCode.Return or CoflowOpCode.Jump or CoflowOpCode.JumpIfFalse or
+                CoflowOpCode.JumpIfFalseKeep or CoflowOpCode.JumpIfTrueKeep;
+            if (boundary)
+            {
+                leaders[pc] = true;
+                if (pc + 1 < leaders.Length) leaders[pc + 1] = true;
+            }
+            if (instruction.Code is CoflowOpCode.Jump or CoflowOpCode.JumpIfFalse or
+                CoflowOpCode.JumpIfFalseKeep or CoflowOpCode.JumpIfTrueKeep)
+                leaders[instruction.Operand] = true;
+        }
+        var charges = new int[instructions.Count];
+        for (var start = 0; start < instructions.Count;)
+        {
+            if (!leaders[start]) { start++; continue; }
+            var end = start + 1;
+            while (end < instructions.Count && !leaders[end]) end++;
+            charges[start] = end - start;
+            start = end;
+        }
+        return charges;
     }
 
     private static CoflowValueRegister[] Allocate(

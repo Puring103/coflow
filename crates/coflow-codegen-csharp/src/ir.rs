@@ -1,4 +1,4 @@
-use crate::emit::{build_csharp_dimension_type, build_csharp_enum, build_csharp_type};
+use crate::emit::{build_csharp_dimension_type, build_csharp_enum, build_csharp_type, function_adapter_expression};
 use crate::emit::types::csharp_type;
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{CsharpConstant, CsharpEnum, CsharpEnumVariant, CsharpProject};
@@ -77,6 +77,7 @@ pub fn build_project(
     types.sort_by(|left, right| left.name.cmp(&right.name));
 
     let singletons = build_csharp_singletons(&view);
+    let delegate_adapters = build_delegate_adapters(schema, &view);
     let constants = schema
         .all_consts()
         .map(|constant| Ok(CsharpConstant {
@@ -94,11 +95,51 @@ pub fn build_project(
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
         uses_localization: view.uses_localization(),
+        delegate_adapters,
         enums,
         types,
         singletons,
         constants,
     })
+}
+
+fn build_delegate_adapters(
+    schema: &CftSchema,
+    view: &CsharpLoweringPlan<'_>,
+) -> Vec<String> {
+    fn collect(
+        ty: &CftValueType,
+        view: &CsharpLoweringPlan<'_>,
+        adapters: &mut BTreeMap<String, String>,
+    ) {
+        match ty {
+            CftValueType::Function(parameters, result) => {
+                let delegate_type = csharp_type(ty, view);
+                adapters.entry(delegate_type).or_insert_with(||
+                    function_adapter_expression(parameters, result, view));
+                for parameter in parameters {
+                    collect(&parameter.value_type, view, adapters);
+                }
+                collect(result, view, adapters);
+            }
+            CftValueType::Array(item) | CftValueType::Option(item) => collect(item, view, adapters),
+            CftValueType::Dict(key, value) | CftValueType::Result(key, value) => {
+                collect(key, view, adapters);
+                collect(value, view, adapters);
+            }
+            _ => { }
+        }
+    }
+
+    let mut adapters = BTreeMap::new();
+    for schema_type in schema.all_types() {
+        for field in schema_type.own_fields() {
+            collect(&field.value_type, view, &mut adapters);
+        }
+    }
+    adapters.into_iter().map(|(delegate_type, adapter)|
+        format!("CoflowDelegateAdapter.Register<{delegate_type}>({adapter});"))
+        .collect()
 }
 
 fn render_constant_value(

@@ -1946,7 +1946,8 @@ internal static class CoflowCompiler
                 foreach (var capture in Captures) capture.Emit(parser);
                 var program = parser.CompileLambda(Signature, Captures, Body);
                 parser.Emit(CoflowOpCode.MakeClosure,
-                    parser.Constant(new CoflowClosureTemplate(program, Captures.Count)));
+                    parser.Constant(new CoflowClosureTemplate(
+                        program, Captures.Select(capture => capture.Type).ToArray())));
             }
         }
 
@@ -2235,6 +2236,7 @@ internal static class CoflowCompiler
             {
                 var collection = parser._localCount++;
                 var callable = parser._localCount++;
+                var count = parser._localCount++;
                 var index = parser._localCount++;
                 var item = parser._localCount++;
                 var result = parser._localCount++;
@@ -2252,8 +2254,14 @@ internal static class CoflowCompiler
                 else Arguments[0].Emit(parser);
                 parser.Emit(CoflowOpCode.StoreLocal, callable);
 
+                parser.Emit(CoflowOpCode.Local, collection);
+                parser.Emit(CoflowOpCode.Native,
+                    parser.Constant(new CoflowNativeCall(Operation.Count)), typeof(long));
+                parser.Emit(CoflowOpCode.StoreLocal, count);
+
                 if (Operation.Name is "map" or "filter")
                 {
+                    parser.Emit(CoflowOpCode.Local, count);
                     parser.Emit(CoflowOpCode.Native,
                         parser.Constant(new CoflowNativeCall(Operation.CreateBuilder!)),
                         Operation.CreateBuilder!.GetType().GetMethod("Invoke")!.ReturnType);
@@ -2275,9 +2283,7 @@ internal static class CoflowCompiler
 
                 var condition = parser._instructions.Count;
                 parser.Emit(CoflowOpCode.Local, index);
-                parser.Emit(CoflowOpCode.Local, collection);
-                parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Operation.Count)), typeof(long));
+                parser.Emit(CoflowOpCode.Local, count);
                 parser.Emit(CoflowOpCode.LessInt, 0, typeof(bool));
                 var done = parser.Emit(CoflowOpCode.JumpIfFalse);
 
@@ -2660,7 +2666,8 @@ internal static class CoflowCompiler
                 values[checked((int)index)];
             private static long ArrayCount<T>(IReadOnlyList<T> value) => value.Count;
             private static T ArrayItem<T>(IReadOnlyList<T> value, long index) => value[checked((int)index)];
-            private static List<T> CreateList<T>() => new();
+            private static List<T> CreateList<T>(long capacity) =>
+                new(checked((int)capacity));
             private static void AddList<T>(List<T> values, T value) => values.Add(value);
             private static IReadOnlyList<T> FinishList<T>(List<T> values) => values.AsReadOnly();
             private static KeyValuePair<TKey, TValue>[] PrepareDictionaryLoop<TKey, TValue>(

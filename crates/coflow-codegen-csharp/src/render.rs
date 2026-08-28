@@ -13,6 +13,7 @@ const METADATA_HELPERS_TEMPLATE: &str = include_str!("../templates/metadata-help
 #[derive(Serialize)]
 struct MetadataProject {
     namespace: String,
+    delegate_adapters: Vec<String>,
     enums: Vec<MetadataEnum>,
     types: Vec<MetadataType>,
     constants: Vec<MetadataConstant>,
@@ -72,7 +73,6 @@ struct MetadataField {
     source_name: String,
     runtime_type: String,
     access: String,
-    assignment_target: String,
     annotations: String,
     has_default: bool,
     object_type: Option<String>,
@@ -107,6 +107,8 @@ struct MetadataReader {
     is_host: bool,
     expected_fields: Vec<String>,
     constructor_arguments: Vec<String>,
+    populate_id: Option<String>,
+    populate_assignments: Vec<String>,
     host_constructor_arguments: Vec<String>,
     variants: Vec<MetadataVariant>,
 }
@@ -179,6 +181,7 @@ pub fn render_cfd_metadata_template(
 fn metadata_project(project: &CsharpProject) -> MetadataProject {
     MetadataProject {
         namespace: project.namespace.clone(),
+        delegate_adapters: project.delegate_adapters.clone(),
         enums: project.enums.iter().map(metadata_enum).collect(),
         types: project.types.iter().filter(|ty| ty.loader_enabled)
             .map(|ty| metadata_type(project, ty)).collect(),
@@ -255,14 +258,6 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
                     else { field.value_type.clone() },
                 access: function.map_or_else(|| field.property_name.clone(),
                     |item| format!("{}.RuntimeEntry", item.entry_name)),
-                assignment_target: if field.is_function {
-                    format!("_coflow{}", field.property_name)
-                } else if ty.is_struct {
-                    field.property_name.clone()
-                } else {
-                    crate::emit::backing_field_name(&field.property_name, false)
-                        .unwrap_or_else(|| field.property_name.clone())
-                },
                 annotations: render_annotations(&field.annotations),
                 has_default: field.default_expression.is_some(),
                 object_type: field.object_type.as_deref().map(escape_csharp_string),
@@ -352,8 +347,30 @@ fn metadata_reader(ty: &CsharpType) -> MetadataReader {
         expected_fields: ty.loader_fields.iter()
             .map(|field| escape_csharp_string(&field.source_name)).collect(),
         constructor_arguments: arguments,
+        populate_id: ty.loader_id_type.as_ref().map(|_| {
+            let value = ty.loader_id_reader.as_ref().map_or_else(|| "key".to_string(),
+                |reader| format!("ReadEnum{reader}Text(key)"));
+            format!("target.Id = {value};")
+        }),
+        populate_assignments: ty.loader_fields.iter().map(|field| {
+            format!("target.{} = {};", assignment_target(ty, field), reader_argument(field))
+        }).collect(),
         host_constructor_arguments: host_arguments,
         variants: metadata_variants(ty),
+    }
+}
+
+fn assignment_target(
+    ty: &CsharpType,
+    field: &crate::model::CsharpLoaderField,
+) -> String {
+    if field.is_function {
+        format!("_coflow{}", field.property_name)
+    } else if ty.is_struct {
+        field.property_name.clone()
+    } else {
+        crate::emit::backing_field_name(&field.property_name, false)
+            .unwrap_or_else(|| field.property_name.clone())
     }
 }
 

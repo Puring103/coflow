@@ -33,6 +33,13 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(output.contains("[ModuleInitializer]"));
     assert!(output.contains("CoflowGeneratedRegistry.Register"));
     assert!(output.contains("CoflowGeneratedContract : ICoflowGeneratedContract"));
+    assert!(output.contains("CoflowGeneratedTypeMetadata, ICoflowRecordMetadata"));
+    assert!(output.contains("CoflowFieldBinding.Create<global::Game.Config.Item, string>"));
+    assert!(output.contains("PopulateCft_4974656D((global::Game.Config.Item)target, record, context)"));
+    assert!(output.contains("target._coflowName = CfdValueReader.String"));
+    assert!(!output.contains("var loaded = ReadCft_4974656D"));
+    assert!(!output.contains("public Type GetFieldType(string fieldName) => fieldName switch"));
+    assert!(!output.contains("public Delegate GetFieldReader(string fieldName) => fieldName switch"));
     assert!(output.contains("DeclaredType => \"Item\""));
     assert!(output.contains("CfdValueReader.String"));
     assert!(output.contains("ReadCft_4974656DFields"));
@@ -63,7 +70,9 @@ fn emits_cft_structs_as_reference_types_with_value_equality() {
     assert!(!output.contains("EqualityComparer<object>.Default"));
     assert!(!output.contains("partial struct Point"));
     assert!(!output.contains("CoflowStringTableToken<Point>"));
-    assert!(output.contains("Cft_506F696E74CoflowMetadata : ICoflowTypeMetadata"));
+    assert!(output.contains(
+        "Cft_506F696E74CoflowMetadata : CoflowGeneratedTypeMetadata, ICoflowTypeMetadata"
+    ));
     assert!(!output.contains("Cft_506F696E74CoflowMetadata : ICoflowRecordMetadata"));
     assert!(!output.contains("public Type KeyType"));
     assert!(!output.contains("public object ParseKey"));
@@ -304,10 +313,12 @@ fn preserves_host_singleton_in_generated_metadata() {
     .expect("generate");
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
-    assert!(output.contains("Cft_417069CoflowMetadata : ICoflowHostMetadata"));
+    assert!(output.contains(
+        "Cft_417069CoflowMetadata : CoflowGeneratedTypeMetadata, ICoflowHostMetadata"
+    ));
     assert!(output.contains("public void Configure("));
     assert!(output.contains("string environment,\n        Action<string> log"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog.RuntimeEntry, log)"));
+    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowLog.RuntimeEntry, log)"));
     assert!(output.contains("CreateHostCft_417069(context)"));
     assert!(!output.contains("BindLog(Action<string> implementation)"));
 }
@@ -327,8 +338,8 @@ fn host_binding_includes_inherited_fields_and_functions() {
     let output = all(&files);
     assert!(output.contains("string region,"));
     assert!(output.contains("Action<string> report,"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowReport.RuntimeEntry, report)"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog.RuntimeEntry, log)"));
+    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowReport.RuntimeEntry, report)"));
+    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowLog.RuntimeEntry, log)"));
     assert!(output.contains(": base(hostSlot, default!, report)"));
 }
 
@@ -368,8 +379,9 @@ fn loads_function_values_nested_in_collections_and_option() {
     assert!(output.contains("IReadOnlyList<Func<long, long>> Handlers"));
     assert!(output.contains("IReadOnlyDictionary<string, Func<string, bool>> Named"));
     assert!(output.contains("Option<Func<long, long>> Optional"));
-    assert!(output.contains("context.FunctionValue<Func<long, long>>(item, typeof(long)"));
-    assert!(output.contains("context.FunctionValue<Func<string, bool>>(item, typeof(bool)"));
+    assert!(output.contains("context.FunctionValueAot<Func<long, long>>(item, typeof(long)"));
+    assert!(output.contains("context.FunctionValueAot<Func<string, bool>>(item, typeof(bool)"));
+    assert!(output.contains("CoflowDelegateAdapter.Register<Func<long, long>>"));
 }
 
 #[test]

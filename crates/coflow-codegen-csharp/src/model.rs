@@ -4,6 +4,7 @@ use serde::Serialize;
 pub struct CsharpProject {
     pub namespace: String,
     pub uses_localization: bool,
+    pub delegate_adapters: Vec<String>,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub singletons: Vec<CsharpSingleton>,

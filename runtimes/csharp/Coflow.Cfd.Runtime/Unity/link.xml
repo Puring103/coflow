@@ -1,0 +1,3 @@
+<linker>
+  <assembly fullname="Coflow.Cfd.Runtime" preserve="all" />
+</linker>

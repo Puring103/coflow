@@ -186,6 +186,20 @@ public sealed class CfdLoadContext
         return factory(entry);
     }
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TDelegate FunctionValueAot<TDelegate>(
+        CfdValueNode node,
+        Type resultType,
+        Type[] parameterTypes,
+        Func<CoflowCallable, TDelegate> factory)
+        where TDelegate : Delegate
+    {
+        if (factory is null) throw new ArgumentNullException(nameof(factory));
+        CoflowDelegateAdapter.Register(factory);
+        return FunctionValue(node, resultType, parameterTypes,
+            entry => factory(new CoflowCallable(entry)));
+    }
+
     private CoflowFunctionEntry CreateFunctionEntry(
         CfdFunctionValue? source,
         string fieldName,

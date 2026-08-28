@@ -21,9 +21,63 @@ public sealed class CoflowHostNotBoundException : InvalidOperationException
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
-public readonly record struct CoflowHostFunctionBinding(
-    CoflowFunctionEntry Entry,
-    Delegate Implementation);
+public readonly record struct CoflowHostFunctionBinding
+{
+    public CoflowHostFunctionBinding(CoflowFunctionEntry entry, Delegate implementation)
+        : this(entry, implementation, null) { }
+
+    private CoflowHostFunctionBinding(
+        CoflowFunctionEntry entry,
+        Delegate implementation,
+        CoflowNativeCall? call)
+    {
+        Entry = entry ?? throw new ArgumentNullException(nameof(entry));
+        Implementation = implementation ?? throw new ArgumentNullException(nameof(implementation));
+        Call = call;
+    }
+
+    public CoflowFunctionEntry Entry { get; }
+    public Delegate Implementation { get; }
+    internal CoflowNativeCall? Call { get; }
+
+    public static CoflowHostFunctionBinding Create<TResult>(CoflowFunctionEntry entry, Func<TResult> implementation) =>
+        new(entry, implementation, new(Type.EmptyTypes, typeof(TResult), frame => frame.Write(implementation())));
+    public static CoflowHostFunctionBinding Create<T1, TResult>(CoflowFunctionEntry entry, Func<T1, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, TResult>(CoflowFunctionEntry entry, Func<T1, T2, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, T4, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, T4, T5, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, T4, T5, T6, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, T7, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, T4, T5, T6, T7, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6)))));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(CoflowFunctionEntry entry, Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7), typeof(T8) }, typeof(TResult), frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6), frame.Read<T8>(7)))));
+
+    public static CoflowHostFunctionBinding Create(CoflowFunctionEntry entry, Action implementation) =>
+        new(entry, implementation, new(Type.EmptyTypes, typeof(Unit), frame => { implementation(); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1>(CoflowFunctionEntry entry, Action<T1> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2>(CoflowFunctionEntry entry, Action<T1, T2> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3>(CoflowFunctionEntry entry, Action<T1, T2, T3> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4, T5> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4, T5, T6> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, T7>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4, T5, T6, T7> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6)); frame.Write(Unit.Value); }));
+    public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, T7, T8>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4, T5, T6, T7, T8> implementation) =>
+        new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7), typeof(T8) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6), frame.Read<T8>(7)); frame.Write(Unit.Value); }));
+}
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowHostState
@@ -48,7 +102,8 @@ public sealed class CoflowHostState
         if (assignFields is null) throw new ArgumentNullException(nameof(assignFields));
         if (functions is null) throw new ArgumentNullException(nameof(functions));
         if (!_functionsCompiled) throw new CoflowFunctionNotCompiledException();
-        foreach (var function in functions) function.Entry.ConfigureHost(function.Implementation);
+        foreach (var function in functions)
+            function.Entry.ConfigureHost(function.Implementation, function.Call);
         assignFields();
         _configured = true;
     }
@@ -61,8 +116,56 @@ public readonly record struct CoflowFunctionIdentity(
     string FieldName,
     string ValuePath = "");
 
+[EditorBrowsable(EditorBrowsableState.Never)]
+public readonly struct CoflowCallable
+{
+    private readonly object _target;
+    private CoflowFunctionEntry? _entry => _target as CoflowFunctionEntry;
+    private CoflowClosure? _closure => _target as CoflowClosure;
+
+    internal CoflowCallable(CoflowFunctionEntry entry) => _target = entry;
+    internal CoflowCallable(CoflowClosure closure) => _target = closure;
+
+    public TResult Invoke<TResult>() => _entry is { } entry ? entry.Invoke<TResult>() : _closure!.Invoke<TResult>();
+    public TResult Invoke<T1, TResult>(T1 arg1) => _entry is { } entry ? entry.Invoke<T1, TResult>(arg1) : _closure!.Invoke<T1, TResult>(arg1);
+    public TResult Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) => _entry is { } entry ? entry.Invoke<T1, T2, TResult>(arg1, arg2) : _closure!.Invoke<T1, T2, TResult>(arg1, arg2);
+    public TResult Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) => _entry is { } entry ? entry.Invoke<T1, T2, T3, TResult>(arg1, arg2, arg3) : _closure!.Invoke<T1, T2, T3, TResult>(arg1, arg2, arg3);
+    public TResult Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, TResult>(arg1, arg2, arg3, arg4) : _closure!.Invoke<T1, T2, T3, T4, TResult>(arg1, arg2, arg3, arg4);
+    public TResult Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, TResult>(arg1, arg2, arg3, arg4, arg5) : _closure!.Invoke<T1, T2, T3, T4, T5, TResult>(arg1, arg2, arg3, arg4, arg5);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, TResult>(arg1, arg2, arg3, arg4, arg5, arg6) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, TResult>(arg1, arg2, arg3, arg4, arg5, arg6);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+
+    public void InvokeVoid() { if (_entry is { } entry) entry.InvokeVoid(); else _closure!.InvokeVoid(); }
+    public void InvokeVoid<T1>(T1 arg1) { if (_entry is { } entry) entry.InvokeVoid(arg1); else _closure!.InvokeVoid(arg1); }
+    public void InvokeVoid<T1, T2>(T1 arg1, T2 arg2) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2); else _closure!.InvokeVoid(arg1, arg2); }
+    public void InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3); else _closure!.InvokeVoid(arg1, arg2, arg3); }
+    public void InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4); }
+    public void InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); }
+}
+
+[EditorBrowsable(EditorBrowsableState.Never)]
+public static class CoflowDelegateAdapter
+{
+    public static void Register<TDelegate>(Func<CoflowCallable, TDelegate> factory)
+        where TDelegate : Delegate => CoflowFunctionDelegates.Register(factory);
+}
+
 internal static class CoflowFunctionDelegates
 {
+    internal sealed class CallableDescriptor(
+        CoflowFunctionEntry? entry,
+        CoflowClosure? closure,
+        CoflowNativeCall? nativeCall)
+    {
+        internal CoflowFunctionEntry? Entry { get; } = entry;
+        internal CoflowClosure? Closure { get; } = closure;
+        internal CoflowNativeCall? NativeCall { get; } = nativeCall;
+    }
+
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type,
         Func<CoflowClosure, Delegate>> ClosureFactories = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowFunctionEntry>
@@ -71,10 +174,25 @@ internal static class CoflowFunctionDelegates
         Closures = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CoflowNativeCall>
         NativeCalls = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, CallableDescriptor>
+        Callables = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, byte>
+        GeneratedAdapterTypes = new();
 
     internal static TDelegate Create<TDelegate>(CoflowFunctionEntry entry)
         where TDelegate : Delegate
         => (TDelegate)Create(typeof(TDelegate), entry);
+
+    internal static void Register<TDelegate>(Func<CoflowCallable, TDelegate> factory)
+        where TDelegate : Delegate
+    {
+        if (factory is null) throw new ArgumentNullException(nameof(factory));
+        ClosureFactories[typeof(TDelegate)] = closure => factory(new CoflowCallable(closure));
+        GeneratedAdapterTypes[typeof(TDelegate)] = 0;
+    }
+
+    internal static bool HasGeneratedAdapter<TDelegate>() where TDelegate : Delegate =>
+        GeneratedAdapterTypes.ContainsKey(typeof(TDelegate));
 
     private static Delegate Create(Type delegateType, CoflowFunctionEntry entry)
     {
@@ -91,21 +209,24 @@ internal static class CoflowFunctionDelegates
         if (method.IsGenericMethodDefinition) method = method.MakeGenericMethod(genericTypes);
         var body = System.Linq.Expressions.Expression.Call(
             System.Linq.Expressions.Expression.Constant(entry), method, parameters);
-        var implementation = System.Linq.Expressions.Expression
-            .Lambda(delegateType, body, parameters)
-            .Compile();
+        var implementation = CoflowExpressionCompiler.Compile(
+            System.Linq.Expressions.Expression.Lambda(delegateType, body, parameters));
         Entries.Add(implementation, entry);
         return implementation;
     }
 
-    internal static bool TryGetEntry(Delegate implementation, out CoflowFunctionEntry entry) =>
-        Entries.TryGetValue(implementation, out entry!);
-
-    internal static bool TryGetClosure(Delegate implementation, out CoflowClosure closure) =>
-        Closures.TryGetValue(implementation, out closure!);
-
-    internal static CoflowNativeCall NativeCall(Delegate implementation) =>
+    private static CoflowNativeCall NativeCall(Delegate implementation) =>
         NativeCalls.GetValue(implementation, static value => new CoflowNativeCall(value));
+
+    internal static CallableDescriptor Callable(Delegate implementation) =>
+        Callables.GetValue(implementation, static value =>
+        {
+            if (Entries.TryGetValue(value, out var entry))
+                return new CallableDescriptor(entry, null, null);
+            if (Closures.TryGetValue(value, out var closure))
+                return new CallableDescriptor(null, closure, null);
+            return new CallableDescriptor(null, null, NativeCall(value));
+        });
 
     internal static object? Adapt(Type expectedType, object? value)
     {
@@ -133,11 +254,12 @@ internal static class CoflowFunctionDelegates
             .ToArray();
         if (method.IsGenericMethodDefinition) method = method.MakeGenericMethod(genericTypes);
         var body = System.Linq.Expressions.Expression.Call(closure, method, parameters);
-        return System.Linq.Expressions.Expression.Lambda<Func<CoflowClosure, Delegate>>(
+        return CoflowExpressionCompiler.Compile(
+            System.Linq.Expressions.Expression.Lambda<Func<CoflowClosure, Delegate>>(
             System.Linq.Expressions.Expression.Convert(
                 System.Linq.Expressions.Expression.Lambda(delegateType, body, parameters),
                 typeof(Delegate)),
-            closure).Compile();
+            closure));
     }
 
     internal static T Adapt<T>(object? value) => (T)Adapt(typeof(T), value)!;
@@ -181,6 +303,16 @@ public sealed class CoflowFunctionEntry<TDelegate> where TDelegate : Delegate
         Func<CoflowFunctionEntry, TDelegate> factory) =>
         new(entry, (factory ?? throw new ArgumentNullException(nameof(factory)))(entry));
 
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static CoflowFunctionEntry<TDelegate> CreateAot(
+        CoflowFunctionEntry entry,
+        Func<CoflowCallable, TDelegate> factory)
+    {
+        if (factory is null) throw new ArgumentNullException(nameof(factory));
+        CoflowFunctionDelegates.Register(factory);
+        return new(entry, factory(new CoflowCallable(entry)));
+    }
+
     public TDelegate Function { get; }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -220,13 +352,13 @@ public sealed class CoflowFunctionEntry
     internal string SourcePath { get; }
     internal CfdSpan? SourceSpan { get; }
     internal bool RequiresCfdBody { get; }
-    internal void ConfigureHost(Delegate implementation)
+    internal void ConfigureHost(Delegate implementation, CoflowNativeCall? call = null)
     {
         if (implementation is null) throw new ArgumentNullException(nameof(implementation));
         if (!_functionsCompiled || _compiled is not null)
             throw new InvalidOperationException("A compiled Coflow function cannot be configured as a host function.");
         _implementation = implementation;
-        _hostCall = new CoflowNativeCall(implementation);
+        _hostCall = call ?? new CoflowNativeCall(implementation);
     }
 
     internal void PublishCompiled(CoflowProgram? implementation)

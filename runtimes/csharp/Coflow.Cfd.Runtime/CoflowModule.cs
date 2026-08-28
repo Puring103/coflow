@@ -124,6 +124,15 @@ public interface ICoflowTypeMetadata : ICfdTypeBinding
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
+public abstract class CoflowGeneratedTypeMetadata
+{
+    public abstract CoflowFieldBinding GetFieldBinding(string fieldName);
+    public Type GetFieldType(string fieldName) => GetFieldBinding(fieldName).RuntimeType;
+    public object GetField(object record, string fieldName) => GetFieldBinding(fieldName).Read(record);
+    public Delegate GetFieldReader(string fieldName) => GetFieldBinding(fieldName).Reader;
+}
+
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface ICoflowRecordMetadata : ICoflowTypeMetadata
 {
     Type KeyType { get; }

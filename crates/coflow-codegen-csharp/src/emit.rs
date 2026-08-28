@@ -513,7 +513,7 @@ fn loader_reader(
                 .map(|parameter| format!("typeof({})", csharp_type(&parameter.value_type, view)))
                 .collect::<Vec<_>>();
             format!(
-                "{context}.FunctionValue<{delegate_type}>({node}, typeof({}), new Type[] {{ {} }}, {})",
+                "{context}.FunctionValueAot<{delegate_type}>({node}, typeof({}), new Type[] {{ {} }}, {})",
                 csharp_type(result, view),
                 parameter_types.join(", "),
                 function_adapter_expression(parameters, result, view),
@@ -540,7 +540,7 @@ fn function_loader_reader(
         .collect::<String>();
     let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
-        "CoflowFunctionEntry<{}>.Create({context}.{method}({node}, \"{}\", typeof({}){parameter_types}), {})",
+        "CoflowFunctionEntry<{}>.CreateAot({context}.{method}({node}, \"{}\", typeof({}){parameter_types}), {})",
         csharp_type(&field.value_type, view),
         escape_csharp_literal(&field.name),
         csharp_type(result, view),
@@ -548,7 +548,7 @@ fn function_loader_reader(
     ))
 }
 
-fn function_adapter_expression(
+pub(crate) fn function_adapter_expression(
     parameters: &[CftFunctionParameter],
     result: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
