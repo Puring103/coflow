@@ -8,8 +8,9 @@ internal static class CoflowEquality
     {
         var left = Expression.Parameter(type, "left");
         var right = Expression.Parameter(type, "right");
-        return Expression.Lambda(Expression.GetFuncType(type, type, typeof(bool)),
-            Equal(type, left, right, metadata), left, right).Compile();
+        return CoflowExpressionCompiler.Compile(Expression.Lambda(
+            Expression.GetFuncType(type, type, typeof(bool)),
+            Equal(type, left, right, metadata), left, right));
     }
 
     private static Expression Equal(

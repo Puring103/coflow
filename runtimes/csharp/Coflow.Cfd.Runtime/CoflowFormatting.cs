@@ -74,7 +74,8 @@ internal static class CoflowFormatting
         Expression result = name == "id" ? rendered : Expression.Call(
             typeof(CoflowFormatting), nameof(Concat2), Type.EmptyTypes,
             Expression.Constant(record.DeclaredType + "::"), rendered);
-        return Expression.Lambda<Func<object, string>>(result, value).Compile();
+        return CoflowExpressionCompiler.Compile(
+            Expression.Lambda<Func<object, string>>(result, value));
     }
 
     private static ValueRenderer Renderer<T>(Delegate formatter)
@@ -90,9 +91,9 @@ internal static class CoflowFormatting
     {
         var value = Expression.Parameter(type, "value");
         var nested = Expression.Parameter(typeof(bool), "nested");
-        return Expression.Lambda(
+        return CoflowExpressionCompiler.Compile(Expression.Lambda(
             Expression.GetFuncType(type, typeof(bool), typeof(string)),
-            Format(type, value, nested, metadata, enums), value, nested).Compile();
+            Format(type, value, nested, metadata, enums), value, nested));
     }
 
     private static Expression Format(

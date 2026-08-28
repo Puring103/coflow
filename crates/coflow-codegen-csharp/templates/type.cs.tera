@@ -55,7 +55,7 @@ namespace {{ type.namespace }}
         {
 {% for field in type.host_fields %}            {{ field.target }} = {{ field.parameter.name }};
 {% endfor %}        }{% for function in type.functions %},
-        new CoflowHostFunctionBinding({{ function.entry_name }}.RuntimeEntry, {{ function.bind_parameter_name }}){% endfor %});
+        CoflowHostFunctionBinding.Create({{ function.entry_name }}.RuntimeEntry, {{ function.bind_parameter_name }}){% endfor %});
 
 {% endif %}    internal {{ type.name }}() { }
 

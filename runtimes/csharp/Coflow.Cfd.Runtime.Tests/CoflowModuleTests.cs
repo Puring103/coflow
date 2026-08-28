@@ -88,6 +88,21 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void VmReusesTheRegisterWindowAcrossMutualTailCalls()
+    {
+        var source = "Rule { main { " +
+            "calculate: fn(value: int) -> int { " +
+            "if value <= 0 { 1 } else { helper(value - 1) } }, " +
+            "helper: fn(value: int) -> int { " +
+            "if value <= 0 { 0 } else { calculate(value - 1) } } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(1, rule.Calculate(1_000));
+        Assert.Equal(0, rule.Calculate(1_001));
+    }
+
+    [Fact]
     public void OverflowProducesSourceMappedFault()
     {
         var module = Coflow.LoadAndCompile(new[]
@@ -142,6 +157,54 @@ public sealed class CoflowModuleTests
         var program = rule.CalculateEntry.RuntimeEntry.CompiledProgram!;
         Assert.Equal(new[] { CoflowOpCode.Constant, CoflowOpCode.Return },
             program.Instructions.Select(instruction => instruction.Code));
+    }
+
+    [Fact]
+    public void GeneratedFieldBindingUsesTypedReadersWithoutExpressionCompilation()
+    {
+        var before = CoflowExpressionCompiler.InterpretedCompilationCount;
+        using (CoflowExpressionCompiler.OverrideDynamicCodeSupportForCurrentThread(false))
+        {
+            var binding = CoflowFieldBinding.Create<Settings, long>(
+                "value", static settings => settings.Value);
+            Assert.Equal(42, binding.ReadInteger!(new Settings { Value = 42 }));
+            Assert.Equal(typeof(long), binding.RuntimeType);
+        }
+        Assert.Equal(before, CoflowExpressionCompiler.InterpretedCompilationCount);
+    }
+
+    [Fact]
+    public void VmRunsThroughTheAotCompatibleExpressionInterpreter()
+    {
+        var before = CoflowExpressionCompiler.InterpretedCompilationCount;
+        using (CoflowExpressionCompiler.OverrideDynamicCodeSupportForCurrentThread(false))
+        {
+            var source = "Rule { main { " +
+                "calculate: fn(value: int) -> int { " +
+                "[value, value + 1].map(fn(item: int) -> int { item * 2 })" +
+                ".fold(0, fn(total: int, item: int) -> int { total + item }) }, " +
+                "make: fn(offset: int) -> fn(int) -> int { " +
+                "fn(value: int) -> int { value + offset } } } }";
+            var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+                .Table(Rules).Get("main").Value;
+
+            Assert.Equal(14, rule.Calculate(3));
+            Assert.Equal(9, rule.Make(4)(5));
+        }
+        Assert.True(CoflowExpressionCompiler.InterpretedCompilationCount > before);
+    }
+
+    [Fact]
+    public void GeneratedDelegateAdaptersCoverReturnedVmClosures()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { value }, " +
+            "make: fn(offset: int) -> fn(int) -> int { " +
+            "fn(value: int) -> int { value + offset } } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.True(CoflowFunctionDelegates.HasGeneratedAdapter<Func<long, long>>());
+        Assert.Equal(9, rule.Make(4)(5));
     }
 
     private static CoflowModule LoadData(string source) =>
@@ -281,7 +344,7 @@ public sealed class CoflowModuleTests
             rule.HelperEntry = Entry(context, record, "helper");
             rule.TailEntry = Entry(context, record, "tail");
             var entry = context.Function(CfdValueReader.FindField(record.Fields, "make"), "make", typeof(Func<long, long>), typeof(long));
-            rule.MakeEntry = CoflowFunctionEntry<Func<long, Func<long, long>>>.Create(entry,
+            rule.MakeEntry = CoflowFunctionEntry<Func<long, Func<long, long>>>.CreateAot(entry,
                 static value => argument => value.Invoke<long, Func<long, long>>(argument));
             rule.DeepEntry = Entry(context, record, "deep");
         }
@@ -292,7 +355,8 @@ public sealed class CoflowModuleTests
             var entry = required
                 ? context.RequiredFunction(node, name, typeof(long), typeof(long))
                 : context.Function(node, name, typeof(long), typeof(long));
-            return CoflowFunctionEntry<Func<long, long>>.Create(entry, static value => argument => value.Invoke<long, long>(argument));
+            return CoflowFunctionEntry<Func<long, long>>.CreateAot(entry,
+                static value => argument => value.Invoke<long, long>(argument));
         }
     }
 }

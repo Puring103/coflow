@@ -103,6 +103,19 @@
         return Read{{ reader.metadata_name }}Fields(record.Fields, record.Key, context);
     }
 
+    private static void Populate{{ reader.metadata_name }}(
+        {{ reader.qualified_name }} target,
+        CfdRecordNode record,
+        CfdLoadContext context)
+    {
+        using var scope = context.EnterRecord(record.DeclaredType, record.Key);
+        var fields = record.Fields;
+        var key = record.Key;
+        CfdValueReader.ValidateFields(fields{% for field in reader.expected_fields %}, "{{ field }}"{% endfor %});
+{% if reader.populate_id %}        {{ reader.populate_id }}
+{% endif %}{% for assignment in reader.populate_assignments %}        {{ assignment }}
+{% endfor %}    }
+
 {% if reader.variants | length == 0 %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
         CfdValueNode node,
         CfdLoadContext context) =>

@@ -29,7 +29,11 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {% endfor %}    };
 
     [ModuleInitializer]
-    internal static void Register() => CoflowGeneratedRegistry.Register(Instance);
+    internal static void Register()
+    {
+{% for adapter in metadata.delegate_adapters %}        {{ adapter }}
+{% endfor %}        CoflowGeneratedRegistry.Register(Instance);
+    }
 
 {% for enum in enums %}    private sealed class {{ enum.metadata_name }}CoflowEnumMetadata : ICoflowEnumMetadata
     {
@@ -49,8 +53,18 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
         public object FromInt64(long value) => ({{ enum.qualified_name }})value;
     }
 
-{% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
+{% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : CoflowGeneratedTypeMetadata, {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
     {
+{% for field in type.fields %}        private static readonly CoflowFieldBinding Field{{ loop.index0 }} =
+            CoflowFieldBinding.Create<{{ type.qualified_name }}, {{ field.runtime_type }}>(
+                "{{ field.source_name }}", static record => record.{{ field.access }});
+{% endfor %}{% if type.fields | length > 0 %}
+{% endif %}        public override CoflowFieldBinding GetFieldBinding(string fieldName) => fieldName switch
+        {
+{% for field in type.fields %}            "{{ field.source_name }}" => Field{{ loop.index0 }},
+{% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
+        };
+
         public Type RuntimeType => typeof({{ type.qualified_name }});
 {% if type.is_record %}        public Type KeyType => typeof({{ type.key_type }});
 {% endif %}
@@ -65,21 +79,6 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
         {
 {% for field in type.fields %}            "{{ field.source_name }}" => {{ field.annotations }},
 {% endfor %}            _ => Array.Empty<CoflowAnnotation>(),
-        };
-        public Type GetFieldType(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}            "{{ field.source_name }}" => typeof({{ field.runtime_type }}),
-{% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
-        };
-        public object GetField(object record, string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}            "{{ field.source_name }}" => (({{ type.qualified_name }})record).{{ field.access }},
-{% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
-        };
-        public Delegate GetFieldReader(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}            "{{ field.source_name }}" => new Func<{{ type.qualified_name }}, {{ field.runtime_type }}>(static record => record.{{ field.access }}),
-{% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
         };
         public bool HasFieldDefault(string fieldName) => fieldName switch
         {
@@ -108,10 +107,8 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {% endif %}{% if type.is_record %}        public object CreateRecord(string key, CfdLoadContext context) => {% if type.can_create_record %}new {{ type.qualified_name }}(){% else %}throw new InvalidOperationException("CFT type `{{ type.source_name }}` cannot be a record."){% endif %};
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-{% if type.can_create_record %}            var loaded = Read{{ type.metadata_name }}(record, context);
-{% if type.is_record %}            (({{ type.qualified_name }})target).Id = loaded.Id;
-{% endif %}{% for field in type.fields %}            (({{ type.qualified_name }})target).{{ field.assignment_target }} = loaded.{{ field.assignment_target }};
-{% endfor %}{% else %}            throw new InvalidOperationException("CFT type `{{ type.source_name }}` cannot be populated as a record.");
+{% if type.can_create_record %}            Populate{{ type.metadata_name }}(({{ type.qualified_name }})target, record, context);
+{% else %}            throw new InvalidOperationException("CFT type `{{ type.source_name }}` cannot be populated as a record.");
 {% endif %}        }
 {% endif %}
     }
