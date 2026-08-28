@@ -1,6 +1,7 @@
 namespace integration::runtime;
 
 use integration::domain::Character;
+use integration::domain::CharacterId;
 use integration::domain::Stats;
 use integration::domain::ScenarioConfig;
 
@@ -87,6 +88,24 @@ Scenario {
       total
     },
 
+    floatLoop: fn(iterations: int) -> float {
+      var current = 0;
+      var total = 0.0;
+      while current < iterations {
+        total += 0.5;
+        current += 1;
+      }
+      total
+    },
+
+    numericConversions: fn(value: int, ratio: float) -> int {
+      if float(value) < ratio { int(ratio) } else { value }
+    },
+
+    enumRoundTrip: fn(value: CharacterId) -> bool {
+      value == CharacterId::arcanist
+    },
+
     increment: fn(value: int) -> int {
       value + 1
     },
@@ -100,6 +119,14 @@ Scenario {
         0
       } else {
         tailRecursion(iterations - 1)
+      }
+    },
+
+    tailAccumulator: fn(iterations: int, total: int) -> int {
+      if iterations <= 0 {
+        total
+      } else {
+        tailAccumulator(iterations - 1, total + iterations)
       }
     },
 
@@ -123,6 +150,64 @@ Scenario {
     hostCall: fn(value: int) -> int {
       &HostServices.trace("benchmark");
       value
+    },
+
+    hostComposite: fn(value: Option<int>) -> Result<int, string> {
+      &HostServices.normalize(value)
+    },
+
+    propagateOption: fn(value: Option<int>) -> Option<int> {
+      Some(value? + 1)
+    },
+
+    propagateResult: fn(value: Result<int, string>) -> Result<int, string> {
+      Ok(value? + 1)
+    },
+
+    propagateNested: fn(value: Result<Result<int, string>, string>) -> Result<int, string> {
+      Ok(value?? + 1)
+    },
+
+    makeOptionalAdder: fn(value: Option<int>) -> fn(int) -> int {
+      fn(input: int) -> int {
+        match value {
+          Some(offset) => input + offset,
+          None => input,
+        }
+      }
+    },
+
+    collectionQueries: fn(value: int) -> int {
+      var found = config.samples.find(fn(item: int) -> bool { item == value });
+      var foundValue = match found { Some(item) => item, None => 0 };
+      var hasLarger = config.samples.any(fn(item: int) -> bool { item > value });
+      var allPositive = config.samples.all(fn(item: int) -> bool { item > 0 });
+      var anyValue = if hasLarger { 10 } else { 0 };
+      var allValue = if allPositive { 100 } else { 0 };
+      foundValue + anyValue + allValue
+    },
+
+    emptyCollectionQueries: fn() -> int {
+      var empty = config.samples.filter(fn(item: int) -> bool { false });
+      var mapped = empty.map(fn(item: int) -> int { item + 1 });
+      var folded = empty.fold(7, fn(total: int, item: int) -> int { total + item });
+      var found = empty.find(fn(item: int) -> bool { true });
+      var foundValue = match found { Some(item) => item, None => 0 };
+      var anyValue = if empty.any(fn(item: int) -> bool { true }) { 10 } else { 0 };
+      var allValue = if empty.all(fn(item: int) -> bool { false }) { 100 } else { 0 };
+      mapped.sum() + folded + foundValue + anyValue + allValue
+    },
+
+    makeStats: fn(value: int) -> Stats {
+      Stats { health: value, attack: value + 1, resistances: { "typed": value + 2 } }
+    },
+
+    makeDefaultStats: fn(value: int) -> Stats {
+      Stats { health: value, attack: value + 1 }
+    },
+
+    formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string {
+      "value={value}, ratio={ratio}, enabled={enabled}, optional={optional}, stats={config.optionalBonus}"
     },
   }
 }

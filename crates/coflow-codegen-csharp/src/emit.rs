@@ -4,7 +4,7 @@ pub(crate) mod types;
 use crate::lowering::{CsharpDimensionTable, CsharpLoweringPlan};
 use crate::model::{
     CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpFunction,
-    CsharpHostField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
+    CsharpEqualityField, CsharpHostField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
 };
 use coflow_language::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use crate::CsharpCodegenError;
@@ -80,7 +80,7 @@ pub fn build_csharp_type(
     let is_struct = schema_type.is_struct;
     if !is_struct {
         constructor_parameters.push(CsharpParameter {
-            ty: "CoflowHostSlot?".to_string(),
+            ty: "CoflowHostState?".to_string(),
             name: "hostSlot".to_string(),
         });
         if schema_type.parent.is_some() {
@@ -93,7 +93,7 @@ pub fn build_csharp_type(
             });
         }
     }
-    let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
+    let is_table = !schema_type.is_abstract && !is_struct && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
             schema_type,
@@ -116,17 +116,17 @@ pub fn build_csharp_type(
         let inherited = !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name);
         if let CftValueType::Function(parameters, result) = &field.value_type {
             constructor_parameters.push(CsharpParameter {
-                ty: "CoflowFunctionSlot".to_string(),
+                ty: format!("CoflowFunctionEntry<{}>", csharp_type(&field.value_type, view)),
                 name: local_name.clone(),
             });
             let method_name = csharp_public_member_name(&field.name);
-            let slot_name = format!("_coflow{}", method_name);
+            let entry_name = format!("_coflow{}", method_name);
             functions.push(CsharpFunction {
                 source_name: field.name.to_string(),
                 method_name: method_name.clone(),
                 bind_method_name: format!("Bind{method_name}"),
                 bind_parameter_name: local_name.clone(),
-                slot_name: slot_name.clone(),
+                entry_name: entry_name.clone(),
                 declared_here: !inherited,
                 result_type: csharp_type(result, view),
                 delegate_type: csharp_type(&field.value_type, view),
@@ -139,7 +139,7 @@ pub fn build_csharp_type(
                 continue;
             }
             assignments.push(CsharpConstructorAssignment {
-                target: slot_name,
+                target: entry_name,
                 property: method_name,
                 parameter: local_name,
             });
@@ -197,12 +197,15 @@ pub fn build_csharp_type(
     let all_field_props = all_fields
         .iter()
         .filter(|field| !matches!(field.value_type, CftValueType::Function(_, _)))
-        .map(|f| csharp_public_member_name(&f.name))
+        .map(|field| CsharpEqualityField {
+            name: csharp_public_member_name(&field.name),
+            ty: csharp_field_property_type(field, view),
+        })
         .collect::<Vec<_>>();
     let equality = (!schema_type.is_abstract).then_some({
         CsharpEquality {
             key_property: "Id".to_string(),
-            is_struct,
+            is_struct: false,
             by_fields: !is_table,
             fields: all_field_props,
         }
@@ -286,6 +289,17 @@ pub fn build_csharp_type(
     } else {
         Vec::new()
     };
+    let loader_id_type = is_table.then(|| csharp_type(&view.key_field_type(&schema_type.name), view));
+    let table_token_type = loader_id_type.as_ref().map(|key_type| {
+        if key_type == "string" {
+            format!("CoflowStringTableToken<{}>", view.csharp_type_ref(&schema_type.name))
+        } else {
+            format!(
+                "CoflowEnumTableToken<{}, {key_type}>",
+                view.csharp_type_ref(&schema_type.name)
+            )
+        }
+    });
     Ok(CsharpType {
         name: view.csharp_type_name(&schema_type.name),
         namespace: view.csharp_namespace(&schema_type.name),
@@ -314,8 +328,8 @@ pub fn build_csharp_type(
         assignments,
         equality,
         loader_fields,
-        loader_id_type: (!schema_type.is_singleton && !schema_type.is_abstract)
-            .then(|| csharp_type(&view.key_field_type(&schema_type.name), view)),
+        loader_id_type,
+        table_token_type,
         loader_id_reader: (!schema_type.is_singleton && !schema_type.is_abstract)
             .then(|| view.id_as_enum(&schema_type.name).map(|name| view.metadata_name(&name)))
             .flatten(),
@@ -323,6 +337,7 @@ pub fn build_csharp_type(
         is_host: schema_type.is_host,
         is_abstract: schema_type.is_abstract,
         is_sealed: schema_type.is_sealed,
+        is_struct,
         loader_assignable_to: if schema_type.is_abstract {
             Vec::new()
         } else {
@@ -339,7 +354,7 @@ pub fn build_csharp_dimension_type(
     let name = view.csharp_type_name(&table.source_name);
     let mut constructor_parameters = vec![
         CsharpParameter {
-            ty: "CoflowHostSlot?".to_string(),
+            ty: "CoflowHostState?".to_string(),
             name: "hostSlot".to_string(),
         },
         CsharpParameter {
@@ -438,11 +453,16 @@ pub fn build_csharp_dimension_type(
         }),
         loader_fields,
         loader_id_type: Some("string".to_string()),
+        table_token_type: Some(format!(
+            "CoflowStringTableToken<{}>",
+            view.csharp_type_ref(&table.source_name)
+        )),
         loader_id_reader: None,
         loader_enabled: true,
         is_host: false,
         is_abstract: false,
         is_sealed: true,
+        is_struct: false,
         loader_assignable_to: vec![table.source_name.clone()],
         loader_variants: Vec::new(),
     })
@@ -486,10 +506,19 @@ fn loader_reader(
         CftValueType::Unit => {
             "default!".to_string()
         }
-        CftValueType::Function(_, _) => format!(
-            "{context}.FunctionValue<{}>({node})",
-            csharp_type(ty, view)
-        ),
+        CftValueType::Function(parameters, result) => {
+            let delegate_type = csharp_type(ty, view);
+            let parameter_types = parameters
+                .iter()
+                .map(|parameter| format!("typeof({})", csharp_type(&parameter.value_type, view)))
+                .collect::<Vec<_>>();
+            format!(
+                "{context}.FunctionValue<{delegate_type}>({node}, typeof({}), new Type[] {{ {} }}, {})",
+                csharp_type(result, view),
+                parameter_types.join(", "),
+                function_adapter_expression(parameters, result, view),
+            )
+        }
     }
 }
 
@@ -511,10 +540,49 @@ fn function_loader_reader(
         .collect::<String>();
     let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
-        "{context}.{method}({node}, \"{}\", typeof({}){parameter_types})",
+        "CoflowFunctionEntry<{}>.Create({context}.{method}({node}, \"{}\", typeof({}){parameter_types}), {})",
+        csharp_type(&field.value_type, view),
         escape_csharp_literal(&field.name),
         csharp_type(result, view),
+        function_adapter_expression(parameters, result, view),
     ))
+}
+
+fn function_adapter_expression(
+    parameters: &[CftFunctionParameter],
+    result: &CftValueType,
+    view: &CsharpLoweringPlan<'_>,
+) -> String {
+    debug_assert!(parameters.len() <= 8, "function arity is validated while building the project");
+    let parameter_types = parameters
+        .iter()
+        .map(|parameter| csharp_type(&parameter.value_type, view))
+        .collect::<Vec<_>>();
+    let arguments = (0..parameters.len())
+        .map(|index| format!("arg{index}"))
+        .collect::<Vec<_>>();
+    let lambda_parameters = if arguments.is_empty() {
+        "()".to_string()
+    } else {
+        format!("({})", arguments.join(", "))
+    };
+    let generic_parameters = parameter_types.join(", ");
+    let call = if matches!(result, CftValueType::Unit) {
+        if arguments.is_empty() {
+            "entry.InvokeVoid()".to_string()
+        } else {
+            format!("entry.InvokeVoid<{generic_parameters}>({})", arguments.join(", "))
+        }
+    } else {
+        let result_type = csharp_type(result, view);
+        let type_arguments = if generic_parameters.is_empty() {
+            result_type
+        } else {
+            format!("{generic_parameters}, {result_type}")
+        };
+        format!("entry.Invoke<{type_arguments}>({})", arguments.join(", "))
+    };
+    format!("static entry => {lambda_parameters} => {call}")
 }
 
 fn loader_default(
@@ -919,7 +987,7 @@ fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> Str
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
     } else if schema_type.is_struct {
-        "public partial struct"
+        "public sealed partial class"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
     } else {

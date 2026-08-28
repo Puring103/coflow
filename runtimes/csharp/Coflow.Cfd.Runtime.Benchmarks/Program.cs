@@ -12,20 +12,20 @@ internal static class BenchmarkData
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Data", fileName));
 
     internal static CoflowModule LoadCompiled(string characters, string scenario)
-    {
-        using var charactersModule = Coflow.LoadData(characters);
-        return Coflow.LoadAndCompile(scenario, charactersModule);
-    }
+        => Coflow.LoadAndCompile(new[] { characters, scenario });
 
     internal static void BindHost(CoflowModule module)
     {
-        var result = module.Singleton<HostServices>().Bind(
+        var host = module.Singleton<HostServices>();
+        if (!host.HasValue) throw new InvalidOperationException("Benchmark module has no HostServices singleton.");
+        host.Value.Configure(
             "benchmark",
             static _ => { },
             static (value, operation) => operation(value + 1),
-            static value => value);
-        if (result.IsErr)
-            throw new InvalidOperationException($"Unable to bind benchmark host: {result.Error}");
+            static value => value,
+            static value => value.HasValue
+                ? Result<long, string>.Ok(value.Value)
+                : Result<long, string>.Err("missing"));
     }
 }
 
@@ -44,21 +44,24 @@ public class VmExecutionBenchmarks
             BenchmarkData.Read("characters.cfd"),
             BenchmarkData.Read("scenario.cfd"));
         BenchmarkData.BindHost(_module);
-        _scenario = _module.Table<Scenario>().Get("fullRoundTrip").Value;
+        _scenario = _module.Table(Scenario.Table).Get("fullRoundTrip").Value;
         _vmClosure = _scenario.MakeScaler(3);
     }
 
-    [GlobalCleanup]
-    public void Cleanup() => _module.Dispose();
-
     [Benchmark]
     public long IntegerLoop() => _scenario.IntegerLoop(1_000);
+
+    [Benchmark]
+    public double FloatLoop() => _scenario.FloatLoop(1_000);
 
     [Benchmark]
     public long DirectCfdCallChain() => _scenario.DirectCallChain(10);
 
     [Benchmark]
     public long TailRecursion() => _scenario.TailRecursion(1_000);
+
+    [Benchmark]
+    public long TailAccumulator() => _scenario.TailAccumulator(1_000, 0);
 
     [Benchmark]
     public long GeneratedFieldRead() => _scenario.FieldReadLoop(1_000);
@@ -83,8 +86,8 @@ public class ModuleLifecycleBenchmarks
     private string _characters = null!;
     private string _charactersAlternative = null!;
     private string _scenario = null!;
-    private CoflowModule _charactersModule = null!;
     private CoflowModule _module = null!;
+    private CoflowModuleSet _modules = null!;
     private bool _useAlternative;
 
     [GlobalSetup]
@@ -96,35 +99,28 @@ public class ModuleLifecycleBenchmarks
             "attack: 20",
             StringComparison.Ordinal);
         _scenario = BenchmarkData.Read("scenario.cfd");
-        _charactersModule = Coflow.LoadData(_characters);
-        _module = Coflow.LoadAndCompile(_scenario, _charactersModule);
+        _module = BenchmarkData.LoadCompiled(_characters, _scenario);
+        _modules = Coflow.Modules(_module);
         BenchmarkData.BindHost(_module);
-    }
-
-    [GlobalCleanup]
-    public void Cleanup()
-    {
-        _module.Dispose();
-        _charactersModule.Dispose();
     }
 
     [Benchmark]
     public bool LoadAndCompile()
     {
-        using var module = BenchmarkData.LoadCompiled(_characters, _scenario);
+        var module = BenchmarkData.LoadCompiled(_characters, _scenario);
         return module.FunctionsCompiled;
     }
 
     [Benchmark]
-    public long ReloadAndRecompile()
+    public int ReplaceModuleSnapshot()
     {
         _useAlternative = !_useAlternative;
-        var result = _module.Reload(
-            _charactersModule,
-            _useAlternative ? _charactersAlternative : _characters);
-        if (result.IsErr)
-            throw new InvalidOperationException(
-                "Reload failed: " + string.Join(Environment.NewLine, result.Error.Diagnostics));
-        return result.Value.Generation;
+        var replacement = BenchmarkData.LoadCompiled(
+            _useAlternative ? _charactersAlternative : _characters,
+            _scenario);
+        var next = _modules.Replace(_module, replacement);
+        _module = replacement;
+        _modules = next;
+        return next.Modules.Count;
     }
 }

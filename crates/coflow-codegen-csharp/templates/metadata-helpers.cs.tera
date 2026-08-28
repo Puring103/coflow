@@ -1,0 +1,176 @@
+{% for factory in object_factories %}{% if factory.invalid %}    private static Delegate CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
+        throw new InvalidOperationException("CFT type `{{ factory.source_name }}` cannot be constructed as an object.");
+{% else %}    private delegate {{ factory.qualified_name }} VmObjectFactory{{ factory.metadata_name }}({% for parameter in factory.vm_parameters %}{{ parameter }}{% if not loop.last %}, {% endif %}{% endfor %});
+    private static Delegate CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
+        new VmObjectFactory{{ factory.metadata_name }}(({% for parameter in factory.vm_parameters %}{{ parameter }}{% if not loop.last %}, {% endif %}{% endfor %}) => new {{ factory.qualified_name }}(
+{% for argument in factory.vm_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}        ));
+{% endif %}
+    private static Delegate CreateVmDefault{{ factory.metadata_name }}(string fieldName, CfdLoadContext context)
+    {
+{% if factory.needs_key %}        const string key = "";
+{% endif %}
+        return fieldName switch
+        {
+{% for default in factory.defaults %}            "{{ default.source_name }}" => new Func<{{ default.runtime_type }}>(() => {{ default.expression }}),
+{% endfor %}            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
+        };
+    }
+
+{% endfor %}{% for enum in enums %}{% if enum.is_flags %}    private static {{ enum.qualified_name }} ReadEnum{{ enum.metadata_name }}(CfdValueNode node) =>
+        CfdValueReader.Flags<{{ enum.qualified_name }}>(node, "{{ enum.source_name }}", {{ enum.declared_mask }}L, static token => token switch
+        {
+{% for variant in enum.variants %}            "{{ variant.source_name }}" or "{{ enum.source_name }}::{{ variant.source_name }}" => (long?){{ enum.qualified_name }}.{{ variant.name }},
+{% endfor %}            _ => null,
+        });
+{% else %}    private static {{ enum.qualified_name }} ReadEnum{{ enum.metadata_name }}(CfdValueNode node) =>
+        CfdValueReader.Enum<{{ enum.qualified_name }}>(node, "{{ enum.source_name }}", static token => token switch
+        {
+{% for variant in enum.variants %}            "{{ variant.source_name }}" or "{{ enum.source_name }}::{{ variant.source_name }}" => ({{ enum.qualified_name }}?){{ enum.qualified_name }}.{{ variant.name }},
+{% endfor %}            _ => null,
+        });
+{% endif %}    private static {{ enum.qualified_name }} ReadEnum{{ enum.metadata_name }}Text(string value) =>
+        CfdValueReader.EnumText<{{ enum.qualified_name }}>(value, "{{ enum.source_name }}", static token => token switch
+        {
+{% for variant in enum.variants %}            "{{ variant.source_name }}" or "{{ enum.source_name }}::{{ variant.source_name }}" => ({{ enum.qualified_name }}?){{ enum.qualified_name }}.{{ variant.name }},
+{% endfor %}            _ => null,
+        });
+
+{% endfor %}{% if uses_localization %}    private static Localized<T> ReadLocalized<T>(
+        T defaultValue,
+        CfdLoadContext context,
+        string key,
+        string variantsType,
+        string recordKey,
+        IReadOnlyList<string> variants,
+        Func<CfdValueNode, CfdLoadContext, T> read)
+    {
+        var record = context.FindRecord(variantsType, recordKey);
+        if (record is null)
+            return new Localized<T>(key, defaultValue);
+        context.WithRecordPath(record, () =>
+            CfdValueReader.ValidateFields(record.Fields, new[] { "default" }.Concat(variants).ToArray()));
+        var values = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var variant in variants)
+        {
+            var node = CfdValueReader.FindField(record.Fields, variant);
+            if (node is not null && node is not CfdNoneValue)
+                values.Add(variant, context.WithRecordPath(record, () => read(node, context)));
+        }
+        return new Localized<T>(key, defaultValue, values);
+    }
+
+{% endif %}{% for factory in object_factories %}{% if factory.invalid %}    private static object CreateObject{{ factory.metadata_name }}(
+        CfdLoadContext context,
+        IReadOnlyDictionary<string, object?> fields) =>
+        throw new InvalidOperationException("CFT type `{{ factory.source_name }}` cannot be constructed as an object.");
+
+{% else %}    private static object CreateObject{{ factory.metadata_name }}(
+        CfdLoadContext context,
+        IReadOnlyDictionary<string, object?> fields)
+    {
+{% if factory.needs_key %}        const string key = "";
+{% endif %}        return new {{ factory.qualified_name }}(
+{% for argument in factory.arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+{% endif %}{% endfor %}{% for reader in readers %}{% if reader.is_host %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
+        CfdRecordNode record,
+        CfdLoadContext context) =>
+        throw new CfdLoadException(new[]
+        {
+            new CfdDiagnostic(
+                "CFD-HOST-RECORD",
+                "CFD cannot declare @Host type `{{ reader.source_name }}`",
+                string.Empty,
+                record.Span),
+        });
+
+    private static object CreateHost{{ reader.metadata_name }}(CfdLoadContext context)
+    {
+        using var scope = context.EnterRecord("{{ reader.source_name }}", string.Empty);
+        return new {{ reader.qualified_name }}(
+{% for argument in reader.host_constructor_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+{% else %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
+        CfdRecordNode record,
+        CfdLoadContext context)
+    {
+        using var scope = context.EnterRecord(record.DeclaredType, record.Key);
+        return Read{{ reader.metadata_name }}Fields(record.Fields, record.Key, context);
+    }
+
+{% if reader.variants | length == 0 %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
+        CfdValueNode node,
+        CfdLoadContext context) =>
+        CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields);
+
+{% else %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
+        CfdValueNode node,
+        CfdLoadContext context)
+    {
+        if (node is CfdDictionaryValue)
+            return CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields);
+        if (node is not CfdObjectValue objectValue)
+            throw new CfdLoadException(new[]
+            {
+                new CfdDiagnostic("CFD-VALUE-TYPE", "expected an object", string.Empty, node.Span),
+            });
+        return objectValue.DeclaredType switch
+        {
+            null or "{{ reader.source_name }}" =>
+                CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields),
+{% for variant in reader.variants %}            "{{ variant.source_name }}" => Read{{ variant.reader_name }}(node, context),
+{% endfor %}            _ => throw new CfdLoadException(new[]
+            {
+                new CfdDiagnostic(
+                    "CFD-REF-UNKNOWN-TYPE",
+                    $"unknown concrete type `{objectValue.DeclaredType}` for `{{ reader.source_name }}`",
+                    string.Empty,
+                    node.Span),
+            }),
+        };
+    }
+
+{% endif %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}Fields(
+        IReadOnlyList<CfdFieldNode> fields,
+        string key,
+        CfdLoadContext context)
+    {
+        CfdValueReader.ValidateFields(fields{% for field in reader.expected_fields %}, "{{ field }}"{% endfor %});
+        return new {{ reader.qualified_name }}(
+{% for argument in reader.constructor_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+{% endif %}{% endfor %}{% for reader in polymorphic_readers %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
+        CfdValueNode node,
+        CfdLoadContext context)
+    {
+        if (node is not CfdObjectValue objectValue || objectValue.DeclaredType is null)
+            throw new CfdLoadException(new[]
+            {
+                new CfdDiagnostic(
+                    "CFD-VALUE-TYPE",
+                    "expected a concrete polymorphic object",
+                    string.Empty,
+                    node.Span),
+            });
+        return objectValue.DeclaredType switch
+        {
+{% for variant in reader.variants %}            "{{ variant.source_name }}" => Read{{ variant.reader_name }}(node, context),
+{% endfor %}            _ => throw new CfdLoadException(new[]
+            {
+                new CfdDiagnostic(
+                    "CFD-REF-UNKNOWN-TYPE",
+                    $"unknown concrete type `{objectValue.DeclaredType}` for `{{ reader.source_name }}`",
+                    string.Empty,
+                    node.Span),
+            }),
+        };
+    }
+
+{% endfor %}

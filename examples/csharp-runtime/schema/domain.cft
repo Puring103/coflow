@@ -2,12 +2,14 @@ namespace integration::domain;
 
 enum CharacterId {}
 
+@struct
 sealed type Stats {
   health: int;
   attack: int;
-  resistances: {string: int};
+  resistances: {string: int} = {};
 }
 
+@struct
 sealed type ScenarioConfig {
   label: string;
   samples: [int];

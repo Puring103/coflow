@@ -3,14 +3,7 @@ namespace CoflowRuntime;
 using System.Collections;
 using System.ComponentModel;
 
-public enum CoflowAnnotationArgumentKind
-{
-    Name,
-    String,
-    Int,
-    Float,
-    Bool,
-}
+public enum CoflowAnnotationArgumentKind { Name, String, Int, Float, Bool }
 
 public sealed class CoflowAnnotationArgument
 {
@@ -19,7 +12,6 @@ public sealed class CoflowAnnotationArgument
         Kind = kind;
         Value = value ?? throw new ArgumentNullException(nameof(value));
     }
-
     public CoflowAnnotationArgumentKind Kind { get; }
     public object Value { get; }
 }
@@ -31,7 +23,6 @@ public sealed class CoflowAnnotation
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments));
     }
-
     public string Name { get; }
     public IReadOnlyList<CoflowAnnotationArgument> Arguments { get; }
 }
@@ -48,7 +39,7 @@ public sealed class CoflowConstant
         RuntimeType = runtimeType ?? throw new ArgumentNullException(nameof(runtimeType));
         _value = value ?? throw new ArgumentNullException(nameof(value));
         if (!runtimeType.IsInstanceOfType(value))
-            throw new ArgumentException("The constant value does not match its generated runtime type.", nameof(value));
+            throw new ArgumentException("The constant value does not match its generated type.", nameof(value));
     }
 
     public CoflowConstant(string declaredName, Type runtimeType, Func<CfdLoadContext, object> factory)
@@ -61,7 +52,7 @@ public sealed class CoflowConstant
     public string DeclaredName { get; }
     public Type RuntimeType { get; }
     public object Value => _value ?? throw new InvalidOperationException(
-        $"Coflow constant `{DeclaredName}` is resolved for each loaded generation.");
+        $"Coflow constant `{DeclaredName}` is resolved while a module is loaded.");
 
     internal object Resolve(CfdLoadContext context)
     {
@@ -82,16 +73,13 @@ public static class CoflowConstantValues
         Array.AsReadOnly(values ?? throw new ArgumentNullException(nameof(values)));
 
     public static IReadOnlyDictionary<TKey, TValue> Dictionary<TKey, TValue>(
-        params KeyValuePair<TKey, TValue>[] entries)
-        where TKey : notnull
+        params KeyValuePair<TKey, TValue>[] entries) where TKey : notnull
     {
         if (entries is null) throw new ArgumentNullException(nameof(entries));
         var values = new Dictionary<TKey, TValue>();
         foreach (var entry in entries)
-        {
             if (!values.TryAdd(entry.Key, entry.Value))
-                throw new ArgumentException($"Duplicate constant dictionary key `{entry.Key}`.", nameof(entries));
-        }
+                throw new ArgumentException($"Duplicate constant key `{entry.Key}`.", nameof(entries));
         return new System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>(values);
     }
 }
@@ -120,152 +108,81 @@ public interface ICoflowEnumMetadata
 public interface ICoflowTypeMetadata : ICfdTypeBinding
 {
     Type RuntimeType { get; }
-    Type KeyType { get; }
     bool IsSingleton { get; }
-    bool IsHost { get; }
     bool IsAbstract { get; }
     bool IsSealed { get; }
-    bool IsRecord { get; }
     IReadOnlyList<CoflowAnnotation> Annotations { get; }
-    object ParseKey(string key);
-    object GetKey(object record);
     IReadOnlyList<string> FieldNames { get; }
     IReadOnlyList<CoflowAnnotation> FieldAnnotations(string fieldName);
     Type GetFieldType(string fieldName);
     object GetField(object record, string fieldName);
+    Delegate GetFieldReader(string fieldName);
     bool HasFieldDefault(string fieldName);
     object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields);
+    Delegate CreateVmObjectFactory(CfdLoadContext context);
+    Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context);
+}
+
+[EditorBrowsable(EditorBrowsableState.Never)]
+public interface ICoflowRecordMetadata : ICoflowTypeMetadata
+{
+    Type KeyType { get; }
+    object ParseKey(string key);
+    object GetKey(object record);
+    Delegate GetKeyReader();
+    object CreateRecord(string key, CfdLoadContext context);
+    void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context);
+}
+
+[EditorBrowsable(EditorBrowsableState.Never)]
+public interface ICoflowHostMetadata : ICoflowTypeMetadata
+{
     object CreateHost(CfdLoadContext context);
-    void TransferHostState(object source, object target);
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class CoflowGeneratedRegistry
 {
-    private static readonly CoflowGeneratedContractRegistry Registry = new();
+    private static readonly object Sync = new();
+    private static readonly List<ICoflowGeneratedContract> Contracts = new();
+    private static ICoflowGeneratedContract? _resolved;
 
-    public static void Register(ICoflowGeneratedContract contract) => Registry.Register(contract);
-
-    internal static ICoflowGeneratedContract RequireContract() => Registry.RequireContract();
-}
-
-internal sealed class CoflowGeneratedContractRegistry
-{
-    private readonly object _sync = new();
-    private readonly List<ICoflowGeneratedContract> _registrations = new();
-    private ICoflowGeneratedContract? _resolvedContract;
-
-    internal void Register(ICoflowGeneratedContract contract)
+    public static void Register(ICoflowGeneratedContract contract)
     {
         if (contract is null) throw new ArgumentNullException(nameof(contract));
-        lock (_sync)
+        lock (Sync)
         {
-            if (_registrations.Any(existing => ReferenceEquals(existing, contract))) return;
-            if (_resolvedContract is not null)
-                throw new InvalidOperationException(
-                    "Generated Coflow contracts cannot be registered after the first runtime load.");
-            _registrations.Add(contract);
-        }
-    }
-
-    internal ICoflowGeneratedContract RequireContract()
-    {
-        lock (_sync)
-        {
-            if (_resolvedContract is not null) return _resolvedContract;
-            if (_registrations.Count == 0)
-                throw new InvalidOperationException(
-                    "No generated Coflow contract is registered. Reference the C# sources generated from the project CFT.");
-            return _resolvedContract = _registrations.Count == 1
-                ? _registrations[0]
-                : new CoflowCompositeGeneratedContract(_registrations);
-        }
-    }
-}
-
-internal sealed class CoflowCompositeGeneratedContract : ICoflowGeneratedContract
-{
-    internal CoflowCompositeGeneratedContract(IEnumerable<ICoflowGeneratedContract> contracts)
-    {
-        var values = contracts?.ToArray() ?? throw new ArgumentNullException(nameof(contracts));
-        if (values.Length == 0)
-            throw new ArgumentException("At least one generated contract is required.", nameof(contracts));
-        Types = values.SelectMany(contract => contract.Types).ToArray();
-        Enums = values.SelectMany(contract => contract.Enums).ToArray();
-        Constants = values.SelectMany(contract => contract.Constants).ToArray();
-    }
-
-    public IReadOnlyList<ICoflowTypeMetadata> Types { get; }
-    public IReadOnlyList<ICoflowEnumMetadata> Enums { get; }
-    public IReadOnlyList<CoflowConstant> Constants { get; }
-}
-
-internal static class CoflowLoader
-{
-    public static CoflowModule LoadData(string cfd) => LoadData(new[] { cfd });
-
-    public static CoflowModule LoadData(string[] cfdSources) =>
-        Load(cfdSources, Array.Empty<CoflowModule>(),
-            CoflowGeneratedRegistry.RequireContract(), functionsCompiled: false);
-
-    public static CoflowModule LoadData(string[] cfdSources, CoflowModule[] children) =>
-        Load(cfdSources, children, CoflowGeneratedRegistry.RequireContract(), functionsCompiled: false);
-
-    public static CoflowModule LoadAndCompile(string cfd) => LoadAndCompile(new[] { cfd });
-
-    public static CoflowModule LoadAndCompile(string[] cfdSources) =>
-        Load(cfdSources, Array.Empty<CoflowModule>(),
-            CoflowGeneratedRegistry.RequireContract(), functionsCompiled: true);
-
-    public static CoflowModule LoadAndCompile(string[] cfdSources, CoflowModule[] children) =>
-        Load(cfdSources, children, CoflowGeneratedRegistry.RequireContract(), functionsCompiled: true);
-
-    internal static CoflowModule LoadData(string[] cfdSources, ICoflowGeneratedContract contract)
-        => Load(cfdSources, Array.Empty<CoflowModule>(), contract, functionsCompiled: false);
-
-    internal static CoflowModule LoadAndCompile(string[] cfdSources, ICoflowGeneratedContract contract)
-        => Load(cfdSources, Array.Empty<CoflowModule>(), contract, functionsCompiled: true);
-
-    private static CoflowModule Load(
-        string[] cfdSources,
-        IReadOnlyList<CoflowModule> children,
-        ICoflowGeneratedContract contract,
-        bool functionsCompiled)
-    {
-        if (cfdSources is null) throw new ArgumentNullException(nameof(cfdSources));
-        if (contract is null) throw new ArgumentNullException(nameof(contract));
-        var sourcePart = CoflowSourcePart.Create(cfdSources);
-        var sourceParts = new List<CoflowSourcePart>();
-        var sourceIds = new HashSet<Guid>();
-        var sourceOwners = new HashSet<Guid>();
-        foreach (var child in children ?? throw new ArgumentNullException(nameof(children)))
-        {
-            if (child is null) throw new ArgumentException("A child CFD module cannot be null.", nameof(children));
-            var childParts = child.SnapshotSourceParts(contract);
-            var childOwners = childParts.SelectMany(part => part.Owners).ToHashSet();
-            if (sourceOwners.Overlaps(childOwners))
-                throw new ArgumentException("The same child CFD module is included more than once.", nameof(children));
-            sourceOwners.UnionWith(childOwners);
-            foreach (var childPart in childParts)
+            if (!Contracts.Any(value => ReferenceEquals(value, contract)))
             {
-                if (!sourceIds.Add(childPart.Id))
-                    throw new ArgumentException("The same child CFD module is included more than once.", nameof(children));
-                sourceParts.Add(childPart);
+                Contracts.Add(contract);
+                _resolved = null;
             }
         }
-        sourceParts.Add(sourcePart);
-        try
+    }
+
+    internal static ICoflowGeneratedContract RequireContract()
+    {
+        lock (Sync)
         {
-            return CoflowModule.Load(sourceParts, contract, functionsCompiled);
+            if (Contracts.Count == 0)
+                throw new InvalidOperationException("No generated Coflow contract is registered.");
+            return _resolved ??= Contracts.Count == 1
+                ? Contracts[0]
+                : new CompositeContract(Contracts.ToArray());
         }
-        catch (CoflowLoadException)
+    }
+
+    private sealed class CompositeContract : ICoflowGeneratedContract
+    {
+        internal CompositeContract(IReadOnlyList<ICoflowGeneratedContract> contracts)
         {
-            throw;
+            Types = contracts.SelectMany(value => value.Types).ToArray();
+            Enums = contracts.SelectMany(value => value.Enums).ToArray();
+            Constants = contracts.SelectMany(value => value.Constants).ToArray();
         }
-        catch (CfdLoadException error)
-        {
-            throw new CoflowLoadException(error.Diagnostics);
-        }
+        public IReadOnlyList<ICoflowTypeMetadata> Types { get; }
+        public IReadOnlyList<ICoflowEnumMetadata> Enums { get; }
+        public IReadOnlyList<CoflowConstant> Constants { get; }
     }
 }
 
@@ -274,489 +191,335 @@ public sealed class CoflowLoadException : CfdLoadException
     public CoflowLoadException(IReadOnlyList<CfdDiagnostic> diagnostics) : base(diagnostics) { }
 }
 
-public readonly record struct ReloadInfo(long PreviousGeneration, long Generation);
-
-public sealed class CoflowReloadError
+public abstract class CoflowTable : IEnumerable
 {
-    public CoflowReloadError(IReadOnlyList<CfdDiagnostic> diagnostics) =>
-        Diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
-
-    public IReadOnlyList<CfdDiagnostic> Diagnostics { get; }
+    public abstract Type RecordType { get; }
+    public abstract Type KeyType { get; }
+    public abstract int Count { get; }
+    internal abstract IEnumerable<object> UntypedRecords { get; }
+    internal abstract object KeyOf(object record);
+    public abstract IEnumerator GetEnumerator();
 }
 
-internal sealed record CoflowSourcePart(Guid Id, string[] Sources, IReadOnlyList<Guid> Owners)
+public interface ICoflowTableToken<TTable> where TTable : CoflowTable
 {
-    internal static CoflowSourcePart Create(string[] sources)
+    Type RecordType { get; }
+    Type KeyType { get; }
+    TTable Empty { get; }
+}
+
+public sealed class CoflowStringTableToken<T> : ICoflowTableToken<CoflowStringTable<T>> where T : class
+{
+    private static readonly CoflowStringTable<T> EmptyTable = new(Array.Empty<T>(), static _ => string.Empty);
+    public Type RecordType => typeof(T);
+    public Type KeyType => typeof(string);
+    public CoflowStringTable<T> Empty => EmptyTable;
+}
+
+public sealed class CoflowEnumTableToken<T, TKey> : ICoflowTableToken<CoflowEnumTable<T, TKey>>
+    where T : class where TKey : struct, Enum
+{
+    private static readonly CoflowEnumTable<T, TKey> EmptyTable = new(Array.Empty<T>(), static _ => default);
+    public Type RecordType => typeof(T);
+    public Type KeyType => typeof(TKey);
+    public CoflowEnumTable<T, TKey> Empty => EmptyTable;
+}
+
+public sealed class CoflowStringTable<T> : CoflowTable, IReadOnlyList<T> where T : class
+{
+    private readonly IReadOnlyList<T>[] _segments;
+    private readonly Dictionary<string, T> _index;
+    private readonly Func<T, string> _key;
+
+    internal CoflowStringTable(IReadOnlyList<T> records, Func<T, string> key)
+        : this(new[] { records }, key) { }
+
+    internal CoflowStringTable(IReadOnlyList<T>[] segments, Func<T, string> key)
     {
-        if (sources is null) throw new ArgumentNullException(nameof(sources));
-        return new CoflowSourcePart(Guid.NewGuid(), sources.Select(source => source ??
-            throw new ArgumentException("CFD source text cannot be null.", nameof(sources))).ToArray(),
-            Array.Empty<Guid>());
+        _segments = segments;
+        _key = key;
+        _index = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var record in segments.SelectMany(value => value))
+            if (!_index.TryAdd(key(record), record)) Duplicate(key(record));
     }
 
-    internal CoflowSourcePart WithOwner(Guid owner) => Owners.Contains(owner)
-        ? this
-        : this with { Owners = Owners.Append(owner).ToArray() };
+    public override Type RecordType => typeof(T);
+    public override Type KeyType => typeof(string);
+    public override int Count => _segments.Sum(value => value.Count);
+    public T this[int index] => SegmentItem(_segments, index);
+    public Option<T> Get(string key) => _index.TryGetValue(key, out var value) ? Option<T>.Some(value) : Option<T>.None;
+    internal override IEnumerable<object> UntypedRecords => this.Cast<object>();
+    internal override object KeyOf(object record) => _key((T)record);
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
+    public override IEnumerator GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
+    private static void Duplicate(string key) => throw new CoflowLoadException(new[] {
+        new CfdDiagnostic("CFD-SYNTAX-DUPLICATE-RECORD", $"record key `{key}` is declared more than once for `{typeof(T)}`", string.Empty) });
+    private static TItem SegmentItem<TItem>(IReadOnlyList<TItem>[] segments, int index)
+    {
+        foreach (var segment in segments) { if (index < segment.Count) return segment[index]; index -= segment.Count; }
+        throw new ArgumentOutOfRangeException(nameof(index));
+    }
 }
 
-public sealed class CoflowModule : IDisposable
+public sealed class CoflowEnumTable<T, TKey> : CoflowTable, IReadOnlyList<T>
+    where T : class where TKey : struct, Enum
 {
-    private readonly object _sync = new();
-    private IReadOnlyDictionary<Type, object> _tables;
-    private IReadOnlyDictionary<Type, object> _singletons;
-    private IReadOnlyList<CoflowFunctionSlot> _functions;
-    private CoflowGenerationStorage? _storage;
-    private CoflowGenerationGate _generationGate;
-    private readonly ICoflowGeneratedContract _contract;
-    private readonly Guid _identity = Guid.NewGuid();
-    private IReadOnlyList<CoflowSourcePart> _sourceParts;
-    private long _generation = 1;
-    private bool _disposed;
+    private readonly IReadOnlyList<T>[] _segments;
+    private readonly Dictionary<TKey, T> _index;
+    private readonly Func<T, TKey> _key;
+
+    internal CoflowEnumTable(IReadOnlyList<T> records, Func<T, TKey> key) : this(new[] { records }, key) { }
+    internal CoflowEnumTable(IReadOnlyList<T>[] segments, Func<T, TKey> key)
+    {
+        _segments = segments;
+        _key = key;
+        _index = new Dictionary<TKey, T>();
+        foreach (var record in segments.SelectMany(value => value))
+            if (!_index.TryAdd(key(record), record)) Duplicate(key(record));
+    }
+
+    public override Type RecordType => typeof(T);
+    public override Type KeyType => typeof(TKey);
+    public override int Count => _segments.Sum(value => value.Count);
+    public T this[int index] { get { var offset = index; foreach (var segment in _segments) { if (offset < segment.Count) return segment[offset]; offset -= segment.Count; } throw new ArgumentOutOfRangeException(nameof(index)); } }
+    public Option<T> Get(TKey key) => _index.TryGetValue(key, out var value) ? Option<T>.Some(value) : Option<T>.None;
+    internal override IEnumerable<object> UntypedRecords => this.Cast<object>();
+    internal override object KeyOf(object record) => _key((T)record);
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
+    public override IEnumerator GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
+    private static void Duplicate(TKey key) => throw new CoflowLoadException(new[] {
+        new CfdDiagnostic("CFD-SYNTAX-DUPLICATE-RECORD", $"record key `{key}` is declared more than once for `{typeof(T)}`", string.Empty) });
+}
+
+public sealed class CoflowModule
+{
+    private readonly IReadOnlyDictionary<Type, CoflowTable> _tables;
+    private readonly IReadOnlyDictionary<Type, object> _singletons;
+    private readonly IReadOnlyDictionary<CoflowFunctionIdentity, CoflowFunctionEntry> _functions;
 
     private CoflowModule(
-        IReadOnlyDictionary<Type, object> tables,
-        IReadOnlyDictionary<Type, object> singletons,
-        IReadOnlyList<CoflowFunctionSlot> functions,
-        CoflowGenerationStorage storage,
-        CoflowGenerationGate generationGate,
-        bool functionsCompiled,
         ICoflowGeneratedContract contract,
-        IReadOnlyList<CoflowSourcePart> sourceParts)
+        IReadOnlyDictionary<Type, CoflowTable> tables,
+        IReadOnlyDictionary<Type, object> singletons,
+        IReadOnlyList<CoflowFunctionEntry> functions,
+        bool functionsCompiled)
     {
+        Contract = contract;
         _tables = tables;
         _singletons = singletons;
-        _functions = functions;
-        _storage = storage;
-        _generationGate = generationGate;
-        _contract = contract;
-        _sourceParts = sourceParts;
+        _functions = functions.ToDictionary(value => value.Identity);
         FunctionsCompiled = functionsCompiled;
     }
 
+    internal ICoflowGeneratedContract Contract { get; }
+    internal IReadOnlyDictionary<Type, CoflowTable> Tables => _tables;
+    internal IReadOnlyDictionary<Type, object> Singletons => _singletons;
+    internal IReadOnlyDictionary<CoflowFunctionIdentity, CoflowFunctionEntry> Functions => _functions;
     public bool FunctionsCompiled { get; }
 
-    internal CoflowGenerationStorage Storage => _storage ??
-        throw new ObjectDisposedException(nameof(CoflowModule));
-
-    internal static CoflowModule Load(
-        IReadOnlyList<CoflowSourcePart> sourceParts,
-        ICoflowGeneratedContract contract,
-        bool functionsCompiled)
+    public TTable Table<TTable>(ICoflowTableToken<TTable> token) where TTable : CoflowTable
     {
-        var documents = ParseSources(sourceParts);
+        if (token is null) throw new ArgumentNullException(nameof(token));
+        return _tables.TryGetValue(token.RecordType, out var table) ? (TTable)table : token.Empty;
+    }
+
+    public Option<T> Singleton<T>() where T : class => _singletons.TryGetValue(typeof(T), out var value)
+        ? Option<T>.Some((T)value) : Option<T>.None;
+
+    internal static CoflowModule Load(string[] sources, ICoflowGeneratedContract contract, bool compile)
+    {
+        if (sources is null) throw new ArgumentNullException(nameof(sources));
         ValidateContract(contract);
-        var generationGate = new CoflowGenerationGate();
+        var documents = CfdParser.ParseAll(sources.Select((text, index) =>
+            new CfdSource($"source[{index}]", text ?? throw new ArgumentException("CFD source cannot be null.", nameof(sources)))));
         var context = new CfdLoadContext(
-            documents,
-            bindings: contract.Types,
-            enums: contract.Enums,
-            constants: contract.Constants,
-            functionsCompiled: functionsCompiled);
-        context.GenerationGate = generationGate;
+            documents, null, contract.Types, contract.Enums, contract.Constants, compile);
         documents = context.Documents;
-        var metadataByName = contract.Types.ToDictionary(type => type.DeclaredType, StringComparer.Ordinal);
-        foreach (var document in documents)
+        var metadataByName = contract.Types.ToDictionary(value => value.DeclaredType, StringComparer.Ordinal);
+        foreach (var record in documents.SelectMany(value => value.Records))
         {
-            foreach (var record in document.Records)
-            {
-                if (!metadataByName.TryGetValue(record.DeclaredType, out var recordMetadata))
-                    throw new CoflowLoadException(new[] { new CfdDiagnostic(
-                        "CFD-REF-UNKNOWN-TYPE",
-                        $"CFD record `{record.Key}` uses unknown type `{record.DeclaredType}`",
-                        document.Path,
-                        record.Span) });
-                if (recordMetadata.IsHost)
-                    throw new CoflowLoadException(new[] { new CfdDiagnostic(
-                        "CFD-HOST-RECORD",
-                        $"CFD cannot declare @Host type `{record.DeclaredType}`",
-                        document.Path,
-                        record.Span) });
-            }
+            if (!metadataByName.TryGetValue(record.DeclaredType, out var metadata))
+                throw Error("CFD-REF-UNKNOWN-TYPE", $"unknown record type `{record.DeclaredType}`", record.Span);
+            if (metadata is ICoflowHostMetadata)
+                throw Error("CFD-HOST-RECORD", $"CFD cannot declare @Host `{record.DeclaredType}`", record.Span);
+            if (metadata is not ICoflowRecordMetadata)
+                throw Error("CFD-REF-UNKNOWN-TYPE", $"type `{record.DeclaredType}` cannot be declared as a record", record.Span);
         }
-        var tables = new Dictionary<Type, object>();
+
+        var records = new Dictionary<(string, string), object>();
         var singletons = new Dictionary<Type, object>();
-        var recordsByIdentity = new Dictionary<(string DeclaredType, string Key), object>();
+        foreach (var record in documents.SelectMany(value => value.Records))
+        {
+            var metadata = (ICoflowRecordMetadata)metadataByName[record.DeclaredType];
+            var shell = metadata.CreateRecord(record.Key, context);
+            records.Add((record.DeclaredType, record.Key), shell);
+            context.RegisterRecord(record.DeclaredType, record.Key, shell);
+        }
+        foreach (var record in documents.SelectMany(value => value.Records))
+            ((ICoflowRecordMetadata)metadataByName[record.DeclaredType]).PopulateRecord(
+                records[(record.DeclaredType, record.Key)], record, context);
         foreach (var metadata in contract.Types)
         {
-            if (metadata.IsHost)
+            if (metadata is ICoflowHostMetadata hostMetadata)
             {
-                var host = metadata.CreateHost(context);
+                var host = hostMetadata.CreateHost(context);
                 singletons.Add(metadata.RuntimeType, host);
-                recordsByIdentity.Add((metadata.DeclaredType, string.Empty), host);
+                records.Add((metadata.DeclaredType, string.Empty), host);
                 continue;
             }
-            var records = documents.SelectMany(document => document.Records)
-                .Where(record => string.Equals(record.DeclaredType, metadata.DeclaredType, StringComparison.Ordinal))
-                .ToArray();
-            if (metadata.IsSingleton)
-            {
-                if (records.Length != 1)
-                    throw new CoflowLoadException(new[] { new CfdDiagnostic(
-                        "CFD-SINGLETON-COUNT",
-                        $"singleton `{metadata.DeclaredType}` must have exactly one record",
-                        string.Empty) });
-                var singleton = context.Resolve<object>(metadata.DeclaredType, records[0].Key);
-                singletons.Add(metadata.RuntimeType, singleton);
-                recordsByIdentity.Add((metadata.DeclaredType, records[0].Key), singleton);
-                continue;
-            }
+            var nodes = documents.SelectMany(value => value.Records)
+                .Where(value => value.DeclaredType == metadata.DeclaredType).ToArray();
+            if (metadata.IsSingleton && nodes.Length > 1)
+                throw Error("CFD-SINGLETON-COUNT", $"singleton `{metadata.DeclaredType}` appears more than once");
+            if (metadata.IsSingleton && nodes.Length == 1)
+                singletons.Add(metadata.RuntimeType, records[(metadata.DeclaredType, nodes[0].Key)]);
+        }
 
-            var values = records.Select(record => context.Resolve<object>(metadata.DeclaredType, record.Key)).ToArray();
-            for (var index = 0; index < records.Length; index++)
-                recordsByIdentity.Add((metadata.DeclaredType, records[index].Key), values[index]);
-        }
-        foreach (var metadata in contract.Types.Where(type => !type.IsHost && !type.IsSingleton))
+        var tables = new Dictionary<Type, CoflowTable>();
+        foreach (var metadata in contract.Types.OfType<ICoflowRecordMetadata>()
+                     .Where(value => !value.IsSingleton && !value.IsAbstract))
         {
-            var values = documents.SelectMany(document => document.Records)
-                .Where(record => metadataByName[record.DeclaredType].AssignableTypes
-                    .Contains(metadata.DeclaredType, StringComparer.Ordinal))
-                .Select(record => recordsByIdentity[(record.DeclaredType, record.Key)])
-                .ToArray();
-            tables.Add(metadata.RuntimeType, CreateTable(metadata, values));
+            var values = documents.SelectMany(value => value.Records)
+                .Where(value => metadataByName[value.DeclaredType].AssignableTypes.Contains(metadata.DeclaredType, StringComparer.Ordinal))
+                .Select(value => records[(value.DeclaredType, value.Key)]).ToArray();
+            if (values.Length != 0) tables.Add(metadata.RuntimeType, CreateTable(metadata, values));
         }
-        var storage = CoflowGenerationStorage.Build(contract.Types, recordsByIdentity, context.Functions);
-        if (functionsCompiled)
-            CoflowCompiler.Compile(context.Functions, contract, recordsByIdentity, context, storage);
-        return new CoflowModule(
-            tables, singletons, context.Functions, storage, generationGate,
-            functionsCompiled, contract, sourceParts);
+        if (compile) CoflowCompiler.Compile(context.Functions, contract, records, context);
+        return new CoflowModule(contract, tables, singletons, context.Functions, compile);
+    }
+
+    private static CoflowTable CreateTable(ICoflowRecordMetadata metadata, object[] values)
+    {
+        var method = typeof(CoflowModule).GetMethod(nameof(CreateTypedTable), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(metadata.RuntimeType, metadata.KeyType);
+        return InvokeTableFactory(method, new object[] { metadata, values });
+    }
+
+    private static CoflowTable CreateTypedTable<T, TKey>(ICoflowRecordMetadata metadata, object[] values) where T : class
+    {
+        var records = values.Cast<T>().ToArray();
+        return typeof(TKey) == typeof(string)
+            ? new CoflowStringTable<T>(records, value => (string)metadata.GetKey(value))
+            : CreateEnumTable<T, TKey>(metadata, records);
+    }
+
+    private static CoflowTable CreateEnumTable<T, TKey>(ICoflowRecordMetadata metadata, IReadOnlyList<T> records) where T : class
+    {
+        var method = typeof(CoflowModule).GetMethod(nameof(CreateEnumTableCore), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(T), typeof(TKey));
+        return InvokeTableFactory(method, new object[] { metadata, records });
+    }
+
+    private static CoflowTable CreateEnumTableCore<T, TKey>(ICoflowRecordMetadata metadata, IReadOnlyList<T> records)
+        where T : class where TKey : struct, Enum =>
+        new CoflowEnumTable<T, TKey>(records, value => (TKey)metadata.GetKey(value));
+
+    internal static CoflowTable InvokeTableFactory(System.Reflection.MethodInfo method, object[] arguments)
+    {
+        try { return (CoflowTable)method.Invoke(null, arguments)!; }
+        catch (System.Reflection.TargetInvocationException error) when (error.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException).Throw();
+            throw;
+        }
     }
 
     private static void ValidateContract(ICoflowGeneratedContract contract)
     {
-        var duplicateDeclaredType = contract.Types.Select(type => type.DeclaredType)
-            .Concat(contract.Enums.Select(value => value.DeclaredType))
-            .GroupBy(name => name, StringComparer.Ordinal)
-            .FirstOrDefault(group => group.Count() > 1);
-        if (duplicateDeclaredType is not null)
-            throw ContractError("COFLOW-METADATA-DUPLICATE-NAME",
-                $"generated name `{duplicateDeclaredType.Key}` is registered more than once");
-
-        var duplicateRuntimeType = contract.Types.Select(type => type.RuntimeType)
-            .Concat(contract.Enums.Select(value => value.RuntimeType))
-            .GroupBy(type => type)
-            .FirstOrDefault(group => group.Count() > 1);
-        if (duplicateRuntimeType is not null)
-            throw ContractError("COFLOW-METADATA-DUPLICATE-TYPE",
-                $"generated runtime type `{duplicateRuntimeType.Key}` is registered more than once");
-
-        var duplicateConstant = contract.Constants.GroupBy(
-                constant => constant.DeclaredName, StringComparer.Ordinal)
-            .FirstOrDefault(group => group.Count() > 1);
-        if (duplicateConstant is not null)
-            throw ContractError("COFLOW-METADATA-DUPLICATE-CONSTANT",
-                $"generated constant `{duplicateConstant.Key}` is registered more than once");
+        if (contract is null) throw new ArgumentNullException(nameof(contract));
+        var duplicateName = contract.Types.Select(value => value.DeclaredType)
+            .Concat(contract.Enums.Select(value => value.DeclaredType)).GroupBy(value => value, StringComparer.Ordinal)
+            .FirstOrDefault(value => value.Count() > 1);
+        if (duplicateName is not null) throw Error("COFLOW-METADATA-DUPLICATE-NAME", $"generated name `{duplicateName.Key}` is duplicated");
+        var duplicateType = contract.Types.Select(value => value.RuntimeType)
+            .Concat(contract.Enums.Select(value => value.RuntimeType)).GroupBy(value => value).FirstOrDefault(value => value.Count() > 1);
+        if (duplicateType is not null) throw Error("COFLOW-METADATA-DUPLICATE-TYPE", $"runtime type `{duplicateType.Key}` is duplicated");
     }
 
-    private static CoflowLoadException ContractError(string code, string message) =>
-        new(new[] { new CfdDiagnostic(code, message, string.Empty) });
-
-    private static IReadOnlyList<CfdDocument> ParseSources(IReadOnlyList<CoflowSourcePart> sourceParts)
-    {
-        var combined = sourceParts.Count > 1;
-        var sources = sourceParts.SelectMany((part, partIndex) => part.Sources.Select((text, sourceIndex) =>
-            new CfdSource(combined ? $"module[{partIndex}]/source[{sourceIndex}]" : $"source[{sourceIndex}]", text)));
-        return CfdParser.ParseAll(sources);
-    }
-
-    private static object CreateTable(ICoflowTypeMetadata metadata, object[] values)
-    {
-        var tableType = typeof(CoflowTable<>).MakeGenericType(metadata.RuntimeType);
-        return Activator.CreateInstance(tableType, metadata, values)!;
-    }
-
-    public CoflowTable<T> Table<T>()
-    {
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            return _tables.TryGetValue(typeof(T), out var table)
-                ? (CoflowTable<T>)table
-                : throw new InvalidOperationException($"`{typeof(T)}` is not a generated non-singleton Coflow type.");
-        }
-    }
-
-    public T Singleton<T>()
-    {
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            return _singletons.TryGetValue(typeof(T), out var singleton)
-                ? (T)singleton
-                : throw new InvalidOperationException($"`{typeof(T)}` is not a loaded generated singleton Coflow type.");
-        }
-    }
-
-    internal static CoflowModule Combine(IReadOnlyList<CoflowModule> modules)
-    {
-        if (modules is null) throw new ArgumentNullException(nameof(modules));
-        if (modules.Count == 0)
-            throw new ArgumentException("At least one CFD module is required.", nameof(modules));
-
-        ICoflowGeneratedContract? contract = null;
-        var compiled = true;
-        var sourceParts = new List<CoflowSourcePart>();
-        var sourceIds = new HashSet<Guid>();
-        var sourceOwners = new HashSet<Guid>();
-        foreach (var module in modules)
-        {
-            if (module is null) throw new ArgumentException("A CFD module cannot be null.", nameof(modules));
-            lock (module._sync)
-            {
-                module.ThrowIfDisposed();
-                contract ??= module._contract;
-                if (!ReferenceEquals(contract, module._contract))
-                    throw new ArgumentException("CFD modules use different generated contracts.", nameof(modules));
-                compiled &= module.FunctionsCompiled;
-                var moduleParts = module._sourceParts
-                    .Select(sourcePart => sourcePart.WithOwner(module._identity))
-                    .ToArray();
-                var moduleOwners = moduleParts.SelectMany(part => part.Owners).ToHashSet();
-                if (sourceOwners.Overlaps(moduleOwners))
-                    throw new ArgumentException("The same CFD module is included more than once.", nameof(modules));
-                sourceOwners.UnionWith(moduleOwners);
-                foreach (var sourcePart in moduleParts)
-                {
-                    if (!sourceIds.Add(sourcePart.Id))
-                        throw new ArgumentException("The same CFD module is included more than once.", nameof(modules));
-                    sourceParts.Add(sourcePart);
-                }
-            }
-        }
-        return Load(sourceParts, contract!, compiled);
-    }
-
-    internal IReadOnlyList<CoflowSourcePart> SnapshotSourceParts(ICoflowGeneratedContract contract)
-    {
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            if (!ReferenceEquals(_contract, contract))
-                throw new ArgumentException("The child CFD module uses a different generated contract.");
-            return _sourceParts.Select(part => part.WithOwner(_identity)).ToArray();
-        }
-    }
-
-    public CoflowModule Compile()
-    {
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            return Load(_sourceParts, _contract, functionsCompiled: true);
-        }
-    }
-
-    public Result<ReloadInfo, CoflowReloadError> Reload(string cfd) => Reload(new[] { cfd });
-
-    public Result<ReloadInfo, CoflowReloadError> Reload(string[] cfdSources)
-    {
-        if (cfdSources is null) throw new ArgumentNullException(nameof(cfdSources));
-        IReadOnlyList<CoflowSourcePart> replacement;
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            var identity = _sourceParts.Count == 1 ? _sourceParts[0].Id : Guid.NewGuid();
-            replacement = new[] { new CoflowSourcePart(
-                identity, ValidateSources(cfdSources), Array.Empty<Guid>()) };
-        }
-        return ReloadParts(replacement);
-    }
-
-    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string cfd) =>
-        Reload(child, new[] { cfd });
-
-    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string[] cfdSources)
-    {
-        if (child is null) throw new ArgumentNullException(nameof(child));
-        if (cfdSources is null) throw new ArgumentNullException(nameof(cfdSources));
-        Guid childId;
-        lock (child._sync)
-        {
-            child.ThrowIfDisposed();
-            if (!ReferenceEquals(_contract, child._contract))
-                throw new ArgumentException("The child CFD module uses a different generated contract.", nameof(child));
-            childId = child._identity;
-        }
-
-        IReadOnlyList<CoflowSourcePart> replacement;
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            var matched = _sourceParts.Where(part => part.Owners.Contains(childId)).ToArray();
-            if (matched.Length == 0)
-                throw new ArgumentException("The target is not a child of this CFD module.", nameof(child));
-            var preservedOwners = matched[0].Owners
-                .Where(owner => matched.All(part => part.Owners.Contains(owner)))
-                .ToArray();
-            var replacementPart = new CoflowSourcePart(
-                Guid.NewGuid(), ValidateSources(cfdSources), preservedOwners);
-            var replaced = false;
-            replacement = _sourceParts.SelectMany(part =>
-            {
-                if (!part.Owners.Contains(childId)) return new[] { part };
-                if (replaced) return Array.Empty<CoflowSourcePart>();
-                replaced = true;
-                return new[] { replacementPart };
-            }).ToArray();
-        }
-        return ReloadParts(replacement);
-    }
-
-    private Result<ReloadInfo, CoflowReloadError> ReloadParts(IReadOnlyList<CoflowSourcePart> sourceParts)
-    {
-        long previousGeneration;
-        CoflowGenerationGate previousGate;
-        lock (_sync)
-        {
-            ThrowIfDisposed();
-            previousGeneration = _generation;
-            previousGate = _generationGate;
-        }
-
-        CoflowModule candidate;
-        try
-        {
-            candidate = Load(sourceParts, _contract, FunctionsCompiled);
-        }
-        catch (CfdLoadException error)
-        {
-            return Result<ReloadInfo, CoflowReloadError>.Err(new CoflowReloadError(error.Diagnostics));
-        }
-
-        lock (previousGate.Sync)
-        {
-            lock (_sync)
-            {
-                if (_disposed)
-                {
-                    candidate.Dispose();
-                    throw new ObjectDisposedException(nameof(CoflowModule));
-                }
-                if (_generation != previousGeneration || !ReferenceEquals(_generationGate, previousGate))
-                {
-                    candidate.Dispose();
-                    return Result<ReloadInfo, CoflowReloadError>.Err(new CoflowReloadError(new[]
-                    {
-                        new CfdDiagnostic("COFLOW-RELOAD-CONCURRENT",
-                            "the active generation changed while reload was being prepared", string.Empty),
-                    }));
-                }
-
-                try
-                {
-                    foreach (var metadata in _contract.Types.Where(type => type.IsHost))
-                    {
-                        metadata.TransferHostState(
-                            _singletons[metadata.RuntimeType],
-                            candidate._singletons[metadata.RuntimeType]);
-                    }
-                }
-                catch (InvalidOperationException error)
-                {
-                    candidate.Dispose();
-                    return Result<ReloadInfo, CoflowReloadError>.Err(new CoflowReloadError(new[]
-                    {
-                        new CfdDiagnostic("COFLOW-RELOAD-BINDING", error.Message, string.Empty),
-                    }));
-                }
-
-                previousGate.Retire();
-                _tables = candidate._tables;
-                _singletons = candidate._singletons;
-                _functions = candidate._functions;
-                _storage = candidate._storage;
-                _generationGate = candidate._generationGate;
-                _sourceParts = sourceParts;
-                _generation++;
-                return Result<ReloadInfo, CoflowReloadError>.Ok(
-                    new ReloadInfo(previousGeneration, _generation));
-            }
-        }
-    }
-
-    public void Dispose()
-    {
-        while (true)
-        {
-            CoflowGenerationGate gate;
-            lock (_sync)
-            {
-                if (_disposed) return;
-                gate = _generationGate;
-            }
-            lock (gate.Sync)
-            {
-                lock (_sync)
-                {
-                    if (_disposed) return;
-                    if (!ReferenceEquals(_generationGate, gate)) continue;
-                    gate.Retire();
-                    _disposed = true;
-                    _tables = new Dictionary<Type, object>();
-                    _singletons = new Dictionary<Type, object>();
-                    _functions = Array.Empty<CoflowFunctionSlot>();
-                    _storage = null;
-                    _sourceParts = Array.Empty<CoflowSourcePart>();
-                    return;
-                }
-            }
-        }
-    }
-
-    private static string[] ValidateSources(string[] sources) => sources.Select(source => source ??
-        throw new ArgumentException("CFD source text cannot be null.", nameof(sources))).ToArray();
-
-    private void ThrowIfDisposed()
-    {
-        if (_disposed) throw new ObjectDisposedException(nameof(CoflowModule));
-    }
+    private static CoflowLoadException Error(string code, string message, CfdSpan? span = null) =>
+        new(new[] { new CfdDiagnostic(code, message, string.Empty, span) });
 }
 
-public sealed class CoflowTable<T> : IReadOnlyList<T>
+public sealed class CoflowModuleSet
 {
-    private readonly T[] _records;
-    private readonly IReadOnlyDictionary<object, T> _index;
-    private readonly ICoflowTypeMetadata _metadata;
+    private readonly IReadOnlyList<CoflowModule> _modules;
+    private readonly IReadOnlyDictionary<Type, CoflowTable> _tables;
+    private readonly IReadOnlyDictionary<Type, object> _singletons;
+    private readonly IReadOnlyDictionary<CoflowFunctionIdentity, CoflowFunctionEntry> _functions;
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public CoflowTable(ICoflowTypeMetadata metadata, object[] records)
+    public CoflowModuleSet(params CoflowModule[] modules) : this((IReadOnlyList<CoflowModule>)modules) { }
+
+    private CoflowModuleSet(IReadOnlyList<CoflowModule> modules)
     {
-        _metadata = metadata;
-        _records = records.Cast<T>().ToArray();
-        var index = new Dictionary<object, T>();
-        foreach (var record in _records)
+        if (modules is null) throw new ArgumentNullException(nameof(modules));
+        _modules = modules.ToArray();
+        if (_modules.Any(value => value is null)) throw new ArgumentException("A module cannot be null.", nameof(modules));
+        if (_modules.Select(value => value.Contract).Distinct(ContractReferenceComparer.Instance).Skip(1).Any())
+            throw new ArgumentException("All modules must use the same generated contract.", nameof(modules));
+        _singletons = MergeUnique(_modules.SelectMany(value => value.Singletons), "singleton");
+        _functions = MergeUnique(_modules.SelectMany(value => value.Functions), "function");
+        _tables = CombineTables(_modules);
+    }
+
+    public IReadOnlyList<CoflowModule> Modules => _modules;
+    public TTable Table<TTable>(ICoflowTableToken<TTable> token) where TTable : CoflowTable =>
+        _tables.TryGetValue(token.RecordType, out var table) ? (TTable)table : token.Empty;
+    public Option<T> Singleton<T>() where T : class => _singletons.TryGetValue(typeof(T), out var value)
+        ? Option<T>.Some((T)value) : Option<T>.None;
+    public CoflowModuleSet Add(CoflowModule module) => new(_modules.Append(module).ToArray());
+    public CoflowModuleSet Remove(CoflowModule module) => new(_modules.Where(value => !ReferenceEquals(value, module)).ToArray());
+    public CoflowModuleSet Replace(CoflowModule current, CoflowModule replacement) =>
+        new(_modules.Select(value => ReferenceEquals(value, current) ? replacement : value).ToArray());
+
+    private sealed class ContractReferenceComparer : IEqualityComparer<ICoflowGeneratedContract>
+    {
+        internal static ContractReferenceComparer Instance { get; } = new();
+        public bool Equals(ICoflowGeneratedContract? left, ICoflowGeneratedContract? right) =>
+            ReferenceEquals(left, right);
+        public int GetHashCode(ICoflowGeneratedContract value) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
+    }
+
+    private static Dictionary<TKey, TValue> MergeUnique<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> values, string kind) where TKey : notnull
+    {
+        var result = new Dictionary<TKey, TValue>();
+        foreach (var pair in values)
+            if (!result.TryAdd(pair.Key, pair.Value)) throw new ArgumentException($"Duplicate Coflow {kind} `{pair.Key}`.");
+        return result;
+    }
+
+    private static IReadOnlyDictionary<Type, CoflowTable> CombineTables(IReadOnlyList<CoflowModule> modules)
+    {
+        var result = new Dictionary<Type, CoflowTable>();
+        foreach (var group in modules.SelectMany(value => value.Tables).GroupBy(value => value.Key))
         {
-            var key = metadata.GetKey(record!);
-            if (!index.TryAdd(key, record))
-                throw new CoflowLoadException(new[] { new CfdDiagnostic(
-                    "CFD-SYNTAX-DUPLICATE-RECORD",
-                    $"record key `{key}` is declared more than once for `{metadata.DeclaredType}`",
-                    string.Empty) });
+            var tables = group.Select(value => value.Value).ToArray();
+            var method = typeof(CoflowModuleSet).GetMethod(nameof(CombineTyped), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+                .MakeGenericMethod(group.Key, tables[0].KeyType);
+            result.Add(group.Key, CoflowModule.InvokeTableFactory(method, new object[] { tables }));
         }
-        _index = index;
+        return result;
     }
 
-    public int Count => _records.Length;
-    public T this[int index] => _records[index];
-
-    public Option<T> Get(string key)
+    private static CoflowTable CombineTyped<T, TKey>(CoflowTable[] tables) where T : class
     {
-        if (_metadata.KeyType != typeof(string))
-            throw new ArgumentException($"`{_metadata.DeclaredType}` uses enum key `{_metadata.KeyType}`.", nameof(key));
-        return Find(key);
+        var segments = tables.Select(value => (IReadOnlyList<T>)value).ToArray();
+        if (typeof(TKey) == typeof(string))
+            return new CoflowStringTable<T>(segments, value => (string)tables[0].KeyOf(value));
+        var method = typeof(CoflowModuleSet).GetMethod(nameof(CombineEnum), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(T), typeof(TKey));
+        return CoflowModule.InvokeTableFactory(method, new object[] { tables, segments });
     }
 
-    public Option<T> Get<TKey>(TKey key) where TKey : struct, Enum
-    {
-        if (_metadata.KeyType != typeof(TKey))
-            throw new ArgumentException($"`{_metadata.DeclaredType}` does not use enum key `{typeof(TKey)}`.", nameof(key));
-        return Find(key);
-    }
+    private static CoflowTable CombineEnum<T, TKey>(CoflowTable[] tables, IReadOnlyList<T>[] segments)
+        where T : class where TKey : struct, Enum =>
+        new CoflowEnumTable<T, TKey>(segments, value => (TKey)tables[0].KeyOf(value));
+}
 
-    private Option<T> Find(object key) => _index.TryGetValue(key, out var value)
-        ? Option<T>.Some(value)
-        : Option<T>.None;
-
-    public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_records).GetEnumerator();
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+internal static class CoflowLoader
+{
+    internal static CoflowModule LoadData(string[] sources, ICoflowGeneratedContract? contract = null) =>
+        CoflowModule.Load(sources, contract ?? CoflowGeneratedRegistry.RequireContract(), false);
+    internal static CoflowModule LoadAndCompile(string[] sources, ICoflowGeneratedContract? contract = null) =>
+        CoflowModule.Load(sources, contract ?? CoflowGeneratedRegistry.RequireContract(), true);
 }

@@ -47,6 +47,30 @@ fn emits_declarations_and_runtime_metadata() {
 }
 
 #[test]
+fn emits_cft_structs_as_reference_types_with_value_equality() {
+    let files = generate_csharp_cfd(
+        &schema("@struct sealed type Point { x: int; y: int; }"),
+        &CsharpCodegenOptions::new("Game.Config"),
+        &[],
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate struct");
+    let output = all(&files);
+    assert!(output.contains("public sealed partial class Point : IEquatable<Point>"));
+    assert!(output.contains("public bool Equals(Point? other)"));
+    assert!(output.contains("EqualityComparer<long>.Default.Equals(X, other.X)"));
+    assert!(!output.contains("EqualityComparer<object>.Default"));
+    assert!(!output.contains("partial struct Point"));
+    assert!(!output.contains("CoflowStringTableToken<Point>"));
+    assert!(output.contains("Cft_506F696E74CoflowMetadata : ICoflowTypeMetadata"));
+    assert!(!output.contains("Cft_506F696E74CoflowMetadata : ICoflowRecordMetadata"));
+    assert!(!output.contains("public Type KeyType"));
+    assert!(!output.contains("public object ParseKey"));
+    assert!(!output.contains("public Delegate GetKeyReader"));
+}
+
+#[test]
 fn expands_type_aliases_without_emitting_alias_declarations() {
     let files = generate_csharp_cfd(
         &schema(
@@ -280,10 +304,10 @@ fn preserves_host_singleton_in_generated_metadata() {
     .expect("generate");
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
-    assert!(output.contains("public bool IsHost => true;"));
-    assert!(output.contains("public Result<Unit, HostBindError> Bind("));
+    assert!(output.contains("Cft_417069CoflowMetadata : ICoflowHostMetadata"));
+    assert!(output.contains("public void Configure("));
     assert!(output.contains("string environment,\n        Action<string> log"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog, log)"));
+    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog.RuntimeEntry, log)"));
     assert!(output.contains("CreateHostCft_417069(context)"));
     assert!(!output.contains("BindLog(Action<string> implementation)"));
 }
@@ -303,8 +327,8 @@ fn host_binding_includes_inherited_fields_and_functions() {
     let output = all(&files);
     assert!(output.contains("string region,"));
     assert!(output.contains("Action<string> report,"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowReport, report)"));
-    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog, log)"));
+    assert!(output.contains("new CoflowHostFunctionBinding(_coflowReport.RuntimeEntry, report)"));
+    assert!(output.contains("new CoflowHostFunctionBinding(_coflowLog.RuntimeEntry, log)"));
     assert!(output.contains(": base(hostSlot, default!, report)"));
 }
 
@@ -319,10 +343,10 @@ fn maps_option_result_unit_and_function_types() {
     .expect("generate");
     let output = all(&files);
     assert!(output.contains("Option<long> Optional"));
-    assert!(output.contains("internal readonly CoflowFunctionSlot _coflowRun;"));
+    assert!(output.contains("internal CoflowFunctionEntry<Func<string, Result<Unit, global::CoflowConfig.Failure>>> _coflowRun"));
     assert!(output.contains("public Result<Unit, global::CoflowConfig.Failure> Run(string input)"));
     assert!(!output.contains("BindRun"));
-    assert!(output.contains("_coflowRun.Invoke<Result<Unit, global::CoflowConfig.Failure>>(input)"));
+    assert!(output.contains("_coflowRun.Function(input)"));
     assert!(output.contains("internal Api("));
     assert!(!output.contains("Func<string, Result<Unit, Failure>> Run { get;"));
 }
@@ -344,8 +368,8 @@ fn loads_function_values_nested_in_collections_and_option() {
     assert!(output.contains("IReadOnlyList<Func<long, long>> Handlers"));
     assert!(output.contains("IReadOnlyDictionary<string, Func<string, bool>> Named"));
     assert!(output.contains("Option<Func<long, long>> Optional"));
-    assert!(output.contains("context.FunctionValue<Func<long, long>>(item)"));
-    assert!(output.contains("context.FunctionValue<Func<string, bool>>(item)"));
+    assert!(output.contains("context.FunctionValue<Func<long, long>>(item, typeof(long)"));
+    assert!(output.contains("context.FunctionValue<Func<string, bool>>(item, typeof(bool)"));
 }
 
 #[test]
@@ -364,7 +388,7 @@ fn ordinary_function_loader_marks_the_cfd_body_as_required() {
     ));
     assert!(output.contains("public long Evaluate(long value)"));
     assert!(output.contains("public void Notify(string message)"));
-    assert!(!output.contains("public Result<Unit, HostBindError> Bind("));
+    assert!(!output.contains("public void Configure("));
     assert!(!output.contains("BindEvaluate"));
     assert!(!output.contains("BindNotify"));
 }
@@ -502,8 +526,9 @@ type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base
     assert!(output.contains("ObjectFieldType(string fieldName)"));
     assert!(output.contains("ReferenceFieldType(string fieldName)"));
     assert!(output.contains("\"concrete_child\" => ReadCft_636F6E63726574655F6368696C64(node, context)"));
+    assert!(output.contains("null or \"concrete_base\" =>"));
     assert!(output.contains(
-        "null or \"concrete_base\" => CfdValueReader.Object(node, context, \"concrete_base\", ReadCft_636F6E63726574655F62617365Fields)"
+        "CfdValueReader.Object(node, context, \"concrete_base\", ReadCft_636F6E63726574655F62617365Fields)"
     ));
 }
 

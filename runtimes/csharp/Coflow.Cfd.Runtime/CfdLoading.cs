@@ -16,11 +16,10 @@ public sealed class CfdLoadContext
     private readonly IReadOnlyDictionary<CfdRecordNode, string> _recordPaths;
     private readonly Stack<CfdNameResolver> _currentNames = new();
     private readonly HashSet<CfdFormattedStringValue> _formatting = new();
-    private readonly List<CoflowFunctionSlot> _functions = new();
+    private readonly List<CoflowFunctionEntry> _functions = new();
     private readonly bool _functionsCompiled;
     private readonly Dictionary<CoflowConstant, object> _constantCache = new();
     private readonly HashSet<CoflowConstant> _resolvingConstants = new();
-    internal CoflowGenerationGate GenerationGate { get; set; } = new();
 
     public CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
@@ -100,9 +99,15 @@ public sealed class CfdLoadContext
     public CfdLoadOptions Options { get; }
     public IReadOnlyDictionary<string, ICfdTypeBinding> Bindings { get; }
     public List<CfdDiagnostic> Diagnostics { get; } = new();
-    internal IReadOnlyList<CoflowFunctionSlot> Functions => _functions;
+    internal IReadOnlyList<CoflowFunctionEntry> Functions => _functions;
 
-    public CoflowHostSlot Host() => new(_functionsCompiled, GenerationGate);
+    internal void RegisterRecord(string declaredType, string key, object record)
+    {
+        if (!_cache.TryAdd((declaredType, key), record))
+            throw Error("CFD-SYNTAX-DUPLICATE-RECORD", $"record `{declaredType}::{key}` is registered more than once");
+    }
+
+    public CoflowHostState Host() => new(_functionsCompiled);
 
     internal object ResolveConstant(CoflowConstant constant)
     {
@@ -121,7 +126,7 @@ public sealed class CfdLoadContext
         }
     }
 
-    public CoflowFunctionSlot Function(
+    public CoflowFunctionEntry Function(
         CfdValueNode? node,
         string fieldName,
         Type resultType,
@@ -133,11 +138,11 @@ public sealed class CfdLoadContext
                 "expected a CFD function body",
                 CurrentPath,
                 node.Span) });
-        return CreateFunctionSlot(node as CfdFunctionValue, fieldName, fieldName,
+        return CreateFunctionEntry(node as CfdFunctionValue, fieldName, fieldName,
             resultType, parameterTypes, requiresCfdBody: false);
     }
 
-    public CoflowFunctionSlot RequiredFunction(
+    public CoflowFunctionEntry RequiredFunction(
         CfdValueNode? node,
         string fieldName,
         Type resultType,
@@ -149,11 +154,15 @@ public sealed class CfdLoadContext
                 "expected a CFD function body",
                 CurrentPath,
                 node.Span) });
-        return CreateFunctionSlot(node as CfdFunctionValue, fieldName, fieldName,
+        return CreateFunctionEntry(node as CfdFunctionValue, fieldName, fieldName,
             resultType, parameterTypes, requiresCfdBody: true);
     }
 
-    public TDelegate FunctionValue<TDelegate>(CfdValueNode node)
+    public TDelegate FunctionValue<TDelegate>(
+        CfdValueNode node,
+        Type resultType,
+        Type[] parameterTypes,
+        Func<CoflowFunctionEntry, TDelegate> factory)
         where TDelegate : Delegate
     {
         if (node is not CfdFunctionValue source)
@@ -162,22 +171,22 @@ public sealed class CfdLoadContext
                 "expected a CFD function body",
                 CurrentPath,
                 node.Span) });
-        var invoke = typeof(TDelegate).GetMethod("Invoke") ?? throw new ArgumentException(
-            "The generated function value type is not a delegate.", nameof(TDelegate));
+        if (resultType is null) throw new ArgumentNullException(nameof(resultType));
+        if (parameterTypes is null) throw new ArgumentNullException(nameof(parameterTypes));
+        if (factory is null) throw new ArgumentNullException(nameof(factory));
         var location = LocateFunctionValue(node) ?? throw new InvalidOperationException(
             "A persistent function value must belong to the current CFD record.");
-        var resultType = invoke.ReturnType == typeof(void) ? typeof(Unit) : invoke.ReturnType;
-        var slot = CreateFunctionSlot(
+        var entry = CreateFunctionEntry(
             source,
             location.FieldName,
             location.ValuePath,
             resultType,
-            invoke.GetParameters().Select(parameter => parameter.ParameterType).ToArray(),
+            parameterTypes,
             requiresCfdBody: true);
-        return CoflowFunctionDelegates.Create<TDelegate>(slot);
+        return factory(entry);
     }
 
-    private CoflowFunctionSlot CreateFunctionSlot(
+    private CoflowFunctionEntry CreateFunctionEntry(
         CfdFunctionValue? source,
         string fieldName,
         string valuePath,
@@ -186,9 +195,9 @@ public sealed class CfdLoadContext
         bool requiresCfdBody)
     {
         var declaredType = CurrentRecordType ?? throw new InvalidOperationException(
-            "A persistent Coflow function slot must be created while reading a record.");
+            "A persistent Coflow function entry must be created while reading a record.");
         var recordKey = CurrentRecordKey ?? string.Empty;
-        var slot = new CoflowFunctionSlot(
+        var entry = new CoflowFunctionEntry(
             new CoflowFunctionIdentity(declaredType, recordKey, fieldName, valuePath),
             new CoflowFunctionSignature(resultType, parameterTypes),
             source,
@@ -196,8 +205,8 @@ public sealed class CfdLoadContext
             CurrentPath,
             source?.Span ?? CurrentSpan,
             requiresCfdBody);
-        _functions.Add(slot);
-        return slot;
+        _functions.Add(entry);
+        return entry;
     }
 
     private (string FieldName, string ValuePath)? LocateFunctionValue(CfdValueNode target)
