@@ -38,11 +38,31 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Test C# runtime
-        run: dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj --configuration Release
-
       - name: Build all C# runtime targets
         run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj --configuration Release
+
+      - name: Consume the netstandard2.1 C# runtime
+        run: dotnet run --project runtimes/csharp/Coflow.Cfd.Runtime.NetStandardSmoke/Coflow.Cfd.Runtime.NetStandardSmoke.csproj --configuration Release
+
+      - name: Test C# runtime with coverage
+        shell: pwsh
+        run: >-
+          dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
+          --configuration Release
+          /p:CollectCoverage=true
+          /p:CoverletOutput="$env:RUNNER_TEMP/csharp-runtime-coverage/"
+          /p:CoverletOutputFormat=cobertura
+          /p:Threshold=40
+          /p:ThresholdType=line%2cbranch
+          /p:ThresholdStat=total
+
+      - name: Upload C# runtime coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csharp-runtime-coverage
+          path: ${{ runner.temp }}/csharp-runtime-coverage/coverage.cobertura.xml
+          if-no-files-found: error
 
       - name: Regenerate C# integration contract
         run: cargo run -- codegen examples/csharp-runtime

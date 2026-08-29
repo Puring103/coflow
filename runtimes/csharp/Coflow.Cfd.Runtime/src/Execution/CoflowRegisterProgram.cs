@@ -512,6 +512,8 @@ internal static class CoflowRegisterLowering
                 stack.Add(typeof(bool)); break;
             case CoflowOpCode.JumpIfFalseKeep:
             case CoflowOpCode.JumpIfTrueKeep:
+                if (stack.Count == 0)
+                    throw Invalid(program, $"stack underflow at instruction {pc}");
                 RequireKind(stack[^1], CoflowRegisterKind.Integer);
                 yield return (instruction.Operand, stack.ToArray());
                 stack.RemoveAt(stack.Count - 1);
