@@ -265,7 +265,8 @@ internal static partial class CoflowCompiler
                 secondName = ExpectBindingIdentifier("expected a second loop binding").Text;
             ExpectIdentifier("in");
             var collection = ParseExpression();
-            var isRange = collection.Type == typeof(CoflowRange);
+            var range = collection as RangeExpr;
+            var isRange = range is not null;
             if (!collection.Type.IsGenericType && !isRange)
                 Error("COFLOW-FUNCTION-TYPE", "for requires an array, dictionary, or range");
             var definition = collection.Type.IsGenericType ? collection.Type.GetGenericTypeDefinition() : null;
@@ -279,10 +280,11 @@ internal static partial class CoflowCompiler
             if (secondName == firstName)
                 Error("COFLOW-FUNCTION-NAME", $"loop binding `{firstName}` is declared more than once");
 
-            var collectionLocal = _localCount++;
-            var indexLocal = _localCount++;
+            var collectionLocal = isRange ? -1 : _localCount++;
+            var indexLocal = isRange && secondName is null ? -1 : _localCount++;
             var firstLocal = _localCount++;
-            int? secondLocal = secondName is null ? null : _localCount++;
+            var rangeEndLocal = isRange ? _localCount++ : -1;
+            int? secondLocal = secondName is null ? null : isRange ? indexLocal : _localCount++;
             var scope = new Dictionary<string, (int Index, Type Type)>(StringComparer.Ordinal);
             if (isArray || isRange)
             {
@@ -301,9 +303,17 @@ internal static partial class CoflowCompiler
             finally { _loopParseDepth--; }
             if (body.Type != typeof(Unit) && !body.AlwaysTerminates)
                 Error("COFLOW-FUNCTION-TYPE", "for body must have type `()`");
-            return new ForExpr(collection, isArray || isRange, collectionLocal, indexLocal,
+            if (range is not null)
+                return new RangeForExpr(
+                    range.Start,
+                    range.End,
+                    range.Inclusive,
+                    firstLocal,
+                    rangeEndLocal,
+                    secondLocal,
+                    body);
+            return new ForExpr(collection, isArray, collectionLocal, indexLocal,
                 firstLocal, secondLocal, body,
-                isRange ? ValueFactories.RangeLoop() :
                 isArray ? ValueFactories.ArrayLoop(types[0]) : ValueFactories.DictionaryLoop(types[0], types[1]));
         }
 
@@ -1593,8 +1603,13 @@ internal static partial class CoflowCompiler
             if (token.Text != value) Error("COFLOW-FUNCTION-SYNTAX", $"expected `{value}`");
         }
         [DoesNotReturn]
-        private void Error(string code, string message) =>
-            throw new FunctionCompileException(code, message, Peek().Offset);
+        private void Error(string code, string message)
+        {
+            var offset = _emissionOffset >= 0
+                ? _emissionOffset
+                : _index < _tokens.Count ? _tokens[_index].Offset : _tokens[^1].Offset;
+            throw new FunctionCompileException(code, message, offset);
+        }
 
 
     }
