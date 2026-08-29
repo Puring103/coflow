@@ -1,6 +1,7 @@
 use coflow_language::CftValueType;
 
 use crate::lowering::CsharpLoweringPlan;
+use crate::names::csharp_type_name;
 use coflow_language::CftField;
 
 pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
@@ -47,17 +48,15 @@ pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> S
     }
 }
 
-/// Property type for a field, with `Localized<T>` wrapping when the field is
-/// `@localized`. The wrapping is applied around the same type the field would
-/// normally receive (including `IReadOnlyList<T>` / `IReadOnlyDictionary<...>`
-/// for collection fields).
+/// Property type for a dimensional field, with its generated dimension type
+/// wrapping the normal field type, including collection types.
 pub(super) fn csharp_field_property_type(
     field: &CftField,
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
     let inner = csharp_property_type(&field.value_type, view);
-    if field.dimension.is_some() {
-        format!("Localized<{inner}>")
+    if let Some(binding) = &field.dimension {
+        format!("{}<{inner}>", csharp_type_name(binding.dimension.as_str()))
     } else {
         inner
     }

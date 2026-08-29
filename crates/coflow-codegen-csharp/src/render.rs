@@ -6,7 +6,7 @@ use tera::{Context, Tera};
 
 const ENUM_TEMPLATE: &str = include_str!("../templates/enum.cs.tera");
 const TYPE_TEMPLATE: &str = include_str!("../templates/type.cs.tera");
-const LOCALIZED_TEMPLATE: &str = include_str!("../templates/localized.cs.tera");
+const DIMENSIONS_TEMPLATE: &str = include_str!("../templates/dimensions.cs.tera");
 const METADATA_TEMPLATE: &str = include_str!("../templates/metadata.cs.tera");
 const METADATA_HELPERS_TEMPLATE: &str = include_str!("../templates/metadata-helpers.cs.tera");
 
@@ -20,7 +20,7 @@ struct MetadataProject {
     object_factories: Vec<MetadataObjectFactory>,
     readers: Vec<MetadataReader>,
     polymorphic_readers: Vec<MetadataPolymorphicReader>,
-    uses_localization: bool,
+    dimensions: Vec<crate::model::CsharpDimension>,
 }
 
 #[derive(Serialize)]
@@ -150,12 +150,12 @@ pub fn render_common_project(
             contents: render(&tera, "type.cs.tera", &context)?,
         });
     }
-    if project.uses_localization {
+    if !project.dimensions.is_empty() {
         let mut context = Context::new();
         context.insert("project", project);
         files.push(GeneratedFile {
-            relative_path: PathBuf::from("Localized.cs"),
-            contents: render(&tera, "localized.cs.tera", &context)?,
+            relative_path: PathBuf::from("Dimensions.cs"),
+            contents: render(&tera, "dimensions.cs.tera", &context)?,
         });
     }
     Ok(files)
@@ -174,7 +174,7 @@ pub fn render_cfd_metadata_template(
     context.insert("object_factories", &view.object_factories);
     context.insert("readers", &view.readers);
     context.insert("polymorphic_readers", &view.polymorphic_readers);
-    context.insert("uses_localization", &view.uses_localization);
+    context.insert("dimensions", &view.dimensions);
     render(&templates()?, "metadata.cs.tera", &context)
 }
 
@@ -205,7 +205,7 @@ fn metadata_project(project: &CsharpProject) -> MetadataProject {
                 qualified_name: ty.qualified_name.clone(),
                 variants: metadata_variants(ty),
             }).collect(),
-        uses_localization: project.uses_localization,
+        dimensions: project.dimensions.clone(),
     }
 }
 
@@ -419,7 +419,7 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
     for (name, contents) in [
         ("enum.cs.tera", ENUM_TEMPLATE),
         ("type.cs.tera", TYPE_TEMPLATE),
-        ("localized.cs.tera", LOCALIZED_TEMPLATE),
+        ("dimensions.cs.tera", DIMENSIONS_TEMPLATE),
         ("metadata.cs.tera", METADATA_TEMPLATE),
         ("metadata-helpers.cs.tera", METADATA_HELPERS_TEMPLATE),
     ] {

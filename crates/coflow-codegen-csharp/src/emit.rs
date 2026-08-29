@@ -1,7 +1,7 @@
 mod identifiers;
 pub(crate) mod types;
 
-use crate::lowering::{CsharpDimensionTable, CsharpLoweringPlan};
+use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpFunction,
     CsharpEqualityField, CsharpHostField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
@@ -230,25 +230,27 @@ pub fn build_csharp_type(
                         field.declaring_type, field.name
                     );
                     let variants = view.dimension_variants(binding.dimension.as_str())?;
-                    Ok((generated_type, variants))
+                    Ok((
+                        csharp_public_type_name(binding.dimension.as_str()),
+                        generated_type,
+                        variants,
+                    ))
                 })
                 .transpose()?;
-            let dimension_key = view
+            let variants_record_key = view
                 .type_is_singleton(field.declaring_type.as_str())?
                 .then(|| format!("\"{}\"", escape_csharp_literal(field.name.as_str())));
-            let localized_reader = |base: String, context: &str, key: &str| {
-                dimension.as_ref().map_or(base.clone(), |(generated_type, variants)| {
+            let variants_reader = |base: String, context: &str, key: &str| {
+                dimension.as_ref().map_or(base.clone(), |(dimension_type, generated_type, variants)| {
                     let variants = variants
                         .iter()
                         .map(|variant| format!("\"{}\"", escape_csharp_literal(variant)))
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        "ReadLocalized({base}, {context}, $\"{}.{}.{{{key}}}\", \"{}\", {}, new string[] {{ {variants} }}, static (item, context) => {})",
-                        field.declaring_type,
-                        field.name,
+                        "Read{dimension_type}({base}, {context}, \"{}\", {}, new string[] {{ {variants} }}, static (item, context) => {})",
                         escape_csharp_literal(generated_type),
-                        dimension_key.as_deref().unwrap_or(key),
+                        variants_record_key.as_deref().unwrap_or(key),
                         loader_reader(&field.value_type, view, "item", "context")
                     )
                 })
@@ -256,11 +258,11 @@ pub fn build_csharp_type(
             Ok(CsharpLoaderField {
                 source_name: field.name.to_string(),
                 property_name: csharp_public_member_name(&field.name),
-                value_type: csharp_type(&field.value_type, view),
+                value_type: csharp_field_property_type(field, view),
                 is_function: matches!(field.value_type, CftValueType::Function(_, _)),
-                reader_expression: localized_reader(reader, "CONTEXT", "RECORD_KEY"),
+                reader_expression: variants_reader(reader, "CONTEXT", "RECORD_KEY"),
                 default_expression: default
-                    .map(|default| localized_reader(default, "context", "key")),
+                    .map(|default| variants_reader(default, "context", "key")),
                 object_type: match &field.value_type {
                     CftValueType::Object(name) => Some(name.to_string()),
                     _ => None,
@@ -344,127 +346,6 @@ pub fn build_csharp_type(
             view.assignable_target_names(&schema_type.name)?
         },
         loader_variants,
-    })
-}
-
-pub fn build_csharp_dimension_type(
-    table: &CsharpDimensionTable,
-    view: &CsharpLoweringPlan<'_>,
-) -> Result<CsharpType, CsharpCodegenError> {
-    let name = view.csharp_type_name(&table.source_name);
-    let mut constructor_parameters = vec![
-        CsharpParameter {
-            ty: "CoflowHostState?".to_string(),
-            name: "hostSlot".to_string(),
-        },
-        CsharpParameter {
-            ty: "string".to_string(),
-            name: "id".to_string(),
-        },
-    ];
-    let mut properties = vec![CsharpProperty {
-        visibility: "public".to_string(),
-        name: "Id".to_string(),
-        type_name: "string".to_string(),
-        backing_field: None,
-        guard_host: false,
-        summary: None,
-        obsolete: false,
-    }];
-    let mut assignments = vec![
-        CsharpConstructorAssignment {
-            property: "HostSlot".to_string(),
-            target: "_coflowHost".to_string(),
-            parameter: "hostSlot".to_string(),
-        },
-        CsharpConstructorAssignment {
-            property: "Id".to_string(),
-            target: "Id".to_string(),
-            parameter: "id".to_string(),
-        },
-    ];
-    let mut used_names = HashSet::new();
-    for field in &table.fields {
-        let local_name = field_local_name(&field.name, &mut used_names)?;
-        let property_type = csharp_field_property_type(field, view);
-        constructor_parameters.push(CsharpParameter {
-            ty: property_type.clone(),
-            name: local_name.clone(),
-        });
-        add_field_constructor_member(
-            field,
-            property_type,
-            local_name,
-            view,
-            &mut properties,
-            &mut assignments,
-            false,
-        );
-    }
-
-    let loader_fields = table
-        .fields
-        .iter()
-        .map(|field| CsharpLoaderField {
-            source_name: field.name.to_string(),
-            property_name: csharp_public_member_name(&field.name),
-            value_type: csharp_type(&field.value_type, view),
-            is_function: matches!(field.value_type, CftValueType::Function(_, _)),
-            reader_expression: function_loader_reader(field, view, "VALUE", "CONTEXT", true)
-                .unwrap_or_else(|| loader_reader(&field.value_type, view, "VALUE", "CONTEXT")),
-            default_expression: None,
-            object_type: match &field.value_type {
-                CftValueType::Object(name) => Some(name.to_string()),
-                _ => None,
-            },
-            reference_type: match &field.value_type {
-                CftValueType::RecordRef(name) => Some(name.to_string()),
-                _ => None,
-            },
-            annotations: csharp_annotations(&field.annotations),
-        })
-        .collect();
-    Ok(CsharpType {
-        name: name.clone(),
-        namespace: view.csharp_namespace(&table.source_name),
-        qualified_name: view.csharp_type_ref(&table.source_name),
-        relative_path: view.csharp_relative_path(&table.source_name),
-        metadata_name: view.metadata_name(&table.source_name),
-        source_name: table.source_name.clone(),
-        annotations: Vec::new(),
-        declaration: format!("public sealed partial class {name} : IEquatable<{name}>"),
-        constructor_visibility: "public".to_string(),
-        summary: None,
-        obsolete: false,
-        properties,
-        functions: Vec::new(),
-        host_fields: Vec::new(),
-        uses_host_slot: true,
-        declares_host_slot: true,
-        constructor_parameters,
-        base_constructor_args: Vec::new(),
-        base_constructor_call: None,
-        assignments,
-        equality: Some(CsharpEquality {
-            key_property: "Id".to_string(),
-            is_struct: false,
-            by_fields: false,
-            fields: Vec::new(),
-        }),
-        loader_fields,
-        loader_id_type: Some("string".to_string()),
-        table_token_type: Some(format!(
-            "CoflowStringTableToken<{}>",
-            view.csharp_type_ref(&table.source_name)
-        )),
-        loader_id_reader: None,
-        loader_enabled: true,
-        is_host: false,
-        is_abstract: false,
-        is_sealed: true,
-        is_struct: false,
-        loader_assignable_to: vec![table.source_name.clone()],
-        loader_variants: Vec::new(),
     })
 }
 

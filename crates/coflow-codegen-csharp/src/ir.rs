@@ -1,7 +1,9 @@
-use crate::emit::{build_csharp_dimension_type, build_csharp_enum, build_csharp_type, function_adapter_expression};
+use crate::emit::{build_csharp_enum, build_csharp_type, function_adapter_expression};
 use crate::emit::types::csharp_type;
 use crate::lowering::CsharpLoweringPlan;
-use crate::model::{CsharpConstant, CsharpEnum, CsharpEnumVariant, CsharpProject};
+use crate::model::{
+    CsharpConstant, CsharpDimension, CsharpEnum, CsharpEnumVariant, CsharpProject,
+};
 use crate::names::{csharp_ident_error, csharp_namespace_error, csharp_type_name};
 use crate::CsharpCodegenError;
 use coflow_language::{CftConstValue, CftSchema, CftValueType};
@@ -68,15 +70,16 @@ pub fn build_project(
         .all_types()
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
-    types.extend(
-        view.dimension_tables()
-            .iter()
-            .map(|table| build_csharp_dimension_type(table, &view))
-            .collect::<Result<Vec<_>, _>>()?,
-    );
     types.sort_by(|left, right| left.name.cmp(&right.name));
 
     let singletons = build_csharp_singletons(&view);
+    let dimensions = view
+        .dimensions()
+        .map(|dimension| CsharpDimension {
+            name: csharp_type_name(dimension.name.as_str()),
+            source_name: dimension.name.to_string(),
+        })
+        .collect();
     let delegate_adapters = build_delegate_adapters(schema, &view);
     let constants = schema
         .all_consts()
@@ -94,7 +97,7 @@ pub fn build_project(
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
-        uses_localization: view.uses_localization(),
+        dimensions,
         delegate_adapters,
         enums,
         types,
@@ -345,6 +348,14 @@ fn validate_schema_names(
     view: &CsharpLoweringPlan<'_>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
+    for dimension in view.dimensions() {
+        validate_ident(
+            "dimension type",
+            &csharp_type_name(dimension.name.as_str()),
+            diagnostics,
+        );
+    }
+
     for schema_enum in view.cft_enum_metas() {
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         validate_cft_namespace(&schema_enum.name, diagnostics);
@@ -379,16 +390,44 @@ fn validate_generated_names(
     view: &CsharpLoweringPlan<'_>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
-    for name in view
+    let root_names = view
         .all_type_names()
         .chain(view.enum_names())
         .filter(|name| !name.contains("::"))
-    {
-        let generated = csharp_type_name(name);
+        .map(|name| (csharp_type_name(name), name.to_string()))
+        .collect::<BTreeMap<_, _>>();
+    for (generated, source) in &root_names {
         if matches!(generated.as_str(), "CoflowData" | "CoflowGeneratedContract") {
             push_codegen_diagnostic(
                 diagnostics,
-                format!("generated C# type name `{generated}` is reserved by runtime metadata"),
+                format!("generated C# type name `{generated}` from `{source}` is reserved by runtime metadata"),
+            );
+        }
+    }
+    let mut dimension_names = BTreeMap::new();
+    for dimension in view.dimensions() {
+        let generated = csharp_type_name(dimension.name.as_str());
+        let source_name = dimension.name.to_string();
+        if matches!(generated.as_str(), "CoflowData" | "CoflowGeneratedContract") {
+            push_codegen_diagnostic(
+                diagnostics,
+                format!("generated C# type name `{generated}` from `{source_name}` is reserved by runtime metadata"),
+            );
+        }
+        if let Some(source) = root_names.get(&generated) {
+            push_codegen_diagnostic(
+                diagnostics,
+                format!(
+                    "generated C# dimension type `{generated}` collides with `{source}`"
+                ),
+            );
+        }
+        if let Some(existing) = dimension_names.insert(generated.clone(), source_name.clone()) {
+            push_codegen_diagnostic(
+                diagnostics,
+                format!(
+                    "generated C# dimension type `{generated}` collides between `{existing}` and `{source_name}`"
+                ),
             );
         }
     }
@@ -402,8 +441,8 @@ fn validate_generated_file_names(
 ) {
     let mut reserved = BTreeSet::new();
     reserved.insert(case_insensitive_file_key("Coflow.Metadata.cs"));
-    if view.uses_localization() {
-        reserved.insert(case_insensitive_file_key("Localized.cs"));
+    if view.dimensions().next().is_some() {
+        reserved.insert(case_insensitive_file_key("Dimensions.cs"));
     }
 
     let mut file_sources = BTreeMap::<String, String>::new();
