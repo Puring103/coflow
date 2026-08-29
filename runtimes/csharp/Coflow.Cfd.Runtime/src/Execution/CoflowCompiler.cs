@@ -921,9 +921,9 @@ internal static partial class CoflowCompiler
             var result = target == "int" ? typeof(long) : typeof(double);
             if (value.Type is not null && value.Type != typeof(long) && value.Type != typeof(double))
                 Error("COFLOW-FUNCTION-TYPE", $"{target} conversion requires int or float");
+            if (value.Type == result) return value;
             var convert = (value.Type, result) switch
             {
-                (var source, var destination) when source == destination => CoflowOpCode.Reinterpret,
                 (var source, _) when source == typeof(long) => CoflowOpCode.ConvertIntToFloat,
                 _ => CoflowOpCode.ConvertFloatToInt,
             };

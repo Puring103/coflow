@@ -137,7 +137,6 @@ public interface ICoflowRecordMetadata : ICoflowTypeMetadata
 {
     Type KeyType { get; }
     object ParseKey(string key);
-    object GetKey(object record);
     Delegate GetKeyReader();
     object CreateRecord(string key, CfdLoadContext context);
     void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context);
@@ -160,7 +159,7 @@ public abstract class CoflowTable : IEnumerable
     public abstract Type KeyType { get; }
     public abstract int Count { get; }
     internal abstract IEnumerable<object> UntypedRecords { get; }
-    internal abstract object KeyOf(object record);
+    internal abstract Delegate KeyReader { get; }
     public abstract IEnumerator GetEnumerator();
 }
 
@@ -218,7 +217,7 @@ public sealed class CoflowStringTable<T> : CoflowTable, IReadOnlyList<T> where T
     public T this[int index] => CoflowSegments.Item(_segments, _segmentStarts, _count, index);
     public Option<T> Get(string key) => _index.TryGetValue(key, out var value) ? Option<T>.Some(value) : Option<T>.None;
     internal override IEnumerable<object> UntypedRecords => this.Cast<object>();
-    internal override object KeyOf(object record) => _key((T)record);
+    internal override Delegate KeyReader => _key;
     IEnumerator<T> IEnumerable<T>.GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
     public override IEnumerator GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
     private static void Duplicate(string key) => throw new CoflowLoadException(new[] {
@@ -254,7 +253,7 @@ public sealed class CoflowEnumTable<T, TKey> : CoflowTable, IReadOnlyList<T>
     public T this[int index] => CoflowSegments.Item(_segments, _segmentStarts, _count, index);
     public Option<T> Get(TKey key) => _index.TryGetValue(key, out var value) ? Option<T>.Some(value) : Option<T>.None;
     internal override IEnumerable<object> UntypedRecords => this.Cast<object>();
-    internal override object KeyOf(object record) => _key((T)record);
+    internal override Delegate KeyReader => _key;
     IEnumerator<T> IEnumerable<T>.GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
     public override IEnumerator GetEnumerator() => _segments.SelectMany(value => value).GetEnumerator();
     private static void Duplicate(TKey key) => throw new CoflowLoadException(new[] {
@@ -395,7 +394,7 @@ public sealed class CoflowModule
     {
         var records = values.Cast<T>().ToArray();
         return typeof(TKey) == typeof(string)
-            ? new CoflowStringTable<T>(records, value => (string)metadata.GetKey(value))
+            ? new CoflowStringTable<T>(records, (Func<T, string>)metadata.GetKeyReader())
             : CreateEnumTable<T, TKey>(metadata, records);
     }
 
@@ -408,7 +407,7 @@ public sealed class CoflowModule
 
     private static CoflowTable CreateEnumTableCore<T, TKey>(ICoflowRecordMetadata metadata, IReadOnlyList<T> records)
         where T : class where TKey : struct, Enum =>
-        new CoflowEnumTable<T, TKey>(records, value => (TKey)metadata.GetKey(value));
+        new CoflowEnumTable<T, TKey>(records, (Func<T, TKey>)metadata.GetKeyReader());
 
     internal static CoflowTable InvokeTableFactory(System.Reflection.MethodInfo method, object[] arguments)
     {
@@ -515,7 +514,7 @@ public sealed class CoflowModuleSet
     {
         var segments = tables.Select(value => (IReadOnlyList<T>)value).ToArray();
         if (typeof(TKey) == typeof(string))
-            return new CoflowStringTable<T>(segments, value => (string)tables[0].KeyOf(value));
+            return new CoflowStringTable<T>(segments, (Func<T, string>)tables[0].KeyReader);
         var method = typeof(CoflowModuleSet).GetMethod(nameof(CombineEnum), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
             .MakeGenericMethod(typeof(T), typeof(TKey));
         return CoflowModule.InvokeTableFactory(method, new object[] { tables, segments });
@@ -523,5 +522,5 @@ public sealed class CoflowModuleSet
 
     private static CoflowTable CombineEnum<T, TKey>(CoflowTable[] tables, IReadOnlyList<T>[] segments)
         where T : class where TKey : struct, Enum =>
-        new CoflowEnumTable<T, TKey>(segments, value => (TKey)tables[0].KeyOf(value));
+        new CoflowEnumTable<T, TKey>(segments, (Func<T, TKey>)tables[0].KeyReader);
 }
