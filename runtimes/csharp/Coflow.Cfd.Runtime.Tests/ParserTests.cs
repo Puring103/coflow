@@ -161,6 +161,18 @@ public sealed class ParserTests
         Assert.Contains("value * scale", function.Source);
     }
 
+    [Theory]
+    [InlineData("Rule { item { value: fn(input: int) -> int } }", "CFD-FUNCTION-BODY")]
+    [InlineData("Rule { item { value: fn(input: int) -> int { input", "CFD-FUNCTION-BODY")]
+    [InlineData("Rule { item { value: fn(input: int -> int { input } } }", "CFD-FUNCTION-SIGNATURE")]
+    public void RejectsMalformedFunctionSignaturesAndBodies(string source, string code)
+    {
+        var error = Assert.Throws<CfdParseException>(() =>
+            CfdParser.Parse(new CfdSource("data/invalid-function.cfd", source)));
+
+        Assert.Contains(error.Diagnostics, item => item.Code == code);
+    }
+
     [Fact]
     public void ParsesExplicitOptionAndResultConstructorsAndRejectsNull()
     {
@@ -344,6 +356,47 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void SharedRuntimeCorpusLoadsComplexValuesLikeTheRustRuntime()
+    {
+        var document = CfdParser.Parse(new CfdSource(
+            "data/complex.cfd", RuntimeFixture("complex-values.valid.cfd")));
+        var fields = Assert.Single(document.Records).Fields;
+        var context = new CfdLoadContext(new[] { document });
+
+        CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional", "outcome");
+        Assert.Equal(new long[] { 1, 2, 3, 5, 8 },
+            CfdValueReader.Array(CfdValueReader.Field(fields, "samples"), context,
+                static (value, _) => CfdValueReader.Int64(value)));
+        var lookup = CfdValueReader.Dictionary(CfdValueReader.Field(fields, "lookup"), context,
+            static (value, load) => CfdValueReader.String(value, load),
+            static (value, _) => CfdValueReader.Int64(value));
+        Assert.Equal(2, lookup["two"]);
+        var optional = CfdValueReader.Option(CfdValueReader.Field(fields, "optional"), context, ReadPayload);
+        Assert.True(optional.HasValue);
+        Assert.True(optional.Value.Enabled);
+        Assert.Equal(13, optional.Value.Score);
+        var outcome = CfdValueReader.Result(CfdValueReader.Field(fields, "outcome"), context,
+            static (value, load) => CfdValueReader.Option(value, load, ReadPayload),
+            static (value, load) => CfdValueReader.String(value, load));
+        Assert.True(outcome.IsOk);
+        Assert.True(outcome.Value.HasValue);
+        Assert.False(outcome.Value.Value.Enabled);
+        Assert.Equal(21, outcome.Value.Value.Score);
+    }
+
+    [Fact]
+    public void SharedRuntimeCorpusRejectsUnknownFieldsLikeTheRustRuntime()
+    {
+        var document = CfdParser.Parse(new CfdSource(
+            "data/complex-invalid.cfd", RuntimeFixture("complex-values.invalid.cfd")));
+        var fields = Assert.Single(document.Records).Fields;
+
+        var error = Assert.Throws<CfdLoadException>(() =>
+            CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional", "outcome"));
+        Assert.Equal("CFD-FIELD-UNKNOWN", error.Diagnostics[0].Code);
+    }
+
+    [Fact]
     public void ReportsUnknownFieldsAndConversionFailures()
     {
         var document = CfdParser.Parse(new CfdSource(
@@ -489,6 +542,52 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void ParsesDeepCompositeValuesWithinTheSupportedRuntimeRange()
+    {
+        const int depth = 128;
+        var nested = string.Concat(Enumerable.Repeat("Some(", depth)) + "1" +
+            string.Concat(Enumerable.Repeat(")", depth));
+        var document = CfdParser.Parse(new CfdSource(
+            "data/deep.cfd", $"Item {{ item {{ value: {nested} }} }}"));
+
+        CfdValueNode value = document.Records[0].Fields[0].Value;
+        for (var level = 0; level < depth; level++)
+            value = Assert.IsType<CfdSomeValue>(value).Value;
+        Assert.Equal("1", Assert.IsType<CfdScalarValue>(value).Value);
+    }
+
+    [Fact]
+    public void ParsesLargeRecordsAndCollectionsWithoutDroppingValues()
+    {
+        const int count = 1_000;
+        var fields = string.Join(",", Enumerable.Range(0, count).Select(index => $"field{index}: {index}"));
+        var values = string.Join(",", Enumerable.Range(0, count));
+        var document = CfdParser.Parse(new CfdSource(
+            "data/large.cfd", $"Item {{ item {{ {fields}, values: [{values}] }} }}"));
+
+        var record = Assert.Single(document.Records);
+        Assert.Equal(count + 1, record.Fields.Count);
+        Assert.Equal(count, Assert.IsType<CfdArrayValue>(record.Fields[^1].Value).Items.Count);
+    }
+
+    [Fact]
+    public void ReportsMultipleIndependentSyntaxErrorsInOneDocument()
+    {
+        var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(new CfdSource(
+            "data/multiple-errors.cfd", "Item { one { value: null, value: 1 } one { other: null } }")));
+
+        Assert.True(error.Diagnostics.Count >= 4);
+        Assert.Equal(2, error.Diagnostics.Count(item => item.Code == "CFD-SYNTAX-NULL"));
+        Assert.Contains(error.Diagnostics, item => item.Code == "CFD-SYNTAX-DUPLICATE-FIELD");
+        Assert.Contains(error.Diagnostics, item => item.Code == "CFD-SYNTAX-DUPLICATE-RECORD");
+        Assert.All(error.Diagnostics, item =>
+        {
+            Assert.Equal("data/multiple-errors.cfd", item.Path);
+            Assert.NotNull(item.Span);
+        });
+    }
+
+    [Fact]
     public void ReaderDiagnosticsInheritTheOwningRecordSourcePath()
     {
         var document = CfdParser.Parse(new CfdSource(
@@ -510,6 +609,17 @@ public sealed class ParserTests
 
     private static string RuntimeFixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuntimeFixtures", name));
+
+    private static Payload ReadPayload(CfdValueNode node, CfdLoadContext context) =>
+        CfdValueReader.Object(node, context, "Payload", static (fields, _, _) =>
+        {
+            CfdValueReader.ValidateFields(fields, "enabled", "score");
+            return new Payload(
+                CfdValueReader.Boolean(CfdValueReader.Field(fields, "enabled")),
+                CfdValueReader.Int64(CfdValueReader.Field(fields, "score")));
+        });
+
+    private sealed record Payload(bool Enabled, long Score);
 
     private sealed class Node
     {

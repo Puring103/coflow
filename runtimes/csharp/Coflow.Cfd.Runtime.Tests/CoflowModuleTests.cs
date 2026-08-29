@@ -218,6 +218,47 @@ public sealed class CoflowModuleTests
         Assert.Equal(9, rule.Make(4)(5));
     }
 
+    [Fact]
+    public void CompilerHandlesDeepExpressionsClosuresAndNonTailRecursion()
+    {
+        const int depth = 128;
+        var expression = "value";
+        for (var index = 0; index < depth; index++) expression = $"({expression} + 1)";
+        var captures = string.Join(" ", Enumerable.Range(0, depth).Select(index =>
+            $"var capture{index} = {(index == 0 ? "offset" : $"capture{index - 1}")} + 1;"));
+        var source = $"Rule {{ main {{ " +
+            $"calculate: fn(value: int) -> int {{ {expression} }}, " +
+            $"deep: fn(value: int) -> int {{ if value <= 0 {{ 0 }} else {{ 1 + deep(value - 1) }} }}, " +
+            $"make: fn(offset: int) -> fn(int) -> int {{ {captures} fn(value: int) -> int {{ value + capture{depth - 1} }} }} " +
+            "} }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(depth + 1, rule.Calculate(1));
+        Assert.Equal(depth, rule.Deep(depth));
+        Assert.Equal(depth + 2, rule.Make(1)(1));
+    }
+
+    [Fact]
+    public void CompilerReportsIndependentFunctionErrorsWithSourceLocations()
+    {
+        var source = "Rule { main { " +
+            "calculate: fn(value: int) -> int { \"wrong\" }, " +
+            "helper: fn(value: int) -> int { unknown(value) } } }";
+
+        var error = Assert.Throws<CoflowLoadException>(() =>
+            Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata())));
+
+        Assert.Equal(2, error.Diagnostics.Count);
+        Assert.Contains(error.Diagnostics, item => item.Code == "COFLOW-FUNCTION-TYPE");
+        Assert.Contains(error.Diagnostics, item => item.Code == "COFLOW-FUNCTION-NAME");
+        Assert.All(error.Diagnostics, item =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(item.Path));
+            Assert.NotNull(item.Span);
+        });
+    }
+
     private static CoflowModule LoadData(string source) =>
         Coflow.LoadData(new[] { source }, Contract(new NodeMetadata()));
     private static ICoflowGeneratedContract Contract(params ICoflowTypeMetadata[] metadata) => new TestContract(metadata);

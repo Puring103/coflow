@@ -1,6 +1,7 @@
 using CoflowRuntime;
 using CoflowRuntime.Generated;
 using System;
+using System.Collections.Generic;
 using Xunit;
 
 namespace CoflowRuntime.Tests;
@@ -45,10 +46,108 @@ public sealed class CoflowProgramValidationTests
         Assert.Contains("return type", error.Message, StringComparison.Ordinal);
     }
 
+    public static IEnumerable<object[]> InvalidPrograms()
+    {
+        yield return Case("stack underflow",
+            new[] { new CoflowInstruction(CoflowOpCode.Pop) });
+        yield return Case("invalid argument index",
+            new[] { new CoflowInstruction(CoflowOpCode.Argument, 1) });
+        yield return Case("read before assignment",
+            new[] { new CoflowInstruction(CoflowOpCode.Local), new CoflowInstruction(CoflowOpCode.Return) },
+            localCount: 1);
+        yield return Case("changes type",
+            new[]
+            {
+                Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.StoreLocal),
+                Constant(1, typeof(double)), new CoflowInstruction(CoflowOpCode.StoreLocal),
+                Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.Return),
+            },
+            new object?[] { 1L, 1.0 }, localCount: 1);
+        yield return Case("reads `System.Int64` as Reference",
+            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.LoadField, 1) },
+            new object?[] { 1L, new object() });
+        yield return Case("cannot construct",
+            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.MakeOptionSome, ValueType: typeof(Option<string>)) },
+            new object?[] { 1L });
+        yield return Case("payload type",
+            new[] { Constant(0, typeof(Option<long>)), new CoflowInstruction(CoflowOpCode.ReadFirstPayload, ValueType: typeof(string)) },
+            new object?[] { Option<long>.None });
+        yield return Case("incompatible propagation layouts",
+            new[] { Constant(0, typeof(Result<long, string>)), new CoflowInstruction(CoflowOpCode.Propagate, ValueType: typeof(long)) },
+            new object?[] { Result<long, string>.Ok(1) }, typeof(Result<long, Exception>));
+        yield return Case("creates None with non-Option",
+            new[] { new CoflowInstruction(CoflowOpCode.MakeOptionNone, ValueType: typeof(long)) });
+        yield return Case("reads a tag",
+            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.ReadValueTag) },
+            new object?[] { 1L });
+        yield return Case("reinterprets incompatible layouts",
+            new[] { Constant(0, typeof(string)), new CoflowInstruction(CoflowOpCode.Reinterpret, ValueType: typeof(long)) },
+            new object?[] { "value" });
+        yield return Case("reads `System.Double` as Integer",
+            new[] { Constant(0, typeof(double)), new CoflowInstruction(CoflowOpCode.ConvertIntToFloat) },
+            new object?[] { 1.0 });
+        yield return Case("invalid Type descriptor",
+            new[] { Constant(0, typeof(string)), new CoflowInstruction(CoflowOpCode.IsType, 1) },
+            new object?[] { "value", 42L });
+        yield return Case("native argument 0",
+            new[]
+            {
+                Constant(0, typeof(double)),
+                new CoflowInstruction(CoflowOpCode.Native, 1, ValueType: typeof(long)),
+            },
+            new object?[] { 1.0, new CoflowNativeCall(new Func<long, long>(value => value)) });
+        yield return Case("stack underflow",
+            new[] { new CoflowInstruction(CoflowOpCode.JumpIfFalseKeep, 1) });
+        yield return Case("incompatible stack layout",
+            new[]
+            {
+                Constant(0, typeof(bool)),
+                new CoflowInstruction(CoflowOpCode.JumpIfFalse, 4),
+                Constant(1, typeof(long)),
+                new CoflowInstruction(CoflowOpCode.Jump, 5),
+                Constant(2, typeof(double)),
+                new CoflowInstruction(CoflowOpCode.Return),
+            },
+            new object?[] { true, 1L, 1.0 });
+        yield return Case("unknown opcode",
+            new[] { new CoflowInstruction((CoflowOpCode)byte.MaxValue) });
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidPrograms))]
+    public void RejectsInvalidOpcodeStackDescriptorAndLayoutCombinations(object data)
+    {
+        var invalid = Assert.IsType<InvalidProgram>(data);
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            Program(invalid.Instructions, invalid.Constants, invalid.ReturnType, invalid.LocalCount));
+
+        Assert.Contains(invalid.Expected, error.Message, StringComparison.Ordinal);
+    }
+
+    private static object[] Case(
+        string expected,
+        CoflowInstruction[] instructions,
+        object?[]? constants = null,
+        Type? returnType = null,
+        int localCount = 0) =>
+        new object[] { new InvalidProgram(
+            expected, instructions, constants ?? Array.Empty<object?>(), returnType ?? typeof(Unit), localCount) };
+
+    private static CoflowInstruction Constant(int index, Type type) =>
+        new(CoflowOpCode.Constant, index, ValueType: type);
+
+    private sealed record InvalidProgram(
+        string Expected,
+        CoflowInstruction[] Instructions,
+        object?[] Constants,
+        Type ReturnType,
+        int LocalCount);
+
     private static CoflowProgram Program(
         CoflowInstruction[] instructions,
         object?[] constants,
-        Type returnType) => new(
+        Type returnType,
+        int localCount = 0) => new(
             new CoflowFunctionIdentity("Validation", "test", "program"),
             "validation.cfd",
             null,
@@ -57,5 +156,5 @@ public sealed class CoflowProgramValidationTests
             constants,
             Array.Empty<Type>(),
             returnType,
-            0);
+            localCount);
 }

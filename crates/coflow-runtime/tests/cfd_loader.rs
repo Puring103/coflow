@@ -737,6 +737,30 @@ fn cfd_allows_acyclic_record_reference_chains() -> TestResult {
 }
 
 #[test]
+fn cfd_loads_shared_complex_runtime_values() -> TestResult {
+    let schema = compile_schema(&runtime_parity_fixture("complex-values.cft"));
+
+    let model = load_cfd_model(
+        &schema,
+        &runtime_parity_fixture("complex-values.valid.cfd"),
+    )?;
+
+    assert_eq!(model.record_count(), 1);
+    Ok(())
+}
+
+#[test]
+fn cfd_rejects_shared_complex_runtime_unknown_fields() {
+    let schema = compile_schema(&runtime_parity_fixture("complex-values.cft"));
+
+    load_cfd_model(
+        &schema,
+        &runtime_parity_fixture("complex-values.invalid.cfd"),
+    )
+    .expect_err("shared runtime fixture contains an unknown field");
+}
+
+#[test]
 fn cfd_rejects_invalid_record_reference_forms() {
     let schema = compile_schema(
         r#"
