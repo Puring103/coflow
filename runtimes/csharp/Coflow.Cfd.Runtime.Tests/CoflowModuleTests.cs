@@ -137,8 +137,8 @@ public sealed class CoflowModuleTests
 
         Assert.Equal(3, rule.Calculate(0));
         var program = rule.CalculateEntry.RuntimeEntry.CompiledProgram!;
-        Assert.Equal(new[] { CoflowOpCode.Constant, CoflowOpCode.Return },
-            program.Instructions.Select(instruction => instruction.Code));
+        Assert.Equal(new[] { CoflowRegisterOpCode.ConstantInteger, CoflowRegisterOpCode.Return },
+            program.RegisterProgram.Instructions.Select(instruction => instruction.Code));
     }
 
     [Fact]
@@ -180,8 +180,25 @@ public sealed class CoflowModuleTests
             .Table(Rules).Get("main").Value;
 
         Assert.Equal(7, rule.Calculate(7));
-        Assert.DoesNotContain(rule.CalculateEntry.RuntimeEntry.CompiledProgram!.Instructions,
-            instruction => instruction.Code == CoflowOpCode.Reinterpret);
+        Assert.DoesNotContain(
+            rule.CalculateEntry.RuntimeEntry.CompiledProgram!.RegisterProgram.Instructions,
+            instruction => instruction.Code == CoflowRegisterOpCode.MoveValue);
+    }
+
+    [Fact]
+    public void CompilerEmitsExplicitRegisterOperands()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { value + 1 } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(8, rule.Calculate(7));
+        var instructions = rule.CalculateEntry.RuntimeEntry.CompiledProgram!
+            .RegisterProgram.Instructions;
+        var add = Assert.Single(instructions, instruction =>
+            instruction.Code == CoflowRegisterOpCode.AddInt);
+        Assert.Equal(add.A, add.B);
+        Assert.NotEqual(add.B, add.C);
     }
 
     [Fact]
@@ -254,6 +271,24 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void VmExecutesTerminatingLoopsAndInclusiveRangeAtIntegerLimit()
+    {
+        var source = "Rule { main { " +
+            "calculate: fn(value: int) -> int { " +
+            "for item in value..=9223372036854775807 { return item; } 0 }, " +
+            "helper: fn(value: int) -> int { while value > 0 { return 7; } 3 } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(long.MaxValue, rule.Calculate(long.MaxValue));
+        Assert.Equal(7, rule.HelperEntry.Function(1));
+        Assert.Equal(3, rule.HelperEntry.Function(0));
+        Assert.DoesNotContain(rule.CalculateEntry.RuntimeEntry.CompiledProgram!
+            .RegisterProgram.Instructions,
+            instruction => instruction.Code == CoflowRegisterOpCode.Native);
+    }
+
+    [Fact]
     public void VmExecutesPrecompiledRegexWithoutLeakingThePatternOntoTheStack()
     {
         var source = "Rule { main { calculate: fn(value: int) -> int { " +
@@ -314,6 +349,7 @@ public sealed class CoflowModuleTests
     [InlineData("value += 1; value", "COFLOW-FUNCTION-ASSIGN")]
     [InlineData("~\"text\"", "COFLOW-FUNCTION-TYPE")]
     [InlineData("value + 1.0", "COFLOW-FUNCTION-TYPE")]
+    [InlineData("var range = 0..value; 0", "COFLOW-FUNCTION-TYPE")]
     [InlineData("if value is int { 1 } else { 0 }", "COFLOW-FUNCTION-TYPE")]
     [InlineData("$missing; 0", "COFLOW-FUNCTION-METADATA")]
     [InlineData("\"{}\"; 0", "COFLOW-FUNCTION-INTERPOLATION")]

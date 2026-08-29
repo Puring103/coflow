@@ -46,6 +46,34 @@ public sealed class CoflowProgramValidationTests
         Assert.Contains("return type", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ExecutesCompositeArgumentsWithoutExplicitIrValueTypes()
+    {
+        var option = Program(
+            new[]
+            {
+                new CoflowInstruction(CoflowOpCode.Argument),
+                new CoflowInstruction(CoflowOpCode.Return),
+            },
+            Array.Empty<object?>(),
+            typeof(Option<long>),
+            parameterTypes: new[] { typeof(Option<long>) });
+        var result = Program(
+            new[]
+            {
+                new CoflowInstruction(CoflowOpCode.Argument),
+                new CoflowInstruction(CoflowOpCode.Return),
+            },
+            Array.Empty<object?>(),
+            typeof(Result<long, string>),
+            parameterTypes: new[] { typeof(Result<long, string>) });
+
+        Assert.Equal(7, CoflowVm.Execute<Option<long>, Option<long>>(
+            option, Option<long>.Some(7)).Value);
+        Assert.Equal("failure", CoflowVm.Execute<Result<long, string>, Result<long, string>>(
+            result, Result<long, string>.Err("failure")).Error);
+    }
+
     public static IEnumerable<object[]> InvalidPrograms()
     {
         yield return Case("stack underflow",
@@ -147,14 +175,15 @@ public sealed class CoflowProgramValidationTests
         CoflowInstruction[] instructions,
         object?[] constants,
         Type returnType,
-        int localCount = 0) => new(
+        int localCount = 0,
+        Type[]? parameterTypes = null) => new(
             new CoflowFunctionIdentity("Validation", "test", "program"),
             "validation.cfd",
             null,
             instructions,
             new CfdSpan?[instructions.Length],
             constants,
-            Array.Empty<Type>(),
+            parameterTypes ?? Array.Empty<Type>(),
             returnType,
             localCount);
 }

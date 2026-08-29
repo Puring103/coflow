@@ -726,8 +726,11 @@ internal static partial class CoflowCompiler
                 parser._loops.Push(loop);
                 Body.Emit(parser);
                 parser._loops.Pop();
-                if (!Body.AlwaysTerminates) parser.Emit(CoflowOpCode.Pop);
-                parser.Emit(CoflowOpCode.Jump, start);
+                if (!Body.AlwaysTerminates)
+                {
+                    parser.Emit(CoflowOpCode.Pop);
+                    parser.Emit(CoflowOpCode.Jump, start);
+                }
                 var end = parser._instructions.Count;
                 parser.Patch(done, end);
                 foreach (var jump in loop.BreakJumps) parser.Patch(jump, end);
@@ -785,31 +788,97 @@ internal static partial class CoflowCompiler
                 Body.Emit(parser);
                 parser._loops.Pop();
                 if (!Body.AlwaysTerminates) parser.Emit(CoflowOpCode.Pop);
-                var increment = parser._instructions.Count;
-                loop.ContinueTarget = increment;
-                foreach (var jump in loop.ContinueJumps) parser.Patch(jump, increment);
-                parser.Emit(CoflowOpCode.Local, IndexLocal);
-                parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
-                parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
-                parser.Emit(CoflowOpCode.StoreLocal, IndexLocal);
-                parser.Emit(CoflowOpCode.Jump, condition);
+                if (!Body.AlwaysTerminates || loop.ContinueJumps.Count != 0)
+                {
+                    var increment = parser._instructions.Count;
+                    loop.ContinueTarget = increment;
+                    foreach (var jump in loop.ContinueJumps) parser.Patch(jump, increment);
+                    parser.Emit(CoflowOpCode.Local, IndexLocal);
+                    parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
+                    parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
+                    parser.Emit(CoflowOpCode.StoreLocal, IndexLocal);
+                    parser.Emit(CoflowOpCode.Jump, condition);
+                }
                 var end = parser._instructions.Count;
                 parser.Patch(done, end);
                 foreach (var jump in loop.BreakJumps) parser.Patch(jump, end);
             }
         }
 
-        private sealed record RangeExpr(Expr Start, Expr End, bool Inclusive) : Expr(typeof(CoflowRange))
+        private sealed record RangeForExpr(
+            Expr Start,
+            Expr End,
+            bool Inclusive,
+            int ValueLocal,
+            int EndLocal,
+            int? IndexLocal,
+            Expr Body) : Expr(typeof(Unit))
         {
             internal override void EmitCore(FunctionParser parser)
             {
                 Start.Emit(parser);
+                parser.Emit(CoflowOpCode.StoreLocal, ValueLocal);
                 End.Emit(parser);
-                Func<long, long, CoflowRange> create = Inclusive
-                    ? static (start, end) => new CoflowRange(start, end, true)
-                    : static (start, end) => new CoflowRange(start, end, false);
-                parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(create)));
+                parser.Emit(CoflowOpCode.StoreLocal, EndLocal);
+                if (IndexLocal is { } index)
+                {
+                    parser.Emit(CoflowOpCode.Constant, parser.Constant(0L), typeof(long));
+                    parser.Emit(CoflowOpCode.StoreLocal, index);
+                }
+
+                var condition = parser._instructions.Count;
+                parser.Emit(CoflowOpCode.Local, ValueLocal, typeof(long));
+                parser.Emit(CoflowOpCode.Local, EndLocal, typeof(long));
+                parser.Emit(Inclusive ? CoflowOpCode.LessOrEqualInt : CoflowOpCode.LessInt,
+                    0, typeof(bool));
+                var done = parser.Emit(CoflowOpCode.JumpIfFalse);
+
+                var loop = new LoopEmitContext(-1);
+                parser._loops.Push(loop);
+                Body.Emit(parser);
+                parser._loops.Pop();
+                if (!Body.AlwaysTerminates) parser.Emit(CoflowOpCode.Pop);
+                int? inclusiveDone = null;
+                if (!Body.AlwaysTerminates || loop.ContinueJumps.Count != 0)
+                {
+                    var increment = parser._instructions.Count;
+                    loop.ContinueTarget = increment;
+                    foreach (var jump in loop.ContinueJumps) parser.Patch(jump, increment);
+
+                    if (Inclusive)
+                    {
+                        parser.Emit(CoflowOpCode.Local, ValueLocal, typeof(long));
+                        parser.Emit(CoflowOpCode.Local, EndLocal, typeof(long));
+                        parser.Emit(CoflowOpCode.EqualInteger, 0, typeof(bool));
+                        var continueIncrement = parser.Emit(CoflowOpCode.JumpIfFalse);
+                        inclusiveDone = parser.Emit(CoflowOpCode.Jump);
+                        parser.Patch(continueIncrement, parser._instructions.Count);
+                    }
+
+                    parser.Emit(CoflowOpCode.Local, ValueLocal, typeof(long));
+                    parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
+                    parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
+                    parser.Emit(CoflowOpCode.StoreLocal, ValueLocal);
+                    if (IndexLocal is { } indexLocal)
+                    {
+                        parser.Emit(CoflowOpCode.Local, indexLocal, typeof(long));
+                        parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
+                        parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
+                        parser.Emit(CoflowOpCode.StoreLocal, indexLocal);
+                    }
+                    parser.Emit(CoflowOpCode.Jump, condition);
+                }
+                var end = parser._instructions.Count;
+                parser.Patch(done, end);
+                if (inclusiveDone is { } completed) parser.Patch(completed, end);
+                foreach (var jump in loop.BreakJumps) parser.Patch(jump, end);
             }
+        }
+
+        private sealed record RangeExpr(Expr Start, Expr End, bool Inclusive) : Expr(typeof(RangeExpr))
+        {
+            internal override void EmitCore(FunctionParser parser) =>
+                parser.Error("COFLOW-FUNCTION-TYPE", "range expressions can only be used by a for loop");
         }
 
         private sealed class LoopEmitContext(int continueTarget)
@@ -925,12 +994,6 @@ internal static partial class CoflowCompiler
                 Closed(DictionaryLoopCountMethod, key, value),
                 Closed(DictionaryLoopKeyMethod, key, value),
                 Closed(DictionaryLoopValueMethod, key, value));
-            internal static CoflowLoopAccess RangeLoop() => new(
-                new Func<CoflowRange, CoflowRange>(static value => value),
-                typeof(CoflowRange),
-                new Func<CoflowRange, long>(static value => value.Count),
-                new Func<CoflowRange, long, long>(static (value, index) => checked(value.Start + index)),
-                null);
             internal static CoflowHigherOrderOperation HigherOrder(
                 string name, Type element, Type outputElement, Type resultType) => new(
                     name,

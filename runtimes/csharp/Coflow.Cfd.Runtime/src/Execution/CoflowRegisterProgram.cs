@@ -100,46 +100,90 @@ internal readonly record struct CoflowValueRegister(
             : new(child, IntegerBase + integerOffset, FloatBase + floatOffset, ReferenceBase + referenceOffset);
 }
 
-internal readonly record struct CoflowExecutableInstruction(
-    CoflowOpCode Code,
-    int Operand,
-    int Operand2,
-    int Operand3,
-    Type? ValueType,
-    int StackDepth,
-    object? Operation,
-    CoflowEncodedValue? Constant);
+internal enum CoflowRegisterOpCode : byte
+{
+    Nop,
+    ConstantInteger, ConstantFloat, ConstantReference, ConstantValue,
+    MoveInteger, MoveFloat, MoveReference, MoveValue,
+    LoadFieldInteger, LoadFieldFloat, LoadFieldReference, Native,
+    MakeOptionNone, MakeOptionSome, MakeResultOk, MakeResultErr,
+    ReadValueTag, ReadFirstPayload, ReadSecondPayload, Propagate,
+    MakeClosure,
+    ConvertIntToFloat, ConvertFloatToInt, IsType,
+    NegateInt, NegateFloat, Not, BitNot,
+    AddInt, AddFloat, AddString, SubtractInt, SubtractFloat, MultiplyInt, MultiplyFloat,
+    DivideInt, DivideFloat, IntegerDivide, Remainder, PowerInt, PowerFloat,
+    ShiftLeft, ShiftRight, BitAnd, BitXor, BitOr,
+    LessInt, LessFloat, LessString, LessOrEqualInt, LessOrEqualFloat, LessOrEqualString,
+    GreaterInt, GreaterFloat, GreaterString,
+    GreaterOrEqualInt, GreaterOrEqualFloat, GreaterOrEqualString,
+    EqualInteger, EqualFloat, EqualReference,
+    JumpIfFalse, JumpIfTrue, Jump,
+    Call, CallIndirect, TailCall, TailCallIndirect, Return,
+}
+
+internal readonly record struct CoflowRegisterInstruction(
+    CoflowRegisterOpCode Code,
+    int A = 0,
+    int B = 0,
+    int C = 0,
+    long Immediate = 0,
+    object? Operation = null);
+
+internal sealed record CoflowRegisterValueTransfer(
+    CoflowValueRegister Source,
+    CoflowValueRegister Target);
+
+internal sealed record CoflowRegisterConstantSite(
+    CoflowEncodedValue Value,
+    CoflowValueRegister Target);
+
+internal sealed record CoflowRegisterTargetSite(CoflowValueRegister Target);
+
+internal sealed record CoflowRegisterPropagateSite(
+    CoflowValueRegister Source,
+    CoflowValueRegister Payload,
+    CoflowValueRegister ReturnValue);
+
+internal sealed record CoflowRegisterClosureSite(
+    CoflowClosureTemplate Template,
+    CoflowValueRegister[] Captures,
+    CoflowValueRegister Target);
+
+internal sealed record CoflowRegisterCallSite(
+    CoflowFunctionEntry Entry,
+    CoflowValueRegister[] Arguments,
+    CoflowValueRegister Result);
+
+internal sealed record CoflowRegisterIndirectCallSite(
+    CoflowValueRegister Callable,
+    CoflowValueRegister[] Arguments,
+    CoflowValueRegister Result,
+    Type ResultType);
+
+internal sealed record CoflowLoweringInput(
+    CoflowFunctionIdentity Identity,
+    CoflowInstruction[] Instructions,
+    CfdSpan?[] InstructionSpans,
+    object?[] Operations,
+    CoflowEncodedValue?[] EncodedConstants,
+    Type[] ParameterTypes,
+    Type ReturnType,
+    int LocalCount);
 
 internal sealed class CoflowRegisterProgram
 {
     internal CoflowRegisterProgram(
-        Type[][] stacks,
         CoflowValueRegister[] parameters,
-        CoflowValueRegister[] locals,
-        CoflowValueRegister[] temporaries,
-        IReadOnlyList<CoflowInstruction> instructions,
-        IReadOnlyList<object?> operations,
-        IReadOnlyList<CoflowEncodedValue?> encodedConstants,
+        CoflowRegisterInstruction[] instructions,
+        CfdSpan?[] instructionSpans,
         int integerRegisterCount,
         int floatRegisterCount,
         int referenceRegisterCount)
     {
-        Stacks = stacks;
-        StackDepths = stacks.Select(stack => stack.Length).ToArray();
         Parameters = parameters;
-        Locals = locals;
-        Temporaries = temporaries;
-        StackRegisters = stacks.Select(stack => stack.Select((type, depth) =>
-        {
-            var temporary = temporaries[depth];
-            return new CoflowValueRegister(
-                CoflowValueShape.Of(type),
-                temporary.IntegerBase,
-                temporary.FloatBase,
-                temporary.ReferenceBase);
-        }).ToArray()).ToArray();
-        NativeCallSites = BuildNativeCallSites(instructions, operations);
-        Instructions = BuildInstructions(instructions, operations, encodedConstants);
+        Instructions = instructions;
+        InstructionSpans = instructionSpans;
         ParameterIntegerCount = parameters.Sum(value => value.Shape.IntegerCount);
         ParameterFloatCount = parameters.Sum(value => value.Shape.FloatCount);
         ParameterReferenceCount = parameters.Sum(value => value.Shape.ReferenceCount);
@@ -148,78 +192,20 @@ internal sealed class CoflowRegisterProgram
         ReferenceRegisterCount = referenceRegisterCount;
     }
 
-    internal Type[][] Stacks { get; }
-    internal int[] StackDepths { get; }
-    internal CoflowValueRegister[][] StackRegisters { get; }
     internal CoflowValueRegister[] Parameters { get; }
-    internal CoflowValueRegister[] Locals { get; }
-    internal CoflowValueRegister[] Temporaries { get; }
-    internal CoflowNativeCallSite?[] NativeCallSites { get; }
-    internal CoflowExecutableInstruction[] Instructions { get; }
+    internal CoflowRegisterInstruction[] Instructions { get; }
+    internal CfdSpan?[] InstructionSpans { get; }
     internal int IntegerRegisterCount { get; }
     internal int FloatRegisterCount { get; }
     internal int ReferenceRegisterCount { get; }
     internal int ParameterIntegerCount { get; }
     internal int ParameterFloatCount { get; }
     internal int ParameterReferenceCount { get; }
-    internal CoflowValueRegister Stack(int pc, int depth) => StackRegisters[pc][depth];
-    internal CoflowValueRegister Temporary(CoflowValueShape shape, int depth)
-    {
-        var temporary = Temporaries[depth];
-        return new(shape, temporary.IntegerBase, temporary.FloatBase, temporary.ReferenceBase);
-    }
-
-    private CoflowNativeCallSite?[] BuildNativeCallSites(
-        IReadOnlyList<CoflowInstruction> instructions,
-        IReadOnlyList<object?> operations)
-    {
-        var sites = new CoflowNativeCallSite?[instructions.Count];
-        for (var pc = 0; pc < instructions.Count; pc++)
-        {
-            var instruction = instructions[pc];
-            if (instruction.Code != CoflowOpCode.Native) continue;
-            var call = (CoflowNativeCall)operations[instruction.Operand]!;
-            var depth = StackDepths[pc];
-            var arguments = new CoflowValueRegister[call.ArgumentCount];
-            for (var index = 0; index < arguments.Length; index++)
-                arguments[index] = StackRegisters[pc][depth - arguments.Length + index];
-            sites[pc] = new CoflowNativeCallSite(
-                call,
-                arguments,
-                Temporary(CoflowValueShape.Of(instruction.ValueType!), depth - arguments.Length));
-        }
-        return sites;
-    }
-
-    private CoflowExecutableInstruction[] BuildInstructions(
-        IReadOnlyList<CoflowInstruction> instructions,
-        IReadOnlyList<object?> operations,
-        IReadOnlyList<CoflowEncodedValue?> encodedConstants)
-    {
-        var decoded = new CoflowExecutableInstruction[instructions.Count];
-        for (var pc = 0; pc < instructions.Count; pc++)
-        {
-            var instruction = instructions[pc];
-            decoded[pc] = new CoflowExecutableInstruction(
-                instruction.Code,
-                instruction.Operand,
-                instruction.Operand2,
-                instruction.Operand3,
-                instruction.ValueType,
-                StackDepths[pc],
-                instruction.Code == CoflowOpCode.Constant ? null :
-                    instruction.Operand >= 0 && instruction.Operand < operations.Count
-                        ? operations[instruction.Operand] : null,
-                instruction.Code == CoflowOpCode.Constant
-                    ? encodedConstants[instruction.Operand] : null);
-        }
-        return decoded;
-    }
 }
 
 internal static class CoflowRegisterLowering
 {
-    internal static CoflowRegisterProgram Lower(CoflowProgram program)
+    internal static CoflowRegisterProgram Lower(CoflowLoweringInput program)
     {
         var instructions = program.Instructions;
         var states = new Type[instructions.Length + 1][];
@@ -246,6 +232,7 @@ internal static class CoflowRegisterLowering
         var parameters = Allocate(program.ParameterTypes, ref integer, ref floating, ref reference);
         var localTypes = locals.Select(value => value ?? typeof(Unit)).ToArray();
         var localRegisters = Allocate(localTypes, ref integer, ref floating, ref reference);
+        var returnValue = Allocate(program.ReturnType, ref integer, ref floating, ref reference);
         var maxDepth = states.Where(value => value is not null).Max(value => value!.Length);
         var temporaries = new CoflowValueRegister[maxDepth];
         for (var depth = 0; depth < maxDepth; depth++)
@@ -261,17 +248,33 @@ internal static class CoflowRegisterLowering
             floating += floatWidth;
             reference += referenceWidth;
         }
-        return new CoflowRegisterProgram(
+        var (executable, instructionSpans) = LowerInstructions(
+            program,
             states.Take(instructions.Length).Select(value => value!).ToArray(),
             parameters,
             localRegisters,
-            temporaries,
-            instructions,
-            program.Operations,
-            program.EncodedConstants,
+            returnValue,
+            temporaries);
+        return new CoflowRegisterProgram(
+            parameters,
+            executable,
+            instructionSpans,
             integer,
             floating,
             reference);
+    }
+
+    private static CoflowValueRegister Allocate(
+        Type type,
+        ref int integer,
+        ref int floating,
+        ref int reference)
+    {
+        var result = new CoflowValueRegister(CoflowValueShape.Of(type), integer, floating, reference);
+        integer += result.Shape.IntegerCount;
+        floating += result.Shape.FloatCount;
+        reference += result.Shape.ReferenceCount;
+        return result;
     }
 
     private static CoflowValueRegister[] Allocate(
@@ -292,8 +295,403 @@ internal static class CoflowRegisterLowering
         return result;
     }
 
+    private static (CoflowRegisterInstruction[] Instructions, CfdSpan?[] InstructionSpans) LowerInstructions(
+        CoflowLoweringInput program,
+        Type[][] states,
+        CoflowValueRegister[] parameters,
+        CoflowValueRegister[] locals,
+        CoflowValueRegister returnValue,
+        CoflowValueRegister[] temporaries)
+    {
+        var result = new CoflowRegisterInstruction[program.Instructions.Length];
+        for (var pc = 0; pc < result.Length; pc++)
+        {
+            var source = program.Instructions[pc];
+            var stack = states[pc];
+            var depth = stack.Length;
+
+            CoflowValueRegister Temporary(Type type, int index)
+            {
+                var storage = temporaries[index];
+                return new CoflowValueRegister(
+                    CoflowValueShape.Of(type),
+                    storage.IntegerBase,
+                    storage.FloatBase,
+                    storage.ReferenceBase);
+            }
+            CoflowValueRegister Stack(int index) => Temporary(stack[index], index);
+            CoflowValueRegister Top(int offset = 1) => Stack(depth - offset);
+            CoflowValueRegister Output(Type type, int consumed) => Temporary(type, depth - consumed);
+            object Operation() => program.Operations[source.Operand]
+                ?? throw Invalid(program, $"instruction {pc} has no operation descriptor");
+            CoflowValueRegister[] Arguments(int count)
+            {
+                var start = depth - count;
+                var arguments = new CoflowValueRegister[count];
+                for (var index = 0; index < count; index++)
+                    arguments[index] = Stack(start + index);
+                return arguments;
+            }
+
+            var valueType = source.Code switch
+            {
+                CoflowOpCode.Constant => program.EncodedConstants[source.Operand]?.Shape.Type ?? typeof(object),
+                CoflowOpCode.Argument => program.ParameterTypes[source.Operand],
+                CoflowOpCode.Local => locals[source.Operand].Shape.Type,
+                CoflowOpCode.LoadField => ((CoflowFieldAccess)Operation()).RuntimeType,
+                CoflowOpCode.Native => ((CoflowNativeCall)Operation()).ResultType,
+                CoflowOpCode.Call => ((CoflowCallSite)Operation()).Entry.Signature.ResultType,
+                CoflowOpCode.TailCall or CoflowOpCode.TailCallIndirect => program.ReturnType,
+                _ => source.ValueType ?? typeof(object),
+            };
+            result[pc] = source.Code switch
+            {
+                CoflowOpCode.Constant => Constant(
+                    program.EncodedConstants[source.Operand]
+                        ?? throw Invalid(program, $"instruction {pc} has no encoded constant"),
+                    Output(valueType, 0)),
+                CoflowOpCode.Argument => Move(parameters[source.Operand], Output(valueType, 0)),
+                CoflowOpCode.Local => Move(locals[source.Operand], Output(valueType, 0)),
+                CoflowOpCode.StoreLocal => Move(Top(), locals[source.Operand]),
+                CoflowOpCode.LoadField => Field(
+                    (CoflowFieldAccess)Operation(), Top(), Output(valueType, 1)),
+                CoflowOpCode.Native => Native(
+                    (CoflowNativeCall)Operation(),
+                    Arguments(((CoflowNativeCall)Operation()).ArgumentCount),
+                    Output(valueType, ((CoflowNativeCall)Operation()).ArgumentCount)),
+                CoflowOpCode.MakeOptionNone => new(
+                    CoflowRegisterOpCode.MakeOptionNone,
+                    Operation: new CoflowRegisterTargetSite(Output(valueType, 0))),
+                CoflowOpCode.MakeOptionSome => Transfer(
+                    CoflowRegisterOpCode.MakeOptionSome, Top(), Output(valueType, 1)),
+                CoflowOpCode.MakeResultOk => Transfer(
+                    CoflowRegisterOpCode.MakeResultOk, Top(), Output(valueType, 1)),
+                CoflowOpCode.MakeResultErr => Transfer(
+                    CoflowRegisterOpCode.MakeResultErr, Top(), Output(valueType, 1)),
+                CoflowOpCode.ReadValueTag => new(
+                    CoflowRegisterOpCode.ReadValueTag,
+                    Output(typeof(bool), 1).IntegerBase,
+                    Top().IntegerBase),
+                CoflowOpCode.ReadFirstPayload => Transfer(
+                    CoflowRegisterOpCode.ReadFirstPayload, Top().First, Output(valueType, 1)),
+                CoflowOpCode.ReadSecondPayload => Transfer(
+                    CoflowRegisterOpCode.ReadSecondPayload, Top().Second, Output(valueType, 1)),
+                CoflowOpCode.Propagate => new(
+                    CoflowRegisterOpCode.Propagate,
+                    Operation: new CoflowRegisterPropagateSite(
+                        Top(), Output(valueType, 1), returnValue)),
+                CoflowOpCode.MakeClosure => Closure(
+                    (CoflowClosureTemplate)Operation(),
+                    Arguments(((CoflowClosureTemplate)Operation()).CaptureCount),
+                    Output(valueType, ((CoflowClosureTemplate)Operation()).CaptureCount)),
+                CoflowOpCode.Pop => new(CoflowRegisterOpCode.Nop),
+                CoflowOpCode.Reinterpret => Transfer(
+                    CoflowRegisterOpCode.MoveValue, Top(), Output(valueType, 1)),
+                CoflowOpCode.ConvertIntToFloat => new(
+                    CoflowRegisterOpCode.ConvertIntToFloat,
+                    Output(typeof(double), 1).FloatBase,
+                    Top().IntegerBase),
+                CoflowOpCode.ConvertFloatToInt => new(
+                    CoflowRegisterOpCode.ConvertFloatToInt,
+                    Output(typeof(long), 1).IntegerBase,
+                    Top().FloatBase),
+                CoflowOpCode.IsType => new(
+                    CoflowRegisterOpCode.IsType,
+                    Output(typeof(bool), 1).IntegerBase,
+                    Top().ReferenceBase,
+                    Operation: (Type)Operation()),
+                CoflowOpCode.NegateInt or CoflowOpCode.Not or CoflowOpCode.BitNot => IntegerUnary(
+                    source.Code, Top().IntegerBase, Output(valueType, 1).IntegerBase),
+                CoflowOpCode.NegateFloat => new(
+                    CoflowRegisterOpCode.NegateFloat,
+                    Output(valueType, 1).FloatBase,
+                    Top().FloatBase),
+                CoflowOpCode.AddInt or CoflowOpCode.SubtractInt or CoflowOpCode.MultiplyInt or
+                CoflowOpCode.DivideInt or CoflowOpCode.IntegerDivide or CoflowOpCode.Remainder or
+                CoflowOpCode.PowerInt or CoflowOpCode.ShiftLeft or CoflowOpCode.ShiftRight or
+                CoflowOpCode.BitAnd or CoflowOpCode.BitXor or CoflowOpCode.BitOr => IntegerBinary(
+                    source.Code,
+                    Output(valueType, 2).IntegerBase,
+                    Top(2).IntegerBase,
+                    Top().IntegerBase),
+                CoflowOpCode.AddFloat or CoflowOpCode.SubtractFloat or CoflowOpCode.MultiplyFloat or
+                CoflowOpCode.DivideFloat or CoflowOpCode.PowerFloat => FloatBinary(
+                    source.Code,
+                    Output(valueType, 2).FloatBase,
+                    Top(2).FloatBase,
+                    Top().FloatBase),
+                CoflowOpCode.AddString => new(
+                    CoflowRegisterOpCode.AddString,
+                    Output(typeof(string), 2).ReferenceBase,
+                    Top(2).ReferenceBase,
+                    Top().ReferenceBase),
+                CoflowOpCode.LessInt or CoflowOpCode.LessOrEqualInt or CoflowOpCode.GreaterInt or
+                CoflowOpCode.GreaterOrEqualInt or CoflowOpCode.EqualInteger => IntegerComparison(
+                    source.Code,
+                    Output(typeof(bool), 2).IntegerBase,
+                    Top(2).IntegerBase,
+                    Top().IntegerBase),
+                CoflowOpCode.LessFloat or CoflowOpCode.LessOrEqualFloat or CoflowOpCode.GreaterFloat or
+                CoflowOpCode.GreaterOrEqualFloat or CoflowOpCode.EqualFloat => FloatComparison(
+                    source.Code,
+                    Output(typeof(bool), 2).IntegerBase,
+                    Top(2).FloatBase,
+                    Top().FloatBase),
+                CoflowOpCode.LessString or CoflowOpCode.LessOrEqualString or CoflowOpCode.GreaterString or
+                CoflowOpCode.GreaterOrEqualString => StringComparison(
+                    source.Code,
+                    Output(typeof(bool), 2).IntegerBase,
+                    Top(2).ReferenceBase,
+                    Top().ReferenceBase),
+                CoflowOpCode.EqualReference => new(
+                    CoflowRegisterOpCode.EqualReference,
+                    Output(typeof(bool), 2).IntegerBase,
+                    Top(2).ReferenceBase,
+                    Top().ReferenceBase),
+                CoflowOpCode.JumpIfFalseKeep or CoflowOpCode.JumpIfFalse => new(
+                    CoflowRegisterOpCode.JumpIfFalse, Top().IntegerBase, source.Operand),
+                CoflowOpCode.JumpIfTrueKeep => new(
+                    CoflowRegisterOpCode.JumpIfTrue, Top().IntegerBase, source.Operand),
+                CoflowOpCode.Jump => new(CoflowRegisterOpCode.Jump, source.Operand),
+                CoflowOpCode.Call => DirectCall(
+                    CoflowRegisterOpCode.Call,
+                    (CoflowCallSite)Operation(),
+                    Arguments(((CoflowCallSite)Operation()).ArgumentCount),
+                    Output(((CoflowCallSite)Operation()).Entry.Signature.ResultType,
+                        ((CoflowCallSite)Operation()).ArgumentCount)),
+                CoflowOpCode.CallIndirect => IndirectCall(
+                    CoflowRegisterOpCode.CallIndirect,
+                    Stack(depth - source.Operand - 1),
+                    Arguments(source.Operand),
+                    Output(valueType, source.Operand + 1),
+                    valueType),
+                CoflowOpCode.TailCall => DirectCall(
+                    CoflowRegisterOpCode.TailCall,
+                    (CoflowCallSite)Operation(),
+                    Arguments(((CoflowCallSite)Operation()).ArgumentCount),
+                    returnValue),
+                CoflowOpCode.TailCallIndirect => IndirectCall(
+                    CoflowRegisterOpCode.TailCallIndirect,
+                    Stack(depth - source.Operand - 1),
+                    Arguments(source.Operand),
+                    returnValue,
+                    program.ReturnType),
+                CoflowOpCode.Return => new(
+                    CoflowRegisterOpCode.Return,
+                    Operation: new CoflowRegisterTargetSite(Top())),
+                _ => throw Invalid(program, $"unknown opcode `{source.Code}`"),
+            };
+        }
+        return Compact(result, program.InstructionSpans);
+    }
+
+    private static (CoflowRegisterInstruction[] Instructions, CfdSpan?[] InstructionSpans) Compact(
+        CoflowRegisterInstruction[] source,
+        CfdSpan?[] sourceSpans)
+    {
+        var targets = new int[source.Length + 1];
+        var count = 0;
+        for (var index = 0; index < source.Length; index++)
+        {
+            targets[index] = count;
+            if (source[index].Code != CoflowRegisterOpCode.Nop) count++;
+        }
+        targets[source.Length] = count;
+
+        var instructions = new CoflowRegisterInstruction[count];
+        var instructionSpans = new CfdSpan?[count];
+        var target = 0;
+        for (var index = 0; index < source.Length; index++)
+        {
+            var instruction = source[index];
+            if (instruction.Code == CoflowRegisterOpCode.Nop) continue;
+            instruction = instruction.Code switch
+            {
+                CoflowRegisterOpCode.Jump => instruction with { A = targets[instruction.A] },
+                CoflowRegisterOpCode.JumpIfFalse or CoflowRegisterOpCode.JumpIfTrue =>
+                    instruction with { B = targets[instruction.B] },
+                _ => instruction,
+            };
+            instructions[target] = instruction;
+            instructionSpans[target] = sourceSpans[index];
+            target++;
+        }
+        return (instructions, instructionSpans);
+    }
+
+    private static CoflowRegisterInstruction Constant(
+        CoflowEncodedValue value,
+        CoflowValueRegister target) => value.Shape.Kind switch
+        {
+            CoflowValueShapeKind.Unit => new(CoflowRegisterOpCode.Nop),
+            CoflowValueShapeKind.Scalar when value.Shape.ScalarKind == CoflowRegisterKind.Integer =>
+                new(CoflowRegisterOpCode.ConstantInteger, target.IntegerBase, Immediate: value.Integers[0]),
+            CoflowValueShapeKind.Scalar when value.Shape.ScalarKind == CoflowRegisterKind.Float =>
+                new(CoflowRegisterOpCode.ConstantFloat, target.FloatBase,
+                    Immediate: BitConverter.DoubleToInt64Bits(value.Floats[0])),
+            CoflowValueShapeKind.Scalar =>
+                new(CoflowRegisterOpCode.ConstantReference, target.ReferenceBase, Operation: value.References[0]),
+            _ => new(CoflowRegisterOpCode.ConstantValue,
+                Operation: new CoflowRegisterConstantSite(value, target)),
+        };
+
+    private static CoflowRegisterInstruction Move(
+        CoflowValueRegister source,
+        CoflowValueRegister target)
+    {
+        if (source.Shape.Kind == CoflowValueShapeKind.Unit)
+            return new(CoflowRegisterOpCode.Nop);
+        if (source.Shape.Kind != CoflowValueShapeKind.Scalar)
+            return Transfer(CoflowRegisterOpCode.MoveValue, source, target);
+        return source.Shape.ScalarKind switch
+        {
+            CoflowRegisterKind.Integer => new(
+                CoflowRegisterOpCode.MoveInteger, target.IntegerBase, source.IntegerBase),
+            CoflowRegisterKind.Float => new(
+                CoflowRegisterOpCode.MoveFloat, target.FloatBase, source.FloatBase),
+            _ => new(CoflowRegisterOpCode.MoveReference, target.ReferenceBase, source.ReferenceBase),
+        };
+    }
+
+    private static CoflowRegisterInstruction Transfer(
+        CoflowRegisterOpCode code,
+        CoflowValueRegister source,
+        CoflowValueRegister target) => new(
+            code,
+            Operation: new CoflowRegisterValueTransfer(source, target));
+
+    private static CoflowRegisterInstruction Field(
+        CoflowFieldAccess access,
+        CoflowValueRegister receiver,
+        CoflowValueRegister target)
+    {
+        if (access.ReadInteger is not null)
+            return new(CoflowRegisterOpCode.LoadFieldInteger,
+                target.IntegerBase, receiver.ReferenceBase, Operation: access);
+        if (access.ReadFloat is not null)
+            return new(CoflowRegisterOpCode.LoadFieldFloat,
+                target.FloatBase, receiver.ReferenceBase, Operation: access);
+        if (access.ReadReference is not null)
+            return new(CoflowRegisterOpCode.LoadFieldReference,
+                target.ReferenceBase, receiver.ReferenceBase, Operation: access);
+        return Native(access.Call, new[] { receiver }, target);
+    }
+
+    private static CoflowRegisterInstruction Native(
+        CoflowNativeCall call,
+        CoflowValueRegister[] arguments,
+        CoflowValueRegister result) => new(
+            CoflowRegisterOpCode.Native,
+            Operation: new CoflowNativeCallSite(call, arguments, result));
+
+    private static CoflowRegisterInstruction Closure(
+        CoflowClosureTemplate template,
+        CoflowValueRegister[] captures,
+        CoflowValueRegister target) => new(
+            CoflowRegisterOpCode.MakeClosure,
+            Operation: new CoflowRegisterClosureSite(template, captures, target));
+
+    private static CoflowRegisterInstruction DirectCall(
+        CoflowRegisterOpCode code,
+        CoflowCallSite call,
+        CoflowValueRegister[] arguments,
+        CoflowValueRegister result) => new(
+            code,
+            Operation: new CoflowRegisterCallSite(call.Entry, arguments, result));
+
+    private static CoflowRegisterInstruction IndirectCall(
+        CoflowRegisterOpCode code,
+        CoflowValueRegister callable,
+        CoflowValueRegister[] arguments,
+        CoflowValueRegister result,
+        Type resultType) => new(
+            code,
+            Operation: new CoflowRegisterIndirectCallSite(
+                callable, arguments, result, resultType));
+
+    private static CoflowRegisterInstruction IntegerUnary(
+        CoflowOpCode code,
+        int source,
+        int target) => new(code switch
+        {
+            CoflowOpCode.NegateInt => CoflowRegisterOpCode.NegateInt,
+            CoflowOpCode.Not => CoflowRegisterOpCode.Not,
+            _ => CoflowRegisterOpCode.BitNot,
+        }, target, source);
+
+    private static CoflowRegisterInstruction IntegerBinary(
+        CoflowOpCode code,
+        int target,
+        int left,
+        int right) => new(code switch
+        {
+            CoflowOpCode.AddInt => CoflowRegisterOpCode.AddInt,
+            CoflowOpCode.SubtractInt => CoflowRegisterOpCode.SubtractInt,
+            CoflowOpCode.MultiplyInt => CoflowRegisterOpCode.MultiplyInt,
+            CoflowOpCode.DivideInt => CoflowRegisterOpCode.DivideInt,
+            CoflowOpCode.IntegerDivide => CoflowRegisterOpCode.IntegerDivide,
+            CoflowOpCode.Remainder => CoflowRegisterOpCode.Remainder,
+            CoflowOpCode.PowerInt => CoflowRegisterOpCode.PowerInt,
+            CoflowOpCode.ShiftLeft => CoflowRegisterOpCode.ShiftLeft,
+            CoflowOpCode.ShiftRight => CoflowRegisterOpCode.ShiftRight,
+            CoflowOpCode.BitAnd => CoflowRegisterOpCode.BitAnd,
+            CoflowOpCode.BitXor => CoflowRegisterOpCode.BitXor,
+            _ => CoflowRegisterOpCode.BitOr,
+        }, target, left, right);
+
+    private static CoflowRegisterInstruction FloatBinary(
+        CoflowOpCode code,
+        int target,
+        int left,
+        int right) => new(code switch
+        {
+            CoflowOpCode.AddFloat => CoflowRegisterOpCode.AddFloat,
+            CoflowOpCode.SubtractFloat => CoflowRegisterOpCode.SubtractFloat,
+            CoflowOpCode.MultiplyFloat => CoflowRegisterOpCode.MultiplyFloat,
+            CoflowOpCode.DivideFloat => CoflowRegisterOpCode.DivideFloat,
+            _ => CoflowRegisterOpCode.PowerFloat,
+        }, target, left, right);
+
+    private static CoflowRegisterInstruction IntegerComparison(
+        CoflowOpCode code,
+        int target,
+        int left,
+        int right) => new(code switch
+        {
+            CoflowOpCode.LessInt => CoflowRegisterOpCode.LessInt,
+            CoflowOpCode.LessOrEqualInt => CoflowRegisterOpCode.LessOrEqualInt,
+            CoflowOpCode.GreaterInt => CoflowRegisterOpCode.GreaterInt,
+            CoflowOpCode.GreaterOrEqualInt => CoflowRegisterOpCode.GreaterOrEqualInt,
+            _ => CoflowRegisterOpCode.EqualInteger,
+        }, target, left, right);
+
+    private static CoflowRegisterInstruction FloatComparison(
+        CoflowOpCode code,
+        int target,
+        int left,
+        int right) => new(code switch
+        {
+            CoflowOpCode.LessFloat => CoflowRegisterOpCode.LessFloat,
+            CoflowOpCode.LessOrEqualFloat => CoflowRegisterOpCode.LessOrEqualFloat,
+            CoflowOpCode.GreaterFloat => CoflowRegisterOpCode.GreaterFloat,
+            CoflowOpCode.GreaterOrEqualFloat => CoflowRegisterOpCode.GreaterOrEqualFloat,
+            _ => CoflowRegisterOpCode.EqualFloat,
+        }, target, left, right);
+
+    private static CoflowRegisterInstruction StringComparison(
+        CoflowOpCode code,
+        int target,
+        int left,
+        int right) => new(code switch
+        {
+            CoflowOpCode.LessString => CoflowRegisterOpCode.LessString,
+            CoflowOpCode.LessOrEqualString => CoflowRegisterOpCode.LessOrEqualString,
+            CoflowOpCode.GreaterString => CoflowRegisterOpCode.GreaterString,
+            _ => CoflowRegisterOpCode.GreaterOrEqualString,
+        }, target, left, right);
+
     private static IEnumerable<(int Pc, Type[] Stack)> Transfer(
-        CoflowProgram program,
+        CoflowLoweringInput program,
         int pc,
         Type[] input,
         Type?[] locals)
@@ -581,7 +979,7 @@ internal static class CoflowRegisterLowering
         yield return (pc + 1, stack.ToArray());
     }
 
-    private static bool Merge(CoflowProgram program, Type[][] states, int pc, Type[] incoming)
+    private static bool Merge(CoflowLoweringInput program, Type[][] states, int pc, Type[] incoming)
     {
         if (pc < 0 || pc >= states.Length) throw Invalid(program, "jump target is outside the program");
         if (states[pc] is null) { states[pc] = incoming; return true; }
@@ -593,12 +991,11 @@ internal static class CoflowRegisterLowering
         return false;
     }
 
-    internal static CoflowRegisterKind Kind(Type type) => CoflowValueShape.Scalar(type);
     private static void ValidateCallable(
         Type callable,
         IReadOnlyList<Type> arguments,
         Type result,
-        CoflowProgram program,
+        CoflowLoweringInput program,
         int pc)
     {
         var invoke = callable.GetMethod("Invoke");
@@ -612,6 +1009,6 @@ internal static class CoflowRegisterLowering
                 !parameters[index].ParameterType.IsAssignableFrom(arguments[index]))
                 throw Invalid(program, $"instruction {pc} indirect argument {index} has incompatible type");
     }
-    private static InvalidOperationException Invalid(CoflowProgram program, string message) =>
+    private static InvalidOperationException Invalid(CoflowLoweringInput program, string message) =>
         new($"invalid Coflow program `{program.Identity}`: {message}");
 }

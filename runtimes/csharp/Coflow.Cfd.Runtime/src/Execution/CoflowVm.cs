@@ -203,8 +203,6 @@ internal static class CoflowBoundaryCodec
 internal readonly record struct CoflowInstruction(
     CoflowOpCode Code,
     int Operand = 0,
-    int Operand2 = 0,
-    int Operand3 = 0,
     Type? ValueType = null);
 
 internal readonly record struct CoflowCallSite(CoflowFunctionEntry Entry, int ArgumentCount);
@@ -279,71 +277,37 @@ internal sealed class CoflowNativeCall
 internal readonly struct CoflowNativeFrame
 {
     private readonly CoflowVm.CoflowExecutionContext _context;
-    private readonly int _pc;
-    private readonly int _depth;
-    private readonly int _argumentCount;
+    private readonly CoflowValueRegister[] _arguments;
+    private readonly CoflowValueRegister _result;
     private readonly Type _resultType;
-    private readonly int _resultDepth;
-    private readonly CoflowNativeCallSite? _site;
 
     internal CoflowNativeFrame(
         CoflowVm.CoflowExecutionContext context,
         CoflowNativeCallSite site)
+        : this(context, site.Arguments, site.Result, site.Call.ResultType)
     {
-        _context = context;
-        _site = site;
-        _pc = 0;
-        _depth = 0;
-        _argumentCount = site.Arguments.Length;
-        _resultType = site.Call.ResultType;
-        _resultDepth = 0;
     }
 
     internal CoflowNativeFrame(
         CoflowVm.CoflowExecutionContext context,
-        int pc,
-        int depth,
-        int argumentCount,
+        CoflowValueRegister[] arguments,
+        CoflowValueRegister result,
         Type resultType)
     {
         _context = context;
-        _pc = pc;
-        _depth = depth;
-        _argumentCount = argumentCount;
+        _arguments = arguments;
+        _result = result;
         _resultType = resultType;
-        _resultDepth = depth - argumentCount;
-        _site = null;
     }
 
-    internal CoflowNativeFrame(
-        CoflowVm.CoflowExecutionContext context,
-        int pc,
-        int argumentStart,
-        int resultDepth,
-        int argumentCount,
-        Type resultType)
-    {
-        _context = context;
-        _pc = pc;
-        _depth = argumentStart + argumentCount;
-        _argumentCount = argumentCount;
-        _resultType = resultType;
-        _resultDepth = resultDepth;
-        _site = null;
-    }
-
-    public T Read<T>(int index) => _site is { } site
-        ? CoflowBoundaryCodec<T>.ReadRelative(_context, site.Arguments[index])
-        : CoflowBoundaryCodec<T>.Read(
-            _context, _context.Stack(_pc, _depth - _argumentCount + index));
+    public T Read<T>(int index) =>
+        CoflowBoundaryCodec<T>.ReadRelative(_context, _arguments[index]);
 
     public void Write<T>(T value)
     {
         if (typeof(T) != _resultType)
             throw new InvalidOperationException($"native result `{typeof(T)}` does not match `{_resultType}`");
-        if (_site is { } site)
-            CoflowBoundaryCodec<T>.WriteRelative(_context, site.Result, value);
-        else _context.Write(_context.Temporary(_resultType, _resultDepth), value);
+        CoflowBoundaryCodec<T>.WriteRelative(_context, _result, value);
     }
 }
 
@@ -389,12 +353,6 @@ internal readonly record struct CoflowLoopAccess(
     Delegate Count,
     Delegate First,
     Delegate? Second);
-internal sealed record CoflowRange(long Start, long End, bool Inclusive)
-{
-    internal long Count => End <= Start
-        ? Inclusive && End == Start ? 1 : 0
-        : checked(End - Start + (Inclusive ? 1 : 0));
-}
 internal sealed class CoflowClosureTemplate
 {
     internal CoflowClosureTemplate(CoflowProgram program, IReadOnlyList<Type> captureTypes)
@@ -588,44 +546,46 @@ internal sealed class CoflowProgram
         Identity = identity;
         SourcePath = sourcePath;
         SourceSpan = sourceSpan;
-        Instructions = instructions.ToArray();
-        InstructionSpans = instructionSpans.ToArray();
-        if (Instructions.Length == 0)
+        var loweredInstructions = instructions.ToArray();
+        var loweredInstructionSpans = instructionSpans.ToArray();
+        if (loweredInstructions.Length == 0)
             throw new InvalidOperationException($"Coflow program `{identity}` has no instructions.");
-        if (InstructionSpans.Length != Instructions.Length)
+        if (loweredInstructionSpans.Length != loweredInstructions.Length)
             throw new InvalidOperationException($"Coflow program `{identity}` has an invalid source map.");
         if (localCount < 0)
             throw new InvalidOperationException($"Coflow program `{identity}` has a negative local count.");
         var sourceConstants = constants.ToArray();
-        Operations = sourceConstants.ToArray();
-        EncodedConstants = new CoflowEncodedValue?[sourceConstants.Length];
-        foreach (var instruction in Instructions)
+        var operations = sourceConstants.ToArray();
+        var encodedConstants = new CoflowEncodedValue?[sourceConstants.Length];
+        foreach (var instruction in loweredInstructions)
             if (instruction.Code == CoflowOpCode.Constant)
             {
                 if ((uint)instruction.Operand >= (uint)sourceConstants.Length)
                     throw new InvalidOperationException($"Coflow program `{identity}` has an invalid constant index.");
-                EncodedConstants[instruction.Operand] ??= CoflowEncodedValue.Encode(
+                encodedConstants[instruction.Operand] ??= CoflowEncodedValue.Encode(
                     instruction.ValueType ?? sourceConstants[instruction.Operand]?.GetType() ?? typeof(object),
                     sourceConstants[instruction.Operand]);
-                Operations[instruction.Operand] = null;
+                operations[instruction.Operand] = null;
             }
         ParameterTypes = parameterTypes.ToArray();
         ReturnType = returnType;
-        LocalCount = localCount;
-        RegisterProgram = CoflowRegisterLowering.Lower(this);
+        RegisterProgram = CoflowRegisterLowering.Lower(new CoflowLoweringInput(
+            identity,
+            loweredInstructions,
+            loweredInstructionSpans,
+            operations,
+            encodedConstants,
+            ParameterTypes,
+            ReturnType,
+            localCount));
     }
 
     internal CoflowFunctionIdentity Identity { get; }
     internal string SourcePath { get; }
     internal CfdSpan? SourceSpan { get; }
-    internal CoflowInstruction[] Instructions { get; }
-    internal CfdSpan?[] InstructionSpans { get; }
-    internal object?[] Operations { get; }
-    internal CoflowEncodedValue?[] EncodedConstants { get; }
     internal Type[] ParameterTypes { get; }
     internal Type ReturnType { get; }
     internal int ParameterCount => ParameterTypes.Length;
-    internal int LocalCount { get; }
     internal CoflowRegisterProgram RegisterProgram { get; }
 }
 
@@ -678,212 +638,227 @@ internal static class CoflowVm
                     throw new InvalidOperationException("Coflow function ended without Return.");
                 var instruction = registers.Instructions[pc];
                 context.Pc = pc + 1;
-                var depth = instruction.StackDepth;
                 switch (instruction.Code)
                 {
-                    case CoflowOpCode.Constant:
+                    case CoflowRegisterOpCode.Nop: break;
+                    case CoflowRegisterOpCode.ConstantInteger:
+                        context.WriteIntegerRelative(instruction.A, instruction.Immediate);
+                        break;
+                    case CoflowRegisterOpCode.ConstantFloat:
+                        context.WriteFloatRelative(instruction.A,
+                            BitConverter.Int64BitsToDouble(instruction.Immediate));
+                        break;
+                    case CoflowRegisterOpCode.ConstantReference:
+                        context.WriteReferenceRelative(instruction.A, instruction.Operation);
+                        break;
+                    case CoflowRegisterOpCode.ConstantValue:
                     {
-                        var encoded = instruction.Constant
-                            ?? throw new InvalidOperationException("constant has no encoded layout");
-                        context.WriteEncodedRelative(encoded,
-                            registers.Temporary(encoded.Shape, depth));
+                        var site = (CoflowRegisterConstantSite)instruction.Operation!;
+                        context.WriteEncodedRelative(site.Value, site.Target);
                         break;
                     }
-                    case CoflowOpCode.Argument:
+                    case CoflowRegisterOpCode.MoveInteger:
+                        context.WriteIntegerRelative(instruction.A,
+                            context.ReadIntegerRelative(instruction.B));
+                        break;
+                    case CoflowRegisterOpCode.MoveFloat:
+                        context.WriteFloatRelative(instruction.A,
+                            context.ReadFloatRelative(instruction.B));
+                        break;
+                    case CoflowRegisterOpCode.MoveReference:
+                        context.WriteReferenceRelative(instruction.A,
+                            context.ReadReferenceRelative(instruction.B));
+                        break;
+                    case CoflowRegisterOpCode.MoveValue:
                     {
-                        var source = registers.Parameters[instruction.Operand];
-                        context.CopyRelative(source, registers.Temporary(source.Shape, depth));
+                        var site = (CoflowRegisterValueTransfer)instruction.Operation!;
+                        context.CopyRelative(site.Source, site.Target);
                         break;
                     }
-                    case CoflowOpCode.Local:
-                    {
-                        var source = registers.Locals[instruction.Operand];
-                        context.CopyRelative(source, registers.Temporary(source.Shape, depth));
-                        break;
-                    }
-                    case CoflowOpCode.StoreLocal:
-                        context.CopyRelative(registers.Stack(pc, depth - 1),
-                            registers.Locals[instruction.Operand]);
-                        break;
-                    case CoflowOpCode.LoadField:
+                    case CoflowRegisterOpCode.LoadFieldInteger:
+                    case CoflowRegisterOpCode.LoadFieldFloat:
+                    case CoflowRegisterOpCode.LoadFieldReference:
                     {
                         var access = (CoflowFieldAccess)instruction.Operation!;
-                        var receiver = context.ReadReferenceRelative(
-                            registers.Stack(pc, depth - 1).ReferenceBase)
+                        var receiver = context.ReadReferenceRelative(instruction.B)
                             ?? throw new InvalidOperationException($"field `{access.Name}` receiver is null");
-                        var target = registers.Temporaries[depth - 1];
-                        if (access.ReadInteger is { } readInteger)
-                            context.WriteIntegerRelative(target.IntegerBase, readInteger(receiver));
-                        else if (access.ReadFloat is { } readFloat)
-                            context.WriteFloatRelative(target.FloatBase, readFloat(receiver));
-                        else if (access.ReadReference is { } readReference)
-                            context.WriteReferenceRelative(target.ReferenceBase, readReference(receiver));
-                        else
-                            access.Call.Invoke(new CoflowNativeFrame(
-                                context, pc, depth, 1, access.RuntimeType));
+                        if (instruction.Code == CoflowRegisterOpCode.LoadFieldInteger)
+                            context.WriteIntegerRelative(instruction.A, access.ReadInteger!(receiver));
+                        else if (instruction.Code == CoflowRegisterOpCode.LoadFieldFloat)
+                            context.WriteFloatRelative(instruction.A, access.ReadFloat!(receiver));
+                        else context.WriteReferenceRelative(instruction.A, access.ReadReference!(receiver));
                         break;
                     }
-                    case CoflowOpCode.Native:
+                    case CoflowRegisterOpCode.Native:
                     {
-                        var site = registers.NativeCallSites[pc]
-                            ?? throw new InvalidOperationException("native instruction has no lowered call site");
+                        var site = (CoflowNativeCallSite)instruction.Operation!;
                         site.Call.Invoke(new CoflowNativeFrame(context, site));
                         break;
                     }
-                    case CoflowOpCode.MakeOptionSome:
-                    case CoflowOpCode.MakeResultOk:
-                    case CoflowOpCode.MakeResultErr:
+                    case CoflowRegisterOpCode.MakeOptionSome:
+                    case CoflowRegisterOpCode.MakeResultOk:
+                    case CoflowRegisterOpCode.MakeResultErr:
                     {
-                        var source = context.Stack(pc, depth - 1);
-                        var target = context.Temporary(instruction.ValueType!, depth - 1);
-                        context.CopyPhysical(source,
-                            instruction.Code == CoflowOpCode.MakeResultErr ? target.Second : target.First);
-                        context.WriteInteger(target.Tag,
-                            instruction.Code == CoflowOpCode.MakeResultErr ? 0 : 1);
+                        var site = (CoflowRegisterValueTransfer)instruction.Operation!;
+                        context.CopyRelative(site.Source,
+                            instruction.Code == CoflowRegisterOpCode.MakeResultErr
+                                ? site.Target.Second : site.Target.First);
+                        context.WriteIntegerRelative(site.Target.IntegerBase,
+                            instruction.Code == CoflowRegisterOpCode.MakeResultErr ? 0 : 1);
                         break;
                     }
-                    case CoflowOpCode.MakeOptionNone:
+                    case CoflowRegisterOpCode.MakeOptionNone:
                     {
-                        var target = context.Temporary(instruction.ValueType!, depth);
-                        context.WriteInteger(target.Tag, 0);
+                        var site = (CoflowRegisterTargetSite)instruction.Operation!;
+                        context.WriteIntegerRelative(site.Target.IntegerBase, 0);
                         break;
                     }
-                    case CoflowOpCode.ReadValueTag:
-                        context.WriteInteger(context.Temporary(typeof(bool), depth - 1).Scalar,
-                            context.ReadInteger(context.Stack(pc, depth - 1).Tag));
+                    case CoflowRegisterOpCode.ReadValueTag:
+                        context.WriteIntegerRelative(instruction.A,
+                            context.ReadIntegerRelative(instruction.B));
                         break;
-                    case CoflowOpCode.ReadFirstPayload:
-                        context.CopyPhysical(context.Stack(pc, depth - 1).First,
-                            context.Temporary(instruction.ValueType!, depth - 1));
-                        break;
-                    case CoflowOpCode.ReadSecondPayload:
-                        context.CopyPhysical(context.Stack(pc, depth - 1).Second,
-                            context.Temporary(instruction.ValueType!, depth - 1));
-                        break;
-                    case CoflowOpCode.Propagate:
+                    case CoflowRegisterOpCode.ReadFirstPayload:
+                    case CoflowRegisterOpCode.ReadSecondPayload:
                     {
-                        var source = context.Stack(pc, depth - 1);
-                        if (context.ReadInteger(source.Tag) == 0)
+                        var site = (CoflowRegisterValueTransfer)instruction.Operation!;
+                        context.CopyRelative(site.Source, site.Target);
+                        break;
+                    }
+                    case CoflowRegisterOpCode.Propagate:
+                    {
+                        var site = (CoflowRegisterPropagateSite)instruction.Operation!;
+                        if (context.ReadIntegerRelative(site.Source.IntegerBase) == 0)
                         {
-                            var returnValue = context.Temporary(context.Program.ReturnType, depth - 1);
-                            context.WriteInteger(returnValue.Tag, 0);
-                            if (source.Shape.Kind == CoflowValueShapeKind.Result)
-                                context.CopyPhysical(source.Second, returnValue.Second);
-                            if (context.ReturnRegister<TResult>(returnValue, out var returned)) return returned;
+                            context.WriteIntegerRelative(site.ReturnValue.IntegerBase, 0);
+                            if (site.Source.Shape.Kind == CoflowValueShapeKind.Result)
+                                context.CopyRelative(site.Source.Second, site.ReturnValue.Second);
+                            if (context.ReturnRegister<TResult>(site.ReturnValue, out var returned)) return returned;
                         }
-                        else context.CopyPhysical(source.First,
-                            context.Temporary(instruction.ValueType!, depth - 1));
+                        else context.CopyRelative(site.Source.First, site.Payload);
                         break;
                     }
-                    case CoflowOpCode.MakeClosure:
-                        context.MakeClosure(pc, depth,
-                            (CoflowClosureTemplate)instruction.Operation!,
-                            instruction.ValueType!);
+                    case CoflowRegisterOpCode.MakeClosure:
+                        context.MakeClosure((CoflowRegisterClosureSite)instruction.Operation!);
                         break;
-                    case CoflowOpCode.Pop: break;
-                    case CoflowOpCode.Reinterpret:
-                        context.CopyPhysical(context.Stack(pc, depth - 1),
-                            context.Temporary(instruction.ValueType!, depth - 1));
+                    case CoflowRegisterOpCode.ConvertIntToFloat:
+                        context.WriteFloatRelative(instruction.A,
+                            context.ReadIntegerRelative(instruction.B));
                         break;
-                    case CoflowOpCode.ConvertIntToFloat:
-                        context.WriteFloatRelative(registers.Temporaries[depth - 1].FloatBase,
-                            context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase));
+                    case CoflowRegisterOpCode.ConvertFloatToInt:
+                        context.WriteIntegerRelative(instruction.A,
+                            checked((long)context.ReadFloatRelative(instruction.B)));
                         break;
-                    case CoflowOpCode.ConvertFloatToInt:
-                        context.WriteIntegerRelative(registers.Temporaries[depth - 1].IntegerBase,
-                            checked((long)context.ReadFloatRelative(registers.Stack(pc, depth - 1).FloatBase)));
+                    case CoflowRegisterOpCode.IsType:
+                        context.WriteIntegerRelative(instruction.A,
+                            ((Type)instruction.Operation!).IsInstanceOfType(
+                                context.ReadReferenceRelative(instruction.B)) ? 1 : 0);
                         break;
-                    case CoflowOpCode.IsType:
-                        context.WriteInteger(context.Temporary(typeof(bool), depth - 1).Scalar,
-                            instruction.Operation is Type type &&
-                            type.IsInstanceOfType(context.ReadReference(context.Stack(pc, depth - 1).Scalar)) ? 1 : 0);
+                    case CoflowRegisterOpCode.NegateInt:
+                    case CoflowRegisterOpCode.Not:
+                    case CoflowRegisterOpCode.BitNot:
+                        UnaryInteger(context, instruction);
                         break;
-                    case CoflowOpCode.NegateInt:
-                    case CoflowOpCode.Not:
-                    case CoflowOpCode.BitNot: UnaryInteger(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.NegateFloat: UnaryFloat(context, pc, depth); break;
-                    case CoflowOpCode.AddInt:
-                    case CoflowOpCode.SubtractInt:
-                    case CoflowOpCode.MultiplyInt:
-                    case CoflowOpCode.DivideInt:
-                    case CoflowOpCode.IntegerDivide:
-                    case CoflowOpCode.Remainder:
-                    case CoflowOpCode.PowerInt:
-                    case CoflowOpCode.ShiftLeft:
-                    case CoflowOpCode.ShiftRight:
-                    case CoflowOpCode.BitAnd:
-                    case CoflowOpCode.BitXor:
-                    case CoflowOpCode.BitOr: BinaryInteger(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.AddFloat:
-                    case CoflowOpCode.SubtractFloat:
-                    case CoflowOpCode.MultiplyFloat:
-                    case CoflowOpCode.DivideFloat:
-                    case CoflowOpCode.PowerFloat: BinaryFloat(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.AddString: AddString(context, pc, depth); break;
-                    case CoflowOpCode.LessInt:
-                    case CoflowOpCode.LessOrEqualInt:
-                    case CoflowOpCode.GreaterInt:
-                    case CoflowOpCode.GreaterOrEqualInt:
-                    case CoflowOpCode.EqualInteger: CompareInteger(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.LessFloat:
-                    case CoflowOpCode.LessOrEqualFloat:
-                    case CoflowOpCode.GreaterFloat:
-                    case CoflowOpCode.GreaterOrEqualFloat:
-                    case CoflowOpCode.EqualFloat: CompareFloat(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.LessString:
-                    case CoflowOpCode.LessOrEqualString:
-                    case CoflowOpCode.GreaterString:
-                    case CoflowOpCode.GreaterOrEqualString: CompareString(context, pc, depth, instruction.Code); break;
-                    case CoflowOpCode.EqualReference:
-                        context.WriteIntegerRelative(registers.Temporaries[depth - 2].IntegerBase,
-                            Equals(context.ReadReferenceRelative(registers.Stack(pc, depth - 2).ReferenceBase),
-                                context.ReadReferenceRelative(registers.Stack(pc, depth - 1).ReferenceBase)) ? 1 : 0);
+                    case CoflowRegisterOpCode.NegateFloat:
+                        context.WriteFloatRelative(instruction.A,
+                            -context.ReadFloatRelative(instruction.B));
                         break;
-                    case CoflowOpCode.JumpIfFalseKeep:
-                        if (context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase) == 0)
-                            context.Pc = instruction.Operand;
+                    case CoflowRegisterOpCode.AddInt:
+                    case CoflowRegisterOpCode.SubtractInt:
+                    case CoflowRegisterOpCode.MultiplyInt:
+                    case CoflowRegisterOpCode.DivideInt:
+                    case CoflowRegisterOpCode.IntegerDivide:
+                    case CoflowRegisterOpCode.Remainder:
+                    case CoflowRegisterOpCode.PowerInt:
+                    case CoflowRegisterOpCode.ShiftLeft:
+                    case CoflowRegisterOpCode.ShiftRight:
+                    case CoflowRegisterOpCode.BitAnd:
+                    case CoflowRegisterOpCode.BitXor:
+                    case CoflowRegisterOpCode.BitOr:
+                        BinaryInteger(context, instruction);
                         break;
-                    case CoflowOpCode.JumpIfTrueKeep:
-                        if (context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase) != 0)
-                            context.Pc = instruction.Operand;
+                    case CoflowRegisterOpCode.AddFloat:
+                    case CoflowRegisterOpCode.SubtractFloat:
+                    case CoflowRegisterOpCode.MultiplyFloat:
+                    case CoflowRegisterOpCode.DivideFloat:
+                    case CoflowRegisterOpCode.PowerFloat:
+                        BinaryFloat(context, instruction);
                         break;
-                    case CoflowOpCode.JumpIfFalse:
-                        if (context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase) == 0)
-                            context.Pc = instruction.Operand;
+                    case CoflowRegisterOpCode.AddString:
+                        context.WriteReferenceRelative(instruction.A,
+                            (string)context.ReadReferenceRelative(instruction.B)! +
+                            (string)context.ReadReferenceRelative(instruction.C)!);
                         break;
-                    case CoflowOpCode.Jump: context.Pc = instruction.Operand; break;
-                    case CoflowOpCode.Call:
+                    case CoflowRegisterOpCode.LessInt:
+                    case CoflowRegisterOpCode.LessOrEqualInt:
+                    case CoflowRegisterOpCode.GreaterInt:
+                    case CoflowRegisterOpCode.GreaterOrEqualInt:
+                    case CoflowRegisterOpCode.EqualInteger:
+                        CompareInteger(context, instruction);
+                        break;
+                    case CoflowRegisterOpCode.LessFloat:
+                    case CoflowRegisterOpCode.LessOrEqualFloat:
+                    case CoflowRegisterOpCode.GreaterFloat:
+                    case CoflowRegisterOpCode.GreaterOrEqualFloat:
+                    case CoflowRegisterOpCode.EqualFloat:
+                        CompareFloat(context, instruction);
+                        break;
+                    case CoflowRegisterOpCode.LessString:
+                    case CoflowRegisterOpCode.LessOrEqualString:
+                    case CoflowRegisterOpCode.GreaterString:
+                    case CoflowRegisterOpCode.GreaterOrEqualString:
+                        CompareString(context, instruction);
+                        break;
+                    case CoflowRegisterOpCode.EqualReference:
+                        context.WriteIntegerRelative(instruction.A,
+                            Equals(context.ReadReferenceRelative(instruction.B),
+                                context.ReadReferenceRelative(instruction.C)) ? 1 : 0);
+                        break;
+                    case CoflowRegisterOpCode.JumpIfFalse:
+                        if (context.ReadIntegerRelative(instruction.A) == 0)
+                            context.Pc = instruction.B;
+                        break;
+                    case CoflowRegisterOpCode.JumpIfTrue:
+                        if (context.ReadIntegerRelative(instruction.A) != 0)
+                            context.Pc = instruction.B;
+                        break;
+                    case CoflowRegisterOpCode.Jump:
+                        context.Pc = instruction.A;
+                        break;
+                    case CoflowRegisterOpCode.Call:
                     {
-                        var call = (CoflowCallSite)instruction.Operation!;
-                        if (!context.Call(call.Entry, pc, depth, call.ArgumentCount, tail: false))
-                            call.Entry.InvokeBoundFromVm(new CoflowNativeFrame(
-                                context, pc, depth, call.ArgumentCount, call.Entry.Signature.ResultType));
+                        var site = (CoflowRegisterCallSite)instruction.Operation!;
+                        if (!context.Call(site, tail: false))
+                            site.Entry.InvokeBoundFromVm(new CoflowNativeFrame(
+                                context, site.Arguments, site.Result,
+                                site.Entry.Signature.ResultType));
                         break;
                     }
-                    case CoflowOpCode.CallIndirect:
-                        if (context.CallIndirect<TResult>(pc, depth, instruction.Operand, tail: false,
+                    case CoflowRegisterOpCode.CallIndirect:
+                        if (context.CallIndirect<TResult>(
+                                (CoflowRegisterIndirectCallSite)instruction.Operation!, tail: false,
                                 out var indirectResult)) return indirectResult;
                         break;
-                    case CoflowOpCode.TailCall:
+                    case CoflowRegisterOpCode.TailCall:
                     {
-                        var call = (CoflowCallSite)instruction.Operation!;
-                        if (!context.Call(call.Entry, pc, depth, call.ArgumentCount, tail: true))
+                        var site = (CoflowRegisterCallSite)instruction.Operation!;
+                        if (!context.Call(site, tail: true))
                         {
-                            call.Entry.InvokeBoundFromVm(new CoflowNativeFrame(
-                                context, pc, depth, call.ArgumentCount, call.Entry.Signature.ResultType));
-                            if (context.ReturnRegister<TResult>(
-                                    context.Temporary(call.Entry.Signature.ResultType, depth - call.ArgumentCount),
-                                    out var returned)) return returned;
+                            site.Entry.InvokeBoundFromVm(new CoflowNativeFrame(
+                                context, site.Arguments, site.Result,
+                                site.Entry.Signature.ResultType));
+                            if (context.ReturnRegister<TResult>(site.Result, out var returned)) return returned;
                         }
                         break;
                     }
-                    case CoflowOpCode.TailCallIndirect:
-                        if (context.CallIndirect<TResult>(pc, depth, instruction.Operand, tail: true,
+                    case CoflowRegisterOpCode.TailCallIndirect:
+                        if (context.CallIndirect<TResult>(
+                                (CoflowRegisterIndirectCallSite)instruction.Operation!, tail: true,
                                 out var indirectTailResult)) return indirectTailResult;
                         break;
-                    case CoflowOpCode.Return:
+                    case CoflowRegisterOpCode.Return:
                     {
-                        if (context.ReturnRegister<TResult>(context.Stack(pc, depth - 1), out var returned)) return returned;
+                        var site = (CoflowRegisterTargetSite)instruction.Operation!;
+                        if (context.ReturnRegister<TResult>(site.Target, out var returned)) return returned;
                         break;
                     }
                     default: throw new InvalidOperationException($"Unknown Coflow opcode `{instruction.Code}`.");
@@ -893,8 +868,9 @@ internal static class CoflowVm
         catch (CoflowFaultException) { throw; }
         catch (Exception error)
         {
-            var span = context.Pc > 0 && context.Pc <= context.Program.InstructionSpans.Length
-                ? context.Program.InstructionSpans[context.Pc - 1] : null;
+            var executable = context.Program.RegisterProgram;
+            var span = context.Pc > 0 && context.Pc <= executable.InstructionSpans.Length
+                ? executable.InstructionSpans[context.Pc - 1] : null;
             throw Fault(context.Program, error.Message, error, context.CallStack, span);
         }
         finally
@@ -916,117 +892,107 @@ internal static class CoflowVm
         return context;
     }
 
-    private static void UnaryInteger(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
+    private static void UnaryInteger(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var register = context.Program.RegisterProgram.Stack(pc, depth - 1).IntegerBase;
-        var value = context.ReadIntegerRelative(register);
-        context.WriteIntegerRelative(register, code switch
+        var value = context.ReadIntegerRelative(instruction.B);
+        context.WriteIntegerRelative(instruction.A, instruction.Code switch
         {
-            CoflowOpCode.NegateInt => checked(-value),
-            CoflowOpCode.Not => value == 0 ? 1 : 0,
-            CoflowOpCode.BitNot => ~value,
-            _ => throw new InvalidOperationException($"invalid unary integer opcode `{code}`"),
+            CoflowRegisterOpCode.NegateInt => checked(-value),
+            CoflowRegisterOpCode.Not => value == 0 ? 1 : 0,
+            CoflowRegisterOpCode.BitNot => ~value,
+            _ => throw new InvalidOperationException($"invalid unary integer opcode `{instruction.Code}`"),
         });
     }
-    private static void UnaryFloat(CoflowExecutionContext context, int pc, int depth)
+    private static void BinaryInteger(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var register = context.Program.RegisterProgram.Stack(pc, depth - 1).FloatBase;
-        context.WriteFloatRelative(register, -context.ReadFloatRelative(register));
-    }
-    private static void BinaryInteger(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
-    {
-        var registers = context.Program.RegisterProgram;
-        var left = registers.Stack(pc, depth - 2).IntegerBase;
-        var leftValue = context.ReadIntegerRelative(left);
-        var rightValue = context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase);
-        context.WriteIntegerRelative(left, code switch
+        var leftValue = context.ReadIntegerRelative(instruction.B);
+        var rightValue = context.ReadIntegerRelative(instruction.C);
+        context.WriteIntegerRelative(instruction.A, instruction.Code switch
         {
-            CoflowOpCode.AddInt => checked(leftValue + rightValue),
-            CoflowOpCode.SubtractInt => checked(leftValue - rightValue),
-            CoflowOpCode.MultiplyInt => checked(leftValue * rightValue),
-            CoflowOpCode.DivideInt or CoflowOpCode.IntegerDivide => checked(leftValue / rightValue),
-            CoflowOpCode.Remainder => checked(leftValue % rightValue),
-            CoflowOpCode.PowerInt => PowerInteger(leftValue, rightValue),
-            CoflowOpCode.ShiftLeft => checked(leftValue << checked((int)rightValue)),
-            CoflowOpCode.ShiftRight => leftValue >> checked((int)rightValue),
-            CoflowOpCode.BitAnd => leftValue & rightValue,
-            CoflowOpCode.BitXor => leftValue ^ rightValue,
-            CoflowOpCode.BitOr => leftValue | rightValue,
-            _ => throw new InvalidOperationException($"invalid binary integer opcode `{code}`"),
+            CoflowRegisterOpCode.AddInt => checked(leftValue + rightValue),
+            CoflowRegisterOpCode.SubtractInt => checked(leftValue - rightValue),
+            CoflowRegisterOpCode.MultiplyInt => checked(leftValue * rightValue),
+            CoflowRegisterOpCode.DivideInt or CoflowRegisterOpCode.IntegerDivide => checked(leftValue / rightValue),
+            CoflowRegisterOpCode.Remainder => checked(leftValue % rightValue),
+            CoflowRegisterOpCode.PowerInt => PowerInteger(leftValue, rightValue),
+            CoflowRegisterOpCode.ShiftLeft => checked(leftValue << checked((int)rightValue)),
+            CoflowRegisterOpCode.ShiftRight => leftValue >> checked((int)rightValue),
+            CoflowRegisterOpCode.BitAnd => leftValue & rightValue,
+            CoflowRegisterOpCode.BitXor => leftValue ^ rightValue,
+            CoflowRegisterOpCode.BitOr => leftValue | rightValue,
+            _ => throw new InvalidOperationException($"invalid binary integer opcode `{instruction.Code}`"),
         });
     }
-    private static void BinaryFloat(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
+    private static void BinaryFloat(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var registers = context.Program.RegisterProgram;
-        var left = registers.Stack(pc, depth - 2).FloatBase;
-        var leftValue = context.ReadFloatRelative(left);
-        var rightValue = context.ReadFloatRelative(registers.Stack(pc, depth - 1).FloatBase);
-        context.WriteFloatRelative(left, code switch
+        var leftValue = context.ReadFloatRelative(instruction.B);
+        var rightValue = context.ReadFloatRelative(instruction.C);
+        context.WriteFloatRelative(instruction.A, instruction.Code switch
         {
-            CoflowOpCode.AddFloat => leftValue + rightValue,
-            CoflowOpCode.SubtractFloat => leftValue - rightValue,
-            CoflowOpCode.MultiplyFloat => leftValue * rightValue,
-            CoflowOpCode.DivideFloat => leftValue / rightValue,
-            CoflowOpCode.PowerFloat => Math.Pow(leftValue, rightValue),
-            _ => throw new InvalidOperationException($"invalid binary float opcode `{code}`"),
+            CoflowRegisterOpCode.AddFloat => leftValue + rightValue,
+            CoflowRegisterOpCode.SubtractFloat => leftValue - rightValue,
+            CoflowRegisterOpCode.MultiplyFloat => leftValue * rightValue,
+            CoflowRegisterOpCode.DivideFloat => leftValue / rightValue,
+            CoflowRegisterOpCode.PowerFloat => Math.Pow(leftValue, rightValue),
+            _ => throw new InvalidOperationException($"invalid binary float opcode `{instruction.Code}`"),
         });
     }
-    private static void AddString(CoflowExecutionContext context, int pc, int depth)
+    private static void CompareInteger(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var registers = context.Program.RegisterProgram;
-        var left = registers.Stack(pc, depth - 2).ReferenceBase;
-        context.WriteReferenceRelative(left,
-            (string)context.ReadReferenceRelative(left)! +
-            (string)context.ReadReferenceRelative(registers.Stack(pc, depth - 1).ReferenceBase)!);
-    }
-    private static void CompareInteger(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
-    {
-        var registers = context.Program.RegisterProgram;
-        var left = registers.Stack(pc, depth - 2).IntegerBase;
-        var leftValue = context.ReadIntegerRelative(left);
-        var rightValue = context.ReadIntegerRelative(registers.Stack(pc, depth - 1).IntegerBase);
-        var result = code switch
+        var leftValue = context.ReadIntegerRelative(instruction.B);
+        var rightValue = context.ReadIntegerRelative(instruction.C);
+        var result = instruction.Code switch
         {
-            CoflowOpCode.LessInt => leftValue < rightValue,
-            CoflowOpCode.LessOrEqualInt => leftValue <= rightValue,
-            CoflowOpCode.GreaterInt => leftValue > rightValue,
-            CoflowOpCode.GreaterOrEqualInt => leftValue >= rightValue,
-            CoflowOpCode.EqualInteger => leftValue == rightValue,
-            _ => throw new InvalidOperationException($"invalid integer comparison opcode `{code}`"),
+            CoflowRegisterOpCode.LessInt => leftValue < rightValue,
+            CoflowRegisterOpCode.LessOrEqualInt => leftValue <= rightValue,
+            CoflowRegisterOpCode.GreaterInt => leftValue > rightValue,
+            CoflowRegisterOpCode.GreaterOrEqualInt => leftValue >= rightValue,
+            CoflowRegisterOpCode.EqualInteger => leftValue == rightValue,
+            _ => throw new InvalidOperationException($"invalid integer comparison opcode `{instruction.Code}`"),
         };
-        context.WriteIntegerRelative(registers.Temporaries[depth - 2].IntegerBase, result ? 1 : 0);
+        context.WriteIntegerRelative(instruction.A, result ? 1 : 0);
     }
-    private static void CompareFloat(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
+    private static void CompareFloat(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var registers = context.Program.RegisterProgram;
-        var leftValue = context.ReadFloatRelative(registers.Stack(pc, depth - 2).FloatBase);
-        var rightValue = context.ReadFloatRelative(registers.Stack(pc, depth - 1).FloatBase);
-        var result = code switch
+        var leftValue = context.ReadFloatRelative(instruction.B);
+        var rightValue = context.ReadFloatRelative(instruction.C);
+        var result = instruction.Code switch
         {
-            CoflowOpCode.LessFloat => leftValue < rightValue,
-            CoflowOpCode.LessOrEqualFloat => leftValue <= rightValue,
-            CoflowOpCode.GreaterFloat => leftValue > rightValue,
-            CoflowOpCode.GreaterOrEqualFloat => leftValue >= rightValue,
-            CoflowOpCode.EqualFloat => leftValue.Equals(rightValue),
-            _ => throw new InvalidOperationException($"invalid float comparison opcode `{code}`"),
+            CoflowRegisterOpCode.LessFloat => leftValue < rightValue,
+            CoflowRegisterOpCode.LessOrEqualFloat => leftValue <= rightValue,
+            CoflowRegisterOpCode.GreaterFloat => leftValue > rightValue,
+            CoflowRegisterOpCode.GreaterOrEqualFloat => leftValue >= rightValue,
+            CoflowRegisterOpCode.EqualFloat => leftValue.Equals(rightValue),
+            _ => throw new InvalidOperationException($"invalid float comparison opcode `{instruction.Code}`"),
         };
-        context.WriteIntegerRelative(registers.Temporaries[depth - 2].IntegerBase, result ? 1 : 0);
+        context.WriteIntegerRelative(instruction.A, result ? 1 : 0);
     }
-    private static void CompareString(CoflowExecutionContext context, int pc, int depth, CoflowOpCode code)
+    private static void CompareString(
+        CoflowExecutionContext context,
+        CoflowRegisterInstruction instruction)
     {
-        var registers = context.Program.RegisterProgram;
         var comparison = string.CompareOrdinal(
-            (string)context.ReadReferenceRelative(registers.Stack(pc, depth - 2).ReferenceBase)!,
-            (string)context.ReadReferenceRelative(registers.Stack(pc, depth - 1).ReferenceBase)!);
-        var result = code switch
+            (string)context.ReadReferenceRelative(instruction.B)!,
+            (string)context.ReadReferenceRelative(instruction.C)!);
+        var result = instruction.Code switch
         {
-            CoflowOpCode.LessString => comparison < 0,
-            CoflowOpCode.LessOrEqualString => comparison <= 0,
-            CoflowOpCode.GreaterString => comparison > 0,
-            CoflowOpCode.GreaterOrEqualString => comparison >= 0,
-            _ => throw new InvalidOperationException($"invalid string comparison opcode `{code}`"),
+            CoflowRegisterOpCode.LessString => comparison < 0,
+            CoflowRegisterOpCode.LessOrEqualString => comparison <= 0,
+            CoflowRegisterOpCode.GreaterString => comparison > 0,
+            CoflowRegisterOpCode.GreaterOrEqualString => comparison >= 0,
+            _ => throw new InvalidOperationException($"invalid string comparison opcode `{instruction.Code}`"),
         };
-        context.WriteIntegerRelative(registers.Temporaries[depth - 2].IntegerBase, result ? 1 : 0);
+        context.WriteIntegerRelative(instruction.A, result ? 1 : 0);
     }
     private static long PowerInteger(long value, long exponent)
     {
@@ -1168,23 +1134,13 @@ internal static class CoflowVm
             arguments.Write(this);
         }
 
-        internal CoflowValueRegister Stack(int pc, int depth) => Offset(Program.RegisterProgram.Stack(pc, depth));
-        internal CoflowValueRegister Temporary(Type type, int depth) =>
-            Offset(Program.RegisterProgram.Temporary(CoflowValueShape.Of(type), depth));
         internal CoflowValueRegister Parameter(int index) => Offset(Program.RegisterProgram.Parameters[index]);
-        internal CoflowValueRegister Local(int index) => Offset(Program.RegisterProgram.Locals[index]);
         private CoflowValueRegister Offset(CoflowValueRegister register) => register with
         {
             IntegerBase = register.IntegerBase + _integerBase,
             FloatBase = register.FloatBase + _floatBase,
             ReferenceBase = register.ReferenceBase + _referenceBase,
         };
-        private CoflowRegister Offset(CoflowRegister register) => register with { Index = register.Index + register.Kind switch
-        {
-            CoflowRegisterKind.Integer => _integerBase,
-            CoflowRegisterKind.Float => _floatBase,
-            _ => _referenceBase,
-        }};
         private static CoflowValueRegister Absolute(
             CoflowValueRegister register,
             int integerBase,
@@ -1239,6 +1195,9 @@ internal static class CoflowVm
 
         internal void CopyRelative(CoflowValueRegister source, CoflowValueRegister target)
         {
+            if (source.Shape.Kind != target.Shape.Kind)
+                throw new InvalidOperationException(
+                    $"register value kind mismatch: `{source.Shape.Type}` to `{target.Shape.Type}`");
             switch (source.Shape.Kind)
             {
                 case CoflowValueShapeKind.Unit: return;
@@ -1268,26 +1227,6 @@ internal static class CoflowVm
             }
         }
 
-        internal void CopyPhysical(CoflowValueRegister source, CoflowValueRegister target)
-        {
-            if (source.Shape.IntegerCount != target.Shape.IntegerCount ||
-                source.Shape.FloatCount != target.Shape.FloatCount ||
-                source.Shape.ReferenceCount != target.Shape.ReferenceCount)
-                throw new InvalidOperationException("register physical layout mismatch");
-            Array.Copy(_integers, source.IntegerBase, _integers, target.IntegerBase, source.Shape.IntegerCount);
-            Array.Copy(_floats, source.FloatBase, _floats, target.FloatBase, source.Shape.FloatCount);
-            Array.Copy(_references, source.ReferenceBase, _references, target.ReferenceBase, source.Shape.ReferenceCount);
-        }
-
-        internal void WriteEncoded(CoflowEncodedValue source, CoflowValueRegister target)
-        {
-            if (source.Shape.Type != target.Shape.Type)
-                throw new InvalidOperationException("encoded constant type mismatch");
-            Array.Copy(source.Integers, 0, _integers, target.IntegerBase, source.Integers.Length);
-            Array.Copy(source.Floats, 0, _floats, target.FloatBase, source.Floats.Length);
-            Array.Copy(source.References, 0, _references, target.ReferenceBase, source.References.Length);
-        }
-
         internal void WriteEncodedRelative(CoflowEncodedValue source, CoflowValueRegister target)
         {
             if (source.Integers.Length == 1 && source.Floats.Length == 0 && source.References.Length == 0)
@@ -1314,29 +1253,24 @@ internal static class CoflowVm
                     _referenceBase + target.ReferenceBase, source.References.Length);
         }
 
-        internal bool Call(CoflowFunctionEntry entry, int pc, int depth, int argumentCount, bool tail)
+        internal bool Call(CoflowRegisterCallSite site, bool tail)
         {
-            var target = entry.CompiledProgram;
+            var target = site.Entry.CompiledProgram;
             if (target is null) return false;
             if (tail && ReferenceEquals(target, Program))
             {
-                for (var index = 0; index < argumentCount; index++)
-                    CopyRelative(
-                        Program.RegisterProgram.Stack(pc, depth - argumentCount + index),
-                        Program.RegisterProgram.Parameters[index]);
+                for (var index = 0; index < site.Arguments.Length; index++)
+                    CopyRelative(site.Arguments[index], Program.RegisterProgram.Parameters[index]);
                 Pc = 0;
                 return true;
             }
-            var returnTarget = Temporary(target.ReturnType, depth - argumentCount);
-            EnterFromStack(target, pc, depth, argumentCount, tail, returnTarget);
+            EnterFromRegisters(target, site.Arguments, tail, Offset(site.Result));
             return true;
         }
 
-        private void EnterFromStack(
+        private void EnterFromRegisters(
             CoflowProgram target,
-            int callerPc,
-            int callerDepth,
-            int argumentCount,
+            CoflowValueRegister[] arguments,
             bool tail,
             CoflowValueRegister returnTarget)
         {
@@ -1363,10 +1297,10 @@ internal static class CoflowVm
             Program = target;
             Pc = 0;
             Reserve(target.RegisterProgram);
-            for (var index = 0; index < argumentCount; index++)
+            for (var index = 0; index < arguments.Length; index++)
             {
                 var source = Absolute(
-                    caller.RegisterProgram.Stack(callerPc, callerDepth - argumentCount + index),
+                    arguments[index],
                     callerIntegerBase,
                     callerFloatBase,
                     callerReferenceBase);
@@ -1377,28 +1311,26 @@ internal static class CoflowVm
         }
 
         internal bool CallIndirect<TResult>(
-            int pc, int depth, int argumentCount, bool tail, out TResult returned)
+            CoflowRegisterIndirectCallSite site,
+            bool tail,
+            out TResult returned)
         {
             returned = default!;
-            var callable = ReadReference(Stack(pc, depth - argumentCount - 1).Scalar);
+            var callable = ReadReferenceRelative(site.Callable.ReferenceBase);
             if (callable is CoflowFunctionEntry entry)
             {
                 if (entry.CompiledProgram is { } compiled)
                 {
-                    EnterFromStack(compiled, pc, depth, argumentCount, tail,
-                        Temporary(compiled.ReturnType, depth - argumentCount - 1));
+                    EnterFromRegisters(compiled, site.Arguments, tail, Offset(site.Result));
                     return false;
                 }
-                var resultType = Program.RegisterProgram.Instructions[pc].ValueType!;
                 entry.InvokeBoundFromVm(new CoflowNativeFrame(
-                    this, pc, depth - argumentCount, depth - argumentCount - 1,
-                    argumentCount, resultType));
-                return tail && ReturnRegister(Temporary(resultType, depth - argumentCount - 1), out returned);
+                    this, site.Arguments, site.Result, site.ResultType));
+                return tail && ReturnRegister(site.Result, out returned);
             }
             if (callable is CoflowClosure closure)
             {
-                var returnTarget = Temporary(closure.Program.ReturnType, depth - argumentCount - 1);
-                EnterClosureFromStack(closure, pc, depth, argumentCount, tail, returnTarget);
+                EnterClosureFromRegisters(closure, site.Arguments, tail, Offset(site.Result));
                 return false;
             }
             if (callable is Delegate implementation)
@@ -1408,36 +1340,28 @@ internal static class CoflowVm
                 {
                     if (adaptedEntry.CompiledProgram is { } compiled)
                     {
-                        EnterFromStack(compiled, pc, depth, argumentCount, tail,
-                            Temporary(compiled.ReturnType, depth - argumentCount - 1));
+                        EnterFromRegisters(compiled, site.Arguments, tail, Offset(site.Result));
                         return false;
                     }
                     adaptedEntry.InvokeBoundFromVm(new CoflowNativeFrame(
-                        this, pc, depth - argumentCount, depth - argumentCount - 1,
-                        argumentCount, Program.RegisterProgram.Instructions[pc].ValueType!));
+                        this, site.Arguments, site.Result, site.ResultType));
                 }
                 else if (descriptor.Closure is { } adaptedClosure)
                 {
-                    EnterClosureFromStack(adaptedClosure, pc, depth, argumentCount, tail,
-                        Temporary(adaptedClosure.Program.ReturnType, depth - argumentCount - 1));
+                    EnterClosureFromRegisters(adaptedClosure, site.Arguments, tail, Offset(site.Result));
                     return false;
                 }
                 else descriptor.NativeCall!.Invoke(new CoflowNativeFrame(
-                    this, pc, depth - argumentCount, depth - argumentCount - 1,
-                    argumentCount, Program.RegisterProgram.Instructions[pc].ValueType!));
-                if (tail && ReturnRegister(
-                        Temporary(Program.RegisterProgram.Instructions[pc].ValueType!, depth - argumentCount - 1),
-                        out returned)) return true;
+                    this, site.Arguments, site.Result, site.ResultType));
+                if (tail && ReturnRegister(site.Result, out returned)) return true;
                 return false;
             }
             throw new InvalidOperationException("indirect call target is not callable");
         }
 
-        private void EnterClosureFromStack(
+        private void EnterClosureFromRegisters(
             CoflowClosure closure,
-            int callerPc,
-            int callerDepth,
-            int argumentCount,
+            CoflowValueRegister[] arguments,
             bool tail,
             CoflowValueRegister returnTarget)
         {
@@ -1464,16 +1388,16 @@ internal static class CoflowVm
             Program = closure.Program;
             Pc = 0;
             Reserve(closure.Program.RegisterProgram);
-            for (var index = 0; index < argumentCount; index++)
+            for (var index = 0; index < arguments.Length; index++)
             {
                 var source = Absolute(
-                    caller.RegisterProgram.Stack(callerPc, callerDepth - argumentCount + index),
+                    arguments[index],
                     callerIntegerBase,
                     callerFloatBase,
                     callerReferenceBase);
                 Copy(source, Parameter(index));
             }
-            WriteCaptures(closure, argumentCount);
+            WriteCaptures(closure, arguments.Length);
             if (tail) CompactTailWindow(closure.Program.RegisterProgram,
                 callerIntegerBase, callerFloatBase, callerReferenceBase, callerReferenceTop);
         }
@@ -1513,11 +1437,11 @@ internal static class CoflowVm
         {
             if (_frameCount == 0)
             {
-                root = CoflowBoundaryCodec<TResult>.Read(this, source);
+                root = CoflowBoundaryCodec<TResult>.ReadRelative(this, source);
                 return true;
             }
             var frame = _frames[_frameCount - 1];
-            Copy(source, frame.ReturnTarget);
+            Copy(Offset(source), frame.ReturnTarget);
             ClearCurrentReferences();
             _frameCount--;
             Program = frame.Program;
@@ -1532,14 +1456,14 @@ internal static class CoflowVm
             return false;
         }
 
-        internal void MakeClosure(int pc, int depth, CoflowClosureTemplate template, Type delegateType)
+        internal void MakeClosure(CoflowRegisterClosureSite site)
         {
+            var template = site.Template;
             var closure = CoflowClosure.Create(template.Program, template.Captures,
                 template.IntegerCount, template.FloatCount, template.ReferenceCount);
-            var start = depth - template.CaptureCount;
             for (var index = 0; index < template.CaptureCount; index++)
-                Capture(Stack(pc, start + index), template.Captures[index], closure);
-            WriteReference(Temporary(delegateType, start).Scalar, closure);
+                Capture(Offset(site.Captures[index]), template.Captures[index], closure);
+            WriteReferenceRelative(site.Target.ReferenceBase, closure);
         }
 
         private void Capture(
