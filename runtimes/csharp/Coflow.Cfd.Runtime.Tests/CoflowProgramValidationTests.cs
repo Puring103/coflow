@@ -2,6 +2,7 @@ using CoflowRuntime;
 using CoflowRuntime.Generated;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 
 namespace CoflowRuntime.Tests;
@@ -72,6 +73,54 @@ public sealed class CoflowProgramValidationTests
             option, Option<long>.Some(7)).Value);
         Assert.Equal("failure", CoflowVm.Execute<Result<long, string>, Result<long, string>>(
             result, Result<long, string>.Err("failure")).Error);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DirectCallWindowsPreserveMixedAndCompositeArguments(bool tail)
+    {
+        var parameterTypes = new[]
+        {
+            typeof(long), typeof(double), typeof(string), typeof(Option<long>),
+        };
+        var target = Program(
+            new[]
+            {
+                new CoflowInstruction(CoflowOpCode.Argument, 0),
+                new CoflowInstruction(CoflowOpCode.Argument, 1),
+                new CoflowInstruction(CoflowOpCode.Argument, 2),
+                new CoflowInstruction(CoflowOpCode.Argument, 3),
+                new CoflowInstruction(CoflowOpCode.Native, 0, ValueType: typeof(long)),
+                new CoflowInstruction(CoflowOpCode.Return),
+            },
+            new object?[] { new CoflowNativeCall(new Func<long, double, string, Option<long>, long>(
+                static (integer, floating, text, optional) =>
+                    integer + (long)floating + text.Length + optional.Value)) },
+            typeof(long),
+            parameterTypes: parameterTypes);
+        var entry = Entry(parameterTypes, typeof(long), target);
+        var caller = CallProgram(entry, parameterTypes, tail);
+
+        Assert.Equal(28, CoflowVm.Execute<long, double, string, Option<long>, long>(
+            caller, 5, 3.0, "four", Option<long>.Some(16)));
+    }
+
+    [Fact]
+    public void DirectCallWindowSuppliesMixedArgumentsToHostFunction()
+    {
+        var parameterTypes = new[]
+        {
+            typeof(long), typeof(double), typeof(string), typeof(Option<long>),
+        };
+        var entry = Entry(parameterTypes, typeof(long), implementation: null);
+        entry.ConfigureHost(new Func<long, double, string, Option<long>, long>(
+            static (integer, floating, text, optional) =>
+                integer + (long)floating + text.Length + optional.Value));
+        var caller = CallProgram(entry, parameterTypes, tail: false);
+
+        Assert.Equal(28, CoflowVm.Execute<long, double, string, Option<long>, long>(
+            caller, 5, 3.0, "four", Option<long>.Some(16)));
     }
 
     public static IEnumerable<object[]> InvalidPrograms()
@@ -163,6 +212,42 @@ public sealed class CoflowProgramValidationTests
 
     private static CoflowInstruction Constant(int index, Type type) =>
         new(CoflowOpCode.Constant, index, ValueType: type);
+
+    private static CoflowProgram CallProgram(
+        CoflowFunctionEntry entry,
+        Type[] parameterTypes,
+        bool tail)
+    {
+        var instructions = parameterTypes.Select((_, index) =>
+                new CoflowInstruction(CoflowOpCode.Argument, index))
+            .Append(new CoflowInstruction(
+                tail ? CoflowOpCode.TailCall : CoflowOpCode.Call,
+                0,
+                ValueType: typeof(long)))
+            .ToList();
+        if (!tail) instructions.Add(new CoflowInstruction(CoflowOpCode.Return));
+        return Program(
+            instructions.ToArray(),
+            new object?[] { new CoflowCallSite(entry, parameterTypes.Length) },
+            typeof(long),
+            parameterTypes: parameterTypes);
+    }
+
+    private static CoflowFunctionEntry Entry(
+        Type[] parameterTypes,
+        Type returnType,
+        CoflowProgram? implementation)
+    {
+        var entry = new CoflowFunctionEntry(
+            new CoflowFunctionIdentity("Validation", "test", "target"),
+            new CoflowFunctionSignature(returnType, parameterTypes),
+            null,
+            CfdNameResolver.Root,
+            "validation.cfd",
+            null);
+        entry.PublishCompiled(implementation);
+        return entry;
+    }
 
     private sealed record InvalidProgram(
         string Expected,
