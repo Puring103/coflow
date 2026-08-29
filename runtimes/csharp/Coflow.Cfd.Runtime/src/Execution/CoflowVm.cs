@@ -570,24 +570,6 @@ internal abstract class CoflowClosure
         }
     }
 
-    public TResult Invoke<TResult>() => CoflowVm.ExecuteClosure<TResult>(this);
-    public TResult Invoke<T1, TResult>(T1 arg1) => CoflowVm.ExecuteClosure<T1, TResult>(this, arg1);
-    public TResult Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) => CoflowVm.ExecuteClosure<T1, T2, TResult>(this, arg1, arg2);
-    public TResult Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) => CoflowVm.ExecuteClosure<T1, T2, T3, TResult>(this, arg1, arg2, arg3);
-    public TResult Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, TResult>(this, arg1, arg2, arg3, arg4);
-    public TResult Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, TResult>(this, arg1, arg2, arg3, arg4, arg5);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, TResult>(this, arg1, arg2, arg3, arg4, arg5, arg6);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, TResult>(this, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(this, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-    public void InvokeVoid() => CoflowVm.ExecuteClosure<Unit>(this);
-    public void InvokeVoid<T1>(T1 arg1) => CoflowVm.ExecuteClosure<T1, Unit>(this, arg1);
-    public void InvokeVoid<T1, T2>(T1 arg1, T2 arg2) => CoflowVm.ExecuteClosure<T1, T2, Unit>(this, arg1, arg2);
-    public void InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) => CoflowVm.ExecuteClosure<T1, T2, T3, Unit>(this, arg1, arg2, arg3);
-    public void InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, Unit>(this, arg1, arg2, arg3, arg4);
-    public void InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, Unit>(this, arg1, arg2, arg3, arg4, arg5);
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, Unit>(this, arg1, arg2, arg3, arg4, arg5, arg6);
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, Unit>(this, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, T8, Unit>(this, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
 internal sealed class CoflowProgram
@@ -684,26 +666,7 @@ public sealed class CoflowFaultException : Exception
 
 internal static class CoflowVm
 {
-    private const long MaximumInstructions = 10_000_000;
-    private const int MaximumFrames = 4096;
-    private const int MaximumRegisters = 1_000_000;
-    [ThreadStatic] private static CoflowExecutionContext? _current;
     [ThreadStatic] private static CoflowExecutionContext? _pooledContexts;
-    [ThreadStatic] private static long? _instructionLimitOverride;
-
-    internal static IDisposable OverrideInstructionLimitForCurrentThread(long limit)
-    {
-        if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
-        var previous = _instructionLimitOverride;
-        _instructionLimitOverride = limit;
-        return new LimitScope(previous);
-    }
-
-    internal static void ChargeWork(long count)
-    {
-        if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
-        _current?.Charge(count);
-    }
 
     internal static TResult Execute<TResult>(CoflowProgram program) => ExecuteCore<Arguments0, TResult>(program, new());
     internal static TResult Execute<T1, TResult>(CoflowProgram program, T1 arg1) => ExecuteCore<Arguments1<T1>, TResult>(program, new(arg1));
@@ -738,9 +701,7 @@ internal static class CoflowVm
     {
         if (arguments.Count != program.ParameterCount)
             throw Fault(program, $"function expected {program.ParameterCount} arguments but received {arguments.Count}");
-        var previous = _current;
-        var context = RentContext(_instructionLimitOverride ?? MaximumInstructions);
-        _current = context;
+        var context = RentContext();
         try
         {
             context.Start(program, arguments);
@@ -751,7 +712,6 @@ internal static class CoflowVm
                 if ((uint)pc >= (uint)registers.Instructions.Length)
                     throw new InvalidOperationException("Coflow function ended without Return.");
                 var instruction = registers.Instructions[pc];
-                context.ChargeInstructionBlock(instruction.BlockCharge);
                 context.Pc = pc + 1;
                 var depth = instruction.StackDepth;
                 switch (instruction.Code)
@@ -975,11 +935,10 @@ internal static class CoflowVm
         finally
         {
             context.Dispose();
-            _current = previous;
         }
     }
 
-    private static CoflowExecutionContext RentContext(long instructionLimit)
+    private static CoflowExecutionContext RentContext()
     {
         var context = _pooledContexts;
         if (context is null) context = new CoflowExecutionContext();
@@ -988,7 +947,7 @@ internal static class CoflowVm
             _pooledContexts = context.NextPooled;
             context.NextPooled = null;
         }
-        context.Reset(instructionLimit);
+        context.Reset();
         return context;
     }
 
@@ -1187,11 +1146,6 @@ internal static class CoflowVm
         }
     }
 
-    private sealed class LimitScope(long? previous) : IDisposable
-    {
-        public void Dispose() => _instructionLimitOverride = previous;
-    }
-
     private struct CoflowFrame
     {
         internal CoflowProgram Program;
@@ -1211,9 +1165,6 @@ internal static class CoflowVm
         private double[] _floats = ArrayPool<double>.Shared.Rent(16);
         private object?[] _references = RentCleared<object?>(32);
         private CoflowFrame[] _frames = RentCleared<CoflowFrame>(16);
-        private long _instructionLimit;
-        private long _instructions;
-        private int _prepaidInstructions;
         private int _frameCount;
         private int _frameHighWater;
         private int _integerBase;
@@ -1225,11 +1176,8 @@ internal static class CoflowVm
         private int _referenceHighWater;
         internal CoflowExecutionContext? NextPooled { get; set; }
 
-        internal void Reset(long instructionLimit)
+        internal void Reset()
         {
-            _instructionLimit = instructionLimit;
-            _instructions = 0;
-            _prepaidInstructions = 0;
             _frameCount = 0;
             _frameHighWater = 0;
             _integerBase = 0;
@@ -1253,29 +1201,6 @@ internal static class CoflowVm
             Program = program;
             Reserve(program.RegisterProgram);
             arguments.Write(this);
-        }
-
-        internal void Charge(long count)
-        {
-            if (count < 0 || _instructions > _instructionLimit - count)
-                throw new InvalidOperationException("Coflow VM instruction budget exceeded.");
-            _instructions += count;
-        }
-
-        internal void ChargeInstructionBlock(int blockCharge)
-        {
-            if (_prepaidInstructions != 0)
-            {
-                _prepaidInstructions--;
-                return;
-            }
-            if (blockCharge > 1 && _instructions <= _instructionLimit - blockCharge)
-            {
-                _instructions += blockCharge;
-                _prepaidInstructions = blockCharge - 1;
-                return;
-            }
-            Charge(1);
         }
 
         internal CoflowValueRegister Stack(int pc, int depth) => Offset(Program.RegisterProgram.Stack(pc, depth));
@@ -1715,7 +1640,6 @@ internal static class CoflowVm
 
         private void PushFrame(CoflowValueRegister returnTarget)
         {
-            if (_frameCount >= MaximumFrames) throw new InvalidOperationException("Coflow VM call depth budget exceeded.");
             EnsureFrames(_frameCount + 1);
             _frames[_frameCount++] = new CoflowFrame {
                 Program = Program, ReturnPc = Pc,
@@ -1731,8 +1655,6 @@ internal static class CoflowVm
             _integerTop = checked(_integerBase + program.IntegerRegisterCount);
             _floatTop = checked(_floatBase + program.FloatRegisterCount);
             _referenceTop = checked(_referenceBase + program.ReferenceRegisterCount);
-            if (_integerTop + _floatTop + _referenceTop > MaximumRegisters)
-                throw new InvalidOperationException("Coflow VM register budget exceeded.");
             Ensure(ref _integers, _integerTop);
             Ensure(ref _floats, _floatTop);
             Ensure(ref _references, _referenceTop);

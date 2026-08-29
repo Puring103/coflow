@@ -6,38 +6,32 @@ namespace CoflowRuntime;
 /// <summary>Schema-free parser shared by generated target models.</summary>
 public static class CfdParser
 {
-    public static CfdDocument Parse(CfdSource source, CfdLoadOptions? options = null)
+    public static CfdDocument Parse(CfdSource source)
     {
-        var parser = new Parser(source, options ?? new CfdLoadOptions());
+        var parser = new Parser(source);
         return parser.ParseDocument();
     }
 
-    public static IReadOnlyList<CfdDocument> ParseAll(IEnumerable<CfdSource> sources, CfdLoadOptions? options = null)
+    public static IReadOnlyList<CfdDocument> ParseAll(IEnumerable<CfdSource> sources)
     {
         var documents = new List<CfdDocument>();
         foreach (var source in sources)
-            documents.Add(Parse(source, options));
+            documents.Add(Parse(source));
         return documents;
     }
 
     private sealed class Parser
     {
         private readonly CfdSource _source;
-        private readonly CfdLoadOptions _options;
         private readonly List<CfdDiagnostic> _errors = new();
         private readonly HashSet<(string Type, string Key)> _recordKeys = new();
         private int _index;
         private int _line = 1;
         private int _column = 1;
-        private int _nodes;
-        private int _depth;
 
-        public Parser(CfdSource source, CfdLoadOptions options)
+        public Parser(CfdSource source)
         {
             _source = source;
-            _options = options;
-            if (Encoding.UTF8.GetByteCount(source.Text) > options.MaxSourceBytes)
-                Error("CFD-LIMIT-SOURCE", "source exceeds the configured byte limit", CurrentSpan());
         }
 
         public CfdDocument ParseDocument()
@@ -86,8 +80,6 @@ public static class CfdParser
                 {
                     var type = ParseName("record type");
                     AddRecord(records, ParseRecord(first, type, start));
-                    if (records.Count > _options.MaxRecords)
-                        Error("CFD-LIMIT-RECORDS", "source exceeds the record limit", CurrentSpan());
                 }
                 else if (Match('{'))
                 {
@@ -127,8 +119,6 @@ public static class CfdParser
                 string type = groupType;
                 if (Match(':')) type = ParseName("record type");
                 AddRecord(records, ParseRecord(key, type, keyStart, groupType));
-                if (records.Count > _options.MaxRecords)
-                    Error("CFD-LIMIT-RECORDS", "source exceeds the record limit", CurrentSpan());
                 SkipTrivia();
                 Match(',');
             }
@@ -168,18 +158,14 @@ public static class CfdParser
         {
             SkipTrivia();
             Expect('{', "expected `{` after record declaration");
-            Enter();
             var fields = ParseFields();
-            Exit();
-            var record = new CfdRecordNode(key, type, fields, SpanFrom(start), groupType);
-            ChargeNode(record.Span); // Record field block.
-            ChargeNode(record.Span); // Record.
-            return record;
+            return new CfdRecordNode(key, type, fields, SpanFrom(start), groupType);
         }
 
         private List<CfdFieldNode> ParseFields()
         {
             var fields = new List<CfdFieldNode>();
+            var fieldNames = new HashSet<string>(StringComparer.Ordinal);
             while (!End)
             {
                 SkipTrivia();
@@ -188,11 +174,10 @@ public static class CfdParser
                 var name = ParseKey("field name");
                 Expect(':', "expected `:` after field name");
                 var value = ParseValue();
-                if (fields.Any(field => field.Name == name))
+                if (!fieldNames.Add(name))
                     Error("CFD-SYNTAX-DUPLICATE-FIELD", $"field `{name}` is declared more than once", SpanFrom(start));
                 var field = new CfdFieldNode(name, value, SpanFrom(start));
                 fields.Add(field);
-                ChargeNode(field.Span);
                 SkipTrivia();
                 if (Match(','))
                     continue;
@@ -203,12 +188,7 @@ public static class CfdParser
             return fields;
         }
 
-        private CfdValueNode ParseValue()
-        {
-            var value = ParseValueInner();
-            ChargeNode(value.Span);
-            return value;
-        }
+        private CfdValueNode ParseValue() => ParseValueInner();
 
         private CfdValueNode ParseValueInner()
         {
@@ -255,12 +235,8 @@ public static class CfdParser
                 SkipTrivia();
                 if (Match('{'))
                 {
-                    Enter();
                     var fields = ParseFields();
-                    Exit();
-                    var value = new CfdObjectValue(token, fields, SpanFrom(start));
-                    ChargeNode(value.Span); // Inline object block.
-                    return value;
+                    return new CfdObjectValue(token, fields, SpanFrom(start));
                 }
                 (_index, _line, _column) = save;
             }
@@ -367,17 +343,13 @@ public static class CfdParser
 
         private CfdValueNode ParseDictionary(Position start)
         {
-            Enter();
             var entries = new List<CfdEntryNode>();
             while (!End)
             {
                 SkipTrivia();
                 if (Match('}'))
                 {
-                    Exit();
-                    var dictionary = new CfdDictionaryValue(entries, SpanFrom(start));
-                    ChargeNode(dictionary.Span); // Dictionary block.
-                    return dictionary;
+                    return new CfdDictionaryValue(entries, SpanFrom(start));
                 }
                 var entryStart = Cursor;
                 var key = ParseDictionaryKey();
@@ -385,7 +357,6 @@ public static class CfdParser
                 var value = ParseValue();
                 var entry = new CfdEntryNode(key, value, SpanFrom(entryStart));
                 entries.Add(entry);
-                ChargeNode(entry.Span);
                 SkipTrivia();
                 if (Match(','))
                     continue;
@@ -393,10 +364,7 @@ public static class CfdParser
                     Error("CFD-SYNTAX-010", "expected `,` or `}` after dictionary entry", CurrentSpan());
             }
             Error("CFD-SYNTAX-005", "unterminated dictionary", CurrentSpan());
-            Exit();
-            var unterminated = new CfdDictionaryValue(entries, SpanFrom(start));
-            ChargeNode(unterminated.Span);
-            return unterminated;
+            return new CfdDictionaryValue(entries, SpanFrom(start));
         }
 
         private CfdValueNode ParseDictionaryKey()
@@ -408,18 +376,16 @@ public static class CfdParser
                 key = new CfdStringValue(ParseString(), SpanFrom(start));
             else
                 key = new CfdScalarValue(ParseName("dictionary key"), SpanFrom(start));
-            ChargeNode(key.Span);
             return key;
         }
 
         private CfdValueNode ParseArray(Position start)
         {
-            Enter();
             var values = new List<CfdValueNode>();
             while (!End)
             {
                 SkipTrivia();
-                if (Match(']')) { Exit(); return new CfdArrayValue(values, SpanFrom(start)); }
+                if (Match(']')) return new CfdArrayValue(values, SpanFrom(start));
                 values.Add(ParseValue());
                 SkipTrivia();
                 if (Match(','))
@@ -431,7 +397,6 @@ public static class CfdParser
                 }
             }
             Error("CFD-SYNTAX-005", "unterminated array or dictionary", CurrentSpan());
-            Exit();
             return new CfdArrayValue(values, SpanFrom(start));
         }
 
@@ -582,10 +547,7 @@ public static class CfdParser
             (typeName is null || IsQualifiedName(typeName)) &&
             (key is null || IsReferenceName(key)) && path.All(IsReferenceName);
 
-        private static bool IsReferenceName(string value) =>
-            !string.IsNullOrEmpty(value) &&
-            (value[0] == '_' || char.IsLetter(value[0])) &&
-            value.Skip(1).All(character => character == '_' || char.IsLetterOrDigit(character));
+        private static bool IsReferenceName(string value) => CfdIdentifiers.IsIdentifierName(value);
 
         private static bool IsQualifiedName(string value) =>
             value.Split(new[] { "::" }, StringSplitOptions.None).All(IsIdentifier);
@@ -613,7 +575,6 @@ public static class CfdParser
                 if (!Match(symbol)) break;
                 var (right, _) = operand();
                 left = CfdBitExpression.Binary(operation, left, right, new CfdSpan(left.Span.StartLine, left.Span.StartColumn, right.Span.EndLine, right.Span.EndColumn));
-                ChargeNode(left.Span);
                 isExpression = true;
             }
             return (left, isExpression);
@@ -625,10 +586,8 @@ public static class CfdParser
             var start = Cursor;
             if (Match('('))
             {
-                Enter();
                 var (expression, _) = ParseBitOrExpression();
                 Expect(')', "expected `)` after bit expression");
-                Exit();
                 return (expression.WithSpan(SpanFrom(start)), true);
             }
             var token = ParseName("flag expression operand");
@@ -712,19 +671,6 @@ public static class CfdParser
             }
         }
 
-        private void Enter()
-        {
-            _depth++;
-            if (_depth > _options.MaxDepth) Error("CFD-LIMIT-DEPTH", "nested value exceeds the depth limit", CurrentSpan());
-        }
-
-        private void ChargeNode(CfdSpan span)
-        {
-            _nodes++;
-            if (_nodes > _options.MaxNodes) Error("CFD-LIMIT-NODES", "source exceeds the node limit", span);
-        }
-
-        private void Exit() => _depth = Math.Max(0, _depth - 1);
         private void Expect(char character, string message) { if (!Match(character)) Error("CFD-SYNTAX-008", message, CurrentSpan()); }
         private bool Match(char character) { if (!End && Peek() == character) { Read(); return true; } return false; }
         private bool Match(string value)

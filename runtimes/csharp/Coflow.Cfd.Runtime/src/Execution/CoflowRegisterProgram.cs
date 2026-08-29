@@ -107,7 +107,6 @@ internal readonly record struct CoflowExecutableInstruction(
     int Operand3,
     Type? ValueType,
     int StackDepth,
-    int BlockCharge,
     object? Operation,
     CoflowEncodedValue? Constant);
 
@@ -118,7 +117,6 @@ internal sealed class CoflowRegisterProgram
         CoflowValueRegister[] parameters,
         CoflowValueRegister[] locals,
         CoflowValueRegister[] temporaries,
-        int[] blockCharges,
         IReadOnlyList<CoflowInstruction> instructions,
         IReadOnlyList<object?> operations,
         IReadOnlyList<CoflowEncodedValue?> encodedConstants,
@@ -131,7 +129,6 @@ internal sealed class CoflowRegisterProgram
         Parameters = parameters;
         Locals = locals;
         Temporaries = temporaries;
-        BlockCharges = blockCharges;
         StackRegisters = stacks.Select(stack => stack.Select((type, depth) =>
         {
             var temporary = temporaries[depth];
@@ -157,7 +154,6 @@ internal sealed class CoflowRegisterProgram
     internal CoflowValueRegister[] Parameters { get; }
     internal CoflowValueRegister[] Locals { get; }
     internal CoflowValueRegister[] Temporaries { get; }
-    internal int[] BlockCharges { get; }
     internal CoflowNativeCallSite?[] NativeCallSites { get; }
     internal CoflowExecutableInstruction[] Instructions { get; }
     internal int IntegerRegisterCount { get; }
@@ -211,7 +207,6 @@ internal sealed class CoflowRegisterProgram
                 instruction.Operand3,
                 instruction.ValueType,
                 StackDepths[pc],
-                BlockCharges[pc],
                 instruction.Code == CoflowOpCode.Constant ? null :
                     instruction.Operand >= 0 && instruction.Operand < operations.Count
                         ? operations[instruction.Operand] : null,
@@ -271,45 +266,12 @@ internal static class CoflowRegisterLowering
             parameters,
             localRegisters,
             temporaries,
-            BuildBlockCharges(instructions),
             instructions,
             program.Operations,
             program.EncodedConstants,
             integer,
             floating,
             reference);
-    }
-
-    private static int[] BuildBlockCharges(IReadOnlyList<CoflowInstruction> instructions)
-    {
-        var leaders = new bool[instructions.Count + 1];
-        leaders[0] = true;
-        for (var pc = 0; pc < instructions.Count; pc++)
-        {
-            var instruction = instructions[pc];
-            var boundary = instruction.Code is CoflowOpCode.Native or CoflowOpCode.Call or
-                CoflowOpCode.CallIndirect or CoflowOpCode.TailCall or CoflowOpCode.TailCallIndirect or
-                CoflowOpCode.Return or CoflowOpCode.Jump or CoflowOpCode.JumpIfFalse or
-                CoflowOpCode.JumpIfFalseKeep or CoflowOpCode.JumpIfTrueKeep;
-            if (boundary)
-            {
-                leaders[pc] = true;
-                if (pc + 1 < leaders.Length) leaders[pc + 1] = true;
-            }
-            if (instruction.Code is CoflowOpCode.Jump or CoflowOpCode.JumpIfFalse or
-                CoflowOpCode.JumpIfFalseKeep or CoflowOpCode.JumpIfTrueKeep)
-                leaders[instruction.Operand] = true;
-        }
-        var charges = new int[instructions.Count];
-        for (var start = 0; start < instructions.Count;)
-        {
-            if (!leaders[start]) { start++; continue; }
-            var end = start + 1;
-            while (end < instructions.Count && !leaders[end]) end++;
-            charges[start] = end - start;
-            start = end;
-        }
-        return charges;
     }
 
     private static CoflowValueRegister[] Allocate(

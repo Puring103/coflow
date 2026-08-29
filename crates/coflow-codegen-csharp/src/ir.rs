@@ -379,6 +379,19 @@ fn validate_generated_names(
     view: &CsharpLoweringPlan<'_>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
+    for name in view
+        .all_type_names()
+        .chain(view.enum_names())
+        .filter(|name| !name.contains("::"))
+    {
+        let generated = csharp_type_name(name);
+        if matches!(generated.as_str(), "CoflowData" | "CoflowGeneratedContract") {
+            push_codegen_diagnostic(
+                diagnostics,
+                format!("generated C# type name `{generated}` is reserved by runtime metadata"),
+            );
+        }
+    }
     validate_generated_file_names(view, diagnostics);
     validate_generated_member_names(view, diagnostics);
 }

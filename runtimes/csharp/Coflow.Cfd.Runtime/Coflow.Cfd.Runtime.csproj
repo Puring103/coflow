@@ -12,9 +12,4 @@
     <Description>Strongly typed CFD loading, compilation, function binding, reload, and virtual machine runtime.</Description>
     <PackageVersion>0.9.1</PackageVersion>
   </PropertyGroup>
-  <ItemGroup>
-    <None Include="Unity/link.xml"
-          Pack="true"
-          PackagePath="contentFiles/any/any/Coflow.Cfd.Runtime/link.xml" />
-  </ItemGroup>
 </Project>

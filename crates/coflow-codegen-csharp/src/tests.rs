@@ -31,7 +31,8 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(!output.contains("SourceFiles"));
     assert!(output.contains("ICoflowTypeMetadata"));
     assert!(output.contains("[ModuleInitializer]"));
-    assert!(output.contains("CoflowGeneratedRegistry.Register"));
+    assert!(output.contains("public static class CoflowData"));
+    assert!(!output.contains("CoflowGeneratedRegistry"));
     assert!(output.contains("CoflowGeneratedContract : ICoflowGeneratedContract"));
     assert!(output.contains("CoflowGeneratedTypeMetadata, ICoflowRecordMetadata"));
     assert!(output.contains("CoflowFieldBinding.Create<global::Game.Config.Item, string>"));

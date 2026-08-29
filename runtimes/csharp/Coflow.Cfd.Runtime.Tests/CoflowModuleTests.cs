@@ -113,25 +113,6 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
-    public void VmEnforcesInstructionAndCallDepthBudgets()
-    {
-        var source = "Rule { main { " +
-            "calculate: fn(value: int) -> int { var current = value; while current > 0 { current -= 1; } current }, " +
-            "deep: fn(value: int) -> int { if value <= 0 { 0 } else { 1 + deep(value - 1) } } } }";
-        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
-            .Table(Rules).Get("main").Value;
-
-        using (CoflowVm.OverrideInstructionLimitForCurrentThread(8))
-        {
-            var instructionFault = Assert.Throws<CoflowFaultException>(() => rule.Calculate(100));
-            Assert.Contains("instruction budget", instructionFault.Message, StringComparison.Ordinal);
-        }
-
-        var depthFault = Assert.Throws<CoflowFaultException>(() => rule.Deep(5_000));
-        Assert.Contains("call depth budget", depthFault.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void VmFaultContainsCrossFunctionCallStack()
     {
         var source = "Rule { main { " +

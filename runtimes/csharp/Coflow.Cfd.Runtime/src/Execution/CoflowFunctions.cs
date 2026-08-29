@@ -126,25 +126,25 @@ public readonly struct CoflowCallable
     internal CoflowCallable(CoflowFunctionEntry entry) => _target = entry;
     internal CoflowCallable(CoflowClosure closure) => _target = closure;
 
-    public TResult Invoke<TResult>() => _entry is { } entry ? entry.Invoke<TResult>() : _closure!.Invoke<TResult>();
-    public TResult Invoke<T1, TResult>(T1 arg1) => _entry is { } entry ? entry.Invoke<T1, TResult>(arg1) : _closure!.Invoke<T1, TResult>(arg1);
-    public TResult Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) => _entry is { } entry ? entry.Invoke<T1, T2, TResult>(arg1, arg2) : _closure!.Invoke<T1, T2, TResult>(arg1, arg2);
-    public TResult Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) => _entry is { } entry ? entry.Invoke<T1, T2, T3, TResult>(arg1, arg2, arg3) : _closure!.Invoke<T1, T2, T3, TResult>(arg1, arg2, arg3);
-    public TResult Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, TResult>(arg1, arg2, arg3, arg4) : _closure!.Invoke<T1, T2, T3, T4, TResult>(arg1, arg2, arg3, arg4);
-    public TResult Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, TResult>(arg1, arg2, arg3, arg4, arg5) : _closure!.Invoke<T1, T2, T3, T4, T5, TResult>(arg1, arg2, arg3, arg4, arg5);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, TResult>(arg1, arg2, arg3, arg4, arg5, arg6) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, TResult>(arg1, arg2, arg3, arg4, arg5, arg6);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) : _closure!.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+    public TResult Invoke<TResult>() => _entry is { } entry ? entry.Invoke<TResult>() : CoflowVm.ExecuteClosure<TResult>(_closure!);
+    public TResult Invoke<T1, TResult>(T1 arg1) => _entry is { } entry ? entry.Invoke<T1, TResult>(arg1) : CoflowVm.ExecuteClosure<T1, TResult>(_closure!, arg1);
+    public TResult Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) => _entry is { } entry ? entry.Invoke<T1, T2, TResult>(arg1, arg2) : CoflowVm.ExecuteClosure<T1, T2, TResult>(_closure!, arg1, arg2);
+    public TResult Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) => _entry is { } entry ? entry.Invoke<T1, T2, T3, TResult>(arg1, arg2, arg3) : CoflowVm.ExecuteClosure<T1, T2, T3, TResult>(_closure!, arg1, arg2, arg3);
+    public TResult Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, TResult>(arg1, arg2, arg3, arg4) : CoflowVm.ExecuteClosure<T1, T2, T3, T4, TResult>(_closure!, arg1, arg2, arg3, arg4);
+    public TResult Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, TResult>(arg1, arg2, arg3, arg4, arg5) : CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, TResult>(_closure!, arg1, arg2, arg3, arg4, arg5);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, TResult>(arg1, arg2, arg3, arg4, arg5, arg6) : CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, TResult>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7) : CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, TResult>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+    public TResult Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => _entry is { } entry ? entry.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) : CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 
-    public void InvokeVoid() { if (_entry is { } entry) entry.InvokeVoid(); else _closure!.InvokeVoid(); }
-    public void InvokeVoid<T1>(T1 arg1) { if (_entry is { } entry) entry.InvokeVoid(arg1); else _closure!.InvokeVoid(arg1); }
-    public void InvokeVoid<T1, T2>(T1 arg1, T2 arg2) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2); else _closure!.InvokeVoid(arg1, arg2); }
-    public void InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3); else _closure!.InvokeVoid(arg1, arg2, arg3); }
-    public void InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4); }
-    public void InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5); }
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6); }
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7); }
-    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); else _closure!.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); }
+    public void InvokeVoid() { if (_entry is { } entry) entry.InvokeVoid(); else CoflowVm.ExecuteClosure<Unit>(_closure!); }
+    public void InvokeVoid<T1>(T1 arg1) { if (_entry is { } entry) entry.InvokeVoid(arg1); else CoflowVm.ExecuteClosure<T1, Unit>(_closure!, arg1); }
+    public void InvokeVoid<T1, T2>(T1 arg1, T2 arg2) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2); else CoflowVm.ExecuteClosure<T1, T2, Unit>(_closure!, arg1, arg2); }
+    public void InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3); else CoflowVm.ExecuteClosure<T1, T2, T3, Unit>(_closure!, arg1, arg2, arg3); }
+    public void InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4); else CoflowVm.ExecuteClosure<T1, T2, T3, T4, Unit>(_closure!, arg1, arg2, arg3, arg4); }
+    public void InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5); else CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, Unit>(_closure!, arg1, arg2, arg3, arg4, arg5); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6); else CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, Unit>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7); else CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, Unit>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6, arg7); }
+    public void InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) { if (_entry is { } entry) entry.InvokeVoid(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); else CoflowVm.ExecuteClosure<T1, T2, T3, T4, T5, T6, T7, T8, Unit>(_closure!, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8); }
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]
