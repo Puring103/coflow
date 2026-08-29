@@ -155,6 +155,35 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void GeneratedEnumFieldBindingDoesNotBoxOnRead()
+    {
+        var binding = CoflowFieldBinding.CreateEnum<EnumSettings, TestMode>(
+            "mode", static settings => settings.Mode, static value => (long)value);
+        var settings = new EnumSettings { Mode = TestMode.Secondary };
+        for (var index = 0; index < 1_000; index++) _ = binding.ReadInteger!(settings);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        long sum = 0;
+        for (var index = 0; index < 10_000; index++) sum += binding.ReadInteger!(settings);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(20_000, sum);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void SameTypeNumericConversionDoesNotEmitReinterpret()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { int(value) } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(7, rule.Calculate(7));
+        Assert.DoesNotContain(rule.CalculateEntry.RuntimeEntry.CompiledProgram!.Instructions,
+            instruction => instruction.Code == CoflowOpCode.Reinterpret);
+    }
+
+    [Fact]
     public void VmRunsThroughTheAotCompatibleExpressionInterpreter()
     {
         var before = CoflowExpressionCompiler.InterpretedCompilationCount;
@@ -208,6 +237,9 @@ public sealed class CoflowModuleTests
 
     private sealed class Settings { public long Value { get; internal set; } }
 
+    private enum TestMode { Primary = 1, Secondary = 2 }
+    private sealed class EnumSettings { public TestMode Mode { get; internal set; } }
+
     private sealed class Rule
     {
         public string Id { get; internal set; } = string.Empty;
@@ -244,8 +276,7 @@ public sealed class CoflowModuleTests
         public string? ObjectFieldType(string fieldName) => null;
         public virtual string? ReferenceFieldType(string fieldName) => null;
         public object ParseKey(string key) => key;
-        public abstract object GetKey(object record);
-        public Delegate GetKeyReader() => new Func<T, string>(record => (string)GetKey(record));
+        public abstract Delegate GetKeyReader();
         public object CreateRecord(string key, CfdLoadContext context) => new T();
         public abstract void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context);
         public object Read(CfdRecordNode record, CfdLoadContext context)
@@ -267,7 +298,7 @@ public sealed class CoflowModuleTests
         public override Delegate GetFieldReader(string name) => name switch
             { "value" => new Func<Node, long>(static value => value.Value), "next" => new Func<Node, Option<Node>>(static value => value.Next), _ => throw new ArgumentException(nameof(name)) };
         public override string? ReferenceFieldType(string name) => name == "next" ? "Node" : null;
-        public override object GetKey(object value) => ((Node)value).Id;
+        public override Delegate GetKeyReader() => new Func<Node, string>(static value => value.Id);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);
@@ -289,7 +320,7 @@ public sealed class CoflowModuleTests
         public override Delegate GetFieldReader(string name) => name == "value"
             ? new Func<Settings, long>(static value => value.Value)
             : throw new ArgumentException(nameof(name));
-        public override object GetKey(object value) => string.Empty;
+        public override Delegate GetKeyReader() => new Func<Settings, string>(static _ => string.Empty);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context) =>
             ((Settings)target).Value = CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value"));
     }
@@ -315,7 +346,7 @@ public sealed class CoflowModuleTests
             "deep" => new Func<Rule, CoflowFunctionEntry>(static value => value.DeepEntry.RuntimeEntry),
             _ => throw new ArgumentException(nameof(name)),
         };
-        public override object GetKey(object value) => ((Rule)value).Id;
+        public override Delegate GetKeyReader() => new Func<Rule, string>(static value => value.Id);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);

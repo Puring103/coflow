@@ -84,6 +84,26 @@ public sealed class CoflowFieldBinding
             readFloat,
             readReference);
     }
+
+    public static CoflowFieldBinding CreateEnum<TRecord, TEnum>(
+        string name,
+        Func<TRecord, TEnum> reader,
+        Func<TEnum, long> toInt64)
+        where TEnum : struct, Enum
+    {
+        if (name is null) throw new ArgumentNullException(nameof(name));
+        if (reader is null) throw new ArgumentNullException(nameof(reader));
+        if (toInt64 is null) throw new ArgumentNullException(nameof(toInt64));
+        return new CoflowFieldBinding(
+            name,
+            typeof(TEnum),
+            reader,
+            value => reader((TRecord)value!)!,
+            CoflowNativeCall.Create(reader),
+            value => toInt64(reader((TRecord)value!)),
+            null,
+            null);
+    }
 }
 
 /// <summary>Load-time bound access to an ordinary generated object.</summary>

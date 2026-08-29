@@ -446,6 +446,11 @@ fn emits_source_enum_mappings_and_flag_masks() {
     assert!(output.contains("\"common_value\" or \"item_rarity::common_value\""));
     assert!(output.contains("ReadEnumCft_6974656D5F666C616773"));
     assert!(output.contains(" 3L"));
+    assert!(output.contains(
+        "CoflowFieldBinding.CreateEnum<global::Game.Config.Item, global::Game.Config.ItemRarity>"
+    ));
+    assert!(output.contains("static value => (long)value"));
+    assert!(!output.contains("public object GetKey(object record)"));
     assert!(output.contains("CfdValueReader.Object(node, context, \"Item\""));
 }
 

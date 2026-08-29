@@ -68,8 +68,8 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : CoflowGeneratedTypeMetadata, {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
     {
 {% for field in type.fields %}        private static readonly CoflowFieldBinding Field{{ loop.index0 }} =
-            CoflowFieldBinding.Create<{{ type.qualified_name }}, {{ field.runtime_type }}>(
-                "{{ field.source_name }}", static record => record.{{ field.access }});
+            CoflowFieldBinding.{% if field.is_enum %}CreateEnum{% else %}Create{% endif %}<{{ type.qualified_name }}, {{ field.runtime_type }}>(
+                "{{ field.source_name }}", static record => record.{{ field.access }}{% if field.is_enum %}, static value => (long)value{% endif %});
 {% endfor %}{% if type.fields | length > 0 %}
 {% endif %}        public override CoflowFieldBinding GetFieldBinding(string fieldName) => fieldName switch
         {
@@ -111,7 +111,6 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {% endif %}{% endfor %}            _ => null,
         };
 {% if type.is_record %}        public object ParseKey(string key) => {{ type.parse_key }};
-        public object GetKey(object record) => {{ type.get_key }};
         public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, {{ type.key_type }}>(static record => record.Id);
 {% endif %}
         public object Read(CfdRecordNode record, CfdLoadContext context) => Read{{ type.metadata_name }}(record, context);

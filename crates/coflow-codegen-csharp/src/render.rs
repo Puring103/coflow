@@ -64,7 +64,6 @@ struct MetadataType {
     assignable_types: Vec<String>,
     fields: Vec<MetadataField>,
     parse_key: String,
-    get_key: String,
     create_host: String,
 }
 
@@ -73,6 +72,7 @@ struct MetadataField {
     source_name: String,
     runtime_type: String,
     access: String,
+    is_enum: bool,
     annotations: String,
     has_default: bool,
     object_type: Option<String>,
@@ -258,6 +258,7 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
                     else { field.value_type.clone() },
                 access: function.map_or_else(|| field.property_name.clone(),
                     |item| format!("{}.RuntimeEntry", item.entry_name)),
+                is_enum: project.enums.iter().any(|item| item.qualified_name == field.value_type),
                 annotations: render_annotations(&field.annotations),
                 has_default: field.default_expression.is_some(),
                 object_type: field.object_type.as_deref().map(escape_csharp_string),
@@ -265,8 +266,6 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
             }
         }).collect(),
         parse_key,
-        get_key: if singleton || ty.loader_id_type.is_none() { "string.Empty".to_string() }
-            else { format!("(({})record).Id", ty.qualified_name) },
         create_host: if ty.is_host { format!("CreateHost{}(context)", ty.metadata_name) }
             else { "throw new InvalidOperationException(\"The generated type is not @Host.\")".to_string() },
     }
