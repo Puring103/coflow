@@ -9,7 +9,14 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Coflow.Cfd.Runtime</PackageId>
-    <Description>Strongly typed CFD loading, compilation, function binding, reload, and virtual machine runtime.</Description>
+    <Description>Strongly typed CFD loading, compilation, function binding, immutable modules, and virtual machine runtime.</Description>
     <PackageVersion>0.9.1</PackageVersion>
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 </Project>

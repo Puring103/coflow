@@ -1,5 +1,6 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
+using System.ComponentModel;
 using System.Globalization;
 
 /// <summary>
@@ -7,6 +8,7 @@ using System.Globalization;
 /// explicit reader for each schema type; no constructor discovery or reflection
 /// is needed at runtime.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CfdLoadContext
 {
     private readonly Dictionary<(string DeclaredType, string Key), object> _cache = new();
@@ -23,7 +25,7 @@ public sealed class CfdLoadContext
     private readonly Dictionary<CoflowConstant, object> _constantCache = new();
     private readonly HashSet<CoflowConstant> _resolvingConstants = new();
 
-    public CfdLoadContext(
+    internal CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
         IEnumerable<ICfdTypeBinding>? bindings = null,
         IEnumerable<ICoflowEnumMetadata>? enums = null,
@@ -61,7 +63,7 @@ public sealed class CfdLoadContext
         Records = new CfdRecordCatalog(Documents, bindingMap);
     }
 
-    public IReadOnlyList<CfdDocument> Documents { get; }
+    internal IReadOnlyList<CfdDocument> Documents { get; }
     public IReadOnlyDictionary<string, ICfdTypeBinding> Bindings { get; }
     public List<CfdDiagnostic> Diagnostics { get; } = new();
     internal IReadOnlyList<CoflowFunctionEntry> Functions => _functions;
@@ -496,6 +498,7 @@ public sealed class CfdLoadContext
     };
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface ICfdTypeBinding
 {
     string DeclaredType { get; }
@@ -505,7 +508,7 @@ public interface ICfdTypeBinding
     object Read(CfdRecordNode record, CfdLoadContext context);
 }
 
-public static class CfdLoader
+internal static class CfdLoader
 {
     public static IReadOnlyList<CfdDocument> LoadDocuments(
         ICfdTextLoader loader,
@@ -530,6 +533,7 @@ public static class CfdLoader
 }
 
 /// <summary>Schema-independent conversions used by generated C# readers.</summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class CfdValueReader
 {
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<

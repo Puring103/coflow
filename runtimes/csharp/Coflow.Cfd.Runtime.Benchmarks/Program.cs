@@ -12,7 +12,7 @@ internal static class BenchmarkData
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Data", fileName));
 
     internal static CoflowModule LoadCompiled(string characters, string scenario)
-        => Coflow.LoadAndCompile(new[] { characters, scenario });
+        => Integration.Config.CoflowData.LoadAndCompile(new[] { characters, scenario });
 
     internal static void BindHost(CoflowModule module)
     {

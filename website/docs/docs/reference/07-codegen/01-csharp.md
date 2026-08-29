@@ -8,14 +8,13 @@ C# target 目前支持 `namespace` 选项：
 codegen:
   - language: csharp
     dir: Generated
-    options:
-      namespace: Game.Config
+    namespace: Game.Config
 ```
 
 运行 `coflow codegen` 后，将生成目录和 `Coflow.Cfd.Runtime` 引入 C# 项目即可加载 CFD：
 
 ```csharp
-var module = Coflow.LoadAndCompile(new[] { itemsCfd, rulesCfd });
+var module = Game.Config.CoflowData.LoadAndCompile(new[] { itemsCfd, rulesCfd });
 
 var items = module.Table(Item.Table);
 var item = items.Get(ItemId.Sword);
@@ -37,6 +36,12 @@ var next = view.Replace(featureModule, replacement);
 
 同一个 ModuleSet 中不能出现重复记录键、重复 singleton 或重复函数。`Replace` 返回新的
 ModuleSet，不会修改原值。
+
+`CoflowModule` 不提供原地 reload。需要更新数据时，重新加载一个新 Module，再用 `Replace` 发布
+新的 ModuleSet；旧 Module 和旧查询结果保持有效。
+
+Runtime 的应用 API 位于 `CoflowRuntime`。`CoflowRuntime.Generated` 是生成代码跨程序集调用的 ABI，
+不属于应用 API，并从 IntelliSense 隐藏。
 
 `@Host` 类型通过 singleton 获取并配置：
 

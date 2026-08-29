@@ -180,7 +180,7 @@ Host，需要自行协调。Host 函数实现也可以重新配置，不因一�
 
 ## 8. 函数入口
 
-`CoflowFunctionSlot` 更名为 `CoflowFunctionEntry`。公开函数入口保留精确 Delegate 类型：
+生成代码 ABI 使用 `CoflowFunctionEntry<TDelegate>` 保存精确 Delegate 类型：
 
 ```csharp
 public sealed class CoflowFunctionEntry<TDelegate>
@@ -197,7 +197,8 @@ CoflowFunctionEntry<Func<Item, long>> Price;
 CoflowFunctionEntry<Action<string>> Log;
 ```
 
-公开调用不使用 `params object?[]`。生成的泛型适配器负责把 Delegate 参数写入 VM 对应的寄存器
+该类型位于 `CoflowRuntime.Generated` 并从应用 IntelliSense 隐藏；应用只调用生成类型上的强类型
+方法。调用边界不使用 `params object?[]`。生成的泛型适配器负责把 Delegate 参数写入 VM 对应的寄存器
 类别，并从返回寄存器读取精确类型。Host Delegate 也通过同样的静态签名适配，不在每次调用时使用
 反射或创建参数数组。
 

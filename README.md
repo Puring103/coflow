@@ -7,7 +7,7 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 - CFT 类型、默认值、枚举、引用、多态、维度和 check。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
-- C# 生成代码直接调用 `Coflow.Cfd.Runtime` 从文件、delegate 或内存文本加载 CFD。
+- C# 生成代码通过 `Coflow.Cfd.Runtime` 从内存中的 CFD 文本构造强类型 Module。
 - 代码生成接口支持继续增加其他目标语言；数据格式不再扩展。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
 
@@ -41,14 +41,20 @@ codegen:
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Cfd.Runtime` 引入生成代码所在项目，并使用生成的数据库入口：
+将 `runtimes/csharp/Coflow.Cfd.Runtime` 引入生成代码所在项目，并使用生成的 `CoflowData` 入口：
 
 ```csharp
-var database = Game.Config.GameConfig.Load(
-    new DelegateCfdTextLoader(File.ReadAllText));
+var module = Example.Config.CoflowData.LoadAndCompile(new[]
+{
+    File.ReadAllText("data/items.cfd"),
+    File.ReadAllText("data/rules.cfd"),
+});
+
+var item = module.Table(Item.Table).Get(ItemId.Sword);
 ```
 
-生成代码声明 `SourceFiles`，runtime 只按这个清单读取 CFD，不扫描目录，也不解析 CFT。
+Runtime 接受 CFD 文本，不扫描目录、不读取 CFT，也不保存文件加载策略。多个独立 Module 可以通过
+不可变的 `CoflowModuleSet` 组合查询和替换。
 
 ## 开发
 

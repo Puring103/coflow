@@ -1,24 +1,6 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 using System.ComponentModel;
-
-public sealed class CoflowFunctionNotCompiledException : InvalidOperationException
-{
-    public CoflowFunctionNotCompiledException()
-        : base("Coflow functions are unavailable because the data was loaded with Coflow.LoadData.") { }
-}
-
-public sealed class CoflowFunctionNotBoundException : InvalidOperationException
-{
-    public CoflowFunctionNotBoundException()
-        : base("The Coflow function has no CFD body or bound C# implementation.") { }
-}
-
-public sealed class CoflowHostNotBoundException : InvalidOperationException
-{
-    public CoflowHostNotBoundException()
-        : base("The generated @Host singleton has not been bound.") { }
-}
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public readonly record struct CoflowHostFunctionBinding
@@ -108,13 +90,6 @@ public sealed class CoflowHostState
         _configured = true;
     }
 }
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public readonly record struct CoflowFunctionIdentity(
-    string DeclaredType,
-    string RecordKey,
-    string FieldName,
-    string ValuePath = "");
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public readonly struct CoflowCallable
@@ -275,8 +250,7 @@ internal static class CoflowFunctionDelegates
     }
 }
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class CoflowFunctionSignature
+internal sealed class CoflowFunctionSignature
 {
     public CoflowFunctionSignature(Type resultType, IReadOnlyList<Type> parameterTypes)
     {
@@ -288,6 +262,7 @@ public sealed class CoflowFunctionSignature
     public IReadOnlyList<Type> ParameterTypes { get; }
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowFunctionEntry<TDelegate> where TDelegate : Delegate
 {
     [EditorBrowsable(EditorBrowsableState.Never)]

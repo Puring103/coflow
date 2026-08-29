@@ -1,438 +1,139 @@
-# C# Runtime API 设计
+# C# Runtime API
 
-> 状态：当前 API 设计
->
-> 范围：固定 C# Runtime 库、CFT 生成类型、CFD 数据加载、函数编译、C# VM、强类型访问、
-> `@Host` singleton 注入、generation 与 reload
+> 状态：当前实现契约
 
-本文档只描述目标版本。旧 API 和旧命名直接删除，不保留兼容别名、自动转换、fallback 或其他
-兜底入口。
+`Coflow.Cfd.Runtime` 负责根据构建期生成的 contract 解析 CFD、构造强类型对象，并可选地编译和
+执行 CFD 函数。Runtime 不加载 CFT，不扫描目录，也不读取 JSON、MessagePack 或字节码 artifact。
 
-## 1. 目标与约束
+## 1. API 边界
 
-C# Runtime 是固定发布的库。应用运行时只提供 CFD 文本，不提供 CFT、数据 artifact 或字节码
-artifact。CFT 在构建期生成 C# 类型以及这些类型内部使用的加载 metadata；C# Runtime 根据生成
-metadata 直接加载 CFD，并可选择是否检查和编译函数。
+公开类型分为两个明确层次：
 
-公共 API 遵循以下约束：
+- `CoflowRuntime` 是应用 API，包括 Module、Table、`Option<T>`、`Result<T, TError>`、诊断和 fault。
+- `CoflowRuntime.Generated` 是生成代码 ABI，包括 CFD AST、reader、metadata、字段 binding 和函数
+  adapter。该命名空间的类型为了支持跨程序集生成代码而保持 `public`，但不属于应用 API，并从
+  IntelliSense 隐藏。
 
-- 顶层入口固定为 `Coflow.LoadData` 和 `Coflow.LoadAndCompile`，不是项目生成类。
-- 两个入口的 CFD 输入只接受一个字符串或字符串数组；字符串内容是 CFD，不是文件路径。
-- `LoadData` 只加载普通数据并无条件跳过全部函数检查；其 generation 不能绑定或调用函数。
-- `LoadAndCompile` 加载普通数据，并对 CFD 函数完成名称解析、类型检查和字节码生成。
-- C# VM 是 CFD 函数唯一的正式执行实现。
-- C# Runtime 不加载 CFT，不计算或比较 CFT hash，也不执行 CFT check。
-- codegen 只为 CFT 中实际声明的类型生成公开 C# 类型，不生成项目级数据根类型或 Runtime 包装类型。
-- 应用不按字符串读取 type、field 或 function。普通 record key 本身仍可以是 `string`。
-- 完整记录注入只允许显式声明为 `@Host @singleton` 的 CFT type。
-- 只有已编译的 `CoflowModule` 可以绑定 `@Host` singleton；普通函数字段不能绑定。
-- `CoflowModule` 只代表一组 CFD source part 及其当前 generation，不代表 CFT。模块可以组合、编译，
-  也可以在组合根上定向替换其中一个子模块。
-- 按 key 查找记录只有 `CoflowTable<T>.Get(...)`：返回 Runtime 的 `Option<T>`，未找到时返回
-  `None`。不提供返回 nullable、缺失时抛异常、接受默认值或采用 fallback 的查找入口。
+Runtime 的公开 API 由 `PublicAPI.Shipped.txt` 固定。修改应用 API 或生成代码 ABI 都必须显式更新
+基线，并按兼容性影响选择版本号。
 
-Runtime 内部可以保留 AST、动态 value、layout、slot 和函数索引，但这些都不属于应用公共 API。
+## 2. 加载入口
 
-## 2. 生成代码边界
-
-以下 CFT：
-
-```cft
-@idAsEnum(ItemId)
-type Item {
-  name: string;
-  tags: [string] = [];
-  backup: Option<&Item> = None;
-}
-
-enum ItemId {}
-
-type Rule {
-  evaluate: fn(input: int) -> Result<int, string>;
-}
-```
-
-只生成 CFT 中存在的公开类型：
+每个 C# codegen 目标在配置的命名空间中生成唯一入口 `CoflowData`：
 
 ```csharp
-public sealed class Item { /* generated fields and internal reader */ }
-public enum ItemId { /* generated record keys */ }
-public sealed class Rule { /* generated fields and call methods */ }
+public static class CoflowData
+{
+    public static CoflowModule Load(string cfd);
+    public static CoflowModule Load(string[] cfdSources);
+    public static CoflowModule LoadAndCompile(string cfd);
+    public static CoflowModule LoadAndCompile(string[] cfdSources);
+}
 ```
 
-生成器不得自行增加 `Record`、`Action`、`Model`、`Data` 或项目名称后缀。生成类型的名称直接
-来自 CFT 声明。
+参数是 CFD 文本，不是文件路径。调用方负责读取文件、下载文本或从资源系统取得内容：
 
-本文中的 `Item`、`Rule`、`Services` 等名称都只是 CFT 业务声明示例，不是 Runtime 入口。
-顶层 Runtime API 始终位于固定库的 `Coflow` 与 `CoflowModule` 上。
+```csharp
+var module = Game.Config.CoflowData.LoadAndCompile(new[]
+{
+    File.ReadAllText("data/items.cfd"),
+    File.ReadAllText("data/rules.cfd"),
+});
+```
 
-每个生成类型同时包含或关联 Runtime 内部使用的：
+`Load` 构造全部普通数据，但跳过 CFD 函数的解析、检查和编译。调用函数字段会抛出
+`CoflowFunctionNotCompiledException`，配置 `@Host` 也会失败。
 
-- 规范 CFT type identity；
-- 字段名称、字段类型和继承 metadata；
-- 默认值和注解 metadata；
-- 强类型 CFD reader；
-- record key 类型信息；
-- 函数签名和调用包装；仅 `@Host @singleton` 额外生成整记录绑定入口。
+`LoadAndCompile` 在加载数据后检查并编译所有函数。任何解析、数据构造或函数编译错误都会抛出
+`CfdLoadException` 的具体子类，不会返回部分可用的 Module。语法错误使用 `CfdParseException`，
+contract 驱动的数据或函数错误使用 `CoflowLoadException`。
 
-CFT 中声明在 `type`、`enum`、字段和 enum variant 上的全部内建或自定义注解都进入 metadata。
-自定义注解保留原名称以及名称、string、int、float、bool 参数；codegen 不按一份封闭的内建注解
-列表过滤或丢弃它们。
+`Coflow.LoadData` 和 `Coflow.LoadAndCompile` 是 `CoflowData` 内部调用的生成 ABI，不是应用入口。
 
-这些成员可以通过 internal 接口供 Runtime 使用，但应用不需要注册 binding、传入 schema 对象或
-访问 descriptor。生成代码可以使用内部 module initializer 注册同一 CFT 项目的类型 metadata；
-注册过程不形成新的公开项目类型。生成 metadata 的整体称为 generated contract；它固定对应当前
-C# 程序中生成的 CFT 类型，不是可加载或替换的 CFD module。
+## 3. 类型和查询
 
-一个进程可以在首次调用 `LoadData` 或 `LoadAndCompile` 前注册多个 generated contract 片段；Runtime
-将它们合并并冻结为本进程的固定合同，不要求调用方传入项目名或合同字符串。片段间的规范 CFT 名称、
-C# runtime type 和常量名称必须唯一。首次加载后不允许继续注册或替换 CFT 合同。
+主要类型映射如下：
 
-## 3. CFT 到 C# 的类型映射
-
-| CFT 类型 | C# 类型 |
+| CFT | C# |
 | --- | --- |
-| `()` | `Unit`；可清楚表达时 delegate 也可以返回 `void` |
+| `()` | `Unit` |
 | `int` | `long` |
 | `float` | `double` |
 | `bool` | `bool` |
 | `string` | `string` |
-| enum | 同名生成 enum |
-| object type | 同名生成 class；`@struct` 时生成 readonly struct |
-| record reference | 目标 CFT type 对应的生成 C# 类型 |
 | `[T]` | `IReadOnlyList<T>` |
 | `{K: V}` | `IReadOnlyDictionary<K, V>` |
-| `Option<T>` | Runtime 的 `Option<T>` |
-| `Result<T, E>` | Runtime 的 `Result<T, E>` |
-| `fn(A) -> R` | `Func<A, R>`、`Action<A>`，或标准 delegate 无法清楚表达时生成的 delegate |
+| `Option<T>` | `Option<T>` |
+| `Result<T, E>` | `Result<T, E>` |
+| `fn(A) -> R` | 精确的 `Func<A, R>`、`Action<A>` 或生成 delegate |
 
-不为数组、字典、Option、Result 或普通 string key 生成 `XxxList`、`XxxMap`、`XxxOption`、
-`XxxResult` 或 `XxxKey` 包装。
-
-### 3.1 Record key
-
-未声明 `@idAsEnum` 的 type 使用 `string` key：
+每个可查询 record type 生成一个强类型 table token：
 
 ```csharp
-Option<Item> item = data.Table<Item>().Get("sword");
+var items = module.Table(Item.Table);       // CoflowEnumTable<Item, ItemId>
+var rules = module.Table(Rule.Table);       // CoflowStringTable<Rule>
+
+Option<Item> item = items.Get(ItemId.Sword);
+Option<Rule> rule = rules.Get("default");
 ```
 
-声明 `@idAsEnum(ItemId)` 的 type 使用生成 enum：
+找不到 table 时返回共享空表，找不到 key 时返回 `Option<T>.None`。Table 同时实现
+`IReadOnlyList<T>`，整数索引只表示稳定的记录顺序。
+
+普通 singleton 和 `@Host` singleton 都通过以下入口查询：
 
 ```csharp
-Option<Item> item = data.Table<Item>().Get(ItemId.Sword);
+Option<Settings> settings = module.Singleton<Settings>();
 ```
 
-record 的 `Id` 属性使用同一种 key 类型。普通 string key 是配置数据，不属于动态 schema API。
+## 4. Module 与 ModuleSet
 
-## 4. 顶层加载 API
+`CoflowModule` 是一次独立加载产生的不可变数据和函数快照。同一次加载的多个 CFD source 可以互相
+引用；不同 Module 不能建立记录、常量或函数引用。
 
-Runtime 库提供固定入口：
+`CoflowModuleSet` 提供多个独立 Module 的组合查询视图：
 
 ```csharp
-public static class Coflow
-{
-    public static CoflowModule LoadData(string cfd);
-    public static CoflowModule LoadData(string cfd, params CoflowModule[] children);
-    public static CoflowModule LoadData(string[] cfdSources);
-    public static CoflowModule LoadData(string[] cfdSources, params CoflowModule[] children);
-
-    public static CoflowModule LoadAndCompile(string cfd);
-    public static CoflowModule LoadAndCompile(string cfd, params CoflowModule[] children);
-    public static CoflowModule LoadAndCompile(string[] cfdSources);
-    public static CoflowModule LoadAndCompile(string[] cfdSources, params CoflowModule[] children);
-
-    public static CoflowModule Combine(params CoflowModule[] modules);
-}
+var current = Coflow.Modules(baseModule, featureModule);
+var next = current.Replace(featureModule, replacement);
 ```
 
-参数是 CFD 文本内容，不是文件路径。数组顺序参与稳定的 source identity；诊断使用
-`source[0]`、`source[1]` 等来源名称。
+`Add`、`Remove` 和 `Replace` 都返回新的 ModuleSet，不修改旧视图或 Module。组合要求所有 Module
+使用同一个 generated contract，并拒绝重复 record key、singleton 或函数身份。
 
-### 4.1 `LoadData`
+Runtime 不提供原地 reload、generation gate 或 `IDisposable` 生命周期。重新加载由应用创建新
+Module，然后通过 `Replace` 发布新的 ModuleSet；此前取得的对象和旧 ModuleSet 继续保持有效。
 
-`LoadData`：
+## 5. Host
 
-1. 解析 CFD 顶层记录、普通字段和函数 body 边界。
-2. 使用生成 metadata 验证 record type、普通字段、默认值、继承、Option、集合、维度和引用。
-3. 构建不可变数据 generation。
-4. 无条件跳过函数检查：不解析函数 body 内部表达式，不执行函数名称解析、类型检查、控制流检查
-   或字节码生成，也不提供控制这一行为的参数。
-
-返回的普通数据可以完整读取。函数调用抛出 `CoflowFunctionNotCompiledException`；调用
-`@Host @singleton` 的 `Bind(...)` 返回 `HostBindError.FunctionsNotCompiled`。
-
-### 4.2 `LoadAndCompile`
-
-`LoadAndCompile` 先执行 `LoadData` 的全部数据阶段，然后：
-
-1. 解析全部函数 body。
-2. 完成项目级名称解析和类型检查。
-3. 完成闭包捕获与调用目标分析。
-4. 生成 generation-local 函数表和字节码。
-5. 返回允许函数调用以及绑定 `@Host @singleton` 的 `CoflowModule`。
-
-函数编译失败时不返回部分可用的 `CoflowModule`。非 `@Host` 函数字段必须在 CFD 中提供 body；
-缺少时产生 `COFLOW-FUNCTION-MISSING`。`@Host` 函数不得在 CFD 中提供实现，只能在加载成功后绑定。
-
-## 5. 强类型数据访问
-
-`CoflowModule` 和 `CoflowTable<T>` 都属于固定 Runtime 库：
+`@Host @singleton` 由 Runtime 创建，不允许在 CFD 中声明。生成类型提供强类型 `Configure`：
 
 ```csharp
-public sealed class CoflowModule : IDisposable
-{
-    public bool FunctionsCompiled { get; }
-
-    public CoflowTable<T> Table<T>();
-    public T Singleton<T>();
-
-    public CoflowModule Compile();
-
-    public Result<ReloadInfo, CoflowReloadError> Reload(string cfd);
-    public Result<ReloadInfo, CoflowReloadError> Reload(string[] cfdSources);
-    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string cfd);
-    public Result<ReloadInfo, CoflowReloadError> Reload(CoflowModule child, string[] cfdSources);
-}
-
-public sealed class CoflowTable<T> : IReadOnlyList<T>
-{
-    // 仅当 T 未声明 @idAsEnum 时有效
-    public Option<T> Get(string key);
-
-    // 仅当 T 声明 @idAsEnum(TKey) 且参数正是该 TKey 时有效
-    public Option<T> Get<TKey>(TKey key)
-        where TKey : struct, Enum;
-}
+var host = module.Singleton<HostServices>();
+if (host.TryGetValue(out var services))
+    services.Configure(environment, log, calculate);
 ```
 
-`Option<T>` 是固定 Runtime 库提供的泛型值类型，不是为每个 record 生成的包装类型。`Get`
-命中时构造 `Some(record)`，未命中时构造 `None`；它不会用 `default(T)` 表示缺失。
-`CoflowTable<T>` 不提供 `TryGet`、`GetRequired`、按 key 索引器或带默认值参数的另一组按 key
-查找方法，也不为旧查找 API 保留别名。继承自 `IReadOnlyList<T>` 的索引器只按记录顺序和整数位置
-访问，不能接受 record key，也不改变 `Get` 是唯一按 key 查找入口这一约束。
+配置可以重复执行，已有生成对象会读取更新后的字段和 delegate。Host 配置不提供跨线程同步；调用方
+必须保证 `Configure` 不与读取或函数调用并发执行。
 
-`Table<T>()` 只接受生成的非 singleton CFT type；`Singleton<T>()` 只接受生成的 singleton type。
-传入不符合该类别的生成类型是 API 使用错误。Runtime 根据 `T` 的内部生成 metadata 定位类型，
-不接收 type name 字符串。
+## 6. 函数与 fault
 
-`Get` 的返回值语义固定如下：key 存在时返回 `Some(record)`，key 不存在时返回 `None`。
-缺失记录是正常的 Option 分支，不是加载错误或 VM fault。
+生成类型只公开按 CFT 签名生成的强类型方法。内部 `CoflowFunctionEntry<TDelegate>` 属于
+`CoflowRuntime.Generated` ABI，不是应用查询接口。
 
-```csharp
-Option<Item> found = data.Table<Item>().Get(ItemId.Sword);
+语言值 `Result<T, E>` 不会转换为异常。整数溢出、除零、无效 VM 状态或未处理的 Host delegate
+异常产生 `CoflowFaultException`；fault 包含函数身份、source span、来源路径和 Coflow 调用栈。
 
-if (found.TryGetValue(out Item item))
-{
-    long price = item.Price;
-}
-```
+所有 CFD 和 Host 函数同步执行。Runtime 不提供 `Task<T>`、continuation、取消或 scheduler API。
 
-这里的 `TryGetValue` 是 `Option<T>` 的解包方法，不是 `CoflowTable<T>` 上的另一种记录查找 API。
+## 7. 固定边界
 
-未声明 `@idAsEnum` 的 type 只接受 `string` key。枚举 key 重载只接受目标 type 通过
-`@idAsEnum` 指定的生成 enum；传入其他 enum 属于 key 类型错误。两种重载不会互相转换，也不接受
-enum 名称字符串作为替代输入。由于 C# 无法在 `CoflowTable<T>` 的单个泛型参数上表达关联的 enum
-key 类型，`Get<TKey>` 的方法签名保证传入值是 enum，Runtime 再根据 `T` 的生成 metadata 验证
-`TKey` 正是 `@idAsEnum` 指定的 enum；不匹配时立即报告 API 使用错误，不尝试按名称或底层整数转换。
-`IReadOnlyList<T>` 枚举顺序是 generation 中稳定的记录顺序。
+Runtime 不公开或支持：
 
-普通 singleton 在数据加载阶段必须恰好存在一条 CFD 记录，否则加载失败。`@Host` singleton
-由 Runtime 创建未绑定位置，不要求 CFD 记录。
-
-## 6. `@Host` Singleton
-
-CFT 可以声明多个宿主 singleton：
-
-```cft
-@Host
-@singleton
-type Services {
-  environment: string;
-  limits: Limits;
-  log: fn(string) -> ();
-}
-```
-
-规则：
-
-- `@Host` 必须与 `@singleton` 同时显式出现，且目标必须是具体 type。
-- CFD 不得声明 `Services` 记录。
-- codegen 生成的 `Services` 类型直接提供强类型 `Bind(...)`。
-- `Bind` 参数由 CFT 字段按声明顺序生成，不使用 record key、type name 或 field name 字符串。
-- `Bind` 表示完整记录注入，全部普通字段和函数字段都必须一次性提供；CFT 默认值不形成隐式宿主
-  读取或省略参数的重载。
-- 一个 generation 中每个 `@Host` singleton 只能成功绑定一次。
-- 只有 `LoadAndCompile` 返回的数据允许绑定。
-
-示例：
-
-```csharp
-using CoflowModule module = Coflow.LoadAndCompile(cfdSources);
-
-Services services = module.Singleton<Services>();
-Result<Unit, HostBindError> bound = services.Bind(
-    environment: "development",
-    limits: limits,
-    log: Log);
-
-if (bound.IsOk)
-{
-    services.Log("started");
-}
-```
-
-`"development"` 是 CFT `string` 字段的普通值。API 中没有宿主 record key 或动态字段名。
-
-绑定成功后，普通字段编码进当前 generation 的只读宿主记录，delegate 进入同一 generation 的函数
-表。绑定完成前读取该 singleton 或调用其函数产生 `CoflowHostNotBoundException`。
-
-## 7. 普通函数调用
-
-以下 CFT：
-
-```cft
-type Rule {
-  priority: int;
-  evaluate: fn(input: int) -> Result<int, string>;
-}
-```
-
-生成同名 `Rule` 类型，不生成 `RuleRecord`：
-
-```csharp
-public sealed class Rule
-{
-    public string Id { get; }
-    public long Priority { get; }
-
-    public Result<long, string> Evaluate(long input);
-}
-```
-
-应用先以强类型 table 和 key 找到记录：
-
-```csharp
-Option<Rule> found = data.Table<Rule>().Get("combat");
-
-if (found.TryGetValue(out Rule rule))
-    Result<long, string> result = rule.Evaluate(42);
-```
-
-普通类型只生成强类型调用方法，不生成 `BindEvaluate` 或其他 `BindXxx`，其实现只能来自 CFD。
-CFT 函数签名中的参数名保留到生成的 C# 方法；未写参数名时才生成 `arg0`、`arg1`。参数名不参与
-函数类型相等性、逆变/协变或 VM ABI。CFT `Err(E)` 保持语言值，不转换为异常。
-
-## 8. Module、Generation 与 Reload
-
-模块保存 CFD source part 的稳定内部身份。`Combine(a, b)` 将 source part 合并后重新链接数据；只有
-全部输入均已编译时，结果才直接编译，否则返回 data-only module，再由 `Compile()` 产生编译后的
-新模块。也可以在加载父 CFD 时传入 children，使父子数据和函数在一次操作中完成项目级链接。
-
-同一个 source part 不能在一次组合中重复出现，使用不同 generated contract 的模块不能组合。
-`Compile()` 和 `Combine()` 返回新模块，不改变输入模块。
-
-每次成功加载产生一个 generation。普通 CFD 记录、集合、引用和字节码在发布后不可变；
-只有 `@Host` singleton 拥有宿主 bind-once slot。绑定只填充这些预先生成并经过签名验证的 slot，
-不改变普通 CFD 数据、记录身份或字节码。
-
-`CoflowModule` 持有当前 generation；从 table 或 singleton 取得的生成对象固定属于取得它们时的
-generation。同一 generation 内的 `@Host` 对象可以观察其 slot 从未绑定变为已绑定。
-
-`Reload`：
-
-1. 使用新的 CFD 字符串加载候选数据。
-2. 如果当前数据由 `LoadAndCompile` 创建，则重新检查和编译全部候选函数。
-3. 将已有 `@Host` singleton 强类型绑定迁移到候选 generation。
-4. 全部成功后原子发布候选 generation。
-
-`module.Reload(sources)` 用新的 source 集合替换该 module 的完整 CFD 内容；
-`root.Reload(child, sources)` 只替换组合根中属于 child 的内容。
-
-reload 不加载 CFT、不比较 CFT hash，也不改变生成 C# 类型。失败时继续保留旧 generation。
-旧生成对象继续观察旧 generation；reload 后重新执行 `Table<T>()`、`Singleton<T>()` 或 `Get`
-才能取得新 generation 对象。
-
-`root.Reload(child, sources)` 按 child 的稳定 module identity 替换组合根中的对应 source part，然后
-自动重建跨模块记录引用并重新链接、编译根函数图。调用者只调用这一个 Reload；Runtime 不建立从
-child 指向所有组合根的反向订阅，直接对 child 调用 Reload 不会隐式修改其他根。
-
-Reload 与 Host Bind 由 generation gate 串行化：先完成的 Bind 会迁移到候选 generation；先完成
-发布的 Reload 会将旧 generation 标记为 retired，等待中的旧对象 Bind 返回
-`HostBindError.GenerationRetired`，不会出现返回成功但绑定只留在旧 generation 的状态。
-
-`@idAsEnum` key 在 reload 时按对应 enum 值重新解析。
-
-## 9. Fault 与错误
-
-错误通道固定如下：
-
-- `LoadData` 和 `LoadAndCompile` 返回 `CoflowModule`；失败时抛出包含全部诊断的
-  `CoflowLoadException`，函数编译诊断也属于该异常。
-- `@Host @singleton` 的 `Bind` 返回 `Result<Unit, HostBindError>`；普通类型没有绑定 API。
-- `Reload` 返回 `Result<ReloadInfo, CoflowReloadError>`，失败时保留旧 generation。
-- record 查找只通过 `CoflowTable<T>.Get(...)` 完成，并返回 `Option<T>`；缺失记录是 `None`，
-  Runtime 不提供 nullable、异常、带默认值或 fallback 的替代版本。
-
-函数声明返回 `Result<T, E>` 时，生成方法直接返回该语言结果。VM fault 不是语言业务错误：
-
-- 整数溢出、除零、预算超限和 VM 不变量破坏产生 `CoflowFaultException`。
-- 未处理的 C# delegate 异常包装为 `CoflowFaultException`，并保留原异常作为 inner exception。
-- fault 包含 CFD source 位置和简短 Coflow 调用栈。
-- Runtime 不把 `Err(E)` 转换为异常。
-
-## 10. 执行模型
-
-Coflow 函数和 C# delegate 全部同步执行。生成方法返回 CFT 声明的结果，不返回 `Task<T>`。
-
-应用可以自行把一次完整调用调度到线程池，但 delegate 不能暂停正在执行的 VM。当前 API 不提供
-continuation、pending call、resume token、scheduler 或异步宿主函数。
-
-每次调用固定使用目标生成对象所属的 generation。Runtime 对每次调用应用指令、调用深度和值栈
-预算。VM → Host → VM 的同步重入共享同一个执行上下文和预算，Host 不能通过回调闭包重置预算。
-默认指令预算为 10,000,000，调用深度为 4,096，值栈为 1,000,000；这些是 Runtime 内部执行保护，
-不增加 `LoadData` 或 `LoadAndCompile` 参数。墙钟取消、外部
-调度和可配置执行策略留给后续独立 API，不属于当前固定加载入口。C# VM 是正式执行实现；Rust
-项目工具不执行这套 CFD 函数字节码。
-
-VM 的临时值栈使用池化数组，高阶函数直接遍历强类型只读集合，不为遍历复制完整 `object[]`。
-集合内建函数的线性工作量计入同一指令预算。
-
-## 11. 生命周期与释放
-
-模块发布新 generation 后不主动破坏旧生成对象。旧对象、旧闭包和正在执行的调用继续持有旧
-generation，保证调用期间状态稳定；这些外部引用全部释放后，旧 generation 可以被 GC 回收。
-Runtime 不按 CFD 文本、module identity 或 reload 次数建立全局强引用缓存。
-
-`Dispose()` 使模块停止提供新的 table、singleton、compile 或 reload 操作，清除模块持有的表、
-函数、storage 和 source part，并将当前 generation 标记为 retired。已经取得的旧对象仍按其自身
-generation 工作，但未绑定的旧 Host 不能再绑定。失败的 Reload 候选也会立即释放其所有根引用。
-
-## 12. CFT Check 边界
-
-CFT check 暂不迁移到 C# Runtime：
-
-- codegen 不生成 check body 或 check IR。
-- `LoadData`、`LoadAndCompile` 和 `Reload` 都不执行 CFT check。
-- C# Runtime 不公开 `Check()`。
-- CFT check 继续由 Rust 项目工具按现有语义处理，且不能调用 CFD 函数或 C# delegate。
-
-以后迁移 check 时需要单独设计，不预留当前公共 API。
-
-## 13. 明确不公开的 API
-
-C# Runtime 不公开：
-
-- 按 type name、field name 或 function name 字符串访问；普通 string record key 除外；
-- 动态 `CoflowValue` union；
-- CFT parser 或 CFT schema 文件加载；
-- schema hash 或 contract hash；
-- 数据、schema 或字节码 artifact loader；
-- generation-local ID、slot、layout、field offset 或 row pointer；
-- 宿主 record key、动态 Host descriptor 或按字符串逐字段绑定；
-- `XxxRecord`、`XxxKey`、`XxxList`、`XxxMap` 等非 CFT 声明包装类型；
-- CFT check 执行；
-- 异步函数或 `Task<T>` 映射。
-
-这些限制保证固定 Runtime 库只提供通用加载、generation 和 VM 能力，项目公开类型严格来自 CFT
-声明，应用通过泛型生成类型、普通 key 或 `@idAsEnum` enum 完成全部数据访问。
+- CFT parser、CFT check 或 schema hash；
+- 按字符串读取 type、field 或 function；
+- 跨 Module 引用或组合时重定位；
+- 原地 reload、自动 Host 状态迁移或 Module disposal；
+- JSON、MessagePack、数据 artifact 或字节码 artifact；
+- 异步 CFD 函数。
