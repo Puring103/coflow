@@ -3,12 +3,18 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct CsharpProject {
     pub namespace: String,
-    pub uses_localization: bool,
+    pub dimensions: Vec<CsharpDimension>,
     pub delegate_adapters: Vec<String>,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub singletons: Vec<CsharpSingleton>,
     pub constants: Vec<CsharpConstant>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CsharpDimension {
+    pub name: String,
+    pub source_name: String,
 }
 
 #[derive(Debug, Serialize)]

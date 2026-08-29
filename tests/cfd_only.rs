@@ -166,17 +166,14 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
     .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
-    assert!(generated.contains(
-        "Cft_5569546578745F77656C636F6D6556617269616E7473CoflowMetadata"
-    ));
-    assert!(generated.contains("ReadLocalized("));
+    assert!(generated.contains("ReadLanguage("));
     assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
-    assert!(!generated.contains("LocalizationProvider"));
+    assert!(!generated.contains("Localization"));
     assert!(!generated.contains("TbUiTextWelcomeVariants"));
 }
 
 #[test]
-fn csharp_codegen_emits_each_singleton_dimension_type_in_metadata() {
+fn csharp_codegen_reads_each_singleton_dimension_record() {
     let dir = tempfile::tempdir().expect("singleton dimension project");
     fs::write(
         dir.path().join("schema.cft"),
@@ -206,12 +203,6 @@ fn csharp_codegen_emits_each_singleton_dimension_type_in_metadata() {
     let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
     .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText.cfd"));
-    assert!(generated.contains(
-        "Cft_5569546578745F77656C636F6D6556617269616E7473CoflowMetadata"
-    ));
-    assert!(generated.contains(
-        "Cft_5569546578745F6661726577656C6C56617269616E7473CoflowMetadata"
-    ));
     assert!(generated.contains(
         "\"UiText_welcomeVariants\", \"welcome\", new string[] { \"zh\" }"
     ));
