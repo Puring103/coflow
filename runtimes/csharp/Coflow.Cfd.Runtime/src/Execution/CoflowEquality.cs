@@ -6,18 +6,28 @@ internal static class CoflowEquality
 {
     internal static Delegate Create(Type type, IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata)
     {
+        var metadataByRuntimeType = metadata.Values.ToDictionary(item => item.RuntimeType);
+        return Create(type, metadata, metadataByRuntimeType);
+    }
+
+    private static Delegate Create(
+        Type type,
+        IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata,
+        IReadOnlyDictionary<Type, ICoflowTypeMetadata> metadataByRuntimeType)
+    {
         var left = Expression.Parameter(type, "left");
         var right = Expression.Parameter(type, "right");
         return CoflowExpressionCompiler.Compile(Expression.Lambda(
             Expression.GetFuncType(type, type, typeof(bool)),
-            Equal(type, left, right, metadata), left, right));
+            Equal(type, left, right, metadata, metadataByRuntimeType), left, right));
     }
 
     private static Expression Equal(
         Type type,
         Expression left,
         Expression right,
-        IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata)
+        IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata,
+        IReadOnlyDictionary<Type, ICoflowTypeMetadata> metadataByRuntimeType)
     {
         if (type.IsGenericType)
         {
@@ -31,7 +41,7 @@ internal static class CoflowEquality
                     Expression.OrElse(Expression.Not(leftActive),
                         Equal(arguments[0],
                             Expression.Property(left, nameof(Option<int>.Value)),
-                            Expression.Property(right, nameof(Option<int>.Value)), metadata)));
+                            Expression.Property(right, nameof(Option<int>.Value)), metadata, metadataByRuntimeType)));
             }
             if (definition == typeof(Result<,>))
             {
@@ -41,22 +51,21 @@ internal static class CoflowEquality
                     Expression.Condition(leftOk,
                         Equal(arguments[0],
                             Expression.Property(left, nameof(Result<int, int>.Value)),
-                            Expression.Property(right, nameof(Result<int, int>.Value)), metadata),
+                            Expression.Property(right, nameof(Result<int, int>.Value)), metadata, metadataByRuntimeType),
                         Equal(arguments[1],
                             Expression.Property(left, nameof(Result<int, int>.Error)),
-                            Expression.Property(right, nameof(Result<int, int>.Error)), metadata)));
+                            Expression.Property(right, nameof(Result<int, int>.Error)), metadata, metadataByRuntimeType)));
             }
             if (definition == typeof(IReadOnlyList<>))
                 return Expression.Call(typeof(CoflowEquality), nameof(ListEqual), arguments,
-                    left, right, Expression.Constant(Create(arguments[0], metadata)));
+                    left, right, Expression.Constant(Create(arguments[0], metadata, metadataByRuntimeType)));
             if (definition == typeof(IReadOnlyDictionary<,>))
                 return Expression.Call(typeof(CoflowEquality), nameof(DictionaryEqual), arguments,
-                    left, right, Expression.Constant(Create(arguments[0], metadata)),
-                    Expression.Constant(Create(arguments[1], metadata)));
+                    left, right, Expression.Constant(Create(arguments[1], metadata, metadataByRuntimeType)));
         }
 
         if (type == typeof(string)) return Expression.Equal(left, right);
-        var generated = metadata.Values.FirstOrDefault(item => item.RuntimeType == type);
+        metadataByRuntimeType.TryGetValue(type, out var generated);
         if (generated is null || generated is ICoflowRecordMetadata)
             return type.IsValueType ? Expression.Equal(left, right) : Expression.ReferenceEqual(left, right);
         Expression result = Expression.Constant(true);
@@ -67,7 +76,8 @@ internal static class CoflowEquality
             var delegateType = Expression.GetFuncType(type, fieldType);
             var leftField = Expression.Invoke(Expression.Convert(Expression.Constant(reader), delegateType), left);
             var rightField = Expression.Invoke(Expression.Convert(Expression.Constant(reader), delegateType), right);
-            result = Expression.AndAlso(result, Equal(fieldType, leftField, rightField, metadata));
+            result = Expression.AndAlso(result,
+                Equal(fieldType, leftField, rightField, metadata, metadataByRuntimeType));
         }
         return result;
     }
@@ -84,19 +94,15 @@ internal static class CoflowEquality
     private static bool DictionaryEqual<TKey, TValue>(
         IReadOnlyDictionary<TKey, TValue> left,
         IReadOnlyDictionary<TKey, TValue> right,
-        Delegate keyEquality,
         Delegate valueEquality) where TKey : notnull
     {
         if (left.Count != right.Count) return false;
-        var equalKey = (Func<TKey, TKey, bool>)keyEquality;
         var equalValue = (Func<TValue, TValue, bool>)valueEquality;
-        var unmatched = right.ToList();
         foreach (var leftItem in left)
         {
-            var match = unmatched.FindIndex(item => equalKey(leftItem.Key, item.Key));
-            if (match < 0 || !equalValue(leftItem.Value, unmatched[match].Value)) return false;
-            unmatched.RemoveAt(match);
+            if (!right.TryGetValue(leftItem.Key, out var rightValue) ||
+                !equalValue(leftItem.Value, rightValue)) return false;
         }
-        return unmatched.Count == 0;
+        return true;
     }
 }

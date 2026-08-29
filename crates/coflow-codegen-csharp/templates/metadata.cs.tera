@@ -9,6 +9,18 @@ using CoflowRuntime;
 namespace {{ namespace }}
 {
 
+public static class CoflowData
+{
+    public static CoflowModule Load(string cfd) =>
+        global::Coflow.LoadData(cfd, CoflowGeneratedContract.Instance);
+    public static CoflowModule Load(string[] cfdSources) =>
+        global::Coflow.LoadData(cfdSources, CoflowGeneratedContract.Instance);
+    public static CoflowModule LoadAndCompile(string cfd) =>
+        global::Coflow.LoadAndCompile(cfd, CoflowGeneratedContract.Instance);
+    public static CoflowModule LoadAndCompile(string[] cfdSources) =>
+        global::Coflow.LoadAndCompile(cfdSources, CoflowGeneratedContract.Instance);
+}
+
 internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {
     internal static readonly CoflowGeneratedContract Instance = new();
@@ -32,7 +44,7 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
     internal static void Register()
     {
 {% for adapter in metadata.delegate_adapters %}        {{ adapter }}
-{% endfor %}        CoflowGeneratedRegistry.Register(Instance);
+{% endfor %}
     }
 
 {% for enum in enums %}    private sealed class {{ enum.metadata_name }}CoflowEnumMetadata : ICoflowEnumMetadata

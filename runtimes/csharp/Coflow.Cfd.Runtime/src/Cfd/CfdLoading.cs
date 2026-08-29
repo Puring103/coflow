@@ -16,6 +16,8 @@ public sealed class CfdLoadContext
     private readonly IReadOnlyDictionary<CfdRecordNode, string> _recordPaths;
     private readonly Stack<CfdNameResolver> _currentNames = new();
     private readonly HashSet<CfdFormattedStringValue> _formatting = new();
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        CfdRecordNode, Dictionary<CfdValueNode, (string FieldName, string ValuePath)>> _valueLocations = new();
     private readonly List<CoflowFunctionEntry> _functions = new();
     private readonly bool _functionsCompiled;
     private readonly Dictionary<CoflowConstant, object> _constantCache = new();
@@ -23,13 +25,12 @@ public sealed class CfdLoadContext
 
     public CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
-        CfdLoadOptions? options = null,
         IEnumerable<ICfdTypeBinding>? bindings = null,
         IEnumerable<ICoflowEnumMetadata>? enums = null,
         IEnumerable<CoflowConstant>? constants = null,
         bool functionsCompiled = false)
     {
-        Options = options ?? new CfdLoadOptions();
+        if (documents is null) throw new ArgumentNullException(nameof(documents));
         _functionsCompiled = functionsCompiled;
         var bindingMap = new Dictionary<string, ICfdTypeBinding>(StringComparer.Ordinal);
         foreach (var binding in bindings ?? Array.Empty<ICfdTypeBinding>())
@@ -57,49 +58,14 @@ public sealed class CfdLoadContext
         Documents = bound.Documents;
         _recordNames = bound.RecordNames;
         _recordPaths = bound.RecordPaths;
-        var seen = new HashSet<(string DomainType, string Key)>();
-        var diagnostics = new List<CfdDiagnostic>();
-        foreach (var document in documents)
-        {
-            foreach (var record in document.Records)
-            {
-                if (record.GroupType is not null &&
-                    bindingMap.TryGetValue(record.DeclaredType, out var groupBinding) &&
-                    !groupBinding.AssignableTypes.Contains(record.GroupType, StringComparer.Ordinal))
-                {
-                    diagnostics.Add(new CfdDiagnostic(
-                        "CFD-RECORD-GROUP-TYPE",
-                        $"record type `{record.DeclaredType}` is not assignable to group `{record.GroupType}`",
-                        document.Path,
-                        record.Span));
-                }
-                var domains = bindingMap.TryGetValue(record.DeclaredType, out var binding)
-                    ? binding.AssignableTypes
-                    : new[] { record.DeclaredType };
-                var duplicate = false;
-                foreach (var domain in domains)
-                {
-                    duplicate |= !seen.Add((domain, record.Key));
-                }
-                if (duplicate)
-                {
-                    diagnostics.Add(new CfdDiagnostic(
-                        "CFD-SYNTAX-DUPLICATE-RECORD",
-                        $"record key `{record.Key}` is declared more than once in an assignable type domain",
-                        document.Path,
-                        record.Span));
-                }
-            }
-        }
-        if (diagnostics.Count != 0)
-            throw new CfdLoadException(diagnostics);
+        Records = new CfdRecordCatalog(Documents, bindingMap);
     }
 
     public IReadOnlyList<CfdDocument> Documents { get; }
-    public CfdLoadOptions Options { get; }
     public IReadOnlyDictionary<string, ICfdTypeBinding> Bindings { get; }
     public List<CfdDiagnostic> Diagnostics { get; } = new();
     internal IReadOnlyList<CoflowFunctionEntry> Functions => _functions;
+    internal CfdRecordCatalog Records { get; }
 
     internal void RegisterRecord(string declaredType, string key, object record)
     {
@@ -229,52 +195,49 @@ public sealed class CfdLoadContext
             ? FindRecord(type, key)
             : null;
         if (record is null) return null;
-        foreach (var field in record.Fields)
-        {
-            if (TryLocateValue(field.Value, target, field.Name, out var path))
-                return (field.Name, path);
-        }
-        return null;
+        var locations = _valueLocations.GetValue(record, static value => IndexValueLocations(value));
+        return locations.TryGetValue(target, out var location) ? location : null;
     }
 
-    private static bool TryLocateValue(
-        CfdValueNode current,
-        CfdValueNode target,
-        string path,
-        out string result)
+    private static Dictionary<CfdValueNode, (string FieldName, string ValuePath)> IndexValueLocations(
+        CfdRecordNode record)
     {
-        if (ReferenceEquals(current, target))
-        {
-            result = path;
-            return true;
-        }
+        var result = new Dictionary<CfdValueNode, (string FieldName, string ValuePath)>();
+        foreach (var field in record.Fields) AddValueLocation(result, field.Value, field.Name, field.Name);
+        return result;
+    }
+
+    private static void AddValueLocation(
+        Dictionary<CfdValueNode, (string FieldName, string ValuePath)> locations,
+        CfdValueNode current,
+        string fieldName,
+        string path)
+    {
+        locations.Add(current, (fieldName, path));
         switch (current)
         {
             case CfdSomeValue some:
-                return TryLocateValue(some.Value, target, $"{path}.Some", out result);
+                AddValueLocation(locations, some.Value, fieldName, $"{path}.Some");
+                break;
             case CfdOkValue ok:
-                return TryLocateValue(ok.Value, target, $"{path}.Ok", out result);
+                AddValueLocation(locations, ok.Value, fieldName, $"{path}.Ok");
+                break;
             case CfdErrValue error:
-                return TryLocateValue(error.Value, target, $"{path}.Err", out result);
+                AddValueLocation(locations, error.Value, fieldName, $"{path}.Err");
+                break;
             case CfdArrayValue array:
                 for (var index = 0; index < array.Items.Count; index++)
-                    if (TryLocateValue(array.Items[index], target, $"{path}[{index}]", out result))
-                        return true;
+                    AddValueLocation(locations, array.Items[index], fieldName, $"{path}[{index}]");
                 break;
             case CfdDictionaryValue dictionary:
                 for (var index = 0; index < dictionary.Entries.Count; index++)
-                    if (TryLocateValue(dictionary.Entries[index].Value, target,
-                            $"{path}[{index}]", out result))
-                        return true;
+                    AddValueLocation(locations, dictionary.Entries[index].Value, fieldName, $"{path}[{index}]");
                 break;
             case CfdObjectValue objectValue:
                 foreach (var field in objectValue.Fields)
-                    if (TryLocateValue(field.Value, target, $"{path}.{field.Name}", out result))
-                        return true;
+                    AddValueLocation(locations, field.Value, fieldName, $"{path}.{field.Name}");
                 break;
         }
-        result = string.Empty;
-        return false;
     }
 
     public IDisposable EnterRecord(string declaredType, string key)
@@ -315,9 +278,8 @@ public sealed class CfdLoadContext
 
     public T Resolve<T>(string key) => Resolve<T>(typeof(T).Name, key);
 
-    public CfdRecordNode? FindRecord(string declaredType, string key) => Documents
-        .SelectMany(document => document.Records)
-        .FirstOrDefault(record => record.DeclaredType == declaredType && record.Key == key);
+    public CfdRecordNode? FindRecord(string declaredType, string key) =>
+        Records.Find(declaredType, key);
 
     public T Resolve<T>(string declaredType, string key)
     {
@@ -361,18 +323,7 @@ public sealed class CfdLoadContext
     }
 
     private CfdRecordNode? FindAssignableRecord(string declaredType, string key)
-    {
-        var matches = Documents
-            .SelectMany(document => document.Records)
-            .Where(record => record.Key == key)
-            .Where(record => record.DeclaredType == declaredType ||
-                Bindings.TryGetValue(record.DeclaredType, out var binding) &&
-                binding.AssignableTypes.Contains(declaredType, StringComparer.Ordinal))
-            .ToList();
-        if (matches.Count > 1)
-            throw Error("CFD-REF-AMBIGUOUS", $"CFD reference `{key}` is ambiguous as `{declaredType}`");
-        return matches.FirstOrDefault();
-    }
+        => Records.FindAssignable(declaredType, key);
 
     public T WithRecordPath<T>(CfdRecordNode record, Func<T> read)
     {
@@ -382,8 +333,7 @@ public sealed class CfdLoadContext
         }
         catch (CfdLoadException error)
         {
-            var path = Documents.FirstOrDefault(document => document.Records.Contains(record))?.Path
-                ?? string.Empty;
+            var path = _recordPaths.TryGetValue(record, out var recordPath) ? recordPath : string.Empty;
             if (path.Length == 0 || error.Diagnostics.All(diagnostic => diagnostic.Path.Length != 0))
                 throw;
             throw new CfdLoadException(error.Diagnostics
@@ -472,7 +422,7 @@ public sealed class CfdLoadContext
             {
                 new CfdDiagnostic("CFD-VALUE-FORMAT", $"formatted string record `{key}` was not found", CurrentPath, source.Span),
             });
-        CfdValueNode? current = record.Fields.FirstOrDefault(field => field.Name == reference.Path[0])?.Value;
+        CfdValueNode? current = CfdValueReader.FindField(record.Fields, reference.Path[0]);
         if (current is null)
             throw new CfdLoadException(new[]
             {
@@ -494,7 +444,7 @@ public sealed class CfdLoadContext
                     recordReference, referenceType, out nextBinding),
                 _ => null,
             };
-            current = fields?.FirstOrDefault(item => item.Name == field)?.Value;
+            current = fields is null ? null : CfdValueReader.FindField(fields, field);
             if (current is null || nextBinding is null)
                 throw new CfdLoadException(new[]
                 {
@@ -559,9 +509,10 @@ public static class CfdLoader
 {
     public static IReadOnlyList<CfdDocument> LoadDocuments(
         ICfdTextLoader loader,
-        IEnumerable<string> paths,
-        CfdLoadOptions? options = null)
+        IEnumerable<string> paths)
     {
+        if (loader is null) throw new ArgumentNullException(nameof(loader));
+        if (paths is null) throw new ArgumentNullException(nameof(paths));
         var sources = new List<CfdSource>();
         var errors = new List<CfdDiagnostic>();
         foreach (var path in paths)
@@ -574,13 +525,16 @@ public static class CfdLoader
             sources.Add(new CfdSource(path, text));
         }
         if (errors.Count != 0) throw new CfdLoadException(errors);
-        return CfdParser.ParseAll(sources, options);
+        return CfdParser.ParseAll(sources);
     }
 }
 
 /// <summary>Schema-independent conversions used by generated C# readers.</summary>
 public static class CfdValueReader
 {
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        IReadOnlyList<CfdFieldNode>, CfdFieldIndex> FieldIndexes = new();
+
     public static string String(CfdValueNode node) => node switch
     {
         CfdStringValue value => value.Value,
@@ -771,31 +725,17 @@ public static class CfdValueReader
     }
 
     public static CfdValueNode Field(IReadOnlyList<CfdFieldNode> fields, string name) =>
-        fields.FirstOrDefault(field => field.Name == name)?.Value
+        Index(fields).Find(name)
         ?? throw new CfdLoadException(new[] { new CfdDiagnostic("CFD-FIELD-MISSING", $"CFD field `{name}` is missing", string.Empty) });
 
     public static CfdValueNode? FindField(IReadOnlyList<CfdFieldNode> fields, string name) =>
-        fields.FirstOrDefault(field => field.Name == name)?.Value;
+        Index(fields).Find(name);
 
     public static void ValidateFields(IReadOnlyList<CfdFieldNode> fields, params string[] expected)
     {
-        var duplicate = fields
-            .GroupBy(field => field.Name, StringComparer.Ordinal)
-            .FirstOrDefault(group => group.Count() > 1);
-        if (duplicate is not null)
-        {
-            var field = duplicate.First();
-            throw new CfdLoadException(new[]
-            {
-                new CfdDiagnostic(
-                    "CFD-SYNTAX-DUPLICATE-FIELD",
-                    $"field `{field.Name}` is declared more than once",
-                    string.Empty,
-                    field.Span),
-            });
-        }
+        var index = Index(fields);
         var known = new HashSet<string>(expected, StringComparer.Ordinal);
-        var unknown = fields.FirstOrDefault(field => !known.Contains(field.Name));
+        var unknown = index.Fields.FirstOrDefault(field => !known.Contains(field.Name));
         if (unknown is not null)
         {
             throw new CfdLoadException(new[]
@@ -807,6 +747,37 @@ public static class CfdValueReader
                     unknown.Span),
             });
         }
+    }
+
+    private static CfdFieldIndex Index(IReadOnlyList<CfdFieldNode> fields)
+    {
+        if (fields is null) throw new ArgumentNullException(nameof(fields));
+        return FieldIndexes.GetValue(fields, static value => new CfdFieldIndex(value));
+    }
+
+    private sealed class CfdFieldIndex
+    {
+        private readonly Dictionary<string, CfdValueNode> _values = new(StringComparer.Ordinal);
+
+        internal CfdFieldIndex(IReadOnlyList<CfdFieldNode> fields)
+        {
+            Fields = fields;
+            foreach (var field in fields)
+            {
+                if (_values.TryAdd(field.Name, field.Value)) continue;
+                throw new CfdLoadException(new[]
+                {
+                    new CfdDiagnostic(
+                        "CFD-SYNTAX-DUPLICATE-FIELD",
+                        $"field `{field.Name}` is declared more than once",
+                        string.Empty,
+                        field.Span),
+                });
+            }
+        }
+
+        internal IReadOnlyList<CfdFieldNode> Fields { get; }
+        internal CfdValueNode? Find(string name) => _values.TryGetValue(name, out var value) ? value : null;
     }
 
     private static string ScalarText(CfdValueNode node) => node is CfdScalarValue value

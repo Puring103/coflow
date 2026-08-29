@@ -26,7 +26,6 @@ public class CfdLoadException : Exception
     }
 
     public IReadOnlyList<CfdDiagnostic> Diagnostics { get; }
-    public IReadOnlyList<CfdDiagnostic> Errors => Diagnostics;
 }
 
 public sealed class CfdParseException : CfdLoadException
@@ -34,12 +33,4 @@ public sealed class CfdParseException : CfdLoadException
     public CfdParseException(IReadOnlyList<CfdDiagnostic> errors)
         : base(errors) { }
 
-}
-
-public sealed class CfdLoadOptions
-{
-    public int MaxDepth { get; init; } = 128;
-    public int MaxNodes { get; init; } = 1_000_000;
-    public int MaxRecords { get; init; } = 1_000_000;
-    public long MaxSourceBytes { get; init; } = 64L * 1024 * 1024;
 }

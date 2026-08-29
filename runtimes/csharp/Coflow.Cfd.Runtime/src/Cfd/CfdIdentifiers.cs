@@ -14,9 +14,12 @@ internal static class CfdIdentifiers
         "as" or "use" or "fn" or "var" or "return" or "break" or "continue" or "Host" or
         "None" or "Some" or "Ok" or "Err" or "Option" or "Result" or "alert" or "records";
 
-    internal static bool IsIdentifier(string value)
+    internal static bool IsIdentifier(string value) =>
+        IsIdentifierName(value) && !IsReserved(value);
+
+    internal static bool IsIdentifierName(string value)
     {
-        if (string.IsNullOrEmpty(value) || IsReserved(value)) return false;
+        if (string.IsNullOrEmpty(value)) return false;
         var index = 0;
         if (!ReadCodePoint(value, ref index, start: true)) return false;
         while (index < value.Length)
@@ -62,17 +65,15 @@ internal static class CfdIdentifiers
             UnicodeCategory.TitlecaseLetter or
             UnicodeCategory.ModifierLetter or
             UnicodeCategory.OtherLetter or
-            UnicodeCategory.LetterNumber ||
-            codePoint is 0x1885 or 0x1886 or 0x2118 or 0x212e or 0x309b or 0x309c;
+            UnicodeCategory.LetterNumber;
         var valid = start
             ? codePoint == '_' || identifierStart
             : codePoint == '_' || identifierStart || category is
                 UnicodeCategory.NonSpacingMark or
                 UnicodeCategory.SpacingCombiningMark or
                 UnicodeCategory.DecimalDigitNumber or
-                UnicodeCategory.ConnectorPunctuation ||
-                codePoint is 0x00b7 or 0x0387 or 0x1369 or 0x136a or 0x136b or 0x136c or
-                    0x136d or 0x136e or 0x136f or 0x1370 or 0x1371 or 0x19da;
+                UnicodeCategory.ConnectorPunctuation or
+                UnicodeCategory.Format;
         index += width;
         return valid;
     }

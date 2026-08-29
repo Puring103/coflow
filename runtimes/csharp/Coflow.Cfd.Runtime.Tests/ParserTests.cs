@@ -95,7 +95,7 @@ public sealed class ParserTests
         var unknown = CfdParser.Parse(new CfdSource("unknown.cfd", "use missing::Item; Item { item {} }"));
         var unknownError = Assert.Throws<CfdLoadException>(() =>
             CfdNameBinder.Bind(new[] { unknown }, new[] { "Item" }));
-        Assert.Equal("CFD-NAME-UNKNOWN-USE", unknownError.Errors[0].Code);
+        Assert.Equal("CFD-NAME-UNKNOWN-USE", unknownError.Diagnostics[0].Code);
 
         var conflict = CfdParser.Parse(new CfdSource("conflict.cfd", """
             namespace game;
@@ -105,7 +105,7 @@ public sealed class ParserTests
         var conflictError = Assert.Throws<CfdLoadException>(() => CfdNameBinder.Bind(
             new[] { conflict },
             new[] { "common::Item", "game::Item", "game::Rule" }));
-        Assert.Equal("CFD-NAME-USE-CONFLICT", conflictError.Errors[0].Code);
+        Assert.Equal("CFD-NAME-USE-CONFLICT", conflictError.Diagnostics[0].Code);
 
         foreach (var source in new[]
         {
@@ -118,7 +118,7 @@ public sealed class ParserTests
         {
             var syntax = Assert.Throws<CfdParseException>(() =>
                 CfdParser.Parse(new CfdSource("invalid-header.cfd", source)));
-            Assert.Contains(syntax.Errors, item => item.Code is "CFD-SYNTAX-HEADER" or "CFD-SYNTAX-007");
+            Assert.Contains(syntax.Diagnostics, item => item.Code is "CFD-SYNTAX-HEADER" or "CFD-SYNTAX-007");
         }
     }
 
@@ -216,8 +216,8 @@ public sealed class ParserTests
     {
         var error = Assert.Throws<CfdLoadException>(() => CfdLoader.LoadDocuments(
             new DelegateCfdTextLoader(_ => null), new[] { "data/missing.cfd" }));
-        Assert.Equal("CFD-SOURCE-MISSING", error.Errors[0].Code);
-        Assert.Equal("data/missing.cfd", error.Errors[0].Path);
+        Assert.Equal("CFD-SOURCE-MISSING", error.Diagnostics[0].Code);
+        Assert.Equal("data/missing.cfd", error.Diagnostics[0].Path);
     }
 
     [Fact]
@@ -231,29 +231,19 @@ public sealed class ParserTests
     }
 
     [Fact]
-    public void ReportsDuplicateFieldsAndRecordLimits()
+    public void ReportsDuplicateFields()
     {
         var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/items.cfd", "Item { sword { name: 1, name: 2 } }")));
-        Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-DUPLICATE-FIELD");
-
-        var limited = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/items.cfd", "Item { sword {} shield {} }"),
-            new CfdLoadOptions { MaxRecords = 1 }));
-        Assert.Contains(limited.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-RECORDS");
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-DUPLICATE-FIELD");
     }
 
     [Fact]
-    public void ReportsDuplicateRecordsAndSourceByteLimits()
+    public void ReportsDuplicateRecords()
     {
         var duplicate = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/items.cfd", "Item { sword {} } Item { sword {} }")));
-        Assert.Contains(duplicate.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-DUPLICATE-RECORD");
-
-        var limited = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/items.cfd", "Item { sword {} }"),
-            new CfdLoadOptions { MaxSourceBytes = 4 }));
-        Assert.Contains(limited.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-SOURCE");
+        Assert.Contains(duplicate.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-DUPLICATE-RECORD");
     }
 
     [Fact]
@@ -274,7 +264,7 @@ public sealed class ParserTests
         var unicodeEscape = Assert.Throws<CfdParseException>(() => CfdParser.Parse(new CfdSource(
             "data/invalid-escape.cfd",
             """Item { item { value: "\u4e2d" } }""")));
-        Assert.Contains(unicodeEscape.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-006");
+        Assert.Contains(unicodeEscape.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-006");
     }
 
     [Fact]
@@ -294,7 +284,7 @@ public sealed class ParserTests
         {
             var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
                 new CfdSource("data/invalid-key.cfd", $"Item {{ \"{key}\" {{}} }}")));
-            Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-RECORD-KEY");
+            Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-RECORD-KEY");
         }
     }
 
@@ -310,67 +300,8 @@ public sealed class ParserTests
         {
             var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
                 new CfdSource("data/quoted-type.cfd", source)));
-            Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-007");
+            Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-007");
         }
-    }
-
-    [Fact]
-    public void ReportsDepthAndNodeLimitsWithStableCodes()
-    {
-        var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/items.cfd", "Item { item { values: [1, 2, 3] } }"),
-            new CfdLoadOptions { MaxDepth = 1, MaxNodes = 2 }));
-        Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
-        Assert.Contains(error.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
-    }
-
-    [Fact]
-    public void CountsStructuralDepthAndNodesLikeTheRustCfdParser()
-    {
-        const string source = "Item { item { values: [1, 2, 3] } }";
-
-        var accepted = CfdParser.Parse(
-            new CfdSource("data/items.cfd", source),
-            new CfdLoadOptions { MaxDepth = 2, MaxNodes = 7 });
-        Assert.Single(accepted.Records);
-
-        var depth = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/items.cfd", source),
-            new CfdLoadOptions { MaxDepth = 1, MaxNodes = 7 }));
-        Assert.Contains(depth.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
-        Assert.DoesNotContain(depth.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
-
-        var nodes = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/items.cfd", source),
-            new CfdLoadOptions { MaxDepth = 2, MaxNodes = 6 }));
-        Assert.DoesNotContain(nodes.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
-        Assert.Contains(nodes.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
-
-        var groupedRecord = CfdParser.Parse(
-            new CfdSource("data/empty.cfd", "Item { item {} }"),
-            new CfdLoadOptions { MaxDepth = 1, MaxNodes = 2 });
-        Assert.Single(groupedRecord.Records);
-    }
-
-    [Fact]
-    public void CountsBitExpressionNodesAndParenthesisDepth()
-    {
-        const string source = "Item { item { flags: (Fire | Ice) ^ Lightning } }";
-
-        var accepted = CfdParser.Parse(
-            new CfdSource("data/flags.cfd", source),
-            new CfdLoadOptions { MaxDepth = 2, MaxNodes = 6 });
-        Assert.Single(accepted.Records);
-
-        var depth = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/flags.cfd", source),
-            new CfdLoadOptions { MaxDepth = 1, MaxNodes = 6 }));
-        Assert.Contains(depth.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-DEPTH");
-
-        var nodes = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
-            new CfdSource("data/flags.cfd", source),
-            new CfdLoadOptions { MaxDepth = 2, MaxNodes = 5 }));
-        Assert.Contains(nodes.Errors, diagnostic => diagnostic.Code == "CFD-LIMIT-NODES");
     }
 
     [Fact]
@@ -383,7 +314,7 @@ public sealed class ParserTests
         });
 
         var error = Assert.Throws<CfdLoadException>(() => new CfdLoadContext(documents));
-        Assert.Contains(error.Errors, diagnostic =>
+        Assert.Contains(error.Diagnostics, diagnostic =>
             diagnostic.Code == "CFD-SYNTAX-DUPLICATE-RECORD" && diagnostic.Path == "data/two.cfd");
     }
 
@@ -397,7 +328,7 @@ public sealed class ParserTests
             new[] { cyclic },
             bindings: new ICfdTypeBinding[] { new NodeBinding() });
         var cycle = Assert.Throws<CfdLoadException>(() => cyclicContext.Resolve<Node>("Node", "a"));
-        Assert.Equal("CFD-REF-CYCLE", cycle.Errors[0].Code);
+        Assert.Equal("CFD-REF-CYCLE", cycle.Diagnostics[0].Code);
 
         var acyclic = CfdParser.Parse(new CfdSource(
             "data/chain.cfd",
@@ -420,15 +351,15 @@ public sealed class ParserTests
         var fields = document.Records[0].Fields;
 
         var unknown = Assert.Throws<CfdLoadException>(() => CfdValueReader.ValidateFields(fields, "name", "count"));
-        Assert.Equal("CFD-FIELD-UNKNOWN", unknown.Errors[0].Code);
-        Assert.NotNull(unknown.Errors[0].Span);
+        Assert.Equal("CFD-FIELD-UNKNOWN", unknown.Diagnostics[0].Code);
+        Assert.NotNull(unknown.Diagnostics[0].Span);
 
         var count = fields.Single(field => field.Name == "count").Value;
         var overflow = Assert.Throws<CfdLoadException>(() => { _ = CfdValueReader.Int32(count); });
-        Assert.Equal("CFD-VALUE-NUMERIC", overflow.Errors[0].Code);
+        Assert.Equal("CFD-VALUE-NUMERIC", overflow.Diagnostics[0].Code);
 
         var invalidEnum = Assert.Throws<CfdLoadException>(() => CfdValueReader.EnumText<TestElement>("Unknown"));
-        Assert.Equal("CFD-VALUE-ENUM", invalidEnum.Errors[0].Code);
+        Assert.Equal("CFD-VALUE-ENUM", invalidEnum.Diagnostics[0].Code);
 
         var flags = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { sword { value: Fire|Ice } }"));
         var flagsValue = flags.Records[0].Fields[0].Value;
@@ -447,7 +378,7 @@ public sealed class ParserTests
             var node = CfdParser.Parse(new CfdSource("data/bool.cfd", $"Item {{ item {{ value: {text} }} }}"))
                 .Records[0].Fields[0].Value;
             var error = Assert.Throws<CfdLoadException>(() => CfdValueReader.Boolean(node));
-            Assert.Equal("CFD-VALUE-BOOLEAN", error.Errors[0].Code);
+            Assert.Equal("CFD-VALUE-BOOLEAN", error.Diagnostics[0].Code);
         }
 
         var quoted = CfdParser.Parse(new CfdSource("data/quoted.cfd", "Item { item { value: \"1\" } }"))
@@ -482,7 +413,7 @@ public sealed class ParserTests
         {
             var error = Assert.Throws<CfdLoadException>(() => CfdValueReader.String(
                 document.Records[0].Fields[0].Value, context));
-            Assert.Equal("CFD-VALUE-FORMAT", error.Errors[0].Code);
+            Assert.Equal("CFD-VALUE-FORMAT", error.Diagnostics[0].Code);
         }
     }
 
@@ -500,7 +431,7 @@ public sealed class ParserTests
 
         var outOfMask = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { item { value: 8 } }"));
         var error = Assert.Throws<CfdLoadException>(() => CfdValueReader.Enum<TestFlags>(outOfMask.Records[0].Fields[0].Value));
-        Assert.Equal("CFD-VALUE-ENUM", error.Errors[0].Code);
+        Assert.Equal("CFD-VALUE-ENUM", error.Diagnostics[0].Code);
     }
 
     [Fact]
@@ -508,11 +439,11 @@ public sealed class ParserTests
     {
         var missingComma = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/invalid.cfd", "Item { item { first: 1 second: 2 } }")));
-        Assert.Contains(missingComma.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-009");
+        Assert.Contains(missingComma.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-009");
 
         var mixed = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/invalid.cfd", "Item { item { values: [one: 1] } }")));
-        Assert.Contains(mixed.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-011");
+        Assert.Contains(mixed.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-011");
 
         var spaced = CfdParser.Parse(new CfdSource(
             "data/spaced.cfd",
@@ -525,7 +456,7 @@ public sealed class ParserTests
     {
         var invalidReference = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/invalid.cfd", "Item { item { target: &id } }")));
-        Assert.Contains(invalidReference.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-RECORD-KEY");
+        Assert.Contains(invalidReference.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-RECORD-KEY");
 
         var document = CfdParser.Parse(new CfdSource(
             "data/object.cfd",
@@ -536,11 +467,11 @@ public sealed class ParserTests
             context,
             "Stats",
             static (fields, _, _) => fields.Count));
-        Assert.Equal("CFD-SYNTAX-DUPLICATE-FIELD", error.Errors[0].Code);
+        Assert.Equal("CFD-SYNTAX-DUPLICATE-FIELD", error.Diagnostics[0].Code);
 
         var complexKey = Assert.Throws<CfdParseException>(() => CfdParser.Parse(
             new CfdSource("data/invalid.cfd", "Item { item { values: { [one]: 1 } } }")));
-        Assert.Contains(complexKey.Errors, diagnostic => diagnostic.Code == "CFD-SYNTAX-007");
+        Assert.Contains(complexKey.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-007");
     }
 
     [Fact]

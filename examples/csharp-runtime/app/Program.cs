@@ -183,7 +183,7 @@ static CoflowModule Load(params string[] sources)
 {
     try
     {
-        return Coflow.LoadAndCompile(sources);
+        return Integration.Config.CoflowData.LoadAndCompile(sources);
     }
     catch (CoflowLoadException error)
     {

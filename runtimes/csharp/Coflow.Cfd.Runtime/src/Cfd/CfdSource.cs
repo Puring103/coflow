@@ -26,7 +26,8 @@ public sealed class DelegateCfdTextLoader : ICfdTextLoader
 {
     private readonly Func<string, string?> _loader;
 
-    public DelegateCfdTextLoader(Func<string, string?> loader) => _loader = loader;
+    public DelegateCfdTextLoader(Func<string, string?> loader) =>
+        _loader = loader ?? throw new ArgumentNullException(nameof(loader));
 
     public bool TryLoad(string logicalPath, out string? text)
     {
