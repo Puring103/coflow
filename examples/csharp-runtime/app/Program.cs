@@ -127,6 +127,25 @@ var formatted = scenario.FormatValues(4, 1.5, true, Option<long>.Some(6));
 Assert(formatted ==
        "value=4, ratio=1.5, enabled=true, optional=Some(6), stats=Some(integration::domain::Stats { health: 3, attack: 5, resistances: { \"arcane\": 11 } })",
     $"typed interpolation returned the wrong text: {formatted}");
+
+Assert(scenario.SyntaxControlFlow(5) == 42,
+    "for/range/break/continue or compound assignment syntax returned the wrong result");
+Assert(scenario.SyntaxOperators(8, 3, "a"),
+    "unary, arithmetic, bitwise, comparison, or logical operator syntax returned the wrong result");
+Assert(scenario.SyntaxMatch(0, Option<long>.Some(4), Result<long, string>.Err("bad"), CharacterId.Arcanist) == 19 &&
+       scenario.SyntaxMatch(-1, Option<long>.None, Result<long, string>.Ok(5), CharacterId.Guardian) == 26,
+    "literal, Option, Result, bool, or enum match syntax returned the wrong result");
+Assert(scenario.TypeMetadata() ==
+       "integration::runtime::Scenario|typeMetadata|typeMetadata|fullRoundTrip|integration::runtime::Scenario::fullRoundTrip|arcanist|integration::domain::Character::arcanist",
+    "type predicates, type patterns, or Coflow metadata returned the wrong value");
+Assert(scenario.BuiltinSyntax("abc"), "built-in function syntax returned the wrong result");
+var syntaxFormatted = scenario.FormatSyntax("line\n\"quoted\"");
+Assert(syntaxFormatted ==
+       "literal={ok} text=line\n\"quoted\" owner=integration::runtime::Scenario::fullRoundTrip hero=integration::domain::Character::arcanist config=Some(integration::domain::Stats { health: 3, attack: 5, resistances: { \"arcane\": 11 } })",
+    $"escaped or metadata interpolation returned the wrong text: {syntaxFormatted}");
+Assert(scenario.PrimeSum(20) == 77, "prime-sum algorithm returned the wrong result");
+Assert(scenario.MatrixKernel(3) == 135, "matrix-kernel algorithm returned the wrong result");
+Assert(scenario.Fibonacci(20) == 6_765, "non-tail Fibonacci returned the wrong result");
 host.Configure(
     "reconfigured",
     traces.Add,

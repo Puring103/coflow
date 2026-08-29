@@ -451,6 +451,7 @@ internal static partial class CoflowCompiler
             IReadOnlyList<MatchArm> Arms,
             bool LastIsComplement) : Expr(Arms[0].Body.Type)
         {
+            internal override bool AlwaysTerminates => Arms.All(arm => arm.Body.AlwaysTerminates);
             internal override Expr WithExpected(Type expected, FunctionParser parser) =>
                 new MatchExpr(Subject, SubjectLocal,
                     Arms.Select(arm => arm with { Body = arm.Body.WithExpected(expected, parser) }).ToArray(),
@@ -501,7 +502,8 @@ internal static partial class CoflowCompiler
                         parser.Emit(CoflowOpCode.StoreLocal, binding);
                     }
                     arm.Body.Emit(parser);
-                    done.Add(parser.Emit(CoflowOpCode.Jump));
+                    if (!arm.Body.AlwaysTerminates)
+                        done.Add(parser.Emit(CoflowOpCode.Jump));
                     if (next is { } jump) parser.Patch(jump, parser._instructions.Count);
                 }
                 var end = parser._instructions.Count;
@@ -747,19 +749,19 @@ internal static partial class CoflowCompiler
                 Collection.Emit(parser);
                 parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(Access.Prepare)), Access.PreparedType);
                 parser.Emit(CoflowOpCode.StoreLocal, CollectionLocal);
-                parser.Emit(CoflowOpCode.Constant, parser.Constant(0L));
+                parser.Emit(CoflowOpCode.Constant, parser.Constant(0L), typeof(long));
                 parser.Emit(CoflowOpCode.StoreLocal, IndexLocal);
                 var condition = parser._instructions.Count;
                 parser.Emit(CoflowOpCode.Local, IndexLocal);
                 parser.Emit(CoflowOpCode.Local, CollectionLocal);
                 parser.Emit(CoflowOpCode.Native, parser.Constant(new CoflowNativeCall(Access.Count)), typeof(long));
-                parser.Emit(CoflowOpCode.LessInt);
+                parser.Emit(CoflowOpCode.LessInt, 0, typeof(bool));
                 var done = parser.Emit(CoflowOpCode.JumpIfFalse);
 
                 parser.Emit(CoflowOpCode.Local, CollectionLocal);
                 parser.Emit(CoflowOpCode.Local, IndexLocal);
-                parser.Emit(CoflowOpCode.Native,
-                    parser.Constant(new CoflowNativeCall(Access.First)));
+                var first = new CoflowNativeCall(Access.First);
+                parser.Emit(CoflowOpCode.Native, parser.Constant(first), first.ResultType);
                 parser.Emit(CoflowOpCode.StoreLocal, FirstLocal);
                 if (SecondLocal is { } second)
                 {
@@ -771,8 +773,9 @@ internal static partial class CoflowCompiler
                     {
                         parser.Emit(CoflowOpCode.Local, CollectionLocal);
                         parser.Emit(CoflowOpCode.Local, IndexLocal);
+                        var secondValue = new CoflowNativeCall(Access.Second!);
                         parser.Emit(CoflowOpCode.Native,
-                            parser.Constant(new CoflowNativeCall(Access.Second!)));
+                            parser.Constant(secondValue), secondValue.ResultType);
                     }
                     parser.Emit(CoflowOpCode.StoreLocal, second);
                 }
@@ -786,8 +789,8 @@ internal static partial class CoflowCompiler
                 loop.ContinueTarget = increment;
                 foreach (var jump in loop.ContinueJumps) parser.Patch(jump, increment);
                 parser.Emit(CoflowOpCode.Local, IndexLocal);
-                parser.Emit(CoflowOpCode.Constant, parser.Constant(1L));
-                parser.Emit(CoflowOpCode.AddInt);
+                parser.Emit(CoflowOpCode.Constant, parser.Constant(1L), typeof(long));
+                parser.Emit(CoflowOpCode.AddInt, 0, typeof(long));
                 parser.Emit(CoflowOpCode.StoreLocal, IndexLocal);
                 parser.Emit(CoflowOpCode.Jump, condition);
                 var end = parser._instructions.Count;
@@ -873,10 +876,12 @@ internal static partial class CoflowCompiler
                 Condition.Emit(parser);
                 var otherwise = parser.Emit(CoflowOpCode.JumpIfFalse);
                 WhenTrue.Emit(parser);
-                var done = parser.Emit(CoflowOpCode.Jump);
+                var done = WhenTrue.AlwaysTerminates
+                    ? (int?)null
+                    : parser.Emit(CoflowOpCode.Jump);
                 parser.Patch(otherwise, parser._instructions.Count);
                 WhenFalse.Emit(parser);
-                parser.Patch(done, parser._instructions.Count);
+                if (done is { } jump) parser.Patch(jump, parser._instructions.Count);
             }
 
             internal override void EmitTailCore(FunctionParser parser)

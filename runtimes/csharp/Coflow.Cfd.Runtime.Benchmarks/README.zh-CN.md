@@ -1,7 +1,8 @@
 # C# VM 性能基准
 
 该项目使用 BenchmarkDotNet 在 Release 模式下测量 C# runtime，包括函数调用、集合操作、
-Host 调用、配置加载和 ModuleSet 替换。
+Host 调用、配置加载和 ModuleSet 替换。VM 组还包含素数试除、三重循环矩阵核和非尾递归
+Fibonacci，用于观察复杂分支、嵌套循环和调用栈负载。
 
 在仓库根目录运行。脚本会先从复杂示例的 CFT 重新生成强类型 C#，再启动基准：
 

@@ -234,7 +234,7 @@ internal static class CoflowRegisterLowering
                 var before = states[pc];
                 if (before is null) continue;
                 foreach (var successor in Transfer(program, pc, before, locals))
-                    changed |= Merge(states, successor.Pc, successor.Stack);
+                    changed |= Merge(program, states, successor.Pc, successor.Stack);
             }
         }
         if (states.Take(instructions.Length).Any(value => value is null))
@@ -581,12 +581,15 @@ internal static class CoflowRegisterLowering
         yield return (pc + 1, stack.ToArray());
     }
 
-    private static bool Merge(Type[][] states, int pc, Type[] incoming)
+    private static bool Merge(CoflowProgram program, Type[][] states, int pc, Type[] incoming)
     {
-        if (pc < 0 || pc >= states.Length) throw new InvalidOperationException("jump target is outside the program");
+        if (pc < 0 || pc >= states.Length) throw Invalid(program, "jump target is outside the program");
         if (states[pc] is null) { states[pc] = incoming; return true; }
         if (!states[pc].SequenceEqual(incoming))
-            throw new InvalidOperationException($"incompatible stack layout at instruction {pc}");
+            throw Invalid(program,
+                $"incompatible stack layout at instruction {pc}: " +
+                $"[{string.Join(", ", states[pc].Select(type => type.Name))}] vs " +
+                $"[{string.Join(", ", incoming.Select(type => type.Name))}]");
         return false;
     }
 

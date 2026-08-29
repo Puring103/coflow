@@ -47,4 +47,13 @@ type Scenario {
   makeStats: fn(value: int) -> Stats;
   makeDefaultStats: fn(value: int) -> Stats;
   formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string;
+  syntaxControlFlow: fn(input: int) -> int;
+  syntaxOperators: fn(left: int, right: int, text: string) -> bool;
+  syntaxMatch: fn(value: int, optional: Option<int>, outcome: Result<int, string>, character: CharacterId) -> int;
+  typeMetadata: fn() -> string;
+  builtinSyntax: fn(text: string) -> bool;
+  formatSyntax: fn(text: string) -> string;
+  primeSum: fn(limit: int) -> int;
+  matrixKernel: fn(size: int) -> int;
+  fibonacci: fn(value: int) -> int;
 }
