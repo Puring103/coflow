@@ -1,7 +1,7 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 /// <summary>Logical project path and UTF-16 source text for one CFD file.</summary>
-public readonly struct CfdSource : IEquatable<CfdSource>
+internal readonly struct CfdSource : IEquatable<CfdSource>
 {
     public CfdSource(string path, string text)
     {
@@ -17,12 +17,12 @@ public readonly struct CfdSource : IEquatable<CfdSource>
     public override int GetHashCode() => HashCode.Combine(Path, Text);
 }
 
-public interface ICfdTextLoader
+internal interface ICfdTextLoader
 {
     bool TryLoad(string logicalPath, out string? text);
 }
 
-public sealed class DelegateCfdTextLoader : ICfdTextLoader
+internal sealed class DelegateCfdTextLoader : ICfdTextLoader
 {
     private readonly Func<string, string?> _loader;
 

@@ -1,26 +1,8 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
-public readonly struct CfdSpan : IEquatable<CfdSpan>
-{
-    public CfdSpan(int startLine, int startColumn, int endLine, int endColumn)
-    {
-        StartLine = startLine;
-        StartColumn = startColumn;
-        EndLine = endLine;
-        EndColumn = endColumn;
-    }
+using System.ComponentModel;
 
-    public int StartLine { get; }
-    public int StartColumn { get; }
-    public int EndLine { get; }
-    public int EndColumn { get; }
-    public bool Equals(CfdSpan other) => StartLine == other.StartLine && StartColumn == other.StartColumn && EndLine == other.EndLine && EndColumn == other.EndColumn;
-    public override bool Equals(object? obj) => obj is CfdSpan other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(StartLine, StartColumn, EndLine, EndColumn);
-    public override string ToString() => $"{StartLine}:{StartColumn}-{EndLine}:{EndColumn}";
-}
-
-public sealed class CfdDocument
+internal sealed class CfdDocument
 {
     public CfdDocument(
         string path,
@@ -40,11 +22,12 @@ public sealed class CfdDocument
     public IReadOnlyList<CfdRecordNode> Records { get; }
 }
 
-public sealed record CfdUseDirective(string Path, string LocalName, CfdSpan Span);
+internal sealed record CfdUseDirective(string Path, string LocalName, CfdSpan Span);
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CfdRecordNode
 {
-    public CfdRecordNode(
+    internal CfdRecordNode(
         string key,
         string declaredType,
         IReadOnlyList<CfdFieldNode> fields,
@@ -65,9 +48,10 @@ public sealed class CfdRecordNode
     public string? GroupType { get; }
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CfdFieldNode
 {
-    public CfdFieldNode(string name, CfdValueNode value, CfdSpan span)
+    internal CfdFieldNode(string name, CfdValueNode value, CfdSpan span)
     {
         Name = name;
         Value = value;
@@ -79,7 +63,7 @@ public sealed class CfdFieldNode
     public CfdSpan Span { get; }
 }
 
-public sealed class CfdEntryNode
+internal sealed class CfdEntryNode
 {
     public CfdEntryNode(CfdValueNode key, CfdValueNode value, CfdSpan span)
     {
@@ -93,9 +77,10 @@ public sealed class CfdEntryNode
     public CfdSpan Span { get; }
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public abstract class CfdValueNode
 {
-    protected CfdValueNode(CfdSpan span) => Span = span;
+    internal CfdValueNode(CfdSpan span) => Span = span;
     public CfdSpan Span { get; }
 }
 
@@ -104,30 +89,30 @@ internal sealed class CfdInvalidValue : CfdValueNode
     internal CfdInvalidValue(CfdSpan span) : base(span) { }
 }
 
-public sealed class CfdNoneValue : CfdValueNode
+internal sealed class CfdNoneValue : CfdValueNode
 {
     public CfdNoneValue(CfdSpan span) : base(span) { }
 }
 
-public sealed class CfdSomeValue : CfdValueNode
+internal sealed class CfdSomeValue : CfdValueNode
 {
     public CfdSomeValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
     public CfdValueNode Value { get; }
 }
 
-public sealed class CfdOkValue : CfdValueNode
+internal sealed class CfdOkValue : CfdValueNode
 {
     public CfdOkValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
     public CfdValueNode Value { get; }
 }
 
-public sealed class CfdErrValue : CfdValueNode
+internal sealed class CfdErrValue : CfdValueNode
 {
     public CfdErrValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
     public CfdValueNode Value { get; }
 }
 
-public sealed class CfdScalarValue : CfdValueNode
+internal sealed class CfdScalarValue : CfdValueNode
 {
     public CfdScalarValue(string value, CfdSpan span) : base(span) => Value = value;
     public string Value { get; }
@@ -141,13 +126,13 @@ internal sealed class CfdConstantValue : CfdValueNode
     internal CoflowConstant Constant { get; }
 }
 
-public sealed class CfdStringValue : CfdValueNode
+internal sealed class CfdStringValue : CfdValueNode
 {
     public CfdStringValue(string value, CfdSpan span) : base(span) => Value = value;
     public string Value { get; }
 }
 
-public sealed class CfdFormattedStringValue : CfdValueNode
+internal sealed class CfdFormattedStringValue : CfdValueNode
 {
     public CfdFormattedStringValue(string source, IReadOnlyList<CfdFormatSegment> segments, CfdSpan span)
         : base(span)
@@ -160,28 +145,28 @@ public sealed class CfdFormattedStringValue : CfdValueNode
     public IReadOnlyList<CfdFormatSegment> Segments { get; }
 }
 
-public sealed class CfdFunctionValue : CfdValueNode
+internal sealed class CfdFunctionValue : CfdValueNode
 {
     public CfdFunctionValue(string source, CfdSpan span) : base(span) => Source = source;
     public string Source { get; }
 }
 
-public abstract record CfdFormatSegment;
+internal abstract record CfdFormatSegment;
 
-public sealed record CfdFormatText(string Text) : CfdFormatSegment;
+internal sealed record CfdFormatText(string Text) : CfdFormatSegment;
 
-public sealed record CfdFormatReference(
+internal sealed record CfdFormatReference(
     string? TypeName,
     string? Key,
     IReadOnlyList<string> Path) : CfdFormatSegment;
 
-public sealed class CfdBitExpressionValue : CfdValueNode
+internal sealed class CfdBitExpressionValue : CfdValueNode
 {
     public CfdBitExpressionValue(CfdBitExpression expression, CfdSpan span) : base(span) => Expression = expression;
     public CfdBitExpression Expression { get; }
 }
 
-public sealed class CfdBitExpression
+internal sealed class CfdBitExpression
 {
     private CfdBitExpression(CfdBitExpressionKind kind, CfdSpan span)
     {
@@ -205,7 +190,7 @@ public sealed class CfdBitExpression
     internal CfdBitExpression WithSpan(CfdSpan span) => new(Kind, span);
 }
 
-public abstract record CfdBitExpressionKind
+internal abstract record CfdBitExpressionKind
 {
     private CfdBitExpressionKind() { }
 
@@ -217,14 +202,14 @@ public abstract record CfdBitExpressionKind
         CfdBitExpression Right) : CfdBitExpressionKind;
 }
 
-public enum CfdBitOperator
+internal enum CfdBitOperator
 {
     Or,
     Xor,
     And,
 }
 
-public sealed class CfdReferenceValue : CfdValueNode
+internal sealed class CfdReferenceValue : CfdValueNode
 {
     public CfdReferenceValue(string? typeName, string key, CfdSpan span) : base(span)
     {
@@ -236,7 +221,7 @@ public sealed class CfdReferenceValue : CfdValueNode
     public string Key { get; }
 }
 
-public sealed class CfdObjectValue : CfdValueNode
+internal sealed class CfdObjectValue : CfdValueNode
 {
     public CfdObjectValue(string? declaredType, IReadOnlyList<CfdFieldNode> fields, CfdSpan span) : base(span)
     {
@@ -248,13 +233,13 @@ public sealed class CfdObjectValue : CfdValueNode
     public IReadOnlyList<CfdFieldNode> Fields { get; }
 }
 
-public sealed class CfdArrayValue : CfdValueNode
+internal sealed class CfdArrayValue : CfdValueNode
 {
     public CfdArrayValue(IReadOnlyList<CfdValueNode> items, CfdSpan span) : base(span) => Items = items;
     public IReadOnlyList<CfdValueNode> Items { get; }
 }
 
-public sealed class CfdDictionaryValue : CfdValueNode
+internal sealed class CfdDictionaryValue : CfdValueNode
 {
     public CfdDictionaryValue(IReadOnlyList<CfdEntryNode> entries, CfdSpan span) : base(span) => Entries = entries;
     public IReadOnlyList<CfdEntryNode> Entries { get; }

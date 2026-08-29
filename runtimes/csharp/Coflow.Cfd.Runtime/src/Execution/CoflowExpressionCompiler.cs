@@ -1,4 +1,4 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 using System.Linq.Expressions;
 

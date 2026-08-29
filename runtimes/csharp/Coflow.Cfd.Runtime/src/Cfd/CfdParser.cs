@@ -1,10 +1,11 @@
 using System.Globalization;
+using System.ComponentModel;
 using System.Text;
 
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 /// <summary>Schema-free parser shared by generated target models.</summary>
-public static class CfdParser
+internal static class CfdParser
 {
     public static CfdDocument Parse(CfdSource source)
     {

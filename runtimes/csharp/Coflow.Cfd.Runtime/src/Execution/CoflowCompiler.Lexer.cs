@@ -1,4 +1,4 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 internal static partial class CoflowCompiler
 {

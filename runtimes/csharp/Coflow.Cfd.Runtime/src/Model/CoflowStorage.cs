@@ -1,4 +1,4 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public sealed class CoflowFieldBinding

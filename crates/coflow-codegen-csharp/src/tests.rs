@@ -48,6 +48,7 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(!output.contains("Load(ICfdTextLoader loader"));
     assert!(!output.contains("public sealed partial class CoflowTables"));
     assert!(output.contains("using CoflowRuntime;"));
+    assert!(output.contains("using CoflowRuntime.Generated;"));
     assert!(!output.contains("Newtonsoft.Json"));
     assert!(!output.contains("MessagePack"));
     assert!(!output.contains(".json"));

@@ -1,4 +1,4 @@
-namespace CoflowRuntime;
+namespace CoflowRuntime.Generated;
 
 internal enum CoflowRegisterKind : byte { Integer, Float, Reference }
 

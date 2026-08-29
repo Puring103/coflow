@@ -1,4 +1,5 @@
 using CoflowRuntime;
+using CoflowRuntime.Generated;
 using System;
 using Xunit;
 
