@@ -209,5 +209,164 @@ Scenario {
     formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string {
       "value={value}, ratio={ratio}, enabled={enabled}, optional={optional}, stats={config.optionalBonus}"
     },
+
+    syntaxControlFlow: fn(input: int) -> int {
+      var total = 0;
+      for item, index in [1, 2, 3, 4, 5] {
+        if item == 2 { continue; };
+        if item == 5 { break; };
+        total += item + index;
+      }
+      for key, item in { "a": 2, "bb": 3 } {
+        total += key.len() + item;
+      }
+      for item in 1..4 {
+        total += item;
+      }
+      for item, index in 1..=3 {
+        total += item + index;
+      }
+      var counter = 0;
+      while true {
+        counter += 1;
+        if counter == 2 { break; }
+      }
+      total += counter;
+      total -= 1;
+      total *= 2;
+      total /= 2;
+      total = total + input;
+      total
+    },
+
+    syntaxOperators: fn(left: int, right: int, text: string) -> bool {
+      -left == -8 &&
+      -float(left) == -8.0 &&
+      ~left == -9 &&
+      left + right == 11 &&
+      left - right == 5 &&
+      left * right == 24 &&
+      left / right == 2 &&
+      left // right == 2 &&
+      left % right == 2 &&
+      right ** 2 == 9 &&
+      left << 1 == 16 &&
+      left >> 1 == 4 &&
+      (left & right) == 0 &&
+      (left ^ right) == 11 &&
+      (left | right) == 11 &&
+      0 < right < left &&
+      left >= right &&
+      left != right &&
+      !(left == right) &&
+      ((left > right && right > 0) || left < right) &&
+      float(left) / float(right) > 2.5 &&
+      float(left) + float(right) == 11.0 &&
+      float(left) - float(right) == 5.0 &&
+      float(left) * float(right) == 24.0 &&
+      float(right) ** 2.0 == 9.0 &&
+      float(right) < float(left) &&
+      float(right) <= float(left) &&
+      float(left) >= float(right) &&
+      text + "b" == "ab" &&
+      text < "b" &&
+      text <= "a" &&
+      "z" > text &&
+      "a" >= text
+    },
+
+    syntaxMatch: fn(value: int, optional: Option<int>, outcome: Result<int, string>, character: CharacterId) -> int {
+      var literal = match value { -1 => 1, 0 => 2, _ => 3 };
+      var optionValue = match optional { Some(item) => item, None => 0 };
+      var resultValue = match outcome { Ok(item) => item, Err(message) => message.len() };
+      var enumValue = match character {
+        CharacterId::arcanist => 10,
+        CharacterId::guardian => 20,
+      };
+      var boolValue = match value > 0 { true => 1, false => 0 };
+      literal + optionValue + resultValue + enumValue + boolValue
+    },
+
+    typeMetadata: fn() -> string {
+      var identity = if hero is Character { hero.$id } else { "invalid" };
+      var matched = match hero {
+        Character character => character.$path,
+        _ => "invalid",
+      };
+      "{$type}|{$field}|{$function}|{$id}|{$path}|{identity}|{matched}"
+    },
+
+    builtinSyntax: fn(text: string) -> bool {
+      var numbers = [1, 2, 3];
+      var dictionary = { "a": 1, "b": 2 };
+      var emptyNumbers: [int] = [];
+      var emptyDictionary: {string: int} = {};
+      text.len() == 3 &&
+      text.contains("b") &&
+      text.startsWith("a") &&
+      text.endsWith("c") &&
+      !text.isBlank() &&
+      text.matches("^a.*c$") &&
+      numbers.len() == 3 &&
+      numbers.contains(2) &&
+      numbers.isUnique() &&
+      numbers.min() == 1 &&
+      numbers.max() == 3 &&
+      numbers.sum() == 6 &&
+      numbers.isSorted() &&
+      numbers.isStrictlySorted() &&
+      numbers.intersects([3, 4]) &&
+      numbers.isDisjoint([4, 5]) &&
+      numbers.isSubsetOf([0, 1, 2, 3]) &&
+      numbers.isSupersetOf([1, 2]) &&
+      dictionary.len() == 2 &&
+      dictionary.containsKey("a") &&
+      dictionary.contains("b") &&
+      dictionary.containsValue(2) &&
+      dictionary.keys().len() == 2 &&
+      dictionary.values().sum() == 3 &&
+      emptyNumbers.len() == 0 &&
+      emptyDictionary.len() == 0 &&
+      (-4).abs() == 4 &&
+      (-4.0).abs() == 4.0 &&
+      9.0.sqrt() == 3.0 &&
+      9.0.isFinite() &&
+      1.0.approxEqual(1.001, 0.01)
+    },
+
+    formatSyntax: fn(text: string) -> string {
+      "literal={{ok}} text={text} owner={$path} hero={hero.$path} config={config.optionalBonus}"
+    },
+
+    primeSum: fn(limit: int) -> int {
+      var total = 0;
+      for candidate in 2..=limit {
+        var prime = true;
+        for divisor in 2..candidate {
+          if candidate % divisor == 0 {
+            prime = false;
+            break;
+          }
+        }
+        if prime { total += candidate; }
+      }
+      total
+    },
+
+    matrixKernel: fn(size: int) -> int {
+      var total = 0;
+      for row in 0..size {
+        for column in 0..size {
+          for depth in 0..size {
+            total += (row + 1) * (column + 1) + depth % 3;
+          }
+        }
+      }
+      total
+    },
+
+    fibonacci: fn(value: int) -> int {
+      if value <= 1 { value } else { fibonacci(value - 1) + fibonacci(value - 2) }
+    },
   }
 }

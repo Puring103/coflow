@@ -491,7 +491,10 @@ internal static partial class CoflowCompiler
                     ? CoflowBuiltinLibrary.Resolve(name, receiver.Type,
                         arguments.Select(argument => argument.Type).ToArray())
                     : CoflowBuiltinLibrary.ResolveRegex(regexPattern);
-                return new BuiltinExpr(receiver, arguments, builtin);
+                return new BuiltinExpr(
+                    receiver,
+                    regexPattern is null ? arguments : Array.Empty<Expr>(),
+                    builtin);
             }
             catch (ArgumentException error)
             {
@@ -1199,7 +1202,9 @@ internal static partial class CoflowCompiler
 
         private bool IsExhaustiveMatch(Type subjectType, HashSet<string> kinds)
         {
-            if (subjectType == typeof(bool)) return kinds.Contains("true") && kinds.Contains("false");
+            if (subjectType == typeof(bool))
+                return kinds.Contains("literal:System.Boolean:True") &&
+                    kinds.Contains("literal:System.Boolean:False");
             _enumsByRuntimeType.TryGetValue(subjectType, out var subjectEnum);
             if (subjectEnum is not null)
                 return subjectEnum.Variants.Keys.All(variant =>

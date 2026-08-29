@@ -77,6 +77,18 @@ public class VmExecutionBenchmarks
 
     [Benchmark]
     public long ReturnedVmClosure() => _vmClosure(4);
+
+    [Benchmark]
+    public long PrimeTrialDivision() => _scenario.PrimeSum(250);
+
+    [Benchmark]
+    public long MatrixKernel() => _scenario.MatrixKernel(12);
+
+    [Benchmark]
+    public long NonTailRecursiveFibonacci() => _scenario.Fibonacci(18);
+
+    [Benchmark]
+    public bool BuiltinAnalytics() => _scenario.BuiltinSyntax("abc");
 }
 
 [MemoryDiagnoser]

@@ -240,6 +240,54 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void VmExecutesLoopControlRangesIndexesAndCompoundAssignments()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "var total = 0; for item, index in 0..value { " +
+            "if item == 1 { continue; }; if item == 4 { break; }; " +
+            "total += item + index; } " +
+            "total -= 1; total *= 2; total /= 2; total } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(9, rule.Calculate(10));
+    }
+
+    [Fact]
+    public void VmExecutesPrecompiledRegexWithoutLeakingThePatternOntoTheStack()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "if \"abc\".matches(\"^a.*c$\") { value } else { 0 } } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(7, rule.Calculate(7));
+    }
+
+    [Fact]
+    public void CompilerAcceptsExhaustiveBooleanMatchPatterns()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "match value > 0 { true => value, false => 0 } } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(7, rule.Calculate(7));
+        Assert.Equal(0, rule.Calculate(-1));
+    }
+
+    [Fact]
+    public void VmFormatsEscapedBracesArgumentsAndContextMetadata()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "\"{{ok}} {$id} {value}\".len() } } }";
+        var rule = Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata()))
+            .Table(Rules).Get("main").Value;
+
+        Assert.Equal(11, rule.Calculate(7));
+    }
+
+    [Fact]
     public void CompilerReportsIndependentFunctionErrorsWithSourceLocations()
     {
         var source = "Rule { main { " +
@@ -257,6 +305,31 @@ public sealed class CoflowModuleTests
             Assert.False(string.IsNullOrWhiteSpace(item.Path));
             Assert.NotNull(item.Span);
         });
+    }
+
+    [Theory]
+    [InlineData("break; 0", "COFLOW-FUNCTION-CONTROL")]
+    [InlineData("continue; 0", "COFLOW-FUNCTION-CONTROL")]
+    [InlineData("for item in value { } 0", "COFLOW-FUNCTION-TYPE")]
+    [InlineData("value += 1; value", "COFLOW-FUNCTION-ASSIGN")]
+    [InlineData("~\"text\"", "COFLOW-FUNCTION-TYPE")]
+    [InlineData("value + 1.0", "COFLOW-FUNCTION-TYPE")]
+    [InlineData("if value is int { 1 } else { 0 }", "COFLOW-FUNCTION-TYPE")]
+    [InlineData("$missing; 0", "COFLOW-FUNCTION-METADATA")]
+    [InlineData("\"{}\"; 0", "COFLOW-FUNCTION-INTERPOLATION")]
+    [InlineData("match value { 1 => 1 }", "COFLOW-FUNCTION-MATCH")]
+    [InlineData("value.len()", "COFLOW-FUNCTION-BUILTIN")]
+    public void CompilerRejectsInvalidControlOperatorMatchMetadataAndBuiltinSyntax(
+        string body,
+        string code)
+    {
+        var source = $"Rule {{ main {{ calculate: fn(value: int) -> int {{ {body} }} }} }}";
+
+        var error = Assert.Throws<CoflowLoadException>(() =>
+            Coflow.LoadAndCompile(new[] { source }, Contract(new RuleMetadata())));
+
+        Assert.Contains(error.Diagnostics, item => item.Code == code);
+        Assert.All(error.Diagnostics, item => Assert.NotNull(item.Span));
     }
 
     private static CoflowModule LoadData(string source) =>
