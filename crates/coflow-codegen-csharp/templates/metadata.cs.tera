@@ -66,13 +66,13 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
         public object FromInt64(long value) => ({{ enum.qualified_name }})value;
     }
 
-{% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : CoflowGeneratedTypeMetadata, {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
+{% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
     {
 {% for field in type.fields %}        private static readonly CoflowFieldBinding Field{{ loop.index0 }} =
             CoflowFieldBinding.{% if field.is_enum %}CreateEnum{% else %}Create{% endif %}<{{ type.qualified_name }}, {{ field.runtime_type }}>(
                 "{{ field.source_name }}", static record => record.{{ field.access }}{% if field.is_enum %}, static value => (long)value{% endif %});
 {% endfor %}{% if type.fields | length > 0 %}
-{% endif %}        public override CoflowFieldBinding GetFieldBinding(string fieldName) => fieldName switch
+{% endif %}        public CoflowFieldBinding GetFieldBinding(string fieldName) => fieldName switch
         {
 {% for field in type.fields %}            "{{ field.source_name }}" => Field{{ loop.index0 }},
 {% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),

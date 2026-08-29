@@ -34,7 +34,7 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(output.contains("public static class CoflowData"));
     assert!(!output.contains("CoflowGeneratedRegistry"));
     assert!(output.contains("CoflowGeneratedContract : ICoflowGeneratedContract"));
-    assert!(output.contains("CoflowGeneratedTypeMetadata, ICoflowRecordMetadata"));
+    assert!(output.contains("CoflowMetadata : ICoflowRecordMetadata"));
     assert!(output.contains("CoflowFieldBinding.Create<global::Game.Config.Item, string>"));
     assert!(output.contains("PopulateCft_4974656D((global::Game.Config.Item)target, record, context)"));
     assert!(output.contains("target._coflowName = CfdValueReader.String"));
@@ -73,7 +73,7 @@ fn emits_cft_structs_as_reference_types_with_value_equality() {
     assert!(!output.contains("partial struct Point"));
     assert!(!output.contains("CoflowStringTableToken<Point>"));
     assert!(output.contains(
-        "Cft_506F696E74CoflowMetadata : CoflowGeneratedTypeMetadata, ICoflowTypeMetadata"
+        "Cft_506F696E74CoflowMetadata : ICoflowTypeMetadata"
     ));
     assert!(!output.contains("Cft_506F696E74CoflowMetadata : ICoflowRecordMetadata"));
     assert!(!output.contains("public Type KeyType"));
@@ -316,7 +316,7 @@ fn preserves_host_singleton_in_generated_metadata() {
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
     assert!(output.contains(
-        "Cft_417069CoflowMetadata : CoflowGeneratedTypeMetadata, ICoflowHostMetadata"
+        "Cft_417069CoflowMetadata : ICoflowHostMetadata"
     ));
     assert!(output.contains("public void Configure("));
     assert!(output.contains("string environment,\n        Action<string> log"));

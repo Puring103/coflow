@@ -135,63 +135,17 @@ internal sealed class CoflowFieldAccess
     internal Func<object, double>? ReadFloat { get; }
     internal Func<object, object?>? ReadReference { get; }
 
-    internal static CoflowFieldAccess Bind(ICoflowTypeMetadata metadata, string fieldName)
+    internal static CoflowFieldAccess Bind(ICoflowTypeMetadata metadata, CoflowFieldBinding binding)
     {
         if (metadata is null) throw new ArgumentNullException(nameof(metadata));
-        if (metadata is CoflowGeneratedTypeMetadata generated)
-        {
-            var binding = generated.GetFieldBinding(fieldName);
-            return new CoflowFieldAccess(
-                binding.Name,
-                binding.RuntimeType,
-                metadata is ICoflowHostMetadata,
-                binding.Call,
-                binding.ReadInteger,
-                binding.ReadFloat,
-                binding.ReadReference);
-        }
-        var runtimeType = metadata.GetFieldType(fieldName);
-        var reader = metadata.GetFieldReader(fieldName);
-        var shape = CoflowValueShape.Of(runtimeType);
-        Func<object, long>? readInteger = null;
-        Func<object, double>? readFloat = null;
-        Func<object, object?>? readReference = null;
-        if (shape.Kind == CoflowValueShapeKind.Scalar)
-        {
-            var value = System.Linq.Expressions.Expression.Parameter(typeof(object), "value");
-            var invoke = reader.GetType().GetMethod("Invoke")!;
-            var read = System.Linq.Expressions.Expression.Invoke(
-                System.Linq.Expressions.Expression.Constant(reader),
-                System.Linq.Expressions.Expression.Convert(value, invoke.GetParameters()[0].ParameterType));
-            switch (shape.ScalarKind)
-            {
-                case CoflowRegisterKind.Integer:
-                    System.Linq.Expressions.Expression integer = runtimeType == typeof(bool)
-                        ? System.Linq.Expressions.Expression.Condition(read,
-                            System.Linq.Expressions.Expression.Constant(1L),
-                            System.Linq.Expressions.Expression.Constant(0L))
-                        : System.Linq.Expressions.Expression.Convert(read, typeof(long));
-                    readInteger = CoflowExpressionCompiler.Compile(System.Linq.Expressions.Expression
-                        .Lambda<Func<object, long>>(integer, value));
-                    break;
-                case CoflowRegisterKind.Float:
-                    readFloat = CoflowExpressionCompiler.Compile(System.Linq.Expressions.Expression
-                        .Lambda<Func<object, double>>(read, value));
-                    break;
-                default:
-                    readReference = CoflowExpressionCompiler.Compile(System.Linq.Expressions.Expression
-                        .Lambda<Func<object, object?>>(
-                            System.Linq.Expressions.Expression.Convert(read, typeof(object)), value));
-                    break;
-            }
-        }
+        if (binding is null) throw new ArgumentNullException(nameof(binding));
         return new CoflowFieldAccess(
-            fieldName,
-            runtimeType,
+            binding.Name,
+            binding.RuntimeType,
             metadata is ICoflowHostMetadata,
-            new CoflowNativeCall(reader),
-            readInteger,
-            readFloat,
-            readReference);
+            binding.Call,
+            binding.ReadInteger,
+            binding.ReadFloat,
+            binding.ReadReference);
     }
 }
