@@ -142,13 +142,14 @@ internal static partial class CoflowCompiler
                 var supplied = Fields.ToDictionary(field => field.Name, StringComparer.Ordinal);
                 foreach (var name in Metadata.FieldNames)
                 {
-                    if (Metadata.GetFieldType(name) == typeof(CoflowFunctionEntry)) continue;
+                    var fieldType = Metadata.GetFieldBinding(name).RuntimeType;
+                    if (fieldType == typeof(CoflowFunctionEntry)) continue;
                     if (supplied.TryGetValue(name, out var field)) field.Value.Emit(parser);
                     else
                     {
                         var factory = Metadata.CreateVmDefaultFactory(name, Context);
                         parser.Emit(CoflowOpCode.Native,
-                            parser.Constant(new CoflowNativeCall(factory)), Metadata.GetFieldType(name));
+                            parser.Constant(new CoflowNativeCall(factory)), fieldType);
                     }
                 }
                 parser.Emit(CoflowOpCode.Native,

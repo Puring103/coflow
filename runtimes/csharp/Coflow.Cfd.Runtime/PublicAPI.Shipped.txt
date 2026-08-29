@@ -3,7 +3,6 @@ abstract CoflowRuntime.CoflowTable.Count.get -> int
 abstract CoflowRuntime.CoflowTable.GetEnumerator() -> System.Collections.IEnumerator!
 abstract CoflowRuntime.CoflowTable.KeyType.get -> System.Type!
 abstract CoflowRuntime.CoflowTable.RecordType.get -> System.Type!
-abstract CoflowRuntime.Generated.CoflowGeneratedTypeMetadata.GetFieldBinding(string! fieldName) -> CoflowRuntime.Generated.CoflowFieldBinding!
 Coflow
 CoflowRuntime.CfdDiagnostic
 CoflowRuntime.CfdDiagnostic.CfdDiagnostic(string! code, string! message, string! path, CoflowRuntime.CfdSpan? span = null) -> void
@@ -140,7 +139,6 @@ CoflowRuntime.Generated.CoflowDelegateAdapter
 CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>
 CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.CoflowEnumTableToken() -> void
 CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.Empty.get -> CoflowRuntime.CoflowEnumTable<T!, TKey>!
-CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.KeyType.get -> System.Type!
 CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.RecordType.get -> System.Type!
 CoflowRuntime.Generated.CoflowFieldBinding
 CoflowRuntime.Generated.CoflowFieldBinding.Name.get -> string!
@@ -170,11 +168,6 @@ CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>
 CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.CoflowFunctionEntry(CoflowRuntime.Generated.CoflowFunctionEntry! entry, TDelegate! function) -> void
 CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.Function.get -> TDelegate!
 CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.RuntimeEntry.get -> CoflowRuntime.Generated.CoflowFunctionEntry!
-CoflowRuntime.Generated.CoflowGeneratedTypeMetadata
-CoflowRuntime.Generated.CoflowGeneratedTypeMetadata.CoflowGeneratedTypeMetadata() -> void
-CoflowRuntime.Generated.CoflowGeneratedTypeMetadata.GetField(object! record, string! fieldName) -> object!
-CoflowRuntime.Generated.CoflowGeneratedTypeMetadata.GetFieldReader(string! fieldName) -> System.Delegate!
-CoflowRuntime.Generated.CoflowGeneratedTypeMetadata.GetFieldType(string! fieldName) -> System.Type!
 CoflowRuntime.Generated.CoflowHostFunctionBinding
 CoflowRuntime.Generated.CoflowHostFunctionBinding.CoflowHostFunctionBinding() -> void
 CoflowRuntime.Generated.CoflowHostFunctionBinding.CoflowHostFunctionBinding(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Delegate! implementation) -> void
@@ -186,7 +179,6 @@ CoflowRuntime.Generated.CoflowHostState.EnsureBound() -> void
 CoflowRuntime.Generated.CoflowStringTableToken<T>
 CoflowRuntime.Generated.CoflowStringTableToken<T>.CoflowStringTableToken() -> void
 CoflowRuntime.Generated.CoflowStringTableToken<T>.Empty.get -> CoflowRuntime.CoflowStringTable<T!>!
-CoflowRuntime.Generated.CoflowStringTableToken<T>.KeyType.get -> System.Type!
 CoflowRuntime.Generated.CoflowStringTableToken<T>.RecordType.get -> System.Type!
 CoflowRuntime.Generated.ICfdTypeBinding
 CoflowRuntime.Generated.ICfdTypeBinding.AssignableTypes.get -> System.Collections.Generic.IReadOnlyList<string!>!
@@ -216,7 +208,6 @@ CoflowRuntime.Generated.ICoflowRecordMetadata.ParseKey(string! key) -> object!
 CoflowRuntime.Generated.ICoflowRecordMetadata.PopulateRecord(object! target, CoflowRuntime.Generated.CfdRecordNode! record, CoflowRuntime.Generated.CfdLoadContext! context) -> void
 CoflowRuntime.Generated.ICoflowTableToken<TTable>
 CoflowRuntime.Generated.ICoflowTableToken<TTable>.Empty.get -> TTable!
-CoflowRuntime.Generated.ICoflowTableToken<TTable>.KeyType.get -> System.Type!
 CoflowRuntime.Generated.ICoflowTableToken<TTable>.RecordType.get -> System.Type!
 CoflowRuntime.Generated.ICoflowTypeMetadata
 CoflowRuntime.Generated.ICoflowTypeMetadata.Annotations.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
@@ -225,9 +216,7 @@ CoflowRuntime.Generated.ICoflowTypeMetadata.CreateVmDefaultFactory(string! field
 CoflowRuntime.Generated.ICoflowTypeMetadata.CreateVmObjectFactory(CoflowRuntime.Generated.CfdLoadContext! context) -> System.Delegate!
 CoflowRuntime.Generated.ICoflowTypeMetadata.FieldAnnotations(string! fieldName) -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
 CoflowRuntime.Generated.ICoflowTypeMetadata.FieldNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
-CoflowRuntime.Generated.ICoflowTypeMetadata.GetField(object! record, string! fieldName) -> object!
-CoflowRuntime.Generated.ICoflowTypeMetadata.GetFieldReader(string! fieldName) -> System.Delegate!
-CoflowRuntime.Generated.ICoflowTypeMetadata.GetFieldType(string! fieldName) -> System.Type!
+CoflowRuntime.Generated.ICoflowTypeMetadata.GetFieldBinding(string! fieldName) -> CoflowRuntime.Generated.CoflowFieldBinding!
 CoflowRuntime.Generated.ICoflowTypeMetadata.HasFieldDefault(string! fieldName) -> bool
 CoflowRuntime.Generated.ICoflowTypeMetadata.IsAbstract.get -> bool
 CoflowRuntime.Generated.ICoflowTypeMetadata.IsSealed.get -> bool

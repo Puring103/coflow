@@ -116,22 +116,11 @@ public interface ICoflowTypeMetadata : ICfdTypeBinding
     IReadOnlyList<CoflowAnnotation> Annotations { get; }
     IReadOnlyList<string> FieldNames { get; }
     IReadOnlyList<CoflowAnnotation> FieldAnnotations(string fieldName);
-    Type GetFieldType(string fieldName);
-    object GetField(object record, string fieldName);
-    Delegate GetFieldReader(string fieldName);
+    CoflowFieldBinding GetFieldBinding(string fieldName);
     bool HasFieldDefault(string fieldName);
     object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields);
     Delegate CreateVmObjectFactory(CfdLoadContext context);
     Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context);
-}
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public abstract class CoflowGeneratedTypeMetadata
-{
-    public abstract CoflowFieldBinding GetFieldBinding(string fieldName);
-    public Type GetFieldType(string fieldName) => GetFieldBinding(fieldName).RuntimeType;
-    public object GetField(object record, string fieldName) => GetFieldBinding(fieldName).Read(record);
-    public Delegate GetFieldReader(string fieldName) => GetFieldBinding(fieldName).Reader;
 }
 
 [EditorBrowsable(EditorBrowsableState.Never)]

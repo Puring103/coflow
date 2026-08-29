@@ -166,8 +166,9 @@ internal static class CoflowFormatting
         }
         var fieldValues = objectMetadata.FieldNames.Select(field =>
         {
-            var fieldType = objectMetadata.GetFieldType(field);
-            var reader = objectMetadata.GetFieldReader(field);
+            var binding = objectMetadata.GetFieldBinding(field);
+            var fieldType = binding.RuntimeType;
+            var reader = binding.Reader;
             var fieldValue = Expression.Invoke(Expression.Convert(Expression.Constant(reader),
                 Expression.GetFuncType(type, fieldType)), value);
             return Expression.Call(typeof(CoflowFormatting), nameof(Concat2), Type.EmptyTypes,

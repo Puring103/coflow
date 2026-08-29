@@ -587,8 +587,9 @@ internal static partial class CoflowCompiler
                 Error("COFLOW-FUNCTION-FIELD",
                     $"type `{FormatType(receiver.Type)}` has no field `{fieldName}`");
             var resolved = metadata!;
-            return new FieldExpr(receiver, resolved.GetFieldType(fieldName),
-                CoflowFieldAccess.Bind(resolved, fieldName));
+            var binding = resolved.GetFieldBinding(fieldName);
+            return new FieldExpr(receiver, binding.RuntimeType,
+                CoflowFieldAccess.Bind(resolved, binding));
         }
 
         private Expr ParseCall(Expr target)
@@ -689,12 +690,13 @@ internal static partial class CoflowCompiler
                         _metadata.TryGetValue(_entry.Identity.DeclaredType, out var ownerMetadata) &&
                         ownerMetadata.FieldNames.Contains(token.Text, StringComparer.Ordinal))
                     {
-                        if (ownerMetadata.GetFieldType(token.Text) == typeof(CoflowFunctionEntry))
-                            return new FunctionReferenceExpr((CoflowFunctionEntry)ownerMetadata.GetField(owner, token.Text));
+                        var binding = ownerMetadata.GetFieldBinding(token.Text);
+                        if (binding.RuntimeType == typeof(CoflowFunctionEntry))
+                            return new FunctionReferenceExpr((CoflowFunctionEntry)binding.Read(owner));
                         return new FieldExpr(
                             new ConstantExpr(owner, ownerMetadata.RuntimeType),
-                            ownerMetadata.GetFieldType(token.Text),
-                            CoflowFieldAccess.Bind(ownerMetadata, token.Text));
+                            binding.RuntimeType,
+                            CoflowFieldAccess.Bind(ownerMetadata, binding));
                     }
                     if (_declaredConstants.TryGetValue(_names.Resolve(token.Text), out var constant))
                         return new ConstantExpr(_context.ResolveConstant(constant), constant.RuntimeType);
@@ -750,7 +752,7 @@ internal static partial class CoflowCompiler
             {
                 if (!visiting.Add(type)) return true;
                 var result = metadata.FieldNames.All(field =>
-                    SupportsEquality(metadata.GetFieldType(field), visiting));
+                    SupportsEquality(metadata.GetFieldBinding(field).RuntimeType, visiting));
                 visiting.Remove(type);
                 return result;
             }
@@ -776,7 +778,7 @@ internal static partial class CoflowCompiler
             {
                 if (metadata is ICoflowRecordMetadata || !visiting.Add(type)) return true;
                 var result = metadata.FieldNames.All(field =>
-                    IsInterpolatable(metadata.GetFieldType(field), visiting));
+                    IsInterpolatable(metadata.GetFieldBinding(field).RuntimeType, visiting));
                 visiting.Remove(type);
                 return result;
             }
@@ -819,7 +821,8 @@ internal static partial class CoflowCompiler
                 Error("COFLOW-FUNCTION-OBJECT", $"abstract type `{declaredName}` cannot be constructed");
             if (metadata is ICoflowHostMetadata || metadata.IsSingleton)
                 Error("COFLOW-FUNCTION-OBJECT", $"singleton type `{declaredName}` cannot be constructed as a value");
-            if (metadata.FieldNames.Any(field => metadata.GetFieldType(field) == typeof(CoflowFunctionEntry)))
+            if (metadata.FieldNames.Any(field =>
+                    metadata.GetFieldBinding(field).RuntimeType == typeof(CoflowFunctionEntry)))
                 Error("COFLOW-FUNCTION-OBJECT", $"type `{declaredName}` has function fields and cannot be constructed as an object");
 
             Expect(TokenKind.LeftBrace, "expected `{` after an object type");
@@ -832,7 +835,7 @@ internal static partial class CoflowCompiler
                     Error("COFLOW-FUNCTION-OBJECT", $"object field `{field.Text}` is specified more than once");
                 if (!metadata.FieldNames.Contains(field.Text, StringComparer.Ordinal))
                     Error("COFLOW-FUNCTION-OBJECT", $"type `{declaredName}` has no field `{field.Text}`");
-                var fieldType = metadata.GetFieldType(field.Text);
+                var fieldType = metadata.GetFieldBinding(field.Text).RuntimeType;
                 if (fieldType == typeof(CoflowFunctionEntry))
                     Error("COFLOW-FUNCTION-OBJECT", $"function field `{field.Text}` cannot be supplied by an object constructor");
                 Expect(TokenKind.Colon, "expected `:` after an object field name");
@@ -846,7 +849,7 @@ internal static partial class CoflowCompiler
             }
             foreach (var field in metadata.FieldNames)
             {
-                if (metadata.GetFieldType(field) != typeof(CoflowFunctionEntry) &&
+                if (metadata.GetFieldBinding(field).RuntimeType != typeof(CoflowFunctionEntry) &&
                     !seen.Contains(field) &&
                     !metadata.HasFieldDefault(field))
                     Error("COFLOW-FUNCTION-OBJECT", $"object `{declaredName}` is missing required field `{field}`");
@@ -1251,12 +1254,13 @@ internal static partial class CoflowCompiler
             var selected = match!.Value;
             var metadata = _metadata[selected.DeclaredType];
             var value = selected.Value;
-            if (metadata.GetFieldType(fieldName) == typeof(CoflowFunctionEntry))
-                return new FunctionReferenceExpr((CoflowFunctionEntry)metadata.GetField(value, fieldName));
+            var binding = metadata.GetFieldBinding(fieldName);
+            if (binding.RuntimeType == typeof(CoflowFunctionEntry))
+                return new FunctionReferenceExpr((CoflowFunctionEntry)binding.Read(value));
             return new FieldExpr(
                 new ConstantExpr(value, metadata.RuntimeType),
-                metadata.GetFieldType(fieldName),
-                CoflowFieldAccess.Bind(metadata, fieldName));
+                binding.RuntimeType,
+                CoflowFieldAccess.Bind(metadata, binding));
         }
 
         private Expr ParseArrayLiteral()

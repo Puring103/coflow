@@ -267,9 +267,7 @@ public sealed class CoflowModuleTests
         public IReadOnlyList<CoflowAnnotation> Annotations => Array.Empty<CoflowAnnotation>();
         public abstract IReadOnlyList<string> FieldNames { get; }
         public IReadOnlyList<CoflowAnnotation> FieldAnnotations(string fieldName) => Array.Empty<CoflowAnnotation>();
-        public abstract Type GetFieldType(string fieldName);
-        public abstract object GetField(object record, string fieldName);
-        public abstract Delegate GetFieldReader(string fieldName);
+        public abstract CoflowFieldBinding GetFieldBinding(string fieldName);
         public bool HasFieldDefault(string fieldName) => false;
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => throw new InvalidOperationException();
         public Delegate CreateVmObjectFactory(CfdLoadContext context) => throw new InvalidOperationException();
@@ -290,14 +288,15 @@ public sealed class CoflowModuleTests
 
     private sealed class NodeMetadata : Metadata<Node>
     {
+        private static readonly CoflowFieldBinding Value =
+            CoflowFieldBinding.Create<Node, long>("value", static node => node.Value);
+        private static readonly CoflowFieldBinding Next =
+            CoflowFieldBinding.Create<Node, Option<Node>>("next", static node => node.Next);
+
         public override string DeclaredType => "Node";
         public override IReadOnlyList<string> FieldNames => new[] { "value", "next" };
-        public override Type GetFieldType(string name) => name switch
-            { "value" => typeof(long), "next" => typeof(Option<Node>), _ => throw new ArgumentException(nameof(name)) };
-        public override object GetField(object value, string name) => name switch
-            { "value" => ((Node)value).Value, "next" => ((Node)value).Next, _ => throw new ArgumentException(nameof(name)) };
-        public override Delegate GetFieldReader(string name) => name switch
-            { "value" => new Func<Node, long>(static value => value.Value), "next" => new Func<Node, Option<Node>>(static value => value.Next), _ => throw new ArgumentException(nameof(name)) };
+        public override CoflowFieldBinding GetFieldBinding(string name) => name switch
+            { "value" => Value, "next" => Next, _ => throw new ArgumentException(nameof(name)) };
         public override string? ReferenceFieldType(string name) => name == "next" ? "Node" : null;
         public override Delegate GetKeyReader() => new Func<Node, string>(static value => value.Id);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -313,14 +312,14 @@ public sealed class CoflowModuleTests
 
     private sealed class SettingsMetadata : Metadata<Settings>
     {
+        private static readonly CoflowFieldBinding Value =
+            CoflowFieldBinding.Create<Settings, long>("value", static settings => settings.Value);
+
         public override string DeclaredType => "Settings";
         public override bool IsSingleton => true;
         public override IReadOnlyList<string> FieldNames => new[] { "value" };
-        public override Type GetFieldType(string name) => typeof(long);
-        public override object GetField(object value, string name) => ((Settings)value).Value;
-        public override Delegate GetFieldReader(string name) => name == "value"
-            ? new Func<Settings, long>(static value => value.Value)
-            : throw new ArgumentException(nameof(name));
+        public override CoflowFieldBinding GetFieldBinding(string name) => name == "value"
+            ? Value : throw new ArgumentException(nameof(name));
         public override Delegate GetKeyReader() => new Func<Settings, string>(static _ => string.Empty);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context) =>
             ((Settings)target).Value = CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value"));
@@ -328,25 +327,25 @@ public sealed class CoflowModuleTests
 
     private sealed class RuleMetadata : Metadata<Rule>
     {
+        private static readonly IReadOnlyDictionary<string, CoflowFieldBinding> Fields =
+            new Dictionary<string, CoflowFieldBinding>(StringComparer.Ordinal)
+            {
+                ["calculate"] = CoflowFieldBinding.Create<Rule, CoflowFunctionEntry>(
+                    "calculate", static rule => rule.CalculateEntry.RuntimeEntry),
+                ["helper"] = CoflowFieldBinding.Create<Rule, CoflowFunctionEntry>(
+                    "helper", static rule => rule.HelperEntry.RuntimeEntry),
+                ["tail"] = CoflowFieldBinding.Create<Rule, CoflowFunctionEntry>(
+                    "tail", static rule => rule.TailEntry.RuntimeEntry),
+                ["make"] = CoflowFieldBinding.Create<Rule, CoflowFunctionEntry>(
+                    "make", static rule => rule.MakeEntry.RuntimeEntry),
+                ["deep"] = CoflowFieldBinding.Create<Rule, CoflowFunctionEntry>(
+                    "deep", static rule => rule.DeepEntry.RuntimeEntry),
+            };
+
         public override string DeclaredType => "Rule";
-        public override IReadOnlyList<string> FieldNames => new[] { "calculate", "helper", "tail", "make", "deep" };
-        public override Type GetFieldType(string name) => typeof(CoflowFunctionEntry);
-        public override object GetField(object value, string name)
-        {
-            var rule = (Rule)value;
-            return name switch { "calculate" => rule.CalculateEntry.RuntimeEntry, "helper" => rule.HelperEntry.RuntimeEntry,
-                "tail" => rule.TailEntry.RuntimeEntry, "make" => rule.MakeEntry.RuntimeEntry,
-                "deep" => rule.DeepEntry.RuntimeEntry, _ => throw new ArgumentException(nameof(name)) };
-        }
-        public override Delegate GetFieldReader(string name) => name switch
-        {
-            "calculate" => new Func<Rule, CoflowFunctionEntry>(static value => value.CalculateEntry.RuntimeEntry),
-            "helper" => new Func<Rule, CoflowFunctionEntry>(static value => value.HelperEntry.RuntimeEntry),
-            "tail" => new Func<Rule, CoflowFunctionEntry>(static value => value.TailEntry.RuntimeEntry),
-            "make" => new Func<Rule, CoflowFunctionEntry>(static value => value.MakeEntry.RuntimeEntry),
-            "deep" => new Func<Rule, CoflowFunctionEntry>(static value => value.DeepEntry.RuntimeEntry),
-            _ => throw new ArgumentException(nameof(name)),
-        };
+        public override IReadOnlyList<string> FieldNames => Fields.Keys.ToArray();
+        public override CoflowFieldBinding GetFieldBinding(string name) => Fields.TryGetValue(name, out var binding)
+            ? binding : throw new ArgumentException(nameof(name));
         public override Delegate GetKeyReader() => new Func<Rule, string>(static value => value.Id);
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {

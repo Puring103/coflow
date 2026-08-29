@@ -6,7 +6,6 @@ using System.ComponentModel;
 public interface ICoflowTableToken<TTable> where TTable : CoflowTable
 {
     Type RecordType { get; }
-    Type KeyType { get; }
     TTable Empty { get; }
 }
 
@@ -15,7 +14,6 @@ public sealed class CoflowStringTableToken<T> : ICoflowTableToken<CoflowStringTa
 {
     private static readonly CoflowStringTable<T> EmptyTable = new(Array.Empty<T>(), static _ => string.Empty);
     public Type RecordType => typeof(T);
-    public Type KeyType => typeof(string);
     public CoflowStringTable<T> Empty => EmptyTable;
 }
 
@@ -25,6 +23,5 @@ public sealed class CoflowEnumTableToken<T, TKey> : ICoflowTableToken<CoflowEnum
 {
     private static readonly CoflowEnumTable<T, TKey> EmptyTable = new(Array.Empty<T>(), static _ => default);
     public Type RecordType => typeof(T);
-    public Type KeyType => typeof(TKey);
     public CoflowEnumTable<T, TKey> Empty => EmptyTable;
 }

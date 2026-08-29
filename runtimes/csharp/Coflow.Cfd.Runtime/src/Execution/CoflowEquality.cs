@@ -71,8 +71,9 @@ internal static class CoflowEquality
         Expression result = Expression.Constant(true);
         foreach (var field in generated.FieldNames)
         {
-            var fieldType = generated.GetFieldType(field);
-            var reader = generated.GetFieldReader(field);
+            var binding = generated.GetFieldBinding(field);
+            var fieldType = binding.RuntimeType;
+            var reader = binding.Reader;
             var delegateType = Expression.GetFuncType(type, fieldType);
             var leftField = Expression.Invoke(Expression.Convert(Expression.Constant(reader), delegateType), left);
             var rightField = Expression.Invoke(Expression.Convert(Expression.Constant(reader), delegateType), right);

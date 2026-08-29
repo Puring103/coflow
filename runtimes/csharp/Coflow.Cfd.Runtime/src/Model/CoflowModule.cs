@@ -271,7 +271,6 @@ public sealed class CoflowModuleSet
     private readonly IReadOnlyList<CoflowModule> _modules;
     private readonly IReadOnlyDictionary<Type, CoflowTable> _tables;
     private readonly IReadOnlyDictionary<Type, object> _singletons;
-    private readonly IReadOnlyDictionary<CoflowFunctionIdentity, CoflowFunctionEntry> _functions;
 
     public CoflowModuleSet(params CoflowModule[] modules) : this((IReadOnlyList<CoflowModule>)modules) { }
 
@@ -283,7 +282,7 @@ public sealed class CoflowModuleSet
         if (_modules.Select(value => value.Contract).Distinct(ContractReferenceComparer.Instance).Skip(1).Any())
             throw new ArgumentException("All modules must use the same generated contract.", nameof(modules));
         _singletons = MergeUnique(_modules.SelectMany(value => value.Singletons), "singleton");
-        _functions = MergeUnique(_modules.SelectMany(value => value.Functions), "function");
+        MergeUnique(_modules.SelectMany(value => value.Functions), "function");
         _tables = CombineTables(_modules);
     }
 
