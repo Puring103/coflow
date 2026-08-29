@@ -197,7 +197,10 @@ public sealed class CoflowModuleTests
             .RegisterProgram.Instructions;
         var add = Assert.Single(instructions, instruction =>
             instruction.Code == CoflowRegisterOpCode.AddInt);
-        Assert.Equal(add.A, add.B);
+        Assert.DoesNotContain(instructions, instruction =>
+            instruction.Code == CoflowRegisterOpCode.MoveInteger);
+        Assert.Equal(16, System.Runtime.InteropServices.Marshal.SizeOf<CoflowRegisterInstruction>());
+        Assert.NotEqual(add.A, add.B);
         Assert.NotEqual(add.B, add.C);
     }
 
