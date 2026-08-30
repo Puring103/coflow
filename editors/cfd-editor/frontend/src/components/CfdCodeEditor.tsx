@@ -108,6 +108,7 @@ export function CfdCodeEditor({
           indentOnInput(),
           indentationMarkers({
             highlightActiveBlock: false,
+            hideFirstIndent: true,
             markerType: 'fullScope',
             thickness: 1,
             colors: {
