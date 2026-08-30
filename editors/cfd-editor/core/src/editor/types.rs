@@ -173,6 +173,70 @@ pub struct PluginSchemaField {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguagePosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageRange {
+    pub start: LanguagePosition,
+    pub end: LanguagePosition,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageDiagnostic {
+    pub range: LanguageRange,
+    pub severity: u8,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageDocumentState {
+    pub diagnostics: Vec<LanguageDiagnostic>,
+    pub semantic_token_data: Vec<u32>,
+    pub semantic_token_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageCompletion {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insert_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct FunctionDocumentState {
+    pub source: String,
+    pub signature: String,
+    pub body: String,
+    pub diagnostics: Vec<LanguageDiagnostic>,
+    pub semantic_token_data: Vec<u32>,
+    pub semantic_token_types: Vec<String>,
+    pub completions: Vec<LanguageCompletion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionFileRecords {
     pub revision: u32,
     pub file_path: String,
@@ -252,6 +316,7 @@ pub enum WorkspaceViewKind {
     Record,
     Table,
     Graph,
+    Source,
 }
 
 /// Kind of a custom view. Record view is implicit and cannot be created,

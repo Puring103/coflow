@@ -4,7 +4,8 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_language::cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdRecord, CfdSyntaxDiagnostic, CfdValue,
+    parse_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdRecord, CfdSyntaxDiagnostic,
+    CfdFunction, CfdValue,
 };
 use coflow_language::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
@@ -14,6 +15,16 @@ use super::semantic_tokens::{
     SEM_FUNCTION, SEM_KEYWORD, SEM_NAMESPACE, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
     SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
+
+const FUNCTION_KEYWORDS: &[&str] = &[
+    "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
+    "in", "is", "true", "false", "None", "Some", "Ok", "Err",
+];
+const FUNCTION_TYPES: &[&str] = &["int", "float", "bool", "string", "Option", "Result"];
+const FUNCTION_BUILTINS: &[&str] = &[
+    "len", "map", "filter", "fold", "find", "any", "all", "contains", "starts_with",
+    "ends_with",
+];
 
 // ── Public helpers used by LspServer ─────────────────────────────────────────
 
@@ -107,6 +118,176 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
     }
 
     collector.into_lsp_data()
+}
+
+/// Handles the editor's function-body virtual document request.
+pub fn function_document(params: &Value) -> Value {
+    let Some(original) = params.get("source").and_then(Value::as_str) else {
+        return Value::Null;
+    };
+    let Some(parts) = function_parts(original) else {
+        return json!({
+            "source": original,
+            "signature": "fn",
+            "body": original,
+            "diagnostics": [{
+                "range": byte_range(original, 0, original.len().min(1)),
+                "severity": 1,
+                "source": "coflow-language",
+                "message": "invalid function source",
+            }],
+            "semanticTokens": { "data": [] },
+            "completions": [],
+        });
+    };
+    let requested_body = params
+        .get("body")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| parts.body.trim());
+    let replacement = if parts.multiline {
+        format!("\n{}\n", requested_body.trim_matches('\n'))
+    } else {
+        format!(" {} ", requested_body.trim())
+    };
+    let source = format!("{}{}{}", parts.prefix, replacement, parts.suffix);
+    let body = requested_body;
+    let mut collector = TokenCollector::new(body);
+    collect_function_tokens(Span::new(0, body.len()), body, &mut collector);
+    let diagnostics = function_body_diagnostics(&source, parts.prefix.len(), body);
+    json!({
+        "source": source,
+        "signature": parts.signature,
+        "body": body,
+        "diagnostics": diagnostics,
+        "semanticTokens": collector.into_lsp_data(),
+        "completions": function_completion_items(&parts.signature),
+    })
+}
+
+struct FunctionParts<'a> {
+    prefix: &'a str,
+    body: &'a str,
+    suffix: &'a str,
+    signature: &'a str,
+    multiline: bool,
+}
+
+fn function_parts(source: &str) -> Option<FunctionParts<'_>> {
+    const PREFIX: &str = "__function: __EditorFunction { value: ";
+    const SUFFIX: &str = "\n}";
+    let document = format!("{PREFIX}{source}{SUFFIX}");
+    let (ast, diagnostics) = parse_cfd(&document);
+    if !diagnostics.is_empty() {
+        return None;
+    }
+    let function = ast
+        .records
+        .first()?
+        .fields
+        .first()
+        .and_then(|field| match &field.value {
+            CfdValue::Function(function) => Some(function),
+            _ => None,
+        })?;
+    let start = function.body_span.start.checked_sub(PREFIX.len())?;
+    let end = function.body_span.end.checked_sub(PREFIX.len())?;
+    let open = start.checked_sub(1)?;
+    Some(FunctionParts {
+        prefix: source.get(..start)?,
+        body: source.get(start..end)?,
+        suffix: source.get(end..)?,
+        signature: source.get(..open)?.trim(),
+        multiline: source.get(start..end)?.contains('\n') || source.contains('\n'),
+    })
+}
+
+fn function_body_diagnostics(
+    function_source: &str,
+    body_start: usize,
+    body: &str,
+) -> Vec<Value> {
+    const PREFIX: &str = "__function: __EditorFunction { value: ";
+    let document = format!("{PREFIX}{function_source}\n}}");
+    let (_, diagnostics) = parse_cfd(&document);
+    let body_document_start = PREFIX.len() + body_start;
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            let relative = diagnostic.span.start.saturating_sub(body_document_start);
+            let start = relative.min(body.len().saturating_sub(1));
+            let end = (start + diagnostic.span.end.saturating_sub(diagnostic.span.start).max(1))
+                .min(body.len());
+            json!({
+                "range": byte_range(body, start, end),
+                "severity": 1,
+                "source": "coflow-language",
+                "message": diagnostic.message,
+            })
+        })
+        .collect()
+}
+
+fn function_completion_items(signature: &str) -> Vec<Value> {
+    let mut items = FUNCTION_KEYWORDS
+        .iter()
+        .map(|label| json!({ "label": label, "kind": 14 }))
+        .chain(FUNCTION_TYPES.iter().map(|label| json!({ "label": label, "kind": 7 })))
+        .collect::<Vec<_>>();
+    items.extend(FUNCTION_BUILTINS.iter().map(|label| {
+        json!({ "label": label, "kind": 2, "insertText": format!("{label}()") })
+    }));
+    items.extend(function_parameter_names(signature).into_iter().map(|label| {
+        json!({ "label": label, "kind": 6, "detail": "function parameter" })
+    }));
+    items
+}
+
+fn function_parameter_names(signature: &str) -> Vec<&str> {
+    let Some(open) = signature.find('(') else {
+        return Vec::new();
+    };
+    let mut depth = 0_usize;
+    let mut close = None;
+    for (relative, character) in signature[open..].char_indices() {
+        match character {
+            '(' => depth = depth.saturating_add(1),
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    close = Some(open + relative);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(parameters) = close.and_then(|close| signature.get(open + 1..close)) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    let mut parameter_start = 0;
+    depth = 0;
+    for (index, character) in parameters
+        .char_indices()
+        .chain(std::iter::once((parameters.len(), ',')))
+    {
+        match character {
+            '(' | '[' | '{' | '<' => depth = depth.saturating_add(1),
+            ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                if let Some(name) = parameters[parameter_start..index]
+                    .split_once(':')
+                    .map(|(name, _)| name.trim())
+                    .filter(|name| !name.is_empty())
+                {
+                    names.push(name);
+                }
+                parameter_start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    names
 }
 
 fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
@@ -229,14 +410,9 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
             let text = &function_source[start..pos];
             let previous = previous_non_whitespace(function_source, start);
             let following = next_non_whitespace(function_source, pos);
-            let (token_type, modifiers) = if matches!(
-                text,
-                "fn" | "var" | "return" | "if" | "else" | "match" | "for" | "while"
-                    | "break" | "continue" | "in" | "is" | "true" | "false" | "None"
-                    | "Some" | "Ok" | "Err"
-            ) {
+            let (token_type, modifiers) = if FUNCTION_KEYWORDS.contains(&text) {
                 (SEM_KEYWORD, 0)
-            } else if matches!(text, "int" | "float" | "bool" | "string" | "Option" | "Result") {
+            } else if FUNCTION_TYPES.contains(&text) {
                 (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
             } else if previous == Some('$') {
                 (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
@@ -433,6 +609,12 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
 
 /// Completion: field names when cursor is inside a record body.
 pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
+    if let Some(function) = function_at(ast, offset) {
+        let body_start = function.body_span.start.saturating_sub(function.span.start);
+        let signature_end = body_start.saturating_sub(1);
+        let signature = function.source.get(..signature_end).unwrap_or(&function.source);
+        return json!(function_completion_items(signature));
+    }
     let Some(schema) = schema else {
         return json!([]);
     };
@@ -467,6 +649,30 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
         .map(|t| json!({ "label": t.name.as_str(), "kind": 7 }))
         .collect();
     json!(types)
+}
+
+fn function_at(ast: &CfdAst, offset: usize) -> Option<&CfdFunction> {
+    ast.records
+        .iter()
+        .flat_map(|record| record.fields.iter())
+        .find_map(|field| function_in_value(&field.value, offset))
+}
+
+fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
+    match value {
+        CfdValue::Function(function) if span_contains(function.span, offset) => Some(function),
+        CfdValue::Block(block) => block
+            .fields
+            .iter()
+            .find_map(|field| function_in_value(&field.value, offset)),
+        CfdValue::Array(values, _) => values
+            .iter()
+            .find_map(|value| function_in_value(value, offset)),
+        CfdValue::OptionSome(value, _) | CfdValue::ResultOk(value, _) | CfdValue::ResultErr(value, _) => {
+            function_in_value(value, offset)
+        }
+        _ => None,
+    }
 }
 
 /// Definition: return location of the CFT type definition for a `type_span` hit.

@@ -33,6 +33,7 @@ pub(super) fn build_session(
     let yaml_path = project.config_path().to_path_buf();
     let project_root = project.root_dir().to_path_buf();
     let runtime = Runtime::new();
+    let language_server = coflow::lsp::EmbeddedLsp::new(project.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime
@@ -53,6 +54,9 @@ pub(super) fn build_session(
             yaml_path,
             engine,
             diagnostics,
+            language_server,
+            language_documents: HashSet::new(),
+            language_diagnostics: HashMap::new(),
             file_type_names,
             type_display_names,
             ref_target_cache: HashMap::new(),

@@ -1,0 +1,3 @@
+# Feature: omitted fields receive their schema defaults.
+
+standard: DefaultSettings {}

@@ -1,0 +1,9 @@
+# Feature: qualified record references.
+
+tools: Category {
+    title: "Tools",
+}
+
+hammer: CatalogEntry {
+    category: &Category::tools,
+}

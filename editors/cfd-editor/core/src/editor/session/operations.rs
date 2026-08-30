@@ -6,14 +6,333 @@ use super::{
     record_view_to_row, reorder_file_path, snapshot_record_before_delete, write_field_in_session,
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
     CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
+    EditorSession,
     FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields, MutationOp,
     MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, ProjectSearchHit,
     ProjectSearchMode, ProjectSearchResults, RecordCoordinate, RecordRow, RefTarget,
     RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext, WriteFieldOutcome,
 };
-use coflow_runtime::{RecordSearchMode, RecordSearchOptions};
+use crate::editor::types::{
+    FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
+    LanguagePosition, LanguageRange,
+};
+use atomicwrites::{AllowOverwrite, AtomicFile};
+use coflow_runtime::{
+    DataSourceTextOverride, FlatDiagnostic, Project, RecordSearchMode, RecordSearchOptions, Runtime,
+};
+use serde_json::{json, Value};
+use std::io::Write;
+
+fn synchronize_language_document(
+    session: &mut EditorSession,
+    uri: &str,
+    file_path: &str,
+    source: &str,
+    version: i64,
+) -> Result<Vec<Value>, EditorError> {
+    let (method, params) = if session.language_documents.insert(uri.to_string()) {
+        (
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "cfd",
+                    "version": version,
+                    "text": source,
+                }
+            }),
+        )
+    } else {
+        (
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": uri, "version": version },
+                "contentChanges": [{ "text": source }],
+            }),
+        )
+    };
+    session
+        .language_server
+        .notify(method, params)
+        .map_err(|error| EditorError::other(format!("LSP sync failed for {file_path}: {error}")))
+}
+
+fn diagnostics_for_uri(messages: &[Value], uri: &str) -> Option<Vec<LanguageDiagnostic>> {
+    messages
+        .iter()
+        .rev()
+        .find(|message| {
+            message.get("method").and_then(Value::as_str)
+                == Some("textDocument/publishDiagnostics")
+                && message
+                    .pointer("/params/uri")
+                    .and_then(Value::as_str)
+                    == Some(uri)
+        })
+        .and_then(|message| message.pointer("/params/diagnostics"))
+        .and_then(Value::as_array)
+        .map(|diagnostics| diagnostics.iter().filter_map(language_diagnostic).collect())
+}
+
+fn language_diagnostic(value: &Value) -> Option<LanguageDiagnostic> {
+    let position = |value: &Value| {
+        Some(LanguagePosition {
+            line: u32::try_from(value.get("line")?.as_u64()?).ok()?,
+            character: u32::try_from(value.get("character")?.as_u64()?).ok()?,
+        })
+    };
+    let range = value.get("range")?;
+    let code = value.get("code").and_then(|code| {
+        code.as_str()
+            .map(str::to_string)
+            .or_else(|| code.as_i64().map(|code| code.to_string()))
+    });
+    Some(LanguageDiagnostic {
+        range: LanguageRange {
+            start: position(range.get("start")?)?,
+            end: position(range.get("end")?)?,
+        },
+        severity: value
+            .get("severity")
+            .and_then(Value::as_u64)
+            .and_then(|severity| u8::try_from(severity).ok())
+            .unwrap_or(1),
+        message: value.get("message")?.as_str()?.to_string(),
+        code,
+        source: value.get("source").and_then(Value::as_str).map(str::to_string),
+    })
+}
+
+fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
+    let items = value
+        .as_array()
+        .or_else(|| value.get("items").and_then(Value::as_array));
+    items
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            Some(LanguageCompletion {
+                label: item.get("label")?.as_str()?.to_string(),
+                detail: item.get("detail").and_then(Value::as_str).map(str::to_string),
+                kind: item
+                    .get("kind")
+                    .and_then(Value::as_u64)
+                    .and_then(|kind| u32::try_from(kind).ok()),
+                insert_text: item
+                    .get("insertText")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            })
+        })
+        .collect()
+}
 
 impl SessionStore {
+    pub fn read_source_text(&self, id: u32, file_path: &str) -> Result<String, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        std::fs::read_to_string(&path).map_err(|error| {
+            EditorError::project(format!("failed to read {}: {error}", path.display()))
+        })
+    }
+
+    pub fn sync_language_document(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+        version: i64,
+    ) -> Result<LanguageDocumentState, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut notifications = synchronize_language_document(
+            &mut session,
+            &uri,
+            file_path,
+            source,
+            version,
+        )?;
+        let (tokens, emitted) = session
+            .language_server
+            .request(
+                "textDocument/semanticTokens/full",
+                json!({ "textDocument": { "uri": uri } }),
+            )
+            .map_err(EditorError::other)?;
+        notifications.extend(emitted);
+        if let Some(diagnostics) = diagnostics_for_uri(&notifications, &uri) {
+            session.language_diagnostics.insert(uri.clone(), diagnostics);
+        }
+        Ok(LanguageDocumentState {
+            diagnostics: session
+                .language_diagnostics
+                .get(&uri)
+                .cloned()
+                .unwrap_or_default(),
+            semantic_token_data: tokens
+                .get("data")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .filter_map(|value| u32::try_from(value).ok())
+                .collect(),
+            semantic_token_types: coflow::lsp::EmbeddedLsp::semantic_token_types(),
+        })
+    }
+
+    pub fn complete_language_document(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+        version: i64,
+        position: &LanguagePosition,
+    ) -> Result<Vec<LanguageCompletion>, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        synchronize_language_document(&mut session, &uri, file_path, source, version)?;
+        let (result, _) = session
+            .language_server
+            .request(
+                "textDocument/completion",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": position.line, "character": position.character },
+                }),
+            )
+            .map_err(EditorError::other)?;
+        Ok(completion_items(&result))
+    }
+
+    pub fn close_language_document(&self, id: u32, file_path: &str) -> Result<(), EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        if session.language_documents.remove(&uri) {
+            session.language_diagnostics.remove(&uri);
+            session
+                .language_server
+                .notify("textDocument/didClose", json!({ "textDocument": { "uri": uri } }))
+                .map_err(EditorError::other)?;
+        }
+        Ok(())
+    }
+
+    pub fn function_document(
+        &self,
+        id: u32,
+        source: &str,
+        body: Option<&str>,
+    ) -> Result<FunctionDocumentState, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let (result, _) = session
+            .language_server
+            .request("coflow/functionDocument", json!({ "source": source, "body": body }))
+            .map_err(EditorError::other)?;
+        let diagnostics = result
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(language_diagnostic)
+            .collect();
+        let completions = completion_items(result.get("completions").unwrap_or(&Value::Null));
+        Ok(FunctionDocumentState {
+            source: result.get("source").and_then(Value::as_str).unwrap_or(source).to_string(),
+            signature: result.get("signature").and_then(Value::as_str).unwrap_or("fn").to_string(),
+            body: result.get("body").and_then(Value::as_str).unwrap_or(source).to_string(),
+            diagnostics,
+            semantic_token_data: result
+                .pointer("/semanticTokens/data")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .filter_map(|value| u32::try_from(value).ok())
+                .collect(),
+            semantic_token_types: coflow::lsp::EmbeddedLsp::semantic_token_types(),
+            completions,
+        })
+    }
+
+    pub fn validate_source_text(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+    ) -> Result<Vec<FlatDiagnostic>, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let yaml_path = self.project_action_context(id)?;
+        let project = Project::open_schema_only(Some(&yaml_path))
+            .map_err(|diagnostics| api_diagnostics_to_editor_error(diagnostics))?;
+        let source_override = DataSourceTextOverride {
+            normalized_path: path,
+            source: source.to_string(),
+        };
+        let runtime = Runtime::new();
+        let diagnostics = match runtime
+            .open_read_only_session_with_source_overrides(project, &[source_override])
+        {
+            Ok(session) => session.queries().diagnostics().flat_diagnostics(),
+            Err(diagnostics) => diagnostics.flat_diagnostics(),
+        };
+        Ok(diagnostics)
+    }
+
+    pub fn write_source_text(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+    ) -> Result<super::ProjectSnapshot, EditorError> {
+        let diagnostics = self.validate_source_text(id, file_path, source)?;
+        let blocking = diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.severity == "error"
+                    && diagnostic.stage != "CHECK"
+                    && !matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !blocking.is_empty() {
+            return Err(EditorError::write("source contains errors").with_diagnostics(blocking));
+        }
+
+        let path = self.source_file_path(id, file_path)?;
+        AtomicFile::new(&path, AllowOverwrite)
+            .write(|file| file.write_all(source.as_bytes()))
+            .map_err(|error| {
+                EditorError::write(format!("failed to write {}: {error}", path.display()))
+            })?;
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned after source write"))?;
+        session.commit_internal_write(&[file_path.to_string()]);
+        drop(session);
+        self.reload_session(id)
+    }
+
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;

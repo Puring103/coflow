@@ -1,0 +1,5 @@
+# Feature: optional values.
+
+type OptionExample {
+  subtitle: Option<string> = None;
+}

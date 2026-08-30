@@ -1,0 +1,9 @@
+# Feature: references to records by key.
+
+type Category {
+  title: string;
+}
+
+type CatalogEntry {
+  category: &Category;
+}

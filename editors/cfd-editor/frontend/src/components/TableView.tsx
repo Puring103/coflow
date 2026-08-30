@@ -88,6 +88,7 @@ import {
   type PasteCell,
 } from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
+import { FunctionEditorButton } from './FunctionBodyDialog'
 import { fitViewportPosition } from '../utils/floatingPosition'
 
 interface Props {
@@ -1797,7 +1798,7 @@ function EditableCell({
     : undefined
   const isScalar = shownValue.kind === 'bool' || shownValue.kind === 'int' || shownValue.kind === 'float'
                 || shownValue.kind === 'string' || shownValue.kind === 'formatted_string'
-                || shownValue.kind === 'enum' || shownValue.kind === 'ref'
+                || shownValue.kind === 'enum' || shownValue.kind === 'ref' || shownValue.kind === 'function'
   // null cells become editable when the schema tells us they hold an enum/ref/bool
   const isNullDropdown = shownValue.kind === 'option_none' && !!(enumType || refTargetType)
   const canEdit = editable && (isScalar || isNullDropdown) && !!commitValue
@@ -1847,6 +1848,14 @@ function EditableCell({
           nullable={nullable}
           onExit={onEditingFinished}
         />
+      </div>
+    )
+  }
+
+  if (canEdit && shownValue.kind === 'function') {
+    return (
+      <div className="cell-edit-wrap">
+        <FunctionEditorButton value={shownValue} onCommit={commitAndRestoreFocus} />
       </div>
     )
   }

@@ -65,6 +65,7 @@ pub(crate) use state::{
 };
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
+use std::io::Cursor as EmbeddedCursor;
 #[cfg(test)]
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -74,7 +75,6 @@ pub(crate) use text::{
     parse_dotted_ident_chain, previous_char, word_at,
 };
 use uri::path_from_file_uri;
-#[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
 pub(crate) use validation::{
     DiagnosticPublication, LspRequestDocument, LspValidationCore, ValidationSnapshot,
@@ -257,6 +257,7 @@ enum RequestMethod {
     DocumentSymbol,
     Formatting,
     SemanticTokens,
+    FunctionDocument,
     Shutdown,
 }
 
@@ -270,13 +271,14 @@ impl RequestMethod {
             "textDocument/documentSymbol" => Some(Self::DocumentSymbol),
             "textDocument/formatting" => Some(Self::Formatting),
             "textDocument/semanticTokens/full" => Some(Self::SemanticTokens),
+            "coflow/functionDocument" => Some(Self::FunctionDocument),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
         }
     }
 
     const fn requires_snapshot(self) -> bool {
-        !matches!(self, Self::Initialize | Self::Shutdown)
+        !matches!(self, Self::Initialize | Self::FunctionDocument | Self::Shutdown)
     }
 }
 
@@ -294,6 +296,108 @@ struct LspServer<W> {
     writer: W,
     shutdown_requested: bool,
     should_exit: bool,
+}
+
+/// In-process transport for hosts that embed the Coflow language server.
+///
+/// Requests and notifications pass through the same [`LspServer`] dispatcher
+/// used by the stdio CLI. The returned values are ordinary JSON-RPC messages,
+/// including diagnostics published while a document is synchronized.
+pub struct EmbeddedLsp {
+    server: LspServer<Vec<u8>>,
+    next_request_id: u64,
+}
+
+impl std::fmt::Debug for EmbeddedLsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmbeddedLsp")
+            .field("next_request_id", &self.next_request_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl EmbeddedLsp {
+    #[must_use]
+    pub fn new(project: Project) -> Self {
+        Self {
+            server: LspServer::new(project, Vec::new()),
+            next_request_id: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn file_uri(path: &std::path::Path) -> String {
+        path_to_file_uri(path)
+    }
+
+    #[must_use]
+    pub fn semantic_token_types() -> Vec<String> {
+        SEMANTIC_TOKEN_TYPES
+            .iter()
+            .map(|token_type| (*token_type).to_string())
+            .collect()
+    }
+
+    /// Sends an LSP notification and returns every notification emitted by the server.
+    ///
+    /// # Errors
+    /// Returns an error when the LSP handler or embedded transport fails.
+    pub fn notify(&mut self, method: &str, params: Value) -> Result<Vec<Value>, String> {
+        self.server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        }))?;
+        self.take_messages()
+    }
+
+    /// Sends an LSP request and returns its result plus notifications emitted while handling it.
+    ///
+    /// # Errors
+    /// Returns an error when the LSP handler, response, or embedded transport fails.
+    pub fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<(Value, Vec<Value>), String> {
+        self.next_request_id = self.next_request_id.saturating_add(1);
+        let id = self.next_request_id;
+        self.server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }))?;
+        let messages = self.take_messages()?;
+        let mut result = None;
+        let mut notifications = Vec::new();
+        for message in messages {
+            if message.get("id").and_then(Value::as_u64) == Some(id) {
+                if let Some(error) = message.get("error") {
+                    return Err(format!("embedded LSP request `{method}` failed: {error}"));
+                }
+                result = message.get("result").cloned();
+            } else {
+                notifications.push(message);
+            }
+        }
+        result
+            .map(|result| (result, notifications))
+            .ok_or_else(|| format!("embedded LSP request `{method}` returned no response"))
+    }
+
+    fn take_messages(&mut self) -> Result<Vec<Value>, String> {
+        let bytes = std::mem::take(&mut self.server.writer);
+        let mut reader = EmbeddedCursor::new(bytes);
+        let mut messages = Vec::new();
+        while let Some(body) = read_message(&mut reader)? {
+            messages.push(
+                serde_json::from_slice(&body)
+                    .map_err(|error| format!("failed to parse embedded LSP response: {error}"))?,
+            );
+        }
+        Ok(messages)
+    }
 }
 
 fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) -> Value {
@@ -377,6 +481,9 @@ impl<W: Write> LspServer<W> {
             (Some(id), Some(RequestMethod::DocumentSymbol), _) => self.document_symbol(&id, params),
             (Some(id), Some(RequestMethod::Formatting), _) => self.formatting(&id, params),
             (Some(id), Some(RequestMethod::SemanticTokens), _) => self.semantic_tokens(&id, params),
+            (Some(id), Some(RequestMethod::FunctionDocument), _) => {
+                self.write_response(&id, &cfd::function_document(params))
+            }
             (Some(id), Some(RequestMethod::Shutdown), _) => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)

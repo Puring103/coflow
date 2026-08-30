@@ -1,0 +1,18 @@
+# Feature: inheritance and polymorphic inline objects.
+
+abstract type Effect {
+  label: string;
+}
+
+type DamageEffect : Effect {
+  amount: int;
+}
+
+type HealEffect : Effect {
+  amount: int;
+}
+
+type EffectBundle {
+  primary: Effect;
+  additional: [Effect] = [];
+}

@@ -65,10 +65,10 @@ jobs:
           if-no-files-found: error
 
       - name: Regenerate C# integration contract
-        run: cargo run -- codegen examples/csharp-runtime
+        run: cargo run -- codegen tests/csharp-runtime-integration
 
       - name: Run C# integration
-        run: dotnet run --project examples/csharp-runtime/app/Coflow.Runtime.Example.csproj --configuration Release
+        run: dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
 
       - name: Build C# benchmarks
         run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release

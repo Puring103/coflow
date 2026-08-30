@@ -4,6 +4,7 @@ import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
 import {
   DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_SOURCE_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
   RESERVED_VIEW_ID_PREFIX,
   groupFilterPredicate,
@@ -54,16 +55,17 @@ function settingsWith(views: ViewConfig[]): EditorProjectSettings {
 }
 
 describe('viewTabsFor', () => {
-  it('returns only the default record view for singleton types', () => {
+  it('returns record and source views for singleton types', () => {
     const tabs = viewTabsFor(null, FILE, TYPE, true, true)
     expect(tabs).toEqual([
       { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
+      { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
     ])
   })
 
-  it('includes record + table by default, with no default graph view', () => {
+  it('includes record, table, and source by default, with no default graph view', () => {
     const tabs = viewTabsFor(null, FILE, TYPE, false, true).map(t => t.id)
-    expect(tabs).toEqual([DEFAULT_RECORD_VIEW_ID, DEFAULT_TABLE_VIEW_ID])
+    expect(tabs).toEqual([DEFAULT_RECORD_VIEW_ID, DEFAULT_TABLE_VIEW_ID, DEFAULT_SOURCE_VIEW_ID])
   })
 
   it('appends custom views in order, skipping graph views when unsupported', () => {
@@ -72,11 +74,17 @@ describe('viewTabsFor', () => {
     expect(supported).toEqual([
       DEFAULT_RECORD_VIEW_ID,
       DEFAULT_TABLE_VIEW_ID,
+      DEFAULT_SOURCE_VIEW_ID,
       'a',
       'b',
     ])
     const unsupported = viewTabsFor(settings, FILE, TYPE, false, false).map(t => t.id)
-    expect(unsupported).toEqual([DEFAULT_RECORD_VIEW_ID, DEFAULT_TABLE_VIEW_ID, 'a'])
+    expect(unsupported).toEqual([
+      DEFAULT_RECORD_VIEW_ID,
+      DEFAULT_TABLE_VIEW_ID,
+      DEFAULT_SOURCE_VIEW_ID,
+      'a',
+    ])
   })
 })
 
@@ -85,6 +93,14 @@ describe('resolveView', () => {
     expect(resolveView(null, FILE, TYPE, DEFAULT_TABLE_VIEW_ID, true)).toEqual({
       id: DEFAULT_RECORD_VIEW_ID,
       kind: 'record',
+      isDefault: true,
+    })
+  })
+
+  it('keeps the source route for singleton types', () => {
+    expect(resolveView(null, FILE, TYPE, DEFAULT_SOURCE_VIEW_ID, true)).toEqual({
+      id: DEFAULT_SOURCE_VIEW_ID,
+      kind: 'source',
       isDefault: true,
     })
   })

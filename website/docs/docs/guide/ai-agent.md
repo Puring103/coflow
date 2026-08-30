@@ -28,7 +28,7 @@ coflow skill install -g
 
 ## Agent 工作流
 
-给 agent 任务时，尽量提供项目路径和目标，例如“在 `examples/cfd` 中新增一个字段并更新 CFD 记录”。agent 应先读取 schema 和 CFD 文件，再修改：
+给 agent 任务时，尽量提供项目路径和目标，例如“在 `examples/showcase` 中新增一个字段并更新 CFD 记录”。agent 应先读取 schema 和 CFD 文件，再修改：
 
 ```powershell
 coflow schema inspect <project>

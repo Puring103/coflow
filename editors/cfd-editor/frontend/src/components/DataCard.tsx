@@ -63,6 +63,7 @@ import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
 import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
+import { FunctionEditorButton } from './FunctionBodyDialog'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 
@@ -998,7 +999,7 @@ function ScalarFieldRow({
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'formatted_string'
-    || value.kind === 'enum' || value.kind === 'ref'
+    || value.kind === 'enum' || value.kind === 'ref' || value.kind === 'function'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
   const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
@@ -1146,6 +1147,9 @@ export function DirectEditor({
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
+  }
+  if (value.kind === 'function') {
+    return <FunctionEditorButton value={value} onCommit={onCommit} />
   }
   return <ValueChip value={value} />
 }

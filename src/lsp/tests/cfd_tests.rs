@@ -471,3 +471,43 @@ fn cfd_goto_def_continues_past_unparseable_document() {
     let result2 = cft_type_definition_location(&build, "NonExistent");
     assert!(result2.is_none());
 }
+
+#[test]
+fn function_document_uses_cfd_parser_and_lsp_tokens() {
+    let source = "fn(left: int, operation: fn(int, int) -> int, right: int) -> int {\nleft + right\n}";
+    let result = cfd::function_document(&json!({ "source": source }));
+
+    assert_eq!(
+        result["signature"],
+        "fn(left: int, operation: fn(int, int) -> int, right: int) -> int"
+    );
+    assert_eq!(result["body"], "left + right");
+    assert!(result["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert!(result["semanticTokens"]["data"]
+        .as_array()
+        .is_some_and(|data| !data.is_empty()));
+    let labels = result["completions"]
+        .as_array()
+        .expect("completion array")
+        .iter()
+        .filter_map(|item| item["label"].as_str())
+        .collect::<Vec<_>>();
+    assert!(labels.contains(&"left"));
+    assert!(labels.contains(&"right"));
+    assert!(labels.contains(&"operation"));
+    assert!(labels.contains(&"return"));
+}
+
+#[test]
+fn function_document_rebuilds_source_and_reports_body_errors() {
+    let source = "fn(value: int) -> int { value }";
+    let result = cfd::function_document(&json!({
+        "source": source,
+        "body": "var broken = ;",
+    }));
+
+    assert_eq!(result["source"], "fn(value: int) -> int { var broken = ; }");
+    assert!(result["diagnostics"]
+        .as_array()
+        .is_some_and(|diagnostics| !diagnostics.is_empty()));
+}
