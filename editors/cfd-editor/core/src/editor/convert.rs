@@ -184,6 +184,28 @@ fn annotation_for_value(
     ctx: &WireContext<'_>,
     declared_shape: Option<&FieldShapeInfo>,
 ) -> FieldAnnotation {
+    let wrapped = match value {
+        CfdValue::OptionSome(inner) => declared_shape
+            .and_then(|shape| shape.option_inner.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        CfdValue::ResultOk(inner) => declared_shape
+            .and_then(|shape| shape.result_ok.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        CfdValue::ResultErr(inner) => declared_shape
+            .and_then(|shape| shape.result_err.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        _ => None,
+    };
+    if let Some((inner, inner_shape)) = wrapped {
+        let mut annotation = annotation_for_value(inner, ctx, Some(inner_shape));
+        if let Some(outer) = declared_shape {
+            annotation.declared_type = Some(outer.display_label.clone());
+            annotation.label.clone_from(&outer.label);
+            annotation.description.clone_from(&outer.description);
+            annotation.nullable = outer.nullable;
+        }
+        return annotation;
+    }
     let mut annotation = FieldAnnotation::default();
     if let Some(shape) = declared_shape {
         annotation.declared_type = Some(shape.display_label.clone());

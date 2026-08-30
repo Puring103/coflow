@@ -14,7 +14,7 @@ const renderer: FieldRenderer = {
 
 function context(type: string): ReadRenderContext {
   return {
-    value: { kind: 'null' },
+    value: { kind: 'option_none' },
     type,
     nullable: type.endsWith('?'),
     surface: 'table-cell',

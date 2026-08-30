@@ -173,7 +173,33 @@ export function deletedSnapshotValue(snapshot: DeletedRecordSnapshot): FieldValu
 }
 
 export function nullValue(): FieldValue {
-  return { kind: 'null' }
+  return { kind: 'option_none' }
+}
+
+export function isNullValue(value: FieldValue): boolean {
+  return value.kind === 'option_none'
+}
+
+export function presentationValue(value: FieldValue): FieldValue {
+  switch (value.kind) {
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return presentationValue(value.value)
+    default:
+      return value
+  }
+}
+
+export function replacePresentationValue(original: FieldValue, value: FieldValue): FieldValue {
+  if (value.kind === 'option_none') return value
+  switch (original.kind) {
+    case 'option_some': return { kind: 'option_some', value }
+    case 'option_none': return { kind: 'option_some', value }
+    case 'result_ok': return { kind: 'result_ok', value }
+    case 'result_err': return { kind: 'result_err', value }
+    default: return value
+  }
 }
 
 export function stringValue(value: string): FieldValue {
@@ -364,6 +390,10 @@ function normalizeTaggedWireObject(object: Record<string, unknown>): unknown {
       return { ...object, value: normalizeEnumWireValue(object.value) }
     case 'object':
       return { ...object, value: normalizeWireValue(object.value) }
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return { ...object, value: normalizeWireValue(object.value) }
     case 'array':
       return {
         ...object,
@@ -422,8 +452,14 @@ function isEditorError(err: unknown): err is EditorError {
 
 export function cloneValue(value: FieldValue): FieldValue {
   switch (value.kind) {
-    case 'null':
-      return { kind: 'null' }
+    case 'option_none':
+      return { kind: 'option_none' }
+    case 'option_some':
+      return { kind: 'option_some', value: cloneValue(value.value) }
+    case 'result_ok':
+      return { kind: 'result_ok', value: cloneValue(value.value) }
+    case 'result_err':
+      return { kind: 'result_err', value: cloneValue(value.value) }
     case 'bool':
       return { kind: 'bool', value: value.value }
     case 'int':

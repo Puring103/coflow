@@ -115,7 +115,7 @@ export function useRecordItemKeyboard(options: Options) {
       if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
         try {
           const next: FieldValue = intent.kind === 'clear'
-            ? { kind: 'null' }
+            ? { kind: 'option_none' }
             : { kind: 'bool', value: current.dataset.boolValue !== 'true' }
           await options.onWriteField(path, next)
           options.onNotice?.(null)

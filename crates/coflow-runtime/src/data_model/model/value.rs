@@ -85,6 +85,13 @@ impl CfdRecord {
         };
         let mut current = self.fields().get(field.as_str())?;
         for segment in segments {
+            current = match current {
+                CfdValue::OptionSome(value)
+                | CfdValue::ResultOk(value)
+                | CfdValue::ResultErr(value) => value,
+                CfdValue::OptionNone => return None,
+                _ => current,
+            };
             current = match (segment, current) {
                 (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
                     record.fields().get(field.as_str())?

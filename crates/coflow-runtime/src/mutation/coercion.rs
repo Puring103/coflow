@@ -22,6 +22,11 @@ pub(super) fn coerce_mutation_value(
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
         MutationValue::Cfd(value) => normalize_cfd_value(session, value),
     }?;
+    let value = match (expected, value) {
+        (CftValueType::Option(_), value @ (CfdValue::OptionNone | CfdValue::OptionSome(_))) => value,
+        (CftValueType::Option(_), value) => CfdValue::OptionSome(Box::new(value)),
+        (_, value) => value,
+    };
     validate_value_for_write(session, expected, &value, pending_records)?;
     Ok(value)
 }

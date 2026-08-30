@@ -72,8 +72,12 @@ export function projectFieldValue(
 export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
   if (left.kind !== right.kind) return false
   switch (left.kind) {
-    case 'null':
+    case 'option_none':
       return true
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return sameFieldValue(left.value, (right as typeof left).value)
     case 'bool':
     case 'float':
     case 'string':

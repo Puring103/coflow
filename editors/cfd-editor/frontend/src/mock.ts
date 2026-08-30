@@ -318,7 +318,10 @@ function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
 
 function mockSummary(value: FieldValue): string {
   switch (value.kind) {
-    case 'null': return '-'
+    case 'option_none': return '-'
+    case 'option_some': return mockSummary(value.value)
+    case 'result_ok': return `Ok(${mockSummary(value.value)})`
+    case 'result_err': return `Err(${mockSummary(value.value)})`
     case 'bool': return value.value ? 'true' : 'false'
     case 'int':
     case 'float': return String(value.value)
