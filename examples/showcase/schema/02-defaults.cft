@@ -1,0 +1,7 @@
+# Feature: field defaults.
+
+type DefaultSettings {
+  retries: int = 3;
+  title: string = "Untitled";
+  visible: bool = true;
+}

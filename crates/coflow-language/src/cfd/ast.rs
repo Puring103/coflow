@@ -101,6 +101,7 @@ impl CfdValue {
 pub struct CfdFunction {
     pub source: String,
     pub span: Span,
+    pub body_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

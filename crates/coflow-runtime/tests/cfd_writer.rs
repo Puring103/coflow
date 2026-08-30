@@ -250,6 +250,41 @@ shield: Item {
 }
 
 #[test]
+fn inserts_missing_field_with_four_space_indentation() {
+    let dir = temp_dir("insert-missing-field-indentation");
+    let file = dir.join("items.cfd");
+    fs::write(&file, "sword: Item {\n}\n").expect("write seed");
+    let schema = compile_schema("type Item { value: int; }");
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let value = CfdValue::Int(42);
+    let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
+    let model = empty_model(&schema);
+
+    CfdWriter::new()
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                field_path: &segments,
+                new_value: &value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("insert missing field");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert_eq!(after, "sword: Item {\n    value: 42,\n}\n");
+}
+
+#[test]
 fn writes_field_inside_polymorphic_block_using_type_marker() {
     let dir = temp_dir("polymorphic-field");
     let file = dir.join("stages.cfd");
@@ -582,9 +617,12 @@ fn inserts_record_at_end_of_cfd_file() {
 
     assert!(outcome.diagnostics.is_empty());
     let after = fs::read_to_string(&file).expect("re-read");
-    assert!(after.contains("potion: Item"));
-    assert!(after.contains("name: \"Potion\""));
-    assert!(after.contains("value: 3"));
+    assert!(
+        after.contains(
+            "potion: Item {\n    name: \"Potion\",\n    value: 3,\n}\n"
+        ),
+        "inserted records should use four-space indentation: {after}"
+    );
     let model = load_cfd_model(&schema, &after).expect("reload");
     assert!(model.lookup_assignable(&schema, "Item", "potion").is_some());
 }
@@ -704,8 +742,8 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("item: &sword"),
-        "expected & ref syntax: {after}"
+        after.contains("    slot: Slot {\n        item: &sword,\n    },"),
+        "nested fields should use one four-space indentation unit per level: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
     assert!(model
@@ -1018,26 +1056,27 @@ sword: Item {
 }
 
 #[test]
-fn rewrites_chemical_equation_objects_and_arrays_as_valid_cfd() {
-    let dir = temp_dir("chemical-equation-round-trip");
-    let file = dir.join("04-chemical-equations.cfd");
-    let original = include_str!("../../../examples/cfd/data/04-chemical-equations.cfd");
-    fs::write(&file, original).expect("write chemical equation seed");
-    let schema = compile_schema(include_str!("../../../examples/cfd/schema.cft"));
-    let model = load_cfd_model(&schema, original).expect("load chemical equation model");
+fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
+    let dir = temp_dir("polymorphic-object-round-trip");
+    let file = dir.join("07-inheritance.cfd");
+    let original = include_str!("../../../examples/showcase/data/07-inheritance.cfd");
+    fs::write(&file, original).expect("write inheritance seed");
+    let schema = compile_schema(include_str!("../../../examples/showcase/schema/07-inheritance.cft"));
+    let model = load_cfd_model(&schema, original).expect("load inheritance model");
     let record_id = model
-        .lookup_assignable(&schema, "ChemicalEquation", "water_synthesis")
-        .expect("chemical equation record");
-    let record = model.record(record_id).expect("chemical equation value");
-    let expression = record.field("expression").expect("expression").clone();
-    let CfdValue::Object(expression_object) = &expression else {
-        panic!("expression should be an object");
+        .lookup_assignable(&schema, "EffectBundle", "starter_effects")
+        .expect("effect bundle record");
+    let record = model.record(record_id).expect("effect bundle value");
+    let primary = record.field("primary").expect("primary effect").clone();
+    let CfdValue::Object(primary_object) = &primary else {
+        panic!("primary effect should be an object");
     };
-    let CfdValue::Array(inputs) = expression_object.field("inputs").expect("inputs") else {
-        panic!("inputs should be an array");
+    assert_eq!(primary_object.actual_type.as_str(), "DamageEffect");
+    let CfdValue::Array(additional) = record.field("additional").expect("additional effects") else {
+        panic!("additional effects should be an array");
     };
-    let mut appended_inputs = inputs.clone();
-    appended_inputs.push(inputs[0].clone());
+    let mut appended_effects = additional.clone();
+    appended_effects.push(additional[0].clone());
 
     let writer = CfdWriter::new();
     let source = empty_source(&file);
@@ -1047,56 +1086,48 @@ fn rewrites_chemical_equation_objects_and_arrays_as_valid_cfd() {
         schema: &schema,
         model: Some(&model),
     };
-    let expression_path = vec![WriteFieldPathSegment::Field("expression".to_string())];
+    let primary_path = vec![WriteFieldPathSegment::Field("primary".to_string())];
     writer
         .write_field(
             context,
             &WriteCellRequest {
                 origin: &origin,
-                record_key: "water_synthesis",
-                actual_type: "ChemicalEquation",
-                field_path: &expression_path,
-                new_value: &expression,
+                record_key: "starter_effects",
+                actual_type: "EffectBundle",
+                field_path: &primary_path,
+                new_value: &primary,
                 schema: &schema,
                 source: &source,
             },
         )
-        .expect("rewrite expression object");
+        .expect("rewrite primary effect object");
 
-    let inputs_path = vec![
-        WriteFieldPathSegment::Field("expression".to_string()),
-        WriteFieldPathSegment::Field("inputs".to_string()),
-    ];
+    let additional_path = vec![WriteFieldPathSegment::Field("additional".to_string())];
     writer
         .write_field(
             context,
             &WriteCellRequest {
                 origin: &origin,
-                record_key: "water_synthesis",
-                actual_type: "ChemicalEquation",
-                field_path: &inputs_path,
-                new_value: &CfdValue::Array(appended_inputs),
+                record_key: "starter_effects",
+                actual_type: "EffectBundle",
+                field_path: &additional_path,
+                new_value: &CfdValue::Array(appended_effects),
                 schema: &schema,
                 source: &source,
             },
         )
-        .expect("rewrite expression inputs");
+        .expect("rewrite additional effects");
 
     let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
-    let rewritten = load_cfd_model(&schema, &after).expect("reload rewritten chemical equation");
+    let rewritten = load_cfd_model(&schema, &after).expect("reload rewritten effect bundle");
     let rewritten_id = rewritten
-        .lookup_assignable(&schema, "ChemicalEquation", "water_synthesis")
-        .expect("rewritten chemical equation record");
+        .lookup_assignable(&schema, "EffectBundle", "starter_effects")
+        .expect("rewritten effect bundle record");
     let rewritten_record = rewritten.record(rewritten_id).expect("rewritten record");
-    let CfdValue::Object(rewritten_expression) =
-        rewritten_record.field("expression").expect("rewritten expression")
+    let CfdValue::Array(rewritten_additional) =
+        rewritten_record.field("additional").expect("rewritten additional effects")
     else {
-        panic!("rewritten expression should be an object");
+        panic!("rewritten additional effects should be an array");
     };
-    let CfdValue::Array(rewritten_inputs) =
-        rewritten_expression.field("inputs").expect("rewritten inputs")
-    else {
-        panic!("rewritten inputs should be an array");
-    };
-    assert_eq!(rewritten_inputs.len(), 3);
+    assert_eq!(rewritten_additional.len(), 2);
 }

@@ -11,5 +11,5 @@ else
 fi
 export PATH="$(dirname "$dotnet_path"):$PATH"
 
-cargo run --manifest-path "$repo_dir/Cargo.toml" -- codegen "$repo_dir/examples/csharp-runtime"
+cargo run --manifest-path "$repo_dir/Cargo.toml" -- codegen "$repo_dir/tests/csharp-runtime-integration"
 "$dotnet_path" run -c Release --project "$benchmark_dir/Coflow.Cfd.Runtime.Benchmarks.csproj" -- "$@"

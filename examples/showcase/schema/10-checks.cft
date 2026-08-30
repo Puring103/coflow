@@ -1,0 +1,10 @@
+# Feature: record validation with check expressions.
+
+type RangeRule {
+  minimum: int;
+  maximum: int;
+
+  check {
+    minimum <= maximum;
+  }
+}

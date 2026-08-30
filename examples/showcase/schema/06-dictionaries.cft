@@ -1,0 +1,5 @@
+# Feature: dictionaries.
+
+type DictionaryExample {
+  scores: {string: int} = {};
+}

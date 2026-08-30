@@ -32,7 +32,7 @@ import type { RecordRow } from './bindings/RecordRow'
 import type { PluginSchemaType } from './bindings/PluginSchemaType'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
-export const isTauri = '__TAURI_INTERNALS__' in window
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 export interface ProjectChangedEvent {
   session_id: number
@@ -43,6 +43,44 @@ export interface ProjectChangedEvent {
 export interface ProjectWatchErrorEvent {
   session_id: number
   message: string
+}
+
+export interface LanguagePosition {
+  line: number
+  character: number
+}
+
+export interface LanguageRange {
+  start: LanguagePosition
+  end: LanguagePosition
+}
+
+export interface LanguageDiagnostic {
+  range: LanguageRange
+  severity: number
+  message: string
+  code?: string
+  source?: string
+}
+
+export interface LanguageDocumentState {
+  diagnostics: LanguageDiagnostic[]
+  semantic_token_data: number[]
+  semantic_token_types: string[]
+}
+
+export interface LanguageCompletion {
+  label: string
+  detail?: string
+  kind?: number
+  insert_text?: string
+}
+
+export interface FunctionDocumentState extends LanguageDocumentState {
+  source: string
+  signature: string
+  body: string
+  completions: LanguageCompletion[]
 }
 
 export async function pickProjectYaml(): Promise<string | null> {
@@ -279,6 +317,60 @@ export async function buildProjectStatus(sessionId: number): Promise<boolean> {
 
 export async function openSourceFile(sessionId: number, filePath: string): Promise<void> {
   return invokeCommand('open_source_file', { sessionId, filePath })
+}
+
+export async function readSourceText(sessionId: number, filePath: string): Promise<string> {
+  return invokeCommand<string>('read_source_text', { sessionId, filePath })
+}
+
+export async function syncLanguageDocument(
+  sessionId: number,
+  filePath: string,
+  source: string,
+  version: number,
+): Promise<LanguageDocumentState> {
+  return invokeCommand<LanguageDocumentState>('sync_language_document', {
+    sessionId,
+    filePath,
+    source,
+    version,
+  })
+}
+
+export async function completeLanguageDocument(
+  sessionId: number,
+  filePath: string,
+  source: string,
+  version: number,
+  position: LanguagePosition,
+): Promise<LanguageCompletion[]> {
+  return invokeCommand<LanguageCompletion[]>('complete_language_document', {
+    sessionId,
+    filePath,
+    source,
+    version,
+    position,
+  })
+}
+
+export async function closeLanguageDocument(sessionId: number, filePath: string): Promise<void> {
+  return invokeCommand('close_language_document', { sessionId, filePath })
+}
+
+export async function functionDocument(
+  sessionId: number,
+  source: string,
+  body?: string,
+): Promise<FunctionDocumentState> {
+  return invokeCommand<FunctionDocumentState>('function_document', { sessionId, source, body })
+}
+
+export async function writeSourceText(
+  sessionId: number,
+  filePath: string,
+  source: string,
+): Promise<ProjectSnapshot> {
+  return invokeCommand<ProjectSnapshot>('write_source_text', { sessionId, filePath, source })
 }
 
 export async function getEnumVariants(sessionId: number, enumName: string): Promise<EnumVariantOption[]> {

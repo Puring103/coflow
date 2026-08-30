@@ -1,0 +1,5 @@
+# Feature: flag variants combine with the bitwise-or operator.
+
+editor_access: FlagExample {
+    permissions: Read | Write,
+}

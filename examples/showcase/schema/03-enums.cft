@@ -1,0 +1,11 @@
+# Feature: plain enums.
+
+enum Rarity {
+  Common,
+  Rare,
+  Epic,
+}
+
+type EnumExample {
+  rarity: Rarity;
+}

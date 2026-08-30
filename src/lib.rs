@@ -17,5 +17,5 @@ mod artifacts;
 
 pub mod commands;
 
-#[cfg(feature = "cli")]
+#[cfg(feature = "lsp-service")]
 pub mod lsp;

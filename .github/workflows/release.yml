@@ -82,8 +82,8 @@ jobs:
       - name: Regenerate and run C# integration
         shell: pwsh
         run: |
-          cargo run -- codegen examples/csharp-runtime
-          dotnet run --project examples/csharp-runtime/app/Coflow.Runtime.Example.csproj --configuration Release
+          cargo run -- codegen tests/csharp-runtime-integration
+          dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
           dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release
 
       - name: Check TypeScript bindings

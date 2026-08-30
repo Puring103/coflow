@@ -10,9 +10,10 @@ import type { ViewConfig } from '../bindings/ViewConfig'
 
 export const DEFAULT_RECORD_VIEW_ID = '__default_record'
 export const DEFAULT_TABLE_VIEW_ID = '__default_table'
+export const DEFAULT_SOURCE_VIEW_ID = '__default_source'
 export const RESERVED_VIEW_ID_PREFIX = '__'
 
-export type ViewRenderKind = 'record' | 'table' | 'graph'
+export type ViewRenderKind = 'record' | 'table' | 'graph' | 'source'
 
 /** A tab in the view-tab row. */
 export interface ViewTab {
@@ -62,11 +63,15 @@ export function viewTabsFor(
   graphSupported: boolean,
 ): ViewTab[] {
   if (isSingleton) {
-    return [{ id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true }]
+    return [
+      { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
+      { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
+    ]
   }
   const tabs: ViewTab[] = [
     { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
     { id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', isDefault: true },
+    { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
   ]
   for (const view of customViews(settings, file, type)) {
     if (view.kind === 'graph' && !graphSupported) continue
@@ -85,7 +90,9 @@ export function resolveView(
   isSingleton = false,
 ): ResolvedView {
   if (isSingleton) {
-    return { id: DEFAULT_RECORD_VIEW_ID, kind: 'record', isDefault: true }
+    return viewId === DEFAULT_SOURCE_VIEW_ID
+      ? { id: DEFAULT_SOURCE_VIEW_ID, kind: 'source', isDefault: true }
+      : { id: DEFAULT_RECORD_VIEW_ID, kind: 'record', isDefault: true }
   }
   if (viewId === DEFAULT_RECORD_VIEW_ID) {
     return { id: viewId, kind: 'record', isDefault: true }
@@ -97,6 +104,9 @@ export function resolveView(
       isDefault: true,
       columnWidths: settings?.default_table_column_widths?.[file]?.[type] ?? {},
     }
+  }
+  if (viewId === DEFAULT_SOURCE_VIEW_ID) {
+    return { id: viewId, kind: 'source', isDefault: true }
   }
   const view = customViews(settings, file, type).find(v => v.id === viewId)
   if (!view) {

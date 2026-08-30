@@ -154,7 +154,8 @@ mod tests {
         use std::path::PathBuf;
 
         let config =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/showcase/coflow.yaml");
         let project =
             Project::open_schema_only(Some(config.as_path())).expect("example project should open");
         let configured = configured_source(&project, &SourceConfig::from_path("data.cfd".into()));

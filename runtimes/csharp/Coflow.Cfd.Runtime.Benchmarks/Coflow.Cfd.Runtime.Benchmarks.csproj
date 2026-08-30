@@ -8,9 +8,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../../examples/csharp-runtime/generated/**/*.cs"
+    <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs"
              Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
-    <Content Include="../../../examples/csharp-runtime/data/*.cfd"
+    <Content Include="../../../tests/csharp-runtime-integration/data/*.cfd"
              Link="Data/%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj" />

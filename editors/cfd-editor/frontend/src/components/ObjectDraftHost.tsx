@@ -29,11 +29,13 @@ const Ctx = createContext<ObjectDraftHostValue | null>(null)
 export function ObjectDraftHost({
   lookups,
   generationKey,
+  sessionId = 0,
   onOpenReference,
   children,
 }: {
   lookups: EditorLookupController
   generationKey: string
+  sessionId?: number
   onOpenReference: (targetType: string, recordKey: string) => void
   children: ReactNode
 }) {
@@ -44,13 +46,14 @@ export function ObjectDraftHost({
   }, [])
 
   const lookupAccess = useMemo(() => ({
+    sessionId,
     cachedEnumVariants: (enumName: string) => lookups.cachedEnumVariants(enumName),
     cachedRefTargets: (targetType: string) => lookups.cachedRefTargets(targetType),
     loadEnumVariants: (enumName: string) => lookups.loadEnumVariants(enumName),
     loadRefTargets: (targetType: string) => lookups.loadRefTargets(targetType),
     makeDefaultObject: (typeName: string) => lookups.makeDefaultObject(typeName),
     createRecordDraft: (actualType: string) => lookups.createRecordDraft(actualType),
-  }), [generationKey, lookups])
+  }), [generationKey, lookups, sessionId])
 
   const loadDraft = useCallback(async (typeName: string): Promise<CreateRecordDraft> => {
     const result = await lookupAccess.createRecordDraft(typeName)

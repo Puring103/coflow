@@ -22,6 +22,7 @@ export type Route =
   | { view: 'table'; file: string; viewId: string; typeFilter?: string }
   | { view: 'record'; file: string; viewId: string; coordinate: RecordCoordinate }
   | { view: 'graph'; file: string; viewId: string; typeFilter?: string }
+  | { view: 'source'; file: string; viewId: string; typeFilter?: string }
 
 export type GraphNodeView = GraphNode & {
   id: string

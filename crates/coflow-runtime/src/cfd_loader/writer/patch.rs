@@ -70,7 +70,7 @@ pub(super) fn apply_patch(
             let block_end = record.span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
             let fragment = format!(
-                "  {top_field}: {},\n",
+                "    {top_field}: {},\n",
                 serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), 2)
             );
             Ok(format!(
@@ -88,8 +88,8 @@ pub(super) fn apply_patch(
         } => {
             let block_end = block_span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
-            let indent = "  ".repeat(depth + 1);
-            let outer = "  ".repeat(depth);
+            let indent = "    ".repeat(depth + 1);
+            let outer = "    ".repeat(depth);
             let fragment = format!(
                 "{indent}{field_name}: {},\n{outer}",
                 serialize_value_for_type(
@@ -176,7 +176,7 @@ pub(super) fn serialize_record(
 ) -> String {
     let mut out = format!("{key}: {actual_type} {{\n");
     for (name, value) in fields {
-        out.push_str("  ");
+        out.push_str("    ");
         out.push_str(name);
         out.push_str(": ");
         let ty = type_after_field_segment(schema, actual_type, name);

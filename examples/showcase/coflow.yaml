@@ -1,0 +1,7 @@
+schema: schema/
+data: data/
+
+codegen:
+  - language: csharp
+    dir: generated/csharp
+    namespace: Showcase.Config

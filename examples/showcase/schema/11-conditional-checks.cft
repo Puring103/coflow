@@ -1,0 +1,12 @@
+# Feature: conditional validation with when blocks.
+
+type ConditionalRule {
+  enabled: bool;
+  threshold: int;
+
+  check {
+    when enabled {
+      threshold > 0;
+    }
+  }
+}

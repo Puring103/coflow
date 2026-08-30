@@ -15,7 +15,7 @@ ts-export = ["dep:ts-rs", "coflow-runtime/ts-export"]
 
 [dependencies]
 atomicwrites = "0.4.4"
-coflow = { path = "../../..", default-features = false }
+coflow = { path = "../../..", default-features = false, features = ["lsp-service"] }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 notify = "8"
 serde = { version = "1", features = ["derive"] }

@@ -403,7 +403,7 @@ DOTNET_ROOT=/home/wtl/.dotnet DOTNET_ROLL_FORWARD=LatestMajor \
   /home/wtl/.dotnet/dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
 ```
 
-生成示例后，必须把 `examples/cfd/generated/csharp/**/*.cs` 与 runtime 一起执行真实
+生成集成夹具后，必须把 `tests/csharp-runtime-integration/generated/**/*.cs` 与 runtime 一起执行真实
 `dotnet build`。静态审计：
 
 ```text

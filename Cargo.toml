@@ -13,11 +13,13 @@ workspace = true
 [features]
 default = ["cli"]
 cli = [
+    "lsp-service",
     "dep:clap",
     "dep:dirs",
     "dep:include_dir",
     "dep:self_update",
 ]
+lsp-service = []
 
 [[bin]]
 name = "coflow"

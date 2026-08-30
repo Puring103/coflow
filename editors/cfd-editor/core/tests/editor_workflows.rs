@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use cfd_editor_core::editor::{CollectionEdit, SessionStore};
+use cfd_editor_core::editor::{CollectionEdit, LanguagePosition, SessionStore};
 use coflow_runtime::{CfdPathSegment, CfdValue, RecordCoordinate};
 use std::fs;
 use std::path::PathBuf;
@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
-fn chemical_project() -> (PathBuf, PathBuf) {
+fn array_project() -> (PathBuf, PathBuf) {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-chemical-workflow-{id}"));
+    let root = std::env::temp_dir().join(format!("cfd-editor-array-workflow-{id}"));
     if root.exists() {
         fs::remove_dir_all(&root).expect("remove old test project");
     }
@@ -30,15 +30,15 @@ fn chemical_project() -> (PathBuf, PathBuf) {
     .expect("write project config");
     fs::write(
         root.join("schema.cft"),
-        include_str!("../../../../examples/cfd/schema.cft"),
+        include_str!("../../../../examples/showcase/schema/05-arrays.cft"),
     )
     .expect("write schema");
-    let data_file = data_dir.join("04-chemical-equations.cfd");
+    let data_file = data_dir.join("05-arrays.cfd");
     fs::write(
         &data_file,
-        include_str!("../../../../examples/cfd/data/04-chemical-equations.cfd"),
+        include_str!("../../../../examples/showcase/data/05-arrays.cfd"),
     )
-    .expect("write chemical equation data");
+    .expect("write array data");
     (root, data_file)
 }
 
@@ -104,7 +104,7 @@ fn field(name: &str) -> CfdPathSegment {
 fn repository_examples_open_in_editor() {
     let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
 
-    for example in ["card_game", "cfd", "cft", "csharp-runtime"] {
+    for example in ["showcase"] {
         let config = repository_root
             .join("examples")
             .join(example)
@@ -241,51 +241,42 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
 }
 
 #[test]
-fn chemical_equation_editor_mutations_round_trip_through_reload() {
-    let (root, data_file) = chemical_project();
+fn array_editor_mutations_round_trip_through_reload() {
+    let (root, data_file) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
         .load_project(&root.join("coflow.yaml"))
-        .expect("load chemical equation project");
+        .expect("load array project");
     let session_id = snapshot.session_id;
-    let file_path = "data/04-chemical-equations.cfd";
-    let original = RecordCoordinate::try_new("ChemicalEquation", "water_synthesis")
+    let file_path = "data/05-arrays.cfd";
+    let original = RecordCoordinate::try_new("ArrayExample", "featured_tags")
         .expect("valid original coordinate");
-
-    store
-        .write_field(
-            session_id,
-            &original,
-            &[field("temperature_c")],
-            &CfdValue::Float(30.0),
-        )
-        .expect("write scalar field");
     store
         .edit_collection(
             session_id,
             &original,
-            &[field("expression"), field("inputs")],
+            &[field("tags")],
             CollectionEdit::ArrayAppend { value: None },
         )
-        .expect("append nested array item");
+        .expect("append array item");
 
     let renamed = store
-        .rename_record_key(session_id, &original, "water_synthesis_v2")
+        .rename_record_key(session_id, &original, "featured_tags_v2")
         .expect("rename grouped record")
         .renamed;
     let draft = store
-        .make_default_object(session_id, "ChemicalEquation")
-        .expect("create default chemical equation");
+        .make_default_object(session_id, "ArrayExample")
+        .expect("create default array record");
     store
         .insert_record(
             session_id,
             file_path,
-            "empty_equation",
-            "ChemicalEquation",
+            "empty_array",
+            "ArrayExample",
             draft,
         )
-        .expect("insert chemical equation");
-    let inserted = RecordCoordinate::try_new("ChemicalEquation", "empty_equation")
+        .expect("insert array record");
+    let inserted = RecordCoordinate::try_new("ArrayExample", "empty_array")
         .expect("valid inserted coordinate");
     store
         .swap_records(session_id, &renamed, &inserted)
@@ -304,5 +295,101 @@ fn chemical_equation_editor_mutations_round_trip_through_reload() {
     assert_eq!(records.records.len(), 1);
     assert_eq!(records.records[0].coordinate, renamed);
     let source = fs::read_to_string(data_file).expect("read final CFD source");
-    assert!(source.contains("temperature_c: 30.0"), "{source}");
+    assert!(source.contains("\"recommended\", \"recommended\""), "{source}");
+}
+
+#[test]
+fn source_text_edit_validates_before_atomic_save() {
+    let (root, data_file) = array_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load source editing project");
+    let session_id = snapshot.session_id;
+    let file_path = "data/05-arrays.cfd";
+    let original = store
+        .read_source_text(session_id, file_path)
+        .expect("read source text");
+
+    let diagnostics = store
+        .validate_source_text(session_id, file_path, "broken: ArrayExample {")
+        .expect("validate invalid draft");
+    assert!(
+        diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
+        "{diagnostics:#?}"
+    );
+    store
+        .write_source_text(session_id, file_path, "broken: ArrayExample {")
+        .expect_err("invalid source must not be written");
+    assert_eq!(
+        fs::read_to_string(&data_file).expect("read unchanged source"),
+        original
+    );
+
+    let edited = format!("{original}\n");
+    let saved = store
+        .write_source_text(session_id, file_path, &edited)
+        .expect("save valid source text");
+    assert!(saved.revision > snapshot.revision);
+    assert_eq!(
+        store
+            .read_source_text(session_id, file_path)
+            .expect("read saved source"),
+        edited
+    );
+}
+
+#[test]
+fn editor_language_features_are_served_by_embedded_lsp() {
+    let (root, _) = array_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load language-service project");
+    let file_path = "data/05-arrays.cfd";
+    let source = store
+        .read_source_text(snapshot.session_id, file_path)
+        .expect("read source text");
+
+    let document = store
+        .sync_language_document(snapshot.session_id, file_path, &source, 1)
+        .expect("synchronize through embedded LSP");
+    assert!(document.diagnostics.is_empty(), "{:#?}", document.diagnostics);
+    assert!(!document.semantic_token_data.is_empty());
+    assert!(document.semantic_token_types.iter().any(|kind| kind == "type"));
+
+    let completions = store
+        .complete_language_document(
+            snapshot.session_id,
+            file_path,
+            &source,
+            2,
+            &LanguagePosition { line: 0, character: 0 },
+        )
+        .expect("complete through embedded LSP");
+    assert!(completions.iter().any(|item| item.label == "ArrayExample"));
+
+    let function = store
+        .function_document(
+            snapshot.session_id,
+            "fn(value: int) -> int { value + 1 }",
+            None,
+        )
+        .expect("analyze function virtual document through embedded LSP");
+    assert_eq!(function.body, "value + 1");
+    assert!(function.completions.iter().any(|item| item.label == "value"));
+    assert!(!function.semantic_token_data.is_empty());
+
+    let invalid = "broken: ArrayExample {";
+    let first_invalid = store
+        .sync_language_document(snapshot.session_id, file_path, invalid, 3)
+        .expect("publish invalid document diagnostics");
+    let repeated_invalid = store
+        .sync_language_document(snapshot.session_id, file_path, invalid, 3)
+        .expect("reuse diagnostics for an unchanged LSP version");
+    assert!(!first_invalid.diagnostics.is_empty());
+    assert_eq!(
+        repeated_invalid.diagnostics.len(),
+        first_invalid.diagnostics.len()
+    );
 }

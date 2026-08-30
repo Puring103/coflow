@@ -1,0 +1,5 @@
+# Feature: ordered array values.
+
+featured_tags: ArrayExample {
+    tags: ["new", "recommended"],
+}

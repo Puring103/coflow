@@ -1,0 +1,21 @@
+# Feature: top-level records, grouped by their schema type.
+
+Product {
+    notebook {
+        name: "Notebook",
+        price: 12,
+        enabled: true,
+    }
+
+    pencil {
+        name: "Pencil",
+        price: 2,
+        enabled: true,
+    }
+
+    test {
+        name: "sadasd",
+        price:2,
+        enabled:true,
+    }
+}

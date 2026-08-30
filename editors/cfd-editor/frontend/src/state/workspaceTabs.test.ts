@@ -50,6 +50,21 @@ describe('project workspace tabs', () => {
     expect(restored?.activeTabId).toBe(itemId)
   })
 
+  it('restores source view for singleton files', () => {
+    const restored = sanitizeProjectWorkspace({
+      active_tab_id: workspaceTabId('data/settings.cfd', 'Settings'),
+      tabs: [{
+        file_path: 'data/settings.cfd',
+        type_name: 'Settings',
+        view_kind: 'source',
+        view_id: '__default_source',
+      }],
+    }, fileTypes)
+    const tab = restored?.tabs[0]
+    expect(tab).toMatchObject({ viewKind: 'source', viewId: '__default_source' })
+    expect(routeForWorkspaceTab(tab!)).toMatchObject({ view: 'source', viewId: '__default_source' })
+  })
+
   it('serializes workspace state using the backend wire names', () => {
     const tab = defaultWorkspaceTab('data/item.cfd', 'Item', false)
     expect(workspaceToWire([tab], tab.id)).toEqual({

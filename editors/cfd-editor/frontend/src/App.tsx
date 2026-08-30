@@ -10,6 +10,7 @@ import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
 import { DimensionTableView } from './components/DimensionTableView'
+import { SourceEditorView } from './components/SourceEditorView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
@@ -92,6 +93,7 @@ import {
 import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
 import {
   DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_SOURCE_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
   viewTabsFor,
   resolveView,
@@ -1527,8 +1529,9 @@ export default function App() {
       let changed = false
       const next = current.map(tab => {
         if (tab.id !== id) return tab
-        const viewKind = singleton ? 'record' : currentRoute.view
-        const viewId = singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
+        const singletonSource = singleton && currentRoute.view === 'source'
+        const viewKind = singletonSource ? 'source' : singleton ? 'record' : currentRoute.view
+        const viewId = singletonSource ? DEFAULT_SOURCE_VIEW_ID : singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
@@ -1571,7 +1574,9 @@ export default function App() {
     [project?.file_types, activeFile, activeType],
   )
   const isSingletonType = activeTypeOption?.is_singleton ?? false
-  const activeViewKind = currentRoute && isSingletonType ? 'record' : currentRoute?.view
+  const activeViewKind = currentRoute && isSingletonType && currentRoute.view !== 'source'
+    ? 'record'
+    : currentRoute?.view
   const activeRecordCoordinate = currentRoute?.view === 'record'
     ? currentRoute.coordinate
     : activeFileData?.records.find(record => (
@@ -1745,10 +1750,16 @@ export default function App() {
       for (const record of records.records) {
         counts.set(record.coordinate.actual_type, (counts.get(record.coordinate.actual_type) ?? 0) + 1)
       }
-      next[filePath] = (next[filePath] ?? []).map(option => ({
-        ...option,
-        record_count: counts.get(option.name) ?? 0,
-      }))
+      next[filePath] = (next[filePath] ?? [])
+        .map(option => ({
+          ...option,
+          record_count: counts.get(option.name) ?? 0,
+        }))
+        .filter(option => option.record_count > 0)
+    }
+    for (const [filePath, options] of Object.entries(next)) {
+      if (filePath in fileDataCache) continue
+      next[filePath] = options?.filter(option => option.record_count > 0)
     }
     return next
   }, [fileDataCache, project])
@@ -2298,7 +2309,7 @@ export default function App() {
     if (!currentRoute) return
     if (activeFileData?.file_path !== currentRoute.file) return
     const activeTab = workspaceTabsRef.current.find(tab => tab.id === activeWorkspaceTabId)
-    const needsRecord = isSingletonType || activeTab?.viewKind === 'record'
+    const needsRecord = (isSingletonType && currentRoute.view !== 'source') || activeTab?.viewKind === 'record'
     if (!needsRecord) return
     const coordinateIsValid = currentRoute.view === 'record'
       && activeFileData.records.some(record => (
@@ -2368,6 +2379,7 @@ export default function App() {
     <ObjectDraftHost
       lookups={lookups}
       generationKey={lookupGenerationKey}
+      sessionId={project?.session_id}
       onOpenReference={openReference}
     >
     <div className="app">
@@ -2916,7 +2928,7 @@ export default function App() {
                         openViewContextMenu(tab, event.clientX, event.clientY)
                       }}
                     >
-                      <Icon name={tab.kind} size={13} aria-hidden />
+                      <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={13} aria-hidden />
                       {tab.name}
                     </button>
                   ))}
@@ -2961,8 +2973,8 @@ export default function App() {
                 </div>
               )}
 
-              {/* Record search bar — shared across all three views */}
-              <div className="global-search-bar">
+              {/* Record search bar — shared by structured views. */}
+              {activeViewKind !== 'source' && <div className="global-search-bar">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={documentSearchRef}
@@ -3002,7 +3014,7 @@ export default function App() {
                 >
                   {documentSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
                 </span>
-              </div>
+              </div>}
 
               <div className="view-container" ref={viewContainerRef}>
                 {activeViewKind === 'table' && (
@@ -3128,6 +3140,15 @@ export default function App() {
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>
                   )
+                )}
+                {activeViewKind === 'source' && project && currentRoute && (
+                  <SourceEditorView
+                    sessionId={project.session_id}
+                    revision={project.revision}
+                    filePath={currentRoute.file}
+                    readOnly={readOnly}
+                    onSaved={refreshFromSnapshot}
+                  />
                 )}
               </div>
             </>

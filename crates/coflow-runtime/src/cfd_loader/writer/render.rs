@@ -19,8 +19,8 @@ pub(super) fn serialize_value_for_type(
     expected: Option<&CftValueType>,
     depth: usize,
 ) -> String {
-    let indent = "  ".repeat(depth);
-    let outer = "  ".repeat(depth.saturating_sub(1));
+    let indent = "    ".repeat(depth);
+    let outer = "    ".repeat(depth.saturating_sub(1));
     match v {
         CfdValue::OptionNone => "None".to_string(),
         CfdValue::OptionSome(value) => format!(

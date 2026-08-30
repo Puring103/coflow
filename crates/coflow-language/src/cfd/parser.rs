@@ -454,6 +454,7 @@ impl<'a> Parser<'a> {
         Ok(CfdValue::Function(CfdFunction {
             source: self.source[start..self.pos].to_string(),
             span,
+            body_span: Span::new(body_start, body_end),
         }))
     }
 
