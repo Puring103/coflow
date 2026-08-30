@@ -643,6 +643,7 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
+            | CfdValue::Function(_)
             | CfdValue::Enum(_)
             | CfdValue::Ref(_) => {}
         }

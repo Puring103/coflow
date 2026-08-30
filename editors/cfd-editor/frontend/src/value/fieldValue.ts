@@ -76,6 +76,7 @@ function scalarText(value: FieldValue): string | null {
     case 'float': return String(value.value)
     case 'string': return value.value
     case 'formatted_string': return value.value.rendered
+    case 'function': return value.value.source
     case 'enum': return enumVariantText(value)
     case 'ref': return referenceKeyText(value.value)
     default: return null
@@ -211,6 +212,7 @@ function valueKindLabel(value: FieldValue): string {
     case 'float': return 'float'
     case 'string': return 'string'
     case 'formatted_string': return 'string'
+    case 'function': return 'fn'
     case 'enum': return value.value.enum_name
     case 'object': return value.value.actual_type
     case 'ref': return '&'

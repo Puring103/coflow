@@ -307,7 +307,7 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
     // A comment token spanning bytes 0..10 and an AST token at 5..8
     // should not produce overlapping output.
     // Use a real source that has a comment followed by a record.
-    let source = "// comment\nsword: Item { }";
+    let source = "# comment\nsword: Item { }";
     let (ast, _) = parse_cfd(source);
     let result = cfd::semantic_tokens(source, &ast);
     let data = result["data"].as_array().expect("data array");
@@ -335,6 +335,39 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
         prev_end_char = end_char;
     }
     assert!(ok, "semantic tokens must not overlap");
+}
+
+#[test]
+fn cfd_semantic_tokens_cover_migrated_modules_and_function_language() {
+    let source = "namespace game::runtime;\n\
+use game::schema::Runner;\n\
+runner: Runner {\n\
+  execute: fn(value: int) -> int {\n\
+    # function comment\n\
+    var label = \"value\";\n\
+    if true { helper(value) + 1 } else { 0 }\n\
+  },\n\
+}\n";
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let result = cfd::semantic_tokens(source, &ast);
+    let data = result["data"].as_array().expect("data");
+    let token_types = data
+        .chunks(5)
+        .filter_map(|chunk| chunk.get(3).and_then(Value::as_u64))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for expected in [0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 13] {
+        assert!(
+            token_types.contains(&expected),
+            "missing semantic token type {expected}: {token_types:?}"
+        );
+    }
+    assert!(
+        data.chunks(5)
+            .all(|chunk| chunk.get(2).and_then(Value::as_u64).unwrap_or(0) < 32),
+        "function values must be tokenized instead of emitted as one string"
+    );
 }
 
 #[test]

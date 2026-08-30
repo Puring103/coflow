@@ -28,7 +28,6 @@ pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
 pub(crate) const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
     &["declaration", "reference", "path", "record", "schema"];
 
-#[cfg(test)]
 pub(crate) const SEM_NAMESPACE: u32 = 0;
 pub(crate) const SEM_TYPE: u32 = 1;
 pub(crate) const SEM_ENUM: u32 = 2;
@@ -47,7 +46,6 @@ pub(crate) const SEM_PARAMETER: u32 = 13;
 pub(crate) const MOD_DECLARATION: u32 = 1 << 0;
 pub(crate) const MOD_REFERENCE: u32 = 1 << 1;
 pub(crate) const MOD_PATH: u32 = 1 << 2;
-#[cfg(test)]
 pub(crate) const MOD_RECORD: u32 = 1 << 3;
 pub(crate) const MOD_SCHEMA: u32 = 1 << 4;
 
@@ -193,7 +191,10 @@ fn add_lex_semantic_token(
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     let token_type = match kind {
-        TokenKind::Const
+        TokenKind::Namespace
+        | TokenKind::Use
+        | TokenKind::As
+        | TokenKind::Const
         | TokenKind::Enum
         | TokenKind::Type
         | TokenKind::Abstract
@@ -207,6 +208,11 @@ fn add_lex_semantic_token(
         | TokenKind::Is
         | TokenKind::True
         | TokenKind::False => SEM_KEYWORD,
+        TokenKind::Ident(text)
+            if matches!(
+                text.as_str(),
+                "fn" | "Option" | "Result" | "None" | "Some" | "Ok" | "Err"
+            ) => SEM_KEYWORD,
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
         TokenKind::String(_)
         | TokenKind::FormattedStringStart
@@ -234,7 +240,9 @@ fn add_lex_semantic_token(
         | TokenKind::GreaterGreater
         | TokenKind::EqEq
         | TokenKind::BangEq
-        | TokenKind::Equal => SEM_OPERATOR,
+        | TokenKind::Equal
+        | TokenKind::Arrow
+        | TokenKind::DoubleColon => SEM_OPERATOR,
         _ => return,
     };
     push_semantic_span_plain(source, span, token_type, tokens);
@@ -247,6 +255,37 @@ fn add_ast_semantic_tokens(
     ast: &coflow_language::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
+    if let Some(namespace) = &ast.namespace {
+        for segment in &namespace.path.segments {
+            push_semantic_span(
+                &document.source,
+                segment.span,
+                SEM_NAMESPACE,
+                MOD_DECLARATION | MOD_SCHEMA,
+                tokens,
+            );
+        }
+    }
+    for import in &ast.uses {
+        for segment in &import.path.segments {
+            push_semantic_span(
+                &document.source,
+                segment.span,
+                SEM_TYPE,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
+        }
+        if let Some(alias) = &import.alias {
+            push_semantic_span(
+                &document.source,
+                alias.span,
+                SEM_TYPE,
+                MOD_DECLARATION | MOD_SCHEMA,
+                tokens,
+            );
+        }
+    }
     for annotation in &ast.dangling_annotations {
         add_annotation_semantic(document, annotation, tokens);
     }
@@ -343,7 +382,16 @@ fn add_ast_semantic_tokens(
                     }
                 }
             }
-            Item::TypeAlias(_) => {}
+            Item::TypeAlias(alias) => {
+                push_semantic_span(
+                    &document.source,
+                    alias.name_span,
+                    SEM_TYPE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_value_type_semantic(build, document, &alias.target, tokens);
+            }
             Item::Check(check) => {
                 for annotation in &check.annotations {
                     add_annotation_semantic(document, annotation, tokens);

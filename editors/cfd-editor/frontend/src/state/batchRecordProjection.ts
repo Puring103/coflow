@@ -66,6 +66,7 @@ export function fieldValuesEqual(left: FieldValue, right: FieldValue): boolean {
     case 'formatted_string': return right.kind === 'formatted_string'
       && left.value.source === right.value.source
       && left.value.rendered === right.value.rendered
+    case 'function': return right.kind === 'function' && left.value.source === right.value.source
     case 'enum': return right.kind === 'enum'
       && left.value.enum_name === right.value.enum_name
       && left.value.variant === right.value.variant

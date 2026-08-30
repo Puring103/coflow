@@ -92,7 +92,7 @@ pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     let labels: &[&str] = if top_level_needs_type_keyword(line_prefix) {
         &["type"]
     } else {
-        &["const", "enum", "type", "abstract", "sealed", "check"]
+        &["namespace", "use", "const", "enum", "type", "abstract", "sealed", "check"]
     };
     keyword_completion_items(labels)
 }
@@ -281,16 +281,35 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 None,
             ));
         }
-        TypeRefKind::Option(inner) => {
+        TypeRefKind::Option(_) => {
             items.push(completion_item(
                 "None",
                 COMPLETION_KIND_KEYWORD,
                 "CFT Option value",
                 Some("Option without a value."),
             ));
-            collect_default_items_for_type(build, inner, items);
+            items.push(snippet_completion_item(
+                "Some",
+                "Some(${1:value})",
+                "CFT Option constructor",
+                "Option containing a value.",
+            ));
         }
-        TypeRefKind::Result(_, _) | TypeRefKind::Function(_, _) | TypeRefKind::Unit => {}
+        TypeRefKind::Result(_, _) => {
+            items.push(snippet_completion_item(
+                "Ok",
+                "Ok(${1:value})",
+                "CFT Result constructor",
+                "Successful Result value.",
+            ));
+            items.push(snippet_completion_item(
+                "Err",
+                "Err(${1:error})",
+                "CFT Result constructor",
+                "Failed Result value.",
+            ));
+        }
+        TypeRefKind::Function(_, _) | TypeRefKind::Unit => {}
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
@@ -397,6 +416,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             }
         }
     }
+    append_type_alias_completion_items(build, &mut items);
     items
 }
 
@@ -412,7 +432,26 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
             ));
         }
     }
+    append_type_alias_completion_items(build, &mut items);
     items
+}
+
+fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<Value>) {
+    for document in build.documents.values() {
+        let Some(ast) = &document.ast else {
+            continue;
+        };
+        for item in &ast.items {
+            if let Item::TypeAlias(alias) = item {
+                items.push(completion_item(
+                    &alias.name,
+                    COMPLETION_KIND_CLASS,
+                    "CFT type alias",
+                    None,
+                ));
+            }
+        }
+    }
 }
 
 fn const_completion_items(build: &LspBuild) -> Vec<Value> {
@@ -451,7 +490,16 @@ fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value>
 
 fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
     match (&ty.kind, value) {
-        (TypeRefKind::Option(inner), value) => const_value_assignable_to_type(value, inner),
+        (TypeRefKind::Option(_), CftConstValue::OptionNone) => true,
+        (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
+            const_value_assignable_to_type(value, inner)
+        }
+        (TypeRefKind::Result(ok, _), CftConstValue::ResultOk(value)) => {
+            const_value_assignable_to_type(value, ok)
+        }
+        (TypeRefKind::Result(_, error), CftConstValue::ResultErr(value)) => {
+            const_value_assignable_to_type(value, error)
+        }
         (TypeRefKind::Int, CftConstValue::Int(_))
         | (TypeRefKind::Float, CftConstValue::Float(_))
         | (TypeRefKind::Bool, CftConstValue::Bool(_))
@@ -469,6 +517,23 @@ fn completion_item(label: &str, kind: u8, detail: &str, documentation: Option<&s
         item.insert("documentation".to_string(), json!(documentation));
     }
     Value::Object(item)
+}
+
+fn snippet_completion_item(
+    label: &str,
+    insert_text: &str,
+    detail: &str,
+    documentation: &str,
+) -> Value {
+    let mut item = completion_item(
+        label,
+        COMPLETION_KIND_FUNCTION,
+        detail,
+        Some(documentation),
+    );
+    insert_object_field(&mut item, "insertText", json!(insert_text));
+    insert_object_field(&mut item, "insertTextFormat", json!(2));
+    item
 }
 
 fn annotation_completion_item(annotation: &AnnotationCompletion) -> Value {
@@ -505,7 +570,24 @@ pub(crate) fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> 
 }
 
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
-    matches!(label, "@struct" | "@flag" | "@idAsEnum") && scope == CompletionScope::TopLevel
+    match scope {
+        CompletionScope::TopLevel => matches!(
+            label,
+            "@struct"
+                | "@flag"
+                | "@idAsEnum"
+                | "@singleton"
+                | "@Host"
+                | "@label"
+                | "@description"
+        ),
+        CompletionScope::TypeBody => matches!(
+            label,
+            "@label" | "@description" | "@expand" | "@localized" | "@dimension"
+        ),
+        CompletionScope::EnumBody => matches!(label, "@label" | "@description"),
+        CompletionScope::CheckBlock => false,
+    }
 }
 
 pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> CompletionScope {

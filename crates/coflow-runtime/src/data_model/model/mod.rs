@@ -11,7 +11,7 @@ pub use ids::{CfdRecordId, RecordCoordinate};
 pub use tables::CfdTable;
 pub use value::{
     CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdFormattedString,
-    CfdObject, CfdRecord, CfdValue,
+    CfdFunction, CfdObject, CfdRecord, CfdValue,
 };
 
 use crate::data_model::build::CfdModelBuilder;

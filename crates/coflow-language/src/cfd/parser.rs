@@ -2,8 +2,8 @@ mod tokens;
 
 use super::ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdNamespaceDecl, CfdRecord, CfdRef, CfdUseDecl,
-    CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdNamespaceDecl, CfdRecord, CfdRef,
+    CfdUseDecl, CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
@@ -348,6 +348,9 @@ impl<'a> Parser<'a> {
         if self.source[self.pos..].starts_with("f\"") {
             return self.parse_formatted_string();
         }
+        if self.peek_keyword("fn") {
+            return self.parse_function();
+        }
         match self.peek_char() {
             Some('"') => {
                 let start = self.pos;
@@ -372,11 +375,7 @@ impl<'a> Parser<'a> {
                     self.eat_keyword("None");
                     return Ok(CfdValue::OptionNone(Span::new(start, self.pos)));
                 }
-                for (name, constructor) in [
-                    ("Some", 0_u8),
-                    ("Ok", 1_u8),
-                    ("Err", 2_u8),
-                ] {
+                for (name, constructor) in [("Some", 0_u8), ("Ok", 1_u8), ("Err", 2_u8)] {
                     if self.peek_keyword(name) {
                         let start = self.pos;
                         self.eat_keyword(name);
@@ -421,6 +420,136 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+    }
+
+    fn parse_function(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
+        let start = self.pos;
+        if !self.eat_keyword("fn") {
+            return Err(self.error("expected `fn`"));
+        }
+        self.skip_ws_and_comments();
+        self.expect_char('(', "function parameter list `(`")?;
+        self.scan_balanced('(', ')', "unterminated function parameter list")?;
+        self.skip_ws_and_comments();
+        if !self.source[self.pos..].starts_with("->") {
+            return Err(self.error("expected `->` after function parameters"));
+        }
+        self.pos += 2;
+        self.skip_ws_and_comments();
+        self.scan_function_return_type()?;
+        self.skip_ws_and_comments();
+        self.expect_char('{', "function body `{`")?;
+        let body_start = self.pos;
+        self.scan_function_body()?;
+        let body_end = self.pos.saturating_sub(1);
+        if let Err(error) =
+            super::function::validate_function_body(&self.source[body_start..body_end])
+        {
+            return Err(CfdSyntaxDiagnostic {
+                message: error.message,
+                span: Span::new(body_start + error.offset, body_start + error.offset + 1),
+            });
+        }
+        let span = Span::new(start, self.pos);
+        Ok(CfdValue::Function(CfdFunction {
+            source: self.source[start..self.pos].to_string(),
+            span,
+        }))
+    }
+
+    fn scan_balanced(
+        &mut self,
+        open: char,
+        close: char,
+        message: &str,
+    ) -> Result<(), CfdSyntaxDiagnostic> {
+        let mut depth = 1_usize;
+        while let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+            if ch == open {
+                depth += 1;
+            } else if ch == close {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(());
+                }
+            }
+        }
+        Err(self.error(message))
+    }
+
+    fn scan_function_return_type(&mut self) -> Result<(), CfdSyntaxDiagnostic> {
+        let mut started = false;
+        let mut parens = 0_usize;
+        let mut brackets = 0_usize;
+        let mut angles = 0_usize;
+        while let Some(ch) = self.peek_char() {
+            if ch == '{' && parens == 0 && brackets == 0 && angles == 0 {
+                if !started {
+                    self.pos += ch.len_utf8();
+                    self.scan_balanced('{', '}', "unterminated dictionary return type")?;
+                    started = true;
+                    continue;
+                }
+                return Ok(());
+            }
+            self.pos += ch.len_utf8();
+            if !ch.is_whitespace() {
+                started = true;
+            }
+            match ch {
+                '(' => parens += 1,
+                ')' => parens = parens.saturating_sub(1),
+                '[' => brackets += 1,
+                ']' => brackets = brackets.saturating_sub(1),
+                '<' => angles += 1,
+                '>' => angles = angles.saturating_sub(1),
+                _ => {}
+            }
+        }
+        Err(self.error("expected function body"))
+    }
+
+    fn scan_function_body(&mut self) -> Result<(), CfdSyntaxDiagnostic> {
+        let mut depth = 1_usize;
+        while let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+            match ch {
+                '"' => self.scan_function_string()?,
+                '#' => {
+                    while let Some(comment) = self.peek_char() {
+                        self.pos += comment.len_utf8();
+                        if comment == '\n' {
+                            break;
+                        }
+                    }
+                }
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(self.error("unterminated function body"))
+    }
+
+    fn scan_function_string(&mut self) -> Result<(), CfdSyntaxDiagnostic> {
+        while let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+            if ch == '\\' {
+                let Some(escaped) = self.peek_char() else {
+                    return Err(self.error("unterminated string escape in function body"));
+                };
+                self.pos += escaped.len_utf8();
+            } else if ch == '"' {
+                return Ok(());
+            }
+        }
+        Err(self.error("unterminated string in function body"))
     }
 
     fn parse_formatted_string(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {

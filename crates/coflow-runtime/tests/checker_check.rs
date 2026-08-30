@@ -127,6 +127,46 @@ fn nested_owner_statement_walks_every_instance_in_the_target_record() {
 }
 
 #[test]
+fn nested_owner_statement_reads_objects_inside_option_values() {
+    let schema = compile_schema(
+        r#"
+            type Reward { count: int; check { count > 0: "bad reward"; } }
+            type Item { reward: Option<Reward> = None; }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [(
+            "reward",
+            LoadedValueDraft::OptionSome(Box::new(
+                LoadedValueDraft::object_with_declared_type([("count", (-1_i64).into())]),
+            )),
+        )],
+    );
+    let model = builder.build().expect("model");
+    let output = execute_checks(
+        &schema,
+        &model,
+        [CheckTask {
+            statement: type_statements(&schema, "Reward")[0],
+            target: CheckTarget::Record(record_id_at(&model, 0)),
+            projection: CheckProjection::Base,
+        }],
+        CheckLimits::default(),
+    );
+
+    assert_eq!(output.results[0].diagnostics.len(), 1);
+    let diagnostic = &output.results[0].diagnostics[0].diagnostic;
+    assert_eq!(diagnostic.message, "bad reward");
+    assert_eq!(
+        diagnostic.primary.as_ref().map(|label| label.path.clone()),
+        Some(CfdPath::root().field("reward").field("count"))
+    );
+}
+
+#[test]
 fn when_quantifier_and_formatted_message_stay_inside_one_task() {
     let schema = compile_schema(
         r#"

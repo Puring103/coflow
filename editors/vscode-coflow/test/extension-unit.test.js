@@ -171,6 +171,51 @@ async function main() {
     ),
     "CFT TextMate grammar must not include old typed reference rules"
   );
+  for (const syntax of ["namespace", "use", "Option", "Result", "fn", "None", "Some", "Ok", "Err"]) {
+    assert(
+      JSON.stringify(cftGrammar).includes(syntax),
+      `CFT TextMate grammar should include migrated syntax: ${syntax}`
+    );
+  }
+  for (const annotation of ["Host", "dimension", "label", "description"]) {
+    assert(annotationPattern.includes(annotation), `CFT TextMate grammar should include @${annotation}`);
+  }
+
+  const cfdGrammar = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "syntaxes", "cfd.tmLanguage.json"), "utf8")
+  );
+  assert.strictEqual(cfdGrammar.repository["comment-slash"], undefined);
+  assert(JSON.stringify(cfdGrammar.repository.comments).includes("number-sign"));
+  assert(cfdGrammar.repository.function, "CFD TextMate grammar should include function values");
+  for (const syntax of ["namespace", "use", "Option", "Result", "fn", "match", "Some", "Ok", "Err"]) {
+    assert(
+      JSON.stringify(cfdGrammar).includes(syntax),
+      `CFD TextMate grammar should include migrated syntax: ${syntax}`
+    );
+  }
+  assert(
+    cfdGrammar.repository.references.patterns[0].match.includes("::"),
+    "CFD references should support qualified Type::key paths"
+  );
+
+  const cfdLanguageConfig = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "cfd-language-configuration.json"), "utf8")
+  );
+  assert.strictEqual(cfdLanguageConfig.comments.lineComment, "#");
+  assert(cfdLanguageConfig.brackets.some(([open, close]) => open === "(" && close === ")"));
+
+  const cftSnippets = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "snippets", "cft.json"), "utf8")
+  );
+  const cfdSnippets = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "snippets", "cfd.json"), "utf8")
+  );
+  for (const snippet of ["namespace", "use", "optional field", "result field", "function field"]) {
+    assert(cftSnippets[snippet], `CFT snippets should include ${snippet}`);
+  }
+  for (const snippet of ["Namespace", "Use", "Some", "Ok", "Err", "Function"]) {
+    assert(cfdSnippets[snippet], `CFD snippets should include ${snippet}`);
+  }
 
   const session = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(session, {

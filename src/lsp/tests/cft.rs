@@ -181,6 +181,8 @@ fn named_top_level_check_uses_check_completion_scope() {
     );
     let labels = completion_labels(top_level_completion_items(""));
     assert!(labels.iter().any(|label| label == "check"));
+    assert!(labels.iter().any(|label| label == "namespace"));
+    assert!(labels.iter().any(|label| label == "use"));
 }
 
 #[test]
@@ -267,6 +269,7 @@ type Item {\n\
   enabled: bool = true;\n\
   kind: Kind = Kind::One;\n\
   maybe: Option<int> = None;\n\
+  outcome: Result<int, string> = Ok(1);\n\
   xs: [int] = [];\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
@@ -279,12 +282,18 @@ type Item {\n\
     let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
     assert!(top_labels.contains(&"@struct".to_string()));
     assert!(top_labels.contains(&"@idAsEnum".to_string()));
+    assert!(top_labels.contains(&"@Host".to_string()));
+    assert!(top_labels.contains(&"@singleton".to_string()));
+    assert!(top_labels.contains(&"@label".to_string()));
     assert!(!top_labels.contains(&"@id".to_string()));
     assert!(!top_labels.contains(&"@ref".to_string()));
     assert!(!top_labels.contains(&"@index".to_string()));
 
     let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
-    assert!(type_labels.is_empty());
+    assert!(type_labels.contains(&"@expand".to_string()));
+    assert!(type_labels.contains(&"@localized".to_string()));
+    assert!(type_labels.contains(&"@dimension".to_string()));
+    assert!(type_labels.contains(&"@description".to_string()));
     assert!(!type_labels.contains(&"@id".to_string()));
     assert!(!type_labels.contains(&"@ref".to_string()));
     assert!(!type_labels.contains(&"@index".to_string()));
@@ -292,7 +301,8 @@ type Item {\n\
     assert!(!type_labels.contains(&"@struct".to_string()));
 
     let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));
-    assert!(enum_labels.is_empty());
+    assert!(enum_labels.contains(&"@label".to_string()));
+    assert!(enum_labels.contains(&"@description".to_string()));
     assert!(!enum_labels.contains(&"@id".to_string()));
     assert!(!enum_labels.contains(&"@ref".to_string()));
     assert!(!enum_labels.contains(&"@index".to_string()));
@@ -345,8 +355,19 @@ type Item {\n\
     );
     let option_labels = completion_labels(completion_items(&build, document, &option_position));
     assert!(option_labels.contains(&"None".to_string()));
-    assert!(option_labels.contains(&"LIMIT".to_string()));
+    assert!(option_labels.contains(&"Some".to_string()));
+    assert!(!option_labels.contains(&"LIMIT".to_string()));
     assert!(!option_labels.contains(&"NAME".to_string()));
+
+    let result_position = position_from_byte(
+        source,
+        source.find("outcome: Result<int, string> = Ok(1)").expect("Result")
+            + "outcome: Result<int, string> = ".len(),
+    );
+    let result_labels = completion_labels(completion_items(&build, document, &result_position));
+    assert!(result_labels.contains(&"Ok".to_string()));
+    assert!(result_labels.contains(&"Err".to_string()));
+    assert!(!result_labels.contains(&"LIMIT".to_string()));
 
     let array_position = position_from_byte(
         source,

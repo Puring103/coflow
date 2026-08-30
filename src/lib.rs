@@ -13,6 +13,8 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+mod artifacts;
+
 pub mod commands;
 
 #[cfg(feature = "cli")]

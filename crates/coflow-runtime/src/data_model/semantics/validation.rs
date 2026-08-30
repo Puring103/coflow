@@ -283,9 +283,11 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             ),
             _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
-        CftValueType::Function(_, _) | CftValueType::Unit => {
-            Err(type_mismatch(&expected.to_string(), value, path))
-        }
+        CftValueType::Function(_, _) => match value {
+            CfdValue::Function(_) => Ok(()),
+            _ => Err(type_mismatch(&expected.to_string(), value, path)),
+        },
+        CftValueType::Unit => Err(type_mismatch(&expected.to_string(), value, path)),
     }
 }
 
@@ -624,6 +626,7 @@ const fn value_kind(value: &CfdValue) -> &'static str {
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",
         CfdValue::String(_) | CfdValue::FormattedString(_) => "string",
+        CfdValue::Function(_) => "function",
         CfdValue::Enum(_) => "enum",
         CfdValue::Object(_) => "object",
         CfdValue::Ref(_) => "record ref",

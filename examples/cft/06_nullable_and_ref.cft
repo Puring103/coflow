@@ -1,9 +1,9 @@
-# Nullable fields use T?.
+# Optional fields use Option<T> with None or Some(value).
 # Record reference fields use &Type; data files write &key values.
 
 type ExampleQuestStep {
   title: string;
-  optional_target: &ExampleItem? = null;
+  optional_target: Option<&ExampleItem> = None;
 
   required_item: &ExampleItem;
 
@@ -11,9 +11,6 @@ type ExampleQuestStep {
     title != "";
     required_item.id != "";
 
-    when optional_target != null {
-      optional_target.rarity >= ExampleRarity::Common;
-    }
   }
 }
 

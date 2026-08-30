@@ -169,14 +169,10 @@ type SummonEffect : Effect {
 # 抽牌
 type DrawEffect : Effect {
   count: int = 1;
-  filter_cost: int? = null;
+  filter_cost: Option<int> = None;
 
   check {
     1 <= count <= 3;
-
-    when filter_cost != null {
-      0 <= filter_cost <= MAX_COST;
-    }
   }
 }
 
@@ -227,7 +223,7 @@ type Card {
   cost: int;
 
   # 随从专属
-  base_stats: StatLine? = null;
+  base_stats: Option<StatLine> = None;
   keywords: Keyword     = Keyword::Taunt;
 
   # 武器专属
@@ -237,7 +233,7 @@ type Card {
   triggers: [Trigger] = [];
 
   # 进化/升级链
-  evolved_form: &Card? = null;
+  evolved_form: Option<&Card> = None;
 
   # 成本曲线（每个等级实际出牌消耗，用于平衡调整）
   cost_curve: [ScaleCurve] = [];
@@ -257,13 +253,11 @@ type Card {
 
     # 随从：必须有基础属性
     when card_type == CardType::Minion {
-      base_stats != null;
-      base_stats.health > 0;
+      durability == 0;
     }
 
     # 法术/奥秘：不能有随从属性
     when card_type == CardType::Spell || card_type == CardType::Secret {
-      base_stats == null;
       durability == 0;
       (keywords & Keyword::Taunt)   == Keyword(0);
       (keywords & Keyword::Charge)  == Keyword(0);
@@ -271,7 +265,6 @@ type Card {
 
     # 武器
     when card_type == CardType::Weapon {
-      base_stats != null;
       durability > 0;
     }
 
@@ -289,13 +282,6 @@ type Card {
     when durability > 0 {
       card_type == CardType::Weapon;
       durability <= 10;
-    }
-
-    # 进化链不能自我引用
-    when evolved_form != null {
-      evolved_form.id != id;
-      evolved_form.cost >= cost;
-      evolved_form.rarity >= rarity;
     }
 
     # 成长曲线：等级递增

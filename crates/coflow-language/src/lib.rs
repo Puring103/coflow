@@ -53,8 +53,8 @@ pub use syntax::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident
 
 pub use cfd::{
     parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock,
-    CfdField, CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdParseOptions, CfdRecord,
-    CfdRef, CfdSyntaxDiagnostic, CfdValue,
+    CfdField, CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdFunction,
+    CfdParseOptions, CfdRecord, CfdRef, CfdSyntaxDiagnostic, CfdValue,
 };
 pub use limits::{
     BudgetAxis, BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor,

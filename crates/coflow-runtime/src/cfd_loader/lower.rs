@@ -1,11 +1,13 @@
 use crate::data_model::{
     LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
-    LoadedRecordDraft, LoadedValueDraft,
+    LoadedFunction, LoadedRecordDraft, LoadedValueDraft,
 };
 use coflow_language::cfd::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
 };
-use coflow_language::{record_key_ident_error, CftSchema, CftValueType, Span};
+use coflow_language::{
+    record_key_ident_error, CftFunctionParameter, CftSchema, CftValueType, Span,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
@@ -37,11 +39,10 @@ impl CfdNameResolver {
                 continue;
             }
             let local_name = declaration.local_name();
-            let local_symbol = namespace
-                .as_ref()
-                .map_or_else(|| local_name.to_string(), |namespace| {
-                    format!("{namespace}::{local_name}")
-                });
+            let local_symbol = namespace.as_ref().map_or_else(
+                || local_name.to_string(),
+                |namespace| format!("{namespace}::{local_name}"),
+            );
             if symbol_exists(schema, &local_symbol) {
                 diagnostics.push(CfdTextDiagnostic::error(
                     CfdTextErrorCode::Syntax,
@@ -78,9 +79,10 @@ impl CfdNameResolver {
         if let Some(target) = self.uses.get(name) {
             return target.clone();
         }
-        self.namespace
-            .as_ref()
-            .map_or_else(|| name.to_string(), |namespace| format!("{namespace}::{name}"))
+        self.namespace.as_ref().map_or_else(
+            || name.to_string(),
+            |namespace| format!("{namespace}::{name}"),
+        )
     }
 }
 
@@ -233,11 +235,264 @@ fn lower_value_resolved(
                 value.span(),
             )),
         },
-        CftValueType::Function(_, _) | CftValueType::Unit => Err(error(
+        CftValueType::Function(parameters, result) => {
+            lower_function(schema, names, value, parameters, result)
+        }
+        CftValueType::Unit => Err(error(
             CfdTextErrorCode::TypeMismatch,
-            format!("CFD value syntax for `{ty}` is not implemented yet"),
+            format!("expected `{ty}`"),
             value.span(),
         )),
+    }
+}
+
+fn lower_function(
+    schema: &CftSchema,
+    names: &CfdNameResolver,
+    value: &CfdValue,
+    expected_parameters: &[CftFunctionParameter],
+    expected_result: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+    let CfdValue::Function(function) = value else {
+        return Err(error(
+            CfdTextErrorCode::TypeMismatch,
+            "expected function",
+            value.span(),
+        ));
+    };
+    let (parameters, result) = FunctionSignatureParser::new(schema, names, &function.source)
+        .parse()
+        .map_err(|message| error(CfdTextErrorCode::TypeMismatch, message, function.span))?;
+    let actual = CftValueType::Function(parameters, Box::new(result));
+    let expected = CftValueType::Function(
+        expected_parameters.to_vec(),
+        Box::new(expected_result.clone()),
+    );
+    if actual != expected {
+        return Err(error(
+            CfdTextErrorCode::TypeMismatch,
+            format!("expected function `{expected}`, found `{actual}`"),
+            function.span,
+        ));
+    }
+    Ok(LoadedValueDraft::Function(LoadedFunction {
+        source: function.source.clone(),
+    }))
+}
+
+struct FunctionSignatureParser<'a> {
+    schema: &'a CftSchema,
+    names: &'a CfdNameResolver,
+    source: &'a str,
+    pos: usize,
+}
+
+impl<'a> FunctionSignatureParser<'a> {
+    fn new(schema: &'a CftSchema, names: &'a CfdNameResolver, source: &'a str) -> Self {
+        Self {
+            schema,
+            names,
+            source,
+            pos: 0,
+        }
+    }
+
+    fn parse(mut self) -> Result<(Vec<CftFunctionParameter>, CftValueType), String> {
+        self.skip_ws();
+        self.expect_word("fn")?;
+        self.skip_ws();
+        self.expect('(')?;
+        let parameters = self.parse_parameters(true)?;
+        self.skip_ws();
+        self.expect_text("->")?;
+        let result = self.parse_type()?;
+        self.skip_ws();
+        self.expect('{')?;
+        Ok((parameters, result))
+    }
+
+    fn parse_parameters(
+        &mut self,
+        require_names: bool,
+    ) -> Result<Vec<CftFunctionParameter>, String> {
+        let mut parameters = Vec::new();
+        let mut parameter_names = BTreeSet::new();
+        self.skip_ws();
+        if self.eat(')') {
+            return Ok(parameters);
+        }
+        loop {
+            self.skip_ws();
+            let saved = self.pos;
+            let candidate = self.parse_name();
+            self.skip_ws();
+            let (name, value_type) = if !candidate.is_empty() && self.eat(':') {
+                if !parameter_names.insert(candidate.clone()) {
+                    return Err(format!("duplicate function parameter `{candidate}`"));
+                }
+                (Some(candidate), self.parse_type()?)
+            } else {
+                self.pos = saved;
+                if require_names {
+                    return Err("function value parameters must have names".to_string());
+                }
+                (None, self.parse_type()?)
+            };
+            parameters.push(CftFunctionParameter { name, value_type });
+            self.skip_ws();
+            if self.eat(')') {
+                break;
+            }
+            self.expect(',')?;
+        }
+        Ok(parameters)
+    }
+
+    fn parse_type(&mut self) -> Result<CftValueType, String> {
+        self.skip_ws();
+        if self.eat('&') {
+            let raw = self.required_name("record reference target")?;
+            let name = self.names.resolve(&raw);
+            let schema_type = self
+                .schema
+                .resolve_type(&name)
+                .ok_or_else(|| format!("unknown record reference type `{raw}`"))?;
+            return Ok(CftValueType::RecordRef(schema_type.name.clone()));
+        }
+        if self.eat('[') {
+            let inner = self.parse_type()?;
+            self.skip_ws();
+            self.expect(']')?;
+            return Ok(CftValueType::Array(Box::new(inner)));
+        }
+        if self.eat('{') {
+            let key = self.parse_type()?;
+            self.skip_ws();
+            self.expect(':')?;
+            let value = self.parse_type()?;
+            self.skip_ws();
+            self.expect('}')?;
+            return Ok(CftValueType::Dict(Box::new(key), Box::new(value)));
+        }
+        if self.eat('(') {
+            self.skip_ws();
+            self.expect(')')?;
+            return Ok(CftValueType::Unit);
+        }
+        let name = self.required_name("type")?;
+        if name == "fn" {
+            self.skip_ws();
+            self.expect('(')?;
+            let parameters = self.parse_parameters(false)?;
+            self.skip_ws();
+            self.expect_text("->")?;
+            let result = self.parse_type()?;
+            return Ok(CftValueType::Function(parameters, Box::new(result)));
+        }
+        if matches!(name.as_str(), "Option" | "Result") {
+            self.skip_ws();
+            self.expect('<')?;
+            let first = self.parse_type()?;
+            self.skip_ws();
+            if name == "Option" {
+                self.expect('>')?;
+                return Ok(CftValueType::Option(Box::new(first)));
+            }
+            self.expect(',')?;
+            let second = self.parse_type()?;
+            self.skip_ws();
+            self.expect('>')?;
+            return Ok(CftValueType::Result(Box::new(first), Box::new(second)));
+        }
+        Ok(match name.as_str() {
+            "int" => CftValueType::Int,
+            "float" => CftValueType::Float,
+            "bool" => CftValueType::Bool,
+            "string" => CftValueType::String,
+            _ => {
+                let resolved = self.names.resolve(&name);
+                if let Some(schema_enum) = self.schema.resolve_enum(&resolved) {
+                    CftValueType::Enum(schema_enum.name.clone())
+                } else if let Some(schema_type) = self.schema.resolve_type(&resolved) {
+                    CftValueType::Object(schema_type.name.clone())
+                } else {
+                    return Err(format!("unknown function signature type `{name}`"));
+                }
+            }
+        })
+    }
+
+    fn required_name(&mut self, expected: &str) -> Result<String, String> {
+        let name = self.parse_name();
+        if name.is_empty() {
+            Err(format!("expected {expected} in function signature"))
+        } else {
+            Ok(name)
+        }
+    }
+
+    fn parse_name(&mut self) -> String {
+        self.skip_ws();
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | ',' | ':' | '&'
+                )
+            {
+                break;
+            }
+            self.pos += ch.len_utf8();
+        }
+        self.source[start..self.pos].to_string()
+    }
+
+    fn expect_word(&mut self, expected: &str) -> Result<(), String> {
+        if self.source[self.pos..].starts_with(expected) {
+            self.pos += expected.len();
+            Ok(())
+        } else {
+            Err(format!("expected `{expected}` in function signature"))
+        }
+    }
+
+    fn expect_text(&mut self, expected: &str) -> Result<(), String> {
+        self.skip_ws();
+        if self.source[self.pos..].starts_with(expected) {
+            self.pos += expected.len();
+            Ok(())
+        } else {
+            Err(format!("expected `{expected}` in function signature"))
+        }
+    }
+
+    fn expect(&mut self, expected: char) -> Result<(), String> {
+        self.skip_ws();
+        if self.eat(expected) {
+            Ok(())
+        } else {
+            Err(format!("expected `{expected}` in function signature"))
+        }
+    }
+
+    fn eat(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += expected.len_utf8();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.peek().is_some_and(char::is_whitespace) {
+            self.pos += self.peek().map_or(0, char::len_utf8);
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.source[self.pos..].chars().next()
     }
 }
 
@@ -395,9 +650,7 @@ fn lower_flag_expr(
     expr: &CfdBitExpr,
 ) -> Result<i64, CfdTextDiagnostics> {
     match &expr.kind {
-        CfdBitExprKind::Value(raw) => {
-            lower_flag_operand(schema, names, enum_name, raw, expr.span)
-        }
+        CfdBitExprKind::Value(raw) => lower_flag_operand(schema, names, enum_name, raw, expr.span),
         CfdBitExprKind::Binary { op, lhs, rhs } => {
             let lhs = lower_flag_expr(schema, names, enum_name, lhs)?;
             let rhs = lower_flag_expr(schema, names, enum_name, rhs)?;

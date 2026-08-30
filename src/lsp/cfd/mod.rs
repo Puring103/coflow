@@ -9,22 +9,11 @@ use coflow_language::cfd::{
 use coflow_language::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
 
-// ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
-
-const SEM_NAMESPACE: u32 = 0; // record key
-const SEM_TYPE: u32 = 1; // type name
-const SEM_ENUM_MEMBER: u32 = 3; // enum variant value
-const SEM_PROPERTY: u32 = 4; // field name
-const SEM_STRING: u32 = 9; // quoted string value
-const SEM_NUMBER: u32 = 8; // numeric scalar
-const SEM_COMMENT: u32 = 10; // // and # comments
-const SEM_KEYWORD: u32 = 7; // null / true / false
-const SEM_OPERATOR: u32 = 11; // @ & ...
-
-const MOD_DECLARATION: u32 = 1 << 0;
-const MOD_REFERENCE: u32 = 1 << 1;
-const MOD_RECORD: u32 = 1 << 3;
-const MOD_SCHEMA: u32 = 1 << 4;
+use super::semantic_tokens::{
+    MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_ENUM_MEMBER,
+    SEM_FUNCTION, SEM_KEYWORD, SEM_NAMESPACE, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
+    SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+};
 
 // ── Public helpers used by LspServer ─────────────────────────────────────────
 
@@ -89,6 +78,24 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
     // Lex all comment spans.
     collect_comment_tokens(source, &mut collector);
 
+    if let Some(namespace) = &ast.namespace {
+        collector.add_plain(
+            Span::new(namespace.span.start, namespace.span.start + "namespace".len()),
+            SEM_KEYWORD,
+        );
+        collector.add(namespace.path_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_SCHEMA);
+    }
+    for import in &ast.uses {
+        collector.add_plain(
+            Span::new(import.span.start, import.span.start + "use".len()),
+            SEM_KEYWORD,
+        );
+        collector.add(import.path_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
+        if let Some((_, alias_span)) = &import.alias {
+            collector.add(*alias_span, SEM_TYPE, MOD_DECLARATION | MOD_SCHEMA);
+        }
+    }
+
     // Walk the AST for structured tokens.
     for record in &ast.records {
         collector.add(record.key_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
@@ -108,13 +115,20 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             collect_scalar_token(text, *span, c);
         }
         CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
-        CfdValue::QuotedString(_, span) => c.add_plain(*span, SEM_STRING),
-        CfdValue::FormattedString(value) => c.add_plain(value.span, SEM_STRING),
+        CfdValue::QuotedString(_, span) => c.add_multiline_plain(*span, SEM_STRING),
+        CfdValue::FormattedString(value) => c.add_multiline_plain(value.span, SEM_STRING),
+        CfdValue::Function(value) => collect_function_tokens(value.span, &value.source, c),
         CfdValue::OptionNone(span) => c.add_plain(*span, SEM_KEYWORD),
-        CfdValue::OptionSome(value, span)
-        | CfdValue::ResultOk(value, span)
-        | CfdValue::ResultErr(value, span) => {
-            c.add_plain(*span, SEM_KEYWORD);
+        CfdValue::OptionSome(value, span) => {
+            c.add_plain(Span::new(span.start, span.start + 4), SEM_KEYWORD);
+            collect_value_tokens(value, c);
+        }
+        CfdValue::ResultOk(value, span) => {
+            c.add_plain(Span::new(span.start, span.start + 2), SEM_KEYWORD);
+            collect_value_tokens(value, c);
+        }
+        CfdValue::ResultErr(value, span) => {
+            c.add_plain(Span::new(span.start, span.start + 3), SEM_KEYWORD);
             collect_value_tokens(value, c);
         }
         CfdValue::Block(block) => {
@@ -133,6 +147,9 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         }
         CfdValue::Ref(r) => {
             c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
+            if let Some((_, type_span)) = &r.type_name {
+                c.add(*type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
+            }
             c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
         }
     }
@@ -149,7 +166,7 @@ fn collect_bit_expr_tokens(expr: &CfdBitExpr, c: &mut TokenCollector<'_>) {
 }
 
 fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
-    if text == "null" || text == "true" || text == "false" {
+    if matches!(text, "None" | "true" | "false") {
         c.add_plain(span, SEM_KEYWORD);
     } else if text
         .bytes()
@@ -162,11 +179,188 @@ fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
+fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenCollector<'_>) {
+    let mut pos = 0;
+    while pos < function_source.len() {
+        let Some(ch) = function_source[pos..].chars().next() else {
+            break;
+        };
+        if ch.is_whitespace() {
+            pos += ch.len_utf8();
+            continue;
+        }
+        if ch == '#' {
+            let start = pos;
+            while pos < function_source.len() && function_source.as_bytes()[pos] != b'\n' {
+                pos += 1;
+            }
+            c.add_plain(offset_span(span.start, start, pos), SEM_COMMENT);
+            continue;
+        }
+        if ch == '"' {
+            let start = pos;
+            pos += 1;
+            while pos < function_source.len() {
+                let Some(current) = function_source[pos..].chars().next() else {
+                    break;
+                };
+                pos += current.len_utf8();
+                if current == '\\' {
+                    if let Some(escaped) = function_source[pos..].chars().next() {
+                        pos += escaped.len_utf8();
+                    }
+                } else if current == '"' {
+                    break;
+                }
+            }
+            c.add_multiline_plain(offset_span(span.start, start, pos), SEM_STRING);
+            continue;
+        }
+        if is_function_ident_start(ch) {
+            let start = pos;
+            pos += ch.len_utf8();
+            while let Some(current) = function_source[pos..].chars().next() {
+                if !is_function_ident_continue(current) {
+                    break;
+                }
+                pos += current.len_utf8();
+            }
+            let text = &function_source[start..pos];
+            let previous = previous_non_whitespace(function_source, start);
+            let following = next_non_whitespace(function_source, pos);
+            let (token_type, modifiers) = if matches!(
+                text,
+                "fn" | "var" | "return" | "if" | "else" | "match" | "for" | "while"
+                    | "break" | "continue" | "in" | "is" | "true" | "false" | "None"
+                    | "Some" | "Ok" | "Err"
+            ) {
+                (SEM_KEYWORD, 0)
+            } else if matches!(text, "int" | "float" | "bool" | "string" | "Option" | "Result") {
+                (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
+            } else if previous == Some('$') {
+                (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
+            } else if previous == Some('&') {
+                if function_source[pos..].starts_with("::") {
+                    (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
+                } else {
+                    (SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD)
+                }
+            } else if previous == Some('.') {
+                if following == Some('(') {
+                    (SEM_FUNCTION, MOD_REFERENCE)
+                } else {
+                    (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
+                }
+            } else if previous_ends_double_colon(function_source, start) {
+                if qualified_chain_is_reference(function_source, start) {
+                    (SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD)
+                } else {
+                    (SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA)
+                }
+            } else if following == Some(':') {
+                (SEM_PARAMETER, MOD_DECLARATION)
+            } else if following == Some('(') {
+                (SEM_FUNCTION, MOD_REFERENCE)
+            } else if text.chars().next().is_some_and(char::is_uppercase) {
+                (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
+            } else {
+                (SEM_VARIABLE, MOD_REFERENCE)
+            };
+            c.add(offset_span(span.start, start, pos), token_type, modifiers);
+            continue;
+        }
+        if ch.is_ascii_digit() {
+            let start = pos;
+            pos += 1;
+            while pos < function_source.len()
+                && function_source.as_bytes()[pos].is_ascii_digit()
+            {
+                pos += 1;
+            }
+            if function_source.as_bytes().get(pos) == Some(&b'.')
+                && function_source
+                    .as_bytes()
+                    .get(pos + 1)
+                    .is_some_and(u8::is_ascii_digit)
+            {
+                pos += 1;
+                while pos < function_source.len()
+                    && function_source.as_bytes()[pos].is_ascii_digit()
+                {
+                    pos += 1;
+                }
+            }
+            if matches!(function_source.as_bytes().get(pos), Some(b'e' | b'E')) {
+                pos += 1;
+                if matches!(function_source.as_bytes().get(pos), Some(b'+' | b'-')) {
+                    pos += 1;
+                }
+                while pos < function_source.len()
+                    && function_source.as_bytes()[pos].is_ascii_digit()
+                {
+                    pos += 1;
+                }
+            }
+            c.add_plain(offset_span(span.start, start, pos), SEM_NUMBER);
+            continue;
+        }
+
+        let operator_len = ["..=", "->", "::", "//", "==", "!=", "<=", ">=", "&&", "||", "=>", "**", "<<", ">>", "..", "+=", "-=", "*=", "/="]
+            .iter()
+            .find_map(|operator| function_source[pos..].starts_with(operator).then_some(operator.len()))
+            .or_else(|| "+-*/%<>=!~&|^?.:$".contains(ch).then_some(ch.len_utf8()));
+        if let Some(length) = operator_len {
+            c.add_plain(offset_span(span.start, pos, pos + length), SEM_OPERATOR);
+            pos += length;
+        } else {
+            pos += ch.len_utf8();
+        }
+    }
+}
+
+const fn offset_span(base: usize, start: usize, end: usize) -> Span {
+    Span::new(base + start, base + end)
+}
+
+fn is_function_ident_start(ch: char) -> bool {
+    ch == '_' || ch.is_alphabetic()
+}
+
+fn is_function_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
+}
+
+fn previous_non_whitespace(source: &str, offset: usize) -> Option<char> {
+    source[..offset].chars().rev().find(|ch| !ch.is_whitespace())
+}
+
+fn next_non_whitespace(source: &str, offset: usize) -> Option<char> {
+    source[offset..].chars().find(|ch| !ch.is_whitespace())
+}
+
+fn previous_ends_double_colon(source: &str, offset: usize) -> bool {
+    source[..offset].trim_end().ends_with("::")
+}
+
+fn qualified_chain_is_reference(source: &str, offset: usize) -> bool {
+    let prefix = source[..offset].trim_end_matches(':');
+    let chain_start = prefix
+        .char_indices()
+        .rev()
+        .find_map(|(index, ch)| {
+            (!is_function_ident_continue(ch) && ch != ':' && ch != '&')
+                .then_some(index + ch.len_utf8())
+        })
+        .unwrap_or(0);
+    prefix[chain_start..].starts_with('&')
+}
+
 fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if source[i..].starts_with("//") || bytes[i] == b'#' {
+        if bytes[i] == b'#' {
             let start = i;
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
@@ -587,6 +781,17 @@ impl<'a> TokenCollector<'a> {
 
     fn add_plain(&mut self, span: Span, token_type: u32) {
         self.add(span, token_type, 0);
+    }
+
+    fn add_multiline_plain(&mut self, span: Span, token_type: u32) {
+        let mut start = span.start;
+        for line in self.source[span.start..span.end.min(self.source.len())].split_inclusive('\n') {
+            let content_len = line.trim_end_matches(['\r', '\n']).len();
+            if content_len != 0 {
+                self.add_plain(Span::new(start, start + content_len), token_type);
+            }
+            start += line.len();
+        }
     }
 
     fn into_lsp_data(mut self) -> Value {

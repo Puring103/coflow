@@ -18,7 +18,7 @@ type ExampleMonster {
   rarity: ExampleRarity = ExampleRarity::Common;
   stats: ExampleMonsterStats;
   loot: ExampleLootTable;
-  skill: ExampleSkill? = null;
+  skill: Option<ExampleSkill> = None;
 
   check {
     id != "";
@@ -26,8 +26,5 @@ type ExampleMonster {
     1 <= level <= EXAMPLE_MAX_LEVEL;
     stats.hp > 0;
 
-    when skill != null {
-      skill.id != "";
-    }
 }
 }

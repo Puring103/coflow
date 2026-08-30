@@ -53,40 +53,25 @@ pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
 }
 ```
 
-`CodeArtifactSet` 只接受项目内相对路径，拒绝绝对路径、`..` 和重复文件。generator 不访问
-文件系统；根应用先收集所有目标的 artifacts，再统一 staging、备份和原子发布。
+`CodeArtifactSet` 只接受相对路径，拒绝绝对路径、`..` 和重复文件。generator 不访问文件系统；
+根应用先收集所有目标的 artifacts，再统一 staging、备份和原子发布。发布前会规范化现有祖先
+和符号链接，拒绝覆盖项目根、配置、schema、data、维度目录或相互重叠的输出。活动 generation
+记录在 `.coflow/artifacts/active.json`，`coflow clean` 只删除非活动历史和遗留 staging。
 
 ## C# direct-load 接口
 
-生成的数据库类暴露 `SourceFiles` 和 `Load(ICfdTextLoader)`。它把文件清单交给：
+生成的 `CoflowData` 接受一个或多个 CFD 文本，并把生成 contract 交给固定 runtime：
 
 ```csharp
-public interface ICfdTextLoader
-{
-    bool TryLoad(string logicalPath, out string? text);
-}
-
-public interface ICfdTypeBinding
-{
-    string DeclaredType { get; }
-    IReadOnlyList<string> AssignableTypes { get; }
-    string? ObjectFieldType(string fieldName);
-    string? ReferenceFieldType(string fieldName);
-    object Read(CfdRecordNode record, CfdLoadContext context);
-}
-
-public sealed class CfdLoadContext
-{
-    public T Resolve<T>(string declaredType, string key);
-}
+public static CoflowModule Load(string cfd);
+public static CoflowModule Load(string[] cfdSources);
+public static CoflowModule LoadAndCompile(string cfd);
+public static CoflowModule LoadAndCompile(string[] cfdSources);
 ```
 
-`AssignableTypes` 包含 concrete type 自身及其全部 CFT ancestor；两个 field-type 查询用于让
-schema-free parser 沿内联 object 和 record ref 正确求值格式化字符串。context 用这些信息建立继承域内的
-record key identity，以 `(declaredType, key)` 缓存对象并检测循环引用；parser 保留 `CfdSpan`，值读取器
-将未知字段、缺失字段、非法 enum、数值溢出、未知 concrete type、缺少引用和资源限制转成
-稳定的 `CfdDiagnostic`。生成 reader 会在字段缺失时应用 CFT 默认值；无默认值的字段仍是必填。
-生成代码使用显式构造函数和 reader lambda，不使用反射或动态构造。
+`Load` 解析普通数据，`LoadAndCompile` 进一步链接函数引用、检查函数体并生成 VM bytecode。
+`CoflowModule.Table<T>()` 和 `Singleton<T>()` 提供强类型读取；多个独立 module 通过不可变的
+`CoflowModuleSet` 组合。parser 保留源码 span，加载、链接和函数编译错误统一返回稳定诊断。
 
 codegen source manifest 为每个逻辑 CFD 路径标记 `Project` 或结构化的 `Dimension { dimension, source_type, field }` origin。一个 singleton 维度文件可对应多个字段 origin，但生成 loader 只读取一次物理路径，并按记录 key 分派到内部 variant binding。该规范化层只服务 direct loading，不改变公开 schema，也不生成可查询的 dimension table。
 
@@ -94,3 +79,4 @@ codegen source manifest 为每个逻辑 CFD 路径标记 `Project` 或结构化�
 
 代码生成和编辑器写入都遵循“先验证、后 staging、最后一次发布”。多目标生成中任何一个
 目标失败时，之前的目标也不能出现在输出目录；发布阶段失败时按逆序恢复旧目录。
+成功发布后 active manifest 一次性切换到新 generation；Unity `.meta` 文件随输出替换保留。
