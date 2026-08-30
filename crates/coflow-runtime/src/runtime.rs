@@ -487,6 +487,16 @@ impl WriteProjectSession {
             .default_collection_item_value(actual_type, path)
     }
 
+    /// Build a default collection item using the concrete types in a record.
+    pub fn default_collection_item_value_for_record(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        self.session
+            .default_collection_item_value_for_record(coordinate, path)
+    }
+
     /// Apply a batch of mutation commands using the CFD catalog owned by this
     /// capability.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {

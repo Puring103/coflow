@@ -13,7 +13,7 @@ function backend(overrides: Partial<EditorLookupBackend> = {}): EditorLookupBack
   return {
     getEnumVariants: vi.fn(async () => []),
     getRefTargets: vi.fn(async () => []),
-    makeDefaultObject: vi.fn(async () => ({ kind: 'null' } as FieldValue)),
+    makeDefaultObject: vi.fn(async () => ({ kind: 'option_none' } as FieldValue)),
     createRecordDraft: vi.fn(async actualType => ({ actual_type: actualType, fields: [] })),
     ...overrides,
   }

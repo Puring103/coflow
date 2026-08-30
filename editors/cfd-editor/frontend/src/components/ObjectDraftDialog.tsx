@@ -221,7 +221,7 @@ function DraftFieldsBody({
 
 function fieldValueForDraft(value: FieldValue | null): FieldValue {
   if (value) return value
-  return { kind: 'null' }
+  return { kind: 'option_none' }
 }
 
 function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | null {

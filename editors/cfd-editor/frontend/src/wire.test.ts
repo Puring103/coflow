@@ -4,6 +4,9 @@ import type { FieldAnnotation } from './bindings/FieldAnnotation'
 import {
   annotationChildren,
   diagnosticDisplayMessage,
+  nullValue,
+  presentationValue,
+  replacePresentationValue,
   type DiagnosticItem,
 } from './wire'
 
@@ -79,5 +82,24 @@ describe('annotationChildren', () => {
     } as unknown as FieldAnnotation
 
     expect(annotationChildren(annotation)).toEqual([child])
+  })
+})
+
+describe('wrapped values', () => {
+  it('presents Option and Result payloads without losing their outer variant on edit', () => {
+    const some = { kind: 'option_some', value: { kind: 'int', value: 1n } } as const
+    const err = { kind: 'result_err', value: { kind: 'string', value: 'old' } } as const
+
+    expect(presentationValue(some)).toEqual({ kind: 'int', value: 1n })
+    expect(replacePresentationValue(some, { kind: 'int', value: 2n })).toEqual({
+      kind: 'option_some', value: { kind: 'int', value: 2n },
+    })
+    expect(replacePresentationValue(err, { kind: 'string', value: 'new' })).toEqual({
+      kind: 'result_err', value: { kind: 'string', value: 'new' },
+    })
+    expect(replacePresentationValue(some, nullValue())).toEqual({ kind: 'option_none' })
+    expect(replacePresentationValue(nullValue(), { kind: 'bool', value: true })).toEqual({
+      kind: 'option_some', value: { kind: 'bool', value: true },
+    })
   })
 })

@@ -42,8 +42,170 @@ fn chemical_project() -> (PathBuf, PathBuf) {
     (root, data_file)
 }
 
+fn inheritance_project() -> (PathBuf, PathBuf) {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-inheritance-workflow-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old inheritance test project");
+    }
+    let data_dir = root.join("data");
+    fs::create_dir_all(&data_dir).expect("create inheritance data directory");
+    fs::write(
+        root.join("coflow.yaml"),
+        concat!(
+            "schema: schema.cft\n",
+            "data: data/\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+            "    namespace: Test.Config\n",
+        ),
+    )
+    .expect("write inheritance project config");
+    fs::write(
+        root.join("schema.cft"),
+        concat!(
+            "abstract type Reward { label: string; }\n",
+            "type ItemReward : Reward { count: int; tags: [string]; }\n",
+            "type CurrencyReward : Reward { amount: int; }\n",
+            "type Holder { reward: Option<Reward>; outcome: Result<ItemReward, CurrencyReward>; note: Option<string>; }\n",
+        ),
+    )
+    .expect("write inheritance schema");
+    let populated = data_dir.join("rewards.cfd");
+    fs::write(
+        &populated,
+        concat!(
+            "holder: Holder {\n",
+            "    reward: Some(ItemReward{\n",
+            "        label: \"starter\",\n",
+            "        count: 1,\n",
+            "        tags: [],\n",
+            "    }),\n",
+            "    note: Some(\"old\"),\n",
+            "    outcome: Ok(ItemReward{\n",
+            "        label: \"result\",\n",
+            "        count: 3,\n",
+            "        tags: [],\n",
+            "    }),\n",
+            "}\n",
+        ),
+    )
+    .expect("write inheritance data");
+    fs::write(data_dir.join("empty.cfd"), "").expect("write empty data file");
+    (root, populated)
+}
+
 fn field(name: &str) -> CfdPathSegment {
     CfdPathSegment::Field(name.to_string())
+}
+
+#[test]
+fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
+    let (root, populated) = inheritance_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load inheritance project");
+    let session_id = snapshot.session_id;
+
+    let empty_types = snapshot
+        .file_types
+        .get("data/empty.cfd")
+        .expect("empty file type navigation");
+    assert!(empty_types.iter().any(|ty| ty.name == "ItemReward"));
+    assert!(empty_types.iter().any(|ty| ty.name == "CurrencyReward"));
+    assert!(!empty_types.iter().any(|ty| ty.name == "Reward"));
+
+    let draft = store
+        .create_record_draft(session_id, "ItemReward")
+        .expect("create concrete child draft");
+    assert_eq!(
+        draft.fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(),
+        ["label", "count", "tags"]
+    );
+    let new_reward = store
+        .make_default_object(session_id, "ItemReward")
+        .expect("materialize concrete child defaults");
+    store
+        .insert_record(
+            session_id,
+            "data/empty.cfd",
+            "new_reward",
+            "ItemReward",
+            new_reward,
+        )
+        .expect("insert concrete child into empty file");
+
+    let records = store
+        .get_file_records(session_id, "data/rewards.cfd")
+        .expect("read polymorphic records");
+    let reward = records.records[0]
+        .fields
+        .iter()
+        .find(|field| field.name == "reward")
+        .expect("reward field");
+    let annotation = reward.annotation.as_ref().expect("reward annotation");
+    assert!(annotation.nullable);
+    let mut polymorphic_types = annotation.polymorphic_types.clone();
+    polymorphic_types.sort();
+    assert_eq!(polymorphic_types, ["CurrencyReward", "ItemReward"]);
+
+    let holder = RecordCoordinate::try_new("Holder", "holder").expect("holder coordinate");
+    store
+        .write_field(
+            session_id,
+            &holder,
+            &[field("reward"), field("label")],
+            &CfdValue::String("updated".to_string()),
+        )
+        .expect("write inherited field through Option<AbstractType>");
+    store
+        .write_field(
+            session_id,
+            &holder,
+            &[field("reward"), field("count")],
+            &CfdValue::Int(2),
+        )
+        .expect("write child field through Option<AbstractType>");
+    store
+        .write_field(
+            session_id,
+            &holder,
+            &[field("outcome"), field("count")],
+            &CfdValue::Int(4),
+        )
+        .expect("write child field through Result branch");
+    store
+        .edit_collection(
+            session_id,
+            &holder,
+            &[field("reward"), field("tags")],
+            CollectionEdit::ArrayAppend { value: None },
+        )
+        .expect("append first item to child collection through Option<AbstractType>");
+    store
+        .write_field(
+            session_id,
+            &holder,
+            &[field("note")],
+            &CfdValue::String("new".to_string()),
+        )
+        .expect("wrap a bare editor value for an Option field");
+
+    let reloaded = store
+        .reload_session(session_id)
+        .expect("reload inheritance project");
+    assert!(reloaded.diagnostics.is_empty(), "{:#?}", reloaded.diagnostics);
+    let source = fs::read_to_string(populated).expect("read inheritance source");
+    assert!(source.contains("label: \"updated\""), "{source}");
+    assert!(source.contains("count: 2"), "{source}");
+    assert!(source.contains("count: 4"), "{source}");
+    assert!(source.contains("tags: [\"\"]"), "{source}");
+    assert!(source.contains("note: Some(\"new\")"), "{source}");
+    let empty_source = fs::read_to_string(root.join("data/empty.cfd"))
+        .expect("read formerly empty source");
+    assert!(empty_source.contains("new_reward: ItemReward"), "{empty_source}");
 }
 
 #[test]

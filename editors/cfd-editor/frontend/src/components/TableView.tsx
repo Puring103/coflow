@@ -32,9 +32,11 @@ import {
   errorMessage,
   fieldPathField,
   nullValue,
+  presentationValue,
   recordActualType,
   recordKey,
   sameCoordinate,
+  replacePresentationValue,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -989,7 +991,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     if (targets.some(target => !target.writable || !target.annotation?.nullable)) {
                       throw new Error('剪切区域包含只读或不可清空的单元格')
                     }
-                    const writes = targets.filter(target => target.value.kind !== 'null').map(target => ({
+                    const writes = targets.filter(target => target.value.kind !== 'option_none').map(target => ({
                       coordinate: target.coordinate,
                       field_path: target.fieldPath,
                       new_value: nullValue(),
@@ -1653,7 +1655,10 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   if (value.kind === 'object') return value.value.actual_type
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'
-  if (value.kind === 'null') return 'null'
+  if (value.kind === 'option_none') return 'null'
+  if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
+    return inferredCellType({ ...cell, value: value.value })
+  }
   return value.kind
 }
 
@@ -1786,41 +1791,45 @@ function EditableCell({
   onEditingFinished?: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
-                || value.kind === 'string' || value.kind === 'formatted_string'
-                || value.kind === 'enum' || value.kind === 'ref'
+  const shownValue = presentationValue(value)
+  const commitValue = onCommit
+    ? (next: FieldValue) => onCommit(replacePresentationValue(value, next))
+    : undefined
+  const isScalar = shownValue.kind === 'bool' || shownValue.kind === 'int' || shownValue.kind === 'float'
+                || shownValue.kind === 'string' || shownValue.kind === 'formatted_string'
+                || shownValue.kind === 'enum' || shownValue.kind === 'ref'
   // null cells become editable when the schema tells us they hold an enum/ref/bool
-  const isNullDropdown = value.kind === 'null' && !!(enumType || refTargetType)
-  const canEdit = editable && (isScalar || isNullDropdown) && !!onCommit
+  const isNullDropdown = shownValue.kind === 'option_none' && !!(enumType || refTargetType)
+  const canEdit = editable && (isScalar || isNullDropdown) && !!commitValue
   const commitAndRestoreFocus = (next: FieldValue) => {
-    onCommit!(next)
+    commitValue!(next)
     requestAnimationFrame(() => onEditingFinished?.())
   }
 
   // Bool: checkbox, always visible
-  if (canEdit && value.kind === 'bool') {
+  if (canEdit && shownValue.kind === 'bool') {
     return (
       <div className="cell-edit-wrap">
         <input
           type="checkbox"
           className="dc-checkbox"
-          checked={value.value}
-          onChange={e => onCommit!({ kind: 'bool', value: e.target.checked })}
+          checked={shownValue.value}
+          onChange={e => commitValue!({ kind: 'bool', value: e.target.checked })}
         />
       </div>
     )
   }
 
   // Enum
-  if (canEdit && (value.kind === 'enum' || (value.kind === 'null' && enumType))) {
+  if (canEdit && (shownValue.kind === 'enum' || (shownValue.kind === 'option_none' && enumType))) {
     return (
       <div className="cell-edit-wrap">
         <EnumDirectSelect
-          value={value as FieldValue & { kind: 'enum' | 'null' }}
+          value={shownValue as FieldValue & { kind: 'enum' | 'option_none' }}
           enumType={enumType}
           isFlag={enumIsFlag}
           nullable={nullable}
-          onCommit={enumIsFlag ? onCommit! : commitAndRestoreFocus}
+          onCommit={enumIsFlag ? commitValue! : commitAndRestoreFocus}
           onExit={onEditingFinished}
         />
       </div>
@@ -1828,11 +1837,11 @@ function EditableCell({
   }
 
   // Ref
-  if (canEdit && (value.kind === 'ref' || (value.kind === 'null' && refTargetType))) {
+  if (canEdit && (shownValue.kind === 'ref' || (shownValue.kind === 'option_none' && refTargetType))) {
     return (
       <div className="cell-edit-wrap">
         <RefDirectSelect
-          value={value as FieldValue & { kind: 'ref' | 'null' }}
+          value={shownValue as FieldValue & { kind: 'ref' | 'option_none' }}
           onCommit={commitAndRestoreFocus}
           targetType={refTargetType}
           nullable={nullable}
@@ -1847,8 +1856,8 @@ function EditableCell({
     return (
       <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CellTextEditor
-          value={value as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
-          onCommit={next => { onCommit!(next); setEditing(false) }}
+          value={shownValue as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
+          onCommit={next => { commitValue!(next); setEditing(false) }}
           onCancel={() => setEditing(false)}
         />
       </div>
@@ -1864,7 +1873,7 @@ function EditableCell({
       title={canEdit ? '双击编辑' : undefined}
     >
       <DataCardCompact
-        value={value}
+        value={shownValue}
         label={label}
         declaredType={declaredType}
         refTargetType={refTargetType}

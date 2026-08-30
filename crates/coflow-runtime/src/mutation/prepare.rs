@@ -67,7 +67,35 @@ impl ProjectSession {
             "MUTATION-PATH",
             "MUTATION",
         )?;
-        let item_ty = match &ty {
+        self.default_collection_item_for_type(&ty)
+    }
+
+    /// Build a default collection item using concrete object types found in an
+    /// existing record value while traversing the path.
+    pub fn default_collection_item_value_for_record(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        let record = self
+            .record_view(&coordinate.actual_type, &coordinate.key)
+            .map(|view| view.record)
+            .ok_or_else(|| one_path_error("record was not found"))?;
+        let ty = write_rules::expected_type_for_record_path(
+            self.schema(),
+            record,
+            path,
+            "MUTATION-PATH",
+            "MUTATION",
+        )?;
+        self.default_collection_item_for_type(&ty)
+    }
+
+    fn default_collection_item_for_type(
+        &self,
+        collection_type: &CftValueType,
+    ) -> Result<CfdValue, DiagnosticSet> {
+        let item_ty = match collection_type {
             CftValueType::Array(item) | CftValueType::Dict(_, item) => item.as_ref(),
             _ => {
                 return Err(one_path_error(
@@ -520,6 +548,17 @@ pub(super) fn set_nested_value(
         *current = value;
         return Ok(());
     };
+    match current {
+        CfdValue::OptionSome(inner)
+        | CfdValue::ResultOk(inner)
+        | CfdValue::ResultErr(inner) => return set_nested_value(inner, path, value),
+        CfdValue::OptionNone => {
+            return Err(one_path_error(
+                "cannot write a nested path through an empty option",
+            ));
+        }
+        _ => {}
+    }
     let next = match (current, segment) {
         (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
             object.fields.get_mut(field.as_str())
@@ -611,9 +650,13 @@ fn expected_value_for_path(
     coordinate: &RecordCoordinate,
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
-    let current = write_rules::expected_type_for_cfd_path(
+    let record = session
+        .record_view(&coordinate.actual_type, &coordinate.key)
+        .map(|view| view.record)
+        .ok_or_else(|| one_path_error("record was not found"))?;
+    let current = write_rules::expected_type_for_record_path(
         session.schema(),
-        &coordinate.actual_type,
+        record,
         path,
         "MUTATION-PATH",
         "MUTATION",

@@ -502,10 +502,21 @@ fn prepare_write_field(
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
     };
     let target = write_target_for_path(session, record_ref, path)?;
-    write_rules::validate_value_at_write_path(
-        session,
-        &target.coordinate.actual_type,
+    let target_record = session
+        .model
+        .record(record_ref.id)
+        .ok_or_else(|| DiagnosticSet::one(not_found(actual_type, key)))?;
+    let expected = write_rules::expected_type_for_record_path(
+        session.schema(),
+        target_record,
         &target.field_path,
+        "WRITE-SHAPE",
+        "WRITE",
+    )?;
+    write_rules::validate_value_for_write(
+        session,
+        session.schema(),
+        &expected,
         new_value,
         "WRITE-SHAPE",
         "WRITE",

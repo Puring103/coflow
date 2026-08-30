@@ -41,7 +41,7 @@ describe('recordsSupportGraph', () => {
       item_annotation: null,
       children: {},
     } as FieldAnnotation
-    expect(recordsSupportGraph([record({ kind: 'null' }, annotation)])).toBe(true)
+    expect(recordsSupportGraph([record({ kind: 'option_none' }, annotation)])).toBe(true)
   })
 
   it('rejects records without reference values or annotations', () => {

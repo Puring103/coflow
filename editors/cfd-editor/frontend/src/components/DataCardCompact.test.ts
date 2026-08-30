@@ -14,7 +14,7 @@ describe('DataCardCompact complex previews', () => {
         coordinate: { actual_type: 'Item', key: 'sword' },
         file_path: 'data/items.cfd',
       }],
-      makeDefaultObject: async () => ({ kind: 'null' }),
+      makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
     } satisfies EditorLookupBackend)
     lookups.adopt({ sessionId: 1, revision: 1 })

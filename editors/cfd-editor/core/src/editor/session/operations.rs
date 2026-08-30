@@ -368,7 +368,7 @@ impl SessionStore {
             .ok_or_else(|| EditorError::not_found("collection field not found"))?;
         let default_item = session
             .engine
-            .default_collection_item_value(&coordinate.actual_type, field_path)
+            .default_collection_item_value_for_record(coordinate, field_path)
             .ok();
         let next = apply_collection_edit(current, edit, default_item)?;
         let outcome = write_field_in_session(&mut session, coordinate, field_path, &next);

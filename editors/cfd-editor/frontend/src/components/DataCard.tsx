@@ -39,7 +39,9 @@ import {
   fieldPathIndex,
   nullValue,
   objectFields,
+  presentationValue,
   refValue,
+  replacePresentationValue,
 } from '../wire'
 import { Icon } from './Icon'
 import { RichTextString } from './RichTextString'
@@ -170,6 +172,9 @@ function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
  *  should read `FieldAnnotation.item_annotation` / `.ref_target_type` /
  *  `.enum_type` instead — the backend fills those directly. */
 function stripNullableType(declaredType?: string): string | undefined {
+  if (declaredType?.startsWith('Option<') && declaredType.endsWith('>')) {
+    return declaredType.slice(7, -1)
+  }
   return declaredType?.endsWith('?') ? declaredType.slice(0, -1) : declaredType
 }
 
@@ -185,7 +190,7 @@ export function DataCardCompact({ value, label, declaredType, refTargetType, sur
   const fallback = isComplexValue(value)
     ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} highlightQuery={highlightQuery} />
     : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
-  const nullable = declaredType?.endsWith('?') ?? false
+  const nullable = declaredType?.startsWith('Option<') || declaredType?.endsWith('?') || false
   const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
   return (
     <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', nullable, surface }} fallback={fallback} />
@@ -285,8 +290,12 @@ function dictTreeKey(key: DictKey): string {
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
   const navigation = useEditorNavigation()
   switch (value.kind) {
-    case 'null':
+    case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('null', highlightQuery)}</span>
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
     case 'bool':
       return (
         <span className={`vc vc-bool${value.value ? ' on' : ''}`}>
@@ -561,10 +570,11 @@ export function DataCardExpanded({
         const enumType = cellEnumType(fc)
         const enumIsFlag = cellEnumIsFlag(fc)
         const nullable = cellNullable(fc)
-        const nullCollectionShape = fc.value.kind === 'null'
+        const shownValue = presentationValue(fc.value)
+        const nullCollectionShape = shownValue.kind === 'option_none'
           ? collectionShapeForDeclaredType(declaredType)
           : null
-        const displayedValue = nullCollectionShape ?? fc.value
+        const displayedValue = nullCollectionShape ?? shownValue
         if (
           flattenSingleComplexField
           && fields.length === 1
@@ -684,29 +694,32 @@ function FieldRow({
   collectionItem?: boolean
 }) {
   const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
+  const shownValue = presentationValue(value)
   const pluginRenderer = useFieldRenderer({
-    value,
+    value: shownValue,
     type: declaredType ?? '',
     nullable: !!nullable,
     surface: 'record-foldout-header',
   })
-  const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
+  const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
   // "add element" instead of first coercing null → empty collection by
   // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = value.kind === 'null' ? collectionShapeForDeclaredType(declaredType) : null
-  const displayValue = nullCollectionShape ?? value
+  const nullCollectionShape = shownValue.kind === 'option_none' ? collectionShapeForDeclaredType(declaredType) : null
+  const displayValue = nullCollectionShape ?? shownValue
   const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
   // Extra trailing controls for nullable / polymorphic fields. Enum and ref
   // scalars already expose a "(null)" option in their pill selects, so we
   // don't double up there. Bool doesn't get a clear button unless nullable.
-  const commit = onEdit ? (next: FieldValue) => onEdit(fieldPath, next) : undefined
+  const commit = onEdit
+    ? (next: FieldValue) => onEdit(fieldPath, replacePresentationValue(value, next))
+    : undefined
   const nullControls = commit ? (
     <NullableControls
-      value={value}
+      value={shownValue}
       nullable={!!nullable}
       declaredType={declaredType}
       enumType={enumType}
@@ -741,7 +754,7 @@ function FieldRow({
         dragProps={dragProps}
         collectionItem={collectionItem}
         pluginRenderer={pluginRenderer}
-        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
+        pluginContext={pluginRenderer ? { value: shownValue, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
       />
     )
   }
@@ -750,7 +763,7 @@ function FieldRow({
       label={label}
       fieldName={fieldName}
       description={description}
-      value={value}
+      value={shownValue}
       depth={depth}
       onCommit={commit}
       declaredType={declaredType}
@@ -787,10 +800,10 @@ function NullableControls({
   polymorphicTypes: string[]
   onCommit: (next: FieldValue) => void
 }) {
-  const isNull = value.kind === 'null'
+  const isNull = value.kind === 'option_none'
   const isObject = value.kind === 'object'
-  const isPolymorphic = polymorphicTypes.length >= 2
-  const canSwitchType = isObject && isPolymorphic && !isNull
+  const isPolymorphic = polymorphicTypes.length > 0
+  const canSwitchType = isObject && polymorphicTypes.length >= 2 && !isNull
   // Clear button on any nullable, currently non-null field — including enum
   // and ref, whose own dropdowns hide the "(null)" option behind an extra
   // click. A dedicated ✕ next to the value is faster.
@@ -987,7 +1000,7 @@ function ScalarFieldRow({
     || value.kind === 'string' || value.kind === 'formatted_string'
     || value.kind === 'enum' || value.kind === 'ref'
   const resolvedRefTarget = refTargetType
-  const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
+  const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
   const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
@@ -1125,11 +1138,11 @@ export function DirectEditor({
       />
     )
   }
-  if (value.kind === 'enum' || (value.kind === 'null' && enumType)) {
-    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} />
+  if (value.kind === 'enum' || (value.kind === 'option_none' && enumType)) {
+    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} />
   }
-  if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
-    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
+  if (value.kind === 'ref' || (value.kind === 'option_none' && refTargetType)) {
+    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
@@ -1215,10 +1228,10 @@ export function EnumDirectSelect({
   nullable = false,
   variant = 'pill',
 }: {
-  value: FieldValue & { kind: 'enum' | 'null' }
+  value: FieldValue & { kind: 'enum' | 'option_none' }
   onCommit: (next: FieldValue) => void
   onExit?: () => void
-  /** Required when `value.kind === 'null'`: the enum type this field expects. */
+  /** Required when the option is empty: the enum type this field expects. */
   enumType?: string
   autoFocus?: boolean
   isFlag?: boolean
@@ -1234,7 +1247,7 @@ export function EnumDirectSelect({
   const [loadError, setLoadError] = useState<string | null>(null)
   const incomingMask = value.kind === 'enum' ? value.value.value : 0n
   const [draftMask, setDraftMask] = useState(incomingMask)
-  const [draftNull, setDraftNull] = useState(value.kind === 'null')
+  const [draftNull, setDraftNull] = useState(value.kind === 'option_none')
   const pendingFlagValue = useRef<bigint | 'null' | undefined>(undefined)
   const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
   const color = fieldTypeColor(enumName ?? 'enum')
@@ -1254,11 +1267,11 @@ export function EnumDirectSelect({
     return () => { alive = false }
   }, [enumName, lookups])
   useEffect(() => {
-    const incoming = value.kind === 'null' ? 'null' : incomingMask
+    const incoming = value.kind === 'option_none' ? 'null' : incomingMask
     if (pendingFlagValue.current !== undefined && pendingFlagValue.current !== incoming) return
     pendingFlagValue.current = undefined
     setDraftMask(incomingMask)
-    setDraftNull(value.kind === 'null')
+    setDraftNull(value.kind === 'option_none')
   }, [incomingMask, value.kind])
 
   function commit(next: string) {
@@ -1299,7 +1312,7 @@ export function EnumDirectSelect({
     const pending = pendingFlagValue.current
     pendingFlagValue.current = undefined
     if (pending === 'null') {
-      if (value.kind !== 'null') onCommit(nullValue())
+      if (value.kind !== 'option_none') onCommit(nullValue())
     } else if (pending !== undefined && enumName) {
       if (value.kind !== 'enum' || pending !== incomingMask) {
         onCommit(enumValue(enumName, null, pending))
@@ -1327,7 +1340,7 @@ export function EnumDirectSelect({
         onBlur={event => {
           const next = event.target.value
           if (!(value.kind === 'enum' && next === enumVariantText(value))
-            && !(value.kind === 'null' && next === '')) {
+            && !(value.kind === 'option_none' && next === '')) {
             commit(next || (nullable ? NULL_SENTINEL : ''))
           }
           requestAnimationFrame(() => onExit?.())
@@ -1403,7 +1416,7 @@ export function EnumDirectSelect({
     <SearchableSelect
       className={inputClass}
       style={{ '--enum-color': color } as React.CSSProperties}
-      value={value.kind === 'null' && !nullable ? '' : current}
+      value={value.kind === 'option_none' && !nullable ? '' : current}
       autoFocus={autoFocus}
       placeholder="选择枚举..."
       options={[
@@ -1430,7 +1443,7 @@ export function RefDirectSelect({
   nullable = false,
   variant = 'pill',
 }: {
-  value: FieldValue & { kind: 'ref' | 'null' }
+  value: FieldValue & { kind: 'ref' | 'option_none' }
   onCommit: (next: FieldValue) => void
   onExit?: () => void
   targetType?: string
@@ -1451,7 +1464,7 @@ export function RefDirectSelect({
   ))
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
-  const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
+  const selectedValue = value.kind === 'option_none' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
   const inputClass = variant === 'input'
     ? 'dc-input dc-input-ref-select'
@@ -1490,7 +1503,7 @@ export function RefDirectSelect({
 
   function commit(key: string) {
     if (key === NULL_SENTINEL) {
-      if (value.kind !== 'null') onCommit(nullValue())
+      if (value.kind !== 'option_none') onCommit(nullValue())
       return
     }
     if (value.kind !== 'ref' || key !== referenceKeyText(value.value)) {
@@ -1504,7 +1517,7 @@ export function RefDirectSelect({
       <SearchableSelect
         className={inputClass}
         style={{ '--ref-color': color } as CSSProperties}
-        value={value.kind === 'null' && !nullable ? '' : selectedValue}
+        value={value.kind === 'option_none' && !nullable ? '' : selectedValue}
         autoFocus={autoFocus}
         title={targetType}
         placeholder="选择引用..."

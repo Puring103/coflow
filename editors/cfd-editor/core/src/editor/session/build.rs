@@ -65,9 +65,14 @@ pub(super) fn build_session(
 fn type_navigation(queries: ProjectQueries<'_>) -> (FileTypeNames, TypeDisplayNames) {
     let display_names = BTreeMap::new();
     let mut file_type_names = BTreeMap::new();
+    let concrete_types = queries
+        .schema_type_names()
+        .into_iter()
+        .filter(|name| !queries.type_is_abstract(name))
+        .collect::<Vec<_>>();
     for file_path in queries.source_files() {
-        let mut type_names = Vec::new();
-        let mut type_seen = HashSet::new();
+        let mut type_names = concrete_types.clone();
+        let mut type_seen = type_names.iter().cloned().collect::<HashSet<_>>();
         for view in queries.record_views_in_file(file_path) {
             let type_name = view.coordinate.actual_type.to_string();
             if type_seen.insert(type_name.clone()) {

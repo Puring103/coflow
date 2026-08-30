@@ -110,6 +110,14 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn type_is_abstract(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_abstract)
+    }
+
+    #[must_use]
     pub fn id_as_enum_name_for_type(self, type_name: &str) -> Option<String> {
         self.session
             .schema()
@@ -425,6 +433,13 @@ fn dimension_value_at_path<'a>(
     path: &[CfdPathSegment],
 ) -> Option<&'a CfdValue> {
     for segment in path {
+        value = match value {
+            CfdValue::OptionSome(inner)
+            | CfdValue::ResultOk(inner)
+            | CfdValue::ResultErr(inner) => inner,
+            CfdValue::OptionNone => return None,
+            _ => value,
+        };
         value = match (segment, value) {
             (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
                 object.fields().get(field.as_str())?
@@ -442,11 +457,15 @@ fn dimension_value_at_path<'a>(
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
-    let ref_target_type = match ty {
+    let semantic_ty = match ty {
+        CftValueType::Option(inner) => inner.as_ref(),
+        _ => ty,
+    };
+    let ref_target_type = match semantic_ty {
         CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
-    let enum_type = match ty {
+    let enum_type = match semantic_ty {
         CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
@@ -454,32 +473,31 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         .as_deref()
         .and_then(|name| schema.resolve_enum(name))
         .is_some_and(|schema_enum| schema_enum.is_flag);
-    let polymorphic_types = match ty {
+    let polymorphic_types = match semantic_ty {
         CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
     .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
     .filter(|(_, meta)| meta.is_abstract)
     .and_then(|(name, _)| schema.concrete_assignable_types(name))
-    .filter(|types| types.len() >= 2)
     .unwrap_or_default()
     .into_iter()
     .map(|name| name.to_string())
     .collect();
-    let collection_item = match ty {
+    let collection_item = match semantic_ty {
         CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
         }
         _ => None,
     };
-    let object_type = match ty {
+    let object_type = match semantic_ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .filter(|meta| !meta.is_abstract)
             .map(|meta| meta.name.to_string()),
         _ => None,
     };
-    let field_order = match ty {
+    let field_order = match semantic_ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .map(|meta| {
@@ -490,6 +508,17 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
             .unwrap_or_default(),
         _ => Vec::new(),
     };
+    let option_inner = match ty {
+        CftValueType::Option(inner) => Some(Box::new(field_shape(schema, inner))),
+        _ => None,
+    };
+    let (result_ok, result_err) = match ty {
+        CftValueType::Result(ok, err) => (
+            Some(Box::new(field_shape(schema, ok))),
+            Some(Box::new(field_shape(schema, err))),
+        ),
+        _ => (None, None),
+    };
     FieldShapeInfo {
         display_label: ty.display_label(),
         label: None,
@@ -498,6 +527,9 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         enum_type,
         enum_is_flag,
         nullable: matches!(ty, CftValueType::Option(_)),
+        option_inner,
+        result_ok,
+        result_err,
         polymorphic_types,
         collection_item,
         object_type,

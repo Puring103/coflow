@@ -8,6 +8,7 @@ import {
   cellRefTargetType,
   fieldPathField,
   nullValue,
+  presentationValue,
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
@@ -106,9 +107,9 @@ export function MixedFieldRow({ label, sample, declaredType, enumType, enumIsFla
           ) : valueKind === 'bool' ? (
             <MixedCheckbox onCommit={onCommit} />
           ) : valueKind === 'enum' && enumType ? (
-            <EnumDirectSelect value={nullValue() as FieldValue & { kind: 'null' }} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} onCommit={onCommit} />
+            <EnumDirectSelect value={nullValue() as FieldValue & { kind: 'option_none' }} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} onCommit={onCommit} />
           ) : valueKind === 'ref' && refTargetType ? (
-            <RefDirectSelect value={nullValue() as FieldValue & { kind: 'null' }} targetType={refTargetType} nullable={nullable} onCommit={onCommit} />
+            <RefDirectSelect value={nullValue() as FieldValue & { kind: 'option_none' }} targetType={refTargetType} nullable={nullable} onCommit={onCommit} />
           ) : valueKind === 'int' || valueKind === 'float' || valueKind === 'string' ? (
             <MixedTextInput kind={valueKind} declaredType={declaredType} onCommit={onCommit} />
           ) : (
@@ -196,11 +197,12 @@ function mixedValueKind(
 ): FieldValue['kind'] {
   if (enumType) return 'enum'
   if (refTargetType) return 'ref'
-  if (sample.kind !== 'null') return sample.kind
-  const normalized = declaredType?.replace(/\?$/, '').toLowerCase()
+  const shown = presentationValue(sample)
+  if (shown.kind !== 'option_none') return shown.kind
+  const normalized = declaredType?.replace(/^Option<(.*)>$/, '$1').replace(/\?$/, '').toLowerCase()
   if (normalized === 'bool') return 'bool'
   if (normalized?.startsWith('int') || normalized?.startsWith('uint')) return 'int'
   if (normalized === 'float' || normalized === 'double' || normalized === 'number') return 'float'
   if (normalized === 'string') return 'string'
-  return 'null'
+  return 'option_none'
 }
