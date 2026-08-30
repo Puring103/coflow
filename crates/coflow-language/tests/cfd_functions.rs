@@ -1,0 +1,70 @@
+use coflow_language::cfd::{parse_cfd, CfdValue};
+
+fn parse_function(source: &str) -> String {
+    let source = format!("item: Rule {{ apply: {source} }}");
+    let (ast, diagnostics) = parse_cfd(&source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let CfdValue::Function(function) = &ast.records[0].fields[0].value else {
+        panic!("expected function value");
+    };
+    function.source.clone()
+}
+
+#[test]
+fn retains_function_source_and_finds_the_real_body_boundary() {
+    for function in [
+        "fn(value: int) -> int { value + 1 }",
+        "fn() -> () { () }",
+        "fn(value: Option<int>) -> Result<int, string> { Ok(value?) }",
+        "fn(values: [int]) -> [int] { values }",
+        "fn(values: {string: int}) -> {string: int} { values }",
+        "fn(callback: fn(int) -> int) -> fn(int) -> int { callback }",
+        "fn() -> int { fn() -> int { 1 }() }",
+        "fn() -> string { \"a { brace } and \\\"quote\\\"\" }",
+        "fn() -> int { # } is part of this comment\n 1 }",
+    ] {
+        assert_eq!(parse_function(function), function);
+    }
+}
+
+#[test]
+fn functions_are_values_inside_collections() {
+    let source = "item: Rule { callbacks: [fn(x: int) -> int { x }, fn(x: int) -> int { x + 1 }] }";
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let CfdValue::Array(values, _) = &ast.records[0].fields[0].value else {
+        panic!("expected array");
+    };
+    assert!(values
+        .iter()
+        .all(|value| matches!(value, CfdValue::Function(_))));
+}
+
+#[test]
+fn reports_unterminated_function_structures() {
+    for source in [
+        "item: Rule { apply: fn(value: int -> int { value } }",
+        "item: Rule { apply: fn(value: int) int { value } }",
+        "item: Rule { apply: fn(value: int) -> {string: int { value } }",
+        "item: Rule { apply: fn(value: int) -> int { \"unterminated } }",
+        "item: Rule { apply: fn(value: int) -> int { value }",
+    ] {
+        let (_, diagnostics) = parse_cfd(source);
+        assert!(!diagnostics.is_empty(), "expected an error for {source:?}");
+    }
+}
+
+#[test]
+fn validates_function_body_grammar_instead_of_skipping_it() {
+    for body in [
+        "+",
+        "var value = ;",
+        "if true { 1 } trailing",
+        "match value { Some(item) item }",
+        "for item values { item; }",
+    ] {
+        let source = format!("item: Rule {{ apply: fn() -> int {{ {body} }} }}");
+        let (_, diagnostics) = parse_cfd(&source);
+        assert!(!diagnostics.is_empty(), "expected an error for {body:?}");
+    }
+}

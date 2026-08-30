@@ -9,7 +9,7 @@ use coflow_language::CftSchema;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl CodeArtifactSet {
     /// duplicate files before the application can stage it.
     pub fn new(mut files: Vec<CodeArtifactFile>) -> Result<Self, CodegenError> {
         files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-        let mut previous: Option<&Path> = None;
+        let mut portable_paths = Vec::with_capacity(files.len());
         for file in &files {
             if file.relative_path.as_os_str().is_empty()
                 || file.relative_path.is_absolute()
@@ -94,12 +94,38 @@ impl CodeArtifactSet {
                     file.relative_path.clone(),
                 ));
             }
-            if previous == Some(file.relative_path.as_path()) {
-                return Err(CodegenError::DuplicateArtifactPath(
-                    file.relative_path.clone(),
-                ));
+            let mut key = Vec::new();
+            for component in file.relative_path.components() {
+                let std::path::Component::Normal(component) = component else {
+                    return Err(CodegenError::InvalidArtifactPath(
+                        file.relative_path.clone(),
+                    ));
+                };
+                let Some(component) = component.to_str() else {
+                    return Err(CodegenError::InvalidArtifactPath(
+                        file.relative_path.clone(),
+                    ));
+                };
+                if !portable_artifact_component(component) {
+                    return Err(CodegenError::InvalidArtifactPath(
+                        file.relative_path.clone(),
+                    ));
+                }
+                key.push(component.to_lowercase());
             }
-            previous = Some(&file.relative_path);
+            portable_paths.push((&file.relative_path, key));
+        }
+        portable_paths.sort_by(|left, right| left.1.cmp(&right.1));
+        for pair in portable_paths.windows(2) {
+            let [(_, left), (right_path, right)] = pair else {
+                continue;
+            };
+            if left == right {
+                return Err(CodegenError::DuplicateArtifactPath((*right_path).clone()));
+            }
+            if left.len() < right.len() && right.starts_with(left) {
+                return Err(CodegenError::InvalidArtifactPath((*right_path).clone()));
+            }
         }
         Ok(Self { files })
     }
@@ -113,6 +139,40 @@ impl CodeArtifactSet {
     pub fn into_files(self) -> Vec<CodeArtifactFile> {
         self.files
     }
+}
+
+fn portable_artifact_component(component: &str) -> bool {
+    if matches!(component.chars().last(), Some(' ' | '.'))
+        || component.chars().any(|character| {
+            character.is_ascii_control()
+                || matches!(
+                    character,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+        })
+    {
+        return false;
+    }
+    let device = component.split('.').next().unwrap_or_default();
+    if ["CON", "PRN", "AUX", "NUL"]
+        .iter()
+        .any(|name| device.eq_ignore_ascii_case(name))
+    {
+        return false;
+    }
+    let mut characters = device.chars();
+    let prefix = [characters.next(), characters.next(), characters.next()];
+    let suffix = characters.next();
+    if characters.next().is_some() {
+        return true;
+    }
+    let is_com = matches!(prefix, [Some('C' | 'c'), Some('O' | 'o'), Some('M' | 'm')]);
+    let is_lpt = matches!(prefix, [Some('L' | 'l'), Some('P' | 'p'), Some('T' | 't')]);
+    !(is_com || is_lpt)
+        || !matches!(
+            suffix,
+            Some('1'..='9' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}')
+        )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

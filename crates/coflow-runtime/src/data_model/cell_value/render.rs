@@ -42,6 +42,7 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
         CfdValue::Float(value) => Ok(value.to_string()),
         CfdValue::String(value) => Ok(render_string(value)),
         CfdValue::FormattedString(value) => Ok(value.source.clone()),
+        CfdValue::Function(value) => Ok(value.source.clone()),
         CfdValue::Enum(value) => render_enum_value(value),
         CfdValue::Ref(target_key) => Ok(format!("&{target_key}")),
         CfdValue::Array(items) => render_array(items),

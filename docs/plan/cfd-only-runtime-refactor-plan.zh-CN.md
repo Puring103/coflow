@@ -129,6 +129,7 @@ pub enum CfdValue {
     Int(i64),
     Float(f64),
     String(CfdFormattedString),
+    Function(CfdFunction),
     Enum(CfdEnumValue),
     RecordRef { expected: TypeName, key: RecordKey },
     Object { ty: TypeName, fields: Arc<[CfdValue]> },
@@ -139,6 +140,8 @@ pub enum CfdValue {
 
 parser 只负责文本结构；`CfdModelBuilder` 执行默认值、类型、enum、ref、object 和
 dimension 语义校验，再一次性发布 model。失败时返回 `DiagnosticSet`，不暴露半成品索引。
+函数字段不是数据加载例外：CFD parser 保留完整函数源码和 span，lowering 必须校验参数与返回
+签名并把 `CfdFunction` 发布到 model；项目的 `data` 不能通过排除含函数的 CFD 文件规避检查。
 
 ### 4.3 诊断
 
@@ -261,6 +264,10 @@ generator package 和根应用注册项。
 4. 统一把旧目录移动到 backup，再逐个 rename staging 到目标目录。
 5. 任一 backup/publish 失败时删除已发布的新目录，按逆序恢复 backup。
 6. 成功后清理 backup，返回所有 `CodegenReport`。
+
+发布还要写入 `.coflow/artifacts/active.json` 并保留 generation history。`build --status` 只在
+内存生成并比较活动输出，不得发布；`clean` 只删除非活动 generation 和遗留 staging。输出安全
+检查必须解析符号链接，并拒绝项目根、配置、schema、data、维度目录和输出之间的重叠。
 
 ## 7. C# direct-load runtime 契约
 

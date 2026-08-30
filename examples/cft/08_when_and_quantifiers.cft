@@ -4,8 +4,8 @@
 type ExampleSkill {
   name: string;
   is_passive: bool;
-  cooldown: float? = null;
-  range: float? = null;
+  cooldown: Option<float> = None;
+  range: Option<float> = None;
   costs: [int] = [];
 
   check {
@@ -13,13 +13,11 @@ type ExampleSkill {
     name != "";
 
     when !is_passive {
-      cooldown != null;
-      cooldown > 0.0;
+      costs.len() > 0;
     }
 
     when is_passive {
-      range != null;
-      range > 0.0;
+      costs.len() == 0;
     }
 
     all cost in costs {

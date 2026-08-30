@@ -117,6 +117,7 @@ pub fn stringify_value(value: &CfdValue) -> String {
         CfdValue::Float(value) => value.to_string(),
         CfdValue::String(value) => value.clone(),
         CfdValue::FormattedString(value) => value.rendered.clone(),
+        CfdValue::Function(value) => value.source.clone(),
         CfdValue::Enum(value) => value
             .variant
             .as_ref()
@@ -151,6 +152,7 @@ fn nested(value: &CfdValue) -> String {
     match value {
         CfdValue::String(value) => format!("{value:?}"),
         CfdValue::FormattedString(value) => format!("{:?}", value.rendered),
+        CfdValue::Function(value) => value.source.clone(),
         _ => stringify_value(value),
     }
 }

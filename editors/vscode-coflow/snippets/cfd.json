@@ -1,4 +1,14 @@
 {
+  "Namespace": {
+    "prefix": "namespace",
+    "body": "namespace ${1:project}::${2:module};",
+    "description": "Declare the CFD module namespace."
+  },
+  "Use": {
+    "prefix": "use",
+    "body": "use ${1:project}::${2:module}::${3:Type};",
+    "description": "Import a qualified CFD schema symbol."
+  },
   "Top-level record": {
     "prefix": "rec",
     "body": [
@@ -21,12 +31,32 @@
   },
   "Direct reference": {
     "prefix": "&ref",
-    "body": "&${1:key}",
-    "description": "Direct record reference shorthand: &key"
+    "body": "&${1:Type}::${2:key}",
+    "description": "Qualified record reference: &Type::key"
   },
   "Array": {
     "prefix": "arr",
     "body": "[${1:item1}, ${2:item2}]",
     "description": "CFD array value."
+  },
+  "Some": {
+    "prefix": "Some",
+    "body": "Some(${1:value})",
+    "description": "Present Option value."
+  },
+  "Ok": {
+    "prefix": "Ok",
+    "body": "Ok(${1:value})",
+    "description": "Successful Result value."
+  },
+  "Err": {
+    "prefix": "Err",
+    "body": "Err(${1:error})",
+    "description": "Failed Result value."
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": ["fn(${1:value}: ${2:int}) -> ${3:int} {", "\t${4:value}", "}"],
+    "description": "CFD function value."
   }
 }

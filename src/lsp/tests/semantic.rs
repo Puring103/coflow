@@ -154,6 +154,33 @@ fn named_top_level_checks_are_symbols_and_semantic_declarations() {
 }
 
 #[test]
+fn type_aliases_are_symbols_semantic_declarations_and_definition_targets() {
+    let source = "type Count = int;\ntype Item { value: Count; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-type-alias", source);
+    let document = first_document(&build);
+    let raw_tokens = semantic_raw_tokens(&build, document);
+
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "type Count",
+        "Count",
+        SEM_TYPE,
+        MOD_DECLARATION | MOD_SCHEMA,
+    ));
+    let symbols = document_symbols(document);
+    assert!(symbols.iter().any(|symbol| symbol["name"] == "Count"));
+
+    let position = position_from_byte(
+        source,
+        source.rfind("Count").expect("alias use") + 1,
+    );
+    let definitions = definitions_at(&build, document, &position);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0]["range"]["start"]["line"], 0);
+}
+
+#[test]
 fn cfd_semantic_tokens_distinguish_record_refs_and_schema_fields() {
     let source = "base: Monster { stats: { hp: 10 } }\n\
 elite: Monster { target: &base }\n";

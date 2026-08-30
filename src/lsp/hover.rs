@@ -36,6 +36,18 @@ pub(crate) fn hover_at(
         ));
     }
 
+    if let Some(alias) = build.documents.values().find_map(|candidate| {
+        candidate.ast.as_ref()?.items.iter().find_map(|item| match item {
+            Item::TypeAlias(alias) if alias.name == word.text => Some(alias),
+            _ => None,
+        })
+    }) {
+        return Some(hover_response(
+            &format!("CFT type alias `{}`.", alias.name),
+            &byte_range(&document.source, word.start, word.end),
+        ));
+    }
+
     if let Some(chain) = dotted_chain_at(&document.source, &word) {
         if chain.len() >= 2 {
             if let Some((enum_def, variant)) = enum_variant_by_chain(build, &chain) {

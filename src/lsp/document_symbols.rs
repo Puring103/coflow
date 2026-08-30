@@ -73,7 +73,14 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     &children,
                 ));
             }
-            Item::TypeAlias(_) => {}
+            Item::TypeAlias(alias) => symbols.push(document_symbol_item(
+                &document.source,
+                &alias.name,
+                SYMBOL_KIND_CLASS,
+                alias.span,
+                alias.name_span,
+                &[],
+            )),
             Item::Check(check) => symbols.push(document_symbol_item(
                 &document.source,
                 &check.name,

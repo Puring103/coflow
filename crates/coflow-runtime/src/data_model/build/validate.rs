@@ -263,6 +263,13 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::String, LoadedValueDraft::FormattedString(value)) => {
                 Some(ValueDraft::FormattedString(value.clone()))
             }
+            (CftValueType::Function(_, _), LoadedValueDraft::Function(value)) => {
+                Some(ValueDraft::Value(CfdValue::Function(
+                    crate::data_model::CfdFunction {
+                        source: value.source.clone(),
+                    },
+                )))
+            }
             (
                 CftValueType::Enum(expected),
                 LoadedValueDraft::EnumVariant { enum_name, variant },
@@ -575,6 +582,7 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
         LoadedValueDraft::Float(_) => "float",
         LoadedValueDraft::String(_) => "string",
         LoadedValueDraft::FormattedString(_) => "formatted string",
+        LoadedValueDraft::Function(_) => "function",
         LoadedValueDraft::EnumVariant { .. } | LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
         LoadedValueDraft::RecordRef(_) => "record ref",

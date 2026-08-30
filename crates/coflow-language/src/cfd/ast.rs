@@ -25,11 +25,10 @@ pub struct CfdUseDecl {
 impl CfdUseDecl {
     #[must_use]
     pub fn local_name(&self) -> &str {
-        self.alias
-            .as_ref()
-            .map_or_else(|| self.path.rsplit("::").next().unwrap_or(&self.path), |alias| {
-                alias.0.as_str()
-            })
+        self.alias.as_ref().map_or_else(
+            || self.path.rsplit("::").next().unwrap_or(&self.path),
+            |alias| alias.0.as_str(),
+        )
     }
 }
 
@@ -71,6 +70,7 @@ pub enum CfdValue {
     OptionSome(Box<CfdValue>, Span),
     ResultOk(Box<CfdValue>, Span),
     ResultErr(Box<CfdValue>, Span),
+    Function(CfdFunction),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
     Array(Vec<CfdValue>, Span),
@@ -88,12 +88,19 @@ impl CfdValue {
             | Self::ResultOk(_, s)
             | Self::ResultErr(_, s)
             | Self::Array(_, s) => *s,
+            Self::Function(value) => value.span,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
             Self::Ref(r) => r.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CfdFunction {
+    pub source: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

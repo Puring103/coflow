@@ -24,22 +24,27 @@ pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
 
 ## C# 进程内加载
 
-`coflow-codegen-csharp` 生成类型声明、`ICfdTypeBinding` 和 `Load(ICfdTextLoader)` 入口。
-游戏或服务进程引用 `Coflow.Cfd.Runtime` 后提供文件读取函数：
+`coflow-codegen-csharp` 生成业务类型、metadata contract 和强类型 `CoflowData` 入口。游戏或
+服务进程引用 `Coflow.Cfd.Runtime`，读取 CFD 文本后直接加载：
 
 ```csharp
-var tables = CoflowTables.Load(
-    path => File.Exists(path) ? File.ReadAllText(path) : null);
+var module = Game.Config.CoflowData.LoadAndCompile(new[] {
+    File.ReadAllText("data/items.cfd"),
+    File.ReadAllText("data/rules.cfd"),
+});
+
+var items = module.Table<Game.Config.Item>();
 ```
 
-生成代码会按照 `SourceFiles` 清单调用 loader，runtime 解析 CFD、建立
-`(DeclaredType, Key)` identity cache，并解析跨文件引用。缺少文件、未知字段、非法值、
-循环引用和资源限制都通过 `CfdLoadException.Diagnostics` 返回；生成 binding 直接构造
-目标类型。
+`Load` 构造只读数据 module；`LoadAndCompile` 还会链接并编译 CFD 函数。runtime 解析同次
+加载中的全部 CFD、建立 record identity、解析跨文件引用并构造生成类型。未知字段、非法值、
+缺失引用、函数签名/函数体错误和资源限制都通过 `CfdLoadException.Diagnostics` 返回。
 
 本地化字段生成为 `Localized<T>`。`value.For("zh")` 读取指定 variant，`value.Value` 使用 `Localization.CurrentLanguage`；缺失、`null` 和未知语言自动回退到基础值，不需要注册 localization provider。
 
 ## 约束
 
 - 数据文件必须是 `.cfd`；目录发现会忽略其它扩展名。
+- Rust runtime 会把 CFD 函数作为 `CfdFunction` 保留在数据模型中并校验声明签名，不会从
+  `data` 中跳过含函数字段的文件。
 - 写入只能通过 runtime mutation/write plan，不能绕过 revision 检查直接覆盖源文件。

@@ -101,6 +101,38 @@ fn field(name: &str) -> CfdPathSegment {
 }
 
 #[test]
+fn repository_examples_open_in_editor() {
+    let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+
+    for example in ["card_game", "cfd", "cft", "csharp-runtime"] {
+        let config = repository_root
+            .join("examples")
+            .join(example)
+            .join("coflow.yaml");
+        let store = SessionStore::new().expect("create editor session store");
+        let snapshot = store.load_project(&config).unwrap_or_else(|error| {
+            panic!(
+                "editor failed to open repository example `{example}` at {}: {error}",
+                config.display()
+            )
+        });
+
+        assert_eq!(
+            PathBuf::from(snapshot.project_root),
+            config.parent().unwrap().canonicalize().unwrap()
+        );
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.severity != "error"),
+            "editor reported errors for repository example `{example}`: {:#?}",
+            snapshot.diagnostics
+        );
+    }
+}
+
+#[test]
 fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     let (root, populated) = inheritance_project();
     let store = SessionStore::new().expect("create editor session store");

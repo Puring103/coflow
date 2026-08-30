@@ -94,6 +94,7 @@ impl<'a> EvalValue<'a> {
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
+            | CfdValue::Function(_)
             | CfdValue::Enum(_) => Self::Model(value),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
@@ -223,7 +224,8 @@ fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
         | CfdValue::Object(_)
         | CfdValue::Ref(_)
         | CfdValue::Array(_)
-        | CfdValue::Dict(_) => None,
+        | CfdValue::Dict(_)
+        | CfdValue::Function(_) => None,
     }
 }
 
@@ -398,7 +400,7 @@ fn resolved_object_type<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Op
 }
 
 fn inline_object<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a CfdObject> {
-    match model_value(model, cursor)? {
+    match transparent_value(model_value(model, cursor)?) {
         CfdValue::Object(object) => Some(object),
         _ => None,
     }
@@ -409,16 +411,22 @@ pub(crate) fn model_value<'a>(
     cursor: &ModelCursor,
 ) -> Option<&'a CfdValue> {
     let record = model.record(cursor.record)?;
-    let Some(dimension) = &cursor.dimension else {
-        return record.value_at_path(&cursor.path);
+    let mut segments = cursor.path.segments.iter();
+    let mut value = if let Some(dimension) = &cursor.dimension {
+        &record
+            .dimension_field(&dimension.field)?
+            .variants
+            .get(dimension.variant.as_str())?
+            .value
+    } else {
+        let crate::data_model::CfdPathSegment::Field(field) = segments.next()? else {
+            return None;
+        };
+        record.fields().get(field.as_str())?
     };
-    let mut value = &record
-        .dimension_field(&dimension.field)?
-        .variants
-        .get(dimension.variant.as_str())?
-        .value;
-    for segment in &cursor.path.segments {
-        value = match (segment, value) {
+
+    for segment in segments {
+        value = match (segment, transparent_value(value)) {
             (crate::data_model::CfdPathSegment::Field(field), CfdValue::Object(object)) => {
                 object.fields().get(field.as_str())?
             }
@@ -433,6 +441,16 @@ pub(crate) fn model_value<'a>(
         };
     }
     Some(value)
+}
+
+fn transparent_value(mut value: &CfdValue) -> &CfdValue {
+    while let CfdValue::OptionSome(inner)
+    | CfdValue::ResultOk(inner)
+    | CfdValue::ResultErr(inner) = value
+    {
+        value = inner;
+    }
+    value
 }
 
 fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {

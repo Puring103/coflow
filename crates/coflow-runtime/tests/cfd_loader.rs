@@ -37,9 +37,11 @@ fn compile_schema(source: &str) -> CftSchema {
 }
 
 fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
-    let modules = parse_modules(files.iter().map(|(name, source)| {
-        CftFile::from_source(ModuleId::from(*name), *source)
-    }));
+    let modules = parse_modules(
+        files
+            .iter()
+            .map(|(name, source)| CftFile::from_source(ModuleId::from(*name), *source)),
+    );
     build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
 }
 
@@ -105,11 +107,8 @@ fn cfd_rejects_unknown_or_conflicting_uses_without_name_fallback() {
         ("shared.cft", "namespace shared; type Item {}"),
     ]);
 
-    let unknown = parse_cfd_input_records(
-        &schema,
-        "use missing::Item; Item { value {} }",
-    )
-    .expect_err("unknown use target");
+    let unknown = parse_cfd_input_records(&schema, "use missing::Item; Item { value {} }")
+        .expect_err("unknown use target");
     assert_has_text_code(&unknown, CfdTextErrorCode::Syntax);
 
     let conflict = parse_cfd_input_records(
@@ -719,9 +718,10 @@ fn cfd_rejects_cyclic_record_references() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == CfdErrorCode::RefCycle));
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic| diagnostic
-        .message
-        .contains("Node:a -> Node:b -> Node:a")));
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("Node:a -> Node:b -> Node:a")));
 }
 
 #[test]
@@ -740,10 +740,7 @@ fn cfd_allows_acyclic_record_reference_chains() -> TestResult {
 fn cfd_loads_shared_complex_runtime_values() -> TestResult {
     let schema = compile_schema(&runtime_parity_fixture("complex-values.cft"));
 
-    let model = load_cfd_model(
-        &schema,
-        &runtime_parity_fixture("complex-values.valid.cfd"),
-    )?;
+    let model = load_cfd_model(&schema, &runtime_parity_fixture("complex-values.valid.cfd"))?;
 
     assert_eq!(model.record_count(), 1);
     Ok(())
@@ -1085,6 +1082,51 @@ fn examples_cfd_files_load_together() -> TestResult {
         encounter.field("featured_item"),
         Some(CfdValue::Ref(target_key)) if target_key.as_str() == "sword_fire"
     ));
+    Ok(())
+}
+
+#[test]
+fn function_values_are_retained_and_signature_checked() -> TestResult {
+    let schema = compile_schema(
+        r#"
+namespace app;
+type Rule {
+  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string>;
+  factories: [fn(int) -> int];
+}
+"#,
+    );
+    let source = r#"
+namespace app;
+item: Rule {
+  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string> {
+    Ok(callback(value))
+  },
+  factories: [fn(value: int) -> int { value + 1 }],
+}
+"#;
+    let model = load_cfd_model(&schema, source)?;
+    let record_id = model
+        .record_by_type_key("app::Rule", "item")
+        .expect("function record");
+    let record = model.record(record_id).expect("function record value");
+    let Some(CfdValue::Function(function)) = record.field("apply") else {
+        panic!("expected retained function");
+    };
+    assert!(function.source.contains("Ok(callback(value))"));
+    let Some(CfdValue::Array(factories)) = record.field("factories") else {
+        panic!("expected function array");
+    };
+    assert!(matches!(factories.as_slice(), [CfdValue::Function(_)]));
+
+    for invalid in [
+        "item: app::Rule { apply: fn(value: float, callback: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+        "item: app::Rule { apply: fn(value: int, callback: fn(int) -> int) -> int { 1 }, factories: [] }",
+        "item: app::Rule { apply: fn(value: int, value: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+    ] {
+        let error = load_cfd_model(&schema, invalid).expect_err("invalid function signature");
+        assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
+    }
     Ok(())
 }
 

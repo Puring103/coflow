@@ -208,11 +208,23 @@ pub enum CfdValue {
     Float(f64),
     String(String),
     FormattedString(CfdFormattedString),
+    Function(CfdFunction),
     Enum(CfdEnumValue),
     Object(Box<CfdObject>),
     Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordKey),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
+}
+
+/// A schema-checked CFD function retained as executable source for runtimes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CfdFunction {
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

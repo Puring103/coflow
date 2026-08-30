@@ -1,6 +1,7 @@
 schema: schema/
 data:
   - data/characters.cfd
+  - data/scenario.cfd
 codegen:
   - language: csharp
     dir: generated

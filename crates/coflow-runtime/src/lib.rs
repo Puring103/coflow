@@ -59,11 +59,11 @@ pub use data_model::serde_i64;
 pub use data_model::{
     validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
     CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdErrorCode, CfdFormattedString, CfdLabel, CfdModelBuildOutput, CfdModelBuilder, CfdObject,
+    CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel, CfdModelBuildOutput, CfdModelBuilder, CfdObject,
     CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable, CfdValue,
     CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
-    LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
+    LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString, LoadedFunction,
     LoadedRecordDraft, LoadedValueDraft, MappedDiagnostic, MappedLabel, PendingInsertRef,
     RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan, ValueValidationMode,
     ValueValidationRequest,

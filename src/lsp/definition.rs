@@ -72,7 +72,8 @@ pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) ->
             let (name, name_span) = match item {
                 Item::Type(t) => (t.name.as_str(), t.name_span),
                 Item::Enum(e) => (e.name.as_str(), e.name_span),
-                Item::Const(_) | Item::TypeAlias(_) | Item::Check(_) => continue,
+                Item::TypeAlias(alias) => (alias.name.as_str(), alias.name_span),
+                Item::Const(_) | Item::Check(_) => continue,
             };
             if name == type_name {
                 let range = byte_range(document.source(), name_span.start, name_span.end);
@@ -268,6 +269,9 @@ fn ast_global_location(build: &LspBuild, name: &str) -> Option<Value> {
                 Item::Type(ty) if ty.name == name => {
                     return Some(location(document, ty.name_span));
                 }
+                Item::TypeAlias(alias) if alias.name == name => {
+                    return Some(location(document, alias.name_span));
+                }
                 Item::Const(_)
                 | Item::Enum(_)
                 | Item::Type(_)
@@ -285,6 +289,7 @@ fn ast_top_level_name_span(document: &LspDocument, name: &str) -> Option<Span> {
         Item::Const(constant) if constant.name == name => Some(constant.name_span),
         Item::Enum(enum_def) if enum_def.name == name => Some(enum_def.name_span),
         Item::Type(ty) if ty.name == name => Some(ty.name_span),
+        Item::TypeAlias(alias) if alias.name == name => Some(alias.name_span),
         _ => None,
     })
 }

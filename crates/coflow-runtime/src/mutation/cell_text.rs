@@ -83,6 +83,9 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
         LoadedValueDraft::FormattedString(_) => Err(one_value_error(
             "formatted strings must be evaluated before JSON coercion",
         )),
+        LoadedValueDraft::Function(_) => Err(one_value_error(
+            "function values cannot be coerced through JSON mutation input",
+        )),
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
         LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();

@@ -1,12 +1,13 @@
 //! Schema-free CFD syntax parser.
 
 pub mod ast;
+mod function;
 mod parser;
 
 pub use ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdNamespaceDecl, CfdRecord, CfdRef, CfdUseDecl,
-    CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdNamespaceDecl, CfdRecord, CfdRef,
+    CfdUseDecl, CfdValue,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

@@ -209,5 +209,9 @@ impl Parser<'_> {
 }
 
 fn is_value_boundary(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '(' | ')' | '|' | '^' | '&' | ':')
+    ch.is_whitespace()
+        || matches!(
+            ch,
+            ',' | ';' | '}' | ']' | '(' | ')' | '|' | '^' | '&' | ':'
+        )
 }
