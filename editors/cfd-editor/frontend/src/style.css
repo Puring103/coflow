@@ -175,9 +175,6 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   animation: none !important;
   opacity: 1 !important;
 }
-.cfd-code-editor .cm-indent-markers::before {
-  left: calc(2px + 2ch) !important;
-}
 .cm-lsp-token-comment { color: var(--code-comment); font-style: italic; }
 .cm-lsp-token-keyword { color: var(--code-keyword); font-weight: 600; }
 .cm-lsp-token-type,
