@@ -12,7 +12,7 @@ pub mod editor {
 }
 
 use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
-use coflow_runtime::{CfdPathSegment, CfdValue};
+use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
@@ -702,6 +702,22 @@ async fn sync_language_document(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn validate_source_text(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<FlatDiagnostic>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .validate_source_text(session_id, &file_path, &source)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn complete_language_document(
     session_id: u32,
     file_path: String,
@@ -1130,6 +1146,7 @@ pub fn run() -> tauri::Result<()> {
             open_source_file,
             read_source_text,
             sync_language_document,
+            validate_source_text,
             complete_language_document,
             close_language_document,
             function_document,

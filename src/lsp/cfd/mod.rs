@@ -83,7 +83,7 @@ fn field_symbols(source: &str, record: &CfdRecord) -> Vec<Value> {
 }
 
 /// Semantic tokens for a CFD file (delta encoding as per LSP spec).
-pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
+pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -> Value {
     let mut collector = TokenCollector::new(source);
 
     // Lex all comment spans.
@@ -116,6 +116,11 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
             collect_value_tokens(&field.value, &mut collector);
         }
     }
+    if let Some(schema) = schema {
+        for (_, span, _) in incomplete_group_keys(source, schema) {
+            collector.add(span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
+        }
+    }
 
     collector.into_lsp_data()
 }
@@ -130,6 +135,7 @@ pub fn function_document(params: &Value) -> Value {
             "source": original,
             "signature": "fn",
             "body": original,
+            "bodyRange": byte_range(original, 0, original.len()),
             "diagnostics": [{
                 "range": byte_range(original, 0, original.len().min(1)),
                 "severity": 1,
@@ -144,20 +150,27 @@ pub fn function_document(params: &Value) -> Value {
         .get("body")
         .and_then(Value::as_str)
         .unwrap_or_else(|| parts.body.trim());
-    let replacement = if parts.multiline {
-        format!("\n{}\n", requested_body.trim_matches('\n'))
+    let body = if parts.multiline {
+        requested_body.trim_matches('\n')
     } else {
-        format!(" {} ", requested_body.trim())
+        requested_body.trim()
+    };
+    let replacement = if parts.multiline {
+        format!("\n{body}\n")
+    } else {
+        format!(" {body} ")
     };
     let source = format!("{}{}{}", parts.prefix, replacement, parts.suffix);
-    let body = requested_body;
-    let mut collector = TokenCollector::new(body);
-    collect_function_tokens(Span::new(0, body.len()), body, &mut collector);
-    let diagnostics = function_body_diagnostics(&source, parts.prefix.len(), body);
+    let body_start = parts.prefix.len() + 1;
+    let body_end = body_start + body.len();
+    let mut collector = TokenCollector::new(&source);
+    collect_function_tokens(Span::new(0, source.len()), &source, &mut collector);
+    let diagnostics = function_body_diagnostics(&source, body_start, body);
     json!({
         "source": source,
         "signature": parts.signature,
         "body": body,
+        "bodyRange": byte_range(&source, body_start, body_end),
         "diagnostics": diagnostics,
         "semanticTokens": collector.into_lsp_data(),
         "completions": function_completion_items(&parts.signature),
@@ -608,7 +621,7 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
 }
 
 /// Completion: field names when cursor is inside a record body.
-pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
+pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
     if let Some(function) = function_at(ast, offset) {
         let body_start = function.body_span.start.saturating_sub(function.span.start);
         let signature_end = body_start.saturating_sub(1);
@@ -618,6 +631,18 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
     let Some(schema) = schema else {
         return json!([]);
     };
+    if let Some((key, _, group_type)) = incomplete_group_key_at(source, schema, offset) {
+        return json!([{
+            "label": key,
+            "kind": 7,
+            "detail": format!("new {group_type} record"),
+            "insertText": format!("{key} {{"),
+        }]);
+    }
+
+    if let Some(value_type) = completion_value_type(source, ast, schema, offset) {
+        return json!(value_completion_items(schema, value_type));
+    }
 
     for record in &ast.records {
         if !span_contains(record.span, offset) {
@@ -642,6 +667,25 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
         return json!(items);
     }
 
+    if let Some((type_name, body_start)) = record_context_at(source, schema, offset) {
+        let Some(schema_type) = schema.resolve_type(&type_name) else {
+            return json!([]);
+        };
+        let existing = recovered_field_names(source, body_start, offset);
+        let items: Vec<Value> = schema_type
+            .all_fields()
+            .filter(|field| !existing.contains(field.name.as_str()))
+            .map(|field| {
+                json!({
+                    "label": field.name.as_str(),
+                    "kind": 5,
+                    "detail": fmt_value_type(&field.value_type),
+                })
+            })
+            .collect();
+        return json!(items);
+    }
+
     // Top-level: suggest known non-abstract type names.
     let types: Vec<Value> = schema
         .all_types()
@@ -649,6 +693,369 @@ pub fn completion(_source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offse
         .map(|t| json!({ "label": t.name.as_str(), "kind": 7 }))
         .collect();
     json!(types)
+}
+
+fn completion_value_type<'a>(
+    source: &str,
+    ast: &CfdAst,
+    schema: &'a CftSchema,
+    offset: usize,
+) -> Option<&'a CftValueType> {
+    for record in &ast.records {
+        let Some(schema_type) = schema.resolve_type(&record.type_name) else {
+            continue;
+        };
+        for field in &record.fields {
+            if offset >= field.name_span.end && offset <= field.span.end {
+                return schema_type
+                    .all_fields()
+                    .find(|candidate| candidate.name.as_str() == field.name)
+                    .map(|candidate| &candidate.value_type);
+            }
+        }
+    }
+
+    let (type_name, body_start) = record_context_at(source, schema, offset)?;
+    let field_name = recovered_field_context(source, body_start, offset).1?;
+    schema
+        .resolve_type(&type_name)?
+        .all_fields()
+        .find(|field| field.name.as_str() == field_name)
+        .map(|field| &field.value_type)
+}
+
+fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<Value> {
+    match value_type {
+        CftValueType::Bool => ["true", "false"]
+            .into_iter()
+            .map(|label| json!({ "label": label, "kind": 14, "detail": "bool" }))
+            .collect(),
+        CftValueType::Enum(name) => schema.resolve_enum(name.as_str()).map_or_else(Vec::new, |item| {
+            item.variants
+                .iter()
+                .map(|variant| json!({
+                    "label": variant.name.as_str(),
+                    "kind": 20,
+                    "detail": format!("{} enum variant", item.name),
+                }))
+                .collect()
+        }),
+        CftValueType::Option(inner) => vec![
+            json!({ "label": "None", "kind": 14, "detail": value_type.display_label() }),
+            json!({
+                "label": "Some",
+                "kind": 3,
+                "detail": format!("Some({})", inner.display_label()),
+                "insertText": "Some()",
+            }),
+        ],
+        CftValueType::Result(ok, error) => vec![
+            json!({
+                "label": "Ok",
+                "kind": 3,
+                "detail": format!("Ok({})", ok.display_label()),
+                "insertText": "Ok()",
+            }),
+            json!({
+                "label": "Err",
+                "kind": 3,
+                "detail": format!("Err({})", error.display_label()),
+                "insertText": "Err()",
+            }),
+        ],
+        CftValueType::Function(parameters, result) => {
+            let parameters = parameters
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| format!(
+                    "{}: {}",
+                    parameter.name.as_deref().map_or_else(|| format!("arg{index}"), str::to_string),
+                    parameter.value_type.display_label(),
+                ))
+                .collect::<Vec<_>>()
+                .join(", ");
+            vec![json!({
+                "label": "fn",
+                "kind": 3,
+                "detail": value_type.display_label(),
+                "insertText": format!("fn({parameters}) -> {} {{\n    \n}}", result.display_label()),
+            })]
+        }
+        CftValueType::Array(_) => {
+            vec![json!({ "label": "[]", "kind": 21, "detail": value_type.display_label() })]
+        }
+        CftValueType::Dict(_, _) | CftValueType::Object(_) => {
+            vec![json!({ "label": "{}", "kind": 21, "detail": value_type.display_label() })]
+        }
+        CftValueType::Unit => {
+            vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
+        }
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::String
+        | CftValueType::RecordRef(_) => Vec::new(),
+    }
+}
+
+fn incomplete_group_keys<'a>(source: &'a str, schema: &CftSchema) -> Vec<(&'a str, Span, String)> {
+    let mut keys = Vec::new();
+    let mut line_start = 0;
+    for line in source.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\r', '\n']);
+        let leading = content.len() - content.trim_start().len();
+        let key = content.trim();
+        if coflow_language::is_cft_identifier(key) {
+            let span = Span::new(line_start + leading, line_start + leading + key.len());
+            if let Some(group_type) = group_type_at(source, schema, span.start) {
+                keys.push((key, span, group_type));
+            }
+        }
+        line_start += line.len();
+    }
+    keys
+}
+
+fn incomplete_group_key_at<'a>(
+    source: &'a str,
+    schema: &CftSchema,
+    offset: usize,
+) -> Option<(&'a str, Span, String)> {
+    let offset = offset.min(source.len());
+    let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = source[offset..]
+        .find('\n')
+        .map_or(source.len(), |index| offset + index);
+    let before_cursor = source.get(line_start..offset)?;
+    let leading = before_cursor.len() - before_cursor.trim_start().len();
+    let key = before_cursor.trim();
+    if key.is_empty()
+        || !coflow_language::is_cft_identifier(key)
+        || !source.get(offset..line_end)?.trim().is_empty()
+    {
+        return None;
+    }
+    let span = Span::new(line_start + leading, offset);
+    group_type_at(source, schema, span.start).map(|group_type| (key, span, group_type))
+}
+
+fn group_type_at(source: &str, schema: &CftSchema, offset: usize) -> Option<String> {
+    match brace_context_at(source, schema, offset)? {
+        BraceContext::Group(type_name) => Some(type_name),
+        BraceContext::Record { .. } | BraceContext::Other => None,
+    }
+}
+
+fn record_context_at(source: &str, schema: &CftSchema, offset: usize) -> Option<(String, usize)> {
+    match brace_context_at(source, schema, offset)? {
+        BraceContext::Record {
+            type_name,
+            body_start,
+        } => Some((type_name, body_start)),
+        BraceContext::Group(_) | BraceContext::Other => None,
+    }
+}
+
+#[derive(Clone)]
+enum BraceContext {
+    Group(String),
+    Record {
+        type_name: String,
+        body_start: usize,
+    },
+    Other,
+}
+
+fn brace_context_at(source: &str, schema: &CftSchema, offset: usize) -> Option<BraceContext> {
+    let mut stack: Vec<BraceContext> = Vec::new();
+    let mut last_identifier: Option<&str> = None;
+    let mut saw_colon = false;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let prefix = source.get(..offset.min(source.len()))?;
+    let mut characters = prefix.char_indices().peekable();
+
+    while let Some((start, character)) = characters.next() {
+        if line_comment {
+            if character == '\n' {
+                line_comment = false;
+            }
+            continue;
+        }
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if character == '#' {
+            line_comment = true;
+            continue;
+        }
+        if character == '/' && characters.peek().is_some_and(|(_, next)| *next == '/') {
+            let _ = characters.next();
+            line_comment = true;
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            continue;
+        }
+        if character == '_' || character.is_alphabetic() {
+            let mut end = start + character.len_utf8();
+            while let Some((next_start, next)) = characters.peek().copied() {
+                if next == '_' || next.is_alphanumeric() {
+                    let _ = characters.next();
+                    end = next_start + next.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            last_identifier = prefix.get(start..end);
+            continue;
+        }
+        match character {
+            ':' => saw_colon = true,
+            '{' => {
+                let context = match stack.last() {
+                    None if !saw_colon => last_identifier
+                        .filter(|name| schema.resolve_type(name).is_some())
+                        .map_or(BraceContext::Other, |name| {
+                            BraceContext::Group(name.to_string())
+                        }),
+                    None => last_identifier
+                        .filter(|name| schema.resolve_type(name).is_some())
+                        .map_or(BraceContext::Other, |name| BraceContext::Record {
+                            type_name: name.to_string(),
+                            body_start: start + 1,
+                        }),
+                    Some(BraceContext::Group(group_type)) => {
+                        let type_name = if saw_colon {
+                            last_identifier
+                                .filter(|name| schema.resolve_type(name).is_some())
+                                .map(str::to_string)
+                        } else {
+                            Some(group_type.clone())
+                        };
+                        type_name.map_or(BraceContext::Other, |type_name| BraceContext::Record {
+                            type_name,
+                            body_start: start + 1,
+                        })
+                    }
+                    Some(BraceContext::Record { .. } | BraceContext::Other) => BraceContext::Other,
+                };
+                stack.push(context);
+                last_identifier = None;
+                saw_colon = false;
+            }
+            '}' => {
+                let _ = stack.pop();
+                last_identifier = None;
+                saw_colon = false;
+            }
+            ',' | ';' => {
+                last_identifier = None;
+                saw_colon = false;
+            }
+            _ if !character.is_whitespace() => last_identifier = None,
+            _ => {}
+        }
+    }
+
+    stack.last().cloned()
+}
+
+fn recovered_field_names(
+    source: &str,
+    body_start: usize,
+    offset: usize,
+) -> std::collections::BTreeSet<&str> {
+    recovered_field_context(source, body_start, offset).0
+}
+
+fn recovered_field_context(
+    source: &str,
+    body_start: usize,
+    offset: usize,
+) -> (std::collections::BTreeSet<&str>, Option<&str>) {
+    let mut names = std::collections::BTreeSet::new();
+    let Some(body) = source.get(body_start..offset.min(source.len())) else {
+        return (names, None);
+    };
+    let mut depth = 0_u32;
+    let mut identifier: Option<&str> = None;
+    let mut current_field: Option<&str> = None;
+    let mut expecting_field = true;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut characters = body.char_indices().peekable();
+    while let Some((start, character)) = characters.next() {
+        if line_comment {
+            if character == '\n' {
+                line_comment = false;
+            }
+            continue;
+        }
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if character == '#' {
+            line_comment = true;
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            continue;
+        }
+        if character == '_' || character.is_alphabetic() {
+            let mut end = start + character.len_utf8();
+            while let Some((next_start, next)) = characters.peek().copied() {
+                if next == '_' || next.is_alphanumeric() {
+                    let _ = characters.next();
+                    end = next_start + next.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if depth == 0 && expecting_field {
+                identifier = body.get(start..end);
+            }
+            continue;
+        }
+        match character {
+            '{' | '[' | '(' => depth = depth.saturating_add(1),
+            '}' | ']' | ')' => depth = depth.saturating_sub(1),
+            ':' if depth == 0 => {
+                if let Some(name) = identifier.take() {
+                    names.insert(name);
+                    current_field = Some(name);
+                    expecting_field = false;
+                }
+            }
+            ',' if depth == 0 => {
+                identifier = None;
+                current_field = None;
+                expecting_field = true;
+            }
+            _ if depth == 0 && expecting_field && !character.is_whitespace() => {
+                identifier = None;
+            }
+            _ => {}
+        }
+    }
+    (names, current_field)
 }
 
 fn function_at(ast: &CfdAst, offset: usize) -> Option<&CfdFunction> {

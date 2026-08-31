@@ -311,15 +311,22 @@ fn source_text_edit_validates_before_atomic_save() {
         .read_source_text(session_id, file_path)
         .expect("read source text");
 
+    let invalid = "broken: ArrayExample {\n    tags: 12,\n}\n";
     let diagnostics = store
-        .validate_source_text(session_id, file_path, "broken: ArrayExample {")
+        .validate_source_text(session_id, file_path, invalid)
         .expect("validate invalid draft");
     assert!(
         diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
         "{diagnostics:#?}"
     );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.range.is_some_and(|range| range.start.line == 1)),
+        "{diagnostics:#?}"
+    );
     store
-        .write_source_text(session_id, file_path, "broken: ArrayExample {")
+        .write_source_text(session_id, file_path, invalid)
         .expect_err("invalid source must not be written");
     assert_eq!(
         fs::read_to_string(&data_file).expect("read unchanged source"),
@@ -355,6 +362,7 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         .sync_language_document(snapshot.session_id, file_path, &source, 1)
         .expect("synchronize through embedded LSP");
     assert!(document.diagnostics.is_empty(), "{:#?}", document.diagnostics);
+    assert!(document.syntax_valid);
     assert!(!document.semantic_token_data.is_empty());
     assert!(document.semantic_token_types.iter().any(|kind| kind == "type"));
 
@@ -388,6 +396,7 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         .sync_language_document(snapshot.session_id, file_path, invalid, 3)
         .expect("reuse diagnostics for an unchanged LSP version");
     assert!(!first_invalid.diagnostics.is_empty());
+    assert!(!first_invalid.syntax_valid);
     assert_eq!(
         repeated_invalid.diagnostics.len(),
         first_invalid.diagnostics.len()

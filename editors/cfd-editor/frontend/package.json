@@ -19,7 +19,6 @@
     "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.9",
-    "@replit/codemirror-indentation-markers": "^6.5.3",
     "@tanstack/react-table": "^8",
     "@tanstack/react-virtual": "^3.14.3",
     "@tauri-apps/api": "^2",

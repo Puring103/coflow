@@ -190,6 +190,10 @@ impl Diagnostic {
             .primary
             .as_ref()
             .map(|label| source_location_display_path(&label.location));
+        let range = self.primary.as_ref().and_then(|label| match &label.location {
+            SourceLocation::FileSpan { .. } => Some(label.location.text_range()),
+            SourceLocation::ProjectConfig { .. } | SourceLocation::Artifact { .. } => None,
+        });
         FlatDiagnostic {
             severity: severity_str(self.severity).to_string(),
             code: self.code.clone(),
@@ -199,6 +203,7 @@ impl Diagnostic {
             actual_type,
             record_key,
             field_path,
+            range,
             contexts: self.contexts.clone(),
         }
     }
@@ -219,12 +224,22 @@ pub struct Label {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct TextPosition {
     pub line: usize,
     pub character: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct TextRange {
     pub start: TextPosition,
     pub end: TextPosition,
@@ -382,6 +397,8 @@ pub struct FlatDiagnostic {
     pub actual_type: Option<String>,
     pub record_key: Option<String>,
     pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<TextRange>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contexts: Vec<DiagnosticContext>,
 }

@@ -12,6 +12,7 @@ import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
+import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorWorkspaceState } from './bindings/EditorWorkspaceState'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
@@ -67,6 +68,7 @@ export interface LanguageDocumentState {
   diagnostics: LanguageDiagnostic[]
   semantic_token_data: number[]
   semantic_token_types: string[]
+  syntax_valid: boolean
 }
 
 export interface LanguageCompletion {
@@ -80,6 +82,7 @@ export interface FunctionDocumentState extends LanguageDocumentState {
   source: string
   signature: string
   body: string
+  body_range: LanguageRange
   completions: LanguageCompletion[]
 }
 
@@ -335,6 +338,14 @@ export async function syncLanguageDocument(
     source,
     version,
   })
+}
+
+export async function validateSourceText(
+  sessionId: number,
+  filePath: string,
+  source: string,
+): Promise<FlatDiagnostic[]> {
+  return invokeCommand<FlatDiagnostic[]>('validate_source_text', { sessionId, filePath, source })
 }
 
 export async function completeLanguageDocument(

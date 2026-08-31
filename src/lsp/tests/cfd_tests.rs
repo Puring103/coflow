@@ -1,6 +1,7 @@
 use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
+use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_NAMESPACE};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
@@ -309,7 +310,7 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
     // Use a real source that has a comment followed by a record.
     let source = "# comment\nsword: Item { }";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let data = result["data"].as_array().expect("data array");
     // Walk the delta-encoded data and reconstruct absolute positions.
     let mut line = 0usize;
@@ -350,7 +351,7 @@ runner: Runner {\n\
 }\n";
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let data = result["data"].as_array().expect("data");
     let token_types = data
         .chunks(5)
@@ -371,11 +372,161 @@ runner: Runner {\n\
 }
 
 #[test]
+fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
+    let schema_source = "type Product { name: string; }\n";
+    let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
+    let cfd_path = project.root_dir().join("data.cfd");
+    let cfd_uri = path_to_file_uri(&cfd_path);
+    let source = "Product {\n    notebook { name: \"Notebook\", }\n    asd\n    test { name: \"Test\", }\n}\n";
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": cfd_uri,
+                    "version": 1,
+                    "text": source,
+                }
+            }
+        }))
+        .expect("open dirty cfd document");
+
+    server.writer.clear();
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "textDocument/semanticTokens/full",
+            "params": { "textDocument": { "uri": cfd_uri } }
+        }))
+        .expect("semantic token request");
+    let semantic_result = written_messages(&server.writer)[0]["result"].clone();
+    assert_eq!(semantic_result["x-coflow-syntax-valid"], true);
+    let tokens = decode_semantic_tokens(source, &semantic_result["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "asd".to_string(),
+        token_type: SEM_NAMESPACE,
+        modifiers: MOD_DECLARATION | MOD_RECORD,
+    }), "{tokens:?}");
+
+    server.writer.clear();
+    let position = position_from_byte(source, source.find("asd").expect("asd") + 3);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": cfd_uri },
+                "position": { "line": position.line, "character": position.character }
+            }
+        }))
+        .expect("completion request");
+    let completion_result = written_messages(&server.writer)[0]["result"].clone();
+    assert_eq!(completion_result[0]["label"], "asd");
+    assert_eq!(completion_result[0]["insertText"], "asd {");
+    assert_eq!(completion_result[0]["detail"], "new Product record");
+}
+
+#[test]
+fn incomplete_group_record_field_completion_uses_record_schema_context() {
+    let schema_source = "type Product { name: string; price: int; enabled: bool; }\n\
+type Unrelated { payload: string; }\n";
+    let (_cleanup, project) = test_project("lsp-cfd-dirty-group-field", schema_source);
+    let cfd_path = project.root_dir().join("data.cfd");
+    let cfd_uri = path_to_file_uri(&cfd_path);
+    let source = "Product {\n    make {\n        name: \"Draft\",\n        p\n    }\n}\n";
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": cfd_uri,
+                    "version": 1,
+                    "text": source,
+                }
+            }
+        }))
+        .expect("open incomplete grouped record field");
+
+    server.writer.clear();
+    let position = position_from_byte(source, source.find("p\n").expect("field prefix") + 1);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 43,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": cfd_uri },
+                "position": { "line": position.line, "character": position.character }
+            }
+        }))
+        .expect("complete incomplete grouped record field");
+    let messages = written_messages(&server.writer);
+    let completion_result = messages[0]["result"].as_array().expect("completion array");
+    let labels = completion_result
+        .iter()
+        .filter_map(|item| item["label"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, vec!["price", "enabled"]);
+    assert_eq!(completion_result[0]["detail"], "int");
+}
+
+#[test]
+fn cfd_value_completion_uses_schema_type_and_function_body_context() {
+    let schema_source = "enum Rarity { Common, Rare, }\n\
+type Settings {\n\
+  enabled: bool;\n\
+  rarity: Rarity;\n\
+  compute: fn(value: int) -> int;\n\
+}\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-value-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+
+    let complete = |source: &str, needle: &str| {
+        let (ast, _) = parse_cfd(source);
+        let offset = source.find(needle).expect("completion needle") + needle.len();
+        cfd::completion(source, &ast, Some(schema), offset)
+    };
+
+    let bool_items = complete("settings: Settings { enabled: t }", "enabled: t");
+    assert_eq!(
+        completion_labels(bool_items.as_array().expect("bool items").clone()),
+        vec!["true", "false"]
+    );
+
+    let enum_items = complete("settings: Settings { rarity: R }", "rarity: R");
+    assert_eq!(
+        completion_labels(enum_items.as_array().expect("enum items").clone()),
+        vec!["Common", "Rare"]
+    );
+
+    let function_items = complete("settings: Settings { compute: f }", "compute: f");
+    assert_eq!(function_items[0]["label"], "fn");
+    assert_eq!(
+        function_items[0]["insertText"],
+        "fn(value: int) -> int {\n    \n}"
+    );
+
+    let body_items = complete(
+        "settings: Settings { compute: fn(value: int) -> int { ret } }",
+        "ret",
+    );
+    let body_labels = completion_labels(body_items.as_array().expect("function body items").clone());
+    assert!(body_labels.contains(&"return".to_string()));
+    assert!(body_labels.contains(&"value".to_string()));
+}
+
+#[test]
 fn cfd_semantic_tokens_no_comment_token_inside_string() {
     // A URL inside a string must not be treated as a comment.
     let source = r#"r: T { url: "http://example.com" }"#;
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let data = result["data"].as_array().expect("data");
     // Each group of 5: [dline, dchar, len, type, modifiers]
     // SEM_COMMENT index is 10.
@@ -482,6 +633,10 @@ fn function_document_uses_cfd_parser_and_lsp_tokens() {
         "fn(left: int, operation: fn(int, int) -> int, right: int) -> int"
     );
     assert_eq!(result["body"], "left + right");
+    assert_eq!(result["bodyRange"]["start"]["line"], 1);
+    assert_eq!(result["bodyRange"]["start"]["character"], 0);
+    assert_eq!(result["bodyRange"]["end"]["line"], 1);
+    assert_eq!(result["bodyRange"]["end"]["character"], 12);
     assert!(result["diagnostics"].as_array().is_some_and(Vec::is_empty));
     assert!(result["semanticTokens"]["data"]
         .as_array()

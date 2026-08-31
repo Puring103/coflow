@@ -185,7 +185,7 @@ fn cfd_semantic_tokens_distinguish_record_refs_and_schema_fields() {
     let source = "base: Monster { stats: { hp: 10 } }\n\
 elite: Monster { target: &base }\n";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let tokens = decode_semantic_tokens(source, &result["data"]);
 
     assert!(

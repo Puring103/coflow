@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
 import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
-import { errorMessage } from '../wire'
-import { codeMirrorDiagnostics, completionItem, decodeSemanticTokens } from '../code/lspAdapter'
+import { errorDiagnostics, errorMessage, type DiagnosticItem } from '../wire'
+import {
+  codeMirrorDiagnostics,
+  completionItem,
+  decodeSemanticTokens,
+  validationCodeMirrorDiagnostics,
+} from '../code/lspAdapter'
 import { CfdCodeEditor, type CodeSemanticToken } from './CfdCodeEditor'
 import { Icon } from './Icon'
 
@@ -28,16 +33,28 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [diagnostics, setDiagnostics] = useState<api.LanguageDiagnostic[]>([])
+  const [validationDiagnostics, setValidationDiagnostics] = useState<DiagnosticItem[]>([])
   const [semanticTokens, setSemanticTokens] = useState<CodeSemanticToken[]>([])
+  const [replaceSemanticTokens, setReplaceSemanticTokens] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const languageRequest = useRef(0)
   const languageVersion = useRef(0)
+  const validationRequest = useRef(0)
+  const loadedKey = useRef<string | null>(null)
   const dirty = source !== base
+  const editorDiagnostics = useMemo(() => [
+    ...codeMirrorDiagnostics(source, diagnostics),
+    ...validationCodeMirrorDiagnostics(source, validationDiagnostics),
+  ], [diagnostics, source, validationDiagnostics])
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
-    setError(null)
+    const changingDocument = loadedKey.current !== key
+    if (changingDocument) {
+      setLoading(true)
+      setError(null)
+      setValidationDiagnostics([])
+    }
     const operation = api.isTauri
       ? api.readSourceText(sessionId, filePath)
       : Promise.resolve(drafts.get(key)?.base ?? '')
@@ -46,10 +63,11 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       const draft = drafts.get(key)
       setBase(text)
       setSource(draft?.base === text ? draft.text : text)
+      loadedKey.current = key
       if (draft?.base !== text) drafts.delete(key)
     }).catch(cause => {
       if (alive) setError(errorMessage(cause))
-    }).finally(() => { if (alive) setLoading(false) })
+    }).finally(() => { if (alive && changingDocument) setLoading(false) })
     return () => { alive = false }
   }, [filePath, key, revision, sessionId])
 
@@ -63,25 +81,44 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
     if (!api.isTauri || loading) {
       setDiagnostics([])
       setSemanticTokens([])
+      setReplaceSemanticTokens(true)
       return
     }
-    const version = ++languageVersion.current
     const timer = window.setTimeout(() => {
+      const version = ++languageVersion.current
       api.syncLanguageDocument(sessionId, filePath, source, version).then(next => {
         if (languageRequest.current === request) {
           setDiagnostics(next.diagnostics)
           setSemanticTokens(decodeSemanticTokens(source, next))
+          setReplaceSemanticTokens(next.syntax_valid)
         }
       }).catch(cause => {
         if (languageRequest.current === request) {
           setDiagnostics([])
-          setSemanticTokens([])
           setError(errorMessage(cause))
         }
       })
     }, 180)
     return () => window.clearTimeout(timer)
   }, [filePath, loading, sessionId, source])
+
+  useEffect(() => {
+    const request = ++validationRequest.current
+    if (!api.isTauri || loading || !replaceSemanticTokens) {
+      setValidationDiagnostics([])
+      return
+    }
+    const timer = window.setTimeout(() => {
+      api.validateSourceText(sessionId, filePath, source).then(next => {
+        if (validationRequest.current === request) {
+          setValidationDiagnostics(next.filter(item => diagnosticBelongsToFile(item, filePath)))
+        }
+      }).catch(() => {
+        // LSP diagnostics remain available when project-level validation cannot run.
+      })
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [filePath, loading, replaceSemanticTokens, sessionId, source])
 
   useEffect(() => () => {
     if (api.isTauri) void api.closeLanguageDocument(sessionId, filePath)
@@ -95,9 +132,12 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       const snapshot = await api.writeSourceText(sessionId, filePath, source)
       drafts.delete(key)
       setBase(source)
+      setValidationDiagnostics([])
       await onSaved(snapshot)
     } catch (cause) {
-      setError(errorMessage(cause))
+      const details = errorDiagnostics(cause).filter(item => diagnosticBelongsToFile(item, filePath))
+      setValidationDiagnostics(details)
+      setError(details.length > 0 ? null : errorMessage(cause))
     } finally {
       setSaving(false)
     }
@@ -113,34 +153,28 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
           <span>{filePath}</span>
           {dirty && <span className="source-editor-dirty" aria-label="有未保存更改" />}
         </div>
-        <div className="source-editor-actions">
-          {error && <span className="source-editor-error" role="alert">{error}</span>}
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => { void save() }}
-            disabled={!dirty || readOnly || saving || !api.isTauri}
-          >
-            <Icon name="save" size={13} aria-hidden />
-            {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
+        {error && <span className="source-editor-error" role="alert" title={error}>{error}</span>}
       </header>
       <div className="source-editor-main">
         <CfdCodeEditor
           value={source}
-          onChange={setSource}
+          onChange={next => {
+            setSource(next)
+            setValidationDiagnostics([])
+            setError(null)
+          }}
           onSave={() => { void save() }}
           readOnly={readOnly}
           semanticTokens={semanticTokens}
-          diagnostics={codeMirrorDiagnostics(source, diagnostics)}
-          onComplete={async position => {
+          replaceSemanticTokens={replaceSemanticTokens}
+          diagnostics={editorDiagnostics}
+          onComplete={async (currentSource, position) => {
             if (!api.isTauri) return []
             const items = await api.completeLanguageDocument(
               sessionId,
               filePath,
-              source,
-              languageVersion.current,
+              currentSource,
+              ++languageVersion.current,
               position,
             )
             return items.map(completionItem)
@@ -148,21 +182,12 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
           autoFocus
         />
       </div>
-      {diagnostics.length > 0 && (
-        <div className="source-editor-diagnostics" role="status">
-          {diagnostics.map((item, index) => (
-            <div key={`${item.code ?? item.message}:${index}`} className={`source-editor-diagnostic ${severityName(item.severity)}`}>
-              <Icon name={item.severity === 1 ? 'error' : item.severity === 2 ? 'warning' : 'info'} size={12} aria-hidden />
-              {item.code && <code>{item.code}</code>}
-              {item.message}
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   )
 }
 
-function severityName(severity: number): string {
-  return severity === 1 ? 'error' : severity === 2 ? 'warning' : 'info'
+function diagnosticBelongsToFile(diagnostic: DiagnosticItem, filePath: string): boolean {
+  const diagnosticPath = diagnostic.file_path?.replace(/\\/g, '/')
+  const sourcePath = filePath.replace(/\\/g, '/')
+  return diagnosticPath === sourcePath || diagnosticPath?.endsWith(`/${sourcePath}`) === true
 }

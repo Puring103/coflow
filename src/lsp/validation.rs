@@ -56,6 +56,7 @@ pub(crate) enum LspRequestDocument<'a> {
 pub(crate) struct CfdRequestDocument<'a> {
     pub(crate) source: &'a str,
     pub(crate) ast: &'a CfdAst,
+    pub(crate) syntax_valid: bool,
     pub(crate) schema: Option<&'a CftSchema>,
     pub(crate) build: Option<&'a LspBuild>,
 }
@@ -255,6 +256,7 @@ impl LspValidationCore {
             return LspRequestDocument::Cfd(CfdRequestDocument {
                 source: &document.source,
                 ast: &document.ast,
+                syntax_valid: document.syntax_valid,
                 schema: self.schema(),
                 build: self.build(),
             });
