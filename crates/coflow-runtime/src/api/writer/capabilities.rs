@@ -1,13 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Static description of the built-in CFD writer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CfdWriterDescriptor {
-    pub id: &'static str,
-    pub display_name: &'static str,
-    pub capabilities: WriterCapabilities,
-}
-
 /// Editing capabilities exposed to the front-end so the UI can grey out
 /// disabled actions.
 #[allow(clippy::struct_excessive_bools)]

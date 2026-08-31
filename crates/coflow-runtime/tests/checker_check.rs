@@ -79,7 +79,7 @@ fn project_statement_runs_for_an_empty_model() {
     assert!(diagnostic.diagnostic.primary.is_none());
     assert!(matches!(
         diagnostic.contexts.as_slice(),
-        [coflow_runtime::CheckDiagnosticContext::Check { name }] if name == "Required"
+        [CheckDiagnosticContext::Check { name }] if name == "Required"
     ));
 }
 
@@ -140,9 +140,9 @@ fn nested_owner_statement_reads_objects_inside_option_values() {
         "Item",
         [(
             "reward",
-            LoadedValueDraft::OptionSome(Box::new(
-                LoadedValueDraft::object_with_declared_type([("count", (-1_i64).into())]),
-            )),
+            LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::object_with_declared_type([
+                ("count", (-1_i64).into()),
+            ]))),
         )],
     );
     let model = builder.build().expect("model");

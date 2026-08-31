@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use crate::api::{
-    CfdDimensionWriter, CfdDocumentWriter, CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet,
-    WriteFieldPathSegment,
-};
+use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use crate::cfd_loader::CfdWriter;
 use crate::data_model::{CfdValue, RecordOrigin};
 
 use crate::dimensions::DimensionField;
@@ -30,23 +28,23 @@ pub(crate) enum MutationExecutionPlan {
 
 pub(crate) struct InsertPlan {
     pub(super) source: CfdSource,
-    pub(super) writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) writer: Arc<CfdWriter>,
 }
 
 pub(crate) struct WriteFieldPlan {
     pub(super) target: WriteTarget,
     pub(super) source: CfdSource,
-    pub(super) writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) writer: Arc<CfdWriter>,
 }
 
 pub(crate) struct DimensionWritePlan {
     pub(super) source: CfdSource,
-    pub(super) manager: Arc<dyn CfdDimensionWriter>,
+    pub(super) manager: Arc<CfdWriter>,
 }
 
 pub(crate) struct DimensionRecordAction {
     pub(super) source: CfdSource,
-    pub(super) manager: Arc<dyn CfdDimensionWriter>,
+    pub(super) manager: Arc<CfdWriter>,
     pub(super) field: DimensionField,
 }
 
@@ -60,7 +58,7 @@ pub(crate) struct RenameWritePlan {
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
     pub(super) source: CfdSource,
-    pub(super) writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) writer: Arc<CfdWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
@@ -70,13 +68,13 @@ pub(crate) struct DeletePlan {
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
     pub(super) source: CfdSource,
-    pub(super) writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) writer: Arc<CfdWriter>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct ReorderPlan {
     pub(super) source: CfdSource,
-    pub(super) writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) writer: Arc<CfdWriter>,
     pub(super) operation: ReorderOperation,
     pub(super) display_path: String,
 }
@@ -87,10 +85,10 @@ pub(crate) struct TransferPlan {
     pub(super) source_origin: RecordOrigin,
     pub(super) source_display_path: String,
     pub(super) source: CfdSource,
-    pub(super) source_writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) source_writer: Arc<CfdWriter>,
     pub(super) destination_display_path: String,
     pub(super) destination: CfdSource,
-    pub(super) destination_writer: Arc<dyn CfdDocumentWriter>,
+    pub(super) destination_writer: Arc<CfdWriter>,
     pub(super) before: Option<ResolvedRecordPosition>,
 }
 
@@ -120,32 +118,32 @@ impl MutationExecutionPlan {
 
     pub(crate) fn visit_sources<E>(
         &self,
-        mut visit: impl FnMut(&CfdSource, Option<&Arc<dyn CfdDocumentWriter>>) -> Result<(), E>,
+        mut visit: impl FnMut(&CfdSource) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Insert(plan) => visit(&plan.source, Some(&plan.writer))?,
-            Self::WriteField(plan) => visit(&plan.source, Some(&plan.writer))?,
-            Self::WriteDimension(plan) => visit(&plan.source, None)?,
+            Self::Insert(plan) => visit(&plan.source)?,
+            Self::WriteField(plan) => visit(&plan.source)?,
+            Self::WriteDimension(plan) => visit(&plan.source)?,
             Self::Rename(RenamePlan::Noop { .. }) | Self::Folded | Self::Noop { .. } => {}
             Self::Rename(RenamePlan::Write(plan)) => {
-                visit(&plan.source, Some(&plan.writer))?;
+                visit(&plan.source)?;
                 for action in &plan.reference_actions {
-                    visit(action.source(), action.writer())?;
+                    visit(action.source())?;
                 }
                 for action in &plan.dimension_actions {
-                    visit(&action.source, None)?;
+                    visit(&action.source)?;
                 }
             }
             Self::Delete(plan) => {
-                visit(&plan.source, Some(&plan.writer))?;
+                visit(&plan.source)?;
                 for action in &plan.dimension_actions {
-                    visit(&action.source, None)?;
+                    visit(&action.source)?;
                 }
             }
-            Self::Reorder(plan) => visit(&plan.source, Some(&plan.writer))?,
+            Self::Reorder(plan) => visit(&plan.source)?,
             Self::Transfer(plan) => {
-                visit(&plan.source, Some(&plan.source_writer))?;
-                visit(&plan.destination, Some(&plan.destination_writer))?;
+                visit(&plan.source)?;
+                visit(&plan.destination)?;
             }
         }
         Ok(())
@@ -169,7 +167,7 @@ pub(crate) fn prepare_mutation_execution(
     match op {
         PreparedMutationOp::InsertRecord { file, .. } => {
             let source = source_for_file(session, file)?;
-            let writer = lookup_source_writer(catalog, &source)?;
+            let writer = lookup_source_writer(catalog);
             Ok(MutationExecutionPlan::Insert(InsertPlan { source, writer }))
         }
         PreparedMutationOp::SetField {
@@ -272,26 +270,9 @@ fn prepare_transfer_record(
         .record(record_ref.id)
         .ok_or_else(|| reorder_invariant("record is missing from the data model"))?;
     let source = source_for_id(session, record_ref.source_id)?;
-    let source_writer = lookup_source_writer(catalog, &source)?;
-    if !source_writer.capabilities(&source).can_delete_record {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-UNSUPPORTED",
-            "WRITE",
-            "source writer does not support transferring records out",
-        )));
-    }
+    let source_writer = lookup_source_writer(catalog);
     let destination = source_for_file(session, destination_file)?;
-    let destination_writer = lookup_source_writer(catalog, &destination)?;
-    if !destination_writer
-        .capabilities(&destination)
-        .can_insert_record
-    {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-UNSUPPORTED",
-            "WRITE",
-            "destination writer does not support transferring records in",
-        )));
-    }
+    let destination_writer = lookup_source_writer(catalog);
 
     let order = session
         .records
@@ -451,7 +432,7 @@ fn reorder_writer(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     record: &RecordRef,
-) -> Result<(CfdSource, Arc<dyn CfdDocumentWriter>), DiagnosticSet> {
+) -> Result<(CfdSource, Arc<CfdWriter>), DiagnosticSet> {
     if matches!(record.origin, RecordOrigin::None) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-REORDER-ORIGIN",
@@ -460,14 +441,7 @@ fn reorder_writer(
         )));
     }
     let source = source_for_id(session, record.source_id)?;
-    let writer = lookup_source_writer(catalog, &source)?;
-    if !writer.capabilities(&source).can_reorder_records {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-UNSUPPORTED",
-            "WRITE",
-            "writer does not support reordering records",
-        )));
-    }
+    let writer = lookup_source_writer(catalog);
     Ok((source, writer))
 }
 
@@ -531,7 +505,7 @@ fn prepare_write_field(
         return Ok(None);
     }
     let source = source_for_id(session, target.source_id)?;
-    let writer = lookup_source_writer(catalog, &source)?;
+    let writer = lookup_source_writer(catalog);
     Ok(Some(WriteFieldPlan {
         target,
         source,
@@ -560,7 +534,7 @@ fn prepare_rename(
         });
     }
     let source = source_for_id(session, target_ref.source_id)?;
-    let writer = lookup_source_writer(catalog, &source)?;
+    let writer = lookup_source_writer(catalog);
     let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
     let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
@@ -595,7 +569,7 @@ fn prepare_delete(
         )));
     };
     let source = source_for_id(session, record_ref.source_id)?;
-    let writer = lookup_source_writer(catalog, &source)?;
+    let writer = lookup_source_writer(catalog);
     let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),

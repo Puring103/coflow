@@ -212,11 +212,13 @@ pub struct CfdWritePlan {
     pub expected_revision: FileRevision,
 }
 
-pub trait CfdDocumentWriter {
-    fn plan(&self, request: &MutationRequest)
-        -> Result<CfdWritePlan, DiagnosticSet>;
-    fn commit(&self, plan: CfdWritePlan)
-        -> Result<FileRevision, DiagnosticSet>;
+pub(crate) struct CfdWriter;
+
+impl CfdWriter {
+    fn write_field(&self, request: &WriteCellRequest<'_>)
+        -> Result<WriteOutcome, DiagnosticSet>;
+    fn write_field_batch(&self, requests: &[WriteCellRequest<'_>])
+        -> Result<Vec<WriteOutcome>, WriteBatchFailure>;
 }
 ```
 
@@ -238,9 +240,8 @@ pub struct CodegenTarget {
 pub struct CodegenInput<'a> {
     pub schema: &'a CftSchema,
     pub model: Option<&'a CfdDataModel>,
-    pub sources: &'a [SourceManifestEntry],
     pub target: &'a CodegenTarget,
-    pub id_as_enum_lock: &'a serde_json::Value,
+    pub id_as_enum_values: &'a IdAsEnumValues,
 }
 
 pub trait CodeGenerator: Send + Sync + std::fmt::Debug {

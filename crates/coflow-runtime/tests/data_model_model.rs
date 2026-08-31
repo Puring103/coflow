@@ -85,11 +85,11 @@ fn invalid_dimension_values_preserve_the_overlay_origin() {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
     builder.add_dimension_value_draft(DimensionValueDraft {
-        source_type: coflow_language::TypeName::new("Item").unwrap(),
-        source_key: coflow_language::RecordKey::new("item").unwrap(),
-        field: coflow_language::FieldName::new("value").unwrap(),
-        dimension: coflow_language::DimensionName::new("platform").unwrap(),
-        variant: coflow_language::VariantName::new("pc").unwrap(),
+        source_type: TypeName::new("Item").unwrap(),
+        source_key: RecordKey::new("item").unwrap(),
+        field: FieldName::new("value").unwrap(),
+        dimension: DimensionName::new("platform").unwrap(),
+        variant: VariantName::new("pc").unwrap(),
         value: LoadedValueDraft::from("not-an-int"),
         origin: origin.clone(),
     });
@@ -199,11 +199,11 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
         [("name", LoadedValueDraft::from("Potion"))],
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
-        source_type: coflow_language::TypeName::new("Item").unwrap(),
-        source_key: coflow_language::RecordKey::new("potion").unwrap(),
-        field: coflow_language::FieldName::new("name").unwrap(),
-        dimension: coflow_language::DimensionName::new("platform").unwrap(),
-        variant: coflow_language::VariantName::new("pc").unwrap(),
+        source_type: TypeName::new("Item").unwrap(),
+        source_key: RecordKey::new("potion").unwrap(),
+        field: FieldName::new("name").unwrap(),
+        dimension: DimensionName::new("platform").unwrap(),
+        variant: VariantName::new("pc").unwrap(),
         value: LoadedValueDraft::from("PC Potion"),
         origin: RecordOrigin::None,
     });
@@ -251,11 +251,11 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
         [("item", LoadedValueDraft::record_ref("potion"))],
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
-        source_type: coflow_language::TypeName::new("Offer").unwrap(),
-        source_key: coflow_language::RecordKey::new("starter").unwrap(),
-        field: coflow_language::FieldName::new("item").unwrap(),
-        dimension: coflow_language::DimensionName::new("platform").unwrap(),
-        variant: coflow_language::VariantName::new("pc").unwrap(),
+        source_type: TypeName::new("Offer").unwrap(),
+        source_key: RecordKey::new("starter").unwrap(),
+        field: FieldName::new("item").unwrap(),
+        dimension: DimensionName::new("platform").unwrap(),
+        variant: VariantName::new("pc").unwrap(),
         value: LoadedValueDraft::record_ref("potion"),
         origin: RecordOrigin::None,
     });
@@ -303,11 +303,11 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
         [("welcome", LoadedValueDraft::from("Welcome"))],
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
-        source_type: coflow_language::TypeName::new("UiText").unwrap(),
-        source_key: coflow_language::RecordKey::new("UiText").unwrap(),
-        field: coflow_language::FieldName::new("welcome").unwrap(),
-        dimension: coflow_language::DimensionName::new("language").unwrap(),
-        variant: coflow_language::VariantName::new("zh").unwrap(),
+        source_type: TypeName::new("UiText").unwrap(),
+        source_key: RecordKey::new("UiText").unwrap(),
+        field: FieldName::new("welcome").unwrap(),
+        dimension: DimensionName::new("language").unwrap(),
+        variant: VariantName::new("zh").unwrap(),
         value: LoadedValueDraft::from("欢迎"),
         origin: RecordOrigin::None,
     });

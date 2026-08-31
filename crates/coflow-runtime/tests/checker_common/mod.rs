@@ -44,11 +44,11 @@ pub(crate) fn run_model_checks(
     model: &CfdDataModel,
     schema: &CftSchema,
 ) -> Result<(), CfdDiagnostics> {
-    check_result(coflow_runtime::execute_checks(
+    check_result(execute_checks(
         schema,
         model,
         base_tasks(schema, model),
-        coflow_runtime::CheckLimits::default(),
+        CheckLimits::default(),
     ))
 }
 
@@ -57,18 +57,18 @@ pub(crate) fn run_model_checks_with_limits(
     schema: &CftSchema,
     structural_limits: StructuralLimits,
 ) -> Result<(), CfdDiagnostics> {
-    check_result(coflow_runtime::execute_checks(
+    check_result(execute_checks(
         schema,
         model,
         base_tasks(schema, model),
-        coflow_runtime::CheckLimits {
+        CheckLimits {
             structure: structural_limits,
-            ..coflow_runtime::CheckLimits::default()
+            ..CheckLimits::default()
         },
     ))
 }
 
-fn check_result(output: coflow_runtime::CheckOutput) -> Result<(), CfdDiagnostics> {
+fn check_result(output: CheckOutput) -> Result<(), CfdDiagnostics> {
     let diagnostics = output
         .results
         .into_iter()
@@ -82,19 +82,16 @@ fn check_result(output: coflow_runtime::CheckOutput) -> Result<(), CfdDiagnostic
     }
 }
 
-pub(crate) fn base_tasks(
-    schema: &CftSchema,
-    model: &CfdDataModel,
-) -> Vec<coflow_runtime::CheckTask> {
+pub(crate) fn base_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     let mut tasks = std::collections::BTreeSet::new();
     for (record, value) in model.records() {
         tasks.extend(
             schema
                 .check_statements_for_actual_type(value.actual_type())
-                .map(|statement| coflow_runtime::CheckTask {
+                .map(|statement| CheckTask {
                     statement,
-                    target: coflow_runtime::CheckTarget::Record(record),
-                    projection: coflow_runtime::CheckProjection::Base,
+                    target: CheckTarget::Record(record),
+                    projection: CheckProjection::Base,
                 }),
         );
     }
@@ -102,10 +99,10 @@ pub(crate) fn base_tasks(
         schema
             .all_check_statements()
             .filter(|statement| matches!(statement.owner, coflow_language::CheckOwner::Project(_)))
-            .map(|statement| coflow_runtime::CheckTask {
+            .map(|statement| CheckTask {
                 statement: statement.id,
-                target: coflow_runtime::CheckTarget::Project,
-                projection: coflow_runtime::CheckProjection::Base,
+                target: CheckTarget::Project,
+                projection: CheckProjection::Base,
             }),
     );
     tasks.into_iter().collect()

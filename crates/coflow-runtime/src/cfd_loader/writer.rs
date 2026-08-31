@@ -1,7 +1,7 @@
 //! Writer that persists field edits back to `.cfd` source text using span
 //! patches against the parsed AST.
 //!
-//! `CfdWriter` is the [`CfdDocumentWriter`] implementation used by sources whose
+//! `CfdWriter` persists sources whose
 //! origin is [`RecordOrigin::File`]. Each write reads and parses the backing
 //! file from disk so transaction rollback and external edits are always
 //! observed by the next operation.
@@ -11,12 +11,15 @@ mod render;
 mod schema_nav;
 mod target;
 
+#[cfg(test)]
+mod tests;
+
 const CFD_INDENT: &str = "  ";
 
 use crate::api::{
-    CfdDocumentWriter, CfdWriterDescriptor, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    WriteBatchFailure, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
+    ReorderRecordsOperation, ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest,
+    WriteOutcome, WriterCapabilities,
 };
 use crate::data_model::RecordOrigin;
 use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -29,26 +32,22 @@ use patch::{
 use std::io::Write;
 use std::path::Path;
 
-pub static CFD_WRITER_DESCRIPTOR: CfdWriterDescriptor = CfdWriterDescriptor {
-    id: "cfd",
-    display_name: "Coflow data text",
-    capabilities: WriterCapabilities {
-        can_edit_field: true,
-        can_edit_key: true,
-        can_insert_record: true,
-        can_delete_record: true,
-        can_reorder_records: true,
-        requires_full_refresh_after_write: true,
-    },
+pub(crate) const CFD_WRITER_CAPABILITIES: WriterCapabilities = WriterCapabilities {
+    can_edit_field: true,
+    can_edit_key: true,
+    can_insert_record: true,
+    can_delete_record: true,
+    can_reorder_records: true,
+    requires_full_refresh_after_write: true,
 };
 
 /// Writer for `.cfd` text sources.
 #[derive(Debug, Default)]
-pub struct CfdWriter;
+pub(crate) struct CfdWriter;
 
 impl CfdWriter {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 
@@ -111,14 +110,9 @@ fn line_column(source: &str, byte_offset: usize) -> (usize, usize) {
     (line, column)
 }
 
-impl CfdDocumentWriter for CfdWriter {
-    fn descriptor(&self) -> &'static CfdWriterDescriptor {
-        &CFD_WRITER_DESCRIPTOR
-    }
-
-    fn write_field(
+impl CfdWriter {
+    pub(crate) fn write_field(
         &self,
-        _ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = request.origin else {
@@ -143,9 +137,8 @@ impl CfdDocumentWriter for CfdWriter {
         Ok(WriteOutcome::default())
     }
 
-    fn write_field_batch(
+    pub(crate) fn write_field_batch(
         &self,
-        _ctx: WriteContext<'_>,
         requests: &[WriteCellRequest<'_>],
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
         let Some(first) = requests.first() else {
@@ -201,9 +194,8 @@ impl CfdDocumentWriter for CfdWriter {
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
-    fn insert_record(
+    pub(crate) fn insert_record(
         &self,
-        _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = request.source.location.path();
@@ -253,9 +245,8 @@ impl CfdDocumentWriter for CfdWriter {
         Ok(WriteOutcome::default())
     }
 
-    fn delete_record(
+    pub(crate) fn delete_record(
         &self,
-        _ctx: WriteContext<'_>,
         request: &DeleteRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = request.origin else {
@@ -281,9 +272,8 @@ impl CfdDocumentWriter for CfdWriter {
         Ok(WriteOutcome::default())
     }
 
-    fn rename_record(
+    pub(crate) fn rename_record(
         &self,
-        _ctx: WriteContext<'_>,
         request: &RenameRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = request.origin else {
@@ -308,9 +298,8 @@ impl CfdDocumentWriter for CfdWriter {
         Ok(WriteOutcome::default())
     }
 
-    fn reorder_records(
+    pub(crate) fn reorder_records(
         &self,
-        _ctx: WriteContext<'_>,
         request: &ReorderRecordsRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = request.source.location.path();

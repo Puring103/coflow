@@ -68,7 +68,7 @@ fn dimension_projection_reads_the_requested_variant_and_attaches_context() {
     );
     assert!(matches!(
         output.results[0].diagnostics[0].contexts.first(),
-        Some(coflow_runtime::CheckDiagnosticContext::Dimension { dimension, variant })
+        Some(CheckDiagnosticContext::Dimension { dimension, variant })
             if dimension == "language" && variant == "zh"
     ));
 }

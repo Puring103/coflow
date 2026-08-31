@@ -355,7 +355,9 @@ impl SessionStore {
             .state
             .read()
             .map_err(|_| EditorError::session("session poisoned during source path lookup"))?;
-        if !session.queries().has_source_file(file_path) && !session.schema_files.contains(file_path) {
+        if !session.queries().has_source_file(file_path)
+            && !session.schema_files.contains(file_path)
+        {
             return Err(EditorError::not_found(format!(
                 "`{file_path}` is not a source file in the current project"
             )));
@@ -852,6 +854,8 @@ fn finalize_mutation(
     if !report.write_ok {
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
+    coflow::commands::migrate_enum_lock_after_mutation(&session.engine, &report)
+        .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
     session.diagnostics =
         Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
     if report.generation_changed {

@@ -8,7 +8,6 @@ use crate::{
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
     ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
-use crate::codegen::{SourceManifestEntry, SourceOrigin};
 
 /// Read-only capability over one immutable project generation.
 ///
@@ -61,26 +60,6 @@ impl<'a> ProjectQueries<'a> {
             .source_files()
             .iter()
             .map(String::as_str)
-    }
-
-    #[must_use]
-    pub fn codegen_source_manifest(self) -> Vec<SourceManifestEntry> {
-        self.source_files()
-            .flat_map(|logical_path| {
-                let entries = self
-                    .session
-                    .dimension_plan
-                    .codegen_entries_for_path(&self.session.project, logical_path);
-                if entries.is_empty() {
-                    vec![SourceManifestEntry {
-                        logical_path: logical_path.to_string(),
-                        origin: SourceOrigin::Project,
-                    }]
-                } else {
-                    entries
-                }
-            })
-            .collect()
     }
 
     #[must_use]
@@ -422,9 +401,7 @@ impl<'a> ProjectQueries<'a> {
             return WriterCapabilities::read_only();
         };
         let _ = entry;
-        crate::cfd_loader::writer::CFD_WRITER_DESCRIPTOR
-            .capabilities
-            .clone()
+        crate::cfd_loader::CFD_WRITER_CAPABILITIES.clone()
     }
 }
 

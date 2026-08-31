@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::api::{CfdDocumentWriter, CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet};
+use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet};
+use crate::cfd_loader::CfdWriter;
 
 use crate::indexes::SourceId;
 use crate::ProjectSession;
@@ -48,9 +49,6 @@ pub(super) fn source_for_file(
     }
 }
 
-pub(super) fn lookup_source_writer(
-    catalog: &CfdSourceCatalog,
-    _source: &CfdSource,
-) -> Result<Arc<dyn CfdDocumentWriter>, DiagnosticSet> {
-    Ok(catalog.writer() as Arc<dyn CfdDocumentWriter>)
+pub(super) fn lookup_source_writer(catalog: &CfdSourceCatalog) -> Arc<CfdWriter> {
+    catalog.writer()
 }

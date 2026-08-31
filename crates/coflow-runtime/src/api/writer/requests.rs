@@ -1,8 +1,7 @@
-use crate::data_model::{CfdDataModel, CfdPathSegment, CfdValue, RecordOrigin};
+use crate::data_model::{CfdPathSegment, CfdValue, RecordOrigin};
 use crate::{CfdSource, DiagnosticSet};
 use coflow_language::CftSchema;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 /// Canonical data-model path segment used by writers and host wire adapters.
 pub type WriteFieldPathSegment = CfdPathSegment;
@@ -19,8 +18,6 @@ pub struct WriteCellRequest<'a> {
     /// Optional pre-resolved schema type for the record. Writers that produce
     /// typed source representations (e.g. CFD) use this for serialization.
     pub schema: &'a CftSchema,
-    /// Original CFD source that produced the record.
-    pub source: &'a CfdSource,
 }
 
 /// Request describing a new top-level record insertion.
@@ -43,7 +40,6 @@ pub struct DeleteRecordRequest<'a> {
     pub origin: &'a RecordOrigin,
     pub record_key: &'a str,
     pub actual_type: &'a str,
-    pub source: &'a CfdSource,
 }
 
 /// A stable record identity paired with its CFD physical origin.
@@ -83,8 +79,6 @@ pub struct RenameRecordRequest<'a> {
     pub old_key: &'a str,
     pub new_key: &'a str,
     pub actual_type: &'a str,
-    pub source: &'a CfdSource,
-    pub schema: &'a CftSchema,
 }
 
 /// Writer diagnostics produced by a successful CFD writer call.
@@ -102,17 +96,4 @@ pub struct WriteOutcome {
 pub struct WriteBatchFailure {
     pub index: usize,
     pub diagnostics: DiagnosticSet,
-}
-
-/// Context passed to writers. Mirrors [`crate::CfdLoadContext`] but for writes.
-#[derive(Debug, Clone, Copy)]
-pub struct WriteContext<'a> {
-    pub project_root: &'a Path,
-    pub schema: &'a CftSchema,
-    /// The current data model. Writers use it to resolve
-    /// [`crate::data_model::CfdRecordId`]s
-    /// inside the request value (e.g. for ref serialization). May be `None`
-    /// when running pre-flight on a value that hasn't been merged into the
-    /// model yet.
-    pub model: Option<&'a CfdDataModel>,
 }

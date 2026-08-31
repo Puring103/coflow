@@ -3,14 +3,13 @@
 //! This is deliberately a value object, not a registration point. Every
 //! project has exactly one text loader and one CFD writer.
 
-use crate::api::CfdDimensionWriter;
 use crate::cfd_loader::{CfdLoader, CfdWriter};
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct CfdSourceCatalog {
-    pub(crate) loader: Arc<CfdLoader>,
-    pub(crate) writer: Arc<CfdWriter>,
+pub(crate) struct CfdSourceCatalog {
+    loader: Arc<CfdLoader>,
+    writer: Arc<CfdWriter>,
 }
 
 impl std::fmt::Debug for CfdSourceCatalog {
@@ -40,7 +39,7 @@ impl CfdSourceCatalog {
         Arc::clone(&self.writer)
     }
 
-    pub(crate) fn dimension_source_manager(&self) -> Arc<dyn CfdDimensionWriter> {
-        Arc::clone(&self.writer) as Arc<dyn CfdDimensionWriter>
+    pub(crate) fn dimension_source_manager(&self) -> Arc<CfdWriter> {
+        Arc::clone(&self.writer)
     }
 }

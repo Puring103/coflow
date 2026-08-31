@@ -2,147 +2,39 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::api::{
-    CfdSource, Diagnostic, DiagnosticSet, SourceTransaction, SourceTransactionCompensation,
-    WriteContext,
-};
+use crate::api::{Diagnostic, DiagnosticSet};
 
 use super::plan::MutationExecutionPlan;
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationTransaction {
     local: LocalFileTransaction,
-    compensations: Vec<CompensationTransaction>,
 }
 
 impl MutationTransaction {
     pub(crate) fn begin<'a>(
-        ctx: WriteContext<'_>,
         plans: impl IntoIterator<Item = &'a MutationExecutionPlan>,
     ) -> Result<Self, DiagnosticSet> {
         let mut transaction = Self::default();
         let mut seen = std::collections::BTreeSet::new();
         for plan in plans {
-            let enlisted = plan.visit_sources(|source, writer| {
-                let key = source_key(source);
-                if !seen.insert(key) {
+            let enlisted = plan.visit_sources(|source| {
+                if !seen.insert(source.location.path().clone()) {
                     return Ok(());
                 }
-                let declared = writer.map_or_else(
-                    || Ok(SourceTransaction::RuntimeSnapshot),
-                    |writer| writer.begin_transaction(ctx, source),
-                )?;
-                transaction.enlist(source, declared)
+                transaction.local.snapshot_file(source.location.path())
             });
             if let Err(mut diagnostics) = enlisted {
-                transaction.abort_into(&mut diagnostics);
+                transaction.local.rollback_into(&mut diagnostics);
                 return Err(diagnostics);
             }
         }
         Ok(transaction)
     }
 
-    fn enlist(
-        &mut self,
-        source: &CfdSource,
-        declared: SourceTransaction,
-    ) -> Result<(), DiagnosticSet> {
-        match declared {
-            SourceTransaction::RuntimeSnapshot => {
-                let path = source.location.path();
-                self.local.snapshot_file(path)?;
-            }
-            SourceTransaction::Compensation(compensation) => {
-                self.compensations.push(CompensationTransaction {
-                    source: source.display_name.clone(),
-                    compensation,
-                });
-            }
-            SourceTransaction::Unsupported => {
-                return Err(SourceTransaction::unsupported_diagnostic(source));
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn commit(mut self) -> Result<(), DiagnosticSet> {
-        let mut failure = None;
-        for writer in &mut self.compensations {
-            if let Err(writer_diagnostics) = writer.compensation.prepare_commit() {
-                failure = Some((writer.source.clone(), writer_diagnostics));
-                break;
-            }
-        }
-        if let Some((source, writer_diagnostics)) = failure {
-            let mut diagnostics = DiagnosticSet::one(transaction_error(
-                "WRITE-TXN-COMMIT",
-                &source,
-                "prepare publication for",
-            ));
-            diagnostics.extend(writer_diagnostics);
-            self.compensate_into(&mut diagnostics);
-            return Err(diagnostics);
-        }
-        for writer in &mut self.compensations {
-            writer.compensation.commit();
-        }
-        Ok(())
-    }
-
-    pub(crate) fn compensate_into(mut self, diagnostics: &mut DiagnosticSet) {
-        for writer in self.compensations.iter_mut().rev() {
-            if let Err(writer_diagnostics) = writer.compensation.compensate() {
-                diagnostics.push(transaction_error(
-                    "WRITE-TXN-COMPENSATE",
-                    &writer.source,
-                    "compensate",
-                ));
-                diagnostics.extend(writer_diagnostics);
-            }
-        }
+    pub(crate) fn compensate_into(self, diagnostics: &mut DiagnosticSet) {
         self.local.rollback_into(diagnostics);
     }
-
-    fn abort_into(&mut self, diagnostics: &mut DiagnosticSet) {
-        for writer in self.compensations.iter_mut().rev() {
-            if let Err(writer_diagnostics) = writer.compensation.abort() {
-                diagnostics.push(transaction_error(
-                    "WRITE-TXN-ABORT",
-                    &writer.source,
-                    "abort",
-                ));
-                diagnostics.extend(writer_diagnostics);
-            }
-        }
-    }
-}
-
-struct CompensationTransaction {
-    source: String,
-    compensation: Box<dyn SourceTransactionCompensation>,
-}
-
-impl std::fmt::Debug for CompensationTransaction {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CompensationTransaction")
-            .field("source", &self.source)
-            .field("compensation", &"..")
-            .finish()
-    }
-}
-
-fn source_key(source: &CfdSource) -> String {
-    let path = source.location.path();
-    format!("path:{}", path.display())
-}
-
-fn transaction_error(code: &str, source: &str, operation: &str) -> Diagnostic {
-    Diagnostic::error(
-        code,
-        "WRITE",
-        format!("failed to {operation} source transaction for `{source}`"),
-    )
 }
 
 #[derive(Debug, Default)]

@@ -1,6 +1,8 @@
 use coflow_runtime::codegen::{CodeArtifactFile, CodeArtifactSet, CodegenError, CodegenRegistry};
-use coflow_runtime::Project;
-use coflow_runtime::Runtime;
+use coflow_runtime::{
+    MutationAppliedOp, MutationReport, Project, RecordCoordinate, Runtime, WriteOutcome,
+};
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -24,6 +26,107 @@ fn write_project() -> TempDir {
     )
     .expect("config");
     dir
+}
+
+fn write_id_as_enum_project(is_flag: bool, records: &str) -> TempDir {
+    let dir = tempfile::tempdir().expect("temp enum project");
+    let flag = if is_flag { "@flag " } else { "" };
+    fs::write(
+        dir.path().join("schema.cft"),
+        format!("{flag}enum ItemId {{}}\n@idAsEnum(ItemId) type Item {{ name: string; }}\n"),
+    )
+    .expect("schema");
+    fs::create_dir_all(dir.path().join("data")).expect("data dir");
+    fs::write(dir.path().join("data/items.cfd"), records).expect("data");
+    fs::write(
+        dir.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
+    )
+    .expect("config");
+    dir
+}
+
+fn active_enum_values(dir: &TempDir) -> serde_json::Map<String, Value> {
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join(".coflow/artifacts/active.json"))
+            .expect("active manifest"),
+    )
+    .expect("valid active manifest");
+    manifest["id_as_enum_values"]["ItemId"]
+        .as_object()
+        .expect("ItemId stable values")
+        .clone()
+}
+
+#[test]
+fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
+    let project_dir = write_id_as_enum_project(
+        false,
+        "beta: Item { name: \"Beta\" }\ngamma: Item { name: \"Gamma\" }\n",
+    );
+    let config = project_dir.path().join("coflow.yaml");
+    let project = Project::open(Some(&config)).expect("open enum project");
+    coflow::commands::generate_project_code(&project).expect("generate initial enum");
+    assert_eq!(active_enum_values(&project_dir)["beta"], 0);
+    assert_eq!(active_enum_values(&project_dir)["gamma"], 1);
+
+    fs::write(
+        project_dir.path().join("data/items.cfd"),
+        "alpha: Item { name: \"Alpha\" }\nbeta: Item { name: \"Beta\" }\ngamma: Item { name: \"Gamma\" }\n",
+    )
+    .expect("insert sorted-first key");
+    let project = Project::open(Some(&config)).expect("reopen enum project");
+    coflow::commands::generate_project_code(&project).expect("regenerate stable enum");
+    let values = active_enum_values(&project_dir);
+    assert_eq!(values["beta"], 0);
+    assert_eq!(values["gamma"], 1);
+    assert_eq!(values["alpha"], 2);
+
+    let session = Runtime::new()
+        .open_write_session(project)
+        .expect("open write session");
+    let old = RecordCoordinate::try_new("Item", "beta").expect("old coordinate");
+    let new = RecordCoordinate::try_new("Item", "delta").expect("new coordinate");
+    let report = MutationReport {
+        write_ok: true,
+        check_ok: true,
+        generation_changed: true,
+        applied: vec![MutationAppliedOp {
+            index: 0,
+            op: "rename_record".to_string(),
+            record: Some(old.clone()),
+            file: Some("data/items.cfd".to_string()),
+            outcome: WriteOutcome {
+                renamed: Some((old, new)),
+                ..Default::default()
+            },
+        }],
+        failed: Vec::new(),
+        affected_files: vec!["data/items.cfd".to_string()],
+        diagnostics: Vec::new(),
+    };
+    assert!(
+        coflow::commands::migrate_enum_lock_after_mutation(&session, &report)
+            .expect("migrate renamed key")
+    );
+    let values = active_enum_values(&project_dir);
+    assert_eq!(values["delta"], 0);
+    assert!(!values.contains_key("beta"));
+
+    let flag_dir = write_id_as_enum_project(
+        true,
+        "first: Item { name: \"First\" }\nsecond: Item { name: \"Second\" }\nthird: Item { name: \"Third\" }\n",
+    );
+    let flag_project =
+        Project::open(Some(&flag_dir.path().join("coflow.yaml"))).expect("open flag enum project");
+    coflow::commands::generate_project_code(&flag_project).expect("generate flag enum");
+    let values = active_enum_values(&flag_dir);
+    assert_eq!(values["first"], 1);
+    assert_eq!(values["second"], 2);
+    assert_eq!(values["third"], 4);
+    let generated = fs::read_to_string(flag_dir.path().join("generated/csharp/ItemId.cs"))
+        .expect("generated flag enum");
+    assert!(generated.contains("None = 0"));
 }
 
 #[test]

@@ -4,8 +4,9 @@ use coflow_runtime::codegen::{CodegenInput, CodegenRegistry, CodegenTarget};
 use coflow_runtime::Project;
 use coflow_runtime::Runtime;
 use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
-use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+mod id_as_enum;
 
 #[derive(Debug)]
 pub enum CommandOutcome<T> {
@@ -43,6 +44,13 @@ pub struct BuildTargetReport {
 pub struct CleanReport {
     pub generations_removed: usize,
     pub staging_removed: usize,
+}
+
+pub fn migrate_enum_lock_after_mutation(
+    session: &coflow_runtime::WriteProjectSession,
+    report: &coflow_runtime::MutationReport,
+) -> Result<bool, DiagnosticSet> {
+    id_as_enum::migrate_after_mutation(session.project(), session.queries(), report)
 }
 
 #[derive(Debug)]
@@ -130,7 +138,8 @@ fn prepare_project_code<T>(
     if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }
-    let source_manifest = session.queries().codegen_source_manifest();
+    let id_as_enum_values =
+        id_as_enum::prepare_values(project, session.queries().id_as_enum_info())?;
     let mut generators = CodegenRegistry::default();
     generators
         .register(CsharpCfdCodeGenerator)
@@ -160,9 +169,8 @@ fn prepare_project_code<T>(
             .generate(CodegenInput {
                 schema: session.schema(),
                 model: Some(session.model()),
-                sources: &source_manifest,
                 target: &codegen_target,
-                id_as_enum_lock: &Value::Null,
+                id_as_enum_values: &id_as_enum_values,
             })
             .map_err(|error| {
                 DiagnosticSet::one(project_diagnostic(
@@ -188,7 +196,7 @@ fn prepare_project_code<T>(
             files: target.files.clone(),
         })
         .collect();
-    let prepared = PreparedCodeRelease::new(project, outputs)?;
+    let prepared = PreparedCodeRelease::new(project, outputs, id_as_enum_values)?;
     finish(prepared, &pending).map(CommandOutcome::Success)
 }
 
