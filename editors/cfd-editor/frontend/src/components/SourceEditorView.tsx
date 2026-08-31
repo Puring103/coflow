@@ -239,7 +239,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
               ++languageVersion.current,
               position,
             )
-            return items.map(completionItem)
+            return items.map(item => completionItem(item, currentSource))
           }}
           autoFocus
         />

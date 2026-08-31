@@ -58,6 +58,20 @@ impl CfdDefinitionIndex {
                     .cloned()
             })
     }
+
+    pub(crate) fn keys(&self, schema: &CftSchema, expected_type: &str) -> Vec<String> {
+        let Some(types) = schema.concrete_assignable_types(expected_type) else {
+            return Vec::new();
+        };
+        let mut keys = types
+            .into_iter()
+            .filter_map(|actual_type| self.records.get(actual_type.as_str()))
+            .flat_map(|records| records.keys().cloned())
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
 }
 
 /// Find the LSP location (uri + range) of a CFT type definition by name.

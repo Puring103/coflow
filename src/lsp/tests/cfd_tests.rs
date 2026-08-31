@@ -158,6 +158,32 @@ type Holder { key: string; item: Item; }\n";
     assert_eq!(messages[0]["result"]["range"]["start"]["line"], 0);
     assert_eq!(messages[0]["result"]["range"]["start"]["character"], 0);
     assert_eq!(messages[0]["result"]["range"]["end"]["character"], 5);
+
+    server.writer.clear();
+    let completion_position = position_from_byte(source, source.find("&sword").expect("reference") + 1);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": source_uri },
+                "position": {
+                    "line": completion_position.line,
+                    "character": completion_position.character
+                }
+            }
+        }))
+        .expect("record reference completion request");
+    let completion_result = written_messages(&server.writer)[0]["result"]
+        .as_array()
+        .expect("completion array")
+        .clone();
+    let sword = completion_result
+        .iter()
+        .find(|item| item["label"] == "sword")
+        .expect("indexed record key completion");
+    assert_eq!(sword["insertText"], "&sword");
 }
 
 #[test]
@@ -428,7 +454,10 @@ fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
         .expect("completion request");
     let completion_result = written_messages(&server.writer)[0]["result"].clone();
     assert_eq!(completion_result[0]["label"], "asd");
-    assert_eq!(completion_result[0]["insertText"], "asd {");
+    assert_eq!(
+        completion_result[0]["insertText"],
+        "asd {\n  name: ${1:\"value\"},\n}"
+    );
     assert_eq!(completion_result[0]["detail"], "new Product record");
 }
 
@@ -511,8 +540,9 @@ type Settings {\n\
     assert_eq!(function_items[0]["label"], "fn");
     assert_eq!(
         function_items[0]["insertText"],
-        "fn(value: int) -> int {\n    \n}"
+        "fn(value: int) -> int {\n    ${1}\n}"
     );
+    assert_eq!(function_items[0]["insertTextFormat"], 2);
 
     let body_items = complete(
         "settings: Settings { compute: fn(value: int) -> int { ret } }",
@@ -544,7 +574,7 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     let completions = cfd::completion(source, &ast, Some(schema), offset);
     assert_eq!(
         completion_labels(completions.as_array().expect("completion array").clone()),
-        vec!["amount", "enabled", "label"]
+        vec!["amount", "enabled", "label", "Message"]
     );
 
     let option_source = "message: Message { enabled: t }";
@@ -557,8 +587,89 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     );
     assert_eq!(
         completion_labels(option_items.as_array().expect("option items").clone()),
-        vec!["None", "true", "false"]
+        vec!["None", "Some", "true", "false"]
     );
+}
+
+#[test]
+fn cfd_formatted_string_completion_includes_nested_paths() {
+    let schema_source = "type Details { count: int; }\n\
+type Message { details: Details; label: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-nested", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"message: Message { details: { count: 1 }, label: "{det}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let offset = source.find("{det}").expect("formatted path") + "{det".len();
+
+    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let labels = completion_labels(items.as_array().expect("formatted completions").clone());
+    assert!(labels.contains(&"details".to_string()));
+    assert!(labels.contains(&"details.count".to_string()));
+}
+
+#[test]
+fn cfd_completion_recurses_through_arrays_and_inline_objects() {
+    let schema_source = "type Child { enabled: bool; label: string = \"default\"; }\n\
+type Root { children: [Child]; child: Child; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-nested-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+
+    let value_source = "root: Root { children: [{ enabled: t, }], child: {}, }";
+    let (value_ast, diagnostics) = parse_cfd(value_source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let value_offset = value_source.find("enabled: t").expect("nested bool") + "enabled: t".len();
+    let value_items = cfd::completion(value_source, &value_ast, Some(schema), value_offset);
+    assert_eq!(
+        completion_labels(value_items.as_array().expect("nested value items").clone()),
+        vec!["true", "false"]
+    );
+
+    let field_offset = value_source.find("child: {").expect("inline object") + "child: {".len();
+    let field_items = cfd::completion(value_source, &value_ast, Some(schema), field_offset);
+    let fields = field_items.as_array().expect("nested field items");
+    assert_eq!(completion_labels(fields.clone()), vec!["enabled", "label"]);
+    assert_eq!(fields[0]["insertText"], "enabled: ${1:true}");
+    assert_eq!(fields[0]["insertTextFormat"], 2);
+    assert_eq!(fields[0]["sortText"], "0enabled");
+    assert_eq!(fields[1]["sortText"], "1label");
+}
+
+#[test]
+fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
+    let schema_source = "type Product { name: string; enabled: bool = true; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-record-snippet", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let (ast, diagnostics) = parse_cfd("");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let items = cfd::completion("", &ast, Some(schema), 0);
+    let product = items
+        .as_array()
+        .expect("top-level items")
+        .iter()
+        .find(|item| item["label"] == "Product")
+        .expect("Product completion");
+    assert_eq!(product["insertTextFormat"], 2);
+    assert_eq!(
+        product["insertText"],
+        "${1:key}: Product {\n  name: ${2:\"value\"},\n}"
+    );
+}
+
+#[test]
+fn cfd_flag_completion_excludes_variants_already_in_an_incomplete_expression() {
+    let schema_source = "@flag enum Access { Read = 1, Write = 2, Execute = 4, }\n\
+type Settings { access: Access; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-flag-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = "settings: Settings { access: Read |  }";
+    let (ast, _) = parse_cfd(source);
+    let offset = source.find('|').expect("flag operator") + 2;
+
+    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let labels = completion_labels(items.as_array().expect("flag completions").clone());
+    assert_eq!(labels, vec!["Write", "Execute"]);
 }
 
 #[test]
@@ -705,4 +816,20 @@ fn function_document_rebuilds_source_and_reports_body_errors() {
     assert!(result["diagnostics"]
         .as_array()
         .is_some_and(|diagnostics| !diagnostics.is_empty()));
+}
+
+#[test]
+fn function_document_completion_includes_local_variables_and_snippets() {
+    let source = "fn(value: int) -> int { var total = value; return total; }";
+    let result = cfd::function_document(&json!({ "source": source }));
+    let completions = result["completions"].as_array().expect("completions");
+    assert!(completions.iter().any(|item| {
+        item["label"] == "total" && item["detail"] == "local variable"
+    }));
+    let len = completions
+        .iter()
+        .find(|item| item["label"] == "len")
+        .expect("builtin completion");
+    assert_eq!(len["insertText"], "len(${1})");
+    assert_eq!(len["insertTextFormat"], 2);
 }

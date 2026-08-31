@@ -44,6 +44,14 @@ pub(crate) fn completion_items(
         return Vec::new();
     }
 
+    if let Some(items) = annotation_argument_completion_items(build, line_prefix) {
+        return items;
+    }
+
+    if let Some(items) = module_path_completion_items(build, line_prefix) {
+        return items;
+    }
+
     if is_type_predicate_context(line_prefix) {
         return named_type_completion_items(build);
     }
@@ -59,7 +67,10 @@ pub(crate) fn completion_items(
     if let Some(chain) = receiver_chain_before_dot(line_prefix) {
         let mut items = dot_completion_items(build, document, offset, &chain);
         if scope == CompletionScope::CheckBlock {
-            items.extend(function_completion_items());
+            items.extend(type_of_chain(build, document, offset, &chain).map_or_else(
+                function_completion_items,
+                |receiver| function_completion_items_for_type(&receiver),
+            ));
         }
         return items;
     }
@@ -69,13 +80,18 @@ pub(crate) fn completion_items(
     }
 
     if is_type_header_parent_context(line_prefix) {
-        return named_type_completion_items(build);
+        return inheritable_type_completion_items(build, line_prefix);
+    }
+
+
+    if is_const_type_context(line_prefix) || is_type_alias_target_context(line_prefix) {
+        return type_completion_items(build);
     }
 
     match scope {
         CompletionScope::TopLevel => {
             if is_const_value_context(line_prefix) {
-                return const_value_completion_items();
+                return const_value_completion_items_for_context(build, document, offset);
             }
             top_level_completion_items(line_prefix)
         }
@@ -231,28 +247,78 @@ fn literal_completion_items() -> Vec<Value> {
 fn function_completion_items() -> Vec<Value> {
     CftCheckBuiltin::ALL
         .into_iter()
-        .map(|builtin| {
-            let label = builtin.name();
-            let documentation = builtin.documentation();
-            let mut item = completion_item(
-                label,
-                COMPLETION_KIND_FUNCTION,
-                "CFT built-in function",
-                Some(documentation),
-            );
-            let arguments = (1..=builtin.method_arity())
-                .map(|index| format!("${{{index}:value}}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            insert_object_field(
-                &mut item,
-                "insertText",
-                json!(format!("{label}({arguments})")),
-            );
-            insert_object_field(&mut item, "insertTextFormat", json!(2));
-            item
-        })
+        .map(builtin_completion_item)
         .collect()
+}
+
+pub(crate) fn function_completion_items_for_type(receiver: &coflow_language::CftValueType) -> Vec<Value> {
+    CftCheckBuiltin::ALL
+        .into_iter()
+        .filter(|builtin| builtin_supports_receiver(*builtin, receiver))
+        .map(builtin_completion_item)
+        .collect()
+}
+
+fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
+    let label = builtin.name();
+    let mut item = completion_item(
+        label,
+        COMPLETION_KIND_FUNCTION,
+        "CFT built-in function",
+        Some(builtin.documentation()),
+    );
+    let arguments = (1..=builtin.method_arity())
+        .map(|index| format!("${{{index}:value}}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    insert_object_field(
+        &mut item,
+        "insertText",
+        json!(format!("{label}({arguments})")),
+    );
+    insert_object_field(&mut item, "insertTextFormat", json!(2));
+    item
+}
+
+fn builtin_supports_receiver(builtin: CftCheckBuiltin, receiver: &coflow_language::CftValueType) -> bool {
+    use CftCheckBuiltin::{
+        Abs, ApproxEqual, Contains, ContainsKey, ContainsValue, EndsWith, Intersects, IsBlank,
+        IsDisjoint, IsFinite, IsSorted, IsStrictlySorted, IsSubsetOf, IsSupersetOf, Keys, Len,
+        Matches, Max, Min, StartsWith, Sum, Unique, Values,
+    };
+    let receiver = TypeRefLike::from(receiver);
+    match builtin {
+        Len => matches!(receiver, TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict),
+        Contains => matches!(receiver, TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict),
+        Unique | Min | Max | Sum | IsSorted | IsStrictlySorted | Intersects | IsDisjoint
+        | IsSubsetOf | IsSupersetOf => matches!(receiver, TypeRefLike::Array),
+        Keys | Values | ContainsKey | ContainsValue => matches!(receiver, TypeRefLike::Dict),
+        Matches | StartsWith | EndsWith | IsBlank => matches!(receiver, TypeRefLike::String),
+        Abs => matches!(receiver, TypeRefLike::Int | TypeRefLike::Float),
+        IsFinite | ApproxEqual => matches!(receiver, TypeRefLike::Float),
+    }
+}
+
+enum TypeRefLike {
+    Int,
+    Float,
+    String,
+    Array,
+    Dict,
+    Other,
+}
+
+impl<'a> From<&'a coflow_language::CftValueType> for TypeRefLike {
+    fn from(value: &'a coflow_language::CftValueType) -> Self {
+        match value {
+            coflow_language::CftValueType::Int => Self::Int,
+            coflow_language::CftValueType::Float => Self::Float,
+            coflow_language::CftValueType::String => Self::String,
+            coflow_language::CftValueType::Array(_) => Self::Array,
+            coflow_language::CftValueType::Dict(_, _) => Self::Dict,
+            _ => Self::Other,
+        }
+    }
 }
 
 fn check_structure_completion_items() -> Vec<Value> {
@@ -287,6 +353,30 @@ fn is_method_completion_context(source: &str, offset: usize) -> bool {
 
 fn const_value_completion_items() -> Vec<Value> {
     literal_completion_items()
+}
+
+fn const_value_completion_items_for_context(
+    build: &LspBuild,
+    document: &LspDocument,
+    offset: usize,
+) -> Vec<Value> {
+    let ty = document.ast().and_then(|ast| {
+        ast.items.iter().find_map(|item| match item {
+            Item::Const(constant) if constant.span.start <= offset && offset <= constant.span.end => {
+                constant.ty.as_ref()
+            }
+            _ => None,
+        })
+    });
+    let Some(ty) = ty else {
+        let mut items = const_value_completion_items();
+        items.extend(const_completion_items(build));
+        return items;
+    };
+    let mut items = Vec::new();
+    collect_default_items_for_type(build, ty, &mut items);
+    items.extend(const_completion_items_for_type(build, ty));
+    items
 }
 
 fn field_default_completion_items(
@@ -526,6 +616,131 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     }
     append_type_alias_completion_items(build, &mut items);
     items
+}
+
+fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
+    let current_name = line_prefix
+        .split_once("type")
+        .and_then(|(_, suffix)| suffix.trim_start().split_whitespace().next());
+    let Some(schema) = build.schema() else {
+        return named_type_completion_items(build);
+    };
+    schema
+        .all_types()
+        .filter(|candidate| !candidate.is_sealed)
+        .filter(|candidate| current_name != Some(candidate.name.as_str()))
+        .filter(|candidate| {
+            current_name.is_none_or(|current| !type_descends_from(schema, &candidate.name, current))
+        })
+        .map(|candidate| {
+            completion_item(
+                &candidate.name,
+                COMPLETION_KIND_CLASS,
+                "CFT base type",
+                None,
+            )
+        })
+        .collect()
+}
+
+fn type_descends_from(schema: &coflow_language::CftSchema, candidate: &str, ancestor: &str) -> bool {
+    let mut current = schema.resolve_type(candidate);
+    while let Some(ty) = current {
+        let Some(parent) = ty.parent.as_deref() else {
+            return false;
+        };
+        if parent == ancestor {
+            return true;
+        }
+        current = schema.resolve_type(parent);
+    }
+    false
+}
+
+fn annotation_argument_completion_items(build: &LspBuild, line_prefix: &str) -> Option<Vec<Value>> {
+    let trimmed = line_prefix.trim_end();
+    let (annotation, detail, labels): (&str, &str, Vec<String>) = if annotation_argument_open(trimmed, "@dimension") {
+        (
+            "@dimension",
+            "Configured dimension",
+            build
+                .schema()?
+                .all_dimensions()
+                .map(|dimension| dimension.name.to_string())
+                .collect(),
+        )
+    } else if annotation_argument_open(trimmed, "@idAsEnum") {
+        (
+            "@idAsEnum",
+            "CFT enum",
+            build
+                .schema()?
+                .all_enums()
+                .map(|enum_def| enum_def.name.to_string())
+                .collect(),
+        )
+    } else {
+        return None;
+    };
+    Some(
+        labels
+            .into_iter()
+            .map(|label| completion_item(&label, COMPLETION_KIND_ENUM, detail, Some(annotation)))
+            .collect(),
+    )
+}
+
+fn annotation_argument_open(line_prefix: &str, annotation: &str) -> bool {
+    let Some(start) = line_prefix.rfind(annotation) else {
+        return false;
+    };
+    let suffix = &line_prefix[start + annotation.len()..];
+    suffix.trim_start().starts_with('(') && !suffix.contains(')')
+}
+
+fn module_path_completion_items(build: &LspBuild, line_prefix: &str) -> Option<Vec<Value>> {
+    let trimmed = line_prefix.trim_start();
+    let (keyword, suffix) = if let Some(suffix) = trimmed.strip_prefix("namespace ") {
+        ("namespace", suffix)
+    } else if let Some(suffix) = trimmed.strip_prefix("use ") {
+        ("use", suffix)
+    } else {
+        return None;
+    };
+    if suffix.contains(';') || suffix.contains(" as ") {
+        return None;
+    }
+    let mut items = build
+        .documents
+        .keys()
+        .map(|module| {
+            completion_item(
+                module,
+                COMPLETION_KIND_PROPERTY,
+                "CFT module",
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    if keyword == "use" {
+        if let Some(schema) = build.schema() {
+            items.extend(schema.all_types().map(|ty| {
+                let label = format!("{}::{}", ty.module, ty.name);
+                completion_item(&label, COMPLETION_KIND_CLASS, "Imported CFT type", None)
+            }));
+            items.extend(schema.all_enums().map(|enum_def| {
+                let label = format!("{}::{}", enum_def.module, enum_def.name);
+                completion_item(&label, COMPLETION_KIND_ENUM, "Imported CFT enum", None)
+            }));
+        }
+        items.push(completion_item(
+            "as",
+            COMPLETION_KIND_KEYWORD,
+            "Import alias",
+            None,
+        ));
+    }
+    Some(items)
 }
 
 fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<Value>) {
@@ -825,6 +1040,19 @@ pub(crate) fn is_value_typeerence_context(line_prefix: &str) -> bool {
 pub(crate) fn is_const_value_context(line_prefix: &str) -> bool {
     let trimmed = line_prefix.trim_end();
     trimmed.contains("const ") && trimmed.contains('=') && !trimmed.contains(';')
+}
+
+fn is_const_type_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_start();
+    trimmed.starts_with("const ")
+        && trimmed.contains(':')
+        && !trimmed.contains('=')
+        && !trimmed.contains(';')
+}
+
+fn is_type_alias_target_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_start();
+    trimmed.starts_with("type ") && trimmed.contains('=') && !trimmed.contains(';')
 }
 
 pub(crate) fn is_field_default_context(line_prefix: &str) -> bool {

@@ -618,7 +618,13 @@ impl<W: Write> LspServer<W> {
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
                 let offset = byte_offset_from_position(document.source, request.position);
-                cfd::completion(document.source, document.ast, document.schema, offset)
+                cfd::completion_with_build(
+                    document.source,
+                    document.ast,
+                    document.schema,
+                    document.build,
+                    offset,
+                )
             }
             LspRequestDocument::Cft { build, document } => {
                 json!(completion_items(build, document, &request.position))

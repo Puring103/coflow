@@ -115,6 +115,18 @@ fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
         .into_iter()
         .flatten()
         .filter_map(|item| {
+            let text_edit = item.get("textEdit").and_then(|edit| {
+                Some(LanguageTextEdit {
+                    range: language_range(edit.get("range")?)?,
+                    new_text: edit.get("newText")?.as_str()?.to_string(),
+                })
+            });
+            let documentation = item.get("documentation").and_then(|documentation| {
+                documentation
+                    .as_str()
+                    .or_else(|| documentation.get("value").and_then(Value::as_str))
+                    .map(str::to_string)
+            });
             Some(LanguageCompletion {
                 label: item.get("label")?.as_str()?.to_string(),
                 detail: item.get("detail").and_then(Value::as_str).map(str::to_string),
@@ -126,6 +138,17 @@ fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
                     .get("insertText")
                     .and_then(Value::as_str)
                     .map(str::to_string),
+                insert_text_format: item
+                    .get("insertTextFormat")
+                    .and_then(Value::as_u64)
+                    .and_then(|format| u32::try_from(format).ok()),
+                documentation,
+                sort_text: item.get("sortText").and_then(Value::as_str).map(str::to_string),
+                filter_text: item
+                    .get("filterText")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                text_edit,
             })
         })
         .collect()

@@ -47,4 +47,18 @@ describe('LSP CodeMirror adapter', () => {
     expect(completionItem({ label: 'true', kind: 14 })).toMatchObject({ type: 'keyword' })
     expect(completionItem({ label: 'fn', kind: 3 })).toMatchObject({ type: 'function' })
   })
+
+  it('preserves completion documentation and precise text edits', () => {
+    const item = completionItem({
+      label: 'enabled',
+      documentation: 'Whether the feature is enabled.',
+      text_edit: {
+        range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } },
+        new_text: 'enabled: ${1:true}',
+      },
+      insert_text_format: 2,
+    }, 'root\n  en')
+    expect(item.info).toBe('Whether the feature is enabled.')
+    expect(item.apply).toBeTypeOf('function')
+  })
 })

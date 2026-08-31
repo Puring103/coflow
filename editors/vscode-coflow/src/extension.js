@@ -937,14 +937,16 @@ function lspCompletionItemToVsCode(raw) {
       ? markdown(raw.documentation)
       : raw.documentation;
   }
-  if (raw.insertText) {
+  const insertedText = raw.textEdit?.newText || raw.insertText;
+  if (insertedText) {
     item.insertText = raw.insertTextFormat === 2
-      ? new vscode.SnippetString(raw.insertText)
-      : raw.insertText;
+      ? new vscode.SnippetString(insertedText)
+      : insertedText;
   }
   item.sortText = raw.sortText;
-  if (raw.range) {
-    item.range = lspRangeToVsCode(raw.range);
+  item.filterText = raw.filterText;
+  if (raw.textEdit?.range || raw.range) {
+    item.range = lspRangeToVsCode(raw.textEdit?.range || raw.range);
   }
   return item;
 }

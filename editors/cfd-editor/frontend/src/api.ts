@@ -86,6 +86,11 @@ export interface LanguageCompletion {
   detail?: string
   kind?: number
   insert_text?: string
+  insert_text_format?: number
+  documentation?: string
+  sort_text?: string
+  filter_text?: string
+  text_edit?: LanguageTextEdit
 }
 
 export interface FunctionDocumentState extends LanguageDocumentState {

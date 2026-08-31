@@ -15,6 +15,7 @@ use super::semantic_tokens::{
     SEM_FUNCTION, SEM_KEYWORD, SEM_NAMESPACE, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
     SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
+use super::LspBuild;
 
 const FUNCTION_KEYWORDS: &[&str] = &[
     "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
@@ -173,7 +174,7 @@ pub fn function_document(params: &Value) -> Value {
         "bodyRange": byte_range(&source, body_start, body_end),
         "diagnostics": diagnostics,
         "semanticTokens": collector.into_lsp_data(),
-        "completions": function_completion_items(&parts.signature),
+        "completions": function_completion_items_with_locals(parts.signature, &source),
     })
 }
 
@@ -247,12 +248,42 @@ fn function_completion_items(signature: &str) -> Vec<Value> {
         .chain(FUNCTION_TYPES.iter().map(|label| json!({ "label": label, "kind": 7 })))
         .collect::<Vec<_>>();
     items.extend(FUNCTION_BUILTINS.iter().map(|label| {
-        json!({ "label": label, "kind": 2, "insertText": format!("{label}()") })
+        json!({
+            "label": label,
+            "kind": 2,
+            "insertText": format!("{label}(${{1}})"),
+            "insertTextFormat": 2,
+        })
     }));
     items.extend(function_parameter_names(signature).into_iter().map(|label| {
         json!({ "label": label, "kind": 6, "detail": "function parameter" })
     }));
     items
+}
+
+fn function_completion_items_with_locals(signature: &str, source: &str) -> Vec<Value> {
+    let mut items = function_completion_items(signature);
+    items.extend(function_local_names(source).into_iter().map(|label| {
+        json!({ "label": label, "kind": 6, "detail": "local variable" })
+    }));
+    items
+}
+
+fn function_local_names(source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut tokens = source
+        .split(|character: char| !(character == '_' || character.is_alphanumeric()))
+        .filter(|token| !token.is_empty());
+    while let Some(token) = tokens.next() {
+        if token == "var" {
+            if let Some(name) = tokens.next() {
+                if !names.iter().any(|existing| existing == name) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names
 }
 
 fn function_parameter_names(signature: &str) -> Vec<&str> {
@@ -644,30 +675,65 @@ pub fn hover(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usi
 }
 
 /// Completion: field names when cursor is inside a record body.
+#[cfg(test)]
 pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset: usize) -> Value {
+    completion_with_build(source, ast, schema, None, offset)
+}
+
+pub(crate) fn completion_with_build(
+    source: &str,
+    ast: &CfdAst,
+    schema: Option<&CftSchema>,
+    build: Option<&LspBuild>,
+    offset: usize,
+) -> Value {
     if let Some(function) = function_at(ast, offset) {
         let body_start = function.body_span.start.saturating_sub(function.span.start);
         let signature_end = body_start.saturating_sub(1);
         let signature = function.source.get(..signature_end).unwrap_or(&function.source);
-        return json!(function_completion_items(signature));
+        return json!(function_completion_items_with_locals(signature, &function.source));
     }
     let Some(schema) = schema else {
         return json!([]);
     };
-    if let Some(items) = formatted_string_completion(ast, schema, offset) {
+    if let Some(items) = formatted_string_completion(source, ast, schema, build, offset) {
         return json!(items);
     }
     if let Some((key, _, group_type)) = incomplete_group_key_at(source, schema, offset) {
+        let fields = required_field_snippets(schema, &group_type, 1);
+        let body = if fields.is_empty() {
+            String::new()
+        } else {
+            format!("\n  {}\n", fields.join("\n  "))
+        };
         return json!([{
             "label": key,
             "kind": 7,
             "detail": format!("new {group_type} record"),
-            "insertText": format!("{key} {{"),
+            "insertText": format!("{key} {{{body}}}"),
+            "insertTextFormat": 2,
         }]);
     }
 
-    if let Some(value_type) = completion_value_type(source, ast, schema, offset) {
-        return json!(value_completion_items(schema, value_type));
+    if let Some(context) = completion_context(source, ast, schema, offset) {
+        return json!(match context {
+            CompletionContext::Value(value_type) => {
+                let mut items = selected_flag_values(source, offset, schema, value_type).map_or_else(
+                    || value_completion_items(schema, value_type, build),
+                    |selected| flag_completion_items(schema, value_type, &selected),
+                );
+                attach_value_text_edits(source, offset, &mut items);
+                items
+            }
+            CompletionContext::Flags { value_type, selected } => {
+                let mut items = flag_completion_items(schema, value_type, &selected);
+                attach_value_text_edits(source, offset, &mut items);
+                items
+            }
+            CompletionContext::Fields { type_name, existing } => {
+                field_completion_items(source, schema, type_name, &existing, offset)
+            }
+        });
     }
 
     for record in &ast.records {
@@ -679,17 +745,7 @@ pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset
         };
         let existing: std::collections::BTreeSet<&str> =
             record.fields().map(|f| f.name.as_str()).collect();
-        let items: Vec<Value> = schema_type
-            .all_fields()
-            .filter(|f| !existing.contains(f.name.as_str()))
-            .map(|f| {
-                json!({
-                    "label": f.name.as_str(),
-                    "kind": 5,  // Field
-                    "detail": fmt_value_type(&f.value_type),
-                })
-            })
-            .collect();
+        let items = field_completion_items(source, schema, &schema_type.name, &existing, offset);
         return json!(items);
     }
 
@@ -698,17 +754,7 @@ pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset
             return json!([]);
         };
         let existing = recovered_field_names(source, body_start, offset);
-        let items: Vec<Value> = schema_type
-            .all_fields()
-            .filter(|field| !existing.contains(field.name.as_str()))
-            .map(|field| {
-                json!({
-                    "label": field.name.as_str(),
-                    "kind": 5,
-                    "detail": fmt_value_type(&field.value_type),
-                })
-            })
-            .collect();
+        let items = field_completion_items(source, schema, &schema_type.name, &existing, offset);
         return json!(items);
     }
 
@@ -716,14 +762,30 @@ pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset
     let types: Vec<Value> = schema
         .all_types()
         .filter(|t| !t.is_abstract)
-        .map(|t| json!({ "label": t.name.as_str(), "kind": 7 }))
+        .map(|t| {
+            let required = required_field_snippets(schema, &t.name, 2);
+            let body = if required.is_empty() {
+                String::new()
+            } else {
+                format!("\n  {}\n", required.join("\n  "))
+            };
+            json!({
+                "label": t.name.as_str(),
+                "kind": 7,
+                "detail": format!("new {} record", t.name),
+                "insertText": format!("${{1:key}}: {} {{{body}}}", t.name),
+                "insertTextFormat": 2,
+            })
+        })
         .collect();
     json!(types)
 }
 
 fn formatted_string_completion(
+    source: &str,
     ast: &CfdAst,
     schema: &CftSchema,
+    build: Option<&LspBuild>,
     offset: usize,
 ) -> Option<Vec<Value>> {
     let record = ast.records.iter().find(|record| {
@@ -733,50 +795,226 @@ fn formatted_string_completion(
         })
     })?;
     let schema_type = schema.resolve_type(&record.type_name)?;
+    let open = source.get(record.span.start..offset)?.rfind('{')? + record.span.start;
+    let prefix = source.get(open + 1..offset)?.trim();
+    let parts = prefix.split('.').collect::<Vec<_>>();
+    let mut paths = Vec::new();
+
+    if parts.len() >= 2 && schema.resolve_type(parts[0]).is_some() {
+        let type_name = parts[0];
+        if parts.len() == 2 {
+            if let Some(build) = build {
+                paths.extend(
+                    build
+                        .cfd_definitions
+                        .keys(schema, type_name)
+                        .into_iter()
+                        .map(|key| (format!("{type_name}.{key}"), format!("{type_name} record"))),
+                );
+            }
+        } else {
+            let path_prefix = parts[..parts.len() - 1].join(".");
+            collect_formatted_field_paths(schema, type_name, &path_prefix, 2, &mut paths);
+        }
+    } else if let Some((owner, path_prefix)) = formatted_path_owner(schema, schema_type.name.as_str(), &parts) {
+        collect_formatted_field_paths(schema, owner, &path_prefix, 2, &mut paths);
+    } else {
+        collect_formatted_field_paths(schema, schema_type.name.as_str(), "", 3, &mut paths);
+        paths.extend(schema.all_types().map(|ty| {
+            (ty.name.to_string(), "record type".to_string())
+        }));
+    }
+
+    let range = formatted_reference_range(source, offset);
     Some(
-        schema_type
-            .all_fields()
-            .map(|field| {
-                json!({
-                    "label": field.name.as_str(),
-                    "kind": 5,
-                    "detail": format!("formatted field: {}", fmt_value_type(&field.value_type)),
-                })
-            })
+        paths
+            .into_iter()
+            .map(|(label, detail)| json!({
+                "label": label,
+                "kind": 5,
+                "detail": detail,
+                "textEdit": {
+                    "range": byte_range(source, range.start, range.end),
+                    "newText": label,
+                },
+            }))
             .collect(),
     )
 }
 
-fn completion_value_type<'a>(
+fn collect_formatted_field_paths(
+    schema: &CftSchema,
+    type_name: &str,
+    prefix: &str,
+    depth: usize,
+    paths: &mut Vec<(String, String)>,
+) {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return;
+    };
+    for field in schema_type.all_fields() {
+        let label = if prefix.is_empty() {
+            field.name.to_string()
+        } else {
+            format!("{prefix}.{}", field.name)
+        };
+        paths.push((
+            label.clone(),
+            format!("formatted field: {}", fmt_value_type(&field.value_type)),
+        ));
+        if depth > 1 {
+            if let CftValueType::Object(nested) = &field.value_type {
+                collect_formatted_field_paths(schema, nested, &label, depth - 1, paths);
+            }
+        }
+    }
+}
+
+fn formatted_path_owner<'a>(
+    schema: &'a CftSchema,
+    root_type: &'a str,
+    parts: &[&str],
+) -> Option<(&'a str, String)> {
+    if parts.len() < 2 {
+        return None;
+    }
+    let mut owner = root_type;
+    for part in &parts[..parts.len() - 1] {
+        let field = schema.resolve_type(owner)?.field(part)?;
+        let CftValueType::Object(nested) = &field.value_type else {
+            return None;
+        };
+        owner = nested;
+    }
+    Some((owner, parts[..parts.len() - 1].join(".")))
+}
+
+fn formatted_reference_range(source: &str, offset: usize) -> Span {
+    let end = offset.min(source.len());
+    let start = source[..end]
+        .char_indices()
+        .rev()
+        .take_while(|(_, character)| {
+            *character == '_' || *character == '.' || character.is_alphanumeric()
+        })
+        .map(|(index, _)| index)
+        .last()
+        .unwrap_or(end);
+    Span::new(start, end)
+}
+
+enum CompletionContext<'a> {
+    Value(&'a CftValueType),
+    Flags {
+        value_type: &'a CftValueType,
+        selected: std::collections::BTreeSet<String>,
+    },
+    Fields {
+        type_name: &'a str,
+        existing: std::collections::BTreeSet<&'a str>,
+    },
+}
+
+fn completion_context<'a>(
     source: &str,
-    ast: &CfdAst,
+    ast: &'a CfdAst,
     schema: &'a CftSchema,
     offset: usize,
-) -> Option<&'a CftValueType> {
+) -> Option<CompletionContext<'a>> {
     for record in &ast.records {
         let Some(schema_type) = schema.resolve_type(&record.type_name) else {
             continue;
         };
         for field in &record.fields {
             if offset >= field.name_span.end && offset <= field.span.end {
-                return schema_type
+                let value_type = schema_type
                     .all_fields()
                     .find(|candidate| candidate.name.as_str() == field.name)
-                    .map(|candidate| &candidate.value_type);
+                    .map(|candidate| &candidate.value_type)?;
+                return completion_context_in_value(&field.value, schema, value_type, offset);
             }
         }
     }
 
     let (type_name, body_start) = record_context_at(source, schema, offset)?;
     let field_name = recovered_field_context(source, body_start, offset).1?;
-    schema
+    let value_type = schema
         .resolve_type(&type_name)?
         .all_fields()
         .find(|field| field.name.as_str() == field_name)
-        .map(|field| &field.value_type)
+        .map(|field| &field.value_type)?;
+    Some(CompletionContext::Value(value_type))
 }
 
-fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<Value> {
+fn completion_context_in_value<'a>(
+    value: &'a CfdValue,
+    schema: &'a CftSchema,
+    expected: &'a CftValueType,
+    offset: usize,
+) -> Option<CompletionContext<'a>> {
+    match (value, expected) {
+        (CfdValue::BitExpr(expression), CftValueType::Enum(_)) => {
+            let mut selected = std::collections::BTreeSet::new();
+            collect_bit_expr_values(expression, &mut selected);
+            Some(CompletionContext::Flags {
+                value_type: expected,
+                selected,
+            })
+        }
+        (CfdValue::Array(items, _), CftValueType::Array(inner)) => {
+            for item in items {
+                if offset >= item.span().start && offset <= item.span().end {
+                    return completion_context_in_value(item, schema, inner, offset);
+                }
+            }
+            Some(CompletionContext::Value(inner))
+        }
+        (CfdValue::OptionSome(inner_value, _), CftValueType::Option(inner)) => {
+            completion_context_in_value(inner_value, schema, inner, offset)
+        }
+        (CfdValue::ResultOk(inner_value, _), CftValueType::Result(ok, _)) => {
+            completion_context_in_value(inner_value, schema, ok, offset)
+        }
+        (CfdValue::ResultErr(inner_value, _), CftValueType::Result(_, error)) => {
+            completion_context_in_value(inner_value, schema, error, offset)
+        }
+        (CfdValue::Block(block), CftValueType::Dict(_, value_type)) => {
+            for field in &block.fields {
+                if offset >= field.name_span.end && offset <= field.span.end {
+                    return completion_context_in_value(&field.value, schema, value_type, offset);
+                }
+            }
+            Some(CompletionContext::Value(value_type))
+        }
+        (CfdValue::Block(block), CftValueType::Object(expected_name)) => {
+            let actual_name = block
+                .type_marker
+                .as_ref()
+                .map_or(expected_name.as_str(), |(name, _)| name.as_str());
+            let actual_type = schema.resolve_type(actual_name)?;
+            for field in &block.fields {
+                if offset >= field.name_span.end && offset <= field.span.end {
+                    let field_type = actual_type
+                        .all_fields()
+                        .find(|candidate| candidate.name.as_str() == field.name)
+                        .map(|candidate| &candidate.value_type)?;
+                    return completion_context_in_value(&field.value, schema, field_type, offset);
+                }
+            }
+            Some(CompletionContext::Fields {
+                type_name: actual_type.name.as_str(),
+                existing: block.fields.iter().map(|field| field.name.as_str()).collect(),
+            })
+        }
+        _ => Some(CompletionContext::Value(expected)),
+    }
+}
+
+fn value_completion_items(
+    schema: &CftSchema,
+    value_type: &CftValueType,
+    build: Option<&LspBuild>,
+) -> Vec<Value> {
     match value_type {
         CftValueType::Bool => ["true", "false"]
             .into_iter()
@@ -789,6 +1027,7 @@ fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<
                     "label": variant.name.as_str(),
                     "kind": 20,
                     "detail": format!("{} enum variant", item.name),
+                    "insertText": variant.name.as_str(),
                 }))
                 .collect()
         }),
@@ -796,7 +1035,14 @@ fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<
             let mut items = vec![
                 json!({ "label": "None", "kind": 14, "detail": value_type.display_label() }),
             ];
-            items.extend(value_completion_items(schema, inner));
+            items.push(json!({
+                "label": "Some",
+                "kind": 3,
+                "detail": format!("Some({})", inner.display_label()),
+                "insertText": format!("Some(${{1:{}}})", value_placeholder(inner)),
+                "insertTextFormat": 2,
+            }));
+            items.extend(value_completion_items(schema, inner, build));
             items
         }
         CftValueType::Result(ok, error) => vec![
@@ -804,13 +1050,15 @@ fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<
                 "label": "Ok",
                 "kind": 3,
                 "detail": format!("Ok({})", ok.display_label()),
-                "insertText": "Ok()",
+                "insertText": format!("Ok(${{1:{}}})", value_placeholder(ok)),
+                "insertTextFormat": 2,
             }),
             json!({
                 "label": "Err",
                 "kind": 3,
                 "detail": format!("Err({})", error.display_label()),
-                "insertText": "Err()",
+                "insertText": format!("Err(${{1:{}}})", value_placeholder(error)),
+                "insertTextFormat": 2,
             }),
         ],
         CftValueType::Function(parameters, result) => {
@@ -828,22 +1076,262 @@ fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<
                 "label": "fn",
                 "kind": 3,
                 "detail": value_type.display_label(),
-                "insertText": format!("fn({parameters}) -> {} {{\n    \n}}", result.display_label()),
+                "insertText": format!("fn({parameters}) -> {} {{\n    ${{1}}\n}}", result.display_label()),
+                "insertTextFormat": 2,
             })]
         }
         CftValueType::Array(_) => {
             vec![json!({ "label": "[]", "kind": 21, "detail": value_type.display_label() })]
         }
-        CftValueType::Dict(_, _) | CftValueType::Object(_) => {
+        CftValueType::Dict(_, _) => {
             vec![json!({ "label": "{}", "kind": 21, "detail": value_type.display_label() })]
+        }
+        CftValueType::Object(name) => {
+            let mut items = object_value_completion_items(schema, name);
+            items.extend(record_reference_completion_items(schema, name, build, false));
+            items
         }
         CftValueType::Unit => {
             vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
         }
         CftValueType::Int
         | CftValueType::Float
-        | CftValueType::String
-        | CftValueType::RecordRef(_) => Vec::new(),
+        | CftValueType::String => Vec::new(),
+        CftValueType::RecordRef(name) => {
+            record_reference_completion_items(schema, name, build, true)
+        }
+    }
+}
+
+fn record_reference_completion_items(
+    schema: &CftSchema,
+    expected_name: &str,
+    build: Option<&LspBuild>,
+    include_fallback: bool,
+) -> Vec<Value> {
+    let keys = build
+        .map(|build| build.cfd_definitions.keys(schema, expected_name))
+        .unwrap_or_default();
+    if keys.is_empty() && include_fallback {
+        return vec![json!({
+            "label": "record reference",
+            "kind": 18,
+            "detail": format!("reference to {expected_name}"),
+            "insertText": "&${1:key}",
+            "insertTextFormat": 2,
+        })];
+    }
+    keys.into_iter()
+        .map(|key| json!({
+            "label": key,
+            "kind": 18,
+            "detail": format!("{expected_name} record"),
+            "insertText": format!("&{key}"),
+        }))
+        .collect()
+}
+
+fn flag_completion_items(
+    schema: &CftSchema,
+    value_type: &CftValueType,
+    selected: &std::collections::BTreeSet<String>,
+) -> Vec<Value> {
+    let CftValueType::Enum(name) = value_type else {
+        return Vec::new();
+    };
+    schema.resolve_enum(name.as_str()).map_or_else(Vec::new, |item| {
+        item.variants
+            .iter()
+            .filter(|variant| !selected.contains(variant.name.as_str()))
+            .map(|variant| json!({
+                "label": variant.name.as_str(),
+                "kind": 20,
+                "detail": format!("{} flag", item.name),
+            }))
+            .collect()
+    })
+}
+
+fn collect_bit_expr_values(
+    expression: &CfdBitExpr,
+    values: &mut std::collections::BTreeSet<String>,
+) {
+    match &expression.kind {
+        CfdBitExprKind::Value(value) => {
+            values.insert(value.clone());
+        }
+        CfdBitExprKind::Binary { lhs, rhs, .. } => {
+            collect_bit_expr_values(lhs, values);
+            collect_bit_expr_values(rhs, values);
+        }
+    }
+}
+
+fn selected_flag_values(
+    source: &str,
+    offset: usize,
+    schema: &CftSchema,
+    value_type: &CftValueType,
+) -> Option<std::collections::BTreeSet<String>> {
+    let CftValueType::Enum(name) = value_type else {
+        return None;
+    };
+    let enum_def = schema.resolve_enum(name.as_str())?;
+    if !enum_def.is_flag {
+        return None;
+    }
+    let line = source.get(..offset.min(source.len()))?.rsplit('\n').next()?;
+    let value = line.rsplit_once(':').map_or(line, |(_, value)| value);
+    if !value.contains(['|', '^', '&']) {
+        return None;
+    }
+    Some(
+        value
+            .split(|character: char| !(character == '_' || character.is_alphanumeric()))
+            .filter(|token| {
+                enum_def
+                    .variants
+                    .iter()
+                    .any(|variant| variant.name.as_str() == *token)
+            })
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn object_value_completion_items(schema: &CftSchema, expected_name: &str) -> Vec<Value> {
+    schema
+        .concrete_assignable_types(expected_name)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|actual_name| {
+            let actual = schema.resolve_type(&actual_name)?;
+            let fields = required_field_snippets(schema, &actual.name, 1);
+            let body = if fields.is_empty() {
+                String::new()
+            } else {
+                format!("\n  {}\n", fields.join("\n  "))
+            };
+            let marker = (actual.name.as_str() != expected_name || schema.range_is_polymorphic(expected_name))
+                .then(|| format!("{} ", actual.name))
+                .unwrap_or_default();
+            Some(json!({
+                "label": actual.name.as_str(),
+                "kind": 7,
+                "detail": format!("{} object", actual.name),
+                "insertText": format!("{marker}{{{body}}}"),
+                "insertTextFormat": 2,
+            }))
+        })
+        .collect()
+}
+
+fn field_completion_items(
+    source: &str,
+    schema: &CftSchema,
+    type_name: &str,
+    existing: &std::collections::BTreeSet<&str>,
+    offset: usize,
+) -> Vec<Value> {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return Vec::new();
+    };
+    let range = identifier_range_before_cursor(source, offset);
+    schema_type
+        .all_fields()
+        .filter(|field| !existing.contains(field.name.as_str()))
+        .map(|field| {
+            let required = field.default.is_none();
+            let new_text = format!(
+                "{}: ${{1:{}}}",
+                field.name,
+                value_placeholder(&field.value_type)
+            );
+            json!({
+                "label": field.name.as_str(),
+                "kind": 5,
+                "detail": fmt_value_type(&field.value_type),
+                "documentation": if required { "Required field" } else { "Field with a schema default" },
+                "sortText": format!("{}{}", if required { "0" } else { "1" }, field.name),
+                "insertText": new_text,
+                "insertTextFormat": 2,
+                "textEdit": {
+                    "range": byte_range(source, range.start, range.end),
+                    "newText": new_text,
+                },
+            })
+        })
+        .collect()
+}
+
+fn required_field_snippets(schema: &CftSchema, type_name: &str, first_tabstop: usize) -> Vec<String> {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return Vec::new();
+    };
+    schema_type
+        .all_fields()
+        .filter(|field| field.default.is_none())
+        .enumerate()
+        .map(|(index, field)| {
+            format!(
+                "{}: ${{{}:{}}},",
+                field.name,
+                first_tabstop + index,
+                value_placeholder(&field.value_type)
+            )
+        })
+        .collect()
+}
+
+fn value_placeholder(value_type: &CftValueType) -> String {
+    match value_type {
+        CftValueType::Int => "0".to_string(),
+        CftValueType::Float => "0.0".to_string(),
+        CftValueType::Bool => "true".to_string(),
+        CftValueType::String => "\"value\"".to_string(),
+        CftValueType::Enum(name) => name.to_string(),
+        CftValueType::RecordRef(_) => "&key".to_string(),
+        CftValueType::Array(_) => "[]".to_string(),
+        CftValueType::Dict(_, _) | CftValueType::Object(_) => "{}".to_string(),
+        CftValueType::Option(_) => "None".to_string(),
+        CftValueType::Result(_, _) => "Ok(value)".to_string(),
+        CftValueType::Function(_, _) => "fn() {}".to_string(),
+        CftValueType::Unit => "()".to_string(),
+    }
+}
+
+fn identifier_range_before_cursor(source: &str, offset: usize) -> Span {
+    let end = offset.min(source.len());
+    let start = source[..end]
+        .char_indices()
+        .rev()
+        .take_while(|(_, character)| *character == '_' || character.is_alphanumeric())
+        .map(|(index, _)| index)
+        .last()
+        .unwrap_or(end);
+    Span::new(start, end)
+}
+
+fn attach_value_text_edits(source: &str, offset: usize, items: &mut [Value]) {
+    let mut range = identifier_range_before_cursor(source, offset);
+    if range.start > 0 && source.as_bytes().get(range.start - 1) == Some(&b'&') {
+        range.start -= 1;
+    }
+    for item in items {
+        let new_text = item
+            .get("insertText")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("label").and_then(Value::as_str))
+            .map(str::to_string);
+        let Some(new_text) = new_text else {
+            continue;
+        };
+        if let Value::Object(fields) = item {
+            fields.insert("textEdit".to_string(), json!({
+                "range": byte_range(source, range.start, range.end),
+                "newText": new_text,
+            }));
+        }
     }
 }
 
