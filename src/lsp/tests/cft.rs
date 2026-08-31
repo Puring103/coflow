@@ -169,6 +169,50 @@ type Item {\n\
 }
 
 #[test]
+fn incomplete_definitions_keep_contextual_completion_scopes() {
+    for (name, source, expected_scope, expected_label) in [
+        (
+            "type",
+            "type Broken {\n  ",
+            CompletionScope::TypeBody,
+            "field",
+        ),
+        (
+            "enum",
+            "enum Broken {\n  ",
+            CompletionScope::EnumBody,
+            "variant",
+        ),
+        (
+            "check",
+            "check Broken {\n  ",
+            CompletionScope::CheckBlock,
+            "when",
+        ),
+        (
+            "type-check",
+            "type Broken {\n  check {\n    ",
+            CompletionScope::CheckBlock,
+            "all",
+        ),
+    ] {
+        let (_cleanup, build) = test_lsp_build(&format!("lsp-incomplete-{name}"), source);
+        let document = first_document(&build);
+        assert!(document.ast.is_none());
+        assert_eq!(completion_scope(document, source.len()), expected_scope);
+        let labels = completion_labels(completion_items(
+            &build,
+            document,
+            &position_from_byte(source, source.len()),
+        ));
+        assert!(
+            labels.contains(&expected_label.to_string()),
+            "{name} completions were {labels:?}"
+        );
+    }
+}
+
+#[test]
 fn named_top_level_check_uses_check_completion_scope() {
     let source = "check Integrity { true; }";
     let (_cleanup, build) = test_lsp_build("lsp-top-level-check-scope", source);
@@ -311,6 +355,16 @@ type Item {\n\
         completion_labels(top_level_completion_items("abstract ")),
         vec!["type".to_string()]
     );
+    let top_level_items = top_level_completion_items("");
+    let type_item = top_level_items
+        .iter()
+        .find(|item| item["label"] == "type")
+        .expect("type completion");
+    assert_eq!(type_item["insertTextFormat"], 2);
+    assert_eq!(
+        type_item["insertText"],
+        "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"
+    );
 
     let value_type_position = position_from_byte(
         source,
@@ -321,6 +375,10 @@ type Item {\n\
     assert!(value_type_labels.contains(&"Target".to_string()));
     assert!(value_type_labels.contains(&"Kind".to_string()));
     assert!(value_type_labels.contains(&"string".to_string()));
+    assert!(value_type_labels.contains(&"array".to_string()));
+    assert!(value_type_labels.contains(&"dictionary".to_string()));
+    assert!(value_type_labels.contains(&"reference".to_string()));
+    assert!(value_type_labels.contains(&"()".to_string()));
 
     let const_position = position_from_byte(
         source,
@@ -417,6 +475,41 @@ type Item {\n\
     assert!(method_labels.contains(&"containsKey".to_string()));
     assert!(method_labels.contains(&"isSorted".to_string()));
     assert!(method_labels.contains(&"isSubsetOf".to_string()));
+
+    let enum_qualified_source = source.replacen("value > LIMIT", "kind == Kind::", 1);
+    let enum_qualified_offset = enum_qualified_source
+        .find("kind == Kind::")
+        .expect("qualified enum")
+        + "kind == Kind::".len();
+    let (_enum_qualified_cleanup, enum_qualified_build) =
+        test_lsp_build("lsp-cft-qualified-enum-completion", &enum_qualified_source);
+    let enum_qualified_document = first_document(&enum_qualified_build);
+    assert_eq!(
+        completion_labels(completion_items(
+            &enum_qualified_build,
+            enum_qualified_document,
+            &position_from_byte(&enum_qualified_source, enum_qualified_offset),
+        )),
+        vec!["One".to_string(), "Two".to_string()]
+    );
+
+    let method_items = completion_items(
+        &method_build,
+        method_document,
+        &position_from_byte(&method_source, method_offset),
+    );
+    let insert_text = |label: &str| {
+        method_items
+            .iter()
+            .find(|item| item["label"] == label)
+            .and_then(|item| item["insertText"].as_str())
+    };
+    assert_eq!(insert_text("len"), Some("len()"));
+    assert_eq!(insert_text("contains"), Some("contains(${1:value})"));
+    assert_eq!(
+        insert_text("approxEqual"),
+        Some("approxEqual(${1:value}, ${2:value})")
+    );
 
     assert_eq!(
         completion_labels(dot_completion_items(
