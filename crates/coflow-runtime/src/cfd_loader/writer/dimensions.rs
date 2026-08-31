@@ -1,8 +1,7 @@
 use crate::api::{
-    byte_range, CfdDimensionWriter, CfdDimensionWriterDescriptor, CfdWriteContext, Diagnostic,
-    DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceLoadResult, DimensionSourceRequest,
-    DimensionSourceResult, Label, RewriteDimensionRecordRequest, SourceLocation,
-    WriteDimensionValueRequest,
+    byte_range, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceLoadResult,
+    DimensionSourceRequest, DimensionSourceResult, Label, RewriteDimensionRecordRequest,
+    SourceLocation, WriteDimensionValueRequest,
 };
 use crate::data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
 use coflow_language::cfd::parse_cfd;
@@ -15,20 +14,9 @@ use super::render::serialize_value;
 use super::CFD_INDENT;
 use super::{diag, raw_span, CfdWriter};
 
-pub(crate) static CFD_DIMENSION_WRITER_DESCRIPTOR: CfdDimensionWriterDescriptor =
-    CfdDimensionWriterDescriptor {
-        id: "cfd",
-        display_name: "Coflow data text dimension source",
-    };
-
-impl CfdDimensionWriter for CfdWriter {
-    fn descriptor(&self) -> &'static CfdDimensionWriterDescriptor {
-        &CFD_DIMENSION_WRITER_DESCRIPTOR
-    }
-
-    fn load_dimension_source(
+impl CfdWriter {
+    pub(crate) fn load_dimension_source(
         &self,
-        _ctx: CfdWriteContext<'_>,
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -52,9 +40,8 @@ impl CfdDimensionWriter for CfdWriter {
                     .join("; "),
             )));
         }
-        let optional_type = CftValueType::Option(Box::new(
-            request.schema.source_field.value_type.clone(),
-        ));
+        let optional_type =
+            CftValueType::Option(Box::new(request.schema.source_field.value_type.clone()));
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();
         for record in ast.records {
@@ -188,9 +175,8 @@ impl CfdDimensionWriter for CfdWriter {
         }
     }
 
-    fn write_dimension_value(
+    pub(crate) fn write_dimension_value(
         &self,
-        _ctx: CfdWriteContext<'_>,
         request: &WriteDimensionValueRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -226,9 +212,8 @@ impl CfdDimensionWriter for CfdWriter {
         write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
-    fn rewrite_dimension_record(
+    pub(crate) fn rewrite_dimension_record(
         &self,
-        _ctx: CfdWriteContext<'_>,
         request: &RewriteDimensionRecordRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         if request.schema.source_type.is_singleton {
@@ -261,9 +246,8 @@ impl CfdDimensionWriter for CfdWriter {
         write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
-    fn sync_dimension_source(
+    pub(crate) fn sync_dimension_source(
         &self,
-        _ctx: CfdWriteContext<'_>,
         request: &DimensionSourceRequest<'_>,
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         let path = request.source.location.path();
@@ -278,7 +262,11 @@ impl CfdDimensionWriter for CfdWriter {
             let row = existing.get(&entry.key);
             let actual_type = entry.actual_type.as_str();
             let _ = writeln!(out, "{}: {actual_type} {{", entry.key);
-            let _ = writeln!(out, "{CFD_INDENT}default: {},", serialize_value(&entry.default, 2));
+            let _ = writeln!(
+                out,
+                "{CFD_INDENT}default: {},",
+                serialize_value(&entry.default, 2)
+            );
             for variant in request.variants {
                 if let Some(value) = row.and_then(|row| row.variants.get(variant)) {
                     let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));
@@ -292,13 +280,7 @@ impl CfdDimensionWriter for CfdWriter {
     }
 }
 
-fn file_span_label(
-    path: &Path,
-    text: &str,
-    start: usize,
-    end: usize,
-    message: &str,
-) -> Label {
+fn file_span_label(path: &Path, text: &str, start: usize, end: usize, message: &str) -> Label {
     let range = byte_range(text, start, end);
     Label {
         location: SourceLocation::FileSpan {
@@ -326,7 +308,11 @@ fn render_dimension_cfd(
     let mut out = String::new();
     for (key, row) in rows {
         let _ = writeln!(out, "{key}: {actual_type} {{");
-        let _ = writeln!(out, "{CFD_INDENT}default: {},", render_cfd_cell(&row.default));
+        let _ = writeln!(
+            out,
+            "{CFD_INDENT}default: {},",
+            render_cfd_cell(&row.default)
+        );
         for variant in variants {
             if let Some(value) = row.variants.get(variant) {
                 let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));

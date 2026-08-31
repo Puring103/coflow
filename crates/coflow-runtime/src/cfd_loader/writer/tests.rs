@@ -10,15 +10,15 @@
     clippy::unwrap_used
 )]
 
+use super::CfdWriter;
+use crate::api::{
+    CfdSource, CfdSourcePath, DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, WriteCellRequest, WriteFieldPathSegment, WriteRecordRef,
+};
+use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
+use crate::{RecordOrigin, TextSpan};
 use coflow_language::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
-use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdWriter};
-use coflow_runtime::{CfdDataModel, CfdObject, CfdValue, RecordOrigin, TextSpan};
-use coflow_runtime::{
-    CfdDocumentWriter, CfdSource, CfdSourcePath, DeleteRecordRequest, InsertRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteRecordRef,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -69,54 +69,42 @@ fn reorders_records_without_changing_document_slots() {
         "a: Item { value: 1 }\n\nb: Item { value: 2 }\n\nc: Item { value: 3 }\n",
     )
     .expect("write seed");
-    let schema = compile_schema("type Item { value: int; }");
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
-    let ctx = WriteContext {
-        project_root: &dir,
-        schema: &schema,
-        model: None,
-    };
     writer
-        .reorder_records(
-            ctx,
-            &ReorderRecordsRequest {
-                source: &source,
-                operation: ReorderRecordsOperation::Swap {
-                    first: WriteRecordRef {
-                        origin: &origin,
-                        record_key: "a",
-                        actual_type: "Item",
-                    },
-                    second: WriteRecordRef {
-                        origin: &origin,
-                        record_key: "c",
-                        actual_type: "Item",
-                    },
+        .reorder_records(&ReorderRecordsRequest {
+            source: &source,
+            operation: ReorderRecordsOperation::Swap {
+                first: WriteRecordRef {
+                    origin: &origin,
+                    record_key: "a",
+                    actual_type: "Item",
+                },
+                second: WriteRecordRef {
+                    origin: &origin,
+                    record_key: "c",
+                    actual_type: "Item",
                 },
             },
-        )
+        })
         .expect("swap records");
     let swapped = fs::read_to_string(&file).expect("read swapped");
     assert!(swapped.find("c: Item").unwrap() < swapped.find("b: Item").unwrap());
     assert!(swapped.find("b: Item").unwrap() < swapped.find("a: Item").unwrap());
 
     writer
-        .reorder_records(
-            ctx,
-            &ReorderRecordsRequest {
-                source: &source,
-                operation: ReorderRecordsOperation::MoveBefore {
-                    record: WriteRecordRef {
-                        origin: &origin,
-                        record_key: "c",
-                        actual_type: "Item",
-                    },
-                    before: None,
+        .reorder_records(&ReorderRecordsRequest {
+            source: &source,
+            operation: ReorderRecordsOperation::MoveBefore {
+                record: WriteRecordRef {
+                    origin: &origin,
+                    record_key: "c",
+                    actual_type: "Item",
                 },
+                before: None,
             },
-        )
+        })
         .expect("move record");
     let moved = fs::read_to_string(&file).expect("read moved");
     assert!(moved.find("b: Item").unwrap() < moved.find("a: Item").unwrap());
@@ -145,36 +133,30 @@ top: Item {
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
-    let ctx = WriteContext {
-        project_root: &dir,
-        schema: &schema,
-        model: None,
-    };
 
     writer
-        .reorder_records(
-            ctx,
-            &ReorderRecordsRequest {
-                source: &source,
-                operation: ReorderRecordsOperation::Swap {
-                    first: WriteRecordRef {
-                        origin: &origin,
-                        record_key: "grouped",
-                        actual_type: "Item",
-                    },
-                    second: WriteRecordRef {
-                        origin: &origin,
-                        record_key: "top",
-                        actual_type: "Item",
-                    },
+        .reorder_records(&ReorderRecordsRequest {
+            source: &source,
+            operation: ReorderRecordsOperation::Swap {
+                first: WriteRecordRef {
+                    origin: &origin,
+                    record_key: "grouped",
+                    actual_type: "Item",
+                },
+                second: WriteRecordRef {
+                    origin: &origin,
+                    record_key: "top",
+                    actual_type: "Item",
                 },
             },
-        )
+        })
         .expect("swap across group boundary");
 
     let after = fs::read_to_string(&file).expect("read reordered source");
     let model = load_cfd_model(&schema, &after).expect("reload reordered source");
-    assert!(model.lookup_assignable(&schema, "Item", "grouped").is_some());
+    assert!(model
+        .lookup_assignable(&schema, "Item", "grouped")
+        .is_some());
     assert!(model.lookup_assignable(&schema, "Item", "top").is_some());
     assert!(after.contains("grouped: Item"), "{after}");
 }
@@ -211,9 +193,7 @@ shield: Item {
     let writer = CfdWriter::new();
     let request_value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
-    let model = empty_model(&schema);
     let request = WriteCellRequest {
         origin: &origin,
         record_key: "sword",
@@ -221,18 +201,8 @@ shield: Item {
         field_path: &segments,
         new_value: &request_value,
         schema: schema,
-        source: &source,
     };
-    writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &request,
-        )
-        .expect("write succeeds");
+    writer.write_field(&request).expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(after.contains("value: 42"), "expected 42 in: {after}");
@@ -255,29 +225,19 @@ fn inserts_missing_field_with_two_space_indentation() {
     let file = dir.join("items.cfd");
     fs::write(&file, "sword: Item {\n}\n").expect("write seed");
     let schema = compile_schema("type Item { value: int; }");
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     let value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
-    let model = empty_model(&schema);
 
     CfdWriter::new()
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: &schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "sword",
-                actual_type: "Item",
-                field_path: &segments,
-                new_value: &value,
-                schema: &schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+            field_path: &segments,
+            new_value: &value,
+            schema: &schema,
+        })
         .expect("insert missing field");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -323,9 +283,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         WriteFieldPathSegment::Field("first_clear_reward".to_string()),
         WriteFieldPathSegment::Field("item".to_string()),
     ];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
-    let model = empty_model(&schema);
     let request = WriteCellRequest {
         origin: &origin,
         record_key: "stage_start",
@@ -333,18 +291,8 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         field_path: &segments,
         new_value: &request_value,
         schema: schema,
-        source: &source,
     };
-    writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &request,
-        )
-        .expect("write succeeds");
+    writer.write_field(&request).expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -381,28 +329,17 @@ shared: Skill {
     let writer = CfdWriter::new();
     let request_value = CfdValue::String("New Skill".to_string());
     let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
-    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
-        .expect("load model");
 
     writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "shared",
-                actual_type: "Skill",
-                field_path: &segments,
-                new_value: &request_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "shared",
+            actual_type: "Skill",
+            field_path: &segments,
+            new_value: &request_value,
+            schema: schema,
+        })
         .expect("write skill");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -459,25 +396,16 @@ picker: Holder {
     let writer = CfdWriter::new();
     let new_value = CfdValue::record_ref("target_b").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "picker",
-                actual_type: "Holder",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "picker",
+            actual_type: "Holder",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: schema,
+        })
         .expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -496,9 +424,8 @@ picker: Holder {
 
 #[test]
 fn ref_to_unknown_target_uses_short_form() {
-    // When the model is None (or doesn't contain the target), the writer
-    // falls back to `&key`. This test pins that behavior so callers know
-    // they need to provide a model to get qualified refs.
+    // Unknown targets remain key references; semantic validation happens
+    // when the project generation is rebuilt.
     let dir = temp_dir("ref-fallback");
     let file = dir.join("data.cfd");
     fs::write(
@@ -531,25 +458,16 @@ picker: Holder {
     let writer = CfdWriter::new();
     let new_value = CfdValue::record_ref("ghost").unwrap();
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "picker",
-                actual_type: "Holder",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "picker",
+            actual_type: "Holder",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: schema,
+        })
         .expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -562,10 +480,6 @@ picker: Holder {
 #[test]
 fn rejects_empty_reference_key_at_value_boundary() {
     assert!(CfdValue::record_ref("").is_err());
-}
-
-fn empty_model(schema: &CftSchema) -> CfdDataModel {
-    CfdDataModel::builder(schema).build().expect("empty model")
 }
 
 #[test]
@@ -598,29 +512,20 @@ fn inserts_record_at_end_of_cfd_file() {
     ]);
 
     let outcome = writer
-        .insert_record(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &InsertRecordRequest {
-                source: &source,
-                record_key: "potion",
-                actual_type: "Item",
-                fields: &fields,
-                schema: schema,
-                before: None,
-            },
-        )
+        .insert_record(&InsertRecordRequest {
+            source: &source,
+            record_key: "potion",
+            actual_type: "Item",
+            fields: &fields,
+            schema: schema,
+            before: None,
+        })
         .expect("insert succeeds");
 
     assert!(outcome.diagnostics.is_empty());
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains(
-            "potion: Item {\n  name: \"Potion\",\n  value: 3,\n}\n"
-        ),
+        after.contains("potion: Item {\n  name: \"Potion\",\n  value: 3,\n}\n"),
         "inserted records should use two-space indentation: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
@@ -654,21 +559,14 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
     )]);
 
     writer
-        .insert_record(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &InsertRecordRequest {
-                source: &source,
-                record_key: "shared",
-                actual_type: "Skill",
-                fields: &fields,
-                schema: schema,
-                before: None,
-            },
-        )
+        .insert_record(&InsertRecordRequest {
+            source: &source,
+            record_key: "shared",
+            actual_type: "Skill",
+            fields: &fields,
+            schema: schema,
+            before: None,
+        })
         .expect("insert unrelated same-key skill");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -723,21 +621,14 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     )]);
 
     writer
-        .insert_record(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &InsertRecordRequest {
-                source: &source,
-                record_key: "starter",
-                actual_type: "Loot",
-                fields: &fields,
-                schema: schema,
-                before: None,
-            },
-        )
+        .insert_record(&InsertRecordRequest {
+            source: &source,
+            record_key: "starter",
+            actual_type: "Loot",
+            fields: &fields,
+            schema: schema,
+            before: None,
+        })
         .expect("insert succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -775,24 +666,15 @@ shield: Item {
         ",
     );
     let schema = &schema;
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
 
     writer
-        .delete_record(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &DeleteRecordRequest {
-                origin: &origin,
-                record_key: "sword",
-                actual_type: "Item",
-                source: &source,
-            },
-        )
+        .delete_record(&DeleteRecordRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+        })
         .expect("delete succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -819,31 +701,15 @@ shared: Skill {
 "#,
     )
     .expect("write seed");
-    let schema = compile_schema(
-        r"
-        type Item { name: string; }
-        type Skill { name: string; }
-        ",
-    );
-    let schema = &schema;
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
 
     writer
-        .delete_record(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: None,
-            },
-            &DeleteRecordRequest {
-                origin: &origin,
-                record_key: "shared",
-                actual_type: "Skill",
-                source: &source,
-            },
-        )
+        .delete_record(&DeleteRecordRequest {
+            origin: &origin,
+            record_key: "shared",
+            actual_type: "Skill",
+        })
         .expect("delete skill");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -881,34 +747,22 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
     );
 
     let schema = &schema;
-    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
-        .expect("load model");
-
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(20);
     let segments = vec![
         WriteFieldPathSegment::Field("resistances".to_string()),
         WriteFieldPathSegment::DictKey("Element::Fire".to_string()),
     ];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "starter",
-                actual_type: "Loot",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "starter",
+            actual_type: "Loot",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: schema,
+        })
         .expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -954,34 +808,22 @@ fn writes_group_record_without_required_commas() {
     );
 
     let schema = &schema;
-    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
-        .expect("load model");
-
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(7);
     let segments = vec![
         WriteFieldPathSegment::Field("damage".to_string()),
         WriteFieldPathSegment::Field("lo".to_string()),
     ];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
     writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "eff_fireball_damage",
-                actual_type: "DamageEffect",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "eff_fireball_damage",
+            actual_type: "DamageEffect",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: schema,
+        })
         .expect("write succeeds");
 
     let after = fs::read_to_string(&file).expect("re-read");
@@ -1021,26 +863,16 @@ sword: Item {
     let writer = CfdWriter::new();
     let new_value = CfdValue::Int(2);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
-    let source = empty_source(&file);
     let origin = origin_for(&file);
-    let model = empty_model(&schema);
     let err = writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "sword",
-                actual_type: "Item",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: schema,
+        })
         .expect_err("invalid CFD syntax should fail before patching");
 
     assert!(
@@ -1059,9 +891,11 @@ sword: Item {
 fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     let dir = temp_dir("polymorphic-object-round-trip");
     let file = dir.join("07-inheritance.cfd");
-    let original = include_str!("../../../examples/showcase/data/07-inheritance.cfd");
+    let original = include_str!("../../../../../examples/showcase/data/07-inheritance.cfd");
     fs::write(&file, original).expect("write inheritance seed");
-    let schema = compile_schema(include_str!("../../../examples/showcase/schema/07-inheritance.cft"));
+    let schema = compile_schema(include_str!(
+        "../../../../../examples/showcase/schema/07-inheritance.cft"
+    ));
     let model = load_cfd_model(&schema, original).expect("load inheritance model");
     let record_id = model
         .lookup_assignable(&schema, "EffectBundle", "starter_effects")
@@ -1072,50 +906,37 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
         panic!("primary effect should be an object");
     };
     assert_eq!(primary_object.actual_type.as_str(), "HealEffect");
-    let CfdValue::Array(additional) = record.field("additional").expect("additional effects") else {
+    let CfdValue::Array(additional) = record.field("additional").expect("additional effects")
+    else {
         panic!("additional effects should be an array");
     };
     let mut appended_effects = additional.clone();
     appended_effects.push(additional[0].clone());
 
     let writer = CfdWriter::new();
-    let source = empty_source(&file);
     let origin = origin_for(&file);
-    let context = WriteContext {
-        project_root: &dir,
-        schema: &schema,
-        model: Some(&model),
-    };
     let primary_path = vec![WriteFieldPathSegment::Field("primary".to_string())];
     writer
-        .write_field(
-            context,
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "starter_effects",
-                actual_type: "EffectBundle",
-                field_path: &primary_path,
-                new_value: &primary,
-                schema: &schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "starter_effects",
+            actual_type: "EffectBundle",
+            field_path: &primary_path,
+            new_value: &primary,
+            schema: &schema,
+        })
         .expect("rewrite primary effect object");
 
     let additional_path = vec![WriteFieldPathSegment::Field("additional".to_string())];
     writer
-        .write_field(
-            context,
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "starter_effects",
-                actual_type: "EffectBundle",
-                field_path: &additional_path,
-                new_value: &CfdValue::Array(appended_effects),
-                schema: &schema,
-                source: &source,
-            },
-        )
+        .write_field(&WriteCellRequest {
+            origin: &origin,
+            record_key: "starter_effects",
+            actual_type: "EffectBundle",
+            field_path: &additional_path,
+            new_value: &CfdValue::Array(appended_effects),
+            schema: &schema,
+        })
         .expect("rewrite additional effects");
 
     let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
@@ -1124,8 +945,9 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
         .lookup_assignable(&schema, "EffectBundle", "starter_effects")
         .expect("rewritten effect bundle record");
     let rewritten_record = rewritten.record(rewritten_id).expect("rewritten record");
-    let CfdValue::Array(rewritten_additional) =
-        rewritten_record.field("additional").expect("rewritten additional effects")
+    let CfdValue::Array(rewritten_additional) = rewritten_record
+        .field("additional")
+        .expect("rewritten additional effects")
     else {
         panic!("rewritten additional effects should be an array");
     };

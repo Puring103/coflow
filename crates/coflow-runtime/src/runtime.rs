@@ -121,6 +121,7 @@ impl ProjectRuntime {
             .as_ref()
             .is_some_and(|generation| generation.fingerprint == fingerprint)
         {
+            self.attempted = None;
             return Ok(false);
         }
 
@@ -156,6 +157,47 @@ impl ProjectRuntime {
         } else {
             Err(diagnostics)
         }
+    }
+}
+
+#[cfg(test)]
+mod project_runtime_tests {
+    #![allow(clippy::expect_used)]
+
+    use std::fs;
+
+    use super::ProjectRuntime;
+    use crate::{project::normalize_path, Project, SchemaTextOverride};
+
+    #[test]
+    fn reverting_to_published_schema_discards_failed_attempt() {
+        let root = tempfile::tempdir().expect("temp project");
+        let schema_path = root.path().join("schema.cft");
+        fs::write(&schema_path, "type Item { value: int; }\n").expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+        )
+        .expect("write config");
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let mut runtime = ProjectRuntime::new(project);
+
+        assert_eq!(runtime.refresh(), Ok(true));
+        assert!(runtime
+            .refresh_with_overrides(&[SchemaTextOverride {
+                requested_module: None,
+                normalized_path: normalize_path(&schema_path),
+                source: "type Item { value: Missing; }\n".to_string(),
+            }])
+            .is_err());
+        assert!(runtime
+            .latest_attempt()
+            .is_some_and(|attempt| attempt.has_diagnostics()));
+
+        assert_eq!(runtime.refresh(), Ok(false));
+        assert!(runtime
+            .latest_attempt()
+            .is_some_and(|attempt| !attempt.has_diagnostics()));
     }
 }
 

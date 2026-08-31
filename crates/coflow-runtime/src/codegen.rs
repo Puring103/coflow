@@ -12,21 +12,8 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceManifestEntry {
-    pub logical_path: String,
-    pub origin: SourceOrigin,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SourceOrigin {
-    Project,
-    Dimension {
-        dimension: String,
-        source_type: String,
-        field: String,
-    },
-}
+/// Stable numeric values assigned to record keys for each `@idAsEnum` enum.
+pub type IdAsEnumValues = BTreeMap<String, BTreeMap<String, i64>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodegenTarget {
@@ -34,7 +21,6 @@ pub struct CodegenTarget {
     pub output_dir: PathBuf,
     pub options: Value,
 }
-
 impl CodegenTarget {
     #[must_use]
     pub fn new(id: impl Into<String>, output_dir: impl Into<PathBuf>, options: Value) -> Self {
@@ -50,9 +36,8 @@ impl CodegenTarget {
 pub struct CodegenInput<'a> {
     pub schema: &'a CftSchema,
     pub model: Option<&'a CfdDataModel>,
-    pub sources: &'a [SourceManifestEntry],
     pub target: &'a CodegenTarget,
-    pub id_as_enum_lock: &'a Value,
+    pub id_as_enum_values: &'a IdAsEnumValues,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,11 +222,4 @@ impl CodegenRegistry {
             .iter()
             .map(|(id, generator)| (id.as_str(), generator.as_ref()))
     }
-}
-
-/// Shared source identity used by build, editor overlays and generated code.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectSnapshot {
-    pub revision: u64,
-    pub sources: Arc<[SourceManifestEntry]>,
 }

@@ -11,11 +11,8 @@
 use coflow_language::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-use coflow_runtime::CfdDataModel;
-use coflow_runtime::{
-    load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
-};
-use coflow_runtime::{CfdErrorCode, CfdLoadContext, CfdSource, CfdSourcePath, SourceLocation};
+use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
+use coflow_runtime::{CfdErrorCode, SourceLocation};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -117,18 +114,6 @@ fn cfd_rejects_unknown_or_conflicting_uses_without_name_fallback() {
     )
     .expect_err("unqualified use path or local declaration conflict");
     assert_has_text_code(&conflict, CfdTextErrorCode::Syntax);
-}
-
-#[test]
-fn loader_rejects_non_cfd_sources_before_reading() {
-    let loader = CfdLoader;
-    let source = CfdSource {
-        location: CfdSourcePath::new("data/items.json"),
-        display_name: "data/items.json".to_string(),
-    };
-
-    let diagnostics = loader.resolve(&source).expect_err("only CFD is supported");
-    assert!(diagnostics.contains("unsupported extension"));
 }
 
 #[test]
@@ -845,61 +830,6 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
     .expect_err("check blocks are not CFD data syntax");
 
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
-}
-
-#[test]
-fn loader_file_origins_preserve_record_text_spans() -> TestResult {
-    let schema = compile_schema("type Item { value: int; }");
-    let schema = &schema;
-    let root = std::env::temp_dir().join("coflow-language-loader-origin-spans");
-    if root.exists() {
-        fs::remove_dir_all(&root)?;
-    }
-    fs::create_dir_all(&root)?;
-    let source_path = root.join("items.cfd");
-    fs::write(
-        &source_path,
-        "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
-    )?;
-
-    let cfd_loader = CfdLoader;
-    let loaded = cfd_loader
-        .load(
-            CfdLoadContext {
-                project_root: &root,
-                schema: schema,
-                source_text: None,
-            },
-            &CfdSource {
-                location: CfdSourcePath::new(source_path.clone()),
-                display_name: source_path.display().to_string(),
-            },
-        )
-        .map_err(|diagnostics| format!("{diagnostics:?}"))?;
-    let origins = coflow_runtime::origins_of(&loaded.records);
-    let mut builder = CfdDataModel::builder(&schema);
-    for record in loaded.records {
-        builder.add_loaded_record(record);
-    }
-    let err = builder.build().expect_err("second record is missing value");
-    let mapped = coflow_runtime::map_diagnostics_with_origins(err, &origins);
-    let primary = mapped
-        .diagnostics
-        .first()
-        .and_then(|diagnostic| diagnostic.primary.as_ref())
-        .ok_or("expected mapped primary label")?;
-
-    assert_eq!(
-        primary.location,
-        SourceLocation::FileSpan {
-            path: source_path,
-            start_line: 2,
-            start_character: 0,
-            end_line: 3,
-            end_character: 1,
-        }
-    );
-    Ok(())
 }
 
 #[test]

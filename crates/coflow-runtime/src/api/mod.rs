@@ -19,27 +19,26 @@
 #![allow(clippy::missing_const_for_fn)]
 
 pub mod diagnostics;
-pub mod operations;
-pub mod source;
-pub mod writer;
+pub(crate) mod operations;
+pub(crate) mod source;
+pub(crate) mod writer;
 
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
     source_location_display_path, Diagnostic, DiagnosticContext, DiagnosticSet, FlatDiagnostic,
     Label, Severity, SourceLocation, TextPosition, TextRange,
 };
-pub use operations::{
-    CfdDimensionWriter, CfdDimensionWriterDescriptor, CfdWriteContext, DimensionSourceEntry,
-    DimensionSourceLoadRequest, DimensionSourceLoadResult, DimensionSourceRequest,
-    DimensionSourceResult, DimensionSourceSchema, RewriteDimensionRecordRequest,
-    WriteDimensionValueRequest,
+pub(crate) use operations::{
+    DimensionSourceEntry, DimensionSourceLoadRequest, DimensionSourceLoadResult,
+    DimensionSourceRequest, DimensionSourceResult, DimensionSourceSchema,
+    RewriteDimensionRecordRequest, WriteDimensionValueRequest,
 };
-pub use source::{CfdLoadContext, CfdSource, CfdSourcePath, LoadedCfdSource};
-pub use writer::{
-    CfdDocumentWriter, CfdWriterDescriptor, DeleteRecordRequest, InsertRecordRequest,
-    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest, SourceTransaction,
-    SourceTransactionCompensation, WriteBatchFailure, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriteRecordRef, WriterCapabilities,
+pub(crate) use source::{CfdLoadContext, CfdSource, CfdSourcePath, LoadedCfdSource};
+pub use writer::WriterCapabilities;
+pub(crate) use writer::{
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
+    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteFieldPathSegment,
+    WriteOutcome, WriteRecordRef,
 };
 
 pub(crate) use crate::catalog::CfdSourceCatalog;

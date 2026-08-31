@@ -1,7 +1,7 @@
 use crate::data_model::LoadedRecordDraft;
 use coflow_language::CftSchema;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -27,7 +27,6 @@ pub struct CfdSource {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CfdLoadContext<'a> {
-    pub project_root: &'a Path,
     pub schema: &'a CftSchema,
     /// Host-provided source text that should be loaded instead of the backing file.
     /// Text compensations may use this for unsaved documents and dry-run validation.

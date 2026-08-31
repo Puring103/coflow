@@ -1,9 +1,9 @@
-use crate::api::{CfdSourceCatalog, DiagnosticSet, Severity, WriteContext};
+use crate::api::{CfdSourceCatalog, DiagnosticSet, Severity};
 use std::collections::BTreeSet;
 
 use crate::writes::{
-    preflight_mutation_op, prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op,
-    MutationBatchFailure, MutationExecutionPlan, MutationImpact, MutationTransaction,
+    prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op, MutationBatchFailure,
+    MutationExecutionPlan, MutationImpact, MutationTransaction,
 };
 use crate::ProjectSession;
 
@@ -35,14 +35,6 @@ impl ProjectSession {
             }
         };
 
-        for item in &executable {
-            if let Err(diagnostics) = preflight_mutation_op(self, &item.planned.op, &item.execution)
-            {
-                failed.push(failed_op(&item.planned, diagnostics));
-                return report_without_publish(self, false, failed);
-            }
-        }
-
         if executable
             .iter()
             .all(|item| !item.execution.changes_generation())
@@ -62,14 +54,8 @@ fn execute_generation_mutation(
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
 ) -> MutationReport {
-    let schema = session.schema();
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
     let transaction =
-        match MutationTransaction::begin(ctx, executable.iter().map(|item| &item.execution)) {
+        match MutationTransaction::begin(executable.iter().map(|item| &item.execution)) {
             Ok(transaction) => transaction,
             Err(diagnostics) => {
                 if let Some(first) = executable.first() {
@@ -158,13 +144,6 @@ fn execute_generation_mutation(
         transaction.compensate_into(&mut rebuild_diagnostics);
         if let Some(last) = executable.last() {
             failed.push(failed_op(&last.planned, rebuild_diagnostics));
-        }
-        return report_without_publish(session, false, failed);
-    }
-
-    if let Err(diagnostics) = transaction.commit() {
-        if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, diagnostics));
         }
         return report_without_publish(session, false, failed);
     }

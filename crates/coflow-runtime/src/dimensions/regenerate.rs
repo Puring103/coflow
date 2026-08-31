@@ -1,8 +1,8 @@
 mod plan;
 
 use crate::api::{
-    CfdSource, CfdSourceCatalog, CfdSourcePath, CfdWriteContext, Diagnostic, DiagnosticSet,
-    DimensionSourceEntry, DimensionSourceRequest, Label, Severity, SourceLocation,
+    CfdSource, CfdSourceCatalog, CfdSourcePath, Diagnostic, DiagnosticSet, DimensionSourceEntry,
+    DimensionSourceRequest, Label, Severity, SourceLocation,
 };
 use crate::data_model::CfdDataModel;
 use crate::dimensions::DimensionField;
@@ -165,16 +165,11 @@ fn commit_dimension_sync(
         diagnostics.extend(error);
         return false;
     }
-    let result = manager.sync_dimension_source(
-        CfdWriteContext {
-            project_root: project.root_dir(),
-        },
-        &DimensionSourceRequest {
-            source: &source,
-            entries: &operation.entries,
-            variants: &operation.variants,
-        },
-    );
+    let result = manager.sync_dimension_source(&DimensionSourceRequest {
+        source: &source,
+        entries: &operation.entries,
+        variants: &operation.variants,
+    });
     match result {
         Ok(result) if result.changed => {
             changed_paths.insert(operation.path);

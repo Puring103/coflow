@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::api::{
-    CfdDimensionWriter, CfdDocumentWriter, CfdSource, CfdSourceCatalog, CfdWriteContext,
-    DiagnosticSet, DimensionSourceSchema, WriteCellRequest, WriteDimensionValueRequest,
-    WriteFieldPathSegment,
+    CfdSource, CfdSourceCatalog, DiagnosticSet, DimensionSourceSchema, WriteCellRequest,
+    WriteDimensionValueRequest, WriteFieldPathSegment,
 };
+use crate::cfd_loader::CfdWriter;
 use crate::data_model::{
     CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
@@ -17,13 +17,13 @@ use crate::ProjectSession;
 
 pub(super) enum ReferenceUpdateAction {
     Source {
-        writer: Arc<dyn CfdDocumentWriter>,
+        writer: Arc<CfdWriter>,
         source: CfdSource,
         requests: Vec<OwnedWriteCellRequest>,
         display_path: String,
     },
     Dimension {
-        manager: Arc<dyn CfdDimensionWriter>,
+        manager: Arc<CfdWriter>,
         request: OwnedDimensionWriteRequest,
         display_path: String,
     },
@@ -37,13 +37,6 @@ impl ReferenceUpdateAction {
         }
     }
 
-    pub(super) const fn writer(&self) -> Option<&Arc<dyn CfdDocumentWriter>> {
-        match self {
-            Self::Source { writer, .. } => Some(writer),
-            Self::Dimension { .. } => None,
-        }
-    }
-
     pub(super) fn display_path(&self) -> &str {
         match self {
             Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => {
@@ -52,32 +45,20 @@ impl ReferenceUpdateAction {
         }
     }
 
-    pub(super) fn execute(
-        &self,
-        project_root: &std::path::Path,
-        schema: &CftSchema,
-        model: &crate::data_model::CfdDataModel,
-    ) -> Result<DiagnosticSet, DiagnosticSet> {
+    pub(super) fn execute(&self, schema: &CftSchema) -> Result<DiagnosticSet, DiagnosticSet> {
         match self {
             Self::Source {
                 writer,
-                source,
+                source: _,
                 requests,
                 ..
             } => {
                 let requests = requests
                     .iter()
-                    .map(|request| request.as_request(schema, source))
+                    .map(|request| request.as_request(schema))
                     .collect::<Vec<_>>();
                 writer
-                    .write_field_batch(
-                        crate::api::WriteContext {
-                            project_root,
-                            schema,
-                            model: Some(model),
-                        },
-                        &requests,
-                    )
+                    .write_field_batch(&requests)
                     .map(|outcomes| {
                         let mut diagnostics = DiagnosticSet::empty();
                         for outcome in outcomes {
@@ -90,10 +71,7 @@ impl ReferenceUpdateAction {
             Self::Dimension {
                 manager, request, ..
             } => manager
-                .write_dimension_value(
-                    CfdWriteContext { project_root },
-                    &request.as_request(schema)?,
-                )
+                .write_dimension_value(&request.as_request(schema)?)
                 .map(|_| DiagnosticSet::empty()),
         }
     }
@@ -158,11 +136,7 @@ pub(super) struct OwnedWriteCellRequest {
 }
 
 impl OwnedWriteCellRequest {
-    pub(super) fn as_request<'a>(
-        &'a self,
-        schema: &'a CftSchema,
-        source: &'a CfdSource,
-    ) -> WriteCellRequest<'a> {
+    pub(super) fn as_request<'a>(&'a self, schema: &'a CftSchema) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
             record_key: &self.record_key,
@@ -170,7 +144,6 @@ impl OwnedWriteCellRequest {
             field_path: &self.field_path,
             new_value: &self.new_value,
             schema,
-            source,
         }
     }
 }
@@ -290,7 +263,7 @@ pub(super) fn reference_update_actions(
                 };
                 requests.push(request);
             } else {
-                let writer = lookup_source_writer(catalog, &source)?;
+                let writer = lookup_source_writer(catalog);
                 let action_index = actions.len();
                 actions.push(ReferenceUpdateAction::Source {
                     writer,

@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use crate::data_model::RecordCoordinate;
 use crate::project::Project;
-use crate::codegen::{SourceManifestEntry, SourceOrigin};
 use coflow_language::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -112,36 +111,6 @@ impl DimensionRuntimePlan {
             .managed_directories
             .iter()
             .any(|directory| path.starts_with(directory))
-    }
-
-    pub(crate) fn codegen_entries_for_path(
-        &self,
-        project: &Project,
-        display_path: &str,
-    ) -> Vec<SourceManifestEntry> {
-        let source_path = crate::project::normalized_path_identity(
-            &project.resolve_path(Path::new(display_path)),
-        );
-        self.fields
-            .iter()
-            .filter(|field| {
-                project
-                    .config()
-                    .dimensions
-                    .get(field.dimension.as_str())
-                    .and_then(|config| config.out_dir.as_ref())
-                    .map(|directory| project.resolve_path(directory).join(field.source_file_name()))
-                    .is_some_and(|path| crate::project::normalized_path_identity(&path) == source_path)
-            })
-            .map(|field| SourceManifestEntry {
-                logical_path: display_path.to_string(),
-                origin: SourceOrigin::Dimension {
-                    dimension: field.dimension.to_string(),
-                    source_type: field.source_type.to_string(),
-                    field: field.source_field.to_string(),
-                },
-            })
-            .collect()
     }
 
     pub(crate) fn affected_field_indices(

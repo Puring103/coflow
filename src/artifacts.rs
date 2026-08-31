@@ -1,5 +1,5 @@
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use coflow_runtime::codegen::CodeArtifactFile;
+use coflow_runtime::codegen::{CodeArtifactFile, IdAsEnumValues};
 use coflow_runtime::{Diagnostic, DiagnosticSet, Label, Project, SourceLocation};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,12 +32,15 @@ struct ArtifactManifest {
     version: u32,
     revision: String,
     outputs: BTreeMap<String, PublishedOutput>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    id_as_enum_values: IdAsEnumValues,
 }
 
 #[derive(Debug)]
 pub(crate) struct PreparedCodeRelease<'a> {
     project: &'a Project,
     outputs: Vec<CodeOutput>,
+    id_as_enum_values: IdAsEnumValues,
     active: Option<ArtifactManifest>,
 }
 
@@ -45,12 +48,14 @@ impl<'a> PreparedCodeRelease<'a> {
     pub(crate) fn new(
         project: &'a Project,
         outputs: Vec<CodeOutput>,
+        id_as_enum_values: IdAsEnumValues,
     ) -> Result<Self, DiagnosticSet> {
         validate_outputs(project, &outputs)?;
         let active = load_manifest(project)?;
         Ok(Self {
             project,
             outputs,
+            id_as_enum_values,
             active,
         })
     }
@@ -59,6 +64,9 @@ impl<'a> PreparedCodeRelease<'a> {
         let Some(active) = &self.active else {
             return Ok(true);
         };
+        if active.id_as_enum_values != self.id_as_enum_values {
+            return Ok(true);
+        }
         let slots = self
             .outputs
             .iter()
@@ -113,6 +121,7 @@ impl<'a> PreparedCodeRelease<'a> {
         let manifest = ArtifactManifest {
             version: MANIFEST_VERSION,
             revision: unique_revision(),
+            id_as_enum_values: self.id_as_enum_values,
             outputs: staged
                 .iter()
                 .map(|output| {
@@ -686,6 +695,28 @@ fn unique_child(parent: &Path, slot: &str) -> PathBuf {
     parent.join(format!("{safe_slot}-{}", unique_revision()))
 }
 
+pub(crate) fn active_id_as_enum_values(project: &Project) -> Result<IdAsEnumValues, DiagnosticSet> {
+    Ok(load_manifest(project)?
+        .map(|manifest| manifest.id_as_enum_values)
+        .unwrap_or_default())
+}
+
+pub(crate) fn replace_active_id_as_enum_values(
+    project: &Project,
+    values: IdAsEnumValues,
+) -> Result<bool, DiagnosticSet> {
+    let Some(mut manifest) = load_manifest(project)? else {
+        return Ok(false);
+    };
+    if manifest.id_as_enum_values == values {
+        return Ok(false);
+    }
+    manifest.revision = unique_revision();
+    manifest.id_as_enum_values = values;
+    write_manifest(project, &manifest)?;
+    Ok(true)
+}
+
 fn unique_sibling(path: &Path, kind: &str) -> PathBuf {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let name = path
@@ -717,6 +748,6 @@ fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Diagnostic {
     })
 }
 
-fn artifact_error(path: &Path, message: impl Into<String>) -> DiagnosticSet {
+pub(crate) fn artifact_error(path: &Path, message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(artifact_diagnostic(path, message))
 }

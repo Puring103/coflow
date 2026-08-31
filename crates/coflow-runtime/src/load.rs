@@ -1,6 +1,6 @@
 use crate::api::{
     map_diagnostics_with_origins, origins_of, CfdLoadContext, CfdSource, CfdSourceCatalog,
-    CfdWriteContext, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
+    Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
 };
 use crate::data_model::{
     CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
@@ -338,7 +338,6 @@ pub(crate) fn reload_project_data_from_cache(
             let validate_singleton_shape =
                 validated_dimension_sources.insert(batch.entry.display_path.clone());
             match load_dimension_batch(
-                project,
                 schema,
                 catalog,
                 &batch.entry.source,
@@ -354,7 +353,6 @@ pub(crate) fn reload_project_data_from_cache(
         }
         match catalog.loader().load(
             CfdLoadContext {
-                project_root: project.root_dir(),
                 schema,
                 source_text: None,
             },
@@ -406,7 +404,6 @@ fn load_resolved_sources(
         state.indexes.sources.push(entry.clone());
         match loader.load(
             CfdLoadContext {
-                project_root: project.root_dir(),
                 schema,
                 source_text: source_override_text(&spec, source_overrides),
             },
@@ -468,7 +465,6 @@ fn load_resolved_dimension_source(
     let fields = resolved.fields;
     for (index, field) in fields.iter().enumerate() {
         match load_dimension_batch(
-            project,
             schema,
             catalog,
             &source,
@@ -490,7 +486,6 @@ fn load_resolved_dimension_source(
 }
 
 fn load_dimension_batch(
-    project: &Project,
     schema: &CftSchema,
     catalog: &CfdSourceCatalog,
     source: &CfdSource,
@@ -526,22 +521,17 @@ fn load_dimension_batch(
         .map(|field| field.source_field.clone())
         .collect::<Vec<_>>();
     let mut values = manager
-        .load_dimension_source(
-            CfdWriteContext {
-                project_root: project.root_dir(),
+        .load_dimension_source(&DimensionSourceLoadRequest {
+            source,
+            schema: DimensionSourceSchema {
+                schema,
+                dimension,
+                source_type,
+                source_field,
             },
-            &DimensionSourceLoadRequest {
-                source,
-                schema: DimensionSourceSchema {
-                    schema,
-                    dimension,
-                    source_type,
-                    source_field,
-                },
-                singleton_source_fields: &singleton_source_fields,
-                validate_singleton_shape,
-            },
-        )?
+            singleton_source_fields: &singleton_source_fields,
+            validate_singleton_shape,
+        })?
         .values;
     if field.is_singleton {
         let key = records

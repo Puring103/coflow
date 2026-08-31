@@ -1,8 +1,7 @@
 use crate::api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceSchema, InsertRecordRequest,
     RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    RewriteDimensionRecordRequest, WriteCellRequest, WriteContext, WriteDimensionValueRequest,
-    WriteRecordRef,
+    RewriteDimensionRecordRequest, WriteCellRequest, WriteDimensionValueRequest, WriteRecordRef,
 };
 use crate::data_model::CfdValue;
 use coflow_language::RecordKey;
@@ -15,41 +14,6 @@ use super::plan::{
     DeletePlan, DimensionRecordAction, DimensionWritePlan, InsertPlan, MutationExecutionPlan,
     RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
 };
-
-pub(crate) fn preflight_mutation_op(
-    session: &ProjectSession,
-    op: &PreparedMutationOp,
-    execution: &MutationExecutionPlan,
-) -> Result<(), DiagnosticSet> {
-    let (PreparedMutationOp::SetField { value, .. }, MutationExecutionPlan::WriteField(plan)) =
-        (op, execution)
-    else {
-        return Ok(());
-    };
-    let schema = session.schema();
-    let request = WriteCellRequest {
-        origin: &plan.target.origin,
-        record_key: &plan.target.coordinate.key,
-        actual_type: &plan.target.coordinate.actual_type,
-        field_path: &plan.target.field_path,
-        new_value: value,
-        schema,
-        source: &plan.source,
-    };
-    let diagnostics = plan.writer.preflight(
-        WriteContext {
-            project_root: session.project.root_dir(),
-            schema,
-            model: Some(&session.model),
-        },
-        &request,
-    );
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
-}
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn stage_mutation_op(
@@ -109,7 +73,7 @@ pub(crate) fn stage_mutation_op(
         (
             PreparedMutationOp::SwapRecords { .. } | PreparedMutationOp::MoveRecord { .. },
             MutationExecutionPlan::Reorder(plan),
-        ) => stage_reorder_records(session, plan),
+        ) => stage_reorder_records(plan),
         (PreparedMutationOp::TransferRecord { .. }, MutationExecutionPlan::Transfer(plan)) => {
             stage_transfer_record(session, plan)
         }
@@ -201,17 +165,11 @@ pub(crate) fn stage_field_mutation_batch(
             field_path: &plan.target.field_path,
             new_value: value,
             schema: session.schema(),
-            source: &plan.source,
         });
     }
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema: session.schema(),
-        model: Some(&session.model),
-    };
     let writer_outcomes = first_plan
         .writer
-        .write_field_batch(ctx, &requests)
+        .write_field_batch(&requests)
         .map_err(|failure| MutationBatchFailure {
             index: failure.index,
             diagnostics: failure.diagnostics,
@@ -258,14 +216,8 @@ fn stage_write_field(
         field_path: &plan.target.field_path,
         new_value,
         schema,
-        source: &plan.source,
     };
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
-    let writer_outcome = plan.writer.write_field(ctx, &request)?;
+    let writer_outcome = plan.writer.write_field(&request)?;
     Ok(field_write_outcome(plan, host_record, writer_outcome))
 }
 
@@ -287,11 +239,9 @@ fn stage_write_dimension_value(
     let dimension = schema
         .resolve_dimension(&coordinate.dimension)
         .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
-    let result = plan.manager.write_dimension_value(
-        crate::api::CfdWriteContext {
-            project_root: session.project.root_dir(),
-        },
-        &WriteDimensionValueRequest {
+    let result = plan
+        .manager
+        .write_dimension_value(&WriteDimensionValueRequest {
             source: &plan.source,
             schema: DimensionSourceSchema {
                 schema,
@@ -302,8 +252,7 @@ fn stage_write_dimension_value(
             source_key: &coordinate.source_key,
             variant: &coordinate.variant,
             new_value,
-        },
-    )?;
+        })?;
     Ok(WriteOutcome {
         touched: vec![record.clone()],
         inserted: None,
@@ -357,23 +306,16 @@ fn stage_rename_record_key(
     };
     let plan: &RenameWritePlan = plan;
     let schema = session.schema();
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
     let target_request = RenameRecordRequest {
         origin: &plan.origin,
         old_key: &plan.old_coordinate.key,
         new_key,
         actual_type: &plan.old_coordinate.actual_type,
-        source: &plan.source,
-        schema,
     };
-    let mut diagnostics = plan.writer.rename_record(ctx, &target_request)?.diagnostics;
+    let mut diagnostics = plan.writer.rename_record(&target_request)?.diagnostics;
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     for action in &plan.reference_actions {
-        diagnostics.extend(action.execute(session.project.root_dir(), schema, &session.model)?);
+        diagnostics.extend(action.execute(schema)?);
         affected_files.insert(action.display_path().to_string());
     }
     let old_key = plan.old_coordinate.key.clone();
@@ -421,12 +363,7 @@ fn stage_insert_record(
         schema,
         before: None,
     };
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
-    let writer_outcome = plan.writer.insert_record(ctx, &request)?;
+    let writer_outcome = plan.writer.insert_record(&request)?;
     let inserted = RecordCoordinate::try_new(actual_type, record_key)
         .map_err(|_| plan_mismatch("insert coordinate became invalid before staging"))?;
     Ok(WriteOutcome {
@@ -445,19 +382,12 @@ fn stage_delete_record(
     plan: &DeletePlan,
     record: &RecordCoordinate,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let schema = session.schema();
     let request = DeleteRecordRequest {
         origin: &plan.origin,
         record_key: &record.key,
         actual_type: &record.actual_type,
-        source: &plan.source,
     };
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
-    let writer_outcome = plan.writer.delete_record(ctx, &request)?;
+    let writer_outcome = plan.writer.delete_record(&request)?;
     let old_key = record.key.clone();
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     rewrite_dimension_records(
@@ -478,10 +408,7 @@ fn stage_delete_record(
     })
 }
 
-fn stage_reorder_records(
-    session: &ProjectSession,
-    plan: &ReorderPlan,
-) -> Result<WriteOutcome, DiagnosticSet> {
+fn stage_reorder_records(plan: &ReorderPlan) -> Result<WriteOutcome, DiagnosticSet> {
     let (operation, touched) = match &plan.operation {
         ReorderOperation::Swap { first, second } => (
             ReorderRecordsOperation::Swap {
@@ -500,18 +427,10 @@ fn stage_reorder_records(
                 .collect(),
         ),
     };
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema: session.schema(),
-        model: Some(&session.model),
-    };
-    let writer_outcome = plan.writer.reorder_records(
-        ctx,
-        &ReorderRecordsRequest {
-            source: &plan.source,
-            operation,
-        },
-    )?;
+    let writer_outcome = plan.writer.reorder_records(&ReorderRecordsRequest {
+        source: &plan.source,
+        operation,
+    })?;
     Ok(WriteOutcome {
         touched,
         inserted: None,
@@ -528,32 +447,22 @@ fn stage_transfer_record(
     plan: &TransferPlan,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
     let before = plan.before.as_ref().map(write_record_ref);
-    let inserted = plan.destination_writer.insert_record(
-        ctx,
-        &InsertRecordRequest {
+    let inserted = plan
+        .destination_writer
+        .insert_record(&InsertRecordRequest {
             source: &plan.destination,
             record_key: &plan.coordinate.key,
             actual_type: &plan.coordinate.actual_type,
             fields: &plan.fields,
             schema,
             before,
-        },
-    )?;
-    let deleted = plan.source_writer.delete_record(
-        ctx,
-        &DeleteRecordRequest {
-            origin: &plan.source_origin,
-            record_key: &plan.coordinate.key,
-            actual_type: &plan.coordinate.actual_type,
-            source: &plan.source,
-        },
-    )?;
+        })?;
+    let deleted = plan.source_writer.delete_record(&DeleteRecordRequest {
+        origin: &plan.source_origin,
+        record_key: &plan.coordinate.key,
+        actual_type: &plan.coordinate.actual_type,
+    })?;
     let mut diagnostics = inserted.diagnostics;
     diagnostics.extend(deleted.diagnostics);
     Ok(WriteOutcome {
@@ -596,11 +505,9 @@ fn rewrite_dimension_records(
         let dimension = schema
             .resolve_dimension(&action.field.dimension)
             .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
-        let result = action.manager.rewrite_dimension_record(
-            crate::api::CfdWriteContext {
-                project_root: session.project.root_dir(),
-            },
-            &RewriteDimensionRecordRequest {
+        let result = action
+            .manager
+            .rewrite_dimension_record(&RewriteDimensionRecordRequest {
                 source: &action.source,
                 schema: DimensionSourceSchema {
                     schema,
@@ -610,8 +517,7 @@ fn rewrite_dimension_records(
                 },
                 old_key,
                 new_key,
-            },
-        )?;
+            })?;
         if result.changed {
             affected_files.insert(action.source.display_name.clone());
         }

@@ -20,9 +20,7 @@ use super::{ProjectSession, RecordCoordinate};
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
-pub(crate) use stage::{
-    preflight_mutation_op, stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure,
-};
+pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure};
 pub(crate) use transaction::MutationTransaction;
 
 #[derive(Debug, Default)]
