@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
-import { codeMirrorDiagnostics, completionItem, decodeSemanticTokens } from '../code/lspAdapter'
+import { codeMirrorDiagnostics, completionItem, decodeSemanticTokens, rangeOffsets } from '../code/lspAdapter'
 import { useEditorLookups } from '../utils/editContext'
 import type { FieldValue } from '../wire'
 import { CfdCodeEditor } from './CfdCodeEditor'
+import { functionBody, FunctionSourcePreview } from './FunctionSourcePreview'
 import { Icon } from './Icon'
 
 interface Props {
@@ -49,6 +50,28 @@ export function FunctionBodyDialog({ value, onCommit, onClose }: Props) {
     onClose()
   }
 
+  const editableRange = useMemo(
+    () => document ? rangeOffsets(document.source, document.body_range) : null,
+    [document],
+  )
+  const semanticTokens = useMemo(
+    () => document ? decodeSemanticTokens(document.source, document) : [],
+    [document],
+  )
+  const diagnostics = useMemo(() => document && editableRange
+    ? codeMirrorDiagnostics(document.body, document.diagnostics).map(item => ({
+      ...item,
+      from: item.from + editableRange.from,
+      to: item.to + editableRange.from,
+    }))
+    : [], [document, editableRange])
+
+  function changeSource(source: string) {
+    if (!document || !editableRange) return
+    const suffixLength = document.source.length - editableRange.to
+    setBody(source.slice(editableRange.from, source.length - suffixLength))
+  }
+
   return (
     <div className="create-record-backdrop" role="presentation" onMouseDown={event => {
       if (event.target === event.currentTarget) onClose()
@@ -66,18 +89,18 @@ export function FunctionBodyDialog({ value, onCommit, onClose }: Props) {
             <Icon name="code" size={15} aria-hidden />
             <span>函数体</span>
           </div>
-          <code className="function-signature">{document?.signature ?? 'fn'}</code>
           <button className="btn btn-icon" onClick={onClose} aria-label="关闭函数编辑器">
             <Icon name="close" size={14} />
           </button>
         </header>
         <div className="function-editor-body">
           {document && <CfdCodeEditor
-              value={body}
-              onChange={setBody}
+              value={document.source}
+              onChange={changeSource}
               onSave={save}
-              semanticTokens={decodeSemanticTokens(body, document)}
-              diagnostics={codeMirrorDiagnostics(body, document.diagnostics)}
+              editableRange={editableRange}
+              semanticTokens={semanticTokens}
+              diagnostics={diagnostics}
               onComplete={async () => document.completions.map(completionItem)}
               autoFocus
             />}
@@ -100,16 +123,17 @@ export function FunctionEditorButton({
   onCommit,
 }: Pick<Props, 'value' | 'onCommit'>) {
   const [open, setOpen] = useState(false)
+  const preview = functionBody(value.value.source).replace(/\s+/g, ' ').trim()
   return (
     <>
       <button
         type="button"
         className="function-editor-trigger"
         onClick={event => { event.stopPropagation(); setOpen(true) }}
-        title="编辑函数体"
+        title={`${preview}\n\n点击编辑函数体`}
       >
         <Icon name="code" size={13} aria-hidden />
-        <code>fn {'{ ... }'}</code>
+        <FunctionSourcePreview source={value.value.source} />
       </button>
       {open && (
         <FunctionBodyDialog

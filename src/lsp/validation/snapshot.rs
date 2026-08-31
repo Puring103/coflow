@@ -71,6 +71,7 @@ pub(crate) struct ValidationSnapshot {
 pub(super) struct CfdDocumentSnapshot {
     pub(super) source: String,
     pub(super) ast: coflow_language::cfd::CfdAst,
+    pub(super) syntax_valid: bool,
 }
 
 impl ValidationSnapshot {
@@ -209,6 +210,7 @@ fn add_cfd_documents(
             CfdDocumentSnapshot {
                 source: source.text.clone(),
                 ast,
+                syntax_valid: errors.is_empty(),
             },
         );
     }

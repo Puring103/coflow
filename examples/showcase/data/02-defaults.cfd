@@ -1,3 +1,5 @@
 # Feature: omitted fields receive their schema defaults.
 
-standard: DefaultSettings {}
+standard: DefaultSettings {    title: "",
+    visible: true,
+}

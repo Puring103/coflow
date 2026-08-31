@@ -64,6 +64,7 @@ import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
 import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
 import { FunctionEditorButton } from './FunctionBodyDialog'
+import { FunctionSourcePreview } from './FunctionSourcePreview'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 
@@ -342,6 +343,8 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
       return <span className="vc vc-arr">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
     case 'dict':
       return <span className="vc vc-dict">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
+    case 'function':
+      return <span className="vc vc-function"><FunctionSourcePreview source={value.value.source} /></span>
   }
 }
 

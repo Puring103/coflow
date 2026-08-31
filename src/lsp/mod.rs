@@ -706,11 +706,14 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                cfd::semantic_tokens(document.source, document.ast)
+                let mut result = cfd::semantic_tokens(document.source, document.ast, document.schema);
+                result["x-coflow-syntax-valid"] = json!(document.syntax_valid);
+                result
             }
             LspRequestDocument::Cft { build, document } => {
                 json!({
-                    "data": semantic_token_data(build, document)
+                    "data": semantic_token_data(build, document),
+                    "x-coflow-syntax-valid": true
                 })
             }
             LspRequestDocument::Missing => json!({"data": []}),

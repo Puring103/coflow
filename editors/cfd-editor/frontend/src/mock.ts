@@ -92,6 +92,7 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       actual_type: 'Npc',
       record_key: 'Npc_001',
       field_path: 'reward_item',
+      range: null,
       contexts: [],
     },
     {
@@ -103,6 +104,7 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       actual_type: 'Item',
       record_key: 'Item_001',
       field_path: 'unknown_id',
+      range: null,
       contexts: [],
     },
   ],

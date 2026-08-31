@@ -75,23 +75,13 @@ fn diagnostics_for_uri(messages: &[Value], uri: &str) -> Option<Vec<LanguageDiag
 }
 
 fn language_diagnostic(value: &Value) -> Option<LanguageDiagnostic> {
-    let position = |value: &Value| {
-        Some(LanguagePosition {
-            line: u32::try_from(value.get("line")?.as_u64()?).ok()?,
-            character: u32::try_from(value.get("character")?.as_u64()?).ok()?,
-        })
-    };
-    let range = value.get("range")?;
     let code = value.get("code").and_then(|code| {
         code.as_str()
             .map(str::to_string)
             .or_else(|| code.as_i64().map(|code| code.to_string()))
     });
     Some(LanguageDiagnostic {
-        range: LanguageRange {
-            start: position(range.get("start")?)?,
-            end: position(range.get("end")?)?,
-        },
+        range: language_range(value.get("range")?)?,
         severity: value
             .get("severity")
             .and_then(Value::as_u64)
@@ -100,6 +90,19 @@ fn language_diagnostic(value: &Value) -> Option<LanguageDiagnostic> {
         message: value.get("message")?.as_str()?.to_string(),
         code,
         source: value.get("source").and_then(Value::as_str).map(str::to_string),
+    })
+}
+
+fn language_range(value: &Value) -> Option<LanguageRange> {
+    let position = |value: &Value| {
+        Some(LanguagePosition {
+            line: u32::try_from(value.get("line")?.as_u64()?).ok()?,
+            character: u32::try_from(value.get("character")?.as_u64()?).ok()?,
+        })
+    };
+    Some(LanguageRange {
+        start: position(value.get("start")?)?,
+        end: position(value.get("end")?)?,
     })
 }
 
@@ -182,6 +185,10 @@ impl SessionStore {
                 .filter_map(|value| u32::try_from(value).ok())
                 .collect(),
             semantic_token_types: coflow::lsp::EmbeddedLsp::semantic_token_types(),
+            syntax_valid: tokens
+                .get("x-coflow-syntax-valid")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
     }
 
@@ -259,6 +266,13 @@ impl SessionStore {
             source: result.get("source").and_then(Value::as_str).unwrap_or(source).to_string(),
             signature: result.get("signature").and_then(Value::as_str).unwrap_or("fn").to_string(),
             body: result.get("body").and_then(Value::as_str).unwrap_or(source).to_string(),
+            body_range: result
+                .get("bodyRange")
+                .and_then(language_range)
+                .unwrap_or(LanguageRange {
+                    start: LanguagePosition { line: 0, character: 0 },
+                    end: LanguagePosition { line: 0, character: source.chars().count() as u32 },
+                }),
             diagnostics,
             semantic_token_data: result
                 .pointer("/semanticTokens/data")

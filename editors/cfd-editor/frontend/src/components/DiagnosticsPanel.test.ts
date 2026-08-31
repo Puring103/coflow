@@ -34,6 +34,7 @@ describe('diagnostics panel list', () => {
         actual_type: 'RegionConfig',
         record_key: 'Region_01',
         field_path: 'Value',
+        range: null,
         contexts: [],
       }],
     }))

@@ -1,5 +1,5 @@
 # Feature: collection data evaluated by quantifier checks.
 
 non_negative_values: QuantifierRule {
-    numbers: [0, 1, 2],
+    numbers: [0, 2, 2, 2, 2, 2, 2],
 }

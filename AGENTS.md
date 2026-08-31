@@ -82,6 +82,16 @@ Keep README focused on user-facing installation, features, configuration, and us
 internal architecture notes, development workflow, repository checks, and specification indexes
 in this file or in `docs/`.
 
+Internal language and C# Runtime design lives under `docs/language-design/` and is split by responsibility:
+
+- `01-language-design.zh-CN.md`: base language semantics.
+- `02-api-runtime-design.zh-CN.md`: generated API, loading, modules, tables, and Host boundaries.
+- `03-vm-design.zh-CN.md`: register VM, calls, closures, validation, limits, and performance.
+
+Keep public C# syntax and API guidance concise in
+`website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or
+implementation constraints there.
+
 ### Internal Crate Boundaries
 
 - `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, data model, checks, diagnostics, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.

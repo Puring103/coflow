@@ -5,6 +5,11 @@ default_calculator: Calculator {
         left + right
     },
     classify: fn(value: int) -> string {
-        if value >= 10 { "large" } else { "small" }
-    },
+if value >= 10 
+{
+    "large" 
+} else {
+    "small" 
+}
+},
 }

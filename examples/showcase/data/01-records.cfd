@@ -2,9 +2,9 @@
 
 Product {
     notebook {
-        name: "Notebook",
-        price: 12,
-        enabled: true,
+            name: "Notebook",
+            price: 12,
+            enabled: true,
     }
 
     pencil {
@@ -17,5 +17,17 @@ Product {
         name: "sadasd",
         price:2,
         enabled:true,
+    }
+
+    test2{
+        name:" asdasd",
+        price:32,
+        enabled: true
+    }
+
+    sadasd{
+        name: "sadsad",
+        price:12,
+        enabled:true
     }
 }

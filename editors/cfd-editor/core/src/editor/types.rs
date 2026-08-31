@@ -208,6 +208,7 @@ pub struct LanguageDocumentState {
     pub diagnostics: Vec<LanguageDiagnostic>,
     pub semantic_token_data: Vec<u32>,
     pub semantic_token_types: Vec<String>,
+    pub syntax_valid: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +231,7 @@ pub struct FunctionDocumentState {
     pub source: String,
     pub signature: String,
     pub body: String,
+    pub body_range: LanguageRange,
     pub diagnostics: Vec<LanguageDiagnostic>,
     pub semantic_token_data: Vec<u32>,
     pub semantic_token_types: Vec<String>,
