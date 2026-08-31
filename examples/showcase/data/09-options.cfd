@@ -3,5 +3,5 @@
 without_subtitle: OptionExample {}
 
 with_subtitle: OptionExample {
-    subtitle: Some("sdfdsfsdf"),
+  subtitle: "sdfdsfsdf",
 }

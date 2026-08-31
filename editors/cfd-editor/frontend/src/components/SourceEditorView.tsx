@@ -6,9 +6,14 @@ import {
   codeMirrorDiagnostics,
   completionItem,
   decodeSemanticTokens,
+  rangeOffsets,
   validationCodeMirrorDiagnostics,
 } from '../code/lspAdapter'
-import { CfdCodeEditor, type CodeSemanticToken } from './CfdCodeEditor'
+import {
+  CfdCodeEditor,
+  type CodeSemanticToken,
+  type ExternalDocumentUpdate,
+} from './CfdCodeEditor'
 import { Icon } from './Icon'
 
 interface Draft {
@@ -17,6 +22,17 @@ interface Draft {
 }
 
 const drafts = new Map<string, Draft>()
+
+export function normalizeSourceText(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
+}
+
+export function languageTextEditChanges(source: string, edits: readonly api.LanguageTextEdit[]) {
+  return edits.map(edit => ({
+    ...rangeOffsets(source, edit.range),
+    insert: normalizeSourceText(edit.new_text),
+  })).sort((left, right) => left.from - right.from || left.to - right.to)
+}
 
 interface Props {
   sessionId: number
@@ -36,11 +52,13 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   const [validationDiagnostics, setValidationDiagnostics] = useState<DiagnosticItem[]>([])
   const [semanticTokens, setSemanticTokens] = useState<CodeSemanticToken[]>([])
   const [replaceSemanticTokens, setReplaceSemanticTokens] = useState(true)
+  const [documentUpdate, setDocumentUpdate] = useState<ExternalDocumentUpdate | null>(null)
   const [error, setError] = useState<string | null>(null)
   const languageRequest = useRef(0)
   const languageVersion = useRef(0)
   const validationRequest = useRef(0)
   const loadedKey = useRef<string | null>(null)
+  const immediateLanguageSource = useRef<string | null>(null)
   const dirty = source !== base
   const editorDiagnostics = useMemo(() => [
     ...codeMirrorDiagnostics(source, diagnostics),
@@ -58,11 +76,13 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
     const operation = api.isTauri
       ? api.readSourceText(sessionId, filePath)
       : Promise.resolve(drafts.get(key)?.base ?? '')
-    operation.then(text => {
+    operation.then(rawText => {
       if (!alive) return
+      const text = normalizeSourceText(rawText)
       const draft = drafts.get(key)
       setBase(text)
       setSource(draft?.base === text ? draft.text : text)
+      setDocumentUpdate(null)
       loadedKey.current = key
       if (draft?.base !== text) drafts.delete(key)
     }).catch(cause => {
@@ -77,6 +97,10 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   }, [base, dirty, key, source])
 
   useEffect(() => {
+    if (immediateLanguageSource.current === source) {
+      immediateLanguageSource.current = null
+      return
+    }
     const request = ++languageRequest.current
     if (!api.isTauri || loading) {
       setDiagnostics([])
@@ -125,13 +149,49 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   }, [filePath, sessionId])
 
   async function save() {
-    if (!dirty || readOnly || saving || !api.isTauri) return
+    if (readOnly || saving || !api.isTauri) return
     setSaving(true)
     setError(null)
     try {
-      const snapshot = await api.writeSourceText(sessionId, filePath, source)
+      const sourceBeforeFormatting = source
+      const formatting = await api.formatLanguageDocument(
+        sessionId,
+        filePath,
+        sourceBeforeFormatting,
+        ++languageVersion.current,
+      )
+      const formatted = normalizeSourceText(formatting.text)
+      if (formatted !== sourceBeforeFormatting) {
+        setDocumentUpdate({
+          before: sourceBeforeFormatting,
+          after: formatted,
+          changes: languageTextEditChanges(sourceBeforeFormatting, formatting.edits),
+        })
+        immediateLanguageSource.current = formatted
+        const request = ++languageRequest.current
+        const version = ++languageVersion.current
+        setSource(formatted)
+        try {
+          const next = await api.syncLanguageDocument(sessionId, filePath, formatted, version)
+          if (languageRequest.current === request) {
+            setDiagnostics(next.diagnostics)
+            setSemanticTokens(decodeSemanticTokens(formatted, next))
+            setReplaceSemanticTokens(next.syntax_valid)
+          }
+        } catch (cause) {
+          if (languageRequest.current === request) {
+            setDiagnostics([])
+            setError(errorMessage(cause))
+          }
+        }
+      }
+      if (formatted === base) {
+        drafts.delete(key)
+        return
+      }
+      const snapshot = await api.writeSourceText(sessionId, filePath, formatted)
       drafts.delete(key)
-      setBase(source)
+      setBase(formatted)
       setValidationDiagnostics([])
       await onSaved(snapshot)
     } catch (cause) {
@@ -159,12 +219,14 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
         <CfdCodeEditor
           value={source}
           onChange={next => {
+            setDocumentUpdate(null)
             setSource(next)
             setValidationDiagnostics([])
             setError(null)
           }}
           onSave={() => { void save() }}
-          readOnly={readOnly}
+          readOnly={readOnly || saving}
+          documentUpdate={documentUpdate}
           semanticTokens={semanticTokens}
           replaceSemanticTokens={replaceSemanticTokens}
           diagnostics={editorDiagnostics}

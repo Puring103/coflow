@@ -4,8 +4,8 @@
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
 use coflow_language::cfd::{
-    parse_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdRecord, CfdSyntaxDiagnostic,
-    CfdFunction, CfdValue,
+    parse_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdFormatSegment, CfdFunction,
+    CfdRecord, CfdSyntaxDiagnostic, CfdValue,
 };
 use coflow_language::{CftSchema, CftValueType, Span};
 use serde_json::{json, Value};
@@ -310,7 +310,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         }
         CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
         CfdValue::QuotedString(_, span) => c.add_multiline_plain(*span, SEM_STRING),
-        CfdValue::FormattedString(value) => c.add_multiline_plain(value.span, SEM_STRING),
+        CfdValue::FormattedString(value) => collect_formatted_string_tokens(value, c),
         CfdValue::Function(value) => collect_function_tokens(value.span, &value.source, c),
         CfdValue::OptionNone(span) => c.add_plain(*span, SEM_KEYWORD),
         CfdValue::OptionSome(value, span) => {
@@ -346,6 +346,29 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             }
             c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
         }
+    }
+}
+
+fn collect_formatted_string_tokens(
+    value: &coflow_language::CfdFormattedString,
+    collector: &mut TokenCollector<'_>,
+) {
+    let mut cursor = value.span.start;
+    for reference in value.segments.iter().filter_map(|segment| match segment {
+        CfdFormatSegment::Reference(reference)
+            if reference.span.start >= value.span.start
+                && reference.span.end <= value.span.end
+                && reference.span.start < reference.span.end => Some(reference),
+        _ => None,
+    }) {
+        if reference.span.start > cursor {
+            collector.add_multiline_plain(Span::new(cursor, reference.span.start), SEM_STRING);
+        }
+        collector.add_plain(reference.span, SEM_VARIABLE);
+        cursor = reference.span.end;
+    }
+    if cursor < value.span.end {
+        collector.add_multiline_plain(Span::new(cursor, value.span.end), SEM_STRING);
     }
 }
 
@@ -631,6 +654,9 @@ pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset
     let Some(schema) = schema else {
         return json!([]);
     };
+    if let Some(items) = formatted_string_completion(ast, schema, offset) {
+        return json!(items);
+    }
     if let Some((key, _, group_type)) = incomplete_group_key_at(source, schema, offset) {
         return json!([{
             "label": key,
@@ -695,6 +721,32 @@ pub fn completion(source: &str, ast: &CfdAst, schema: Option<&CftSchema>, offset
     json!(types)
 }
 
+fn formatted_string_completion(
+    ast: &CfdAst,
+    schema: &CftSchema,
+    offset: usize,
+) -> Option<Vec<Value>> {
+    let record = ast.records.iter().find(|record| {
+        record.fields.iter().any(|field| match &field.value {
+            CfdValue::FormattedString(value) => span_contains(value.span, offset),
+            _ => false,
+        })
+    })?;
+    let schema_type = schema.resolve_type(&record.type_name)?;
+    Some(
+        schema_type
+            .all_fields()
+            .map(|field| {
+                json!({
+                    "label": field.name.as_str(),
+                    "kind": 5,
+                    "detail": format!("formatted field: {}", fmt_value_type(&field.value_type)),
+                })
+            })
+            .collect(),
+    )
+}
+
 fn completion_value_type<'a>(
     source: &str,
     ast: &CfdAst,
@@ -740,15 +792,13 @@ fn value_completion_items(schema: &CftSchema, value_type: &CftValueType) -> Vec<
                 }))
                 .collect()
         }),
-        CftValueType::Option(inner) => vec![
-            json!({ "label": "None", "kind": 14, "detail": value_type.display_label() }),
-            json!({
-                "label": "Some",
-                "kind": 3,
-                "detail": format!("Some({})", inner.display_label()),
-                "insertText": "Some()",
-            }),
-        ],
+        CftValueType::Option(inner) => {
+            let mut items = vec![
+                json!({ "label": "None", "kind": 14, "detail": value_type.display_label() }),
+            ];
+            items.extend(value_completion_items(schema, inner));
+            items
+        }
         CftValueType::Result(ok, error) => vec![
             json!({
                 "label": "Ok",

@@ -19,6 +19,7 @@ representation.
 | `11-conditional-checks` | Conditional validation |
 | `12-quantifiers` | Collection quantifiers |
 | `13-functions` | Function values and editable function bodies |
+| `14-dimensions` | Localized fields and language overlays |
 
 Run the example from the repository root:
 

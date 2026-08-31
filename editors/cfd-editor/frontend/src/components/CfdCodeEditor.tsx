@@ -2,7 +2,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, t
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language'
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
-import { Annotation, ChangeSet, Compartment, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state'
+import { Annotation, ChangeSet, Compartment, EditorState, StateEffect, StateField, Transaction, type ChangeSpec } from '@codemirror/state'
 import {
   crosshairCursor,
   drawSelection,
@@ -34,6 +34,12 @@ const setSemanticTokens = StateEffect.define<SemanticTokenUpdate>()
 export interface EditableRange {
   from: number
   to: number
+}
+
+export interface ExternalDocumentUpdate {
+  before: string
+  after: string
+  changes: readonly ChangeSpec[]
 }
 
 const setEditableRange = StateEffect.define<EditableRange | null>()
@@ -119,6 +125,7 @@ interface Props {
   replaceSemanticTokens?: boolean
   onComplete?: (source: string, position: { line: number; character: number }) => Promise<readonly Completion[]>
   diagnostics?: readonly Diagnostic[]
+  documentUpdate?: ExternalDocumentUpdate | null
   className?: string
 }
 
@@ -133,6 +140,7 @@ export function CfdCodeEditor({
   replaceSemanticTokens = true,
   onComplete,
   diagnostics = [],
+  documentUpdate = null,
   className,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -175,8 +183,8 @@ export function CfdCodeEditor({
           drawSelection(),
           dropCursor(),
           EditorState.allowMultipleSelections.of(true),
-          EditorState.tabSize.of(4),
-          indentUnit.of('    '),
+          EditorState.tabSize.of(2),
+          indentUnit.of('  '),
           indentOnInput(),
           bracketMatching(),
           closeBrackets(),
@@ -209,7 +217,10 @@ export function CfdCodeEditor({
             ...completionKeymap,
           ]),
           EditorView.updateListener.of(update => {
-            if (update.docChanged) onChangeRef.current(update.state.doc.toString())
+            const userDocumentChange = update.transactions.some(transaction => (
+              transaction.docChanged && !transaction.annotation(externalDocumentUpdate)
+            ))
+            if (userDocumentChange) onChangeRef.current(update.state.doc.toString())
           }),
           EditorView.theme({
             '&': { height: '100%', backgroundColor: 'var(--bg-1)', color: 'var(--text)' },
@@ -234,6 +245,16 @@ export function CfdCodeEditor({
     // The editor owns its document after construction. Prop changes are synced below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !documentUpdate || value !== documentUpdate.after) return
+    if (view.state.doc.toString() !== documentUpdate.before) return
+    view.dispatch({
+      changes: documentUpdate.changes,
+      annotations: [externalDocumentUpdate.of(true), Transaction.addToHistory.of(true)],
+    })
+  }, [documentUpdate, value])
 
   useEffect(() => {
     const view = viewRef.current

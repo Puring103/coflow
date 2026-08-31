@@ -1131,6 +1131,15 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         LoadedValueDraft::record_ref("sword_01")
     );
 
+    let optional_reference = CfdValue::OptionSome(Box::new(reference));
+    let rendered_optional =
+        render_cell_value(&optional_reference).map_err(|err| err.to_string())?;
+    assert_eq!(rendered_optional, "&sword_01");
+    assert_eq!(
+        parse_value(&schema, "Option<&Item>", &rendered_optional)?,
+        LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("sword_01")))
+    );
+
     let dict = CfdValue::Dict(vec![(
         CfdDictKey::String("rare:drop".to_string()),
         CfdValue::Int(10),

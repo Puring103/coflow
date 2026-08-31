@@ -69,6 +69,7 @@ include_dir = { version = "0.7", optional = true }
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+similar = "2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -47,10 +47,10 @@ use definition::{
 use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
-use formatting::format_cft;
+use formatting::{format_cft, formatting_edits};
 use hover::hover_at;
 use position::{
-    byte_offset_from_position, byte_range, full_document_range, range_from_span, LspPosition,
+    byte_offset_from_position, byte_range, range_from_span, LspPosition,
 };
 use protocol::{
     did_change_document, did_change_watched_files, did_open_document, did_save_document,
@@ -680,22 +680,16 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = {
-            let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, &json!([]));
-            };
-            let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, &json!([]));
-            };
-            let formatted = format_cft(&document.source);
-            if formatted == document.source() {
-                json!([])
-            } else {
-                json!([{
-                    "range": full_document_range(&document.source),
-                    "newText": formatted
-                }])
+        let result = match self.request_document(&uri)? {
+            LspRequestDocument::Cfd(document) => {
+                let formatted = format_cft(document.source);
+                json!(formatting_edits(document.source, &formatted))
             }
+            LspRequestDocument::Cft { document, .. } => {
+                let formatted = format_cft(&document.source);
+                json!(formatting_edits(&document.source, &formatted))
+            }
+            LspRequestDocument::Missing => json!([]),
         };
         self.write_response(id, &result)
     }
@@ -725,12 +719,6 @@ impl<W: Write> LspServer<W> {
         let publications = self.core.prepare_request_document(uri);
         self.publish_diagnostic_publications(publications)?;
         Ok(self.core.request_document(uri))
-    }
-
-    fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
-        let publications = self.core.ensure_build_publications();
-        self.publish_diagnostic_publications(publications)?;
-        Ok(self.core.build())
     }
 
     fn publish_diagnostics(

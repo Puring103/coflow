@@ -1,15 +1,16 @@
 # Feature: concrete child objects stored through an abstract parent type.
 
 starter_effects: EffectBundle {
-    primary: HealEffect {
+  primary: HealEffect {
     amount: 0,
     label: "",
-},
-    additional: [HealEffect {
+  },
+
+  additional: [HealEffect {
     amount: 5,
     label: "Recovery",
-}, HealEffect {
+  }, HealEffect {
     amount: 5,
     label: "Recovery",
-}],
+  }],
 }

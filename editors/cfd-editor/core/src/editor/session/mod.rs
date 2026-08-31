@@ -69,6 +69,7 @@ pub struct EditorSession {
     pub language_server: coflow::lsp::EmbeddedLsp,
     pub language_documents: HashSet<String>,
     pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
+    schema_files: HashSet<String>,
     file_type_names: BTreeMap<String, Vec<String>>,
     type_display_names: BTreeMap<(String, String), String>,
     ref_target_cache: HashMap<String, Vec<RefTarget>>,
@@ -354,7 +355,7 @@ impl SessionStore {
             .state
             .read()
             .map_err(|_| EditorError::session("session poisoned during source path lookup"))?;
-        if !session.queries().has_source_file(file_path) {
+        if !session.queries().has_source_file(file_path) && !session.schema_files.contains(file_path) {
             return Err(EditorError::not_found(format!(
                 "`{file_path}` is not a source file in the current project"
             )));

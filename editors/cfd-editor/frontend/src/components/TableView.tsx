@@ -1656,7 +1656,7 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   if (value.kind === 'object') return value.value.actual_type
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'
-  if (value.kind === 'option_none') return 'null'
+  if (value.kind === 'option_none') return 'None'
   if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
     return inferredCellType({ ...cell, value: value.value })
   }

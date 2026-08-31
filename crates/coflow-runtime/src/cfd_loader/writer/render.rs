@@ -2,6 +2,7 @@ use crate::data_model::{CfdDictKey, CfdEnumValue, CfdValue};
 use coflow_language::{CftSchema, CftValueType};
 
 use super::schema_nav::{object_type_name, type_after_field_segment};
+use super::CFD_INDENT;
 
 /// Serialize a `CfdValue` to CFD source text.
 ///
@@ -19,14 +20,13 @@ pub(super) fn serialize_value_for_type(
     expected: Option<&CftValueType>,
     depth: usize,
 ) -> String {
-    let indent = "    ".repeat(depth);
-    let outer = "    ".repeat(depth.saturating_sub(1));
+    let indent = CFD_INDENT.repeat(depth);
+    let outer = CFD_INDENT.repeat(depth.saturating_sub(1));
     match v {
         CfdValue::OptionNone => "None".to_string(),
-        CfdValue::OptionSome(value) => format!(
-            "Some({})",
+        CfdValue::OptionSome(value) => {
             serialize_value_for_type(value, schema, option_inner(expected), depth)
-        ),
+        }
         CfdValue::ResultOk(value) => format!(
             "Ok({})",
             serialize_value_for_type(value, schema, result_ok(expected), depth)
@@ -186,6 +186,18 @@ mod tests {
     use coflow_language::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
     };
+
+    #[test]
+    fn serializes_present_options_without_some_constructor() {
+        let value = CfdValue::OptionSome(Box::new(CfdValue::Int(7)));
+        let ty = CftValueType::Option(Box::new(CftValueType::Int));
+
+        assert_eq!(serialize_value_for_type(&value, None, Some(&ty), 0), "7");
+        assert_eq!(
+            serialize_value_for_type(&CfdValue::OptionNone, None, Some(&ty), 0),
+            "None"
+        );
+    }
 
     #[test]
     fn serializes_flag_masks_in_schema_order() -> Result<(), String> {

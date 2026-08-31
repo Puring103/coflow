@@ -14,11 +14,12 @@ use super::{
 };
 use crate::editor::types::{
     FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
-    LanguagePosition, LanguageRange,
+    LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit,
 };
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_runtime::{
-    DataSourceTextOverride, FlatDiagnostic, Project, RecordSearchMode, RecordSearchOptions, Runtime,
+    DataSourceTextOverride, FlatDiagnostic, Project, ProjectRuntime, RecordSearchMode,
+    RecordSearchOptions, Runtime, SchemaTextOverride,
 };
 use serde_json::{json, Value};
 use std::io::Write;
@@ -130,6 +131,62 @@ fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
         .collect()
 }
 
+fn formatting_edits(edits: &Value) -> Vec<LanguageTextEdit> {
+    edits
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|edit| {
+            Some(LanguageTextEdit {
+                range: language_range(edit.get("range")?)?,
+                new_text: edit.get("newText")?.as_str()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn formatting_text(source: &str, edits: &[LanguageTextEdit]) -> String {
+    let mut replacements = edits
+        .iter()
+        .map(|edit| {
+            (
+                language_position_offset(source, &edit.range.start),
+                language_position_offset(source, &edit.range.end),
+                edit.new_text.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    replacements.sort_unstable_by(|left, right| right.0.cmp(&left.0).then(right.1.cmp(&left.1)));
+
+    let mut text = source.to_string();
+    for (start, end, replacement) in replacements {
+        if start <= end && end <= text.len() {
+            text.replace_range(start..end, replacement);
+        }
+    }
+    text
+}
+
+fn language_position_offset(source: &str, position: &LanguagePosition) -> usize {
+    let mut line = 0u32;
+    let mut character = 0u32;
+    for (byte_index, ch) in source.char_indices() {
+        if line == position.line && character >= position.character {
+            return byte_index;
+        }
+        if ch == '\n' {
+            if line == position.line {
+                return byte_index;
+            }
+            line = line.saturating_add(1);
+            character = 0;
+        } else {
+            character = character.saturating_add(ch.len_utf16() as u32);
+        }
+    }
+    source.len()
+}
+
 impl SessionStore {
     pub fn read_source_text(&self, id: u32, file_path: &str) -> Result<String, EditorError> {
         let path = self.source_file_path(id, file_path)?;
@@ -221,6 +278,38 @@ impl SessionStore {
         Ok(completion_items(&result))
     }
 
+    pub fn format_language_document(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+        version: i64,
+    ) -> Result<LanguageFormattingResult, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let entry = self.session(id)?;
+        let mut session = entry
+            .state
+            .write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        synchronize_language_document(&mut session, &uri, file_path, source, version)?;
+        let (result, _) = session
+            .language_server
+            .request(
+                "textDocument/formatting",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "options": { "tabSize": 2, "insertSpaces": true },
+                }),
+            )
+            .map_err(EditorError::other)?;
+        let edits = formatting_edits(&result);
+        Ok(LanguageFormattingResult {
+            text: formatting_text(source, &edits),
+            edits,
+        })
+    }
+
     pub fn close_language_document(&self, id: u32, file_path: &str) -> Result<(), EditorError> {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
@@ -297,6 +386,18 @@ impl SessionStore {
         let yaml_path = self.project_action_context(id)?;
         let project = Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| api_diagnostics_to_editor_error(diagnostics))?;
+        if file_path.ends_with(".cft") {
+            let mut schema_runtime = ProjectRuntime::new(project);
+            let source_override = SchemaTextOverride {
+                requested_module: None,
+                normalized_path: coflow_runtime::normalize_path(&path),
+                source: source.to_string(),
+            };
+            return match schema_runtime.refresh_with_overrides(&[source_override]) {
+                Ok(_) => Ok(Vec::new()),
+                Err(diagnostics) => Ok(diagnostics.flat_diagnostics()),
+            };
+        }
         let source_override = DataSourceTextOverride {
             normalized_path: path,
             source: source.to_string(),

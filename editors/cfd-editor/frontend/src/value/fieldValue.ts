@@ -160,7 +160,7 @@ function fullTextOf(value: FieldValue): string {
   const scalar = scalarText(value)
   if (scalar !== null) return scalar
   switch (value.kind) {
-    case 'option_none': return 'null'
+    case 'option_none': return 'None'
     case 'option_some': return fullTextOf(value.value)
     case 'result_ok': return `ok ${fullTextOf(value.value)}`
     case 'result_err': return `err ${fullTextOf(value.value)}`
@@ -203,7 +203,7 @@ function dictKindLabel(key: DictKey): string {
 
 function valueKindLabel(value: FieldValue): string {
   switch (value.kind) {
-    case 'option_none': return 'null'
+    case 'option_none': return 'None'
     case 'option_some': return valueKindLabel(value.value)
     case 'result_ok': return `Ok<${valueKindLabel(value.value)}>`
     case 'result_err': return `Err<${valueKindLabel(value.value)}>`

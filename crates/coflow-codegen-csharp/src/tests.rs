@@ -12,7 +12,7 @@ fn schema(source: &str) -> CftSchema {
 fn all(files: &[GeneratedFile]) -> String {
     files
         .iter()
-        .map(|file| file.contents.as_str())
+        .map(|file| file.contents.replace("\r\n", "\n"))
         .collect::<Vec<_>>()
         .join("\n")
 }

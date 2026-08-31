@@ -19,7 +19,8 @@ function dimension(name: string, displayName: string, outDir: string): Dimension
 }
 
 describe('buildFileTreeGroups', () => {
-  it('keeps data first, then localization, then other configured dimensions', () => {
+  it('keeps schema first, then data, localization, and other configured dimensions', () => {
+    const schema = node('schema', 'schema', [node('items.cft', 'schema/items.cft')])
     const data = node('data', 'data', [node('items.cfd', 'data/items.cfd')])
     const languageFile = node('Item_name.cfd', 'generated/lang/Item_name.cfd')
     const platformFile = node('Item_icon.cfd', 'generated/platform/Item_icon.cfd')
@@ -27,6 +28,7 @@ describe('buildFileTreeGroups', () => {
       [
         node('平台', 'generated/platform', [platformFile]),
         node('本地化', 'generated/lang', [languageFile]),
+        schema,
         data,
       ],
       [
@@ -36,19 +38,24 @@ describe('buildFileTreeGroups', () => {
     )
 
     expect(groups.map(group => [group.label, group.icon])).toEqual([
+      ['类型', 'code'],
       ['数据', 'data'],
       ['本地化', 'localization'],
       ['平台', 'dimension'],
     ])
-    expect(groups[0].nodes).toEqual([data])
-    expect(groups[1].nodes).toEqual([languageFile])
-    expect(groups[2].nodes).toEqual([platformFile])
+    expect(groups[0].nodes).toEqual([schema])
+    expect(groups[1].nodes).toEqual([data])
+    expect(groups[2].nodes).toEqual([languageFile])
+    expect(groups[3].nodes).toEqual([platformFile])
   })
 
   it('leaves unmatched nodes under data for older snapshots', () => {
     const data = node('data', 'data')
 
     expect(buildFileTreeGroups([data], [dimension('language', '本地化', 'missing')]))
-      .toEqual([{ key: '__data__', label: '数据', icon: 'data', nodes: [data] }])
+      .toEqual([
+        { key: '__schema__', label: '类型', icon: 'code', nodes: [] },
+        { key: '__data__', label: '数据', icon: 'data', nodes: [data] },
+      ])
   })
 })

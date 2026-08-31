@@ -6,4 +6,5 @@ type Category {
 
 type CatalogEntry {
   category: &Category;
+  related: Option<&CatalogEntry> = None;
 }

@@ -4,8 +4,8 @@ CFD 是唯一数据格式。顶层记录使用声明类型和 key，字段值遵
 
 ```cfd
 sword: Item {
-    name: "Fire Sword",
-    tags: ["weapon", "fire"],
+  name: "Fire Sword",
+  tags: ["weapon", "fire"],
 }
 ```
 

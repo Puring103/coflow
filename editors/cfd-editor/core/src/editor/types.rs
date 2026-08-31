@@ -191,6 +191,22 @@ pub struct LanguageRange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageTextEdit {
+    pub range: LanguageRange,
+    pub new_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct LanguageFormattingResult {
+    pub text: String,
+    pub edits: Vec<LanguageTextEdit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct LanguageDiagnostic {
     pub range: LanguageRange,
     pub severity: u8,

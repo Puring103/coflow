@@ -19,6 +19,6 @@ var current = tables.UiText.Welcome.Value;
 var explicitValue = tables.UiText.Welcome.For("en");
 ```
 
-`For(language)` 优先返回对应非空 variant；variant 缺失、显式为 `null` 或语言未知时返回基础字段值。`Value` 等价于 `For(Localization.CurrentLanguage)`。
+`For(language)` 优先返回对应非空 variant；variant 缺失、显式为 `None` 或语言未知时返回基础字段值。`Value` 等价于 `For(Localization.CurrentLanguage)`。
 
 重复 key、未知字段和覆盖类型不匹配会报告 source span。overlay 的 declared type 必须可赋值给字段所属 source type；Rust 项目加载和生成的 C# loader 使用同一约束。

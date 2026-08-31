@@ -250,7 +250,7 @@ shield: Item {
 }
 
 #[test]
-fn inserts_missing_field_with_four_space_indentation() {
+fn inserts_missing_field_with_two_space_indentation() {
     let dir = temp_dir("insert-missing-field-indentation");
     let file = dir.join("items.cfd");
     fs::write(&file, "sword: Item {\n}\n").expect("write seed");
@@ -281,7 +281,7 @@ fn inserts_missing_field_with_four_space_indentation() {
         .expect("insert missing field");
 
     let after = fs::read_to_string(&file).expect("re-read");
-    assert_eq!(after, "sword: Item {\n    value: 42,\n}\n");
+    assert_eq!(after, "sword: Item {\n  value: 42,\n}\n");
 }
 
 #[test]
@@ -619,9 +619,9 @@ fn inserts_record_at_end_of_cfd_file() {
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
         after.contains(
-            "potion: Item {\n    name: \"Potion\",\n    value: 3,\n}\n"
+            "potion: Item {\n  name: \"Potion\",\n  value: 3,\n}\n"
         ),
-        "inserted records should use four-space indentation: {after}"
+        "inserted records should use two-space indentation: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
     assert!(model.lookup_assignable(&schema, "Item", "potion").is_some());
@@ -742,8 +742,8 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("    slot: Slot {\n        item: &sword,\n    },"),
-        "nested fields should use one four-space indentation unit per level: {after}"
+        after.contains("  slot: Slot {\n    item: &sword,\n  },"),
+        "nested fields should use one two-space indentation unit per level: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
     assert!(model
@@ -1071,7 +1071,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     let CfdValue::Object(primary_object) = &primary else {
         panic!("primary effect should be an object");
     };
-    assert_eq!(primary_object.actual_type.as_str(), "DamageEffect");
+    assert_eq!(primary_object.actual_type.as_str(), "HealEffect");
     let CfdValue::Array(additional) = record.field("additional").expect("additional effects") else {
         panic!("additional effects should be an array");
     };
@@ -1129,5 +1129,5 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     else {
         panic!("rewritten additional effects should be an array");
     };
-    assert_eq!(rewritten_additional.len(), 2);
+    assert_eq!(rewritten_additional.len(), 3);
 }

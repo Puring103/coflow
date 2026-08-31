@@ -12,6 +12,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use super::render::serialize_value;
+use super::CFD_INDENT;
 use super::{diag, raw_span, CfdWriter};
 
 pub(crate) static CFD_DIMENSION_WRITER_DESCRIPTOR: CfdDimensionWriterDescriptor =
@@ -277,12 +278,12 @@ impl CfdDimensionWriter for CfdWriter {
             let row = existing.get(&entry.key);
             let actual_type = entry.actual_type.as_str();
             let _ = writeln!(out, "{}: {actual_type} {{", entry.key);
-            let _ = writeln!(out, "    default: {},", serialize_value(&entry.default, 2));
+            let _ = writeln!(out, "{CFD_INDENT}default: {},", serialize_value(&entry.default, 2));
             for variant in request.variants {
                 if let Some(value) = row.and_then(|row| row.variants.get(variant)) {
-                    let _ = writeln!(out, "    {variant}: {},", render_cfd_cell(value));
+                    let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));
                 } else if row.is_none() {
-                    let _ = writeln!(out, "    {variant}: null,");
+                    let _ = writeln!(out, "{CFD_INDENT}{variant}: None,");
                 }
             }
             out.push_str("}\n\n");
@@ -325,10 +326,10 @@ fn render_dimension_cfd(
     let mut out = String::new();
     for (key, row) in rows {
         let _ = writeln!(out, "{key}: {actual_type} {{");
-        let _ = writeln!(out, "    default: {},", render_cfd_cell(&row.default));
+        let _ = writeln!(out, "{CFD_INDENT}default: {},", render_cfd_cell(&row.default));
         for variant in variants {
             if let Some(value) = row.variants.get(variant) {
-                let _ = writeln!(out, "    {variant}: {},", render_cfd_cell(value));
+                let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));
             }
         }
         out.push_str("}\n\n");
@@ -403,7 +404,7 @@ fn read_existing_dimension_cfd(
 
 fn render_cfd_cell(value: &str) -> String {
     if value.is_empty() {
-        "null".to_string()
+        "None".to_string()
     } else {
         value.to_string()
     }

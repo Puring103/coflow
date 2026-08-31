@@ -18,11 +18,6 @@ impl LspPosition {
     }
 }
 
-pub(crate) fn full_document_range(source: &str) -> Value {
-    let end = position_from_byte(source, source.len());
-    lsp_range(0, 0, end.line, end.character)
-}
-
 pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> Value {
     let start = position_from_byte(source, start);
     let end = position_from_byte(source, end);

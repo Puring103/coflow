@@ -56,6 +56,16 @@ export interface LanguageRange {
   end: LanguagePosition
 }
 
+export interface LanguageTextEdit {
+  range: LanguageRange
+  new_text: string
+}
+
+export interface LanguageFormattingResult {
+  text: string
+  edits: LanguageTextEdit[]
+}
+
 export interface LanguageDiagnostic {
   range: LanguageRange
   severity: number
@@ -346,6 +356,20 @@ export async function validateSourceText(
   source: string,
 ): Promise<FlatDiagnostic[]> {
   return invokeCommand<FlatDiagnostic[]>('validate_source_text', { sessionId, filePath, source })
+}
+
+export async function formatLanguageDocument(
+  sessionId: number,
+  filePath: string,
+  source: string,
+  version: number,
+): Promise<LanguageFormattingResult> {
+  return invokeCommand<LanguageFormattingResult>('format_language_document', {
+    sessionId,
+    filePath,
+    source,
+    version,
+  })
 }
 
 export async function completeLanguageDocument(

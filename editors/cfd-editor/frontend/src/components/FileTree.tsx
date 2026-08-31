@@ -46,7 +46,7 @@ type FlatItem =
 export interface FileTreeGroup {
   key: string
   label: string
-  icon: 'data' | 'localization' | 'dimension'
+  icon: 'data' | 'localization' | 'dimension' | 'code'
   nodes: FileTreeNode[]
 }
 
@@ -56,10 +56,18 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     dimensions.flatMap(dimension => dimension.out_dir ? [normalizePath(dimension.out_dir)] : []),
   )
   const groups: FileTreeGroup[] = [{
+    key: '__schema__',
+    label: '类型',
+    icon: 'code',
+    nodes: filterTree(nodes, node => node.name.endsWith('.cft')),
+  }, {
     key: '__data__',
     label: '数据',
     icon: 'data',
-    nodes: nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+    nodes: filterTree(
+      nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+      node => !node.name.endsWith('.cft'),
+    ),
   }]
   const orderedDimensions = [...dimensions].sort((left, right) => {
     if (left.name === 'language') return -1
@@ -78,6 +86,17 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     })
   }
   return groups
+}
+
+function filterTree(
+  nodes: FileTreeNode[],
+  includeFile: (node: FileTreeNode) => boolean,
+): FileTreeNode[] {
+  return nodes.flatMap(node => {
+    if (!node.is_dir) return includeFile(node) ? [node] : []
+    const children = filterTree(node.children, includeFile)
+    return children.length > 0 ? [{ ...node, children }] : []
+  })
 }
 
 function normalizePath(path: string): string {

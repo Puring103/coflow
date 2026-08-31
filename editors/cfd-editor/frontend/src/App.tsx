@@ -106,6 +106,7 @@ import {
   routeForWorkspaceTab,
   sanitizeProjectWorkspace,
   workspaceTabId,
+  workspaceTabWithView,
   workspaceToWire,
   type WorkspaceTab,
 } from './state/workspaceTabs'
@@ -512,6 +513,15 @@ export default function App() {
   ) => {
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
+    if (tab.filePath.endsWith('.cft')) {
+      router.push({
+        view: 'source',
+        file: tab.filePath,
+        viewId: DEFAULT_SOURCE_VIEW_ID,
+        typeFilter: '',
+      })
+      return
+    }
     if (!tab.typeName) {
       setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
       router.push({
@@ -910,6 +920,7 @@ export default function App() {
   useEffect(() => {
     if (!project || !router.current) return
     const file = router.current.file
+    if (file.endsWith('.cft')) return
     if (dimensionForFile(projectDimensions, file)) return
     if (fileDataCache[file]?.revision === project.revision) return
     if (!api.isTauri) return // mock branch already populated
@@ -1503,6 +1514,7 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
+  const activeSchemaFile = activeFile?.endsWith('.cft') ?? false
   useEffect(() => {
     if (!currentRoute) return
     const routedType = currentRoute.view === 'record'
@@ -1734,7 +1746,7 @@ export default function App() {
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
   const activeGraph = activeGraphKey ? graphCache[activeGraphKey] : null
-  const readOnly = !isEditableFile(activeFileData)
+  const readOnly = activeSchemaFile ? false : !isEditableFile(activeFileData)
   const fileCapabilities = useMemo(() => {
     const map: Record<string, WriterCapabilities> = {}
     for (const [file, records] of Object.entries(fileDataCache)) {
@@ -2289,17 +2301,26 @@ export default function App() {
       setFirstRecordFocusRequest(0)
       closeInspector()
     }
-    if (tab.kind === 'record') {
-      const firstCoordinate =
+    const firstCoordinate = tab.kind === 'record'
+      ? (
         (activeType
           ? activeFileData?.records.find(r => recordActualType(r) === activeType)
           : activeFileData?.records[0])?.coordinate
         ?? activeFileData?.records[0]?.coordinate
-      if (!firstCoordinate) return
-      router.replace({ view: 'record', file: currentRoute.file, viewId: tab.id, coordinate: firstCoordinate })
-    } else {
-      router.replace({ view: tab.kind, file: currentRoute.file, viewId: tab.id, typeFilter: activeType })
-    }
+      )
+      : undefined
+    if (tab.kind === 'record' && !firstCoordinate) return
+
+    const id = workspaceTabId(currentRoute.file, activeType)
+    const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
+      ?? defaultWorkspaceTab(currentRoute.file, activeType, isSingletonType)
+    const nextTab = workspaceTabWithView(existing, tab.kind, tab.id, firstCoordinate)
+    const nextTabs = workspaceTabsRef.current.some(candidate => candidate.id === id)
+      ? workspaceTabsRef.current.map(candidate => candidate.id === id ? nextTab : candidate)
+      : [...workspaceTabsRef.current, nextTab]
+    workspaceTabsRef.current = nextTabs
+    setWorkspaceTabs(nextTabs)
+    router.replace(routeForWorkspaceTab(nextTab, firstCoordinate))
   }
 
   // Record tabs can be restored before their file records have loaded. Once
@@ -2894,8 +2915,21 @@ export default function App() {
               )}
             </div>
           )}
-          {currentRoute && (activeFileData || activeDimensionData) && (
-            activeDimensionData ? (
+          {currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
+            activeSchemaFile ? (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  <button
+                    className="tab-btn tab-view active"
+                    role="tab"
+                    aria-selected="true"
+                  >
+                    <Icon name="code" size={13} aria-hidden />
+                    源码
+                  </button>
+                </div>
+              </div>
+            ) : activeDimensionData ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
                   {(['record', 'table'] as const).map(view => (
@@ -2946,7 +2980,17 @@ export default function App() {
               </div>
             )
           )}
-          {currentRoute && activeDimensionData ? (
+          {currentRoute && activeSchemaFile && project ? (
+            <div className="view-container" ref={viewContainerRef}>
+              <SourceEditorView
+                sessionId={project.session_id}
+                revision={project.revision}
+                filePath={currentRoute.file}
+                readOnly={false}
+                onSaved={refreshFromSnapshot}
+              />
+            </div>
+          ) : currentRoute && activeDimensionData ? (
             <DimensionTableView
               data={activeDimensionData}
               mode={dimensionView}

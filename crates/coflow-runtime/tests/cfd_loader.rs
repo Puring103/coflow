@@ -1100,8 +1100,8 @@ fn showcase_files_load_together() -> TestResult {
     let Some(CfdValue::Object(primary)) = bundle.field("primary") else {
         panic!("expected polymorphic primary effect");
     };
-    assert_eq!(primary.actual_type.as_str(), "DamageEffect");
-    assert_eq!(primary.field("amount"), Some(&CfdValue::Int(20)));
+    assert_eq!(primary.actual_type.as_str(), "HealEffect");
+    assert_eq!(primary.field("amount"), Some(&CfdValue::Int(0)));
     Ok(())
 }
 

@@ -673,7 +673,17 @@ fn manifest_path(project: &Project) -> PathBuf {
 }
 
 fn unique_child(parent: &Path, slot: &str) -> PathBuf {
-    parent.join(format!("{slot}-{}", unique_revision()))
+    let safe_slot = slot
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    parent.join(format!("{safe_slot}-{}", unique_revision()))
 }
 
 fn unique_sibling(path: &Path, kind: &str) -> PathBuf {

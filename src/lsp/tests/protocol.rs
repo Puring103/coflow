@@ -653,10 +653,11 @@ fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
 
     let messages = written_messages(&server.writer);
     let edits = messages[0]["result"].as_array().expect("edits");
-    assert_eq!(edits.len(), 1);
-    assert!(edits[0]["newText"]
-        .as_str()
-        .is_some_and(|text| text.contains("  key: string;")));
+    assert_eq!(edits.len(), 2);
+    assert!(edits.iter().any(|edit| {
+        edit["range"]["start"] == json!({ "line": 1, "character": 0 })
+            && edit["newText"] == "  "
+    }));
 }
 
 #[test]
