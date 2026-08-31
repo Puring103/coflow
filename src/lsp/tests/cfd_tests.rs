@@ -1,7 +1,9 @@
 use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
-use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_NAMESPACE};
+use super::super::semantic_tokens::{
+    MOD_DECLARATION, MOD_RECORD, SEM_NAMESPACE, SEM_VARIABLE,
+};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
@@ -519,6 +521,44 @@ type Settings {\n\
     let body_labels = completion_labels(body_items.as_array().expect("function body items").clone());
     assert!(body_labels.contains(&"return".to_string()));
     assert!(body_labels.contains(&"value".to_string()));
+}
+
+#[test]
+fn cfd_formatted_strings_highlight_and_complete_record_fields() {
+    let schema_source = "type Message { amount: int; enabled: Option<bool>; label: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-string", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"message: Message { amount: 7, enabled: true, label: "amount={amount}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let tokens = decode_semantic_tokens(source, &semantic["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "{amount}".to_string(),
+        token_type: SEM_VARIABLE,
+        modifiers: 0,
+    }), "{tokens:?}");
+
+    let offset = source.find("{amount}").expect("formatted reference") + 3;
+    let completions = cfd::completion(source, &ast, Some(schema), offset);
+    assert_eq!(
+        completion_labels(completions.as_array().expect("completion array").clone()),
+        vec!["amount", "enabled", "label"]
+    );
+
+    let option_source = "message: Message { enabled: t }";
+    let (option_ast, _) = parse_cfd(option_source);
+    let option_items = cfd::completion(
+        option_source,
+        &option_ast,
+        Some(schema),
+        option_source.find('t').expect("option value") + 1,
+    );
+    assert_eq!(
+        completion_labels(option_items.as_array().expect("option items").clone()),
+        vec!["None", "true", "false"]
+    );
 }
 
 #[test]

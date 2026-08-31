@@ -1,0 +1,11 @@
+# Feature: language variants overlay the base UiText.text field.
+
+welcome: UiText {
+  en: "Welcome",
+  zh: "欢迎",
+}
+
+goodbye: UiText {
+  en: "Goodbye",
+  zh: "再见",
+}

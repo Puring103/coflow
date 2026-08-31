@@ -235,6 +235,13 @@ impl ProjectSession {
         for source in self.files.source_files() {
             options.in_sources.insert(display_source_path(source));
         }
+        if let Ok(schema_sources) = self.project.schema_sources() {
+            for source in schema_sources {
+                if let Ok(relative) = source.canonical_path.strip_prefix(self.project.root_dir()) {
+                    options.in_sources.insert(path_to_slash(relative));
+                }
+            }
+        }
         for info in self.dimensions() {
             if let Some(out_dir) = info.out_dir.as_ref() {
                 let absolute = self.project.resolve_path(Path::new(out_dir));

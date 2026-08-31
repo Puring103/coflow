@@ -275,7 +275,7 @@ async function parseForCell(
     const incoming = await parseArray([[text]], cell, { ...context, mode: 'replace' }, errors)
     if (!incoming || incoming.kind !== 'array') return undefined
     if (cell.value.kind !== 'array' && cell.value.kind !== 'option_none') {
-      errors.push({ cell, message: '当前目标值不是 array 或 null' })
+      errors.push({ cell, message: '当前目标值不是 array 或 None' })
       return undefined
     }
     const current = cell.value.kind === 'array' ? cell.value.value : []
@@ -326,7 +326,7 @@ async function parseArray(
   }
   if (context.mode !== 'append') return incoming
   if (cell.value.kind !== 'array' && cell.value.kind !== 'option_none') {
-    errors.push({ cell, message: '当前目标值不是 array 或 null' })
+    errors.push({ cell, message: '当前目标值不是 array 或 None' })
     return undefined
   }
   const current = cell.value.kind === 'array' ? cell.value.value : []

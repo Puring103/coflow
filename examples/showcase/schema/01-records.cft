@@ -2,10 +2,13 @@
 
 @label("Product")
 type Product {
+
   @label("Name")
   name: string;
+
   @label("Price")
   price: int;
+
   @label("Enabled")
   enabled: bool;
 }

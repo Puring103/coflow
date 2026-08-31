@@ -11,6 +11,8 @@ mod render;
 mod schema_nav;
 mod target;
 
+const CFD_INDENT: &str = "  ";
+
 use crate::api::{
     CfdDocumentWriter, CfdWriterDescriptor, DeleteRecordRequest, Diagnostic, DiagnosticSet,
     InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,

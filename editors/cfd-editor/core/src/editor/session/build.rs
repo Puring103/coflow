@@ -32,6 +32,12 @@ pub(super) fn build_session(
     })?;
     let yaml_path = project.config_path().to_path_buf();
     let project_root = project.root_dir().to_path_buf();
+    let schema_files = project
+        .schema_sources()
+        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to discover schema", &err)))?
+        .into_iter()
+        .filter_map(|source| source.canonical_path.strip_prefix(&project_root).ok().map(coflow_runtime::path_to_slash))
+        .collect();
     let runtime = Runtime::new();
     let language_server = coflow::lsp::EmbeddedLsp::new(project.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
@@ -57,6 +63,7 @@ pub(super) fn build_session(
             language_server,
             language_documents: HashSet::new(),
             language_diagnostics: HashMap::new(),
+            schema_files,
             file_type_names,
             type_display_names,
             ref_target_cache: HashMap::new(),

@@ -34,7 +34,7 @@ impl std::error::Error for CellRenderError {}
 pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
     match value {
         CfdValue::OptionNone => Ok("None".to_string()),
-        CfdValue::OptionSome(value) => Ok(format!("Some({})", render_cell_value(value)?)),
+        CfdValue::OptionSome(value) => render_cell_value(value),
         CfdValue::ResultOk(value) => Ok(format!("Ok({})", render_cell_value(value)?)),
         CfdValue::ResultErr(value) => Ok(format!("Err({})", render_cell_value(value)?)),
         CfdValue::Bool(value) => Ok(value.to_string()),

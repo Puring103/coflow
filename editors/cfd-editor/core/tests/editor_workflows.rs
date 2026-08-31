@@ -117,9 +117,10 @@ fn repository_examples_open_in_editor() {
             )
         });
 
+        let expected_root = config.parent().unwrap().canonicalize().unwrap();
         assert_eq!(
-            PathBuf::from(snapshot.project_root),
-            config.parent().unwrap().canonicalize().unwrap()
+            snapshot.project_root.replace("\\\\?\\", ""),
+            expected_root.display().to_string().replace("\\\\?\\", "")
         );
         assert!(
             snapshot
@@ -234,7 +235,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     assert!(source.contains("count: 2"), "{source}");
     assert!(source.contains("count: 4"), "{source}");
     assert!(source.contains("tags: [\"\"]"), "{source}");
-    assert!(source.contains("note: Some(\"new\")"), "{source}");
+    assert!(source.contains("note: \"new\""), "{source}");
     let empty_source = fs::read_to_string(root.join("data/empty.cfd"))
         .expect("read formerly empty source");
     assert!(empty_source.contains("new_reward: ItemReward"), "{empty_source}");
@@ -366,12 +367,19 @@ fn editor_language_features_are_served_by_embedded_lsp() {
     assert!(!document.semantic_token_data.is_empty());
     assert!(document.semantic_token_types.iter().any(|kind| kind == "type"));
 
+    let unformatted = source.replace("  tags:", "tags:");
+    let formatted = store
+        .format_language_document(snapshot.session_id, file_path, &unformatted, 2)
+        .expect("format CFD through embedded LSP");
+    assert!(formatted.text.contains("  tags:"), "{}", formatted.text);
+    assert!(!formatted.edits.is_empty());
+
     let completions = store
         .complete_language_document(
             snapshot.session_id,
             file_path,
             &source,
-            2,
+            3,
             &LanguagePosition { line: 0, character: 0 },
         )
         .expect("complete through embedded LSP");
@@ -390,10 +398,10 @@ fn editor_language_features_are_served_by_embedded_lsp() {
 
     let invalid = "broken: ArrayExample {";
     let first_invalid = store
-        .sync_language_document(snapshot.session_id, file_path, invalid, 3)
+        .sync_language_document(snapshot.session_id, file_path, invalid, 4)
         .expect("publish invalid document diagnostics");
     let repeated_invalid = store
-        .sync_language_document(snapshot.session_id, file_path, invalid, 3)
+        .sync_language_document(snapshot.session_id, file_path, invalid, 4)
         .expect("reuse diagnostics for an unchanged LSP version");
     assert!(!first_invalid.diagnostics.is_empty());
     assert!(!first_invalid.syntax_valid);
@@ -401,4 +409,37 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         repeated_invalid.diagnostics.len(),
         first_invalid.diagnostics.len()
     );
+}
+
+#[test]
+fn cft_source_is_visible_editable_and_validated() {
+    let (root, _) = array_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load schema editing project");
+    let file_path = "schema.cft";
+    let source = store
+        .read_source_text(snapshot.session_id, file_path)
+        .expect("read configured CFT source");
+    assert!(source.contains("type ArrayExample"));
+
+    let invalid = source.replace("[string]", "MissingType");
+    let diagnostics = store
+        .validate_source_text(snapshot.session_id, file_path, &invalid)
+        .expect("validate invalid CFT draft");
+    assert!(diagnostics.iter().any(|item| item.severity == "error"));
+    store
+        .write_source_text(snapshot.session_id, file_path, &invalid)
+        .expect_err("invalid CFT must not be written");
+
+    let unformatted = source.replace("  tags:", "tags:");
+    let formatted = store
+        .format_language_document(snapshot.session_id, file_path, &unformatted, 1)
+        .expect("format CFT through embedded LSP");
+    assert!(formatted.text.contains("  tags:"), "{}", formatted.text);
+    assert!(!formatted.edits.is_empty());
+    store
+        .write_source_text(snapshot.session_id, file_path, &formatted.text)
+        .expect("save valid CFT source");
 }

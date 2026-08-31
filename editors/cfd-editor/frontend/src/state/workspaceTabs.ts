@@ -32,12 +32,13 @@ export function defaultWorkspaceTab(
   typeName: string,
   isSingleton: boolean,
 ): WorkspaceTab {
+  const sourceOnly = filePath.endsWith('.cft')
   return {
     id: workspaceTabId(filePath, typeName),
     filePath,
     typeName,
-    viewId: isSingleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
-    viewKind: isSingleton ? 'record' : 'table',
+    viewId: sourceOnly ? DEFAULT_SOURCE_VIEW_ID : isSingleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
+    viewKind: sourceOnly ? 'source' : isSingleton ? 'record' : 'table',
   }
 }
 
@@ -69,6 +70,20 @@ export function routeForWorkspaceTab(
     file: tab.filePath,
     viewId: tab.viewId,
     typeFilter: tab.typeName,
+  }
+}
+
+export function workspaceTabWithView(
+  tab: WorkspaceTab,
+  viewKind: ViewRenderKind,
+  viewId: string,
+  coordinate?: RecordCoordinate,
+): WorkspaceTab {
+  return {
+    ...tab,
+    viewKind,
+    viewId,
+    coordinate: coordinate ?? tab.coordinate,
   }
 }
 

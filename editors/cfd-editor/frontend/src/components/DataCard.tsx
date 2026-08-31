@@ -293,7 +293,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
   const navigation = useEditorNavigation()
   switch (value.kind) {
     case 'option_none':
-      return <span className="vc vc-null">{highlightSearchText('null', highlightQuery)}</span>
+      return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
     case 'option_some':
     case 'result_ok':
     case 'result_err':
@@ -716,7 +716,7 @@ function FieldRow({
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
   // Extra trailing controls for nullable / polymorphic fields. Enum and ref
-  // scalars already expose a "(null)" option in their pill selects, so we
+  // scalars already expose a `None` option in their pill selects, so we
   // don't double up there. Bool doesn't get a clear button unless nullable.
   const commit = onEdit
     ? (next: FieldValue) => onEdit(fieldPath, replacePresentationValue(value, next))
@@ -809,7 +809,7 @@ function NullableControls({
   const isPolymorphic = polymorphicTypes.length > 0
   const canSwitchType = isObject && polymorphicTypes.length >= 2 && !isNull
   // Clear button on any nullable, currently non-null field — including enum
-  // and ref, whose own dropdowns hide the "(null)" option behind an extra
+  // and ref, whose own dropdowns hide the `None` option behind an extra
   // click. A dedicated ✕ next to the value is faster.
   const canClear = nullable && !isNull
   // Create button on any null field where we can produce something useful:
@@ -894,8 +894,8 @@ function NullableControls({
         <button
           type="button"
           className="dc-null-btn dc-null-btn-clear"
-          title="清除为 null"
-          aria-label="清除为 null"
+          title="清除为 None"
+          aria-label="清除为 None"
           onClick={() => onCommit(nullValue())}
         >
           <Icon name="close" size={11} />
@@ -1242,7 +1242,7 @@ export function EnumDirectSelect({
   enumType?: string
   autoFocus?: boolean
   isFlag?: boolean
-  /** When true, offer a "(null)" option so the field can be cleared. */
+  /** When true, offer a `None` option so the field can be cleared. */
   nullable?: boolean
   variant?: 'pill' | 'input'
 }) {
@@ -1437,7 +1437,7 @@ export function EnumDirectSelect({
   )
 }
 
-const NULL_SENTINEL = '(null)'
+const NULL_SENTINEL = 'None'
 const FLAG_EVERY_SENTINEL = '(every)'
 const FLAG_NONE_SENTINEL = '(none)'
 
@@ -1455,7 +1455,7 @@ export function RefDirectSelect({
   onExit?: () => void
   targetType?: string
   autoFocus?: boolean
-  /** When true, offer a "(null)" option so the field can be cleared. */
+  /** When true, offer a `None` option so the field can be cleared. */
   nullable?: boolean
   variant?: 'pill' | 'input'
 }) {

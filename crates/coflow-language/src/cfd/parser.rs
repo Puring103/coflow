@@ -836,7 +836,14 @@ fn parse_automatic_format_segments(
                 break;
             };
             let expression = rest[1..relative_end].trim();
-            let reference = match parse_field_reference_text(expression, span) {
+            let reference_span = Span::new(
+                span.start.saturating_add(1).saturating_add(pos),
+                span.start
+                    .saturating_add(1)
+                    .saturating_add(pos)
+                    .saturating_add(relative_end + 1),
+            );
+            let reference = match parse_field_reference_text(expression, reference_span) {
                 Ok(reference) => reference,
                 Err(error) if expression.starts_with('&') => return Err(error),
                 Err(_) => {

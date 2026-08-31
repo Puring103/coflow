@@ -1,5 +1,5 @@
 # Feature: string-keyed dictionary values.
 
 review_scores: DictionaryExample {
-    scores: {},
+  scores: {},
 }
