@@ -1,9 +1,10 @@
 use coflow_language::syntax::ast::{Item, TypeRef, TypeRefKind};
-use coflow_language::CftConstValue;
+use coflow_language::syntax::lexer::{lex, TokenKind};
+use coflow_language::{CftCheckBuiltin, CftConstValue, ModuleId};
 use serde_json::{json, Map, Value};
 
 use super::documentation::{
-    builtin_functions, AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
+    AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
 };
 use super::position::{byte_offset_from_position, LspPosition};
 use super::{
@@ -51,6 +52,10 @@ pub(crate) fn completion_items(
         return annotation_completion_items(scope);
     }
 
+    if let Some(enum_name) = enum_name_before_double_colon(line_prefix) {
+        return enum_variant_completion_items(build, document, enum_name);
+    }
+
     if let Some(chain) = receiver_chain_before_dot(line_prefix) {
         let mut items = dot_completion_items(build, document, offset, &chain);
         if scope == CompletionScope::CheckBlock {
@@ -84,21 +89,63 @@ pub(crate) fn completion_items(
             type_member_completion_items()
         }
         CompletionScope::CheckBlock => check_expression_completion_items(build, document, offset),
-        CompletionScope::EnumBody => Vec::new(),
+        CompletionScope::EnumBody => enum_member_completion_items(),
     }
 }
 
 pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
-    let labels: &[&str] = if top_level_needs_type_keyword(line_prefix) {
-        &["type"]
-    } else {
-        &["namespace", "use", "const", "enum", "type", "abstract", "sealed", "check"]
-    };
-    keyword_completion_items(labels)
+    if top_level_needs_type_keyword(line_prefix) {
+        return keyword_snippet_completion_item(
+            "type",
+            "type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+        )
+        .into_iter()
+        .collect();
+    }
+
+    [
+        ("namespace", "namespace ${1:project}::${2:module};"),
+        ("use", "use ${1:project}::${2:module}::${3:Type};"),
+        ("const", "const ${1:NAME}: ${2:int} = ${3:value};"),
+        ("enum", "enum ${1:Name} {\n\t${2:Variant},\n}"),
+        ("type", "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        (
+            "abstract",
+            "abstract type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+        ),
+        (
+            "sealed",
+            "sealed type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+        ),
+        ("check", "check ${1:Name} {\n\t${2:condition};\n}"),
+    ]
+    .into_iter()
+    .filter_map(|(label, insert_text)| keyword_snippet_completion_item(label, insert_text))
+    .collect()
 }
 
 fn type_member_completion_items() -> Vec<Value> {
-    keyword_completion_items(&["check"])
+    let mut items = vec![snippet_completion_item(
+        "field",
+        "${1:field}: ${2:string};",
+        "CFT field",
+        "Define a typed field.",
+    )];
+    if let Some(check) =
+        keyword_snippet_completion_item("check", "check {\n\t${1:condition};\n}")
+    {
+        items.push(check);
+    }
+    items
+}
+
+fn enum_member_completion_items() -> Vec<Value> {
+    vec![snippet_completion_item(
+        "variant",
+        "${1:Variant},",
+        "CFT enum variant",
+        "Define an enum variant.",
+    )]
 }
 
 pub(crate) fn check_expression_completion_items(
@@ -114,7 +161,7 @@ pub(crate) fn check_expression_completion_items(
     }
 
     let mut items = Vec::new();
-    items.extend(keyword_completion_items(&["when", "all", "any", "none"]));
+    items.extend(check_structure_completion_items());
     items.extend(literal_completion_items());
     items.extend(const_completion_items(build));
 
@@ -167,25 +214,6 @@ fn is_records_type_context(source: &str, offset: usize) -> bool {
     last_ident(prefix).is_some_and(|ident| ident == "records")
 }
 
-fn keyword_completion_items(labels: &[&str]) -> Vec<Value> {
-    labels
-        .iter()
-        .filter_map(|requested| {
-            KEYWORDS
-                .iter()
-                .find(|(label, _)| label == requested)
-                .map(|(label, documentation)| {
-                    completion_item(
-                        label,
-                        COMPLETION_KIND_KEYWORD,
-                        "CFT keyword",
-                        Some(documentation),
-                    )
-                })
-        })
-        .collect()
-}
-
 fn literal_completion_items() -> Vec<Value> {
     LITERALS
         .iter()
@@ -201,19 +229,51 @@ fn literal_completion_items() -> Vec<Value> {
 }
 
 fn function_completion_items() -> Vec<Value> {
-    builtin_functions()
-        .map(|(label, documentation)| {
+    CftCheckBuiltin::ALL
+        .into_iter()
+        .map(|builtin| {
+            let label = builtin.name();
+            let documentation = builtin.documentation();
             let mut item = completion_item(
                 label,
                 COMPLETION_KIND_FUNCTION,
                 "CFT built-in function",
                 Some(documentation),
             );
-            insert_object_field(&mut item, "insertText", json!(format!("{label}($1)")));
+            let arguments = (1..=builtin.method_arity())
+                .map(|index| format!("${{{index}:value}}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            insert_object_field(
+                &mut item,
+                "insertText",
+                json!(format!("{label}({arguments})")),
+            );
             insert_object_field(&mut item, "insertTextFormat", json!(2));
             item
         })
         .collect()
+}
+
+fn check_structure_completion_items() -> Vec<Value> {
+    [
+        ("when", "when ${1:condition} {\n\t${2:condition};\n}"),
+        (
+            "all",
+            "all ${1:item} in ${2:items} {\n\t${3:condition};\n}",
+        ),
+        (
+            "any",
+            "any ${1:item} in ${2:items} {\n\t${3:condition};\n}",
+        ),
+        (
+            "none",
+            "none ${1:item} in ${2:items} {\n\t${3:condition};\n}",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(label, insert_text)| keyword_snippet_completion_item(label, insert_text))
+    .collect()
 }
 
 fn is_method_completion_context(source: &str, offset: usize) -> bool {
@@ -369,13 +429,45 @@ pub(crate) fn dot_completion_items(
 fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
     for (label, documentation) in PRIMITIVE_TYPES {
-        items.push(completion_item(
+        let insert_text = match *label {
+            "Option" => Some("Option<${1:string}>"),
+            "Result" => Some("Result<${1:string}, ${2:string}>"),
+            "fn" => Some("fn(${1:value}: ${2:int}) -> ${3:int}"),
+            _ => None,
+        };
+        let mut item = completion_item(
             label,
             COMPLETION_KIND_KEYWORD,
             "Primitive type",
             Some(documentation),
-        ));
+        );
+        if let Some(insert_text) = insert_text {
+            insert_object_field(&mut item, "insertText", json!(insert_text));
+            insert_object_field(&mut item, "insertTextFormat", json!(2));
+        }
+        items.push(item);
     }
+    items.extend([
+        snippet_completion_item(
+            "array",
+            "[${1:string}]",
+            "CFT array type",
+            "Array of one value type.",
+        ),
+        snippet_completion_item(
+            "dictionary",
+            "{${1:string}: ${2:string}}",
+            "CFT dictionary type",
+            "Dictionary with key and value types.",
+        ),
+        snippet_completion_item(
+            "reference",
+            "&${1:Type}",
+            "CFT record reference type",
+            "Reference a top-level record by key.",
+        ),
+        completion_item("()", COMPLETION_KIND_KEYWORD, "CFT unit type", None),
+    ]);
     if let Some(container) = build.schema() {
         for ty in container.all_types() {
             items.push(completion_item(
@@ -519,6 +611,18 @@ fn completion_item(label: &str, kind: u8, detail: &str, documentation: Option<&s
     Value::Object(item)
 }
 
+fn keyword_snippet_completion_item(label: &str, insert_text: &str) -> Option<Value> {
+    let documentation = KEYWORDS
+        .iter()
+        .find_map(|(keyword, documentation)| (*keyword == label).then_some(*documentation))?;
+    Some(snippet_completion_item(
+        label,
+        insert_text,
+        "CFT keyword",
+        documentation,
+    ))
+}
+
 fn snippet_completion_item(
     label: &str,
     insert_text: &str,
@@ -591,35 +695,87 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
 }
 
 pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> CompletionScope {
-    let Some(ast) = &document.ast else {
-        return CompletionScope::TopLevel;
-    };
-
-    for item in &ast.items {
-        match item {
-            Item::Enum(enum_def)
-                if enum_def.span.start <= offset && offset <= enum_def.span.end =>
-            {
-                return CompletionScope::EnumBody;
-            }
-            Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
-                if check_block_contains(ty.check.as_ref(), offset) {
+    if let Some(ast) = &document.ast {
+        for item in &ast.items {
+            match item {
+                Item::Enum(enum_def)
+                    if enum_def.span.start <= offset && offset <= enum_def.span.end =>
+                {
+                    return CompletionScope::EnumBody;
+                }
+                Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
+                    if check_block_contains(ty.check.as_ref(), offset) {
+                        return CompletionScope::CheckBlock;
+                    }
+                    return CompletionScope::TypeBody;
+                }
+                Item::Check(check) if check.span.start <= offset && offset <= check.span.end => {
                     return CompletionScope::CheckBlock;
                 }
-                return CompletionScope::TypeBody;
+                Item::Const(_)
+                | Item::Enum(_)
+                | Item::Type(_)
+                | Item::TypeAlias(_)
+                | Item::Check(_) => {}
             }
-            Item::Check(check) if check.span.start <= offset && offset <= check.span.end => {
-                return CompletionScope::CheckBlock;
-            }
-            Item::Const(_)
-            | Item::Enum(_)
-            | Item::Type(_)
-            | Item::TypeAlias(_)
-            | Item::Check(_) => {}
         }
     }
 
-    CompletionScope::TopLevel
+    inferred_completion_scope(document, offset).unwrap_or(CompletionScope::TopLevel)
+}
+
+fn inferred_completion_scope(
+    document: &LspDocument,
+    offset: usize,
+) -> Option<CompletionScope> {
+    #[derive(Clone, Copy)]
+    enum PendingBody {
+        Type,
+        Enum,
+        Check,
+    }
+
+    let prefix = document.source.get(..offset.min(document.source.len()))?;
+    let tokens = lex(&ModuleId::new(document.module_id.clone()), prefix).ok()?;
+    let mut scopes = vec![CompletionScope::TopLevel];
+    let mut pending = None;
+
+    for token in tokens {
+        let current = *scopes.last()?;
+        match token.kind {
+            TokenKind::Type if current == CompletionScope::TopLevel => {
+                pending = Some(PendingBody::Type);
+            }
+            TokenKind::Enum if current == CompletionScope::TopLevel => {
+                pending = Some(PendingBody::Enum);
+            }
+            TokenKind::Check
+                if matches!(current, CompletionScope::TopLevel | CompletionScope::TypeBody) =>
+            {
+                pending = Some(PendingBody::Check);
+            }
+            TokenKind::LBrace => {
+                let scope = match pending.take() {
+                    Some(PendingBody::Type) => CompletionScope::TypeBody,
+                    Some(PendingBody::Enum) => CompletionScope::EnumBody,
+                    Some(PendingBody::Check) => CompletionScope::CheckBlock,
+                    None => current,
+                };
+                scopes.push(scope);
+            }
+            TokenKind::RBrace => {
+                if scopes.len() > 1 {
+                    scopes.pop();
+                }
+                pending = None;
+            }
+            TokenKind::Equal | TokenKind::Semicolon => pending = None,
+            TokenKind::Eof => {}
+            _ => {}
+        }
+    }
+
+    scopes.last().copied()
 }
 
 fn check_block_contains(
@@ -694,6 +850,118 @@ pub(crate) fn receiver_chain_before_dot(line_prefix: &str) -> Option<Vec<String>
     }
     let receiver = trailing_dotted_ident_chain(&line_prefix[..dot])?;
     parse_dotted_ident_chain(receiver)
+}
+
+fn enum_name_before_double_colon(line_prefix: &str) -> Option<&str> {
+    let separator = line_prefix.rfind("::")?;
+    if !line_prefix[separator + 2..]
+        .chars()
+        .all(is_ident_continue)
+    {
+        return None;
+    }
+    last_ident(line_prefix[..separator].trim_end())
+}
+
+fn enum_variant_completion_items(
+    build: &LspBuild,
+    document: &LspDocument,
+    enum_name: &str,
+) -> Vec<Value> {
+    if let Some(enum_def) = build
+        .schema()
+        .and_then(|container| container.resolve_enum(enum_name))
+    {
+        return enum_def
+            .variants
+            .iter()
+            .map(|variant| enum_variant_completion_item(&enum_def.name, &variant.name))
+            .collect();
+    }
+
+    enum_variants_from_source(document, enum_name)
+        .into_iter()
+        .map(|variant| enum_variant_completion_item(enum_name, &variant))
+        .collect()
+}
+
+fn enum_variant_completion_item(enum_name: &str, variant_name: &str) -> Value {
+    completion_item(
+        variant_name,
+        COMPLETION_KIND_ENUM_MEMBER,
+        &format!("{enum_name} variant"),
+        None,
+    )
+}
+
+fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<String> {
+    let Ok(tokens) = lex(
+        &ModuleId::new(document.module_id.clone()),
+        &document.source,
+    ) else {
+        return Vec::new();
+    };
+
+    let mut index = 0;
+    while index + 2 < tokens.len() {
+        let is_target = matches!(tokens[index].kind, TokenKind::Enum)
+            && matches!(&tokens[index + 1].kind, TokenKind::Ident(name) if name == enum_name)
+            && matches!(tokens[index + 2].kind, TokenKind::LBrace);
+        if !is_target {
+            index += 1;
+            continue;
+        }
+
+        index += 3;
+        let mut variants = Vec::new();
+        while index < tokens.len() {
+            match &tokens[index].kind {
+                TokenKind::At => skip_annotation_tokens(&tokens, &mut index),
+                TokenKind::Ident(name) => {
+                    variants.push(name.clone());
+                    index += 1;
+                    while index < tokens.len()
+                        && !matches!(tokens[index].kind, TokenKind::Comma | TokenKind::RBrace)
+                    {
+                        index += 1;
+                    }
+                    if index < tokens.len() && matches!(tokens[index].kind, TokenKind::Comma) {
+                        index += 1;
+                    }
+                }
+                TokenKind::RBrace | TokenKind::Eof => return variants,
+                _ => index += 1,
+            }
+        }
+        return variants;
+    }
+    Vec::new()
+}
+
+fn skip_annotation_tokens(tokens: &[coflow_language::syntax::lexer::Token], index: &mut usize) {
+    *index += 1;
+    if *index < tokens.len() && matches!(tokens[*index].kind, TokenKind::Ident(_)) {
+        *index += 1;
+    }
+    if *index >= tokens.len() || !matches!(tokens[*index].kind, TokenKind::LParen) {
+        return;
+    }
+
+    let mut depth = 0usize;
+    while *index < tokens.len() {
+        match tokens[*index].kind {
+            TokenKind::LParen => depth += 1,
+            TokenKind::RParen => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    *index += 1;
+                    return;
+                }
+            }
+            _ => {}
+        }
+        *index += 1;
+    }
 }
 
 fn trailing_dotted_ident_chain(text: &str) -> Option<&str> {
