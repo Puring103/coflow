@@ -1,4 +1,4 @@
-use super::super::completion::receiver_chain_before_dot;
+use super::super::completion::{function_completion_items_for_type, receiver_chain_before_dot};
 use super::common::*;
 use super::*;
 use coflow_language::syntax::ast::Item;
@@ -385,7 +385,8 @@ type Item {\n\
         source.find("const LIMIT: int = 5").expect("const") + "const LIMIT: int = ".len(),
     );
     let const_labels = completion_labels(completion_items(&build, document, &const_position));
-    assert!(const_labels.contains(&"true".to_string()));
+    assert!(!const_labels.contains(&"true".to_string()));
+    assert!(const_labels.contains(&"LIMIT".to_string()));
     assert!(!const_labels.contains(&"null".to_string()));
 
     let bool_position = position_from_byte(
@@ -511,6 +512,18 @@ type Item {\n\
         Some("approxEqual(${1:value}, ${2:value})")
     );
 
+    let filtered_method_labels = completion_labels(function_completion_items_for_type(
+        &CftValueType::Array(Box::new(CftValueType::Int)),
+    ));
+    assert!(filtered_method_labels.contains(&"len".to_string()));
+    assert!(filtered_method_labels.contains(&"isSorted".to_string()));
+    assert!(
+        !filtered_method_labels.contains(&"startsWith".to_string()),
+        "{filtered_method_labels:?}"
+    );
+    assert!(!filtered_method_labels.contains(&"containsKey".to_string()));
+    assert!(!filtered_method_labels.contains(&"approxEqual".to_string()));
+
     assert_eq!(
         completion_labels(dot_completion_items(
             &build,
@@ -529,6 +542,55 @@ type Item {\n\
     assert!(ref_field_labels.contains(&"key".to_string()));
     assert!(ref_field_labels.contains(&"value".to_string()));
     assert!(dot_completion_items(&build, document, check_offset, &[s("missing")]).is_empty());
+}
+
+#[test]
+fn completion_covers_const_alias_inheritance_and_annotation_arguments() {
+    let source = "enum Kind {}\n\
+@idAsEnum(Kind)\n\
+type Entity { key: string; }\n\
+sealed type Closed { value: int; }\n\
+type Child : Entity { value: int; }\n\
+type Alias = Entity;\n\
+const LIMIT: int = 1;\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-declaration-completion", source);
+    let document = first_document(&build);
+
+    let const_type_offset = source.find("const LIMIT: int").expect("const") + "const LIMIT: ".len();
+    let const_types = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, const_type_offset),
+    ));
+    assert!(const_types.contains(&"int".to_string()));
+    assert!(const_types.contains(&"Entity".to_string()));
+
+    let alias_offset = source.find("type Alias = Entity").expect("alias") + "type Alias = ".len();
+    let alias_types = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, alias_offset),
+    ));
+    assert!(alias_types.contains(&"string".to_string()));
+    assert!(alias_types.contains(&"Entity".to_string()));
+
+    let parent_offset = source.find("type Child : Entity").expect("parent") + "type Child : ".len();
+    let parents = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, parent_offset),
+    ));
+    assert!(parents.contains(&"Entity".to_string()));
+    assert!(!parents.contains(&"Child".to_string()));
+    assert!(!parents.contains(&"Closed".to_string()));
+
+    let annotation_offset = source.find("@idAsEnum(Kind").expect("annotation") + "@idAsEnum(".len();
+    let annotation_args = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, annotation_offset),
+    ));
+    assert!(annotation_args.contains(&"Kind".to_string()));
 }
 
 #[test]

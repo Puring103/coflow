@@ -383,7 +383,15 @@ fn editor_language_features_are_served_by_embedded_lsp() {
             &LanguagePosition { line: 0, character: 0 },
         )
         .expect("complete through embedded LSP");
-    assert!(completions.iter().any(|item| item.label == "ArrayExample"));
+    let record_completion = completions
+        .iter()
+        .find(|item| item.label == "ArrayExample")
+        .expect("record completion");
+    assert_eq!(record_completion.insert_text_format, Some(2));
+    assert!(record_completion
+        .insert_text
+        .as_deref()
+        .is_some_and(|text| text.contains("${1:key}")));
 
     let function = store
         .function_document(

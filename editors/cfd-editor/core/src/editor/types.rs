@@ -238,6 +238,16 @@ pub struct LanguageCompletion {
     pub kind: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub insert_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insert_text_format: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_edit: Option<LanguageTextEdit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-import type { Completion } from '@codemirror/autocomplete'
+import { snippet, type Completion } from '@codemirror/autocomplete'
 import type { Diagnostic } from '@codemirror/lint'
 import { Text } from '@codemirror/state'
 import type {
@@ -68,7 +68,7 @@ export function rangeOffsets(source: string, range: LanguageRange): { from: numb
   return { from: positionOffset(doc, range.start), to: positionOffset(doc, range.end) }
 }
 
-export function completionItem(item: LanguageCompletion): Completion {
+export function completionItem(item: LanguageCompletion, source = ''): Completion {
   const type = item.kind === 7
     ? 'class'
     : item.kind === 5
@@ -82,5 +82,27 @@ export function completionItem(item: LanguageCompletion): Completion {
             : item.kind === 21
               ? 'constant'
               : 'text'
-  return { label: item.label, detail: item.detail, type, apply: item.insert_text }
+  const inserted = item.text_edit?.new_text ?? item.insert_text
+  let apply: Completion['apply'] = inserted ?? (item.filter_text ? item.label : undefined)
+  if (inserted && item.insert_text_format === 2) apply = snippet(inserted)
+  if (inserted && item.text_edit) {
+    const range = rangeOffsets(source, item.text_edit.range)
+    const insert = item.insert_text_format === 2 ? snippet(inserted) : inserted
+    apply = (view, completion, _from, _to) => {
+      if (typeof insert === 'string') {
+        view.dispatch({ changes: { from: range.from, to: range.to, insert } })
+      } else {
+        insert(view, completion, range.from, range.to)
+      }
+    }
+  }
+  return {
+    label: item.filter_text ?? item.label,
+    displayLabel: item.filter_text ? item.label : undefined,
+    detail: item.detail,
+    info: item.documentation,
+    type,
+    apply,
+    boost: item.sort_text?.startsWith('0') ? 50 : undefined,
+  }
 }

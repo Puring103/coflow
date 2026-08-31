@@ -101,7 +101,7 @@ export function FunctionBodyDialog({ value, onCommit, onClose }: Props) {
               editableRange={editableRange}
               semanticTokens={semanticTokens}
               diagnostics={diagnostics}
-              onComplete={async () => document.completions.map(completionItem)}
+              onComplete={async () => document.completions.map(item => completionItem(item, document.source))}
               autoFocus
             />}
         </div>
