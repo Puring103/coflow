@@ -48,6 +48,14 @@ fn cfd_formatter_recovers_multiline_fields_functions_else_and_comments() {
 }
 
 #[test]
+fn cfd_formatter_preserves_manual_blank_lines_inside_function_bodies() {
+    let source = "calculator: Calculator {\n  classify: fn(\n    value: int\n  ) -> string\n  {\n\n\n    var label = \"small\"\n\n    if value >= 10 {\n\n      label = \"large\"\n\n    }\n\n    label\n\n  },\n}\n";
+    let expected = "calculator: Calculator {\n  classify: fn(\n    value: int\n  ) -> string {\n\n    var label = \"small\"\n\n    if value >= 10 {\n\n      label = \"large\"\n\n    }\n\n    label\n\n  },\n}\n";
+    assert_eq!(format_cfd(source), expected);
+    assert_eq!(format_cfd(expected), expected);
+}
+
+#[test]
 fn cfd_definition_request_returns_schema_field_location() {
     let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
