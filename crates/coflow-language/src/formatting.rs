@@ -22,6 +22,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     let expanded = expand_structural_lines(&collapsed, language);
     let mut output = String::new();
     let mut delimiters = DelimiterIndent::default();
+    let mut function_bodies = FunctionBodyTracker::default();
     let mut generic_continuation_depth = 0usize;
     let mut continuation = false;
     let mut pending_blank_line = false;
@@ -60,6 +61,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         if formatted == "{" && attach_opening_brace(&mut output) {
             pending_blank_line = false;
             delimiters.apply_line(&formatted);
+            function_bodies.apply_line(&formatted);
             continuation = false;
             if separate_after_annotation == Some(line_indent) {
                 separate_after_annotation = None;
@@ -70,7 +72,10 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
 
         if pending_blank_line {
             let collapse_use_group = is_use && last_output_line_starts_with(&output, "use ");
-            if !is_closing && !last_output_line_opens_block(&output) && !collapse_use_group {
+            let preserve_function_blank = function_bodies.is_inside();
+            if preserve_function_blank
+                || (!is_closing && !last_output_line_opens_block(&output) && !collapse_use_group)
+            {
                 ensure_blank_line(&mut output);
             }
             pending_blank_line = false;
@@ -103,6 +108,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         output.push_str(&formatted);
         output.push('\n');
         delimiters.apply_line(&formatted);
+        function_bodies.apply_line(&formatted);
         generic_continuation_depth =
             generic_depth_after_line(&formatted, generic_continuation_depth);
         if !is_comment {
@@ -123,6 +129,89 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     }
 
     output
+}
+
+#[derive(Default)]
+struct FunctionBodyTracker {
+    braces: Vec<bool>,
+    pending_signature: bool,
+    pending_arrow: bool,
+    return_type_started: bool,
+}
+
+impl FunctionBodyTracker {
+    fn is_inside(&self) -> bool {
+        self.braces.iter().any(|is_function| *is_function)
+    }
+
+    fn apply_line(&mut self, line: &str) {
+        let chars = line.chars().collect::<Vec<_>>();
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut index = 0usize;
+        while index < chars.len() {
+            let ch = chars[index];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                index += 1;
+                continue;
+            }
+            match ch {
+                '"' => in_string = true,
+                '#' => break,
+                'f' if chars.get(index + 1) == Some(&'n')
+                    && is_keyword_boundary(chars.get(index.wrapping_sub(1)).copied())
+                    && is_keyword_boundary(chars.get(index + 2).copied()) =>
+                {
+                    self.pending_signature = true;
+                    self.pending_arrow = false;
+                    self.return_type_started = false;
+                    index += 1;
+                }
+                '-' if chars.get(index + 1) == Some(&'>') && self.pending_signature => {
+                    self.pending_arrow = true;
+                    self.return_type_started = false;
+                    index += 1;
+                }
+                '{' => {
+                    let is_function = self.pending_signature
+                        && self.pending_arrow
+                        && self.return_type_started;
+                    self.braces.push(is_function);
+                    if is_function {
+                        self.pending_signature = false;
+                        self.pending_arrow = false;
+                        self.return_type_started = false;
+                    } else if self.pending_arrow {
+                        self.return_type_started = true;
+                    }
+                }
+                '}' => {
+                    self.braces.pop();
+                }
+                ';' if self.pending_signature => {
+                    self.pending_signature = false;
+                    self.pending_arrow = false;
+                    self.return_type_started = false;
+                }
+                _ if self.pending_arrow && !ch.is_whitespace() => {
+                    self.return_type_started = true;
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+    }
+}
+
+fn is_keyword_boundary(ch: Option<char>) -> bool {
+    ch.is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
 }
 
 fn collapse_logical_lines(source: &str) -> String {
