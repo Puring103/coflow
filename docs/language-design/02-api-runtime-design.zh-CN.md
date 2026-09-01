@@ -4,6 +4,10 @@
 >
 > 范围：生成 ABI、加载、强类型数据、Module、ModuleSet、Host、函数入口、诊断与发布边界。
 
+当前实现已经覆盖本文描述的 generated contract、`Load` / `LoadAndCompile`、不可变 Module/ModuleSet、
+强类型调用面和 Host 配置边界。VM 执行限制的未完成状态单独记录在 `03-vm-design.zh-CN.md`，不由 API
+层隐式补偿。
+
 本文档定义 C# Runtime 的应用边界和模块实现。基础语言语义见
 `01-language-design.zh-CN.md`；VM 执行结构见 `03-vm-design.zh-CN.md`。对外用法保留在
 `website/docs/docs/reference/07-codegen/01-csharp.md`，公开 API 的机器基线由
@@ -203,6 +207,10 @@ HostSingleton
 
 配置可以重复执行，更新后已有生成对象读取新的字段和 Delegate。Runtime 不提供 bind-once、锁、
 `Volatile`、generation gate 或自动状态迁移。应用必须保证配置不与读取和函数调用并发。
+
+每个生成 Host 类型只提供一个完整 `Configure(...)` 入口，一次提交全部生成 data field 和 function
+delegate；不存在逐函数 `BindX` API。Runtime 先更新函数 entry，再执行生成的字段赋值，并在入口成功
+返回前将 Host 标记为已配置。
 
 未编译 Module 不允许配置 Host function。已编译但尚未配置的 Host function 在调用时产生明确的未绑定
 异常；Host Delegate 的未处理异常进入 VM fault 边界。

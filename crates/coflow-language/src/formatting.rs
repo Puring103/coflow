@@ -598,10 +598,10 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
             }
         }
         FormatLanguage::Cfd => {
-            let last = prefix.split_whitespace().next_back().unwrap_or_default();
-            let typed_record = !last.is_empty()
-                && last.chars().all(|ch| ch == '_' || ch.is_alphanumeric())
-                && (prefix.contains(':') || prefix.split_whitespace().count() == 1);
+            let typed_record = prefix.rsplit_once(':').map_or_else(
+                || is_cfd_type_name(prefix),
+                |(_, type_name)| is_cfd_type_name(type_name.trim()),
+            );
             if typed_record
                 || prefix.starts_with("if ")
                 || prefix == "else"
@@ -615,6 +615,16 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
             }
         }
     }
+}
+
+fn is_cfd_type_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.split("::").all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|ch| ch == '_' || ch.is_alphanumeric())
+        })
 }
 
 fn current_line_fragment(output: &str) -> &str {
@@ -1124,4 +1134,18 @@ fn delimiter_events(line: &str) -> Vec<char> {
         }
     }
     delimiters
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_cfd;
+
+    #[test]
+    fn cfd_formatter_expands_typed_blocks_without_input_spacing() {
+        let source = "sword:Item{name:\"Sword\",}";
+        let expected = "sword: Item {\n  name: \"Sword\",\n}\n";
+
+        assert_eq!(format_cfd(source), expected);
+        assert_eq!(format_cfd(expected), expected);
+    }
 }

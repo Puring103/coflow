@@ -18,5 +18,6 @@ starter_effects: EffectBundle {
     DamageEffect {
       amount: 0,
       label: "",
-  }],
+    }
+  ],
 }

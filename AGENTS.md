@@ -87,6 +87,7 @@ Internal language and C# Runtime design lives under `docs/language-design/` and 
 - `01-language-design.zh-CN.md`: base language semantics.
 - `02-api-runtime-design.zh-CN.md`: generated API, loading, modules, tables, and Host boundaries.
 - `03-vm-design.zh-CN.md`: register VM, calls, closures, validation, limits, and performance.
+- `04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
 
 Keep public C# syntax and API guidance concise in
 `website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or
