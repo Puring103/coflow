@@ -15,25 +15,31 @@ Product {
 
   test {
     name: "sadasd",
-    price:2,
-    enabled:true,
+    price: 2,
+    enabled: true,
   }
 
-  test2{
-    name:" asdasd",
-    price:32,
+  test2 {
+    name: " asdasd",
+    price: 32,
     enabled: true
   }
 
-  sadasd{
+  sadasd {
     name: "sadsad",
-    price:12,
-    enabled:true
+    price: 12,
+    enabled: true
   }
 
   n {
     name: "asdsad",
-    price:123,
-    enabled:false
+    price: 123,
+    enabled: false
+  }
+
+  asdasd {
+    name: "value",
+    price: 0,
+    enabled: true,
   }
 }

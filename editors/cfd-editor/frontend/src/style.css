@@ -202,7 +202,71 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .cm-lsp-token-decorator { color: var(--code-special); }
 .cm-lsp-token-namespace,
 .cm-lsp-token-function,
-.cm-lsp-token-parameter { color: var(--code-special); }
+.cm-lsp-token-parameter,
+.cm-lsp-token-variable { color: var(--code-special); }
+
+/* Completion rows use the actual insertion text and a quiet selection state.
+ * CodeMirror's property glyph is a hollow square that reads like a checkbox,
+ * so the editor omits the icon column and lets semantic label color carry type. */
+.cfd-code-editor .cm-tooltip-autocomplete {
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+  overflow: hidden;
+}
+.cfd-code-editor .cm-tooltip-autocomplete > ul {
+  padding: 3px;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+.cfd-code-editor .cm-tooltip-autocomplete > ul > li {
+  min-height: 24px;
+  padding: 3px 7px;
+  border-radius: 3px;
+}
+.cfd-code-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--bg-4) !important;
+  color: var(--text) !important;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cfd-code-editor .cm-tooltip-autocomplete .cm-completionIcon {
+  display: none;
+}
+.cfd-code-editor .cm-tooltip-autocomplete .cm-completionMatchedText {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cfd-code-editor .cm-tooltip-autocomplete .cm-completionDetail {
+  margin-left: 14px;
+}
+
+/* Keep completion labels visually consistent with the semantic tokens they insert. */
+.cm-tooltip-autocomplete .cm-completionIcon-keyword + .cm-completionLabel {
+  color: var(--code-keyword);
+  font-weight: 600;
+}
+.cm-tooltip-autocomplete .cm-completionIcon-class + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-interface + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-type + .cm-completionLabel {
+  color: var(--code-type);
+}
+.cm-tooltip-autocomplete .cm-completionIcon-property + .cm-completionLabel {
+  color: var(--code-property);
+}
+.cm-tooltip-autocomplete .cm-completionIcon-enum + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-constant + .cm-completionLabel {
+  color: var(--code-constant);
+}
+.cm-tooltip-autocomplete .cm-completionIcon-function + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-method + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-namespace + .cm-completionLabel,
+.cm-tooltip-autocomplete .cm-completionIcon-variable + .cm-completionLabel {
+  color: var(--code-special);
+}
+.cm-tooltip-autocomplete .cm-completionDetail {
+  color: var(--text-dim);
+}
 
 .function-editor-dialog {
   width: min(920px, calc(100vw - 40px));

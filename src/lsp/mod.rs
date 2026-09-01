@@ -47,7 +47,7 @@ use definition::{
 use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
-use formatting::{format_cft, formatting_edits};
+use formatting::{format_cfd, format_cft, formatting_edits};
 use hover::hover_at;
 use position::{
     byte_offset_from_position, byte_range, range_from_span, LspPosition,
@@ -688,10 +688,16 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                let formatted = format_cft(document.source);
+                if !document.syntax_valid {
+                    return self.write_response(id, &json!([]));
+                }
+                let formatted = format_cfd(document.source);
                 json!(formatting_edits(document.source, &formatted))
             }
             LspRequestDocument::Cft { document, .. } => {
+                if document.ast().is_none() {
+                    return self.write_response(id, &json!([]));
+                }
                 let formatted = format_cft(&document.source);
                 json!(formatting_edits(&document.source, &formatted))
             }

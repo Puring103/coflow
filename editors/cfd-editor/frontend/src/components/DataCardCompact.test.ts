@@ -1,12 +1,74 @@
 import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { DataCardCompact, DataCardExpanded, EnumDirectSelect, RefDirectSelect } from './DataCard'
+import {
+  collectionObjectDraftForAnnotation,
+  DataCardCompact,
+  DataCardExpanded,
+  EnumDirectSelect,
+  RefDirectSelect,
+} from './DataCard'
 import { ObjectDraftHost } from './ObjectDraftHost'
 import type { FieldValue } from '../wire'
+import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import { EditorLookupController, type EditorLookupBackend } from '../state/editorLookups'
 
 describe('DataCardCompact complex previews', () => {
+  const polymorphicObjectAnnotation: FieldAnnotation = {
+    enum_int_value: null,
+    declared_type: 'Reward',
+    ref_target_type: null,
+    enum_type: null,
+    enum_is_flag: false,
+    nullable: false,
+    read_only: false,
+    item_annotation: null,
+    polymorphic_types: ['CurrencyReward', 'ItemReward'],
+    object_type: 'ItemReward',
+    field_order: [],
+    children: {},
+  }
+
+  it('keeps concrete type selection when adding to a populated polymorphic collection', () => {
+    expect(collectionObjectDraftForAnnotation(polymorphicObjectAnnotation, false)).toEqual({
+      actualType: 'CurrencyReward',
+      polymorphicTypes: ['CurrencyReward', 'ItemReward'],
+    })
+  })
+
+  it('renders a type switch action for a populated polymorphic array item', () => {
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'Rewards',
+          annotation: {
+            ...polymorphicObjectAnnotation,
+            declared_type: '[Reward]',
+            object_type: null,
+            item_annotation: polymorphicObjectAnnotation,
+            children: { '0': polymorphicObjectAnnotation },
+          },
+          value: {
+            kind: 'array' as const,
+            value: [{
+              kind: 'object' as const,
+              value: { actual_type: 'ItemReward', fields: {} },
+            }],
+          },
+        }],
+        expandedPaths: new Set(['Rewards']),
+        onEdit: () => {},
+        onCollectionEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('aria-label="切换类型"')
+    expect(html).toContain('当前：ItemReward')
+  })
+
   it('renders cached dropdown options immediately after a revision change', async () => {
     const lookups = new EditorLookupController({
       getEnumVariants: async () => [{ name: 'Epic', value: 2n, label: 'Epic', description: null }],

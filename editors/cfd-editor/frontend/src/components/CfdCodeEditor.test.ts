@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { ChangeSet } from '@codemirror/state'
-import { changesStayWithinEditableRange, mergeSemanticTokens } from './CfdCodeEditor'
+import {
+  changesStayWithinEditableRange,
+  completionPrefixPattern,
+  completionPrefixValidPattern,
+  mergeSemanticTokens,
+} from './CfdCodeEditor'
+
+describe('CFD completion triggering', () => {
+  it('treats an annotation marker and its partial name as completion prefixes', () => {
+    expect('  @'.match(completionPrefixPattern)?.[0]).toBe('@')
+    expect('  @lab'.match(completionPrefixPattern)?.[0]).toBe('@lab')
+    expect(completionPrefixValidPattern.test('@label')).toBe(true)
+    expect('  {&standard.vis'.match(completionPrefixPattern)?.[0]).toBe('&standard.vis')
+    expect(completionPrefixValidPattern.test('&Item::sword.name')).toBe(true)
+  })
+})
 
 describe('CFD semantic highlighting', () => {
   it('retains recovered tokens missing from an invalid intermediate response', () => {

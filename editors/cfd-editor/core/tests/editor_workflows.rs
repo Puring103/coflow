@@ -417,6 +417,11 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         repeated_invalid.diagnostics.len(),
         first_invalid.diagnostics.len()
     );
+    let invalid_formatting = store
+        .format_language_document(snapshot.session_id, file_path, invalid, 5)
+        .expect("ignore formatting for invalid CFD");
+    assert_eq!(invalid_formatting.text, invalid);
+    assert!(invalid_formatting.edits.is_empty());
 }
 
 #[test]
@@ -450,4 +455,11 @@ fn cft_source_is_visible_editable_and_validated() {
     store
         .write_source_text(snapshot.session_id, file_path, &formatted.text)
         .expect("save valid CFT source");
+
+    let invalid_syntax = source.replacen("type ArrayExample {", "type ArrayExample", 1);
+    let invalid_formatting = store
+        .format_language_document(snapshot.session_id, file_path, &invalid_syntax, 2)
+        .expect("ignore formatting for invalid CFT");
+    assert_eq!(invalid_formatting.text, invalid_syntax);
+    assert!(invalid_formatting.edits.is_empty());
 }

@@ -18,7 +18,7 @@ use crate::api::{
 use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
 use crate::{RecordOrigin, TextSpan};
 use coflow_language::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
+    build_schema, format_cfd, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -891,12 +891,14 @@ sword: Item {
 fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     let dir = temp_dir("polymorphic-object-round-trip");
     let file = dir.join("07-inheritance.cfd");
-    let original = include_str!("../../../../../examples/showcase/data/07-inheritance.cfd");
-    fs::write(&file, original).expect("write inheritance seed");
+    let original = format_cfd(include_str!(
+        "../../../../../examples/showcase/data/07-inheritance.cfd"
+    ));
+    fs::write(&file, &original).expect("write inheritance seed");
     let schema = compile_schema(include_str!(
         "../../../../../examples/showcase/schema/07-inheritance.cft"
     ));
-    let model = load_cfd_model(&schema, original).expect("load inheritance model");
+    let model = load_cfd_model(&schema, &original).expect("load inheritance model");
     let record_id = model
         .lookup_assignable(&schema, "EffectBundle", "starter_effects")
         .expect("effect bundle record");
@@ -912,6 +914,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     };
     let mut appended_effects = additional.clone();
     appended_effects.push(additional[0].clone());
+    let expected_additional_len = additional.len() + 1;
 
     let writer = CfdWriter::new();
     let origin = origin_for(&file);
@@ -940,6 +943,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
         .expect("rewrite additional effects");
 
     let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
+    assert_eq!(after, format_cfd(&after), "writer output must already be formatted");
     let rewritten = load_cfd_model(&schema, &after).expect("reload rewritten effect bundle");
     let rewritten_id = rewritten
         .lookup_assignable(&schema, "EffectBundle", "starter_effects")
@@ -951,5 +955,5 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     else {
         panic!("rewritten additional effects should be an array");
     };
-    assert_eq!(rewritten_additional.len(), 3);
+    assert_eq!(rewritten_additional.len(), expected_additional_len);
 }

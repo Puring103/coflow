@@ -1,6 +1,7 @@
 # Feature: fields can vary across configured dimensions.
 
 type UiText {
+
   @localized
   text: string;
 }

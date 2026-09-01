@@ -7,6 +7,45 @@ use super::super::semantic_tokens::{
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
+use coflow_language::format_cfd;
+
+#[test]
+fn cfd_formatter_expands_records_and_separates_top_level_entries() {
+    let source = "Product { notebook { name: \"Notebook\", price: 12, } pencil { name: \"Pencil\", price: 2, } }\nwelcome: Notice { text: \"Ready\", }\n";
+    assert_eq!(
+        format_cfd(source),
+        "Product {\n  notebook {\n    name: \"Notebook\",\n    price: 12,\n  }\n\n  pencil {\n    name: \"Pencil\",\n    price: 2,\n  }\n}\n\nwelcome: Notice {\n  text: \"Ready\",\n}\n"
+    );
+    assert_eq!(format_cfd(&format_cfd(source)), format_cfd(source));
+}
+
+#[test]
+fn cfd_formatter_rejoins_split_function_headers() {
+    let source = "default_calculator: Calculator {\n  classify:\n\n    fn(value: int) ->\n\n    string {\n      if value >= 10 {\n        \"large\"\n      } else {\n        \"small\"\n      }\n    },\n}\n";
+    let expected = "default_calculator: Calculator {\n  classify: fn(value: int) -> string {\n    if value >= 10 {\n      \"large\"\n    } else {\n      \"small\"\n    }\n  },\n}\n";
+    assert_eq!(format_cfd(source), expected);
+    assert_eq!(format_cfd(expected), expected);
+}
+
+#[test]
+fn cfd_formatter_separates_array_close_after_structural_object() {
+    let source = "bundle: EffectBundle {\n  additional: [\n    HealEffect {\n      amount: 5,\n    }],\n}\n";
+    let expected = "bundle: EffectBundle {\n  additional: [\n    HealEffect {\n      amount: 5,\n    }\n  ],\n}\n";
+    assert_eq!(format_cfd(source), expected);
+    assert_eq!(format_cfd(expected), expected);
+    assert_eq!(
+        format_cfd("bundle: EffectBundle { additional: [HealEffect { amount: 5, }], }"),
+        expected
+    );
+}
+
+#[test]
+fn cfd_formatter_recovers_multiline_fields_functions_else_and_comments() {
+    let source = "item: Example {\nname:\n\"Widget\",\ncallback:\nfn(\nvalue: int,\nfallback: fn(int) ->\nint\n)\n->\nResult<\nint,\nstring\n>\n{\nif value > 0 {\n\"ok\"\n}\nelse {\n\"bad\"\n}\n},\n# callback: fn(value: int) ->\nlabel: \"kept\",\n}\n";
+    let expected = "item: Example {\n  name: \"Widget\",\n  callback: fn(\n    value: int,\n    fallback: fn(int) -> int\n  ) -> Result<\n    int,\n    string\n  > {\n    if value > 0 {\n      \"ok\"\n    } else {\n      \"bad\"\n    }\n  },\n  # callback: fn(value: int) ->\n  label: \"kept\",\n}\n";
+    assert_eq!(format_cfd(source), expected);
+    assert_eq!(format_cfd(expected), expected);
+}
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
@@ -606,6 +645,64 @@ type Message { details: Details; label: string; }\n";
     let labels = completion_labels(items.as_array().expect("formatted completions").clone());
     assert!(labels.contains(&"details".to_string()));
     assert!(labels.contains(&"details.count".to_string()));
+}
+
+#[test]
+fn cfd_formatted_string_completion_supports_record_reference_syntax() {
+    let schema_source = "type DefaultSettings { visible: bool; title: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-record-ref", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"standard: DefaultSettings { visible: true, title: "{&standard.visible}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let field_offset = source.find("&standard.v").expect("field reference") + "&standard.v".len();
+    let field_items = cfd::completion(source, &ast, Some(schema), field_offset);
+    let visible = field_items
+        .as_array()
+        .expect("field completions")
+        .iter()
+        .find(|item| item["label"] == "&standard.visible")
+        .expect("referenced record field");
+    assert_eq!(visible["textEdit"]["newText"], "&standard.visible");
+    let reference_start = position_from_byte(source, source.find('&').expect("reference start"));
+    assert_eq!(
+        visible["textEdit"]["range"]["start"]["character"],
+        reference_start.character
+    );
+
+    let key_offset = source.find("&standard.v").expect("field reference") + 3;
+    let key_items = cfd::completion(source, &ast, Some(schema), key_offset);
+    assert!(key_items
+        .as_array()
+        .expect("key completions")
+        .iter()
+        .any(|item| item["label"] == "&standard"));
+
+    let incomplete_source = r#"standard: DefaultSettings { visible: true, title: "{&standard.}" }"#;
+    let (incomplete_ast, incomplete_diagnostics) = parse_cfd(incomplete_source);
+    assert!(!incomplete_diagnostics.is_empty());
+    let incomplete_offset = incomplete_source.find("&standard.").expect("incomplete reference")
+        + "&standard.".len();
+    let incomplete_items = cfd::completion(
+        incomplete_source,
+        &incomplete_ast,
+        Some(schema),
+        incomplete_offset,
+    );
+    assert!(incomplete_items
+        .as_array()
+        .expect("incomplete reference completions")
+        .iter()
+        .any(|item| item["label"] == "&standard.visible"));
+
+    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let tokens = decode_semantic_tokens(source, &semantic["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "{&standard.visible}".to_string(),
+        token_type: SEM_VARIABLE,
+        modifiers: 0,
+    }), "{tokens:?}");
 }
 
 #[test]

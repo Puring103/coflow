@@ -36,7 +36,7 @@ pub mod limits;
 pub use diagnostics::{
     CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage,
 };
-pub use formatting::format_cft;
+pub use formatting::{format_cfd, format_cft};
 pub use module::{parse_modules, CftFile, CftModule, CftModuleSet, ModuleId};
 pub use schema::{
     build_schema, BucketName, CftAnnotation, CftAnnotationValue, CftCheckBuiltin, CftConst,
