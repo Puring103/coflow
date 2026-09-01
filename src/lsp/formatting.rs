@@ -3,7 +3,7 @@ use similar::{DiffTag, TextDiff};
 
 use super::position::byte_range;
 
-pub(crate) use coflow_language::format_cft;
+pub(crate) use coflow_language::{format_cfd, format_cft};
 
 pub(crate) fn formatting_edits(source: &str, formatted: &str) -> Vec<Value> {
     if source == formatted {

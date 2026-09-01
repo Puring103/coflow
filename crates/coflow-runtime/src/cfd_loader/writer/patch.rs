@@ -58,8 +58,13 @@ pub(super) fn apply_patch(
                     ),
                 )));
             }
-            let fragment =
-                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), 1);
+            let depth = replacement_serialization_depth(source, span.start, request.new_value);
+            let fragment = serialize_value_for_type(
+                request.new_value,
+                Some(request.schema),
+                Some(&ty),
+                depth,
+            );
             Ok(format!(
                 "{}{}{}",
                 &source[..span.start],
@@ -107,6 +112,28 @@ pub(super) fn apply_patch(
                 &source[insert_pos..]
             ))
         }
+    }
+}
+
+fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue) -> usize {
+    let line_start = source[..offset.min(source.len())]
+        .rfind('\n')
+        .map_or(0, |index| index + 1);
+    let line_indent = source[line_start..]
+        .chars()
+        .take_while(|character| *character == ' ')
+        .count()
+        / CFD_INDENT.len();
+    line_indent + usize::from(value_starts_object(value))
+}
+
+fn value_starts_object(value: &CfdValue) -> bool {
+    match value {
+        CfdValue::Object(_) => true,
+        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
+            value_starts_object(inner)
+        }
+        _ => false,
     }
 }
 

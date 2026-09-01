@@ -713,8 +713,8 @@ label: \"Recovery\",\n\
 }],\n\
 }\n";
     assert_eq!(
-        format_cft(polymorphic_array),
-        "starter_effects: EffectBundle {\n  primary: HealEffect {\n    amount: 0,\n    label: \"\",\n  },\n  additional: [HealEffect {\n    amount: 5,\n    label: \"Recovery\",\n  }, HealEffect {\n    amount: 5,\n    label: \"Recovery\",\n  }],\n}\n"
+        format_cfd(polymorphic_array),
+        "starter_effects: EffectBundle {\n  primary: HealEffect {\n    amount: 0,\n    label: \"\",\n  },\n  additional: [\n    HealEffect {\n      amount: 5,\n      label: \"Recovery\",\n    },\n    HealEffect {\n      amount: 5,\n      label: \"Recovery\",\n    }\n  ],\n}\n"
     );
 }
 
@@ -758,6 +758,42 @@ enabled:bool;\n\
         format_cft(source),
         "type Item {\n\n  @label(\"Name\")\n  name: string;\n\n  count: int;\n\n  @description(\"Shown in the editor\")\n  enabled: bool;\n}\n"
     );
+
+    let previously_broken = "type Product {\n\n  @label(\"Name\")\n  name: string;\n\n  @label(\"Price\")\n\n  price: int;\n\n  @label(\"Enabled\")\n\n  enabled: bool;\n}\n";
+    let repaired = "type Product {\n\n  @label(\"Name\")\n  name: string;\n\n  @label(\"Price\")\n  price: int;\n\n  @label(\"Enabled\")\n  enabled: bool;\n}\n";
+    assert_eq!(format_cft(previously_broken), repaired);
+    assert_eq!(format_cft(repaired), repaired);
+}
+
+#[test]
+fn formatter_separates_top_level_definitions_but_keeps_their_annotations_attached() {
+    let source = "enum Rarity {\nCommon,\n}\n\
+@label(\"Product\")\n\
+type Product {\nname:string;\n}\n\
+const LIMIT:int=10;\n\
+check Rules {\nLIMIT>0;\n}\n";
+
+    assert_eq!(
+        format_cft(source),
+        "enum Rarity {\n  Common,\n}\n\n@label(\"Product\")\ntype Product {\n  name: string;\n}\n\nconst LIMIT: int = 10;\n\ncheck Rules {\n  LIMIT > 0;\n}\n"
+    );
+}
+
+#[test]
+fn formatter_rejoins_split_function_type_headers() {
+    let source = "type Calculator {\nclassify:\n  fn(value: int) ->\n  string;\n}\n";
+    assert_eq!(
+        format_cft(source),
+        "type Calculator {\n  classify: fn(value: int) -> string;\n}\n"
+    );
+}
+
+#[test]
+fn formatter_recovers_fields_and_indents_expression_continuations() {
+    let source = "type Calculator {\nname:\nstring;\napply:\nfn(\nvalue: int\n)\n->\nResult<\nint,\nstring\n>;\n}\ncheck Rules {\nenabled && # continue after this comment\ncount >\n0;\nmatches(\nvalue,\n\"x\"\n);\n}\n";
+    let expected = "type Calculator {\n  name: string;\n  apply: fn(\n    value: int\n  ) -> Result<\n    int,\n    string\n  >;\n}\n\ncheck Rules {\n  enabled && # continue after this comment\n    count >\n    0;\n  matches(\n    value,\n    \"x\"\n  );\n}\n";
+    assert_eq!(format_cft(source), expected);
+    assert_eq!(format_cft(expected), expected);
 }
 
 #[test]
@@ -784,7 +820,7 @@ calculate(- 1)!=- 1;    # keep  comment\n\
 
     assert_eq!(
         format_cft("type Box {\nvalue:Result<Option<int>,string>;\ncheck { a>b; c<d; }\n}"),
-        "type Box {\n  value: Result<Option<int>, string>;\n  check { a > b; c < d; }\n}\n"
+        "type Box {\n  value: Result<Option<int>, string>;\n\n  check {\n    a > b;\n    c < d;\n  }\n}\n"
     );
     assert_eq!(
         format_cft("type Callback=fn(value:int)->Result<int,string>;"),

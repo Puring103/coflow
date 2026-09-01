@@ -4,7 +4,10 @@ default_calculator: Calculator {
   add: fn(left: int, right: int) -> int {
     left + right
   },
-  classify: fn(value: int) -> string {
+
+  classify: fn(
+    value: int
+  ) -> string {
     if value >= 10 {
       "large"
     } else {

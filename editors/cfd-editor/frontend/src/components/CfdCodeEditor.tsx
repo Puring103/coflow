@@ -45,6 +45,9 @@ export interface ExternalDocumentUpdate {
 const setEditableRange = StateEffect.define<EditableRange | null>()
 const externalDocumentUpdate = Annotation.define<boolean>()
 
+export const completionPrefixPattern = /[@&]?[\p{L}\p{N}_.:]*$/u
+export const completionPrefixValidPattern = /^[@&]?[\p{L}\p{N}_.:]*$/u
+
 export function changesStayWithinEditableRange(changes: ChangeSet, range: EditableRange): boolean {
   let allowed = true
   changes.iterChangedRanges((from, to) => {
@@ -157,7 +160,7 @@ export function CfdCodeEditor({
   const completionSource = (context: CompletionContext) => {
     const complete = onCompleteRef.current
     if (!complete) return null
-    const word = context.matchBefore(/[\p{L}\p{N}_.]*/u)
+    const word = context.matchBefore(completionPrefixPattern)
     if (!word || (!context.explicit && word.from === word.to)) return null
     const line = context.state.doc.lineAt(context.pos)
     return complete(context.state.doc.toString(), {
@@ -166,7 +169,7 @@ export function CfdCodeEditor({
     }).then(options => ({
       from: word.from,
       options: [...options],
-      validFor: /^[\p{L}\p{N}_.]*$/u,
+      validFor: completionPrefixValidPattern,
     }))
   }
 
@@ -230,7 +233,7 @@ export function CfdCodeEditor({
             '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--bg-3)' },
             '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--code-selection)' },
             '.cm-tooltip': { backgroundColor: 'var(--bg-2)', color: 'var(--text)', border: '1px solid var(--border)' },
-            '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--accent)', color: 'white' },
+            '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--bg-4)', color: 'var(--text)' },
             '.cm-diagnostic': { padding: '4px 8px' },
           }),
         ],

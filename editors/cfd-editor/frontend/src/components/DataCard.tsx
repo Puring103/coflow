@@ -1742,9 +1742,15 @@ function ExpandableRow({
     : value.kind === 'array' || value.kind === 'dict'
       ? ' dc-row-collection'
       : ' dc-row-object'
-  const inlineSingletonItem = value.kind === 'array'
+  const inlineSingletonObject = value.kind === 'array'
     && value.value.length === 1
     && value.value[0]?.kind === 'object'
+    ? value.value[0]
+    : null
+  const inlineSingletonItem = inlineSingletonObject !== null
+  const inlineSingletonAnnotation = inlineSingletonObject
+    ? annotationChild(valueAnnotation, 0) ?? annotationItem(valueAnnotation)
+    : undefined
 
   function toggle() {
     if (staticObjectItem) return
@@ -1793,6 +1799,13 @@ function ExpandableRow({
             <DeleteButton
               title="删除唯一元素"
               onClick={() => onCollectionEdit(fieldPath, { kind: 'array_remove', index: 0 })}
+            />
+          )}
+          {onEdit && inlineSingletonObject && (
+            <ObjectTypeSwitchControl
+              value={inlineSingletonObject}
+              annotation={inlineSingletonAnnotation}
+              onCommit={next => onEdit([...fieldPath, fieldPathIndex(0)], next)}
             />
           )}
           {trailing}
@@ -2126,9 +2139,10 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
 
   function reset() { setAdding(false); setDupError(null) }
 
-  const objectDraft = container.value.length === 0
-    ? objectDraftForAnnotation(itemAnnotation)
-    : null
+  const objectDraft = collectionObjectDraftForAnnotation(
+    itemAnnotation,
+    container.value.length === 0,
+  )
 
   function addArrayItem() {
     if (objectDraft) {
@@ -2257,6 +2271,18 @@ function ArrayObjectItem({
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
   const hasFields = objectFields(value).length > 0
+  const itemActions = (
+    <>
+      {onEdit && (
+        <ObjectTypeSwitchControl
+          value={value}
+          annotation={valueAnnotation}
+          onCommit={next => onEdit(fieldPath, next)}
+        />
+      )}
+      {trailing}
+    </>
+  )
 
   return (
     <div
@@ -2296,18 +2322,58 @@ function ArrayObjectItem({
             onCollectionEdit={onCollectionEdit}
             onRowToggle={onRowToggle}
             valueAnnotation={valueAnnotation}
-            firstChildTrailing={trailing}
+            firstChildTrailing={itemActions}
           />
         ) : (
           <div className="dc-row dc-array-empty-object" style={inspectorDepthStyle(depth + 1)}>
             <div className="dc-row-label"><span className="vc vc-null">空对象</span></div>
             <div className="dc-row-value" />
-            <div className="dc-row-actions">{trailing}</div>
+            <div className="dc-row-actions">{itemActions}</div>
           </div>
         )}
       </div>
     </div>
   )
+}
+
+function ObjectTypeSwitchControl({ value, annotation, onCommit }: {
+  value: FieldValue & { kind: 'object' }
+  annotation?: FieldAnnotation
+  onCommit: (next: FieldValue) => void
+}) {
+  const polymorphicTypes = annotationPolymorphicTypes(annotation)
+  const { openObjectDraft } = useObjectDraft()
+  if (polymorphicTypes.length < 2) return null
+
+  return (
+    <button
+      type="button"
+      className="dc-null-btn dc-null-btn-switch dc-object-item-switch"
+      title={`切换类型（当前：${value.value.actual_type}）`}
+      aria-label="切换类型"
+      onClick={event => {
+        event.stopPropagation()
+        openObjectDraft({
+          title: '切换类型',
+          actualType: value.value.actual_type,
+          polymorphicTypes,
+          confirmLabel: '确认切换',
+          onConfirm: onCommit,
+        })
+      }}
+    >
+      <Icon name="edit" size={11} />
+    </button>
+  )
+}
+
+export function collectionObjectDraftForAnnotation(
+  annotation: FieldAnnotation | undefined,
+  collectionIsEmpty: boolean,
+): { actualType: string, polymorphicTypes: string[] } | null {
+  const draft = objectDraftForAnnotation(annotation)
+  if (!draft) return null
+  return collectionIsEmpty || draft.polymorphicTypes.length >= 2 ? draft : null
 }
 
 function objectDraftForAnnotation(annotation?: FieldAnnotation): {

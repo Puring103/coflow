@@ -83,22 +83,25 @@ export function completionItem(item: LanguageCompletion, source = ''): Completio
               ? 'constant'
               : 'text'
   const inserted = item.text_edit?.new_text ?? item.insert_text
+  const filterLabel = item.filter_text ?? item.label
+  const displayLabel = inserted && item.insert_text_format !== 2 ? inserted : item.label
   let apply: Completion['apply'] = inserted ?? (item.filter_text ? item.label : undefined)
   if (inserted && item.insert_text_format === 2) apply = snippet(inserted)
   if (inserted && item.text_edit) {
     const range = rangeOffsets(source, item.text_edit.range)
     const insert = item.insert_text_format === 2 ? snippet(inserted) : inserted
-    apply = (view, completion, _from, _to) => {
+    apply = (view, completion, _from, to) => {
+      const currentTo = Math.max(range.to, to)
       if (typeof insert === 'string') {
-        view.dispatch({ changes: { from: range.from, to: range.to, insert } })
+        view.dispatch({ changes: { from: range.from, to: currentTo, insert } })
       } else {
-        insert(view, completion, range.from, range.to)
+        insert(view, completion, range.from, currentTo)
       }
     }
   }
   return {
-    label: item.filter_text ?? item.label,
-    displayLabel: item.filter_text ? item.label : undefined,
+    label: filterLabel,
+    displayLabel,
     detail: item.detail,
     info: item.documentation,
     type,

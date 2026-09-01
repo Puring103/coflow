@@ -83,6 +83,19 @@ pub(super) fn serialize_value_for_type(
                 CftValueType::Array(inner) => Some(inner.as_ref()),
                 _ => None,
             });
+            if items.iter().any(requires_multiline_collection_layout) {
+                let item_indent = CFD_INDENT.repeat(depth + 1);
+                let elems = items
+                    .iter()
+                    .map(|item| {
+                        format!(
+                            "{item_indent}{}",
+                            serialize_value_for_type(item, schema, item_type, depth + 2)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("[\n{},\n{indent}]", elems.join(",\n"));
+            }
             let elems: Vec<String> = items
                 .iter()
                 .map(|i| serialize_value_for_type(i, schema, item_type, depth))
@@ -94,6 +107,9 @@ pub(super) fn serialize_value_for_type(
                 CftValueType::Dict(_, item) => Some(item.as_ref()),
                 _ => None,
             });
+            let multiline = entries
+                .iter()
+                .any(|(_, value)| requires_multiline_collection_layout(value));
             let pairs: Vec<String> = entries
                 .iter()
                 .map(|(k, v)| {
@@ -105,14 +121,39 @@ pub(super) fn serialize_value_for_type(
                             ToString::to_string,
                         ),
                     };
+                    let value_depth = if multiline { depth + 2 } else { depth };
                     format!(
                         "{key}: {}",
-                        serialize_value_for_type(v, schema, item_type, depth)
+                        serialize_value_for_type(v, schema, item_type, value_depth)
                     )
                 })
                 .collect();
-            format!("{{{}}}", pairs.join(", "))
+            if multiline {
+                let item_indent = CFD_INDENT.repeat(depth + 1);
+                let body = pairs
+                    .into_iter()
+                    .map(|pair| format!("{item_indent}{pair}"))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("{{\n{body},\n{indent}}}")
+            } else {
+                format!("{{{}}}", pairs.join(", "))
+            }
         }
+    }
+}
+
+fn requires_multiline_collection_layout(value: &CfdValue) -> bool {
+    match value {
+        CfdValue::Object(_) => true,
+        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
+            requires_multiline_collection_layout(inner)
+        }
+        CfdValue::Array(items) => items.iter().any(requires_multiline_collection_layout),
+        CfdValue::Dict(entries) => entries
+            .iter()
+            .any(|(_, value)| requires_multiline_collection_layout(value)),
+        _ => false,
     }
 }
 
@@ -182,10 +223,30 @@ fn result_error(expected: Option<&CftValueType>) -> Option<&CftValueType> {
 #[cfg(test)]
 mod tests {
     use super::serialize_value_for_type;
-    use crate::data_model::{CfdEnumValue, CfdValue};
+    use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
     use coflow_language::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
     };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn serializes_object_collections_with_structural_indentation() -> Result<(), String> {
+        let effect = CfdValue::Object(Box::new(
+            CfdObject::try_new(
+                "HealEffect",
+                BTreeMap::from([("amount".to_string(), CfdValue::Int(5))]),
+            )
+            .map_err(|error| error.to_string())?,
+        ));
+        let value = CfdValue::Array(vec![effect.clone(), effect]);
+
+        let rendered = serialize_value_for_type(&value, None, None, 1);
+        let expected = "[\n    HealEffect {\n      amount: 5,\n    },\n    HealEffect {\n      amount: 5,\n    },\n  ]";
+        if rendered != expected {
+            return Err(format!("unexpected object array layout:\n{rendered}"));
+        }
+        Ok(())
+    }
 
     #[test]
     fn serializes_present_options_without_some_constructor() {

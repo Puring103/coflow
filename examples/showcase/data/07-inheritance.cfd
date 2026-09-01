@@ -6,11 +6,17 @@ starter_effects: EffectBundle {
     label: "",
   },
 
-  additional: [HealEffect {
-    amount: 5,
-    label: "Recovery",
-  }, HealEffect {
-    amount: 5,
-    label: "Recovery",
+  additional: [
+    HealEffect {
+      amount: 5,
+      label: "Recovery",
+    },
+    HealEffect {
+      amount: 5,
+      label: "Recovery",
+    },
+    DamageEffect {
+      amount: 0,
+      label: "",
   }],
 }

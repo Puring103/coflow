@@ -788,19 +788,55 @@ fn formatted_string_completion(
     build: Option<&LspBuild>,
     offset: usize,
 ) -> Option<Vec<Value>> {
-    let record = ast.records.iter().find(|record| {
-        record.fields.iter().any(|field| match &field.value {
-            CfdValue::FormattedString(value) => span_contains(value.span, offset),
-            _ => false,
-        })
-    })?;
-    let schema_type = schema.resolve_type(&record.type_name)?;
-    let open = source.get(record.span.start..offset)?.rfind('{')? + record.span.start;
-    let prefix = source.get(open + 1..offset)?.trim();
+    const FORMATTED_PATH_DEPTH: usize = 8;
+    let type_name = ast
+        .records
+        .iter()
+        .find(|record| span_contains(record.span, offset))
+        .map(|record| record.type_name.clone())
+        .or_else(|| record_context_at(source, schema, offset).map(|(name, _)| name))?;
+    let schema_type = schema.resolve_type(&type_name)?;
+    let (_, prefix) = formatted_reference_prefix_at(source, offset)?;
     let parts = prefix.split('.').collect::<Vec<_>>();
     let mut paths = Vec::new();
 
-    if parts.len() >= 2 && schema.resolve_type(parts[0]).is_some() {
+    if let Some(reference) = prefix.strip_prefix('&') {
+        let (record, field_path) = reference
+            .split_once('.')
+            .map_or((reference, None), |(record, path)| (record, Some(path)));
+        let (explicit_type, key_prefix) = record
+            .rsplit_once("::")
+            .map_or((None, record), |(type_name, key)| (Some(type_name), key));
+        let owner_type = explicit_type.unwrap_or(schema_type.name.as_str());
+        if let Some(field_path) = field_path {
+            let field_parts = field_path.split('.').collect::<Vec<_>>();
+            let completed = &field_parts[..field_parts.len().saturating_sub(1)];
+            let mut nested_owner = owner_type;
+            for field_name in completed {
+                let field = schema.resolve_type(nested_owner)?.field(field_name)?;
+                nested_owner = formatted_nested_type(&field.value_type)?;
+            }
+            let base = if completed.is_empty() {
+                format!("&{record}")
+            } else {
+                format!("&{record}.{}", completed.join("."))
+            };
+            collect_formatted_field_paths(schema, nested_owner, &base, FORMATTED_PATH_DEPTH, &mut paths);
+        } else {
+            paths.extend(
+                formatted_record_keys(ast, schema, build, owner_type)
+                    .into_iter()
+                    .filter(|key| key.starts_with(key_prefix))
+                    .map(|key| {
+                        let label = explicit_type.map_or_else(
+                            || format!("&{key}"),
+                            |type_name| format!("&{type_name}::{key}"),
+                        );
+                        (label, format!("{owner_type} record"))
+                    }),
+            );
+        }
+    } else if parts.len() >= 2 && schema.resolve_type(parts[0]).is_some() {
         let type_name = parts[0];
         if parts.len() == 2 {
             if let Some(build) = build {
@@ -814,12 +850,18 @@ fn formatted_string_completion(
             }
         } else {
             let path_prefix = parts[..parts.len() - 1].join(".");
-            collect_formatted_field_paths(schema, type_name, &path_prefix, 2, &mut paths);
+            collect_formatted_field_paths(schema, type_name, &path_prefix, FORMATTED_PATH_DEPTH, &mut paths);
         }
     } else if let Some((owner, path_prefix)) = formatted_path_owner(schema, schema_type.name.as_str(), &parts) {
         collect_formatted_field_paths(schema, owner, &path_prefix, 2, &mut paths);
     } else {
-        collect_formatted_field_paths(schema, schema_type.name.as_str(), "", 3, &mut paths);
+        collect_formatted_field_paths(
+            schema,
+            schema_type.name.as_str(),
+            "",
+            FORMATTED_PATH_DEPTH,
+            &mut paths,
+        );
         paths.extend(schema.all_types().map(|ty| {
             (ty.name.to_string(), "record type".to_string())
         }));
@@ -840,6 +882,38 @@ fn formatted_string_completion(
             }))
             .collect(),
     )
+}
+
+fn formatted_reference_prefix_at(source: &str, offset: usize) -> Option<(usize, &str)> {
+    let end = offset.min(source.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut reference_start = None;
+    for (index, character) in source[..end].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if in_string && character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if character == '"' {
+            in_string = !in_string;
+            reference_start = None;
+            continue;
+        }
+        if !in_string {
+            continue;
+        }
+        match character {
+            '{' => reference_start = Some(index),
+            '}' => reference_start = None,
+            _ => {}
+        }
+    }
+    let start = reference_start?;
+    Some((start, source.get(start + 1..end)?.trim()))
 }
 
 fn collect_formatted_field_paths(
@@ -863,7 +937,7 @@ fn collect_formatted_field_paths(
             format!("formatted field: {}", fmt_value_type(&field.value_type)),
         ));
         if depth > 1 {
-            if let CftValueType::Object(nested) = &field.value_type {
+            if let Some(nested) = formatted_nested_type(&field.value_type) {
                 collect_formatted_field_paths(schema, nested, &label, depth - 1, paths);
             }
         }
@@ -881,12 +955,43 @@ fn formatted_path_owner<'a>(
     let mut owner = root_type;
     for part in &parts[..parts.len() - 1] {
         let field = schema.resolve_type(owner)?.field(part)?;
-        let CftValueType::Object(nested) = &field.value_type else {
-            return None;
-        };
-        owner = nested;
+        owner = formatted_nested_type(&field.value_type)?;
     }
     Some((owner, parts[..parts.len() - 1].join(".")))
+}
+
+fn formatted_nested_type(value_type: &CftValueType) -> Option<&str> {
+    match value_type {
+        CftValueType::Object(name) | CftValueType::RecordRef(name) => Some(name),
+        _ => None,
+    }
+}
+
+fn formatted_record_keys(
+    ast: &CfdAst,
+    schema: &CftSchema,
+    build: Option<&LspBuild>,
+    expected_type: &str,
+) -> Vec<String> {
+    let mut keys = build
+        .map(|build| build.cfd_definitions.keys(schema, expected_type))
+        .unwrap_or_default();
+    let assignable = schema
+        .concrete_assignable_types(expected_type)
+        .unwrap_or_default();
+    keys.extend(
+        ast.records
+            .iter()
+            .filter(|record| {
+                assignable
+                    .iter()
+                    .any(|actual| actual.as_str() == record.type_name)
+            })
+            .map(|record| record.key.clone()),
+    );
+    keys.sort();
+    keys.dedup();
+    keys
 }
 
 fn formatted_reference_range(source: &str, offset: usize) -> Span {
@@ -895,7 +1000,11 @@ fn formatted_reference_range(source: &str, offset: usize) -> Span {
         .char_indices()
         .rev()
         .take_while(|(_, character)| {
-            *character == '_' || *character == '.' || character.is_alphanumeric()
+            *character == '_'
+                || *character == '.'
+                || *character == '&'
+                || *character == ':'
+                || character.is_alphanumeric()
         })
         .map(|(index, _)| index)
         .last()
