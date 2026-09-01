@@ -5,6 +5,11 @@
 > 范围：函数 IR lowering 之后的 program、寄存器、指令、调用 ABI、frame、closure、fault、执行限制、
 > 验证和性能约束。
 
+当前实现已经覆盖 register lowering、program verifier、三类寄存器、普通/尾调用、closure、source-mapped
+fault 和 thread-local context pool。第 13 节的执行限制尚未实现，是本文唯一仍未闭合的安全契约；因此
+当前 VM 不能作为不可信脚本 sandbox，死循环也不会由 VM 自行终止。第 15、16 节包含需要持续验证的
+约束，不表示每一项均已达到。
+
 语言语义见 `01-language-design.zh-CN.md`；Module、Host 和生成 ABI 见
 `02-api-runtime-design.zh-CN.md`。VM 只执行 `LoadAndCompile` 产生的内部 program，不接受外部 bytecode。
 
@@ -32,7 +37,7 @@ CoflowProgram
      ├── current program and pc
      ├── current register bases
      ├── call frames
-     └── execution limits
+     └── execution limits (planned)
 ```
 
 ## 2. 编译与 lowering 边界
@@ -175,8 +180,8 @@ Program 在 Module 发布前验证一次。verifier 必须拒绝：
 - closure capture 数量、顺序、类型或目标参数布局不匹配。
 - Option/Result 构造、传播或 reinterpret 的 shape 不兼容。
 
-验证后的执行循环不重复做静态类型检查，但仍检查动态状态：null receiver、Host 返回、间接目标、算术
-fault 和执行限制。
+验证后的执行循环不重复做静态类型检查。当前执行时检查 null receiver、Host 返回、间接目标和算术
+fault；执行限制按第 13 节仍待实现。
 
 ## 7. 参数、返回值与 CallSite
 
@@ -304,8 +309,9 @@ HigherOrderLoop
 └── accumulator or builder
 ```
 
-数组直接按 `IReadOnlyList<T>` 读取，不预复制元素。dictionary 若需要枚举稳定性，可以建立一次快照，
-但必须把分配和元素工作量纳入操作成本。每个 callback 通过正常 frame 执行，不为每个元素创建参数数组。
+数组直接按 `IReadOnlyList<T>` 读取，不预复制元素。dictionary 在进入循环时通过 `ToArray()` 建立一次稳定
+枚举快照；执行限制落地后，必须把该分配和元素工作量纳入操作成本。每个 callback 通过正常 frame
+执行，不为每个元素创建参数数组。
 
 find/any/all 在满足结果后立即短路；fold 从显式初值开始；map/filter 只为最终结果 builder 分配。
 
@@ -385,17 +391,17 @@ threading 或压缩 bytecode 只有在 Release 基准证明 dispatch 或指令�
 
 ## 16. 验证与基准矩阵
 
-VM 正确性测试至少覆盖：
+VM 正确性测试至少覆盖；其中执行限制相关项目在第 13 节实现后补齐：
 
-- 三类 scalar、enum、unit、Option、Result 和嵌套复合布局。
+- int、float、bool、string、enum、unit、Option、Result 和嵌套复合布局。
 - 常量、move、field、算术、比较、短路、跳转和 return。
 - checked overflow、除零、非法转换、移位边界和 source span。
 - direct/indirect call、非尾递归、尾递归和相互尾调用。
 - Host 参数/返回、异常、重配置与 VM/Host/VM 重入。
 - closure capture、返回 Delegate 和多次 Host 往返。
-- 高阶集合空值、短路、结果与工作量收费。
+- 高阶集合空值、短路和结果；工作量收费随执行限制补齐。
 - verifier 的所有非法 opcode、operand、layout、control-flow 和 signature 情况。
-- 指令、frame、寄存器、集合工作量的边界与首个超限值。
+- 待补：指令、frame、寄存器、集合工作量的边界与首个超限值。
 - context 清理、旧 Module 可回收和 warmed hot path 分配。
 
 基准至少包含整数与浮点循环、函数调用链、尾递归、非尾递归、字段读取、集合 pipeline、closure、Host

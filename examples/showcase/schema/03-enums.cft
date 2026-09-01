@@ -5,6 +5,7 @@ enum Rarity {
   Rare,
   Epic,
 }
+
 type EnumExample {
   rarity: Rarity;
 }

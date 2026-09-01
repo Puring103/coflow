@@ -4,6 +4,10 @@
 >
 > 范围：C# Runtime 所编译的 CFD 函数语言，以及数据值与函数值共享的基础语义。
 
+当前实现已经覆盖本文描述的类型、控制流、函数、closure、传播和高阶集合语义。第 11 节列出的执行
+限制 fault 仍属于 VM 待实现契约；在此之前，函数语言不能作为不可信脚本 sandbox。源码排版及 CFD
+对语义值的文本表示见 `04-source-formatting.zh-CN.md`。
+
 本文档定义语言语义，不提供用户教程或调用示例。公开的 CFT、CFD 语法说明位于
 `website/docs/docs/reference/03-language/`。加载、Module 和 Host 边界见
 `02-api-runtime-design.zh-CN.md`；寄存器与执行机制见 `03-vm-design.zh-CN.md`。
@@ -102,7 +106,8 @@ ValueShape
 
 数据值遵循：
 
-- `Option<T>` 只通过 `None` 或 `Some(T)` 表达缺失与存在。
+- `Option<T>` 的语义值由缺失/存在 tag 和 `T` payload 构成。函数表达式使用 `None` / `Some(T)`；
+  schema-guided CFD 对存在值允许直接写 `T`，writer 也规范写回裸值。
 - `Result<T, E>` 只通过 `Ok(T)` 或 `Err(E)` 表达业务结果。
 - 记录引用按声明的目标记录域和 key 解析，不能退化为普通 string。
 - inline object 与 record reference 是不同值类别。
@@ -181,7 +186,8 @@ Expression
 - `break` 和 `continue` 只在最近循环内有效。
 - 循环表达式结果是 unit；从循环返回函数值必须使用 `return`。
 
-循环和高阶集合操作都必须受 VM 工作量预算约束，语法层不提供绕过执行限制的迭代入口。
+循环和高阶集合操作最终必须受 VM 工作量预算约束，语法层不提供绕过执行限制的迭代入口。该预算当前
+尚未实现，状态见 VM 设计第 13 节。
 
 ## 8. Option、Result 与传播
 
@@ -235,7 +241,8 @@ tag，不隐式扁平化不同的 Option/Result 组合。
 - list 的 map、filter、fold、find、any 和 all。
 
 高阶内建必须验证 callback 签名；`find` 返回 Option，空集合上的 fold 使用显式初值，any/all 使用各自
-的空集合恒等值。线性内建的元素工作量计入 VM 预算，不能以单次 native 调用隐藏无界扫描。
+的空集合恒等值。执行限制落地后，线性内建的元素工作量必须计入 VM 预算，不能以单次 native 调用隐藏
+无界扫描。
 
 ## 11. Fault 语义
 
@@ -245,7 +252,7 @@ tag，不隐式扁平化不同的 Option/Result 组合。
 - 无效索引或不满足语言前置条件的内建操作。
 - 未配置、签名不匹配或抛出未处理异常的 Host function。
 - 无效间接调用目标或 VM 状态不变量破坏。
-- 指令、frame、寄存器或集合工作量超限。
+- 指令、frame、寄存器或集合工作量超限（待 VM 执行限制实现）。
 
 fault 必须绑定当前函数、来源路径、产生故障的表达式 span 和精简 Coflow 调用栈。fault 不暴露寄存器
 快照，也不转换为语言 Result。

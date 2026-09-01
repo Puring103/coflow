@@ -15,6 +15,7 @@ pub(crate) struct Cli {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     Init(InitArgs),
+    Format(FormatArgs),
     Cft(CftArgs),
     Lsp(LspArgs),
     Check(ProjectCheckArgs),
@@ -23,6 +24,23 @@ pub(crate) enum Command {
     Codegen(CodegenArgs),
     Schema(SchemaArgs),
     Skill(SkillArgs),
+    SelfUpdate(SelfUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FormatArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    pub(crate) config_or_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub(crate) check: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SelfUpdateArgs {
+    #[arg(long)]
+    pub(crate) check: bool,
+    #[arg(long, short = 'y')]
+    pub(crate) yes: bool,
 }
 
 #[derive(Debug, Args)]

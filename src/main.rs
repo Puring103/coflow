@@ -28,6 +28,7 @@ use std::process::ExitCode;
 mod cli;
 mod cli_output;
 mod diagnostics;
+mod format_command;
 mod schema_commands;
 mod skill_commands;
 mod write_file;
@@ -35,9 +36,9 @@ mod write_file;
 use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, InitArgs,
-    LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SkillArgs, SkillCommand,
-    SkillScopeArgs,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, FormatArgs,
+    InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SkillArgs,
+    SkillCommand, SkillScopeArgs,
 };
 
 fn main() -> ExitCode {
@@ -54,6 +55,7 @@ fn main() -> ExitCode {
 fn run() -> Result<bool, DiagnosticSet> {
     match Cli::parse().command {
         Command::Init(args) => init_project(args),
+        Command::Format(args) => format_project(&args),
         Command::Cft(command) => run_cft(&command),
         Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
@@ -63,6 +65,10 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Schema(command) => run_schema(&command),
         Command::Skill(command) => run_skill(&command),
     }
+}
+
+fn format_project(args: &FormatArgs) -> Result<bool, DiagnosticSet> {
+    format_command::run(args.config_or_dir.as_deref(), args.check)
 }
 
 fn run_skill(command: &SkillArgs) -> Result<bool, DiagnosticSet> {

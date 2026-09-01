@@ -2,6 +2,7 @@
 
 type QuantifierRule {
   numbers: [int];
+
   check {
     all value in numbers {
       value >= 0;
