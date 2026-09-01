@@ -91,6 +91,29 @@ pub(crate) fn push_semantic_span_plain(
     push_semantic_span(source, span, token_type, 0, tokens);
 }
 
+pub(crate) fn push_multiline_semantic_span(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    token_modifiers: u32,
+    tokens: &mut Vec<RawSemanticToken>,
+) {
+    let mut start = span.start;
+    for line in source[span.start..span.end.min(source.len())].split_inclusive('\n') {
+        let content_len = line.trim_end_matches(['\r', '\n']).len();
+        if content_len != 0 {
+            push_semantic_span(
+                source,
+                Span::new(start, start + content_len),
+                token_type,
+                token_modifiers,
+                tokens,
+            );
+        }
+        start += line.len();
+    }
+}
+
 pub(crate) fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
     tokens.sort_by_key(|token| (token.line, token.character, token.length));
     let mut deduped = Vec::new();
@@ -535,12 +558,29 @@ fn add_default_expr_semantic(
         DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
-        DefaultExprKind::Function { .. } => {
-            push_semantic_span_plain(
-                &document.source,
-                Span::new(expr.span.start, expr.span.start + 2),
-                SEM_KEYWORD,
-                tokens,
+        DefaultExprKind::Function { source, .. } => {
+            super::cfd::visit_function_semantic_tokens(
+                source,
+                expr.span.start,
+                |span, token_type, modifiers, multiline| {
+                    if multiline {
+                        push_multiline_semantic_span(
+                            &document.source,
+                            span,
+                            token_type,
+                            modifiers,
+                            tokens,
+                        );
+                    } else {
+                        push_semantic_span(
+                            &document.source,
+                            span,
+                            token_type,
+                            modifiers,
+                            tokens,
+                        );
+                    }
+                },
             );
         }
         DefaultExprKind::BitExpr { lhs, rhs, .. } => {

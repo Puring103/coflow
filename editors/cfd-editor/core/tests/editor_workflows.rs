@@ -96,6 +96,43 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     (root, populated)
 }
 
+fn function_defaults_project() -> PathBuf {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-function-defaults-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old function defaults project");
+    }
+    fs::create_dir_all(root.join("data")).expect("create function defaults data directory");
+    fs::write(
+        root.join("coflow.yaml"),
+        concat!(
+            "schema: schema.cft\n",
+            "data: data/\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+            "    namespace: Test.Config\n",
+        ),
+    )
+    .expect("write function defaults config");
+    fs::write(
+        root.join("schema.cft"),
+        concat!(
+            "type Rule {\n",
+            "  name: string = \"base\";\n",
+            "  label: string = \"rule {name}\";\n",
+            "  apply: fn(value: int) -> int = fn(input: int) -> int {\n",
+            "    var total = input + 1;\n",
+            "    total\n",
+            "  };\n",
+            "}\n",
+        ),
+    )
+    .expect("write function defaults schema");
+    fs::write(root.join("data/empty.cfd"), "").expect("write empty data file");
+    root
+}
+
 fn field(name: &str) -> CfdPathSegment {
     CfdPathSegment::Field(name.to_string())
 }
@@ -422,6 +459,60 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         .expect("ignore formatting for invalid CFD");
     assert_eq!(invalid_formatting.text, invalid);
     assert!(invalid_formatting.edits.is_empty());
+}
+
+#[test]
+fn cft_function_defaults_are_supported_through_the_editor_backend() {
+    let root = function_defaults_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load function defaults project");
+    let source = store
+        .read_source_text(snapshot.session_id, "schema.cft")
+        .expect("read function defaults schema");
+
+    let document = store
+        .sync_language_document(snapshot.session_id, "schema.cft", &source, 1)
+        .expect("synchronize CFT defaults through embedded LSP");
+    assert!(document.diagnostics.is_empty(), "{:#?}", document.diagnostics);
+    assert!(document.syntax_valid);
+    assert!(!document.semantic_token_data.is_empty());
+
+    let completions = store
+        .complete_language_document(
+            snapshot.session_id,
+            "schema.cft",
+            &source,
+            2,
+            &LanguagePosition {
+                line: 5,
+                character: 4,
+            },
+        )
+        .expect("complete inside CFT default function");
+    assert!(completions.iter().any(|item| item.label == "input"));
+    assert!(completions.iter().any(|item| item.label == "total"));
+    assert!(completions.iter().any(|item| item.label == "var"));
+
+    let unformatted = source.replace("    var total = input + 1;", "var total=input+1;");
+    let formatted = store
+        .format_language_document(snapshot.session_id, "schema.cft", &unformatted, 3)
+        .expect("format CFT default function");
+    assert!(formatted.text.contains("    var total = input + 1;"));
+    let idempotent = store
+        .format_language_document(snapshot.session_id, "schema.cft", &formatted.text, 4)
+        .expect("format canonical CFT default function");
+    assert!(idempotent.edits.is_empty());
+
+    let value = store
+        .make_default_object(snapshot.session_id, "Rule")
+        .expect("materialize CFT defaults");
+    let CfdValue::Object(rule) = value else {
+        panic!("expected Rule object");
+    };
+    assert!(matches!(rule.field("label"), Some(CfdValue::FormattedString(_))));
+    assert!(matches!(rule.field("apply"), Some(CfdValue::Function(_))));
 }
 
 #[test]

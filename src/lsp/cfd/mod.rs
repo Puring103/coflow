@@ -269,6 +269,16 @@ fn function_completion_items_with_locals(signature: &str, source: &str) -> Vec<V
     items
 }
 
+pub(crate) fn function_source_completion_items_at(
+    source: &str,
+    relative_offset: usize,
+) -> Option<Vec<Value>> {
+    let parts = function_parts(source)?;
+    (relative_offset > parts.prefix.len()).then(|| {
+        function_completion_items_with_locals(parts.signature, source)
+    })
+}
+
 fn function_local_names(source: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut tokens = source
@@ -429,6 +439,20 @@ fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
 
 #[allow(clippy::too_many_lines)]
 fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenCollector<'_>) {
+    visit_function_semantic_tokens(function_source, span.start, |span, token_type, modifiers, multiline| {
+        if multiline {
+            c.add_multiline(span, token_type, modifiers);
+        } else {
+            c.add(span, token_type, modifiers);
+        }
+    });
+}
+
+pub(crate) fn visit_function_semantic_tokens(
+    function_source: &str,
+    base: usize,
+    mut visit: impl FnMut(Span, u32, u32, bool),
+) {
     let mut pos = 0;
     while pos < function_source.len() {
         let Some(ch) = function_source[pos..].chars().next() else {
@@ -443,7 +467,7 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
             while pos < function_source.len() && function_source.as_bytes()[pos] != b'\n' {
                 pos += 1;
             }
-            c.add_plain(offset_span(span.start, start, pos), SEM_COMMENT);
+            visit(offset_span(base, start, pos), SEM_COMMENT, 0, false);
             continue;
         }
         if ch == '"' {
@@ -462,7 +486,7 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
                     break;
                 }
             }
-            c.add_multiline_plain(offset_span(span.start, start, pos), SEM_STRING);
+            visit(offset_span(base, start, pos), SEM_STRING, 0, true);
             continue;
         }
         if is_function_ident_start(ch) {
@@ -503,6 +527,8 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
                 }
             } else if following == Some(':') {
                 (SEM_PARAMETER, MOD_DECLARATION)
+            } else if previous_function_ident(function_source, start) == Some("var") {
+                (SEM_VARIABLE, MOD_DECLARATION)
             } else if following == Some('(') {
                 (SEM_FUNCTION, MOD_REFERENCE)
             } else if text.chars().next().is_some_and(char::is_uppercase) {
@@ -510,7 +536,7 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
             } else {
                 (SEM_VARIABLE, MOD_REFERENCE)
             };
-            c.add(offset_span(span.start, start, pos), token_type, modifiers);
+            visit(offset_span(base, start, pos), token_type, modifiers, false);
             continue;
         }
         if ch.is_ascii_digit() {
@@ -545,7 +571,7 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
                     pos += 1;
                 }
             }
-            c.add_plain(offset_span(span.start, start, pos), SEM_NUMBER);
+            visit(offset_span(base, start, pos), SEM_NUMBER, 0, false);
             continue;
         }
 
@@ -554,7 +580,7 @@ fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenColle
             .find_map(|operator| function_source[pos..].starts_with(operator).then_some(operator.len()))
             .or_else(|| "+-*/%<>=!~&|^?.:$".contains(ch).then_some(ch.len_utf8()));
         if let Some(length) = operator_len {
-            c.add_plain(offset_span(span.start, pos, pos + length), SEM_OPERATOR);
+            visit(offset_span(base, pos, pos + length), SEM_OPERATOR, 0, false);
             pos += length;
         } else {
             pos += ch.len_utf8();
@@ -576,6 +602,16 @@ fn is_function_ident_continue(ch: char) -> bool {
 
 fn previous_non_whitespace(source: &str, offset: usize) -> Option<char> {
     source[..offset].chars().rev().find(|ch| !ch.is_whitespace())
+}
+
+fn previous_function_ident(source: &str, offset: usize) -> Option<&str> {
+    let prefix = source[..offset].trim_end();
+    let start = prefix
+        .char_indices()
+        .rev()
+        .find_map(|(index, ch)| (!is_function_ident_continue(ch)).then_some(index + ch.len_utf8()))
+        .unwrap_or(0);
+    prefix.get(start..).filter(|ident| !ident.is_empty())
 }
 
 fn next_non_whitespace(source: &str, offset: usize) -> Option<char> {
@@ -2044,11 +2080,15 @@ impl<'a> TokenCollector<'a> {
     }
 
     fn add_multiline_plain(&mut self, span: Span, token_type: u32) {
+        self.add_multiline(span, token_type, 0);
+    }
+
+    fn add_multiline(&mut self, span: Span, token_type: u32, modifiers: u32) {
         let mut start = span.start;
         for line in self.source[span.start..span.end.min(self.source.len())].split_inclusive('\n') {
             let content_len = line.trim_end_matches(['\r', '\n']).len();
             if content_len != 0 {
-                self.add_plain(Span::new(start, start + content_len), token_type);
+                self.add(Span::new(start, start + content_len), token_type, modifiers);
             }
             start += line.len();
         }
