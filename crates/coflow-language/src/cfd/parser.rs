@@ -346,7 +346,10 @@ impl<'a> Parser<'a> {
     fn parse_value_inner(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         if self.source[self.pos..].starts_with("f\"") {
-            return self.parse_formatted_string();
+            return Err(CfdSyntaxDiagnostic {
+                message: "formatted strings use ordinary quotes; remove the `f` prefix".to_string(),
+                span: Span::new(self.pos, self.pos + 1),
+            });
         }
         if self.peek_keyword("fn") {
             return self.parse_function();
@@ -551,100 +554,6 @@ impl<'a> Parser<'a> {
             }
         }
         Err(self.error("unterminated string in function body"))
-    }
-
-    fn parse_formatted_string(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        self.pos += 2;
-        let mut segments = Vec::new();
-        let mut text = String::new();
-        while let Some(ch) = self.peek_char() {
-            if ch == '"' {
-                self.pos += 1;
-                if !text.is_empty() {
-                    segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
-                }
-                return Ok(CfdValue::FormattedString(CfdFormattedString {
-                    source: self.source[start..self.pos].to_string(),
-                    segments,
-                    span: Span::new(start, self.pos),
-                }));
-            }
-            if ch == '\\' {
-                let escape_start = self.pos;
-                self.pos += 1;
-                let Some(escaped) = self.peek_char() else {
-                    return Err(CfdSyntaxDiagnostic {
-                        message: "unterminated formatted string escape".to_string(),
-                        span: Span::new(escape_start, self.pos),
-                    });
-                };
-                self.pos += escaped.len_utf8();
-                match escaped {
-                    '"' => text.push('"'),
-                    '\\' => text.push('\\'),
-                    'n' => text.push('\n'),
-                    'r' => text.push('\r'),
-                    't' => text.push('\t'),
-                    other => {
-                        return Err(CfdSyntaxDiagnostic {
-                            message: format!("unsupported string escape `\\{other}`"),
-                            span: Span::new(escape_start, self.pos),
-                        });
-                    }
-                }
-                continue;
-            }
-            if ch == '{' {
-                if self.source[self.pos..].starts_with("{{") {
-                    text.push('{');
-                    self.pos += 2;
-                    continue;
-                }
-                if !text.is_empty() {
-                    segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
-                }
-                segments.push(CfdFormatSegment::Reference(self.parse_field_reference()?));
-                continue;
-            }
-            if ch == '}' {
-                if self.source[self.pos..].starts_with("}}") {
-                    text.push('}');
-                    self.pos += 2;
-                    continue;
-                }
-                return Err(CfdSyntaxDiagnostic {
-                    message: "literal `}` in a formatted string must be written as `}}`"
-                        .to_string(),
-                    span: Span::new(self.pos, self.pos + 1),
-                });
-            }
-            self.pos += ch.len_utf8();
-            text.push(ch);
-        }
-        Err(CfdSyntaxDiagnostic {
-            message: "unterminated formatted string".to_string(),
-            span: Span::new(start, self.pos),
-        })
-    }
-
-    fn parse_field_reference(&mut self) -> Result<CfdFieldReference, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        self.pos += 1;
-        let expression_start = self.pos;
-        while self.peek_char().is_some_and(|ch| ch != '}') {
-            self.pos += self.peek_char().map_or(0, char::len_utf8);
-        }
-        if self.peek_char() != Some('}') {
-            return Err(CfdSyntaxDiagnostic {
-                message: "unterminated formatted string reference".to_string(),
-                span: Span::new(start, self.pos),
-            });
-        }
-        let expression_end = self.pos;
-        self.pos += 1;
-        let expression = self.source[expression_start..expression_end].trim();
-        parse_field_reference_text(expression, Span::new(start, self.pos))
     }
 
     fn parse_bit_or_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {

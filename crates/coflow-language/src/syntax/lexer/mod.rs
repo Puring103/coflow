@@ -67,13 +67,13 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if ch == 'f' && self.source[self.pos..self.end].starts_with("f\"") {
-                if !self.allow_formatted_strings {
-                    return Err(self.err(
-                        CftErrorCode::UnexpectedCharacter,
-                        Span::new(self.pos, self.pos + 2),
-                        "nested formatted strings are not supported",
-                    ));
-                }
+                return Err(self.err(
+                    CftErrorCode::UnexpectedCharacter,
+                    Span::new(self.pos, self.pos + 1),
+                    "formatted strings use ordinary quotes; remove the `f` prefix",
+                ));
+            }
+            if ch == '"' && self.allow_formatted_strings && self.string_contains_braces()? {
                 self.lex_formatted_string(&mut tokens)?;
                 continue;
             }
@@ -403,6 +403,14 @@ impl<'a> Lexer<'a> {
                     out.push(value);
                     self.pos += 1;
                 }
+                '{' if self.starts_with("{{") => {
+                    out.push('{');
+                    self.pos += 2;
+                }
+                '}' if self.starts_with("}}") => {
+                    out.push('}');
+                    self.pos += 2;
+                }
                 '\n' | '\r' => {
                     return Err(self.err(
                         CftErrorCode::UnterminatedString,
@@ -426,7 +434,7 @@ impl<'a> Lexer<'a> {
     #[allow(clippy::too_many_lines)]
     fn lex_formatted_string(&mut self, tokens: &mut Vec<Token>) -> Result<(), CftDiagnostics> {
         let start = self.pos;
-        self.pos += 2;
+        self.pos += 1;
         tokens.push(Token {
             kind: TokenKind::FormattedStringStart,
             span: Span::new(start, self.pos),
@@ -530,6 +538,40 @@ impl<'a> Lexer<'a> {
             CftErrorCode::UnterminatedString,
             Span::new(start, self.end),
             "unterminated formatted string literal",
+        ))
+    }
+
+    fn string_contains_braces(&self) -> Result<bool, CftDiagnostics> {
+        let start = self.pos;
+        let mut pos = start + 1;
+        let mut escaped = false;
+        while pos < self.end {
+            let Some(ch) = self.source[pos..self.end].chars().next() else {
+                break;
+            };
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                return Ok(false);
+            } else if ch == '{' && self.source[pos..self.end].starts_with("{{") {
+                pos += 2;
+                continue;
+            } else if ch == '}' && self.source[pos..self.end].starts_with("}}") {
+                pos += 2;
+                continue;
+            } else if matches!(ch, '{' | '}') {
+                return Ok(true);
+            } else if matches!(ch, '\n' | '\r') {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        Err(self.err(
+            CftErrorCode::UnterminatedString,
+            Span::new(start, pos),
+            "unterminated string literal",
         ))
     }
 

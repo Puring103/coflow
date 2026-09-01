@@ -39,11 +39,12 @@ pub fn parse_module_with_options(
     options: CftParseOptions,
 ) -> Result<ModuleAst, CftDiagnostics> {
     let tokens = lex(module, source)?;
-    Parser::new(module, tokens, options).parse_module()
+    Parser::new(module, source, tokens, options).parse_module()
 }
 
 struct Parser<'a> {
     module: &'a ModuleId,
+    source: &'a str,
     tokens: Vec<Token>,
     pos: usize,
     budget: StructuralBudget,
@@ -51,9 +52,15 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(module: &'a ModuleId, tokens: Vec<Token>, options: CftParseOptions) -> Self {
+    fn new(
+        module: &'a ModuleId,
+        source: &'a str,
+        tokens: Vec<Token>,
+        options: CftParseOptions,
+    ) -> Self {
         Self {
             module,
+            source,
             tokens,
             pos: 0,
             budget: StructuralBudget::new(options.structural_limits),

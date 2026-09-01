@@ -42,7 +42,7 @@ describe('FieldValue authoring', () => {
     const value = {
       kind: 'formatted_string' as const,
       value: {
-        source: 'f"<b>{&Item::sword.name}</b>"',
+        source: '"<b>{&Item::sword.name}</b>"',
         rendered: '<b>Iron Sword</b>',
       },
     }

@@ -13,6 +13,12 @@ internal static class CfdParser
         return parser.ParseDocument();
     }
 
+    public static CfdValueNode ParseValue(CfdSource source)
+    {
+        var parser = new Parser(source);
+        return parser.ParseSingleValue();
+    }
+
     public static IReadOnlyList<CfdDocument> ParseAll(IEnumerable<CfdSource> sources)
     {
         var documents = new List<CfdDocument>();
@@ -96,6 +102,15 @@ internal static class CfdParser
             }
             ThrowIfErrors();
             return new CfdDocument(_source.Path, declaredNamespace, uses, records);
+        }
+
+        public CfdValueNode ParseSingleValue()
+        {
+            var value = ParseValue();
+            SkipTrivia();
+            if (!End) Error("CFD-SYNTAX-DEFAULT", "unexpected text after default value", CurrentSpan());
+            ThrowIfErrors();
+            return value;
         }
 
         private string ParseQualifiedPath(string expected, bool requireQualified)
@@ -197,7 +212,11 @@ internal static class CfdParser
             var start = Cursor;
             var sourceStart = _index;
             if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdInvalidValue(CurrentSpan()); }
-            if (Match("f\"")) return ParseFormattedString(start, true);
+            if (Match("f\""))
+            {
+                Error("CFD-SYNTAX-STRING", "formatted strings use ordinary quotes; remove the `f` prefix", SpanFrom(start));
+                return new CfdInvalidValue(SpanFrom(start));
+            }
             if (Match('"'))
             {
                 var value = ParseString();
@@ -399,92 +418,6 @@ internal static class CfdParser
             }
             Error("CFD-SYNTAX-005", "unterminated array or dictionary", CurrentSpan());
             return new CfdArrayValue(values, SpanFrom(start));
-        }
-
-        private CfdValueNode ParseFormattedString(Position start, bool prefixed)
-        {
-            var builder = new StringBuilder();
-            var segments = new List<CfdFormatSegment>();
-            var text = new StringBuilder();
-            while (!End)
-            {
-                var character = Read();
-                if (character == '"')
-                {
-                    if (text.Length != 0) segments.Add(new CfdFormatText(text.ToString()));
-                    return new CfdFormattedStringValue(
-                        (prefixed ? "f\"" : "\"") + builder + "\"",
-                        segments,
-                        SpanFrom(start));
-                }
-                if (character == '\\')
-                {
-                    if (End) break;
-                    var escaped = Read();
-                    switch (escaped)
-                    {
-                        case 'n': text.Append('\n'); break;
-                        case 'r': text.Append('\r'); break;
-                        case 't': text.Append('\t'); break;
-                        case '"': text.Append('"'); break;
-                        case '\\': text.Append('\\'); break;
-                        default:
-                            Error("CFD-SYNTAX-006", $"unsupported string escape `\\{escaped}`", CurrentSpan());
-                            text.Append(escaped);
-                            break;
-                    }
-                    builder.Append('\\').Append(escaped);
-                    continue;
-                }
-                builder.Append(character);
-                if (character == '{')
-                {
-                    if (!End && Peek() == '{')
-                    {
-                        Read();
-                        builder.Append('{');
-                        text.Append('{');
-                        continue;
-                    }
-                    if (text.Length != 0) { segments.Add(new CfdFormatText(text.ToString())); text.Clear(); }
-                    var referenceStart = _index;
-                    var expression = ParseFormatReference();
-                    builder.Append(_source.Text.Substring(referenceStart, _index - referenceStart));
-                    segments.Add(expression);
-                    continue;
-                }
-                if (character == '}')
-                {
-                    if (!End && Peek() == '}')
-                    {
-                        Read();
-                        builder.Append('}');
-                        text.Append('}');
-                        continue;
-                    }
-                    Error("CFD-SYNTAX-012", "literal `}` in a formatted string must be written as `}}`", CurrentSpan());
-                    continue;
-                }
-                text.Append(character);
-            }
-            Error("CFD-SYNTAX-006", "unterminated formatted string", SpanFrom(start));
-            return new CfdFormattedStringValue((prefixed ? "f\"" : "\"") + builder, segments, SpanFrom(start));
-        }
-
-        private CfdFormatSegment ParseFormatReference()
-        {
-            var expression = new StringBuilder();
-            while (!End && Peek() != '}') expression.Append(Read());
-            if (!Match('}'))
-            {
-                Error("CFD-SYNTAX-013", "unterminated formatted string reference", CurrentSpan());
-                return new CfdFormatText("{" + expression);
-            }
-            var value = expression.ToString().Trim();
-            var (typeName, key, path) = ParseFormatReferenceText(value);
-            if (!IsValidFormatReference(value, typeName, key, path))
-                Error("CFD-SYNTAX-013", "formatted string reference must use `field`, `&key.field`, or `&Type::key.field`", CurrentSpan());
-            return new CfdFormatReference(typeName, key, path);
         }
 
         private static (string? TypeName, string? Key, IReadOnlyList<string> Path) ParseFormatReferenceText(string expression)

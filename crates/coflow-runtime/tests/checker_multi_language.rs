@@ -12,7 +12,7 @@ fn schema() -> CftSchema {
             type Item {
                 @localized
                 name: string;
-                check { name != "": f"empty {id}"; }
+                check { name != "": "empty {id}"; }
             }
         "#,
     )

@@ -126,6 +126,25 @@ public sealed class CfdLoadContext
             resultType, parameterTypes, requiresCfdBody: true);
     }
 
+    public CfdValueNode DefaultValue(string source)
+    {
+        if (source is null) throw new ArgumentNullException(nameof(source));
+        return CfdParser.ParseValue(new CfdSource(CurrentPath, source));
+    }
+
+    public CoflowFunctionEntry DefaultFunction(
+        string source,
+        string fieldName,
+        Type resultType,
+        params Type[] parameterTypes)
+    {
+        var node = DefaultValue(source);
+        if (node is not CfdFunctionValue function)
+            throw new InvalidOperationException("A generated function default must contain a function value.");
+        return CreateFunctionEntry(function, fieldName, fieldName,
+            resultType, parameterTypes, requiresCfdBody: true);
+    }
+
     public TDelegate FunctionValue<TDelegate>(
         CfdValueNode node,
         Type resultType,

@@ -532,8 +532,20 @@ fn add_default_expr_semantic(
             );
             add_default_expr_semantic(document, value, tokens);
         }
-        DefaultExprKind::String(_) => {
+        DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
+        }
+        DefaultExprKind::Function { .. } => {
+            push_semantic_span_plain(
+                &document.source,
+                Span::new(expr.span.start, expr.span.start + 2),
+                SEM_KEYWORD,
+                tokens,
+            );
+        }
+        DefaultExprKind::BitExpr { lhs, rhs, .. } => {
+            add_default_expr_semantic(document, lhs, tokens);
+            add_default_expr_semantic(document, rhs, tokens);
         }
         DefaultExprKind::StaticPath(path) => {
             for segment in &path.segments {
@@ -563,6 +575,27 @@ fn add_default_expr_semantic(
             }
         }
         DefaultExprKind::Object(fields) => {
+            for (name, value) in fields {
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_PROPERTY,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::TypedObject { type_name, fields } => {
+            for segment in &type_name.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_TYPE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
             for (name, value) in fields {
                 push_semantic_span(
                     &document.source,

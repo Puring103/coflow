@@ -260,6 +260,17 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftSchemaDefaultValue::Float(value) => Ok(CfdValue::Float(*value)),
             CftSchemaDefaultValue::Bool(value) => Ok(CfdValue::Bool(*value)),
             CftSchemaDefaultValue::String(value) => Ok(CfdValue::String(value.clone())),
+            CftSchemaDefaultValue::FormattedString(source) => {
+                Ok(CfdValue::FormattedString(crate::data_model::CfdFormattedString {
+                    source: source.clone(),
+                    rendered: source.clone(),
+                }))
+            }
+            CftSchemaDefaultValue::Function(source) => {
+                Ok(CfdValue::Function(crate::data_model::CfdFunction {
+                    source: source.clone(),
+                }))
+            }
             CftSchemaDefaultValue::Enum {
                 enum_name,
                 variant,
@@ -328,7 +339,8 @@ impl<'a> DefaultValueMaterializer<'a> {
                 _ => self.zero_for_ty(ty, materialization),
             },
             CftSchemaDefaultValue::Object { type_name, fields } => match ty {
-                CftValueType::Object(expected) if expected == type_name => {
+                CftValueType::Object(expected)
+                    if self.schema.is_assignable(type_name, expected) => {
                     let mut values = self.fields_for_type(type_name, materialization, None)?;
                     for (name, value) in fields {
                         let Some(field) = self.schema.field(type_name, name) else {
@@ -349,7 +361,8 @@ impl<'a> DefaultValueMaterializer<'a> {
                 _ => self.zero_for_ty(ty, materialization),
             },
             CftSchemaDefaultValue::RecordReference { type_name, key } => match ty {
-                CftValueType::RecordRef(expected) if expected == type_name => RecordKey::new(key)
+                CftValueType::RecordRef(expected)
+                    if self.schema.is_assignable(type_name, expected) => RecordKey::new(key)
                     .map(CfdValue::Ref)
                     .map_err(|error| one_mutation_error("MUTATION-DEFAULT", error.to_string())),
                 _ => self.zero_for_ty(ty, materialization),

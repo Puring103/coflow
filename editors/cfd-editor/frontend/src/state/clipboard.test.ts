@@ -42,12 +42,12 @@ describe('CFD clipboard codec', () => {
       { coordinate, fieldPath: [fieldPathField('b')] },
     ]]
     const text = await serializeCfdCellMatrix(cells, async (_coordinate, path) => (
-      path[0].value === 'a' ? 'Stats { hp: 10, tags: ["a,b", "line\\ntext"] }' : 'f"{name}: {{ok}}"'
+      path[0].value === 'a' ? 'Stats { hp: 10, tags: ["a,b", "line\\ntext"] }' : '"{name}: {{ok}}"'
     ))
 
     expect(parseCfdClipboard(text)).toEqual([[
       'Stats { hp: 10, tags: ["a,b", "line\\ntext"] }',
-      'f"{name}: {{ok}}"',
+      '"{name}: {{ok}}"',
     ]])
     expect(parseCfdClipboard('[1, 2]')).toEqual([['[1, 2]']])
     expect(parseCfdClipboard('[]')).toEqual([['[]']])

@@ -1,4 +1,4 @@
-use coflow_language::cfd::{parse_cfd, CfdValue};
+use coflow_language::cfd::{parse_cfd, CfdFormatSegment, CfdValue};
 
 fn parse_function(source: &str) -> String {
     let source = format!("item: Rule {{ apply: {source} }}");
@@ -67,4 +67,20 @@ fn validates_function_body_grammar_instead_of_skipping_it() {
         let (_, diagnostics) = parse_cfd(&source);
         assert!(!diagnostics.is_empty(), "expected an error for {body:?}");
     }
+}
+
+#[test]
+fn ordinary_strings_interpolate_and_the_removed_prefix_is_rejected() {
+    let (ast, diagnostics) = parse_cfd(r#"item: Rule { label: "item {name}" }"#);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(matches!(
+        &ast.records[0].fields[0].value,
+        CfdValue::FormattedString(value)
+            if value.segments.iter().any(|segment| matches!(segment, CfdFormatSegment::Reference(_)))
+    ));
+
+    let (_, diagnostics) = parse_cfd(r#"item: Rule { label: f"{name}" }"#);
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("ordinary quotes")));
 }

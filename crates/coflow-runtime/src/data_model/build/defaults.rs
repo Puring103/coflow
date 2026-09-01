@@ -105,6 +105,25 @@ impl Validator<'_, '_> {
             {
                 CfdValue::String(value.clone())
             }
+            CftSchemaDefaultValue::FormattedString(source)
+                if type_accepts_default(ty, &CftValueType::String) =>
+            {
+                let parsed = match crate::data_model::cell_value::parse_automatic_formatted_string(source) {
+                    Ok(Some(value)) => value,
+                    _ => {
+                        self.push_default_type_mismatch(record, path);
+                        return None;
+                    }
+                };
+                return Some(ValueDraft::FormattedString(parsed));
+            }
+            CftSchemaDefaultValue::Function(source)
+                if matches!(ty, CftValueType::Function(_, _)) =>
+            {
+                CfdValue::Function(crate::data_model::CfdFunction {
+                    source: source.clone(),
+                })
+            }
             CftSchemaDefaultValue::Enum {
                 enum_name,
                 variant,
@@ -191,7 +210,7 @@ impl Validator<'_, '_> {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 };
-                if expected != type_name {
+                if !self.schema.cft().is_assignable(type_name, expected) {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 }
@@ -208,12 +227,12 @@ impl Validator<'_, '_> {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 };
-                if expected != type_name {
+                if !self.schema.cft().is_assignable(type_name, expected) {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 }
                 return Some(ValueDraft::PendingRef {
-                    expected_type: type_name.clone(),
+                    expected_type: expected.clone(),
                     key: key.clone(),
                 });
             }

@@ -239,11 +239,32 @@ pub enum DefaultExprKind {
     ResultOk(Box<DefaultExpr>),
     ResultErr(Box<DefaultExpr>),
     String(String),
+    FormattedString(String),
+    Function {
+        signature: TypeRef,
+        source: String,
+    },
+    BitExpr {
+        op: DefaultBitOp,
+        lhs: Box<DefaultExpr>,
+        rhs: Box<DefaultExpr>,
+    },
     StaticPath(QualifiedName),
     RecordReference(QualifiedName),
     Array(Vec<DefaultExpr>),
     Object(Vec<(NameRef, DefaultExpr)>),
+    TypedObject {
+        type_name: QualifiedName,
+        fields: Vec<(NameRef, DefaultExpr)>,
+    },
     Dictionary(Vec<(DefaultExpr, DefaultExpr)>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultBitOp {
+    Or,
+    Xor,
+    And,
 }
 
 #[derive(Debug, Clone)]
