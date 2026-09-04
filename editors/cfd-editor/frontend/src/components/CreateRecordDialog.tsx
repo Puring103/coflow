@@ -24,6 +24,7 @@ export function CreateRecordDialog({
 }: Props) {
   const [selectedType, setSelectedType] = useState(actualType)
   const [recordKeyDraft, setRecordKeyDraft] = useState(initialKey)
+  const [keyTouched, setKeyTouched] = useState(false)
   const trimmedKey = recordKeyDraft.trim()
   const existingKeySet = useMemo(() => new Set(existingKeys), [existingKeys])
   const duplicateKey = !!trimmedKey && existingKeySet.has(trimmedKey)
@@ -44,7 +45,7 @@ export function CreateRecordDialog({
       onClose={onClose}
       confirmLabel="创建"
       extraValidation={() => {
-        if (!trimmedKey) return 'Key 不能为空'
+        if (!trimmedKey) return keyTouched ? '请输入记录 Key' : ' '
         if (duplicateKey) return `Key "${trimmedKey}" 已存在于该类型的继承域中，请换一个 Key。`
         return null
       }}
@@ -55,9 +56,13 @@ export function CreateRecordDialog({
           autoFocus
           placeholder="record_key"
           aria-label="记录 Key"
-          aria-invalid={!trimmedKey || duplicateKey}
+          aria-invalid={(keyTouched && !trimmedKey) || duplicateKey}
           title={duplicateKey ? `Key "${trimmedKey}" 已存在` : undefined}
-          onChange={e => setRecordKeyDraft(e.target.value)}
+          onChange={e => {
+            setKeyTouched(true)
+            setRecordKeyDraft(e.target.value)
+          }}
+          onBlur={() => setKeyTouched(true)}
         />
       )}
     />
