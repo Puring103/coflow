@@ -401,6 +401,38 @@ impl SessionStore {
         }
     }
 
+    pub fn add_project_input(
+        &self,
+        id: u32,
+        kind: coflow_runtime::ProjectInputKind,
+        path: &StdPath,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::add_project_input(&yaml_path, kind, path)
+            .map_err(|error| EditorError::project(diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+
+    pub fn create_project_file(
+        &self,
+        id: u32,
+        kind: coflow_runtime::ProjectInputKind,
+        parent_path: &StdPath,
+        file_name: &str,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::create_project_file(&yaml_path, kind, parent_path, file_name)
+            .map_err(|error| EditorError::project(diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+
+    pub fn delete_project_entry(&self, id: u32, path: &StdPath) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::delete_project_entry(&yaml_path, path)
+            .map_err(|error| EditorError::project(diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+
     fn build_reload_candidate(
         &self,
         id: u32,
@@ -502,14 +534,9 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
     let mut records = Vec::new();
     let mut columns = Vec::<(String, ColumnStats)>::new();
     let mut column_index = BTreeMap::<String, usize>::new();
-    let mut type_seen = Vec::new();
-    let mut type_set = HashSet::new();
     let mut container_counts = BTreeMap::<String, usize>::new();
     let mut row_containers = Vec::new();
     for view in queries.record_views_in_file(file_path) {
-        if type_set.insert(view.coordinate.actual_type.to_string()) {
-            type_seen.push(view.coordinate.actual_type.to_string());
-        }
         let container = record_container_key(view.origin);
         let container_index = container_counts.entry(container.clone()).or_default();
         let mut row = record_view_to_row(&view, &ctx);
@@ -543,10 +570,15 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
             max_summary_len: stats.max_summary_len,
         })
         .collect();
+    let type_names = session.file_type_names.get(file_path).cloned().unwrap_or_else(|| {
+        queries.schema_type_names().into_iter()
+            .filter(|name| !queries.type_is_abstract(name))
+            .collect()
+    });
     FileRecords {
         revision: session.revisions.current(),
         file_path: file_path.to_string(),
-        type_names: type_seen,
+        type_names,
         columns,
         records,
         capabilities: session_capabilities_for_file(session, file_path),

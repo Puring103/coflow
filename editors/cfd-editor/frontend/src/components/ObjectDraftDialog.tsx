@@ -18,6 +18,7 @@ interface Props {
    *  a type <select>. Picking a different type calls onTypeChange. */
   polymorphicTypes?: string[]
   onTypeChange?: (nextType: string) => void
+  alwaysShowTypeSelect?: boolean
   /** Fetch a fresh field draft for the current actualType. */
   onLoadDraft: (actualType: string) => Promise<CreateRecordDraft>
   /** Optional header extras rendered before the type tag (e.g. a key input). */
@@ -39,6 +40,7 @@ export function ObjectDraftDialog({
   actualType,
   polymorphicTypes = [],
   onTypeChange,
+  alwaysShowTypeSelect = false,
   onLoadDraft,
   headerExtras,
   confirmLabel = '确定',
@@ -121,7 +123,7 @@ export function ObjectDraftDialog({
         <div className="create-record-card-header" style={{ '--node-color': typeColorValue } as CSSProperties}>
           <div className="gn-color-bar" />
           {headerExtras}
-          {polymorphicTypes.length >= 2 && onTypeChange ? (
+          {(alwaysShowTypeSelect ? polymorphicTypes.length >= 1 : polymorphicTypes.length >= 2) && onTypeChange ? (
             <SearchableSelect
               className="create-record-type-select"
               value={actualType}

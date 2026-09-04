@@ -37,9 +37,11 @@ export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = 
       path: 'data/dimensions/language',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
+        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
       ],
     },
     {
@@ -47,9 +49,11 @@ export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = 
       path: 'data/dimensions/platform',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
+        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
       ],
     },
     {
@@ -57,14 +61,16 @@ export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = 
       path: 'data',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: true,
       first_source_descendant: 'data/item.cfd',
       children: [
-        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/item.cfd', children: [] },
-        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/archive.cfd', children: [] },
-        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/npc.cfd', children: [] },
+        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/item.cfd', children: [] },
+        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/archive.cfd', children: [] },
+        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/npc.cfd', children: [] },
       ],
     },
-    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, first_source_descendant: null, children: [] },
+    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
     { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], out_dir: 'data/dimensions/language', fields: [] },

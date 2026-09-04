@@ -121,3 +121,12 @@ Public reference documentation lives under `website/docs/docs/reference/`:
 - `website/docs/docs/reference/09-diagnostics/02-codes.md`: diagnostics error code index.
 - `website/docs/docs/reference/10-localization.md`: dimensions and localization.
 - `website/docs/docs/reference/12-architecture.md`: project architecture.
+
+
+实现代码时注意以下内容：
+1. 项目为开发期，修改不需要考虑兼容性，不需要加不必要的兜底
+2. 关键代码需要有中文注释
+3. 变更应当彻底，不能留下技术债
+4. 文档内容应当是正向的，只写入讨论结果，讨论过程不能进入文档
+5. 网页是对外展示的内容，不能包含实现细节，实现细节的文档单独放在docs下
+6. 禁止自行做出决策，有问题应当询问我

@@ -595,6 +595,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
           actualType={newRecordType}
+          typeOptions={data.type_names}
           existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={onInsertRecord}
@@ -660,4 +661,3 @@ function firstScalarSummary(row: RecordRow): string | null {
   }
   return null
 }
-

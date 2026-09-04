@@ -4,11 +4,14 @@ import type { FileTreeNode } from '../bindings/FileTreeNode'
 import { buildFileTreeGroups } from './FileTree'
 
 function node(name: string, path: string, children: FileTreeNode[] = []): FileTreeNode {
+  const root = path.replace(/\\/g, '/').split('/')[0]
   return {
     name,
     path,
     is_dir: children.length > 0,
     in_sources: true,
+    in_schema: root === 'schema',
+    in_data: root === 'data',
     first_source_descendant: null,
     children,
   }
@@ -57,5 +60,20 @@ describe('buildFileTreeGroups', () => {
         { key: '__schema__', label: '类型', icon: 'code', nodes: [] },
         { key: '__data__', label: '数据', icon: 'data', nodes: [data] },
       ])
+  })
+
+  it('keeps empty directories in their configured group', () => {
+    const emptySchema = node('nested', 'schema/nested')
+    emptySchema.is_dir = true
+    const emptyData = node('empty', 'data/empty')
+    emptyData.is_dir = true
+
+    const groups = buildFileTreeGroups([
+      node('schema', 'schema', [emptySchema]),
+      node('data', 'data', [emptyData]),
+    ], [])
+
+    expect(groups[0].nodes[0]?.children).toEqual([emptySchema])
+    expect(groups[1].nodes[0]?.children).toEqual([emptyData])
   })
 })

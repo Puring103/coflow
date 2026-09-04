@@ -1,5 +1,5 @@
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -16,6 +16,23 @@ pub struct ProjectConfig {
     /// named `codegen` so data-export concepts cannot reappear in configuration.
     pub codegen: Vec<OutputConfig>,
     pub dimensions: BTreeMap<String, DimensionConfig>,
+}
+
+impl Serialize for ProjectConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(4))?;
+        map.serialize_entry("schema", &self.schema)?;
+        map.serialize_entry("data", &self.data)?;
+        map.serialize_entry("codegen", &self.codegen)?;
+        if !self.dimensions.is_empty() {
+            map.serialize_entry("dimensions", &self.dimensions)?;
+        }
+        map.end()
+    }
 }
 impl<'de> Deserialize<'de> for ProjectConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -96,11 +113,12 @@ pub struct DimensionConfig {
 
 #[derive(Debug, Clone)]
 pub struct SchemaConfig {
-    paths: Vec<PathBuf>,
-    list_shape: bool,
+    pub(crate) paths: Vec<PathBuf>,
+    pub(crate) list_shape: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent)]
 pub struct SourceConfig {
     location: PathBuf,
 }
@@ -156,6 +174,19 @@ impl SchemaConfig {
     }
 }
 
+impl Serialize for SchemaConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.list_shape || self.paths.len() != 1 {
+            self.paths.serialize(serializer)
+        } else {
+            self.paths[0].serialize(serializer)
+        }
+    }
+}
+
 impl OutputConfig {
     #[must_use]
     pub const fn new(language: String, dir: PathBuf, options: Value) -> Self {
@@ -169,6 +200,24 @@ impl OutputConfig {
     #[must_use]
     pub const fn options(&self) -> &Value {
         &self.options
+    }
+}
+
+impl Serialize for OutputConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(2 + self.options.as_object().map_or(0, Map::len)))?;
+        map.serialize_entry("language", &self.language)?;
+        map.serialize_entry("dir", &self.dir)?;
+        if let Some(options) = self.options.as_object() {
+            for (key, value) in options {
+                map.serialize_entry(key, value)?;
+            }
+        }
+        map.end()
     }
 }
 

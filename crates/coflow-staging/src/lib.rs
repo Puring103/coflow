@@ -253,6 +253,7 @@ impl Drop for StagedDirectory {
 #[derive(Debug)]
 pub struct StagedRemoval {
     path: PathBuf,
+    directory: bool,
     backup: Option<PathBuf>,
     removed: bool,
     finished: bool,
@@ -262,6 +263,7 @@ impl StagedRemoval {
     pub fn create(path: &Path) -> Self {
         Self {
             path: path.to_path_buf(),
+            directory: path.is_dir(),
             backup: None,
             removed: false,
             finished: false,
@@ -288,7 +290,11 @@ impl StagedChange for StagedRemoval {
 
     fn restore(&mut self) {
         if self.removed {
-            let _ = fs::remove_file(&self.path);
+            if self.directory {
+                let _ = fs::remove_dir_all(&self.path);
+            } else {
+                let _ = fs::remove_file(&self.path);
+            }
         }
         if let Some(backup) = self.backup.as_ref() {
             if fs::rename(backup, &self.path).is_ok() {
@@ -300,7 +306,7 @@ impl StagedChange for StagedRemoval {
 
     fn finish(&mut self) {
         self.finished = true;
-        finish_staged(self.backup.take(), false);
+        finish_staged(self.backup.take(), self.directory);
     }
 }
 
@@ -444,5 +450,19 @@ mod tests {
 
         assert!(path.join("old.txt").is_file());
         assert!(!path.join("new.txt").exists());
+    }
+
+    #[test]
+    fn finished_directory_removal_deletes_backup_recursively() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let path = root.path().join("removed");
+        fs::create_dir(&path).expect("create directory");
+        fs::write(path.join("child.txt"), b"value").expect("write child");
+        let mut removal = StagedRemoval::create(&path);
+        removal.publish().expect("publish removal");
+        removal.finish();
+        drop(removal);
+        assert!(!path.exists());
+        assert_eq!(fs::read_dir(root.path()).expect("read root").count(), 0);
     }
 }

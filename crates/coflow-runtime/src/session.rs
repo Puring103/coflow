@@ -231,7 +231,21 @@ impl ProjectSession {
         let mut options = FileTreeOptions {
             dimension_groups: Vec::new(),
             in_sources: BTreeSet::new(),
+            schema_roots: BTreeSet::new(),
+            data_roots: BTreeSet::new(),
         };
+        for path in self.project.config().schema.paths() {
+            let absolute = self.project.resolve_path(path);
+            if let Ok(relative) = absolute.strip_prefix(self.project.root_dir()) {
+                options.schema_roots.insert(path_to_slash(relative));
+            }
+        }
+        for source in self.project.data_paths() {
+            let absolute = self.project.resolve_path(source.path());
+            if let Ok(relative) = absolute.strip_prefix(self.project.root_dir()) {
+                options.data_roots.insert(path_to_slash(relative));
+            }
+        }
         for source in self.files.source_files() {
             options.in_sources.insert(display_source_path(source));
         }
@@ -266,7 +280,13 @@ impl ProjectSession {
                 }
             }
         }
-        let mut tree = files::build_file_tree(self.project.root_dir(), &options.in_sources, &skip);
+        let mut tree = files::build_file_tree(
+            self.project.root_dir(),
+            &options.in_sources,
+            &options.schema_roots,
+            &options.data_roots,
+            &skip,
+        );
         for group in options.dimension_groups.iter().rev() {
             if let Some(node) = files::build_dimension_subtree(
                 self.project.root_dir(),
