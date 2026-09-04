@@ -15,7 +15,7 @@
 
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
-use coflow::commands::{build_project, check_project, generate_project_code, CommandOutcome};
+use coflow_runtime::commands::{build_project, check_project, generate_project_code, CommandOutcome};
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
@@ -230,7 +230,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
 
 fn run_lsp(args: &LspArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    coflow::lsp::run(project).map_err(|message| cli_error("LSP-RUNTIME", message))
+    coflow_lsp::run(project).map_err(|message| cli_error("LSP-RUNTIME", message))
 }
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {

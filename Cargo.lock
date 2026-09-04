@@ -400,8 +400,8 @@ name = "cfd-editor-core"
 version = "0.9.1"
 dependencies = [
  "atomicwrites",
- "coflow",
  "coflow-language",
+ "coflow-lsp",
  "coflow-runtime",
  "notify",
  "serde",
@@ -523,10 +523,9 @@ version = "0.9.1"
 dependencies = [
  "atomicwrites",
  "clap",
- "coflow-codegen-csharp",
  "coflow-language",
+ "coflow-lsp",
  "coflow-runtime",
- "coflow-staging",
  "dirs",
  "include_dir",
  "self_update",
@@ -534,20 +533,43 @@ dependencies = [
  "serde_json",
  "similar",
  "tempfile",
- "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "coflow-checker"
+version = "0.9.1"
+dependencies = [
+ "coflow-diagnostics",
+ "coflow-language",
+ "coflow-model",
+ "regex",
+]
+
+[[package]]
+name = "coflow-codegen"
+version = "0.9.1"
+dependencies = [
+ "coflow-language",
+ "coflow-model",
+ "serde_json",
 ]
 
 [[package]]
 name = "coflow-codegen-csharp"
 version = "0.9.1"
 dependencies = [
+ "coflow-codegen",
  "coflow-language",
- "coflow-runtime",
+ "coflow-model",
  "serde",
  "serde_json",
  "tera",
  "unicode-ident",
 ]
+
+[[package]]
+name = "coflow-diagnostics"
+version = "0.9.1"
 
 [[package]]
 name = "coflow-language"
@@ -559,10 +581,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-runtime"
+name = "coflow-lsp"
 version = "0.9.1"
 dependencies = [
  "coflow-language",
+ "coflow-runtime",
+ "serde_json",
+ "similar",
+]
+
+[[package]]
+name = "coflow-model"
+version = "0.9.1"
+dependencies = [
+ "coflow-diagnostics",
+ "coflow-language",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "unicode-ident",
+]
+
+[[package]]
+name = "coflow-runtime"
+version = "0.9.1"
+dependencies = [
+ "coflow-checker",
+ "coflow-codegen",
+ "coflow-codegen-csharp",
+ "coflow-language",
+ "coflow-model",
  "coflow-staging",
  "regex",
  "serde",

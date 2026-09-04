@@ -95,15 +95,20 @@ implementation constraints there.
 
 ### Internal Crate Boundaries
 
-- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, data model, checks, diagnostics, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
+- `coflow-model` owns the schema-guided CFD data model, model construction, value validation, references, and model diagnostics.
+- `coflow-checker` owns CFT check execution over compiled schemas and immutable CFD data models.
+- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
 - `coflow-staging` owns the internal all-or-nothing filesystem staging primitives shared by CFD writes and generated-code publication.
 - `coflow-language` owns the schema-guided CFD value grammar and structural limits shared by parsers, compilers, and evaluators.
+- `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
 - The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
-- The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through direct staged publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.
+- `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-runtime`.
+- `coflow-lsp` owns the standalone and embedded language server implementation used by the CLI and editor.
+- The root `coflow` package is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-runtime`; non-CLI hosts must not depend on the root package.
 - `editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
 - `editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
 - `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
-- Code generation contracts live in `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
+- Code generation contracts live in `coflow-codegen` and remain re-exported through `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
 
 ### Website Reference Documents
 

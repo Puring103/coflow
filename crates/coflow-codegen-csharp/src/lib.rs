@@ -22,13 +22,13 @@ mod names;
 mod render;
 
 use coflow_language::CftSchema;
-use coflow_runtime::CfdDataModel;
+use coflow_model::CfdDataModel;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
-use coflow_runtime::codegen::{
+use coflow_codegen::{
     CodeArtifactFile, CodeArtifactSet, CodeGenerator as CfdCodeGeneratorTrait,
     CodegenDescriptor as CfdCodegenDescriptor, CodegenError, CodegenInput as CfdCodegenInput,
     IdAsEnumValues,

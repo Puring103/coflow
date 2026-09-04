@@ -13,13 +13,11 @@ workspace = true
 [features]
 default = ["cli"]
 cli = [
-    "lsp-service",
     "dep:clap",
     "dep:dirs",
     "dep:include_dir",
     "dep:self_update",
 ]
-lsp-service = []
 
 [[bin]]
 name = "coflow"
@@ -29,6 +27,11 @@ required-features = ["cli"]
 [workspace]
 members = [
     "crates/coflow-language",
+    "crates/coflow-diagnostics",
+    "crates/coflow-model",
+    "crates/coflow-checker",
+    "crates/coflow-codegen",
+    "crates/coflow-lsp",
     "crates/coflow-runtime",
     "crates/coflow-staging",
     "crates/coflow-codegen-csharp",
@@ -62,10 +65,9 @@ redundant_pub_crate = "allow"
 [dependencies]
 atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"], optional = true }
-coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-language = { path = "crates/coflow-language" }
+coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-runtime = { path = "crates/coflow-runtime" }
-coflow-staging = { path = "crates/coflow-staging" }
 dirs = { version = "6", optional = true }
 include_dir = { version = "0.7", optional = true }
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"], optional = true }
@@ -75,4 +77,3 @@ similar = "2"
 
 [dev-dependencies]
 tempfile = "3"
-toml = "0.9"

@@ -39,7 +39,7 @@ pub(super) fn build_session(
         .filter_map(|source| source.canonical_path.strip_prefix(&project_root).ok().map(coflow_runtime::path_to_slash))
         .collect();
     let runtime = Runtime::new();
-    let language_server = coflow::lsp::EmbeddedLsp::new(project.clone());
+    let language_server = coflow_lsp::EmbeddedLsp::new(project.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime

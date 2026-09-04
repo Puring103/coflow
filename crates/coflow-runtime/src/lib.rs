@@ -16,15 +16,15 @@
 #![allow(clippy::multiple_crate_versions)]
 
 mod api;
+mod artifacts;
 mod catalog;
 mod cfd_loader;
 #[cfg(feature = "internal-check-bench")]
 #[doc(hidden)]
 pub mod check_benchmark_support;
-pub mod checker;
 mod checks;
-pub mod codegen;
-pub mod data_model;
+pub mod commands;
+pub use coflow_codegen as codegen;
 mod dimensions;
 mod files;
 mod indexes;
@@ -50,13 +50,14 @@ pub use cfd_loader::{
     load_cfd_model, parse_cfd_input_records, CfdTextDiagnostic, CfdTextDiagnostics,
     CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-pub use checker::{
+pub use coflow_checker::{
     execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
     CheckOutput, CheckProjection, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,
 };
-pub use data_model::cell_value;
-pub use data_model::serde_i64;
-pub use data_model::{
+pub use coflow_model as data_model;
+pub use coflow_model::cell_value;
+pub use coflow_model::serde_i64;
+pub use coflow_model::{
     validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
     CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
     CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel, CfdModelBuildOutput, CfdModelBuilder,
