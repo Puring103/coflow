@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::checker::{CheckProjection, CheckTarget, CheckTask};
+use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
 use crate::data_model::{CfdDataModel, CfdRecordId};
 use coflow_language::{CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo};
 

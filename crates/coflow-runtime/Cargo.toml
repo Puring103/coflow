@@ -14,10 +14,15 @@ default = []
 internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
+    "coflow-model/ts-export",
 ]
 
 [dependencies]
 coflow-language = { path = "../coflow-language" }
+coflow-model = { path = "../coflow-model" }
+coflow-checker = { path = "../coflow-checker" }
+coflow-codegen = { path = "../coflow-codegen" }
+coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
 coflow-staging = { path = "../coflow-staging" }
 regex = "1"
 serde = { version = "1", features = ["derive"] }

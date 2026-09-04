@@ -1,0 +1,16 @@
+[package]
+name = "coflow-checker"
+version = "0.9.1"
+edition = "2021"
+description = "CFT check execution engine for Coflow data models."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-diagnostics = { path = "../coflow-diagnostics" }
+coflow-language = { path = "../coflow-language" }
+coflow-model = { path = "../coflow-model" }
+regex = "1"

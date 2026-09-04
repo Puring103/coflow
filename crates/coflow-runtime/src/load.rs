@@ -235,7 +235,7 @@ pub(crate) fn load_project_data(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: crate::checker::CheckExecutionStats::default(),
+            statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
@@ -705,7 +705,7 @@ fn build_output_from_cache(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: crate::checker::CheckExecutionStats::default(),
+            statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);

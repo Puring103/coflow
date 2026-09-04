@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::checker::CheckTask;
+use coflow_checker::CheckTask;
 use crate::data_model::CfdDataModel;
 use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 

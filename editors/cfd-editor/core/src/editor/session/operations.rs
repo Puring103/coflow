@@ -231,7 +231,7 @@ impl SessionStore {
         version: i64,
     ) -> Result<LanguageDocumentState, EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
         let mut session = entry
             .state
@@ -266,7 +266,7 @@ impl SessionStore {
                 .filter_map(Value::as_u64)
                 .filter_map(|value| u32::try_from(value).ok())
                 .collect(),
-            semantic_token_types: coflow::lsp::EmbeddedLsp::semantic_token_types(),
+            semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
             syntax_valid: tokens
                 .get("x-coflow-syntax-valid")
                 .and_then(Value::as_bool)
@@ -283,7 +283,7 @@ impl SessionStore {
         position: &LanguagePosition,
     ) -> Result<Vec<LanguageCompletion>, EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
         let mut session = entry
             .state
@@ -311,7 +311,7 @@ impl SessionStore {
         version: i64,
     ) -> Result<LanguageFormattingResult, EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
         let mut session = entry
             .state
@@ -337,7 +337,7 @@ impl SessionStore {
 
     pub fn close_language_document(&self, id: u32, file_path: &str) -> Result<(), EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let uri = coflow::lsp::EmbeddedLsp::file_uri(&path);
+        let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
         let mut session = entry
             .state
@@ -420,7 +420,7 @@ impl SessionStore {
                 .filter_map(Value::as_u64)
                 .filter_map(|value| u32::try_from(value).ok())
                 .collect(),
-            semantic_token_types: coflow::lsp::EmbeddedLsp::semantic_token_types(),
+            semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
             completions,
         })
     }
@@ -804,7 +804,7 @@ impl SessionStore {
         if targets.is_empty() {
             return Err(EditorError::write("batch field write contains no changes"));
         }
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -927,7 +927,7 @@ impl SessionStore {
         let mut session = session_lock
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -962,7 +962,7 @@ impl SessionStore {
         let mut session = session_lock
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -1030,7 +1030,7 @@ impl SessionStore {
                     coordinate.actual_type, coordinate.key
                 ))
             })?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -1064,7 +1064,7 @@ impl SessionStore {
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
         let file_path = reorder_file_path(&session, first)?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -1105,7 +1105,7 @@ impl SessionStore {
                 coordinate.actual_type, coordinate.key
             ))
         })?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,
@@ -1147,7 +1147,7 @@ impl SessionStore {
                 coordinate.actual_type, coordinate.key
             ))
         })?;
-        let report = coflow::commands::apply_project_mutation(
+        let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
                 stop_on_write_error: true,

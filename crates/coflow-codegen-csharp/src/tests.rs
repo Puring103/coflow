@@ -569,7 +569,7 @@ type Item { rarity: Rarity = Rarity::Common; }
 
 #[test]
 fn registry_generator_returns_safe_code_artifacts() {
-    let mut registry = coflow_runtime::codegen::CodegenRegistry::default();
+    let mut registry = coflow_codegen::CodegenRegistry::default();
     registry
         .register(CsharpCfdCodeGenerator)
         .expect("register C#");

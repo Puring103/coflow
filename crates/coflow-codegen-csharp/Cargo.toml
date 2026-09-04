@@ -14,7 +14,8 @@ workspace = true
 
 [dependencies]
 coflow-language = { path = "../coflow-language" }
-coflow-runtime = { path = "../coflow-runtime" }
+coflow-codegen = { path = "../coflow-codegen" }
+coflow-model = { path = "../coflow-model" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tera = "1"

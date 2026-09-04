@@ -66,7 +66,7 @@ pub struct EditorSession {
     pub yaml_path: std::path::PathBuf,
     pub engine: WriteProjectSession,
     pub diagnostics: Diagnostics,
-    pub language_server: coflow::lsp::EmbeddedLsp,
+    pub language_server: coflow_lsp::EmbeddedLsp,
     pub language_documents: HashSet<String>,
     pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
     schema_files: HashSet<String>,
@@ -305,11 +305,11 @@ impl SessionStore {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::check_project(&project)
+        match coflow_runtime::commands::check_project(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
-            coflow::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
-            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+            coflow_runtime::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
                 Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
@@ -319,17 +319,17 @@ impl SessionStore {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::build_project(&project)
+        match coflow_runtime::commands::build_project(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
-            coflow::commands::CommandOutcome::Success(report) => {
+            coflow_runtime::commands::CommandOutcome::Success(report) => {
                 let mut outputs = Vec::new();
                 for target in report.targets {
                     outputs.push(target.code.dir.display().to_string());
                 }
                 Ok(format!("Build completed: {}", outputs.join(", ")))
             }
-            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
                 Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
@@ -339,11 +339,11 @@ impl SessionStore {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow::commands::build_project_status(&project)
+        match coflow_runtime::commands::build_project_status(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
-            coflow::commands::CommandOutcome::Success(changed) => Ok(changed),
-            coflow::commands::CommandOutcome::Diagnostics(diagnostics) => {
+            coflow_runtime::commands::CommandOutcome::Success(changed) => Ok(changed),
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
                 Err(project_diagnostics_to_editor_error(&diagnostics))
             }
         }
@@ -653,7 +653,7 @@ fn write_field_in_session(
         .queries()
         .effective_field_write(coordinate, field_path)
         .and_then(|preview| preview.old_value);
-    let report = coflow::commands::apply_project_mutation(&mut session.engine, MutationRequest {
+    let report = coflow_runtime::commands::apply_project_mutation(&mut session.engine, MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
             record: coordinate.clone(),

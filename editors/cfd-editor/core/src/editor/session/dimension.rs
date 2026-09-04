@@ -125,7 +125,7 @@ impl SessionStore {
                 value: MutationValue::Cfd(value.clone()),
             },
         };
-        let report = coflow::commands::apply_project_mutation(&mut session.engine, MutationRequest {
+        let report = coflow_runtime::commands::apply_project_mutation(&mut session.engine, MutationRequest {
             stop_on_write_error: true,
             ops: vec![op],
         })
