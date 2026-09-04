@@ -55,6 +55,12 @@ function settingsWith(views: ViewConfig[]): EditorProjectSettings {
 }
 
 describe('viewTabsFor', () => {
+  it('keeps source available when a CFD file has no valid record type', () => {
+    expect(viewTabsFor(null, 'data/invalid.cfd', '', false, false)).toEqual([
+      { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
+    ])
+  })
+
   it('returns record and source views for singleton types', () => {
     const tabs = viewTabsFor(null, FILE, TYPE, true, true)
     expect(tabs).toEqual([
