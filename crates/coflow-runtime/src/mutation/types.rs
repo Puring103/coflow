@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::api::{DiagnosticSet, FlatDiagnostic};
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue};
-use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

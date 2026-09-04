@@ -70,6 +70,16 @@ fn validates_function_body_grammar_instead_of_skipping_it() {
 }
 
 #[test]
+fn function_identifiers_use_unicode_xid_rules() {
+    let valid = "fn(\u{53C2}\u{6570}: int) -> int { var \u{7ED3}\u{679C}\u{0301} = \u{53C2}\u{6570} + 1; \u{7ED3}\u{679C}\u{0301} }";
+    assert_eq!(parse_function(valid), valid);
+
+    let invalid = "item: Rule { apply: fn() -> int { var \u{0301}value = 1; \u{0301}value } }";
+    let (_, diagnostics) = parse_cfd(invalid);
+    assert!(!diagnostics.is_empty());
+}
+
+#[test]
 fn ordinary_strings_interpolate_and_the_removed_prefix_is_rejected() {
     let (ast, diagnostics) = parse_cfd(r#"item: Rule { label: "item {name}" }"#);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");

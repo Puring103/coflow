@@ -1,0 +1,13 @@
+[package]
+name = "coflow-format"
+version = "0.9.1"
+edition = "2021"
+description = "Canonical CFT and CFD source formatting."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-language = { path = "../coflow-language" }

@@ -29,6 +29,7 @@ mod dimensions;
 mod files;
 mod indexes;
 mod load;
+mod limits;
 mod mutation;
 mod project;
 mod project_schema;
@@ -75,8 +76,7 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 pub use project::*;
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use coflow_language::StructuralLimits;
-pub use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+pub use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,

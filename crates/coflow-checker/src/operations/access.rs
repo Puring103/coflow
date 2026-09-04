@@ -1,7 +1,7 @@
 use coflow_model::CfdDataModel;
 use coflow_diagnostics::CfdErrorCode;
-use coflow_language::limits::StructuralBudget;
-use coflow_language::{CftSchema, CftValueType};
+use crate::limits::EvaluationBudget;
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
@@ -15,7 +15,7 @@ pub(crate) fn index_value<'model>(
     target: LocatedEvalValue<'model>,
     index: LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(
@@ -154,7 +154,7 @@ pub(crate) fn current_field<'model>(
     model: &'model CfdDataModel,
     current: &EvalValue<'model>,
     name: &str,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<Option<LocatedEvalValue<'model>>> {
     let EvalValue::Record(record) = current else {
         return Ok(None);
@@ -177,7 +177,7 @@ pub(crate) fn field_value<'model>(
     model: &'model CfdDataModel,
     target: LocatedEvalValue<'model>,
     name: &str,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(

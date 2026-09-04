@@ -16,7 +16,7 @@ use crate::limits::StructuralBudget;
 use crate::module::ModuleId;
 use crate::syntax::ast::{ModuleAst, NameRef, QualifiedName};
 use crate::syntax::lexer::{lex, Token, TokenKind};
-use crate::syntax::Span;
+use crate::source::Span;
 
 /// Parses one CFT module into its AST.
 ///

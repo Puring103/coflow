@@ -1,6 +1,6 @@
 mod common;
 
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use coflow_runtime::CfdDataModel;
 use coflow_runtime::{execute_checks, CheckLimits};
 use common::{

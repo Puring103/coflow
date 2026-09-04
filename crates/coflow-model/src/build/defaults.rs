@@ -4,7 +4,7 @@ use crate::build::{RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, RecordOrigin};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
 use coflow_language::limits::TraversalCursor;
-use coflow_language::{CftField, CftSchemaDefaultValue, CftValueType};
+use coflow_language::cft::{CftField, CftSchemaDefaultValue, CftValueType};
 use std::collections::BTreeMap;
 
 impl Validator<'_, '_> {
@@ -247,8 +247,8 @@ impl Validator<'_, '_> {
 
     fn default_explicit_object_value(
         &mut self,
-        type_name: &coflow_language::TypeName,
-        supplied: &[(coflow_language::FieldName, CftSchemaDefaultValue)],
+        type_name: &coflow_language::cft::TypeName,
+        supplied: &[(coflow_language::cft::FieldName, CftSchemaDefaultValue)],
         record: Option<CfdRecordId>,
         path: CfdPath,
         cursor: TraversalCursor,

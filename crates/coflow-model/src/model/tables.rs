@@ -1,5 +1,5 @@
 use super::ids::CfdRecordId;
-use coflow_language::{RecordKey, TypeName};
+use coflow_language::cft::{RecordKey, TypeName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]

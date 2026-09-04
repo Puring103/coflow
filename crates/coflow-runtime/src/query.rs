@@ -1,6 +1,6 @@
 use crate::api::WriterCapabilities;
 use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use crate::indexes::{FileIndex, SourceIndex};
 use crate::{

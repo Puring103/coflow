@@ -1,6 +1,6 @@
 use super::ids::CfdRecordId;
 use crate::diagnostics::CfdPath;
-use coflow_language::{DimensionName, FieldName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, VariantName};
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
 /// record and the `CfdPath` to the ref.

@@ -7,7 +7,7 @@ use crate::data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
 };
 use crate::project::{path_to_slash, Project};
-use coflow_language::{CftModuleSet, CftSchema};
+use coflow_language::cft::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};

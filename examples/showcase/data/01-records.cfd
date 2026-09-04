@@ -10,7 +10,7 @@ Product {
   pencil {
     name: "Pencil",
     price: 2,
-    enabled: true,
+    enabled: false,
   }
 
   test {
@@ -34,7 +34,7 @@ Product {
   n {
     name: "asdsad",
     price: 123,
-    enabled: false
+    enabled: true
   }
 
   asdasd {

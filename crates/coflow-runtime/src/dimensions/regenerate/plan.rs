@@ -6,7 +6,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDataModel, CfdValue};
 use crate::dimensions::DimensionField;
 use crate::project::Project;
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;

@@ -1,5 +1,5 @@
 use super::annotations::{field_dimension_name, find_annotation, has_annotation};
-use super::SchemaCompiler;
+use super::ValidatedSchema;
 use crate::schema::{
     CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftDisplayMetadata, CftEnum, CftEnumVariant, CftField,
     CftFieldDimension, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
@@ -17,7 +17,7 @@ use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldNa
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-impl SchemaCompiler<'_> {
+impl ValidatedSchema<'_> {
     pub(super) fn lower_declarations(&self) -> super::SchemaDeclarations {
         super::SchemaDeclarations {
             consts: self.build_consts(),
@@ -60,18 +60,16 @@ impl SchemaCompiler<'_> {
     fn build_consts(&self) -> BTreeMap<ConstName, CftConst> {
         let mut consts = BTreeMap::new();
         for (name, info) in &self.consts {
+            let (value_type, value) = self
+                .resolved_constants
+                .get(name)
+                .expect("constants are resolved before lowering");
             let name = ConstName::from_validated(name.clone());
             let schema = CftConst {
                 module: info.module.clone(),
                 name: name.clone(),
-                value_type: info
-                    .value_type
-                    .clone()
-                    .expect("constants are resolved before lowering"),
-                value: info
-                    .value
-                    .clone()
-                    .expect("constants are resolved before lowering"),
+                value_type: value_type.clone(),
+                value: value.clone(),
                 span: info.def.span,
             };
             consts.insert(name, schema);
@@ -354,7 +352,7 @@ fn localized_bucket(field: &FieldDef) -> Option<BucketName> {
     }
 }
 
-impl SchemaCompiler<'_> {
+impl ValidatedSchema<'_> {
     fn convert_check_block(
         &self,
         module: &crate::ModuleId,
@@ -441,7 +439,7 @@ impl SchemaCompiler<'_> {
     }
 }
 
-impl SchemaCompiler<'_> {
+impl ValidatedSchema<'_> {
 fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftSchemaCheckExpr {
     CftSchemaCheckExpr {
         kind: match &expr.kind {

@@ -1,10 +1,11 @@
-use coflow_language::syntax::ast::{
+use coflow_language::cft::syntax::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use coflow_language::syntax::lexer::{lex, TokenKind};
-use coflow_language::syntax::CheckVisitor;
-use coflow_language::{ModuleId, Span};
+use coflow_language::cft::syntax::lexer::{lex, TokenKind};
+use coflow_language::cft::syntax::CheckVisitor;
+use coflow_language::cft::ModuleId;
+use coflow_language::source::Span;
 
 use super::position::position_from_byte;
 use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
@@ -275,7 +276,7 @@ fn add_lex_semantic_token(
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
-    ast: &coflow_language::syntax::ast::ModuleAst,
+    ast: &coflow_language::cft::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     if let Some(namespace) = &ast.namespace {
@@ -783,7 +784,7 @@ fn classify_check_expr(
             );
         }
         CheckExprKind::Is { predicate, .. } => match predicate {
-            coflow_language::syntax::ast::TypePredicate::Type(name) => {
+            coflow_language::cft::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(
                     &document.source,
                     name.span,

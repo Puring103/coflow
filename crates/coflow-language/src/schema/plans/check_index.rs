@@ -1,4 +1,5 @@
-use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
+use crate::limits::{StructureKind, TraversalCursor};
+use crate::schema::AnalysisBudget;
 use crate::schema::{
     CheckDependency, CheckOwner, CheckStatementId, CheckStatementInfo, LocatedBudgetError,
 };
@@ -31,7 +32,7 @@ impl CheckIndex {
     pub(in crate::schema) fn compile(
         types: &BTreeMap<TypeName, CftType>,
         project_checks: &BTreeMap<crate::CheckName, CftTopLevelCheck>,
-        budget: &mut StructuralBudget,
+        budget: &mut AnalysisBudget,
     ) -> Result<Self, LocatedBudgetError> {
         let owners_by_actual_type = compile_owner_chains(types, budget)?;
         let (nested_hosts_by_type, nested_types_by_actual_field) =
@@ -258,7 +259,7 @@ impl CheckIndex {
 
 fn compile_owner_chains(
     types: &BTreeMap<TypeName, CftType>,
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
 ) -> Result<BTreeMap<TypeName, Vec<TypeName>>, LocatedBudgetError> {
     let mut result = BTreeMap::new();
     for actual_type in types.keys() {
@@ -281,7 +282,7 @@ fn compile_owner_chains(
 fn compile_nested_hosts(
     types: &BTreeMap<TypeName, CftType>,
     owners: &BTreeMap<TypeName, Vec<TypeName>>,
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
 ) -> Result<(NestedHosts, NestedTypesByField), LocatedBudgetError> {
     let mut direct = BTreeMap::<TypeName, Vec<(FieldName, TypeName)>>::new();
     for (host, meta) in types {
@@ -374,17 +375,17 @@ fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
 }
 
 fn charge(
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
     owner: &CftType,
     depth: usize,
 ) -> Result<(), LocatedBudgetError> {
     budget
-        .check_additional_depth(
+        .check_depth(
             TraversalCursor::root(),
             StructureKind::SchemaDependency,
             u64::try_from(depth).unwrap_or(u64::MAX),
         )
-        .and_then(|()| budget.charge_work(StructureKind::SchemaDependency, 1))
+        .and_then(|()| budget.charge(StructureKind::SchemaDependency, 1))
         .map_err(|error| LocatedBudgetError {
             error,
             module: owner.module.clone(),
@@ -407,7 +408,7 @@ mod tests {
             "type Part { value: int; check { value > 0; } } type Item { part: Part; }",
         )]);
         let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
-        let mut budget = StructuralBudget::new(StructuralLimits::new(1, 1, 1));
+        let mut budget = AnalysisBudget::new(StructuralLimits::new(1, 1, 1));
 
         assert!(
             CheckIndex::compile(&schema.types, &schema.top_level_checks, &mut budget,).is_err()

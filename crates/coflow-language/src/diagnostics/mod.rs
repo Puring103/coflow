@@ -3,7 +3,7 @@ mod codes;
 pub use codes::{CftErrorCode, CftStage};
 
 use crate::module::ModuleId;
-use crate::syntax::Span;
+use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftDiagnostics {

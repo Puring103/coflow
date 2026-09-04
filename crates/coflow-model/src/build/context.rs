@@ -1,4 +1,4 @@
-use coflow_language::{CftEnumValue, CftField, CftSchema, CftType, TypeName};
+use coflow_language::cft::{CftEnumValue, CftField, CftSchema, CftType, TypeName};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BuildSchema<'a> {

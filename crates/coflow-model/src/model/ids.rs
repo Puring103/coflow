@@ -1,4 +1,4 @@
-use coflow_language::{CftNameError, RecordKey, TypeName};
+use coflow_language::cft::{CftNameError, RecordKey, TypeName};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

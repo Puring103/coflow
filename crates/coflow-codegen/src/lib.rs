@@ -5,7 +5,7 @@
 //! the application layer.
 
 use coflow_model::CfdDataModel;
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;

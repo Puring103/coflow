@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use coflow_diagnostics::CfdErrorCode;
-use coflow_language::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
+use coflow_language::cft::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
 
 use super::builtins;
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};

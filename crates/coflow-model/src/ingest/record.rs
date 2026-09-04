@@ -1,6 +1,6 @@
 use super::LoadedValueDraft;
 use crate::diagnostics::RecordOrigin;
-use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]

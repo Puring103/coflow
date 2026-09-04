@@ -2,14 +2,14 @@ use super::annotations::has_annotation;
 use super::state::{
     CheckInfo, ConstInfo, EnumInfo, Symbol, SymbolKind, TypeAliasInfo, TypeInfo,
 };
-use super::SchemaCompiler;
+use super::SymbolTable;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::Item;
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl SchemaCompiler<'_> {
+impl SymbolTable<'_> {
     pub(super) fn report_dangling_annotations(&mut self) {
         for (module_id, module) in &self.modules.modules {
             let Some(ast) = module.ast.as_ref() else {
@@ -102,8 +102,6 @@ impl SchemaCompiler<'_> {
                                 ConstInfo {
                                     module: module_id.clone(),
                                     def,
-                                    value_type: None,
-                                    value: None,
                                 },
                             );
                         }

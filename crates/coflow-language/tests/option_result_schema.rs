@@ -1,9 +1,9 @@
-use coflow_language::{
+use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchemaDefaultValue, CftValueType,
     ModuleId,
 };
 
-fn compile(source: &str) -> Result<coflow_language::CftSchema, coflow_language::CftDiagnostics> {
+fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default())
 }

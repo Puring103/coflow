@@ -23,7 +23,7 @@ use crate::api::{
 };
 use crate::data_model::RecordOrigin;
 use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
-use coflow_language::Span;
+use coflow_language::source::Span;
 use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
 use patch::{
     append_record_source, apply_patch, apply_unset_field_patch, delete_record_span, find_record,
@@ -445,7 +445,7 @@ impl CfdWriter {
         record_key: &str,
         actual_type: &str,
         field_path: &[crate::api::WriteFieldPathSegment],
-        schema: &coflow_language::CftSchema,
+        schema: &coflow_language::cft::CftSchema,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = origin else {
             return Err(DiagnosticSet::one(diag(

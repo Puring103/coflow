@@ -16,7 +16,7 @@ pub use value::{
 
 use crate::build::CfdModelBuilder;
 use crate::indexes::RefIndexes;
-use coflow_language::{CftSchema, RecordKey, TypeName};
+use coflow_language::cft::{CftSchema, RecordKey, TypeName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2,7 +2,7 @@
 
 #[path = "checker_common/mod.rs"]
 mod common;
-use coflow_language::{CheckOwner, DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{CheckOwner, DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
 use common::*;
 
@@ -33,7 +33,7 @@ fn model(schema: &CftSchema) -> CfdDataModel {
     builder.build().expect("model")
 }
 
-fn item_statement(schema: &CftSchema) -> coflow_language::CheckStatementId {
+fn item_statement(schema: &CftSchema) -> coflow_language::cft::CheckStatementId {
     let owner = CheckOwner::Type(TypeName::new("Item").unwrap());
     schema
         .all_check_statements()

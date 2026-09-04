@@ -7,7 +7,7 @@ use crate::syntax::ast::{
     QuantifierKind, TypePredicate, UnaryOp,
 };
 use crate::syntax::lexer::TokenKind;
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_check_block(&mut self) -> Result<CheckBlock, CftDiagnostics> {

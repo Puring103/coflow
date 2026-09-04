@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use coflow_model::CfdDataModel;
-use coflow_language::{
+use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp,
     CftSchemaTypePredicate,
 };

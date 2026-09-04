@@ -11,7 +11,7 @@ use super::super::uri::{hex_value, percent_decode};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
-use coflow_language::Span;
+use coflow_language::source::Span;
 
 #[test]
 fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {

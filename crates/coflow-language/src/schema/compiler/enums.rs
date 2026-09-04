@@ -1,10 +1,10 @@
-use super::SchemaCompiler;
+use super::SymbolTable;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl SchemaCompiler<'_> {
+impl SymbolTable<'_> {
     pub(super) fn validate_enums(&mut self) {
         let names = self.enums.keys().cloned().collect::<Vec<_>>();
         for name in names {

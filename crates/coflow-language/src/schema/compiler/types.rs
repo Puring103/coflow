@@ -1,14 +1,14 @@
 use super::annotations::has_annotation;
 use super::inferred_type::{is_valid_dict_key, InferredType};
 use super::state::{FieldInfo, SymbolKind};
-use super::SchemaCompiler;
+use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::{TypeRef, TypeRefKind};
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::BTreeMap;
 
-impl SchemaCompiler<'_> {
+impl ResolvedTypes<'_> {
     pub(super) fn validate_type_aliases(&mut self) {
         let names = self.aliases.keys().cloned().collect::<Vec<_>>();
         let mut visiting = Vec::new();
@@ -94,7 +94,7 @@ impl SchemaCompiler<'_> {
                                 "name is defined here",
                             );
                         }
-                        self.diagnostics.push(diagnostic);
+                        self.previous.diagnostics.push(diagnostic);
                         InferredType::Unknown
                     }
                     None => {
@@ -170,26 +170,27 @@ impl SchemaCompiler<'_> {
     }
 
     pub(super) fn validate_type_headers(&mut self) {
-        self.each_type(|this, info| {
+        let mut diagnostics = Vec::new();
+        for info in self.types.values() {
             if info.def.is_abstract && info.def.is_sealed {
                 let span = info
                     .def
                     .abstract_span
                     .map_or(info.def.span, |span| span)
                     .join(info.def.sealed_span.map_or(info.def.span, |span| span));
-                this.push_diag(
+                diagnostics.push(CftDiagnostic::error(
                     CftErrorCode::ConflictingTypeModifiers,
-                    &info.module,
+                    info.module.clone(),
                     span,
                     "abstract and sealed modifiers cannot be combined",
-                );
+                ));
             }
             if let Some(parent) = &info.def.parent {
-                let parent_name = this.resolve_name(&info.module, &parent.name);
-                match this.symbols.get(&parent_name) {
+                let parent_name = self.resolve_name(&info.module, &parent.name);
+                match self.symbols.get(&parent_name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}
                     Some(symbol) => {
-                        this.diagnostics.push(
+                        diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::ParentMustBeType,
                                 info.module.clone(),
@@ -204,25 +205,34 @@ impl SchemaCompiler<'_> {
                         );
                     }
                     None => {
-                        this.push_diag(
+                        diagnostics.push(CftDiagnostic::error(
                             CftErrorCode::UnknownNamedType,
-                            &info.module,
+                            info.module.clone(),
                             parent.span,
                             format!("unknown parent type `{parent_name}`"),
-                        );
+                        ));
                     }
                 }
             }
-        });
+        }
+        self.previous.diagnostics.extend(diagnostics);
     }
 
     pub(super) fn validate_field_shapes(&mut self) {
-        self.each_type(|this, info| {
+        let mut diagnostics = Vec::new();
+        for info in self.types.values() {
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
-                this.validate_identifier(&field.name, &info.module, field.name_span);
+                if crate::is_cft_reserved_identifier(&field.name) {
+                    diagnostics.push(CftDiagnostic::error(
+                        CftErrorCode::ReservedIdentifier,
+                        info.module.clone(),
+                        field.name_span,
+                        format!("`{}` is a reserved identifier", field.name),
+                    ));
+                }
                 if let Some(first_span) = fields.get(&field.name) {
-                    this.diagnostics.push(
+                    diagnostics.push(
                         CftDiagnostic::error(
                             CftErrorCode::DuplicateFieldName,
                             info.module.clone(),
@@ -238,31 +248,34 @@ impl SchemaCompiler<'_> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                this.validate_field_type(&info.module, &field.ty);
+                self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
             }
-        });
+        }
+        self.previous.diagnostics.extend(diagnostics);
     }
 
     pub(super) fn build_full_fields(&mut self) {
-        let names = self.types.keys().cloned().collect::<Vec<_>>();
-        for name in names {
-            let chain = self.ancestry_chain(&name);
-            let mut map = BTreeMap::new();
-            for info in chain {
-                for field in &info.def.fields {
-                    let declared_ty = self.resolve_field_type(&info.module, &field.ty);
-                    map.insert(
-                        field.name.clone(),
-                        FieldInfo {
-                            declaring_type: crate::TypeName::from_validated(info.name.clone()),
-                            inferred_type: declared_ty,
-                            dimension: super::annotations::field_dimension_name(field),
-                        },
-                    );
+        self.full_fields = self
+            .types
+            .keys()
+            .map(|name| {
+                let mut map = BTreeMap::new();
+                for info in self.ancestry_chain(name) {
+                    for field in &info.def.fields {
+                        let declared_ty = self.resolve_field_type(&info.module, &field.ty);
+                        map.insert(
+                            field.name.clone(),
+                            FieldInfo {
+                                declaring_type: crate::TypeName::from_validated(info.name.clone()),
+                                inferred_type: declared_ty,
+                                dimension: super::annotations::field_dimension_name(field),
+                            },
+                        );
+                    }
                 }
-            }
-            self.full_fields.insert(name, map);
-        }
+                (name.clone(), map)
+            })
+            .collect();
     }
 
     /// Resolves a `TypeRef` to an `InferredType` without emitting diagnostics. Errors
@@ -327,9 +340,16 @@ impl SchemaCompiler<'_> {
         }
     }
 
-    /// Walks a `TypeRef` once, emitting `UnknownNamedType` / `InvalidDictKeyType`
-    /// diagnostics and returning the resolved type.
-    fn validate_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> InferredType {
+    /// 单次遍历字段类型，只读取已解析阶段，并把诊断写入本次校验的局部结果。
+    fn validate_field_type(
+        &self,
+        module: &ModuleId,
+        ty: &TypeRef,
+        diagnostics: &mut Vec<CftDiagnostic>,
+    ) -> InferredType {
+        let diagnostic = |code, span, message: String| {
+            CftDiagnostic::error(code, module.clone(), span, message)
+        };
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
             TypeRefKind::Float => InferredType::float(),
@@ -338,115 +358,103 @@ impl SchemaCompiler<'_> {
             TypeRefKind::Named(name) => {
                 let resolved_name = self.resolve_name(module, name);
                 match self.symbols.get(&resolved_name) {
-                Some(symbol) if symbol.kind == SymbolKind::Type => {
-                    if self.type_is_singleton(&resolved_name) {
-                        self.push_diag(
-                            CftErrorCode::InvalidAnnotatedFieldType,
-                            module,
-                            ty.span,
-                            "singleton type cannot be used as a field type",
-                        );
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {
+                        if self.type_is_singleton(&resolved_name) {
+                            diagnostics.push(diagnostic(
+                                CftErrorCode::InvalidAnnotatedFieldType,
+                                ty.span,
+                                "singleton type cannot be used as a field type".into(),
+                            ));
+                        }
+                        InferredType::object(crate::TypeName::from_validated(resolved_name))
                     }
-                    InferredType::object(crate::TypeName::from_validated(resolved_name))
-                }
-                Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                    InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
-                }
-                Some(symbol) if symbol.kind == SymbolKind::TypeAlias => self
-                    .resolved_aliases
-                    .get(&resolved_name)
-                    .cloned()
-                    .unwrap_or(InferredType::Unknown),
-                Some(symbol) => {
-                    self.diagnostics.push(
-                        CftDiagnostic::error(
+                    Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                        InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
+                    }
+                    Some(symbol) if symbol.kind == SymbolKind::TypeAlias => self
+                        .resolved_aliases
+                        .get(&resolved_name)
+                        .cloned()
+                        .unwrap_or(InferredType::Unknown),
+                    Some(symbol) => {
+                        diagnostics.push(
+                            diagnostic(
+                                CftErrorCode::UnknownNamedType,
+                                ty.span,
+                                format!("field type `{resolved_name}` is not a type or enum"),
+                            )
+                            .with_related(
+                                symbol.module.clone(),
+                                symbol.span,
+                                "name is defined here",
+                            ),
+                        );
+                        InferredType::Unknown
+                    }
+                    None => {
+                        diagnostics.push(diagnostic(
                             CftErrorCode::UnknownNamedType,
-                            module.clone(),
                             ty.span,
-                            format!("field type `{resolved_name}` is not a type or enum"),
-                        )
-                        .with_related(
-                            symbol.module.clone(),
-                            symbol.span,
-                            "name is defined here",
-                        ),
-                    );
-                    InferredType::Unknown
-                }
-                None => {
-                    self.push_diag(
-                        CftErrorCode::UnknownNamedType,
-                        module,
-                        ty.span,
-                        format!("unknown field type `{resolved_name}`"),
-                    );
-                    InferredType::Unknown
-                }
+                            format!("unknown field type `{resolved_name}`"),
+                        ));
+                        InferredType::Unknown
+                    }
                 }
             }
             TypeRefKind::Ref(inner) => {
-                let inner_ty = self.validate_field_type(module, inner);
+                let inner_ty = self.validate_field_type(module, inner, diagnostics);
                 match inner_ty.object_name() {
-                    Some(name) if self.type_is_singleton(name) => {
-                        self.push_diag(
-                            CftErrorCode::InvalidAnnotatedFieldType,
-                            module,
-                            inner.span,
-                            "reference target type must not be a singleton type",
-                        );
-                    }
+                    Some(name) if self.type_is_singleton(name) => diagnostics.push(diagnostic(
+                        CftErrorCode::InvalidAnnotatedFieldType,
+                        inner.span,
+                        "reference target type must not be a singleton type".into(),
+                    )),
                     Some(_) => {}
                     None if inner_ty.is_unknown() => {}
-                    None => {
-                        self.push_diag(
-                            CftErrorCode::InvalidAnnotatedFieldType,
-                            module,
-                            inner.span,
-                            "reference target must be a non-singleton object type",
-                        );
-                    }
+                    None => diagnostics.push(diagnostic(
+                        CftErrorCode::InvalidAnnotatedFieldType,
+                        inner.span,
+                        "reference target must be a non-singleton object type".into(),
+                    )),
                 }
                 InferredType::record_ref(inner_ty)
             }
             TypeRefKind::Array(inner) => {
-                let inner = self.validate_field_type(module, inner);
-                InferredType::array(inner)
+                InferredType::array(self.validate_field_type(module, inner, diagnostics))
             }
             TypeRefKind::Dict(key, value) => {
-                let key_ty = self.validate_field_type(module, key);
+                let key_ty = self.validate_field_type(module, key, diagnostics);
                 if !is_valid_dict_key(&key_ty) {
-                    self.push_diag(
+                    diagnostics.push(diagnostic(
                         CftErrorCode::InvalidDictKeyType,
-                        module,
                         key.span,
-                        "dict key type must be string, int, or enum",
-                    );
+                        "dict key type must be string, int, or enum".into(),
+                    ));
                 }
-                let value_ty = self.validate_field_type(module, value);
-                InferredType::dict(key_ty, value_ty)
+                InferredType::dict(
+                    key_ty,
+                    self.validate_field_type(module, value, diagnostics),
+                )
             }
             TypeRefKind::Option(inner) => {
-                let inner = self.validate_field_type(module, inner);
-                InferredType::option(inner)
+                InferredType::option(self.validate_field_type(module, inner, diagnostics))
             }
-            TypeRefKind::Result(value, error) => {
-                let value = self.validate_field_type(module, value);
-                let error = self.validate_field_type(module, error);
-                InferredType::result(value, error)
-            }
-            TypeRefKind::Function(parameters, result) => {
-                let parameters = parameters
+            TypeRefKind::Result(value, error) => InferredType::result(
+                self.validate_field_type(module, value, diagnostics),
+                self.validate_field_type(module, error, diagnostics),
+            ),
+            TypeRefKind::Function(parameters, result) => InferredType::function(
+                parameters
                     .iter()
                     .map(|parameter| {
                         (
                             parameter.name.as_ref().map(|name| name.name.clone()),
-                            self.validate_field_type(module, &parameter.value_type),
+                            self.validate_field_type(module, &parameter.value_type, diagnostics),
                         )
                     })
-                    .collect();
-                let result = self.validate_field_type(module, result);
-                InferredType::function(parameters, result)
-            }
+                    .collect(),
+                self.validate_field_type(module, result, diagnostics),
+            ),
             TypeRefKind::Unit => InferredType::unit(),
         }
     }

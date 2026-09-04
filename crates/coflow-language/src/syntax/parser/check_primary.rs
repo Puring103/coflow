@@ -3,7 +3,7 @@ use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
 use crate::syntax::ast::{CheckExpr, CheckExprKind, CheckFormatSegment, NameRef, TypePredicate};
 use crate::syntax::lexer::TokenKind;
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl Parser<'_> {
     #[allow(clippy::too_many_lines)]

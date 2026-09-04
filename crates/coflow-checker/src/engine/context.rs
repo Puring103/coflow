@@ -6,15 +6,14 @@ use crate::{
     CheckDiagnostic, CheckDiagnosticContext, CheckProjection, CheckSchemaLocation,
 };
 use coflow_model::CfdDataModel;
-use coflow_language::limits::StructuralLimits;
-use coflow_language::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType};
+use coflow_language::cft::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType};
 use std::cell::RefCell;
 
 pub(super) struct ExecutionContext<'a> {
     pub(super) schema: &'a CftSchema,
     pub(super) model: &'a CfdDataModel,
     pub(super) projection: &'a CheckProjection,
-    pub(super) structural_limits: StructuralLimits,
+    pub(super) evaluation_limits: crate::EvaluationLimits,
     regex_cache: &'a RefCell<builtins::RegexCache>,
 }
 
@@ -23,14 +22,14 @@ impl<'a> ExecutionContext<'a> {
         schema: &'a CftSchema,
         model: &'a CfdDataModel,
         projection: &'a CheckProjection,
-        structural_limits: StructuralLimits,
+        evaluation_limits: crate::EvaluationLimits,
         regex_cache: &'a RefCell<builtins::RegexCache>,
     ) -> Self {
         Self {
             schema,
             model,
             projection,
-            structural_limits,
+            evaluation_limits,
             regex_cache,
         }
     }
@@ -46,7 +45,7 @@ impl<'a> ExecutionContext<'a> {
             None,
             EvalValue::null(),
             self.regex_cache,
-            self.structural_limits,
+            self.evaluation_limits,
         );
         evaluator.schema_location = Some(CheckSchemaLocation {
             module: check.module.clone(),
@@ -73,7 +72,7 @@ impl<'a> ExecutionContext<'a> {
             Some(location.clone()),
             EvalValue::Record(EvalRecordRef::Resolved(location)),
             self.regex_cache,
-            self.structural_limits,
+            self.evaluation_limits,
         );
         evaluator.schema_location = Some(CheckSchemaLocation {
             module: meta.module.clone(),

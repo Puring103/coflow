@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 
-use coflow_language::{CftValueType, TypeName};
+use coflow_language::cft::{CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 struct EmptyContext;

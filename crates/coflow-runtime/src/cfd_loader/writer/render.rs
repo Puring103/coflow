@@ -1,5 +1,5 @@
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdValue};
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::schema_nav::{object_type_name, type_after_field_segment};
 use super::CFD_INDENT;
@@ -224,7 +224,7 @@ fn result_error(expected: Option<&CftValueType>) -> Option<&CftValueType> {
 mod tests {
     use super::serialize_value_for_type;
     use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
-    use coflow_language::{
+    use coflow_language::cft::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
     };
     use std::collections::BTreeMap;

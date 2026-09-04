@@ -1,15 +1,13 @@
-use super::SchemaCompiler;
+use super::ValueResolver;
 use crate::CftErrorCode;
 use crate::syntax::ast::DefaultExprKind;
 
-impl SchemaCompiler<'_> {
+impl ValueResolver<'_, '_> {
     pub(super) fn validate_defaults(&mut self) {
-        let types = self
-            .types
-            .values()
-            .map(|info| (info.module.clone(), info.def.clone()))
-            .collect::<Vec<_>>();
-        for (module, definition) in types {
+        let previous = self.previous;
+        for info in previous.types.values() {
+            let module = &info.module;
+            let definition = info.def;
             let is_host = super::annotations::has_annotation(&definition.annotations, "Host");
             for field in &definition.fields {
                 let Some(default) = &field.default else {
@@ -20,7 +18,7 @@ impl SchemaCompiler<'_> {
                 {
                     self.push_diag(
                         CftErrorCode::InvalidDefaultExpression,
-                        &module,
+                        module,
                         default.span,
                         "function defaults must be used directly on function fields",
                     );
@@ -29,21 +27,21 @@ impl SchemaCompiler<'_> {
                 if is_host && matches!(default.kind, DefaultExprKind::Function { .. }) {
                     self.push_diag(
                         CftErrorCode::InvalidDefaultExpression,
-                        &module,
+                        module,
                         default.span,
                         "@Host function fields cannot define default implementations",
                     );
                     continue;
                 }
                 let expected = self
-                    .resolve_field_type(&module, &field.ty)
+                    .resolve_field_type(module, &field.ty)
                     .value_type()
                     .cloned();
                 let Some(expected) = expected else {
                     continue;
                 };
                 if let Some((_, value)) = self.resolve_static_value(
-                    &module,
+                    module,
                     default,
                     Some(&expected),
                     &mut Vec::new(),
@@ -56,17 +54,16 @@ impl SchemaCompiler<'_> {
             }
         }
 
-        let host_types = self
+        for host in previous
             .types
             .values()
             .filter(|info| super::annotations::has_annotation(&info.def.annotations, "Host"))
-            .map(|info| info.name.clone())
-            .collect::<Vec<_>>();
-        for host_type in host_types {
-            for ancestor in self
-                .ancestry_chain(&host_type)
+        {
+            let host_type = &host.name;
+            for ancestor in previous
+                .ancestry_chain(host_type)
                 .into_iter()
-                .filter(|info| info.name != host_type)
+                .filter(|info| info.name != *host_type)
             {
                 for default in ancestor
                     .def

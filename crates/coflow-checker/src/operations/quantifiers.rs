@@ -1,5 +1,5 @@
 use coflow_model::{CfdDataModel, CfdErrorCode};
-use coflow_language::limits::StructuralBudget;
+use crate::limits::EvaluationBudget;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
@@ -24,7 +24,7 @@ pub(crate) fn quantifier_item<'model>(
     collection: &LocatedEvalValue<'model>,
     index: usize,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<Option<LocatedEvalValue<'model>>> {
     match &collection.value {
         EvalValue::Array {

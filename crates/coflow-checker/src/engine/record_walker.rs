@@ -2,9 +2,9 @@ use super::context::ExecutionContext;
 use super::value::ValueLocation;
 use crate::dimensions::DimensionVariantAbort;
 use crate::CheckDiagnostic;
+use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
 use coflow_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
-use coflow_language::limits::{StructuralBudget, StructureKind, TraversalCursor};
-use coflow_language::{CftSchemaCheckStmt, CftType};
+use coflow_language::cft::{CftSchemaCheckStmt, CftType};
 
 pub(super) struct RecordCheckWalker<'a> {
     context: ExecutionContext<'a>,
@@ -12,7 +12,7 @@ pub(super) struct RecordCheckWalker<'a> {
     owner: &'a CftType,
     diagnostics: Vec<CheckDiagnostic>,
     work: u64,
-    budget: StructuralBudget,
+    budget: EvaluationBudget,
 }
 
 impl<'a> RecordCheckWalker<'a> {
@@ -22,7 +22,7 @@ impl<'a> RecordCheckWalker<'a> {
         owner: &'a CftType,
     ) -> Self {
         Self {
-            budget: StructuralBudget::new(context.structural_limits),
+            budget: EvaluationBudget::new(context.evaluation_limits),
             context,
             root,
             owner,
@@ -62,7 +62,7 @@ impl<'a> RecordCheckWalker<'a> {
             location,
             statement,
             true,
-            TraversalCursor::root(),
+            EvaluationCursor::root(),
         );
         (
             self.diagnostics,
@@ -73,13 +73,13 @@ impl<'a> RecordCheckWalker<'a> {
     fn visit_object(
         &mut self,
         actual_type: &str,
-        fields: &std::collections::BTreeMap<coflow_language::FieldName, CfdValue>,
+        fields: &std::collections::BTreeMap<coflow_language::cft::FieldName, CfdValue>,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
         project_dimension: bool,
-        cursor: TraversalCursor,
+        cursor: EvaluationCursor,
     ) {
-        let cursor = match self.budget.enter(cursor, StructureKind::DataValue, 1) {
+        let cursor = match self.budget.enter(cursor, EvaluationKind::DataValue, 1) {
             Ok(cursor) => cursor,
             Err(error) => {
                 self.diagnostics.push(
@@ -162,7 +162,7 @@ impl<'a> RecordCheckWalker<'a> {
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
         project_dimension: bool,
-        cursor: TraversalCursor,
+        cursor: EvaluationCursor,
     ) {
         match value {
             CfdValue::Object(object) => self.visit_object(

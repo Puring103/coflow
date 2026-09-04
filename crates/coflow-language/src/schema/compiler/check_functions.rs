@@ -6,7 +6,7 @@ use crate::schema::compiler::inferred_type::{
 };
 use crate::schema::{CftCheckBuiltin, CftValueType};
 use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
-use crate::syntax::Span;
+use crate::source::Span;
 use regex::Regex;
 
 impl CheckTypeAnalyzer<'_, '_> {
@@ -16,8 +16,8 @@ impl CheckTypeAnalyzer<'_, '_> {
         args: &[CheckExpr],
         span: Span,
     ) -> InferredType {
-        let resolved_name = self.compiler.resolve_name(&self.module, &name.name);
-        if self.compiler.enums.contains_key(&resolved_name) {
+        let resolved_name = self.schema.resolve_name(&self.module, &name.name);
+        if self.schema.enums.contains_key(&resolved_name) {
             if args.len() != 1 {
                 self.diag(
                     CftErrorCode::FunctionArityMismatch,

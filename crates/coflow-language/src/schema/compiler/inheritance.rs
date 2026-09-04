@@ -1,22 +1,27 @@
 use super::state::{FieldOrigin, TypeInfo};
-use super::SchemaCompiler;
+use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::limits::{StructureKind, TraversalCursor};
+use crate::schema::AnalysisBudget;
 use crate::module::ModuleId;
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl<'a> SchemaCompiler<'a> {
-    pub(super) fn validate_inheritance(&mut self) -> bool {
+impl<'a> ResolvedTypes<'a> {
+    pub(super) fn validate_inheritance(&mut self, budget: &mut AnalysisBudget) -> bool {
         let names = self.types.keys().cloned().collect::<Vec<_>>();
-        let Some(has_cycle) = self.build_inheritance_chains(&names) else {
+        let Some(has_cycle) = self.build_inheritance_chains(&names, budget) else {
             return false;
         };
         self.validate_inherited_fields(&names);
         !has_cycle
     }
 
-    fn build_inheritance_chains(&mut self, names: &[String]) -> Option<bool> {
+    fn build_inheritance_chains(
+        &mut self,
+        names: &[String],
+        budget: &mut AnalysisBudget,
+    ) -> Option<bool> {
         let mut finished = BTreeSet::new();
         let mut has_cycle = false;
         for name in names {
@@ -31,7 +36,7 @@ impl<'a> SchemaCompiler<'a> {
                 positions.insert(current.clone(), path.len());
                 path.push(current.clone());
                 let local_depth = u64::try_from(path.len()).unwrap_or(u64::MAX);
-                if let Err(error) = self.budget.check_additional_depth(
+                if let Err(error) = budget.check_depth(
                     TraversalCursor::root(),
                     StructureKind::SchemaDependency,
                     local_depth,
@@ -62,7 +67,7 @@ impl<'a> SchemaCompiler<'a> {
                 }
 
                 let (module, span) = self.inheritance_edge_location(&current);
-                if let Err(error) = self.budget.charge_work(StructureKind::SchemaDependency, 1) {
+                if let Err(error) = budget.charge(StructureKind::SchemaDependency, 1) {
                     self.push_budget_error(error, &module, span);
                     return None;
                 }
@@ -86,7 +91,7 @@ impl<'a> SchemaCompiler<'a> {
             for current in path.iter().rev() {
                 chain.push(current.clone());
                 let depth = u64::try_from(chain.len()).unwrap_or(u64::MAX);
-                if let Err(error) = self.budget.check_additional_depth(
+                if let Err(error) = budget.check_depth(
                     TraversalCursor::root(),
                     StructureKind::SchemaDependency,
                     depth,
@@ -110,9 +115,9 @@ impl<'a> SchemaCompiler<'a> {
             };
             if let Some(parent) = &info.def.parent {
                 let parent_name = self.resolve_name(&info.module, &parent.name);
-                if let Some(parent_info) = self.types.get(&parent_name) {
+                if let Some(parent_info) = self.previous.types.get(&parent_name) {
                     if parent_info.def.is_sealed {
-                        self.diagnostics.push(
+                        self.previous.diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::InheritSealedType,
                                 info.module.clone(),
@@ -129,7 +134,7 @@ impl<'a> SchemaCompiler<'a> {
                     let inherited = self.collect_ancestor_fields(Some(&parent_name));
                     for field in &info.def.fields {
                         if let Some(first) = inherited.get(&field.name) {
-                            self.diagnostics.push(
+                            self.previous.diagnostics.push(
                                 CftDiagnostic::error(
                                     CftErrorCode::DuplicateInheritedField,
                                     info.module.clone(),
@@ -188,7 +193,7 @@ impl<'a> SchemaCompiler<'a> {
             let (module, span) = self.inheritance_edge_location(name);
             diagnostic = diagnostic.with_related(module, span, "cycle continues here");
         }
-        self.diagnostics.push(diagnostic);
+        self.previous.diagnostics.push(diagnostic);
     }
 
     /// Walks the inheritance chain root-first and returns a snapshot of every

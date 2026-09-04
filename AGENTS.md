@@ -96,10 +96,11 @@ implementation constraints there.
 ### Internal Crate Boundaries
 
 - `coflow-model` owns the schema-guided CFD data model, model construction, value validation, references, and model diagnostics.
-- `coflow-checker` owns CFT check execution over compiled schemas and immutable CFD data models.
+- `coflow-checker` owns CFT check execution over compiled schemas and immutable CFD data models, including evaluation work and iteration limits.
 - `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
 - `coflow-staging` owns the internal all-or-nothing filesystem staging primitives shared by CFD writes and generated-code publication.
-- `coflow-language` owns the schema-guided CFD value grammar and structural limits shared by parsers, compilers, and evaluators.
+- `coflow-language` owns source spans, shared lossless lexical scanning, CFT syntax and schema compilation, schema-free CFD syntax, and language structural limits.
+- `coflow-format` owns canonical CFT/CFD source formatting over the lossless token stream; it does not load projects or produce LSP edits.
 - `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
 - The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
 - `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-runtime`.

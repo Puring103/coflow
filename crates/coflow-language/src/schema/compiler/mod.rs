@@ -12,20 +12,20 @@ mod state;
 mod symbols;
 mod types;
 
-pub use entry::build_schema;
+pub use entry::{build_schema, build_schema_with_limits};
 
 use self::checks::CheckTypeAnalyzer;
 use self::state::{
     CheckInfo, ConstInfo, EnumInfo, FieldInfo, ModuleScope, Symbol, TypeAliasInfo, TypeInfo,
 };
-use crate::limits::{StructuralBudget, StructuralLimits};
 use crate::module::{CftModuleSet, ModuleId};
 use crate::schema::{
     CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
 };
-use crate::syntax::Span;
-use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::source::Span;
+use crate::{CftDiagnostic, CftErrorCode};
 use std::collections::BTreeMap;
+use std::ops::Deref;
 
 #[derive(Debug, Clone, Default)]
 pub(in crate::schema) struct SchemaDeclarations {
@@ -36,30 +36,49 @@ pub(in crate::schema) struct SchemaDeclarations {
     pub(super) sources: BTreeMap<ModuleId, crate::schema::CftSchemaSource>,
 }
 
-pub(super) struct SchemaCompiler<'a> {
+pub(super) struct SymbolTable<'a> {
     modules: &'a CftModuleSet,
     diagnostics: Vec<CftDiagnostic>,
     symbols: BTreeMap<String, Symbol>,
     consts: BTreeMap<String, ConstInfo<'a>>,
     types: BTreeMap<String, TypeInfo<'a>>,
     aliases: BTreeMap<String, TypeAliasInfo<'a>>,
-    resolved_aliases: BTreeMap<String, inferred_type::InferredType>,
     enums: BTreeMap<String, EnumInfo<'a>>,
     checks: BTreeMap<String, CheckInfo<'a>>,
     module_scopes: BTreeMap<ModuleId, ModuleScope>,
+}
+
+pub(super) struct ResolvedTypes<'a> {
+    previous: SymbolTable<'a>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
-    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
+    resolved_aliases: BTreeMap<String, inferred_type::InferredType>,
+}
+
+pub(super) struct ResolvedValues<'a> {
+    previous: ResolvedTypes<'a>,
+    resolved_constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
+    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
+}
+
+struct ValueResolver<'s, 'a> {
+    previous: &'s ResolvedTypes<'a>,
+    resolved_constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
+    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
+    diagnostics: Vec<CftDiagnostic>,
+}
+
+pub(super) struct ValidatedSchema<'a> {
+    previous: ResolvedValues<'a>,
     quantifier_bindings:
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     check_dimensions:
         BTreeMap<(ModuleId, usize, usize), BTreeMap<crate::DimensionName, Vec<usize>>>,
     check_statement_dependencies:
         BTreeMap<(ModuleId, usize, usize), Vec<crate::schema::CheckStatementDependencies>>,
-    budget: StructuralBudget,
 }
 
-impl<'a> SchemaCompiler<'a> {
+impl<'a> SymbolTable<'a> {
     pub(super) fn new(modules: &'a CftModuleSet) -> Self {
         Self {
             modules,
@@ -68,84 +87,9 @@ impl<'a> SchemaCompiler<'a> {
             consts: BTreeMap::new(),
             types: BTreeMap::new(),
             aliases: BTreeMap::new(),
-            resolved_aliases: BTreeMap::new(),
             enums: BTreeMap::new(),
             checks: BTreeMap::new(),
             module_scopes: BTreeMap::new(),
-            full_fields: BTreeMap::new(),
-            resolved_defaults: BTreeMap::new(),
-            inheritance_chains: BTreeMap::new(),
-            quantifier_bindings: BTreeMap::new(),
-            check_dimensions: BTreeMap::new(),
-            check_statement_dependencies: BTreeMap::new(),
-            budget: StructuralBudget::new(StructuralLimits::default()),
-        }
-    }
-
-    pub(super) fn compile(&mut self) -> Result<SchemaDeclarations, CftDiagnostics> {
-        if !self.validate_structure() {
-            return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
-        }
-        self.report_dangling_annotations();
-        self.collect_symbols();
-        self.validate_enums();
-        self.validate_type_headers();
-        self.validate_type_aliases();
-        self.validate_field_shapes();
-        if !self.validate_inheritance() {
-            return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
-        }
-        self.validate_annotations();
-        self.build_full_fields();
-        self.resolve_constants();
-        self.validate_defaults();
-        self.validate_checks();
-
-        if !self.diagnostics.is_empty() {
-            return Err(CftDiagnostics::new(std::mem::take(&mut self.diagnostics)));
-        }
-        Ok(self.lower_declarations())
-    }
-
-    fn validate_checks(&mut self) {
-        self.each_type(|this, info| {
-            if let Some(check) = &info.def.check {
-                let mut checker = CheckTypeAnalyzer::new(this, info);
-                let (dimensions, dependencies) = checker.check_root_stmts(&check.stmts);
-                this.check_dimensions.insert(
-                    (info.module.clone(), check.span.start, check.span.end),
-                    dimensions,
-                );
-                this.check_statement_dependencies.insert(
-                    (info.module.clone(), check.span.start, check.span.end),
-                    dependencies,
-                );
-            }
-        });
-        let checks: Vec<_> = self
-            .checks
-            .iter()
-            .map(|(name, info)| (name.clone(), info.clone()))
-            .collect();
-        for (_name, info) in checks {
-            let mut checker = CheckTypeAnalyzer::top_level(self, info.module.clone());
-            let (dimensions, dependencies) = checker.check_root_stmts(&info.def.block.stmts);
-            self.check_dimensions.insert(
-                (
-                    info.module.clone(),
-                    info.def.block.span.start,
-                    info.def.block.span.end,
-                ),
-                dimensions,
-            );
-            self.check_statement_dependencies.insert(
-                (
-                    info.module.clone(),
-                    info.def.block.span.start,
-                    info.def.block.span.end,
-                ),
-                dependencies,
-            );
         }
     }
 
@@ -159,26 +103,174 @@ impl<'a> SchemaCompiler<'a> {
         self.diagnostics
             .push(CftDiagnostic::error(code, module.clone(), span, message));
     }
+}
 
-    /// Iterates over every type, releasing the borrow on `self.types` for each
-    /// call so the body can use `&mut self`. Only the key snapshot is allocated
-    /// upfront; each info is cloned one at a time inside the loop.
-    fn each_type<F: FnMut(&mut Self, &TypeInfo<'a>)>(&mut self, mut body: F) {
-        let keys: Vec<String> = self.types.keys().cloned().collect();
-        for key in keys {
-            if let Some(info) = self.types.get(&key).cloned() {
-                body(self, &info);
-            }
+impl<'a> ResolvedTypes<'a> {
+    pub(super) fn new(symbols: SymbolTable<'a>) -> Self {
+        Self {
+            previous: symbols,
+            full_fields: BTreeMap::new(),
+            inheritance_chains: BTreeMap::new(),
+            resolved_aliases: BTreeMap::new(),
         }
     }
 
-    fn each_enum<F: FnMut(&mut Self, &EnumInfo<'a>)>(&mut self, mut body: F) {
-        let keys: Vec<String> = self.enums.keys().cloned().collect();
-        for key in keys {
-            if let Some(info) = self.enums.get(&key).cloned() {
-                body(self, &info);
-            }
+    fn push_diag(
+        &mut self,
+        code: CftErrorCode,
+        module: &ModuleId,
+        span: Span,
+        message: impl Into<String>,
+    ) {
+        self.previous.diagnostics.push(CftDiagnostic::error(
+            code,
+            module.clone(),
+            span,
+            message,
+        ));
+    }
+
+    fn push_budget_error(
+        &mut self,
+        error: crate::limits::BudgetExceeded,
+        module: &ModuleId,
+        span: Span,
+    ) {
+        self.push_diag(
+            CftErrorCode::SchemaStructureLimitExceeded,
+            module,
+            span,
+            error.to_string(),
+        );
+    }
+
+}
+
+impl<'a> Deref for ResolvedTypes<'a> {
+    type Target = SymbolTable<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.previous
+    }
+}
+
+impl<'a> ResolvedValues<'a> {
+    pub(super) fn resolve(mut types: ResolvedTypes<'a>) -> Self {
+        let (resolved_constants, resolved_defaults, diagnostics) = {
+            let mut resolver = ValueResolver {
+                previous: &types,
+                resolved_constants: BTreeMap::new(),
+                resolved_defaults: BTreeMap::new(),
+                diagnostics: Vec::new(),
+            };
+            resolver.resolve_constants();
+            resolver.validate_defaults();
+            (
+                resolver.resolved_constants,
+                resolver.resolved_defaults,
+                resolver.diagnostics,
+            )
+        };
+        types.previous.diagnostics.extend(diagnostics);
+        Self {
+            previous: types,
+            resolved_constants,
+            resolved_defaults,
+        }
+    }
+}
+
+impl<'a> Deref for ResolvedValues<'a> {
+    type Target = ResolvedTypes<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.previous
+    }
+}
+
+impl<'s, 'a> Deref for ValueResolver<'s, 'a> {
+    type Target = ResolvedTypes<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        self.previous
+    }
+}
+
+impl ValueResolver<'_, '_> {
+    fn push_diag(
+        &mut self,
+        code: CftErrorCode,
+        module: &ModuleId,
+        span: Span,
+        message: impl Into<String>,
+    ) {
+        self.diagnostics.push(CftDiagnostic::error(
+            code,
+            module.clone(),
+            span,
+            message,
+        ));
+    }
+}
+
+impl<'a> ValidatedSchema<'a> {
+    pub(super) fn new(values: ResolvedValues<'a>) -> Self {
+        Self {
+            previous: values,
+            quantifier_bindings: BTreeMap::new(),
+            check_dimensions: BTreeMap::new(),
+            check_statement_dependencies: BTreeMap::new(),
         }
     }
 
+    pub(super) fn validate_checks(&mut self) {
+        let mut diagnostics = Vec::new();
+        for info in self.previous.types.values() {
+            if let Some(check) = &info.def.check {
+                let analysis = CheckTypeAnalyzer::new(&self.previous, info)
+                    .check_root_stmts(&check.stmts);
+                self.check_dimensions.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    analysis.dimensions,
+                );
+                self.check_statement_dependencies.insert(
+                    (info.module.clone(), check.span.start, check.span.end),
+                    analysis.dependencies,
+                );
+                self.quantifier_bindings.extend(analysis.quantifier_bindings);
+                diagnostics.extend(analysis.diagnostics);
+            }
+        }
+        for info in self.previous.checks.values() {
+            let analysis = CheckTypeAnalyzer::top_level(&self.previous, info.module.clone())
+                .check_root_stmts(&info.def.block.stmts);
+            self.check_dimensions.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                analysis.dimensions,
+            );
+            self.check_statement_dependencies.insert(
+                (
+                    info.module.clone(),
+                    info.def.block.span.start,
+                    info.def.block.span.end,
+                ),
+                analysis.dependencies,
+            );
+            self.quantifier_bindings.extend(analysis.quantifier_bindings);
+            diagnostics.extend(analysis.diagnostics);
+        }
+        self.previous.previous.previous.diagnostics.extend(diagnostics);
+    }
+}
+
+impl<'a> Deref for ValidatedSchema<'a> {
+    type Target = ResolvedValues<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.previous
+    }
 }

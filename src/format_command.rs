@@ -1,6 +1,6 @@
 use crate::diagnostics::cli_file_error;
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use coflow_language::{format_cfd, format_cft};
+use coflow_format::{format_cfd, format_cft};
 use coflow_runtime::{
     discover_directory_files, path_is_same_or_descendant, path_to_slash, DiagnosticSet, Project,
 };

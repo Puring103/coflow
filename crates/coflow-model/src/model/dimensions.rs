@@ -1,6 +1,6 @@
 use super::{CfdDataModel, CfdRecordId, CfdValue};
 use crate::diagnostics::RecordOrigin;
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DimensionFieldLookupError {

@@ -1,5 +1,5 @@
-use coflow_language::syntax::ast::{Annotation, Item};
-use coflow_language::{CftConstValue, CftType};
+use coflow_language::cft::syntax::ast::{Annotation, Item};
+use coflow_language::cft::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 

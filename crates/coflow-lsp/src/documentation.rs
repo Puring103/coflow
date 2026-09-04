@@ -1,4 +1,4 @@
-use coflow_language::syntax::ast::Annotation;
+use coflow_language::cft::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("namespace", "Declare the module's qualified namespace."),
@@ -46,7 +46,7 @@ pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
 )];
 
 pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
-    coflow_language::CftCheckBuiltin::ALL
+    coflow_language::cft::CftCheckBuiltin::ALL
         .into_iter()
         .map(|builtin| (builtin.name(), builtin.documentation()))
 }

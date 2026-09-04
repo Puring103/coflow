@@ -33,6 +33,7 @@ unicode-ident = "1"
 walkdir = "2"
 
 [dev-dependencies]
+coflow-format = { path = "../coflow-format" }
 tempfile = "3"
 
 [[bench]]

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use crate::RecordKey;
-use coflow_language::{
+use coflow_language::cft::{
     CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
     ValueDependencyMode,
 };

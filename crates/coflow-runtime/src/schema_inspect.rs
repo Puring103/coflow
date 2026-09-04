@@ -1,5 +1,5 @@
 use crate::api::FlatDiagnostic;
-use coflow_language::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
+use coflow_language::cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
 use serde::Serialize;
 
 use crate::ProjectSchemaSession;
@@ -212,7 +212,7 @@ pub fn inspect_schema(
             fields: view
                 .resolve_type(&ty.name)
                 .into_iter()
-                .flat_map(coflow_language::CftType::all_fields)
+                .flat_map(coflow_language::cft::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
                     ty: value_type_info(&field.value_type),

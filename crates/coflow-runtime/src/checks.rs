@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use crate::api::DiagnosticSet;
 use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
 use crate::data_model::{CfdDataModel, RecordOrigin};
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 
 use crate::indexes::DiagnosticLogicalLocation;
 use impact::CheckImpact;
@@ -42,7 +42,10 @@ pub(crate) fn run_full_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> ProjectCheckOutput {
-    let limits = CheckLimits::default();
+    let limits = CheckLimits {
+        evaluation: crate::limits::RuntimeLimits::default().evaluation,
+        ..CheckLimits::default()
+    };
     let output = execute_plan(
         plan_full_checks_with_limit(schema, model, limits.max_tasks),
         schema,
@@ -62,7 +65,10 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckDiagnosticStore,
     impact: &CheckImpact,
 ) -> ProjectCheckOutput {
-    let limits = CheckLimits::default();
+    let limits = CheckLimits {
+        evaluation: crate::limits::RuntimeLimits::default().evaluation,
+        ..CheckLimits::default()
+    };
     let output = execute_plan(
         plan_incremental_checks_with_limit(schema, model, impact, limits.max_tasks),
         schema,
@@ -110,7 +116,7 @@ mod tests {
     };
     use crate::data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use crate::RecordCoordinate;
-    use coflow_language::{
+    use coflow_language::cft::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CheckOwner, DimensionName,
         FieldName, ModuleId, RecordKey, TypeName, VariantName,
     };

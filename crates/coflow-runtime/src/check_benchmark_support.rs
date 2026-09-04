@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_checker::CheckTask;
 use crate::data_model::CfdDataModel;
-use coflow_language::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::checks::{plan_full_checks, plan_full_checks_bounded, plan_incremental_checks};
@@ -24,7 +24,7 @@ pub enum BenchmarkProjection {
     Dimension { dimension: String, variant: String },
 }
 
-pub fn plan_full(schema: &coflow_language::CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
+pub fn plan_full(schema: &coflow_language::cft::CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     plan_full_checks(schema, model)
 }
 
@@ -34,7 +34,7 @@ pub fn plan_full(schema: &coflow_language::CftSchema, model: &CfdDataModel) -> V
 ///
 /// Returns the configured task limit when planning exceeds it.
 pub fn plan_full_with_limit(
-    schema: &coflow_language::CftSchema,
+    schema: &coflow_language::cft::CftSchema,
     model: &CfdDataModel,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, usize> {
@@ -47,7 +47,7 @@ pub fn plan_full_with_limit(
 ///
 /// Returns a validation message when benchmark input contains an invalid name.
 pub fn plan_incremental(
-    schema: &coflow_language::CftSchema,
+    schema: &coflow_language::cft::CftSchema,
     model: &CfdDataModel,
     fields: impl IntoIterator<Item = BenchmarkFieldChange>,
     record_sets: impl IntoIterator<Item = String>,

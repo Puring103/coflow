@@ -1,8 +1,8 @@
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::ModuleAst;
-use crate::syntax::parser::parse_module;
-use crate::syntax::Span;
+use crate::syntax::parser::{parse_module_with_options, CftParseOptions};
+use crate::source::Span;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -93,6 +93,15 @@ impl CftModuleSet {
 /// Parses collected CFT files once and retains successful ASTs for later consumers.
 #[must_use]
 pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
+    parse_modules_with_options(files, CftParseOptions::default())
+}
+
+/// Parses collected CFT files with explicit structural limits.
+#[must_use]
+pub fn parse_modules_with_options(
+    files: impl IntoIterator<Item = CftFile>,
+    options: CftParseOptions,
+) -> CftModuleSet {
     let mut modules = BTreeMap::new();
     let mut diagnostics = Vec::new();
 
@@ -110,7 +119,7 @@ pub fn parse_modules(files: impl IntoIterator<Item = CftFile>) -> CftModuleSet {
         let module = file.module;
         let path = file.path;
         let source: Arc<str> = file.source.into();
-        let parsed = parse_module(&module, &source);
+        let parsed = parse_module_with_options(&module, &source, options);
         let ast = match parsed {
             Ok(ast) => Some(Arc::new(ast)),
             Err(errors) => {

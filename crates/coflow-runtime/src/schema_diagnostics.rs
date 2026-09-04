@@ -1,7 +1,7 @@
 use crate::api::{
     byte_range, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, TextRange,
 };
-use coflow_language::{CftDiagnostic, CftLabel};
+use coflow_language::diagnostics::{CftDiagnostic, CftLabel};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -117,7 +117,9 @@ mod tests {
 
     use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
     use crate::api::SourceLocation;
-    use coflow_language::{CftDiagnostic, CftErrorCode, CftSeverity, ModuleId, Span};
+    use coflow_language::cft::ModuleId;
+    use coflow_language::diagnostics::{CftDiagnostic, CftErrorCode, CftSeverity};
+    use coflow_language::source::Span;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 

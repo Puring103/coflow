@@ -1,7 +1,7 @@
 use super::Parser;
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::limits::{BudgetExceeded, StructuralLimits, StructureKind, TraversalCursor};
-use crate::syntax::Span;
+use crate::source::Span;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CftParseOptions {
@@ -34,8 +34,6 @@ impl Parser<'_> {
         )?;
         let node_charge = self.budget.charge_nodes(kind, 1);
         self.map_budget(node_charge, span)?;
-        let work_charge = self.budget.charge_work(kind, 1);
-        self.map_budget(work_charge, span)?;
         Ok(Parsed {
             value: build(),
             depth,
@@ -50,8 +48,7 @@ impl Parser<'_> {
     ) -> Result<(), CftDiagnostics> {
         let node_charge = self.budget.charge_nodes(kind, nodes);
         self.map_budget(node_charge, span)?;
-        let work_charge = self.budget.charge_work(kind, nodes);
-        self.map_budget(work_charge, span)
+        Ok(())
     }
 
     pub(super) fn nested<T>(

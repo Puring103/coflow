@@ -7,7 +7,7 @@ use crate::data_model::{
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::{path_to_slash, Project};
-use coflow_language::{CftSchema, RecordKey};
+use coflow_language::cft::{CftSchema, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -749,7 +749,9 @@ fn build_partial_model(
             .iter()
             .map(|(_, record)| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
             .collect::<Vec<_>>();
-        let mut builder = CfdDataModel::builder(schema);
+        let mut builder = CfdDataModel::builder(schema).with_structural_limits(
+            crate::limits::RuntimeLimits::default().structural,
+        );
         for (_, record) in &candidates {
             builder.add_loaded_record(record.clone());
         }
@@ -932,6 +934,7 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
 
 pub(crate) fn empty_model(schema: &CftSchema) -> Result<CfdDataModel, DiagnosticSet> {
     CfdDataModel::builder(schema)
+        .with_structural_limits(crate::limits::RuntimeLimits::default().structural)
         .build()
         .map_err(|_| runtime_invariant("empty model build failed"))
 }

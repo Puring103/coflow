@@ -1,5 +1,5 @@
 use coflow_diagnostics::CfdErrorCode;
-use coflow_language::{
+use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp,
 };
 
@@ -170,7 +170,7 @@ pub(crate) fn explain_false_expr(
             expr: inner,
             predicate,
         } => match predicate {
-            coflow_language::CftSchemaTypePredicate::Type(type_name) => {
+            coflow_language::cft::CftSchemaTypePredicate::Type(type_name) => {
                 let actual = trace
                     .fact(inner)
                     .and_then(|fact| fact.actual_type.clone())

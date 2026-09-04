@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::api::DiagnosticSet;
 use crate::api::WriteFieldPathSegment;
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
-use coflow_language::{CftValueType, RecordKey};
+use coflow_language::cft::{CftValueType, RecordKey};
 
 use crate::write_rules;
 use crate::writes;
@@ -464,7 +464,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_language::CftSchema,
+    schema: &coflow_language::cft::CftSchema,
     target_actual_type: &str,
     expected: &CftValueType,
     value: &mut CfdValue,

@@ -1,6 +1,6 @@
 use coflow_model::{CfdDataModel, CfdDictKey, CfdRecordId, CfdValue};
-use coflow_language::limits::{StructuralBudget, StructureKind, TraversalCursor};
-use coflow_language::CftValueType;
+use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
+use coflow_language::cft::CftValueType;
 
 use super::location::{ModelCursor, ValueLocation};
 use super::value::{
@@ -12,7 +12,7 @@ use super::value::{
 pub(crate) enum EvalItems {
     ModelArray {
         storage: ModelCursor,
-        traversal: TraversalCursor,
+        traversal: EvaluationCursor,
         len: usize,
     },
     DictKeys(EvalEntries),
@@ -35,7 +35,7 @@ impl EvalItems {
         element_type: Option<&CftValueType>,
         collection_location: Option<&ValueLocation>,
         model: &'a CfdDataModel,
-        budget: &mut StructuralBudget,
+        budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
         let projected_location = collection_location.map(|location| location.index(index));
         match self {
@@ -71,7 +71,7 @@ impl EvalItems {
                 };
                 let location = ValueLocation::root(record);
                 budget
-                    .enter(TraversalCursor::root(), StructureKind::DataValue, 1)
+                    .enter(EvaluationCursor::root(), EvaluationKind::DataValue, 1)
                     .map_err(|error| LocatedBudgetExceeded {
                         error,
                         location: Box::new(Some(location.clone())),
@@ -88,12 +88,12 @@ impl EvalItems {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EvalEntries {
     storage: ModelCursor,
-    traversal: TraversalCursor,
+    traversal: EvaluationCursor,
     len: usize,
 }
 
 impl EvalEntries {
-    pub(crate) const fn new(storage: ModelCursor, traversal: TraversalCursor, len: usize) -> Self {
+    pub(crate) const fn new(storage: ModelCursor, traversal: EvaluationCursor, len: usize) -> Self {
         Self {
             storage,
             traversal,
@@ -116,7 +116,7 @@ impl EvalEntries {
         value_type: Option<&CftValueType>,
         collection_location: Option<&ValueLocation>,
         model: &'a CfdDataModel,
-        budget: &mut StructuralBudget,
+        budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
         let Some((key, value)) =
             model_dict(model, &self.storage).and_then(|items| items.get(index))
@@ -159,7 +159,7 @@ impl EvalEntries {
         value_type: Option<&CftValueType>,
         projected_location: Option<ValueLocation>,
         model: &'a CfdDataModel,
-        budget: &mut StructuralBudget,
+        budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
         let Some((key, value)) =
             model_dict(model, &self.storage).and_then(|items| items.get(index))

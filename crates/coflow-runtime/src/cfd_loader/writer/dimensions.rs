@@ -5,7 +5,7 @@ use crate::api::{
 };
 use crate::data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
 use coflow_language::cfd::parse_cfd;
-use coflow_language::{CftValueType, RecordKey};
+use coflow_language::cft::{CftValueType, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::Path;

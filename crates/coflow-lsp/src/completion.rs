@@ -1,6 +1,6 @@
-use coflow_language::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
-use coflow_language::syntax::lexer::{lex, TokenKind};
-use coflow_language::{CftCheckBuiltin, CftConstValue, ModuleId};
+use coflow_language::cft::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
+use coflow_language::cft::syntax::lexer::{lex, TokenKind};
+use coflow_language::cft::{CftCheckBuiltin, CftConstValue, ModuleId};
 use serde_json::{json, Map, Value};
 
 use super::documentation::{
@@ -259,7 +259,7 @@ fn function_completion_items() -> Vec<Value> {
         .collect()
 }
 
-pub(crate) fn function_completion_items_for_type(receiver: &coflow_language::CftValueType) -> Vec<Value> {
+pub(crate) fn function_completion_items_for_type(receiver: &coflow_language::cft::CftValueType) -> Vec<Value> {
     CftCheckBuiltin::ALL
         .into_iter()
         .filter(|builtin| builtin_supports_receiver(*builtin, receiver))
@@ -288,7 +288,7 @@ fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
     item
 }
 
-fn builtin_supports_receiver(builtin: CftCheckBuiltin, receiver: &coflow_language::CftValueType) -> bool {
+fn builtin_supports_receiver(builtin: CftCheckBuiltin, receiver: &coflow_language::cft::CftValueType) -> bool {
     use CftCheckBuiltin::{
         Abs, ApproxEqual, Contains, ContainsKey, ContainsValue, EndsWith, Intersects, IsBlank,
         IsDisjoint, IsFinite, IsSorted, IsStrictlySorted, IsSubsetOf, IsSupersetOf, Keys, Len,
@@ -316,14 +316,14 @@ enum TypeRefLike {
     Other,
 }
 
-impl<'a> From<&'a coflow_language::CftValueType> for TypeRefLike {
-    fn from(value: &'a coflow_language::CftValueType) -> Self {
+impl<'a> From<&'a coflow_language::cft::CftValueType> for TypeRefLike {
+    fn from(value: &'a coflow_language::cft::CftValueType) -> Self {
         match value {
-            coflow_language::CftValueType::Int => Self::Int,
-            coflow_language::CftValueType::Float => Self::Float,
-            coflow_language::CftValueType::String => Self::String,
-            coflow_language::CftValueType::Array(_) => Self::Array,
-            coflow_language::CftValueType::Dict(_, _) => Self::Dict,
+            coflow_language::cft::CftValueType::Int => Self::Int,
+            coflow_language::cft::CftValueType::Float => Self::Float,
+            coflow_language::cft::CftValueType::String => Self::String,
+            coflow_language::cft::CftValueType::Array(_) => Self::Array,
+            coflow_language::cft::CftValueType::Dict(_, _) => Self::Dict,
             _ => Self::Other,
         }
     }
@@ -389,7 +389,7 @@ fn const_value_completion_items_for_context(
 
 fn field_default_completion_items(
     build: &LspBuild,
-    field: Option<&coflow_language::syntax::ast::FieldDef>,
+    field: Option<&coflow_language::cft::syntax::ast::FieldDef>,
 ) -> Vec<Value> {
     let mut items = Vec::new();
     let Some(field) = field else {
@@ -737,7 +737,7 @@ fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec
         .collect()
 }
 
-fn type_descends_from(schema: &coflow_language::CftSchema, candidate: &str, ancestor: &str) -> bool {
+fn type_descends_from(schema: &coflow_language::cft::CftSchema, candidate: &str, ancestor: &str) -> bool {
     let mut current = schema.resolve_type(candidate);
     while let Some(ty) = current {
         let Some(parent) = ty.parent.as_deref() else {
@@ -1088,7 +1088,7 @@ fn inferred_completion_scope(
 }
 
 fn check_block_contains(
-    check: Option<&coflow_language::syntax::ast::CheckBlock>,
+    check: Option<&coflow_language::cft::syntax::ast::CheckBlock>,
     offset: usize,
 ) -> bool {
     check.is_some_and(|check| check.span.start <= offset && offset <= check.span.end)
@@ -1260,7 +1260,7 @@ fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<Str
     Vec::new()
 }
 
-fn skip_annotation_tokens(tokens: &[coflow_language::syntax::lexer::Token], index: &mut usize) {
+fn skip_annotation_tokens(tokens: &[coflow_language::cft::syntax::lexer::Token], index: &mut usize) {
     *index += 1;
     if *index < tokens.len() && matches!(tokens[*index].kind, TokenKind::Ident(_)) {
         *index += 1;

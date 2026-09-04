@@ -6,7 +6,7 @@ use crate::syntax::ast::{
     TypeRefKind,
 };
 use crate::syntax::lexer::{Token, TokenKind};
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_const(

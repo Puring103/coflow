@@ -3,7 +3,7 @@
 // consume them. They are part of the canonical AST shape and are exercised by
 // downstream tooling (IDE diagnostics, codegen). Suppress the resulting
 // `dead_code` warnings here rather than in individual definitions.
-use crate::syntax::Span;
+use crate::source::Span;
 
 #[derive(Debug, Clone)]
 pub struct ModuleAst {

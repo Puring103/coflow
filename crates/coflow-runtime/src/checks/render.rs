@@ -4,7 +4,7 @@ use crate::api::{
 };
 use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
 use crate::data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 
 use super::{CheckDiagnosticStore, ProjectCheckOutput};
 use crate::load::logical_locations_from_cfd;

@@ -1,7 +1,8 @@
 use crate::build::{BuildSchema, RecordDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdRecordId, CfdTable};
-use coflow_language::{is_cft_identifier, record_key_ident_error, RecordKey, TypeName};
+use coflow_language::cft::{RecordKey, TypeName};
+use coflow_language::lexical::{is_cft_identifier, record_key_ident_error};
 use std::collections::BTreeMap;
 
 pub(crate) struct ModelIndexes {

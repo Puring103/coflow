@@ -4,6 +4,7 @@ enum Rarity {
   Common,
   Rare,
   Epic,
+  sda
 }
 
 type EnumExample {

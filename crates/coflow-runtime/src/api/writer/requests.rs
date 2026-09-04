@@ -1,6 +1,6 @@
 use crate::data_model::{CfdPathSegment, CfdValue, RecordOrigin};
 use crate::{CfdSource, DiagnosticSet};
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use std::collections::BTreeMap;
 
 /// Canonical data-model path segment used by writers and host wire adapters.

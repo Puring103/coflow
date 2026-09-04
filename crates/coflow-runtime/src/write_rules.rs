@@ -3,7 +3,7 @@ use crate::data_model::{
     CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext,
     ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::{CftSchema, CftValueType, TypeName};
+use coflow_language::cft::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 use crate::ProjectSession;
@@ -13,7 +13,7 @@ fn validate_record_key_for_stage(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_language::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::lexical::record_key_ident_error(key) {
         return Err(one_error(
             code,
             stage,

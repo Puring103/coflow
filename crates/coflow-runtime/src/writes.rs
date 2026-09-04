@@ -12,7 +12,7 @@ mod writer;
 
 use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
 use crate::data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
-use coflow_language::{FieldName, TypeName};
+use coflow_language::cft::{FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
@@ -74,7 +74,7 @@ impl MutationImpact {
         self.record_changes.keys().cloned().collect()
     }
 
-    pub(crate) fn check_impact(&self, schema: &coflow_language::CftSchema) -> CheckImpact {
+    pub(crate) fn check_impact(&self, schema: &coflow_language::cft::CftSchema) -> CheckImpact {
         let mut memberships = BTreeSet::new();
         for actual_type in &self.membership_types {
             memberships.insert(actual_type.clone());
@@ -240,7 +240,7 @@ mod tests {
     use super::*;
     use crate::data_model::CfdPathSegment;
     use crate::mutation::PreparedMutationOp;
-    use coflow_language::RecordKey;
+    use coflow_language::cft::RecordKey;
 
     fn coordinate(key: &str) -> RecordCoordinate {
         RecordCoordinate::new(

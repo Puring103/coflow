@@ -1,8 +1,10 @@
 use crate::api::{Diagnostic, DiagnosticSet};
 use crate::project::{normalize_path, Project};
-use coflow_language::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftModuleSet, CftSchema, ModuleId,
+use coflow_language::cft::{
+    build_schema_with_limits, parse_modules_with_options, CftDimensionInputs, CftFile, CftModuleSet,
+    CftSchema, ModuleId,
 };
+use coflow_language::cft::syntax::parser::CftParseOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -30,6 +32,7 @@ fn collect_project_schema(
     project: &Project,
     overrides: &[SchemaTextOverride],
 ) -> Result<ProjectSchemaAttempt, DiagnosticSet> {
+    let limits = crate::limits::RuntimeLimits::default();
     let sources = project.schema_sources()?;
     let mut matched_overrides = vec![false; overrides.len()];
     let mut files = Vec::new();
@@ -73,7 +76,12 @@ fn collect_project_schema(
         }
     }
 
-    let modules = parse_modules(files);
+    let modules = parse_modules_with_options(
+        files,
+        CftParseOptions {
+            structural_limits: limits.structural,
+        },
+    );
     let sources = modules
         .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.source().to_string()))
@@ -96,10 +104,11 @@ fn collect_project_schema(
             format!("validated project dimensions are invalid: {error}"),
         ))
     })?;
-    let (schema, cft_diagnostics) = match build_schema(&modules, &dimensions) {
-        Ok(schema) => (Some(schema), Vec::new()),
-        Err(errors) => (None, errors.diagnostics),
-    };
+    let (schema, cft_diagnostics) =
+        match build_schema_with_limits(&modules, &dimensions, limits.structural) {
+            Ok(schema) => (Some(schema), Vec::new()),
+            Err(errors) => (None, errors.diagnostics),
+        };
     let diagnostics =
         diagnostic_set_from_cft(dedupe_cft_diagnostics(cft_diagnostics), &sources, &paths);
     Ok(ProjectSchemaAttempt {
@@ -137,7 +146,15 @@ pub(crate) fn open_project_schema_attempt(
             None => (build.modules, None),
         }
     } else {
-        (parse_modules(std::iter::empty::<CftFile>()), None)
+        (
+            parse_modules_with_options(
+                std::iter::empty::<CftFile>(),
+                CftParseOptions {
+                    structural_limits: crate::limits::RuntimeLimits::default().structural,
+                },
+            ),
+            None,
+        )
     };
     Ok(ProjectSchemaSession {
         project,
