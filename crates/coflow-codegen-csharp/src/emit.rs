@@ -216,11 +216,20 @@ pub fn build_csharp_type(
         .map(|field| {
             let reader = function_loader_reader(field, view, "VALUE", "CONTEXT", !schema_type.is_host)
                 .unwrap_or_else(|| loader_reader(&field.value_type, view, "VALUE", "CONTEXT"));
-            let default = field
-                .default
-                .as_ref()
-                .map(|value| loader_default(value, &field.value_type, view))
-                .transpose()?;
+            let default = match (&field.default, &field.value_type) {
+                (
+                    Some(CftSchemaDefaultValue::Function(source)),
+                    CftValueType::Function(parameters, result),
+                ) => Some(function_default_loader(
+                    field,
+                    source,
+                    parameters,
+                    result,
+                    view,
+                )),
+                (Some(value), _) => Some(loader_default(value, &field.value_type, view)?),
+                (None, _) => None,
+            };
             let dimension = field
                 .dimension
                 .as_ref()
@@ -429,6 +438,27 @@ fn function_loader_reader(
     ))
 }
 
+fn function_default_loader(
+    field: &CftField,
+    source: &str,
+    parameters: &[CftFunctionParameter],
+    result: &CftValueType,
+    view: &CsharpLoweringPlan<'_>,
+) -> String {
+    let delegate_type = csharp_type(&field.value_type, view);
+    let parameter_types = parameters
+        .iter()
+        .map(|parameter| format!(", typeof({})", csharp_type(&parameter.value_type, view)))
+        .collect::<String>();
+    format!(
+        "CoflowFunctionEntry<{delegate_type}>.CreateAot(context.DefaultFunction(\"{}\", \"{}\", typeof({}){parameter_types}), {})",
+        escape_csharp_literal(source),
+        escape_csharp_literal(field.name.as_str()),
+        csharp_type(result, view),
+        function_adapter_expression(parameters, result, view),
+    )
+}
+
 pub(crate) fn function_adapter_expression(
     parameters: &[CftFunctionParameter],
     result: &CftValueType,
@@ -533,13 +563,33 @@ fn loader_default_inner(
         CftSchemaDefaultValue::String(value) => {
             format!("\"{}\"", escape_csharp_literal(value))
         }
-        CftSchemaDefaultValue::Enum {
-            enum_name, variant, ..
-        } => format!(
-            "{}.{}",
-            view.csharp_enum_ref(enum_name),
-            csharp_public_member_name(variant)
+        CftSchemaDefaultValue::FormattedString(source) => format!(
+            "CfdValueReader.String(context.DefaultValue(\"{}\"), context)",
+            escape_csharp_literal(source)
         ),
+        CftSchemaDefaultValue::Function(_) => {
+            return Err(CsharpCodegenError::new(
+                "nested function defaults are not supported by C# code generation",
+            ));
+        }
+        CftSchemaDefaultValue::Enum {
+            enum_name,
+            variant,
+            value,
+        } => {
+            if view
+                .cft_enum_meta(enum_name.as_str())
+                .is_some_and(|schema_enum| schema_enum.is_flag)
+            {
+                format!("({}){value}L", view.csharp_enum_ref(enum_name))
+            } else {
+                format!(
+                    "{}.{}",
+                    view.csharp_enum_ref(enum_name),
+                    csharp_public_member_name(variant)
+                )
+            }
+        }
         CftSchemaDefaultValue::EmptyArray => {
             let CftValueType::Array(item) = ty else {
                 return Err(CsharpCodegenError::new("empty array default used on a non-array field"));
@@ -604,7 +654,11 @@ fn loader_default_inner(
             let CftValueType::Object(expected) = ty else {
                 return Err(CsharpCodegenError::new("object default used on a non-object field"));
             };
-            if type_name != expected {
+            if !view
+                .assignable_target_names(type_name.as_str())?
+                .iter()
+                .any(|candidate| candidate == expected.as_str())
+            {
                 return Err(CsharpCodegenError::new(format!(
                     "object default `{type_name}` does not match `{expected}`"
                 )));
@@ -617,7 +671,11 @@ fn loader_default_inner(
                     "record-reference default used on a non-reference field",
                 ));
             };
-            if type_name != expected {
+            if !view
+                .assignable_target_names(type_name.as_str())?
+                .iter()
+                .any(|candidate| candidate == expected.as_str())
+            {
                 return Err(CsharpCodegenError::new(format!(
                     "record-reference default `{type_name}` does not match `{expected}`"
                 )));

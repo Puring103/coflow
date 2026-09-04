@@ -40,17 +40,15 @@ pub struct BuildTargetReport {
     pub code: CodegenReport,
 }
 
-#[derive(Debug)]
-pub struct CleanReport {
-    pub generations_removed: usize,
-    pub staging_removed: usize,
-}
-
-pub fn migrate_enum_lock_after_mutation(
-    session: &coflow_runtime::WriteProjectSession,
-    report: &coflow_runtime::MutationReport,
-) -> Result<bool, DiagnosticSet> {
-    id_as_enum::migrate_after_mutation(session.project(), session.queries(), report)
+pub fn apply_project_mutation(
+    session: &mut coflow_runtime::WriteProjectSession,
+    request: coflow_runtime::MutationRequest,
+) -> Result<coflow_runtime::MutationReport, DiagnosticSet> {
+    let project = session.project().clone();
+    Ok(session.apply_mutation_with_project_files(request, move |queries, applied| {
+        id_as_enum::prepare_rename_update(&project, queries, applied)
+            .map(|update| update.into_iter().collect())
+    }))
 }
 
 #[derive(Debug)]
@@ -60,14 +58,6 @@ struct PendingCodegen {
     display_name: String,
     directory: PathBuf,
     files: Vec<coflow_runtime::codegen::CodeArtifactFile>,
-}
-
-pub fn clean_project(project: &Project) -> Result<CleanReport, DiagnosticSet> {
-    let (generations_removed, staging_removed) = crate::artifacts::clean_history(project)?;
-    Ok(CleanReport {
-        generations_removed,
-        staging_removed,
-    })
 }
 
 pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
@@ -113,7 +103,7 @@ pub fn generate_project_code(
 
 fn prepare_project_code<T>(
     project: &Project,
-    finish: impl FnOnce(PreparedCodeRelease<'_>, &[PendingCodegen]) -> Result<T, DiagnosticSet>,
+    finish: impl FnOnce(PreparedCodeRelease, &[PendingCodegen]) -> Result<T, DiagnosticSet>,
 ) -> Result<CommandOutcome<T>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());

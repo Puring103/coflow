@@ -174,7 +174,7 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
                 enabled: bool;
                 nums: [int];
                 check {
-                    when enabled { all value in nums { value > 0: f"bad {value}"; } }
+                    when enabled { all value in nums { value > 0: "bad {value}"; } }
                 }
             }
         "#,

@@ -11,11 +11,8 @@ use super::{
     EditorWorkspaceTab, ViewConfig, ViewKind,
 };
 
-const SETTINGS_DIR: &str = "editor-setting";
-const VIEWS_FILE: &str = "views.json";
-const RECORD_GROUPS_FILE: &str = "record-groups.json";
-const PROJECT_STATE_DIR: &str = ".coflow";
-const WORKSPACE_FILE: &str = "editor-workspace.json";
+const SETTINGS_FILE: &str = "editor.json";
+const SETTINGS_VERSION: u8 = 1;
 const MIN_COLUMN_WIDTH: f64 = 48.0;
 const MAX_VIEW_NAME_LEN: usize = 80;
 const MAX_FIELD_LEN: usize = 160;
@@ -25,32 +22,22 @@ const RECORD_GROUP_COLORS: &[&str] = &[
     "red", "orange", "yellow", "green", "cyan", "blue", "purple", "gray",
 ];
 
-/// On-disk shape of `editor-setting/views.json`.
+/// Versioned on-disk shape of `editor-setting/editor.json`.
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct ViewsFile {
+struct SettingsFile {
+    version: u8,
     #[serde(default)]
     views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
     #[serde(default)]
     default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
-}
-
-/// On-disk shape of `editor-setting/record-groups.json`.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct RecordGroupsFile {
     #[serde(default)]
     record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
+    #[serde(default)]
+    workspace: EditorWorkspaceState,
 }
 
-fn views_path(project_root: &Path) -> PathBuf {
-    project_root.join(SETTINGS_DIR).join(VIEWS_FILE)
-}
-
-fn record_groups_path(project_root: &Path) -> PathBuf {
-    project_root.join(SETTINGS_DIR).join(RECORD_GROUPS_FILE)
-}
-
-fn workspace_path(project_root: &Path) -> PathBuf {
-    project_root.join(PROJECT_STATE_DIR).join(WORKSPACE_FILE)
+fn settings_path(project_root: &Path) -> PathBuf {
+    project_root.join("editor-setting").join(SETTINGS_FILE)
 }
 
 fn read_json<T: Default + for<'de> Deserialize<'de>>(path: &Path) -> Result<T, EditorError> {
@@ -79,36 +66,43 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), EditorError> {
         .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
 }
 
-/// Read the project settings files and merge them into one in-memory struct.
+/// Read the single versioned editor settings file.
 pub(super) fn read_project_settings(
     project_root: &Path,
 ) -> Result<EditorProjectSettings, EditorError> {
-    let views: ViewsFile = read_json(&views_path(project_root))?;
-    let groups: RecordGroupsFile = read_json(&record_groups_path(project_root))?;
-    let workspace: EditorWorkspaceState = read_json(&workspace_path(project_root))?;
+    let path = settings_path(project_root);
+    if !path.exists() {
+        return Ok(EditorProjectSettings::default());
+    }
+    let settings: SettingsFile = read_json(&path)?;
+    if settings.version != SETTINGS_VERSION {
+        return Err(EditorError::other(format!(
+            "unsupported editor settings version {}",
+            settings.version
+        )));
+    }
     Ok(EditorProjectSettings {
-        views: views.views,
-        default_table_column_widths: views.default_table_column_widths,
-        record_groups: groups.record_groups,
-        workspace,
+        views: settings.views,
+        default_table_column_widths: settings.default_table_column_widths,
+        record_groups: settings.record_groups,
+        workspace: settings.workspace,
     })
 }
 
-/// Persist settings by splitting them back into the two on-disk files.
 pub(super) fn write_project_settings(
     project_root: &Path,
     settings: &EditorProjectSettings,
 ) -> Result<(), EditorError> {
-    let views = ViewsFile {
-        views: settings.views.clone(),
-        default_table_column_widths: settings.default_table_column_widths.clone(),
-    };
-    write_json(&views_path(project_root), &views)?;
-    let groups = RecordGroupsFile {
-        record_groups: settings.record_groups.clone(),
-    };
-    write_json(&record_groups_path(project_root), &groups)?;
-    write_json(&workspace_path(project_root), &settings.workspace)
+    write_json(
+        &settings_path(project_root),
+        &SettingsFile {
+            version: SETTINGS_VERSION,
+            views: settings.views.clone(),
+            default_table_column_widths: settings.default_table_column_widths.clone(),
+            record_groups: settings.record_groups.clone(),
+            workspace: settings.workspace.clone(),
+        },
+    )
 }
 
 pub(super) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWorkspaceState {
@@ -378,9 +372,27 @@ mod tests {
         );
         assert_eq!(loaded.record_groups, settings.record_groups);
         assert_eq!(loaded.workspace, settings.workspace);
-        assert!(root.join(SETTINGS_DIR).join(VIEWS_FILE).is_file());
-        assert!(root.join(SETTINGS_DIR).join(RECORD_GROUPS_FILE).is_file());
-        assert!(root.join(PROJECT_STATE_DIR).join(WORKSPACE_FILE).is_file());
+        assert!(root.join("editor-setting").join(SETTINGS_FILE).is_file());
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn settings_reject_unknown_file_version() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("coflow-editor-settings-{nonce}"));
+        let path = root.join("editor-setting").join(SETTINGS_FILE);
+        fs::create_dir_all(path.parent().expect("settings parent")).expect("create settings dir");
+        fs::write(&path, "{\"version\":2}").expect("write unsupported settings");
+
+        let error = read_project_settings(&root).expect_err("reject unknown settings version");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported editor settings version")
+        );
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

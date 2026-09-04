@@ -45,7 +45,7 @@ use crate::editor::types::{
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
     EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, FileRecords,
     FileTypeOption, GraphData, GraphQuery, InsertRecordOutcome, PluginSchemaField,
-    PluginSchemaType, ProjectSearchHit, ProjectSearchMode, ProjectSearchResults, ProjectSnapshot,
+    PluginSchemaType, ProjectBootstrap, ProjectSearchHit, ProjectSearchMode, ProjectSearchResults,
     RecordColumn, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
     WriteFieldOutcome,
 };
@@ -142,13 +142,13 @@ impl SessionStore {
         })
     }
 
-    pub fn init_project(&self, dir: &StdPath) -> Result<ProjectSnapshot, EditorError> {
+    pub fn init_project(&self, dir: &StdPath) -> Result<ProjectBootstrap, EditorError> {
         let outcome = coflow_runtime::init_project(dir)
             .map_err(|err| EditorError::project(diagnostic_messages(&err)))?;
         self.load_project(&outcome.config_path)
     }
 
-    pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectSnapshot, EditorError> {
+    pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectBootstrap, EditorError> {
         let (session, snapshot_partial) = build_session(yaml_path)?;
         let mut inner = self
             .inner
@@ -156,7 +156,7 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session store poisoned"))?;
         inner.next_id = inner.next_id.checked_add(1).unwrap_or(1);
         let id = inner.next_id;
-        let snapshot = project_snapshot(id, &session, snapshot_partial);
+        let bootstrap = project_bootstrap(id, &session, snapshot_partial);
         inner.sessions.insert(
             id,
             Arc::new(SessionEntry {
@@ -164,7 +164,7 @@ impl SessionStore {
             }),
         );
         drop(inner);
-        Ok(snapshot)
+        Ok(bootstrap)
     }
 
     pub fn get_project_settings(&self, id: u32) -> Result<EditorProjectSettings, EditorError> {
@@ -392,7 +392,7 @@ impl SessionStore {
         Ok(yaml_path)
     }
 
-    pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {
+    pub fn reload_session(&self, id: u32) -> Result<ProjectBootstrap, EditorError> {
         loop {
             let (entry, candidate) = self.build_reload_candidate(id)?;
             if let Some(snapshot) = Self::commit_reload_candidate(id, &entry, candidate)? {
@@ -428,7 +428,7 @@ impl SessionStore {
         id: u32,
         entry: &SessionEntry,
         mut candidate: ReloadCandidate,
-    ) -> Result<Option<ProjectSnapshot>, EditorError> {
+    ) -> Result<Option<ProjectBootstrap>, EditorError> {
         let mut state = entry
             .state
             .write()
@@ -437,10 +437,10 @@ impl SessionStore {
             return Ok(None);
         };
         candidate.session.revisions = revisions;
-        let snapshot = project_snapshot(id, &candidate.session, candidate.snapshot);
+        let bootstrap = project_bootstrap(id, &candidate.session, candidate.snapshot);
         *state = candidate.session;
         drop(state);
-        Ok(Some(snapshot))
+        Ok(Some(bootstrap))
     }
 
     pub(crate) fn has_external_file_changes(
@@ -621,7 +621,7 @@ fn write_field_in_session(
         .queries()
         .effective_field_write(coordinate, field_path)
         .and_then(|preview| preview.old_value);
-    let report = session.engine.apply_mutation(MutationRequest {
+    let report = coflow::commands::apply_project_mutation(&mut session.engine, MutationRequest {
         stop_on_write_error: true,
         ops: vec![MutationOp::SetField {
             record: coordinate.clone(),
@@ -629,7 +629,8 @@ fn write_field_in_session(
             path: field_path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
         }],
-    });
+    })
+    .map_err(api_diagnostics_to_editor_error)?;
     let report = finalize_mutation(session, report, "write field failed")?;
     let outcome = report
         .applied
@@ -678,13 +679,13 @@ fn first_source_file(nodes: &[coflow_runtime::FileTreeNode]) -> Option<String> {
     None
 }
 
-fn project_snapshot(
+fn project_bootstrap(
     session_id: u32,
     session: &EditorSession,
     snapshot: SessionSnapshotParts,
-) -> ProjectSnapshot {
+) -> ProjectBootstrap {
     let file_types = snapshot_file_types(session);
-    ProjectSnapshot {
+    ProjectBootstrap {
         session_id,
         revision: session.revisions.current(),
         project_root: strip_unc_prefix(&session.project_root.display().to_string()),
@@ -854,12 +855,10 @@ fn finalize_mutation(
     if !report.write_ok {
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
-    coflow::commands::migrate_enum_lock_after_mutation(&session.engine, &report)
-        .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
     session.diagnostics =
         Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
     if report.generation_changed {
-        session.commit_internal_write(&report.affected_files);
+        session.commit_internal_write(&report.written_files);
         session.ref_target_cache.clear();
     }
     Ok(report)

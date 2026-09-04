@@ -1,4 +1,4 @@
-use coflow_language::syntax::ast::{Item, TypeRef, TypeRefKind};
+use coflow_language::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
 use coflow_language::syntax::lexer::{lex, TokenKind};
 use coflow_language::{CftCheckBuiltin, CftConstValue, ModuleId};
 use serde_json::{json, Map, Value};
@@ -42,6 +42,14 @@ pub(crate) fn completion_items(
 
     if is_trivia_position(&document.source, offset) {
         return Vec::new();
+    }
+
+    if let Some((source, relative_offset)) = default_function_source_at(document, offset) {
+        if let Some(items) =
+            super::cfd::function_source_completion_items_at(source, relative_offset)
+        {
+            return items;
+        }
     }
 
     if let Some(items) = annotation_argument_completion_items(build, line_prefix) {
@@ -459,7 +467,36 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Failed Result value.",
             ));
         }
-        TypeRefKind::Function(_, _) | TypeRefKind::Unit => {}
+        TypeRefKind::Function(parameters, result) => {
+            let mut next_tab = 1;
+            let arguments = parameters
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| {
+                    let name = parameter
+                        .name
+                        .as_ref()
+                        .map_or_else(|| format!("arg{}", index + 1), |name| name.name.clone());
+                    let tab = next_tab;
+                    next_tab += 1;
+                    format!(
+                        "${{{tab}:{name}}}: {}",
+                        type_ref_source(&parameter.value_type)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            items.push(snippet_completion_item(
+                "fn",
+                &format!(
+                    "fn({arguments}) -> {} {{\n\t${{{next_tab}}}\n}}",
+                    type_ref_source(result)
+                ),
+                "CFT function default",
+                "Define the default implementation for this function field.",
+            ));
+        }
+        TypeRefKind::Unit => {}
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
@@ -616,6 +653,63 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     }
     append_type_alias_completion_items(build, &mut items);
     items
+}
+
+fn default_function_source_at(document: &LspDocument, offset: usize) -> Option<(&str, usize)> {
+    document.ast().and_then(|ast| {
+        ast.items.iter().find_map(|item| {
+            let default = match item {
+                Item::Const(constant) => Some(&constant.value),
+                Item::Type(definition) => definition.fields.iter().find_map(|field| {
+                    field.default.as_ref().filter(|default| {
+                        default.span.start <= offset && offset <= default.span.end
+                    })
+                }),
+                _ => None,
+            }?;
+            if default.span.start <= offset && offset <= default.span.end {
+                if let DefaultExprKind::Function { source, .. } = &default.kind {
+                    return Some((source.as_str(), offset.saturating_sub(default.span.start)));
+                }
+            }
+            None
+        })
+    })
+}
+
+fn type_ref_source(ty: &TypeRef) -> String {
+    match &ty.kind {
+        TypeRefKind::Int => "int".to_string(),
+        TypeRefKind::Float => "float".to_string(),
+        TypeRefKind::Bool => "bool".to_string(),
+        TypeRefKind::String => "string".to_string(),
+        TypeRefKind::Named(name) => name.clone(),
+        TypeRefKind::Ref(inner) => format!("&{}", type_ref_source(inner)),
+        TypeRefKind::Array(inner) => format!("[{}]", type_ref_source(inner)),
+        TypeRefKind::Dict(key, value) => {
+            format!("{{{}: {}}}", type_ref_source(key), type_ref_source(value))
+        }
+        TypeRefKind::Option(inner) => format!("Option<{}>", type_ref_source(inner)),
+        TypeRefKind::Result(ok, err) => {
+            format!("Result<{}, {}>", type_ref_source(ok), type_ref_source(err))
+        }
+        TypeRefKind::Function(parameters, result) => {
+            let parameters = parameters
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| {
+                    let name = parameter
+                        .name
+                        .as_ref()
+                        .map_or_else(|| format!("arg{}", index + 1), |name| name.name.clone());
+                    format!("{name}: {}", type_ref_source(&parameter.value_type))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("fn({parameters}) -> {}", type_ref_source(result))
+        }
+        TypeRefKind::Unit => "()".to_string(),
+    }
 }
 
 fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {

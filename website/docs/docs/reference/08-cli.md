@@ -9,7 +9,6 @@ coflow cft check <project>
 coflow check <project>
 coflow codegen <project>
 coflow build <project>
-coflow clean <project>
 ```
 
 `check` 和 `cft check` 可使用 `--json` 输出诊断。`codegen` 和 `build` 只发布 `coflow.yaml` 中声明的目标语言源文件。

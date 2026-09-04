@@ -266,8 +266,8 @@ generator package 和根应用注册项。
 5. 任一 backup/publish 失败时删除已发布的新目录，按逆序恢复 backup。
 6. 成功后清理 backup，返回所有 `CodegenReport`。
 
-发布还要写入 `.coflow/artifacts/active.json` 并保留 generation history。`build --status` 只在
-内存生成并比较活动输出，不得发布；`clean` 只删除非活动 generation 和遗留 staging。输出安全
+发布不写入 artifact manifest，也不保留 generation history。`build` 只在内存生成并比较现有输出，
+无差异时不发布。输出安全
 检查必须解析符号链接，并拒绝项目根、配置、schema、data、维度目录和输出之间的重叠。
 
 ## 7. C# direct-load runtime 契约

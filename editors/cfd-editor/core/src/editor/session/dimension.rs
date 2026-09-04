@@ -125,10 +125,11 @@ impl SessionStore {
                 value: MutationValue::Cfd(value.clone()),
             },
         };
-        let report = session.engine.apply_mutation(MutationRequest {
+        let report = coflow::commands::apply_project_mutation(&mut session.engine, MutationRequest {
             stop_on_write_error: true,
             ops: vec![op],
-        });
+        })
+        .map_err(super::api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "write dimension value failed")?;
         let new_value = session
             .queries()

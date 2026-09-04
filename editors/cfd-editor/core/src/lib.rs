@@ -6,9 +6,9 @@ pub mod editor;
 mod host;
 mod watcher;
 
-pub use editor::{EditorError, ProjectSnapshot, SessionStore};
+pub use editor::{EditorError, ProjectBootstrap, SessionStore};
 pub use host::EditorHost;
 pub use watcher::{
-    EditorEvent, EditorEventSink, NoopEditorEventSink, ProjectChangedPayload,
+    EditorEvent, EditorEventSink, NoopEditorEventSink, ProjectReloadedPayload,
     ProjectWatchErrorPayload,
 };

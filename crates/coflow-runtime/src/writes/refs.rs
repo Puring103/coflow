@@ -11,14 +11,13 @@ use crate::data_model::{
 };
 use coflow_language::{CftSchema, RecordKey};
 
-use super::writer::{lookup_source_writer, source_for_id};
+use super::writer::lookup_source_writer;
 use crate::indexes::SourceId;
 use crate::ProjectSession;
 
 pub(super) enum ReferenceUpdateAction {
     Source {
         writer: Arc<CfdWriter>,
-        source: CfdSource,
         requests: Vec<OwnedWriteCellRequest>,
         display_path: String,
     },
@@ -30,13 +29,6 @@ pub(super) enum ReferenceUpdateAction {
 }
 
 impl ReferenceUpdateAction {
-    pub(super) const fn source(&self) -> &CfdSource {
-        match self {
-            Self::Source { source, .. } => source,
-            Self::Dimension { request, .. } => &request.source,
-        }
-    }
-
     pub(super) fn display_path(&self) -> &str {
         match self {
             Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => {
@@ -49,7 +41,6 @@ impl ReferenceUpdateAction {
         match self {
             Self::Source {
                 writer,
-                source: _,
                 requests,
                 ..
             } => {
@@ -249,7 +240,6 @@ pub(super) fn reference_update_actions(
             ) {
                 continue;
             }
-            let source = source_for_id(session, host_ref.source_id)?;
             let request = OwnedWriteCellRequest {
                 origin: host_ref.origin.clone(),
                 record_key: host_ref.coordinate.key.to_string(),
@@ -267,7 +257,6 @@ pub(super) fn reference_update_actions(
                 let action_index = actions.len();
                 actions.push(ReferenceUpdateAction::Source {
                     writer,
-                    source,
                     display_path: host_ref.display_path.clone(),
                     requests: vec![request],
                 });

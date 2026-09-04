@@ -15,9 +15,7 @@
 
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
-use coflow::commands::{
-    build_project, check_project, clean_project, generate_project_code, CommandOutcome,
-};
+use coflow::commands::{build_project, check_project, generate_project_code, CommandOutcome};
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{normalize_path, path_to_slash, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
@@ -37,7 +35,7 @@ mod write_file;
 use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, CleanArgs, Cli, CodegenArgs, Command, FormatArgs,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, FormatArgs,
     InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs, SkillArgs,
     SkillCommand, SkillScopeArgs,
 };
@@ -61,7 +59,6 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
         Command::Build(args) => project_build(&args),
-        Command::Clean(args) => project_clean(&args),
         Command::Codegen(args) => generate_code(&args),
         Command::Schema(command) => run_schema(&command),
         Command::Skill(command) => run_skill(&command),
@@ -283,18 +280,6 @@ fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
             Ok(false)
         }
     }
-}
-
-fn project_clean(args: &CleanArgs) -> Result<bool, DiagnosticSet> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let report = clean_project(&project)?;
-    println!(
-        "Cleaned {} historical generations and {} staging entries from {}",
-        report.generations_removed,
-        report.staging_removed,
-        project_path(&project, &project.root_dir().join(".coflow"))
-    );
-    Ok(true)
 }
 
 fn generate_code(args: &CodegenArgs) -> Result<bool, DiagnosticSet> {

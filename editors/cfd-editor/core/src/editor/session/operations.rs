@@ -1,27 +1,27 @@
 //! Record queries and mutation commands for loaded editor sessions.
 
 use super::{
-    api_diagnostics_to_editor_error, apply_collection_edit, create_record_draft_to_wire,
-    file_records_for_session, finalize_mutation, graph, record_container_index, record_type_index,
-    record_view_to_row, reorder_file_path, snapshot_record_before_delete, write_field_in_session,
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
     CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
-    EditorSession,
-    FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields, MutationOp,
-    MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType, ProjectSearchHit,
-    ProjectSearchMode, ProjectSearchResults, RecordCoordinate, RecordRow, RefTarget,
-    RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext, WriteFieldOutcome,
+    EditorSession, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields,
+    MutationOp, MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType,
+    ProjectSearchHit, ProjectSearchMode, ProjectSearchResults,
+    RecordCoordinate, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome,
+    SessionStore, WireContext, WriteFieldOutcome, api_diagnostics_to_editor_error,
+    apply_collection_edit, create_record_draft_to_wire, file_records_for_session,
+    finalize_mutation, graph, record_container_index, record_type_index, record_view_to_row,
+    reorder_file_path, snapshot_record_before_delete, write_field_in_session,
 };
-use crate::editor::types::{
+use crate::editor::{ProjectBootstrap, types::{
     FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
     LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit,
-};
+}};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_runtime::{
     DataSourceTextOverride, FlatDiagnostic, Project, ProjectRuntime, RecordSearchMode,
     RecordSearchOptions, Runtime, SchemaTextOverride,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Write;
 
 fn synchronize_language_document(
@@ -63,12 +63,8 @@ fn diagnostics_for_uri(messages: &[Value], uri: &str) -> Option<Vec<LanguageDiag
         .iter()
         .rev()
         .find(|message| {
-            message.get("method").and_then(Value::as_str)
-                == Some("textDocument/publishDiagnostics")
-                && message
-                    .pointer("/params/uri")
-                    .and_then(Value::as_str)
-                    == Some(uri)
+            message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+                && message.pointer("/params/uri").and_then(Value::as_str) == Some(uri)
         })
         .and_then(|message| message.pointer("/params/diagnostics"))
         .and_then(Value::as_array)
@@ -90,7 +86,10 @@ fn language_diagnostic(value: &Value) -> Option<LanguageDiagnostic> {
             .unwrap_or(1),
         message: value.get("message")?.as_str()?.to_string(),
         code,
-        source: value.get("source").and_then(Value::as_str).map(str::to_string),
+        source: value
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
@@ -129,7 +128,10 @@ fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
             });
             Some(LanguageCompletion {
                 label: item.get("label")?.as_str()?.to_string(),
-                detail: item.get("detail").and_then(Value::as_str).map(str::to_string),
+                detail: item
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 kind: item
                     .get("kind")
                     .and_then(Value::as_u64)
@@ -143,7 +145,10 @@ fn completion_items(value: &Value) -> Vec<LanguageCompletion> {
                     .and_then(Value::as_u64)
                     .and_then(|format| u32::try_from(format).ok()),
                 documentation,
-                sort_text: item.get("sortText").and_then(Value::as_str).map(str::to_string),
+                sort_text: item
+                    .get("sortText")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 filter_text: item
                     .get("filterText")
                     .and_then(Value::as_str)
@@ -232,13 +237,8 @@ impl SessionStore {
             .state
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let mut notifications = synchronize_language_document(
-            &mut session,
-            &uri,
-            file_path,
-            source,
-            version,
-        )?;
+        let mut notifications =
+            synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (tokens, emitted) = session
             .language_server
             .request(
@@ -248,7 +248,9 @@ impl SessionStore {
             .map_err(EditorError::other)?;
         notifications.extend(emitted);
         if let Some(diagnostics) = diagnostics_for_uri(&notifications, &uri) {
-            session.language_diagnostics.insert(uri.clone(), diagnostics);
+            session
+                .language_diagnostics
+                .insert(uri.clone(), diagnostics);
         }
         Ok(LanguageDocumentState {
             diagnostics: session
@@ -345,7 +347,10 @@ impl SessionStore {
             session.language_diagnostics.remove(&uri);
             session
                 .language_server
-                .notify("textDocument/didClose", json!({ "textDocument": { "uri": uri } }))
+                .notify(
+                    "textDocument/didClose",
+                    json!({ "textDocument": { "uri": uri } }),
+                )
                 .map_err(EditorError::other)?;
         }
         Ok(())
@@ -364,7 +369,10 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session poisoned"))?;
         let (result, _) = session
             .language_server
-            .request("coflow/functionDocument", json!({ "source": source, "body": body }))
+            .request(
+                "coflow/functionDocument",
+                json!({ "source": source, "body": body }),
+            )
             .map_err(EditorError::other)?;
         let diagnostics = result
             .get("diagnostics")
@@ -375,15 +383,33 @@ impl SessionStore {
             .collect();
         let completions = completion_items(result.get("completions").unwrap_or(&Value::Null));
         Ok(FunctionDocumentState {
-            source: result.get("source").and_then(Value::as_str).unwrap_or(source).to_string(),
-            signature: result.get("signature").and_then(Value::as_str).unwrap_or("fn").to_string(),
-            body: result.get("body").and_then(Value::as_str).unwrap_or(source).to_string(),
+            source: result
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or(source)
+                .to_string(),
+            signature: result
+                .get("signature")
+                .and_then(Value::as_str)
+                .unwrap_or("fn")
+                .to_string(),
+            body: result
+                .get("body")
+                .and_then(Value::as_str)
+                .unwrap_or(source)
+                .to_string(),
             body_range: result
                 .get("bodyRange")
                 .and_then(language_range)
                 .unwrap_or(LanguageRange {
-                    start: LanguagePosition { line: 0, character: 0 },
-                    end: LanguagePosition { line: 0, character: source.chars().count() as u32 },
+                    start: LanguagePosition {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: LanguagePosition {
+                        line: 0,
+                        character: source.chars().count() as u32,
+                    },
                 }),
             diagnostics,
             semantic_token_data: result
@@ -424,6 +450,7 @@ impl SessionStore {
         let source_override = DataSourceTextOverride {
             normalized_path: path,
             source: source.to_string(),
+            deleted: false,
         };
         let runtime = Runtime::new();
         let diagnostics = match runtime
@@ -440,8 +467,47 @@ impl SessionStore {
         id: u32,
         file_path: &str,
         source: &str,
-    ) -> Result<super::ProjectSnapshot, EditorError> {
-        let diagnostics = self.validate_source_text(id, file_path, source)?;
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let path = self.source_file_path(id, file_path)?;
+        let normalized_path = coflow_runtime::normalize_path(&path);
+        let diagnostics = if file_path.ends_with(".cft") {
+            let yaml_path = self.project_action_context(id)?;
+            let project = Project::open_schema_only(Some(&yaml_path))
+                .map_err(api_diagnostics_to_editor_error)?;
+            let mut schema_runtime = ProjectRuntime::new(project.clone());
+            let schema_override = SchemaTextOverride {
+                requested_module: None,
+                normalized_path,
+                source: source.to_string(),
+            };
+            schema_runtime
+                .refresh_with_overrides(&[schema_override])
+                .map_err(api_diagnostics_to_editor_error)?;
+            let schema_session = schema_runtime
+                .into_latest_attempt()
+                .ok_or_else(|| EditorError::project("candidate schema disappeared"))?;
+            Runtime::new()
+                .open_write_session_from_schema(schema_session)
+                .map_err(api_diagnostics_to_editor_error)?
+                .queries()
+                .diagnostics()
+                .flat_diagnostics()
+        } else {
+            let source_override = DataSourceTextOverride {
+                normalized_path,
+                source: source.to_string(),
+                deleted: false,
+            };
+            let yaml_path = self.project_action_context(id)?;
+            let project = Project::open_schema_only(Some(&yaml_path))
+                .map_err(api_diagnostics_to_editor_error)?;
+            Runtime::new()
+                .open_write_session_with_source_overrides(project, &[source_override])
+                .map_err(api_diagnostics_to_editor_error)?
+                .queries()
+                .diagnostics()
+                .flat_diagnostics()
+        };
         let blocking = diagnostics
             .iter()
             .filter(|diagnostic| {
@@ -455,7 +521,6 @@ impl SessionStore {
             return Err(EditorError::write("source contains errors").with_diagnostics(blocking));
         }
 
-        let path = self.source_file_path(id, file_path)?;
         AtomicFile::new(&path, AllowOverwrite)
             .write(|file| file.write_all(source.as_bytes()))
             .map_err(|error| {
@@ -757,18 +822,22 @@ impl SessionStore {
         if targets.is_empty() {
             return Err(EditorError::write("batch field write contains no changes"));
         }
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: targets
-                .iter()
-                .map(|(write, _)| MutationOp::SetField {
-                    record: write.coordinate.clone(),
-                    file: None,
-                    path: write.field_path.clone(),
-                    value: MutationValue::Cfd(write.new_value.clone()),
-                })
-                .collect(),
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: targets
+                    .iter()
+                    .map(|(write, _)| MutationOp::SetField {
+                        record: write.coordinate.clone(),
+                        file: None,
+                        path: write.field_path.clone(),
+                        value: MutationValue::Cfd(write.new_value.clone()),
+                    })
+                    .collect(),
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "batch field write failed")?;
         let edits = targets
             .into_iter()
@@ -876,16 +945,20 @@ impl SessionStore {
         let mut session = session_lock
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::InsertRecord {
-                file: file_path.to_string(),
-                actual_type: actual_type.to_string(),
-                key: record_key.to_string(),
-                fields: MutationFields::Cfd(fields_map),
-                materialization,
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::InsertRecord {
+                    file: file_path.to_string(),
+                    actual_type: actual_type.to_string(),
+                    key: record_key.to_string(),
+                    fields: MutationFields::Cfd(fields_map),
+                    materialization,
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "insert record failed")?;
         let file_records = file_records_for_session(&session, file_path);
         Ok(InsertRecordOutcome {
@@ -907,14 +980,18 @@ impl SessionStore {
         let mut session = session_lock
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::RenameRecord {
-                record: coordinate.clone(),
-                file: None,
-                new_key: new_key.to_string(),
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::RenameRecord {
+                    record: coordinate.clone(),
+                    file: None,
+                    new_key: new_key.to_string(),
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "rename record failed")?;
         let outcome = report
             .applied
@@ -971,13 +1048,17 @@ impl SessionStore {
                     coordinate.actual_type, coordinate.key
                 ))
             })?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::DeleteRecord {
-                record: coordinate.clone(),
-                file: None,
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::DeleteRecord {
+                    record: coordinate.clone(),
+                    file: None,
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "delete record failed")?;
         let file_records = file_records_for_session(&session, &file_path);
         Ok(DeleteRecordOutcome {
@@ -1001,14 +1082,18 @@ impl SessionStore {
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
         let file_path = reorder_file_path(&session, first)?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::SwapRecords {
-                first: first.clone(),
-                second: second.clone(),
-                file: Some(file_path.clone()),
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::SwapRecords {
+                    first: first.clone(),
+                    second: second.clone(),
+                    file: Some(file_path.clone()),
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "swap records failed")?;
         Ok(ReorderRecordsOutcome {
             revision: session.revisions.current(),
@@ -1038,14 +1123,18 @@ impl SessionStore {
                 coordinate.actual_type, coordinate.key
             ))
         })?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::MoveRecord {
-                record: coordinate.clone(),
-                target_index,
-                file: Some(file_path.clone()),
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::MoveRecord {
+                    record: coordinate.clone(),
+                    target_index,
+                    file: Some(file_path.clone()),
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "move record failed")?;
         Ok(ReorderRecordsOutcome {
             revision: session.revisions.current(),
@@ -1076,15 +1165,19 @@ impl SessionStore {
                 coordinate.actual_type, coordinate.key
             ))
         })?;
-        let report = session.engine.apply_mutation(MutationRequest {
-            stop_on_write_error: true,
-            ops: vec![MutationOp::TransferRecord {
-                record: coordinate.clone(),
-                destination_file: destination_file.to_string(),
-                target_index,
-                source_file: Some(source_file),
-            }],
-        });
+        let report = coflow::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![MutationOp::TransferRecord {
+                    record: coordinate.clone(),
+                    destination_file: destination_file.to_string(),
+                    target_index,
+                    source_file: Some(source_file),
+                }],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "transfer record failed")?;
         Ok(ReorderRecordsOutcome {
             revision: session.revisions.current(),

@@ -526,6 +526,7 @@ dependencies = [
  "coflow-codegen-csharp",
  "coflow-language",
  "coflow-runtime",
+ "coflow-staging",
  "dirs",
  "include_dir",
  "self_update",
@@ -561,8 +562,8 @@ dependencies = [
 name = "coflow-runtime"
 version = "0.9.1"
 dependencies = [
- "atomicwrites",
  "coflow-language",
+ "coflow-staging",
  "regex",
  "serde",
  "serde_json",
@@ -571,6 +572,13 @@ dependencies = [
  "ts-rs",
  "unicode-ident",
  "walkdir",
+]
+
+[[package]]
+name = "coflow-staging"
+version = "0.9.1"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

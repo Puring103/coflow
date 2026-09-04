@@ -22,7 +22,7 @@ fn export_bindings() {
     export_with_retry::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
     // Editor composition views
     export_with_retry::<t::EditorError>("EditorError");
-    export_with_retry::<t::ProjectSnapshot>("ProjectSnapshot");
+    export_with_retry::<t::ProjectBootstrap>("ProjectBootstrap");
     export_with_retry::<t::PluginSchemaType>("PluginSchemaType");
     export_with_retry::<t::PluginSchemaField>("PluginSchemaField");
     export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");

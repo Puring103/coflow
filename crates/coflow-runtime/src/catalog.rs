@@ -31,6 +31,13 @@ impl Default for CfdSourceCatalog {
 }
 
 impl CfdSourceCatalog {
+    pub(crate) fn staged_writes(&self) -> Self {
+        Self {
+            loader: Arc::clone(&self.loader),
+            writer: Arc::new(CfdWriter::new()),
+        }
+    }
+
     pub(crate) fn loader(&self) -> Arc<CfdLoader> {
         Arc::clone(&self.loader)
     }

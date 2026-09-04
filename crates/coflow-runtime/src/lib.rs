@@ -81,6 +81,7 @@ pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
+    ProjectFileUpdate,
 };
 pub use project_schema::SchemaTextOverride;
 pub use query::ProjectQueries;

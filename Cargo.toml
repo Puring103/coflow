@@ -30,6 +30,7 @@ required-features = ["cli"]
 members = [
     "crates/coflow-language",
     "crates/coflow-runtime",
+    "crates/coflow-staging",
     "crates/coflow-codegen-csharp",
     "editors/cfd-editor/core",
     "editors/cfd-editor/src-tauri",
@@ -64,6 +65,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-language = { path = "crates/coflow-language" }
 coflow-runtime = { path = "crates/coflow-runtime" }
+coflow-staging = { path = "crates/coflow-staging" }
 dirs = { version = "6", optional = true }
 include_dir = { version = "0.7", optional = true }
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"], optional = true }

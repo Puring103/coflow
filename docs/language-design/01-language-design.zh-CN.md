@@ -17,7 +17,7 @@
 基础语言必须满足：
 
 - CFT 在构建期定义类型、字段、默认值、函数签名和注解。
-- CFD 在运行期提供记录值和普通函数实现。
+- CFD 在运行期提供记录值，并可覆盖 CFT 中的普通函数默认实现。
 - 数据值与函数值使用同一套静态类型，不在 VM 中建立第二套语义类型。
 - `Load` 可以只读取数据；`LoadAndCompile` 才检查并编译函数体。
 - 类型错误在 Module 发布前诊断，执行期只处理动态 fault。
@@ -30,7 +30,7 @@ CFT
 ├── type declarations
 ├── field declarations
 ├── function signatures
-├── constants and defaults
+├── constants and defaults, including direct function defaults
 └── annotations
 
 CFD
@@ -117,8 +117,10 @@ ValueShape
 
 ## 5. 函数声明与实现
 
-CFT 只声明函数签名，普通函数字段由 CFD 提供 body。`@Host @singleton` 的函数由应用配置，CFD 不能
-为其提供实现。
+CFT 声明函数签名，普通函数字段可以同时声明默认 body；CFD 提供同字段函数值时覆盖该默认实现。
+函数默认值只允许直接用于函数字段，不嵌套在其他默认值中。`@Host @singleton` 的函数由应用配置，
+CFT 不能声明默认 body，CFD 也不能为其提供实现。Rust 数据模型保存函数源码但不提供执行引擎；C#
+Runtime 的 `Load` 只构建并保留函数值，`LoadAndCompile` 才对所有有效函数体进行类型检查和编译。
 
 函数值具有统一语义：
 

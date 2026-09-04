@@ -87,8 +87,9 @@ fn reorders_records_without_changing_document_slots() {
                     actual_type: "Item",
                 },
             },
-        })
+    })
         .expect("swap records");
+    writer.publish().expect("publish staged swap");
     let swapped = fs::read_to_string(&file).expect("read swapped");
     assert!(swapped.find("c: Item").unwrap() < swapped.find("b: Item").unwrap());
     assert!(swapped.find("b: Item").unwrap() < swapped.find("a: Item").unwrap());
@@ -106,6 +107,7 @@ fn reorders_records_without_changing_document_slots() {
             },
         })
         .expect("move record");
+    writer.publish().expect("publish staged move");
     let moved = fs::read_to_string(&file).expect("read moved");
     assert!(moved.find("b: Item").unwrap() < moved.find("a: Item").unwrap());
     assert!(moved.find("a: Item").unwrap() < moved.find("c: Item").unwrap());
@@ -151,6 +153,7 @@ top: Item {
             },
         })
         .expect("swap across group boundary");
+    writer.publish().expect("publish staged swap");
 
     let after = fs::read_to_string(&file).expect("read reordered source");
     let model = load_cfd_model(&schema, &after).expect("reload reordered source");
@@ -203,6 +206,7 @@ shield: Item {
         schema: schema,
     };
     writer.write_field(&request).expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(after.contains("value: 42"), "expected 42 in: {after}");
@@ -229,7 +233,8 @@ fn inserts_missing_field_with_two_space_indentation() {
     let value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
 
-    CfdWriter::new()
+    let writer = CfdWriter::new();
+    writer
         .write_field(&WriteCellRequest {
             origin: &origin,
             record_key: "sword",
@@ -239,6 +244,7 @@ fn inserts_missing_field_with_two_space_indentation() {
             schema: &schema,
         })
         .expect("insert missing field");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert_eq!(after, "sword: Item {\n  value: 42,\n}\n");
@@ -293,6 +299,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         schema: schema,
     };
     writer.write_field(&request).expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -341,6 +348,7 @@ shared: Skill {
             schema: schema,
         })
         .expect("write skill");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -407,6 +415,7 @@ picker: Holder {
             schema: schema,
         })
         .expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -469,6 +478,7 @@ picker: Holder {
             schema: schema,
         })
         .expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -521,6 +531,7 @@ fn inserts_record_at_end_of_cfd_file() {
             before: None,
         })
         .expect("insert succeeds");
+    writer.publish().expect("publish staged insert");
 
     assert!(outcome.diagnostics.is_empty());
     let after = fs::read_to_string(&file).expect("re-read");
@@ -568,6 +579,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
             before: None,
         })
         .expect("insert unrelated same-key skill");
+    writer.publish().expect("publish staged insert");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -630,6 +642,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
             before: None,
         })
         .expect("insert succeeds");
+    writer.publish().expect("publish staged insert");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -676,6 +689,7 @@ shield: Item {
             actual_type: "Item",
         })
         .expect("delete succeeds");
+    writer.publish().expect("publish staged delete");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(!after.contains("sword: Item"));
@@ -711,6 +725,7 @@ shared: Skill {
             actual_type: "Skill",
         })
         .expect("delete skill");
+    writer.publish().expect("publish staged delete");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -764,6 +779,7 @@ fn writes_enum_dict_key_path_using_qualified_display_text() {
             schema: schema,
         })
         .expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -825,6 +841,7 @@ fn writes_group_record_without_required_commas() {
             schema: schema,
         })
         .expect("write succeeds");
+    writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
@@ -941,6 +958,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
             schema: &schema,
         })
         .expect("rewrite additional effects");
+    writer.publish().expect("publish staged rewrite");
 
     let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
     assert_eq!(after, format_cfd(&after), "writer output must already be formatted");

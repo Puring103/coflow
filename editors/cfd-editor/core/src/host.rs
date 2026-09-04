@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
+use crate::editor::{EditorError, ProjectBootstrap, SessionStore};
 use crate::watcher::{EditorEventSink, ProjectWatchRegistry};
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ impl EditorHost {
         })
     }
 
-    pub fn load_project(&self, yaml_path: &Path) -> Result<ProjectSnapshot, EditorError> {
+    pub fn load_project(&self, yaml_path: &Path) -> Result<ProjectBootstrap, EditorError> {
         self.load_project_with_watch(yaml_path, |snapshot| {
             self.watchers.watch_session(
                 Arc::clone(&self.sessions),
@@ -36,7 +36,7 @@ impl EditorHost {
         })
     }
 
-    pub fn init_project(&self, dir: &Path) -> Result<ProjectSnapshot, EditorError> {
+    pub fn init_project(&self, dir: &Path) -> Result<ProjectBootstrap, EditorError> {
         self.init_project_with_watch(dir, |snapshot| {
             self.watchers.watch_session(
                 Arc::clone(&self.sessions),
@@ -52,7 +52,7 @@ impl EditorHost {
         Ok(())
     }
 
-    pub fn reload_session(&self, session_id: u32) -> Result<ProjectSnapshot, EditorError> {
+    pub fn reload_session(&self, session_id: u32) -> Result<ProjectBootstrap, EditorError> {
         self.sessions.reload_session(session_id)
     }
 
@@ -64,9 +64,9 @@ impl EditorHost {
         &self,
         yaml_path: &Path,
         start_watch: F,
-    ) -> Result<ProjectSnapshot, EditorError>
+    ) -> Result<ProjectBootstrap, EditorError>
     where
-        F: FnOnce(&ProjectSnapshot) -> Result<(), EditorError>,
+        F: FnOnce(&ProjectBootstrap) -> Result<(), EditorError>,
     {
         let snapshot = self.sessions.load_project(yaml_path)?;
         self.finish_open(snapshot, start_watch)
@@ -76,9 +76,9 @@ impl EditorHost {
         &self,
         dir: &Path,
         start_watch: F,
-    ) -> Result<ProjectSnapshot, EditorError>
+    ) -> Result<ProjectBootstrap, EditorError>
     where
-        F: FnOnce(&ProjectSnapshot) -> Result<(), EditorError>,
+        F: FnOnce(&ProjectBootstrap) -> Result<(), EditorError>,
     {
         let snapshot = self.sessions.init_project(dir)?;
         self.finish_open(snapshot, start_watch)
@@ -86,17 +86,17 @@ impl EditorHost {
 
     fn finish_open<F>(
         &self,
-        snapshot: ProjectSnapshot,
+        bootstrap: ProjectBootstrap,
         start_watch: F,
-    ) -> Result<ProjectSnapshot, EditorError>
+    ) -> Result<ProjectBootstrap, EditorError>
     where
-        F: FnOnce(&ProjectSnapshot) -> Result<(), EditorError>,
+        F: FnOnce(&ProjectBootstrap) -> Result<(), EditorError>,
     {
-        if let Err(error) = start_watch(&snapshot) {
-            self.sessions.close_session(snapshot.session_id)?;
+        if let Err(error) = start_watch(&bootstrap) {
+            self.sessions.close_session(bootstrap.session_id)?;
             return Err(error);
         }
-        Ok(snapshot)
+        Ok(bootstrap)
     }
 }
 

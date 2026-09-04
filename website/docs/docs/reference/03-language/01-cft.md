@@ -133,19 +133,32 @@ nullable 使用 `Option<T>`，没有 `T?` 类型简写。primitive、集合和 `
 type Stats {
   hp: int = 100;
   title: string = "Unknown";
+  label: string = "HP: {hp}";
   enabled: bool = true;
   rarity: Rarity = Common;
+  permissions: Permission = Permission::Read | Permission::Write;
   tags: [string] = [];
   attrs: {string: int} = { "attack": 10 };
   next: Option<&Item> = None;
   fallback: Result<int, string> = Ok(0);
   owner: &Item = &Item::default_item;
+  effect: Effect = DamageEffect { label: "default", amount: 10 };
+  normalize: fn(value: int) -> int = fn(input: int) -> int {
+    if input > 0 { input } else { 0 }
+  };
 }
 ```
 
-默认值支持 scalar、enum/const 路径、数组、字典、内联对象、`None`、`Some(...)`、`Ok(...)`、
-`Err(...)` 和记录引用。CFT 中的记录引用默认值必须写为 `&Type::key`，以便在没有字段上下文时确定目标
-记录类型。复合默认值必须完全符合声明类型。
+默认值支持 scalar、格式化字符串、enum/const 路径、flag 位表达式、数组、字典、内联对象、
+`None`、`Some(...)`、`Ok(...)`、`Err(...)`、记录引用和函数字面量。多态 object 字段可用
+`ConcreteType { ... }` 指定具体子 type。CFT 中的记录引用默认值必须写为 `&Type::key`，以便在没有字段
+上下文时确定目标记录类型。普通字符串包含插值时会自动识别为格式化字符串，`{{` / `}}` 分别表示
+字面量 `{` / `}`，不存在 `f"..."` 语法。
+
+函数字段的默认实现必须与字段签名一致，参数名不参与签名相等性。CFD 显式提供同字段函数时覆盖 CFT
+默认实现；`@Host` type 的函数字段不能声明默认实现。函数默认值仅支持直接用于函数字段，不能嵌套在
+集合、Option、Result 或 object 默认值中。Rust 数据模型保留函数源码；C# Runtime 的 `Load` 保留函数，
+`LoadAndCompile` 才类型检查并编译函数体。
 
 ## 注解
 

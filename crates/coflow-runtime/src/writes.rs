@@ -1,14 +1,13 @@
-//! Source-write staging behind the runtime mutation transaction.
+//! Source-write staging behind the mutation publication flow.
 //!
 //! Hosts write through [`crate::WriteProjectSession`]. This module resolves
-//! stable record coordinates, performs CFD writer I/O, and leaves transaction
-//! compensation plus the single post-write rebuild to `mutation::apply`.
+//! stable record coordinates, stages CFD writer I/O, and leaves candidate
+//! validation plus publication to `mutation::apply`.
 
 mod plan;
 mod refs;
 mod stage;
 mod target;
-mod transaction;
 mod writer;
 
 use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
@@ -21,7 +20,6 @@ use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure};
-pub(crate) use transaction::MutationTransaction;
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationImpact {
@@ -94,6 +92,14 @@ impl MutationImpact {
         use crate::mutation::PreparedMutationOp;
         match operation {
             PreparedMutationOp::SetField {
+                write_record, path, ..
+            } => self.add_path(
+                write_record.clone(),
+                &CfdPath {
+                    segments: path.clone(),
+                },
+            ),
+            PreparedMutationOp::UnsetField {
                 write_record, path, ..
             } => self.add_path(
                 write_record.clone(),
@@ -217,8 +223,14 @@ pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
+    source_overrides: &[crate::DataSourceTextOverride],
 ) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(session, catalog, impact)
+    crate::session_build::rebuild_project_session_from_generation(
+        session,
+        catalog,
+        impact,
+        source_overrides,
+    )
 }
 
 #[cfg(test)]

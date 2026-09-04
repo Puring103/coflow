@@ -20,7 +20,6 @@ pub(crate) enum Command {
     Lsp(LspArgs),
     Check(ProjectCheckArgs),
     Build(BuildArgs),
-    Clean(CleanArgs),
     Codegen(CodegenArgs),
     Schema(SchemaArgs),
     Skill(SkillArgs),
@@ -109,12 +108,6 @@ pub(crate) struct ProjectCheckArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct BuildArgs {
-    #[arg(value_name = "CONFIG_OR_DIR")]
-    pub(crate) config_or_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct CleanArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     pub(crate) config_or_dir: Option<PathBuf>,
 }

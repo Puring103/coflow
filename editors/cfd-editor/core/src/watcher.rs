@@ -6,15 +6,16 @@ use std::time::Duration;
 
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
+use coflow_runtime::FlatDiagnostic;
 
-use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
+use crate::editor::{EditorError, ProjectBootstrap, SessionStore};
 
 const DEBOUNCE: Duration = Duration::from_millis(350);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum EditorEvent {
-    ProjectChanged(ProjectChangedPayload),
+    ProjectReloaded(ProjectReloadedPayload),
     ProjectWatchError(ProjectWatchErrorPayload),
 }
 
@@ -35,10 +36,11 @@ pub(crate) struct ProjectWatchRegistry {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct ProjectChangedPayload {
+pub struct ProjectReloadedPayload {
     pub session_id: u32,
     pub changed_paths: Vec<String>,
-    pub snapshot: ProjectSnapshot,
+    pub revision: u32,
+    pub diagnostics: Vec<FlatDiagnostic>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -52,10 +54,10 @@ impl ProjectWatchRegistry {
         &self,
         sessions: Arc<SessionStore>,
         events: Arc<dyn EditorEventSink>,
-        snapshot: &ProjectSnapshot,
+        bootstrap: &ProjectBootstrap,
     ) -> Result<(), EditorError> {
-        let session_id = snapshot.session_id;
-        let project_root = PathBuf::from(&snapshot.project_root);
+        let session_id = bootstrap.session_id;
+        let project_root = PathBuf::from(&bootstrap.project_root);
         let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
         let mut watcher = RecommendedWatcher::new(
             move |result| {
@@ -147,6 +149,12 @@ fn is_relevant_event(event: &Event) -> bool {
 fn is_ignored_path(path: &Path) -> bool {
     path.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
+        if name.starts_with(".atomicwrite")
+            || (name.starts_with('.')
+                && (name.contains(".coflow-staging-") || name.contains(".coflow-backup-")))
+        {
+            return true;
+        }
         matches!(
             name.as_ref(),
             ".git"
@@ -162,6 +170,7 @@ fn is_ignored_path(path: &Path) -> bool {
                 | ".svelte-kit"
                 | "coverage"
                 | ".DS_Store"
+                | "editor-setting"
         )
     })
 }
@@ -192,10 +201,11 @@ fn emit_reload(
     changed_paths: Vec<String>,
 ) {
     match sessions.reload_session(session_id) {
-        Ok(snapshot) => events.emit(EditorEvent::ProjectChanged(ProjectChangedPayload {
+        Ok(snapshot) => events.emit(EditorEvent::ProjectReloaded(ProjectReloadedPayload {
             session_id,
             changed_paths,
-            snapshot,
+            revision: snapshot.revision,
+            diagnostics: snapshot.diagnostics,
         })),
         Err(err) => emit_watch_error(events, session_id, err.message),
     }
@@ -218,6 +228,21 @@ mod tests {
     fn project_state_directory_does_not_trigger_reload() {
         let paths = vec![
             PathBuf::from("project/.coflow/editor.json"),
+            PathBuf::from("project/data/items.cfd"),
+        ];
+
+        assert_eq!(
+            filter_relevant_paths(&paths),
+            vec![PathBuf::from("project/data/items.cfd")]
+        );
+    }
+
+    #[test]
+    fn atomic_write_staging_paths_do_not_trigger_reload() {
+        let paths = vec![
+            PathBuf::from("project/data/.items.cfd.coflow-staging-1-2-3"),
+            PathBuf::from("project/data/.items.cfd.coflow-backup-1-2-4"),
+            PathBuf::from("project/data/.atomicwriteAbCd/source"),
             PathBuf::from("project/data/items.cfd"),
         ];
 

@@ -9,14 +9,15 @@ use crate::indexes::{RecordRef, SourceId};
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
 
-use super::refs::{reference_update_actions, ReferenceUpdateAction};
-use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
+use super::refs::{ReferenceUpdateAction, reference_update_actions};
+use super::target::{WriteTarget, is_id_path, not_found, write_target_for_path};
 use super::writer::{lookup_source_writer, source_for_file, source_for_id};
 use crate::write_rules;
 
 pub(crate) enum MutationExecutionPlan {
     Insert(InsertPlan),
     WriteField(WriteFieldPlan),
+    UnsetField(WriteFieldPlan),
     WriteDimension(DimensionWritePlan),
     Rename(RenamePlan),
     Delete(DeletePlan),
@@ -57,7 +58,6 @@ pub(crate) struct RenameWritePlan {
     pub(super) old_coordinate: RecordCoordinate,
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
-    pub(super) source: CfdSource,
     pub(super) writer: Arc<CfdWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
@@ -67,7 +67,6 @@ pub(crate) struct DeletePlan {
     pub(super) coordinate: RecordCoordinate,
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
-    pub(super) source: CfdSource,
     pub(super) writer: Arc<CfdWriter>,
     pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
@@ -84,7 +83,6 @@ pub(crate) struct TransferPlan {
     pub(super) fields: std::collections::BTreeMap<String, CfdValue>,
     pub(super) source_origin: RecordOrigin,
     pub(super) source_display_path: String,
-    pub(super) source: CfdSource,
     pub(super) source_writer: Arc<CfdWriter>,
     pub(super) destination_display_path: String,
     pub(super) destination: CfdSource,
@@ -114,39 +112,6 @@ impl MutationExecutionPlan {
             self,
             Self::Rename(RenamePlan::Noop { .. }) | Self::Noop { .. } | Self::Folded
         )
-    }
-
-    pub(crate) fn visit_sources<E>(
-        &self,
-        mut visit: impl FnMut(&CfdSource) -> Result<(), E>,
-    ) -> Result<(), E> {
-        match self {
-            Self::Insert(plan) => visit(&plan.source)?,
-            Self::WriteField(plan) => visit(&plan.source)?,
-            Self::WriteDimension(plan) => visit(&plan.source)?,
-            Self::Rename(RenamePlan::Noop { .. }) | Self::Folded | Self::Noop { .. } => {}
-            Self::Rename(RenamePlan::Write(plan)) => {
-                visit(&plan.source)?;
-                for action in &plan.reference_actions {
-                    visit(action.source())?;
-                }
-                for action in &plan.dimension_actions {
-                    visit(&action.source)?;
-                }
-            }
-            Self::Delete(plan) => {
-                visit(&plan.source)?;
-                for action in &plan.dimension_actions {
-                    visit(&action.source)?;
-                }
-            }
-            Self::Reorder(plan) => visit(&plan.source)?,
-            Self::Transfer(plan) => {
-                visit(&plan.source)?;
-                visit(&plan.destination)?;
-            }
-        }
-        Ok(())
     }
 
     pub(crate) fn can_batch_field_write_with(&self, other: &Self) -> bool {
@@ -216,6 +181,16 @@ pub(crate) fn prepare_mutation_execution(
                 manager,
             }))
         }
+        PreparedMutationOp::UnsetField {
+            write_record, path, ..
+        } => prepare_unset_field(
+            session,
+            catalog,
+            &write_record.actual_type,
+            &write_record.key,
+            path,
+        )
+        .map(MutationExecutionPlan::UnsetField),
         PreparedMutationOp::RenameRecord {
             record, new_key, ..
         } => prepare_rename(session, catalog, record, new_key).map(MutationExecutionPlan::Rename),
@@ -241,6 +216,26 @@ pub(crate) fn prepare_mutation_execution(
         | PreparedMutationOp::FoldedDeleteRecord { .. }
         | PreparedMutationOp::CancelledInsert { .. } => Ok(MutationExecutionPlan::Folded),
     }
+}
+
+fn prepare_unset_field(
+    session: &ProjectSession,
+    catalog: &CfdSourceCatalog,
+    actual_type: &str,
+    key: &str,
+    path: &[WriteFieldPathSegment],
+) -> Result<WriteFieldPlan, DiagnosticSet> {
+    let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
+        return Err(DiagnosticSet::one(not_found(actual_type, key)));
+    };
+    let target = write_target_for_path(session, record_ref, path)?;
+    let source = source_for_id(session, target.source_id)?;
+    let writer = lookup_source_writer(catalog);
+    Ok(WriteFieldPlan {
+        target,
+        source,
+        writer,
+    })
 }
 
 fn prepare_transfer_record(
@@ -269,7 +264,6 @@ fn prepare_transfer_record(
         .model
         .record(record_ref.id)
         .ok_or_else(|| reorder_invariant("record is missing from the data model"))?;
-    let source = source_for_id(session, record_ref.source_id)?;
     let source_writer = lookup_source_writer(catalog);
     let destination = source_for_file(session, destination_file)?;
     let destination_writer = lookup_source_writer(catalog);
@@ -302,7 +296,6 @@ fn prepare_transfer_record(
         fields,
         source_origin: record_ref.origin.clone(),
         source_display_path: record_ref.display_path.clone(),
-        source,
         source_writer,
         destination_display_path: destination_file.to_string(),
         destination,
@@ -533,7 +526,6 @@ fn prepare_rename(
             coordinate: target_ref.coordinate.clone(),
         });
     }
-    let source = source_for_id(session, target_ref.source_id)?;
     let writer = lookup_source_writer(catalog);
     let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
     let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
@@ -541,7 +533,6 @@ fn prepare_rename(
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
         display_path: target_ref.display_path.clone(),
-        source,
         writer,
         reference_actions,
         dimension_actions,
@@ -568,14 +559,12 @@ fn prepare_delete(
             &record.key,
         )));
     };
-    let source = source_for_id(session, record_ref.source_id)?;
     let writer = lookup_source_writer(catalog);
     let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
         display_path: record_ref.display_path.clone(),
-        source,
         writer,
         dimension_actions,
     })

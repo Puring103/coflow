@@ -18,6 +18,7 @@ pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
+    ProjectFileUpdate,
 };
 pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 

@@ -19,7 +19,7 @@ import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
-import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
 import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
 import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RefTarget } from './bindings/RefTarget'
@@ -35,10 +35,11 @@ import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
-export interface ProjectChangedEvent {
+export interface ProjectReloadedEvent {
   session_id: number
   changed_paths: string[]
-  snapshot: ProjectSnapshot
+  revision: number
+  diagnostics: FlatDiagnostic[]
 }
 
 export interface ProjectWatchErrorEvent {
@@ -125,12 +126,16 @@ export async function pickProjectDirectory(): Promise<string | null> {
   return typeof path === 'string' ? path : null
 }
 
-export async function loadProject(yamlPath: string): Promise<ProjectSnapshot> {
-  return invokeCommand<ProjectSnapshot>('load_project', { yamlPath })
+export async function loadProject(yamlPath: string): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('load_project', { yamlPath })
 }
 
-export async function initProject(dir: string): Promise<ProjectSnapshot> {
-  return invokeCommand<ProjectSnapshot>('init_project', { dir })
+export async function initProject(dir: string): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('init_project', { dir })
+}
+
+export async function reloadSession(sessionId: number): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('reload_session', { sessionId })
 }
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
@@ -409,8 +414,8 @@ export async function writeSourceText(
   sessionId: number,
   filePath: string,
   source: string,
-): Promise<ProjectSnapshot> {
-  return invokeCommand<ProjectSnapshot>('write_source_text', { sessionId, filePath, source })
+): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('write_source_text', { sessionId, filePath, source })
 }
 
 export async function getEnumVariants(sessionId: number, enumName: string): Promise<EnumVariantOption[]> {
@@ -580,8 +585,8 @@ export async function transferRecord(
   })
 }
 
-export async function onProjectChanged(handler: (event: ProjectChangedEvent) => void): Promise<() => void> {
-  return listen<ProjectChangedEvent>('project_changed', event => handler(fromIpc(event.payload) as ProjectChangedEvent))
+export async function onProjectReloaded(handler: (event: ProjectReloadedEvent) => void): Promise<() => void> {
+  return listen<ProjectReloadedEvent>('project_reloaded', event => handler(fromIpc(event.payload) as ProjectReloadedEvent))
 }
 
 export async function onProjectWatchError(handler: (event: ProjectWatchErrorEvent) => void): Promise<() => void> {

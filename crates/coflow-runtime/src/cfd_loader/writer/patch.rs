@@ -1,16 +1,16 @@
 use crate::api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
 use crate::data_model::CfdValue;
-use coflow_language::cfd::ast::CfdRecord as AstRecord;
-use coflow_language::cfd::CfdAst;
 use coflow_language::CftSchema;
 use coflow_language::Span;
+use coflow_language::cfd::CfdAst;
+use coflow_language::cfd::ast::CfdRecord as AstRecord;
 use std::collections::BTreeMap;
 
+use super::CFD_INDENT;
 use super::diag;
 use super::render::serialize_value_for_type;
 use super::schema_nav::type_after_field_segment;
-use super::target::{locate_target, WriteTarget};
-use super::CFD_INDENT;
+use super::target::{WriteTarget, locate_target};
 
 pub(super) fn apply_patch(
     source: &str,
@@ -59,12 +59,8 @@ pub(super) fn apply_patch(
                 )));
             }
             let depth = replacement_serialization_depth(source, span.start, request.new_value);
-            let fragment = serialize_value_for_type(
-                request.new_value,
-                Some(request.schema),
-                Some(&ty),
-                depth,
-            );
+            let fragment =
+                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), depth);
             Ok(format!(
                 "{}{}{}",
                 &source[..span.start],
@@ -145,6 +141,86 @@ pub(super) fn find_record<'a>(
     ast.records
         .iter()
         .find(|record| record.type_name == actual_type && record.key == key)
+}
+
+pub(super) fn apply_unset_field_patch(
+    schema: &CftSchema,
+    source: &str,
+    ast: &CfdAst,
+    actual_type: &str,
+    record_key: &str,
+    field_path: &[WriteFieldPathSegment],
+) -> Result<String, DiagnosticSet> {
+    if field_path.is_empty() {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "field_path must not be empty",
+        )));
+    }
+    let record = find_record(ast, actual_type, record_key).ok_or_else(|| {
+        DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("record `{actual_type}.{record_key}` not found in AST"),
+        ))
+    })?;
+    let WriteTarget::Replace { span, .. } = locate_target(schema, actual_type, record, field_path)?
+    else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "field_path must identify an existing field to unset",
+        )));
+    };
+    let removed = removed_field_span(source, span);
+    Ok(format!(
+        "{}{}",
+        source.get(..removed.start).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "field span is outside the source document",
+            ))
+        })?,
+        source.get(removed.end..).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "field span is outside the source document",
+            ))
+        })?,
+    ))
+}
+
+fn removed_field_span(source: &str, value_span: Span) -> Span {
+    let mut start = value_span.start.min(source.len());
+    while start > 0 {
+        let Some(previous) = source[..start].chars().next_back() else {
+            break;
+        };
+        if previous == '\n' {
+            break;
+        }
+        start -= previous.len_utf8();
+    }
+    let mut end = value_span.end.min(source.len());
+    end += source[end..]
+        .chars()
+        .take_while(|c| c.is_whitespace() && *c != '\n')
+        .map(char::len_utf8)
+        .sum::<usize>();
+    if source[end..].starts_with(',') {
+        end += 1;
+        end += source[end..]
+            .chars()
+            .take_while(|c| c.is_whitespace() && *c != '\n')
+            .map(char::len_utf8)
+            .sum::<usize>();
+    }
+    if source[end..].starts_with("\r\n") {
+        end += 2;
+    } else if source[end..].starts_with('\n') {
+        end += 1;
+    } else {
+        end = source.len();
+    }
+    Span::new(start, end)
 }
 
 fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
@@ -260,28 +336,30 @@ pub(super) fn reorder_record_spans(
     let replacements = records
         .iter()
         .zip(order)
-        .map(|(slot, source_index)| -> Result<(Span, String), DiagnosticSet> {
-            let moved = records.get(*source_index).ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    "record reorder index is outside the document",
-                ))
-            })?;
-            let fragment = source
-                .get(moved.span.start..moved.span.end)
-                .ok_or_else(|| {
+        .map(
+            |(slot, source_index)| -> Result<(Span, String), DiagnosticSet> {
+                let moved = records.get(*source_index).ok_or_else(|| {
                     DiagnosticSet::one(diag(
                         "CFD-WRITE",
-                        "record span is outside the source document",
+                        "record reorder index is outside the document",
                     ))
                 })?;
-            let fragment = if record_container(slot) == record_container(moved) {
-                fragment.to_string()
-            } else {
-                explicit_record_fragment(fragment, moved)?
-            };
-            Ok((slot.span, fragment))
-        })
+                let fragment = source
+                    .get(moved.span.start..moved.span.end)
+                    .ok_or_else(|| {
+                        DiagnosticSet::one(diag(
+                            "CFD-WRITE",
+                            "record span is outside the source document",
+                        ))
+                    })?;
+                let fragment = if record_container(slot) == record_container(moved) {
+                    fragment.to_string()
+                } else {
+                    explicit_record_fragment(fragment, moved)?
+                };
+                Ok((slot.span, fragment))
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     replace_spans(source, &replacements)
 }
@@ -290,10 +368,7 @@ fn record_container(record: &AstRecord) -> Option<usize> {
     record.group_type.as_ref().map(|(_, span)| span.start)
 }
 
-fn explicit_record_fragment(
-    fragment: &str,
-    record: &AstRecord,
-) -> Result<String, DiagnosticSet> {
+fn explicit_record_fragment(fragment: &str, record: &AstRecord) -> Result<String, DiagnosticSet> {
     if record.type_span.start >= record.span.start {
         return Ok(fragment.to_string());
     }

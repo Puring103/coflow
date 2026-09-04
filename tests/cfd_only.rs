@@ -1,6 +1,6 @@
 use coflow_runtime::codegen::{CodeArtifactFile, CodeArtifactSet, CodegenError, CodegenRegistry};
 use coflow_runtime::{
-    MutationAppliedOp, MutationReport, Project, RecordCoordinate, Runtime, WriteOutcome,
+    MutationOp, MutationRequest, Project, RecordCoordinate, Runtime,
 };
 use serde_json::Value;
 use std::fs;
@@ -47,12 +47,12 @@ fn write_id_as_enum_project(is_flag: bool, records: &str) -> TempDir {
 }
 
 fn active_enum_values(dir: &TempDir) -> serde_json::Map<String, Value> {
-    let manifest: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".coflow/artifacts/active.json"))
-            .expect("active manifest"),
+    let lock: Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join("coflow.enum.lock.json"))
+            .expect("enum lockfile"),
     )
-    .expect("valid active manifest");
-    manifest["id_as_enum_values"]["ItemId"]
+    .expect("valid enum lockfile");
+    lock["ItemId"]
         .as_object()
         .expect("ItemId stable values")
         .clone()
@@ -82,32 +82,30 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     assert_eq!(values["gamma"], 1);
     assert_eq!(values["alpha"], 2);
 
-    let session = Runtime::new()
-        .open_write_session(project)
+    let mut session = Runtime::new()
+        .open_write_session(Project::open(Some(&config)).expect("reopen for mutation"))
         .expect("open write session");
     let old = RecordCoordinate::try_new("Item", "beta").expect("old coordinate");
     let new = RecordCoordinate::try_new("Item", "delta").expect("new coordinate");
-    let report = MutationReport {
-        write_ok: true,
-        check_ok: true,
-        generation_changed: true,
-        applied: vec![MutationAppliedOp {
-            index: 0,
-            op: "rename_record".to_string(),
-            record: Some(old.clone()),
-            file: Some("data/items.cfd".to_string()),
-            outcome: WriteOutcome {
-                renamed: Some((old, new)),
-                ..Default::default()
-            },
-        }],
-        failed: Vec::new(),
-        affected_files: vec!["data/items.cfd".to_string()],
-        diagnostics: Vec::new(),
-    };
+    let report = coflow::commands::apply_project_mutation(
+        &mut session,
+        MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::RenameRecord {
+                record: old,
+                file: None,
+                new_key: new.key.to_string(),
+            }],
+        },
+    )
+    .expect("rename id key");
+    assert!(report.write_ok && report.check_ok);
+    assert!(report.affected_files.contains(&"data/items.cfd".to_string()));
+    assert!(report.written_files.contains(&"data/items.cfd".to_string()));
     assert!(
-        coflow::commands::migrate_enum_lock_after_mutation(&session, &report)
-            .expect("migrate renamed key")
+        report
+            .written_files
+            .contains(&"coflow.enum.lock.json".to_string())
     );
     let values = active_enum_values(&project_dir);
     assert_eq!(values["delta"], 0);
@@ -337,14 +335,12 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
 }
 
 #[test]
-fn codegen_reuses_history_preserves_unity_meta_and_cleans_inactive_generations() {
+fn codegen_preserves_unity_meta_without_generation_history() {
     let project_dir = write_project();
     let config = project_dir.path().join("coflow.yaml");
     let project = Project::open(Some(&config)).expect("open project");
     coflow::commands::generate_project_code(&project).expect("generate baseline");
 
-    let generations = project_dir.path().join(".coflow/artifacts/generations");
-    assert_eq!(fs::read_dir(&generations).expect("read history").count(), 1);
     fs::write(
         project_dir.path().join("generated/csharp/Item.cs.meta"),
         "unity-guid",
@@ -352,7 +348,6 @@ fn codegen_reuses_history_preserves_unity_meta_and_cleans_inactive_generations()
     .expect("write Unity metadata");
 
     coflow::commands::generate_project_code(&project).expect("reuse unchanged output");
-    assert_eq!(fs::read_dir(&generations).expect("read history").count(), 1);
 
     fs::write(
         project_dir.path().join("schema.cft"),
@@ -366,11 +361,6 @@ fn codegen_reuses_history_preserves_unity_meta_and_cleans_inactive_generations()
             .expect("read preserved Unity metadata"),
         "unity-guid"
     );
-    assert_eq!(fs::read_dir(&generations).expect("read history").count(), 2);
-
-    let cleaned = coflow::commands::clean_project(&changed).expect("clean history");
-    assert_eq!(cleaned.generations_removed, 1);
-    assert_eq!(fs::read_dir(&generations).expect("read history").count(), 1);
 }
 
 #[test]

@@ -40,6 +40,7 @@ pub(crate) struct ProjectLoadOutput {
 pub struct DataSourceTextOverride {
     pub normalized_path: PathBuf,
     pub source: String,
+    pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -121,6 +122,7 @@ pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) refresh_implicit_dimension_sources: bool,
     pub(crate) previous_checks: Option<&'a CheckDiagnosticStore>,
     pub(crate) check_impact: &'a CheckImpact,
+    pub(crate) source_overrides: &'a [DataSourceTextOverride],
 }
 
 struct LoadState<'a> {
@@ -188,6 +190,12 @@ pub(crate) fn load_project_data(
                     .sources_resolved
                     .saturating_add(resolved_sources.len());
                 for resolved_source in resolved_sources {
+                    if is_deleted_override(
+                        resolved_source.source.location.path(),
+                        source_overrides,
+                    ) {
+                        continue;
+                    }
                     diagnostics.extend(load_resolved_dimension_source(
                         project,
                         schema,
@@ -283,7 +291,11 @@ pub(crate) fn reload_project_data_from_cache(
             .batches
             .iter()
             .filter(|batch| {
-                options.load.include_implicit_dimension_sources || batch.dimension_field.is_none()
+                (options.load.include_implicit_dimension_sources || batch.dimension_field.is_none())
+                    && !is_deleted_override(
+                        batch.entry.source.location.path(),
+                        options.source_overrides,
+                    )
             })
             .cloned()
             .collect(),
@@ -354,7 +366,7 @@ pub(crate) fn reload_project_data_from_cache(
         match catalog.loader().load(
             CfdLoadContext {
                 schema,
-                source_text: None,
+                source_text: source_override_text(&batch.entry.source, options.source_overrides),
             },
             &batch.entry.source,
         ) {
@@ -391,6 +403,9 @@ fn load_resolved_sources(
     let loader = catalog.loader();
     for resolved in resolved_sources {
         let spec = resolved.source;
+        if is_deleted_override(spec.location.path(), source_overrides) {
+            continue;
+        }
         let display_path = display_path_for(project, &spec);
         let source_id = SourceId(state.indexes.sources.entries.len());
         state
@@ -441,6 +456,16 @@ fn source_override_text<'a>(
         .rev()
         .find(|source_override| source_override.normalized_path == source_path)
         .map(|source_override| source_override.source.as_str())
+}
+
+fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverride]) -> bool {
+    let normalized_path = crate::normalize_path(path);
+    overrides
+        .iter()
+        .rev()
+        .any(|source_override| {
+            source_override.normalized_path == normalized_path && source_override.deleted
+        })
 }
 
 fn load_resolved_dimension_source(

@@ -288,6 +288,8 @@ fn contains_record_reference(value: &CftConstValue) -> bool {
         | CftConstValue::Float(_)
         | CftConstValue::Bool(_)
         | CftConstValue::String(_)
+        | CftConstValue::FormattedString(_)
+        | CftConstValue::Function(_)
         | CftConstValue::Enum { .. }
         | CftConstValue::OptionNone => false,
     }

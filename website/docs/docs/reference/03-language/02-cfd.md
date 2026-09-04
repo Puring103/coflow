@@ -134,12 +134,12 @@ fallback: &Game::Items::Item::default_item,
 
 ### 格式化字符串
 
-字符串包含有效字段引用时会被识别为格式化字符串，也可以显式使用 `f"..."`：
+普通字符串包含有效字段引用时会自动识别为格式化字符串，不存在单独的字符串前缀：
 
 ```cfd
 label: "{name} x {count}",
-remote_label: f"{&sword.name}",
-qualified: f"{&Game::Items::Item::sword.name}",
+remote_label: "{&sword.name}",
+qualified: "{&Game::Items::Item::sword.name}",
 ```
 
 插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`。`{{` 和 `}}` 表示字面花括号。
@@ -147,7 +147,7 @@ qualified: f"{&Game::Items::Item::sword.name}",
 
 ### 函数值
 
-函数类型字段在 CFD 中提供与 CFT 声明一致的签名和函数体：
+函数类型字段可以在 CFD 中提供与 CFT 声明一致的签名和函数体：
 
 ```cfd
 calculator: Calculator {
@@ -161,8 +161,11 @@ calculator: Calculator {
 }
 ```
 
-函数体是受静态类型约束的表达式语言。函数签名必须与 CFT 字段类型一致；`@Host` 服务函数由宿主配置，
-不能在 CFD 中实现。当前 C# Runtime 的 VM 尚未提供执行预算，函数只应来自受信任、可控的配置源。
+函数体是受静态类型约束的表达式语言。函数签名必须与 CFT 字段类型一致；函数字段也可以在 CFT 中
+声明默认实现，CFD 中的显式值会覆盖它。`@Host` 服务函数由宿主配置，不能在 CFT 中声明默认实现，也
+不能在 CFD 中实现。C# Runtime 的 `Load` 只保留函数值，`LoadAndCompile` 才类型检查并编译函数体。
+Rust runtime 当前不执行函数。当前 C# Runtime 的 VM 尚未提供执行预算，函数只应来自受信任、可控的
+配置源。
 
 ## 文件发现与检查
 
