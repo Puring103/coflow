@@ -113,7 +113,7 @@ impl ResolvedTypes<'_> {
                 );
             }
         }
-        self.previous.diagnostics.extend(diagnostics);
+        self.diagnostics.extend(diagnostics);
     }
 
     fn register_id_as_enum_name(
@@ -300,9 +300,9 @@ impl ResolvedTypes<'_> {
         enum_name_span: Span,
         diagnostics: &mut Vec<CftDiagnostic>,
     ) {
-        match self.previous.symbols.get(enum_name) {
+        match self.symbols.get(enum_name) {
             Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                if let Some(info) = self.previous.enums.get(enum_name) {
+                if let Some(info) = self.enums.get(enum_name) {
                     if !info.def.variants.is_empty() {
                         diagnostics.push(
                             CftDiagnostic::error(

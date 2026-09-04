@@ -49,27 +49,30 @@ pub(super) struct SymbolTable<'a> {
 }
 
 pub(super) struct ResolvedTypes<'a> {
-    previous: SymbolTable<'a>,
+    symbol_table: SymbolTable<'a>,
+    diagnostics: Vec<CftDiagnostic>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
     resolved_aliases: BTreeMap<String, inferred_type::InferredType>,
 }
 
 pub(super) struct ResolvedValues<'a> {
-    previous: ResolvedTypes<'a>,
-    resolved_constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
+    resolved_types: ResolvedTypes<'a>,
+    resolved_constants:
+        BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
     resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
 }
 
 struct ValueResolver<'s, 'a> {
-    previous: &'s ResolvedTypes<'a>,
-    resolved_constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
+    resolved_types: &'s ResolvedTypes<'a>,
+    resolved_constants:
+        BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
     resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
     diagnostics: Vec<CftDiagnostic>,
 }
 
 pub(super) struct ValidatedSchema<'a> {
-    previous: ResolvedValues<'a>,
+    resolved_values: ResolvedValues<'a>,
     quantifier_bindings:
         BTreeMap<(ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
     check_dimensions:
@@ -106,9 +109,10 @@ impl<'a> SymbolTable<'a> {
 }
 
 impl<'a> ResolvedTypes<'a> {
-    fn new(symbols: SymbolTable<'a>) -> Self {
+    fn new(symbol_table: SymbolTable<'a>) -> Self {
         Self {
-            previous: symbols,
+            symbol_table,
+            diagnostics: Vec::new(),
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
             resolved_aliases: BTreeMap::new(),
@@ -122,12 +126,8 @@ impl<'a> ResolvedTypes<'a> {
         span: Span,
         message: impl Into<String>,
     ) {
-        self.previous.diagnostics.push(CftDiagnostic::error(
-            code,
-            module.clone(),
-            span,
-            message,
-        ));
+        self.diagnostics
+            .push(CftDiagnostic::error(code, module.clone(), span, message));
     }
 
     fn push_budget_error(
@@ -143,22 +143,21 @@ impl<'a> ResolvedTypes<'a> {
             error.to_string(),
         );
     }
-
 }
 
 impl<'a> Deref for ResolvedTypes<'a> {
     type Target = SymbolTable<'a>;
 
     fn deref(&self) -> &Self::Target {
-        &self.previous
+        &self.symbol_table
     }
 }
 
 impl<'a> ResolvedValues<'a> {
-    fn resolve(mut types: ResolvedTypes<'a>) -> Self {
+    fn resolve(types: ResolvedTypes<'a>) -> (Self, Vec<CftDiagnostic>) {
         let (resolved_constants, resolved_defaults, diagnostics) = {
             let mut resolver = ValueResolver {
-                previous: &types,
+                resolved_types: &types,
                 resolved_constants: BTreeMap::new(),
                 resolved_defaults: BTreeMap::new(),
                 diagnostics: Vec::new(),
@@ -171,12 +170,14 @@ impl<'a> ResolvedValues<'a> {
                 resolver.diagnostics,
             )
         };
-        types.previous.diagnostics.extend(diagnostics);
-        Self {
-            previous: types,
-            resolved_constants,
-            resolved_defaults,
-        }
+        (
+            Self {
+                resolved_types: types,
+                resolved_constants,
+                resolved_defaults,
+            },
+            diagnostics,
+        )
     }
 }
 
@@ -184,7 +185,7 @@ impl<'a> Deref for ResolvedValues<'a> {
     type Target = ResolvedTypes<'a>;
 
     fn deref(&self) -> &Self::Target {
-        &self.previous
+        &self.resolved_types
     }
 }
 
@@ -192,7 +193,7 @@ impl<'s, 'a> Deref for ValueResolver<'s, 'a> {
     type Target = ResolvedTypes<'a>;
 
     fn deref(&self) -> &Self::Target {
-        self.previous
+        self.resolved_types
     }
 }
 
@@ -204,47 +205,36 @@ impl ValueResolver<'_, '_> {
         span: Span,
         message: impl Into<String>,
     ) {
-        self.diagnostics.push(CftDiagnostic::error(
-            code,
-            module.clone(),
-            span,
-            message,
-        ));
+        self.diagnostics
+            .push(CftDiagnostic::error(code, module.clone(), span, message));
     }
 }
 
 impl<'a> ValidatedSchema<'a> {
-    fn new(values: ResolvedValues<'a>) -> Self {
-        Self {
-            previous: values,
-            quantifier_bindings: BTreeMap::new(),
-            check_dimensions: BTreeMap::new(),
-            check_statement_dependencies: BTreeMap::new(),
-        }
-    }
-
-    fn validate_checks(&mut self) {
+    fn validate(values: ResolvedValues<'a>) -> (Self, Vec<CftDiagnostic>) {
+        let mut quantifier_bindings = BTreeMap::new();
+        let mut check_dimensions = BTreeMap::new();
+        let mut check_statement_dependencies = BTreeMap::new();
         let mut diagnostics = Vec::new();
-        for info in self.previous.types.values() {
+        for info in values.types.values() {
             if let Some(check) = &info.def.check {
-                let analysis = CheckTypeAnalyzer::new(&self.previous, info)
-                    .check_root_stmts(&check.stmts);
-                self.check_dimensions.insert(
+                let analysis = CheckTypeAnalyzer::new(&values, info).check_root_stmts(&check.stmts);
+                check_dimensions.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     analysis.dimensions,
                 );
-                self.check_statement_dependencies.insert(
+                check_statement_dependencies.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     analysis.dependencies,
                 );
-                self.quantifier_bindings.extend(analysis.quantifier_bindings);
+                quantifier_bindings.extend(analysis.quantifier_bindings);
                 diagnostics.extend(analysis.diagnostics);
             }
         }
-        for info in self.previous.checks.values() {
-            let analysis = CheckTypeAnalyzer::top_level(&self.previous, info.module.clone())
+        for info in values.checks.values() {
+            let analysis = CheckTypeAnalyzer::top_level(&values, info.module.clone())
                 .check_root_stmts(&info.def.block.stmts);
-            self.check_dimensions.insert(
+            check_dimensions.insert(
                 (
                     info.module.clone(),
                     info.def.block.span.start,
@@ -252,7 +242,7 @@ impl<'a> ValidatedSchema<'a> {
                 ),
                 analysis.dimensions,
             );
-            self.check_statement_dependencies.insert(
+            check_statement_dependencies.insert(
                 (
                     info.module.clone(),
                     info.def.block.span.start,
@@ -260,10 +250,18 @@ impl<'a> ValidatedSchema<'a> {
                 ),
                 analysis.dependencies,
             );
-            self.quantifier_bindings.extend(analysis.quantifier_bindings);
+            quantifier_bindings.extend(analysis.quantifier_bindings);
             diagnostics.extend(analysis.diagnostics);
         }
-        self.previous.previous.previous.diagnostics.extend(diagnostics);
+        (
+            Self {
+                resolved_values: values,
+                quantifier_bindings,
+                check_dimensions,
+                check_statement_dependencies,
+            },
+            diagnostics,
+        )
     }
 }
 
@@ -271,6 +269,6 @@ impl<'a> Deref for ValidatedSchema<'a> {
     type Target = ResolvedValues<'a>;
 
     fn deref(&self) -> &Self::Target {
-        &self.previous
+        &self.resolved_values
     }
 }

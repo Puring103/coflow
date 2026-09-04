@@ -4,6 +4,11 @@ use crate::module::CftModuleSet;
 use crate::schema::{AnalysisBudget, CftDimensionInputs, CftSchema};
 use crate::CftDiagnostics;
 
+struct StageOutput<T> {
+    product: T,
+    diagnostics: Vec<crate::CftDiagnostic>,
+}
+
 /// Builds an immutable semantic schema from modules that have already been parsed.
 ///
 /// The complete effective schema is published only after every compilation
@@ -46,7 +51,7 @@ pub fn build_schema_with_limits(
 fn collect_symbols<'a>(
     module_set: &'a CftModuleSet,
     structural_budget: &mut StructuralBudget,
-) -> Result<SymbolTable<'a>, CftDiagnostics> {
+) -> Result<StageOutput<SymbolTable<'a>>, CftDiagnostics> {
     let mut symbols = SymbolTable::new(module_set);
     if !symbols.validate_structure(structural_budget) {
         return Err(CftDiagnostics::new(symbols.diagnostics));
@@ -54,48 +59,77 @@ fn collect_symbols<'a>(
     symbols.report_dangling_annotations();
     symbols.collect_symbols();
     symbols.validate_enums();
-    Ok(symbols)
+    let diagnostics = std::mem::take(&mut symbols.diagnostics);
+    Ok(StageOutput {
+        product: symbols,
+        diagnostics,
+    })
 }
 
 fn resolve_types<'a>(
-    symbols: SymbolTable<'a>,
+    symbols: StageOutput<SymbolTable<'a>>,
     analysis_budget: &mut AnalysisBudget,
-) -> Result<ResolvedTypes<'a>, CftDiagnostics> {
-    let mut types = ResolvedTypes::new(symbols);
+) -> Result<StageOutput<ResolvedTypes<'a>>, CftDiagnostics> {
+    let StageOutput {
+        product: symbol_table,
+        mut diagnostics,
+    } = symbols;
+    let mut types = ResolvedTypes::new(symbol_table);
     types.validate_type_headers();
     types.validate_type_aliases();
     types.validate_field_shapes();
     if !types.validate_inheritance(analysis_budget) {
-        return Err(CftDiagnostics::new(std::mem::take(
-            &mut types.previous.diagnostics,
-        )));
+        diagnostics.extend(std::mem::take(&mut types.diagnostics));
+        return Err(CftDiagnostics::new(diagnostics));
     }
     types.validate_annotations();
     types.build_full_fields();
-    Ok(types)
+    diagnostics.extend(std::mem::take(&mut types.diagnostics));
+    Ok(StageOutput {
+        product: types,
+        diagnostics,
+    })
 }
 
-fn resolve_values(types: ResolvedTypes<'_>) -> ResolvedValues<'_> {
-    ResolvedValues::resolve(types)
-}
-
-fn validate_checks(values: ResolvedValues<'_>) -> Result<ValidatedSchema<'_>, CftDiagnostics> {
-    let mut validated = ValidatedSchema::new(values);
-    validated.validate_checks();
-    if !validated.previous.previous.previous.diagnostics.is_empty() {
-        return Err(CftDiagnostics::new(std::mem::take(
-            &mut validated.previous.previous.previous.diagnostics,
-        )));
+fn resolve_values(types: StageOutput<ResolvedTypes<'_>>) -> StageOutput<ResolvedValues<'_>> {
+    let StageOutput {
+        product: resolved_types,
+        mut diagnostics,
+    } = types;
+    let (values, stage_diagnostics) = ResolvedValues::resolve(resolved_types);
+    diagnostics.extend(stage_diagnostics);
+    StageOutput {
+        product: values,
+        diagnostics,
     }
-    Ok(validated)
+}
+
+fn validate_checks(
+    values: StageOutput<ResolvedValues<'_>>,
+) -> Result<StageOutput<ValidatedSchema<'_>>, CftDiagnostics> {
+    let StageOutput {
+        product: resolved_values,
+        mut diagnostics,
+    } = values;
+    let (validated, stage_diagnostics) = ValidatedSchema::validate(resolved_values);
+    diagnostics.extend(stage_diagnostics);
+    let output = StageOutput {
+        product: validated,
+        diagnostics,
+    };
+    if !output.diagnostics.is_empty() {
+        return Err(CftDiagnostics::new(output.diagnostics));
+    }
+    Ok(output)
 }
 
 fn lower_schema(
-    validated: ValidatedSchema<'_>,
+    validated: StageOutput<ValidatedSchema<'_>>,
     dimensions: &CftDimensionInputs,
     analysis_budget: &mut AnalysisBudget,
 ) -> Result<CftSchema, CftDiagnostics> {
-    let declarations: SchemaDeclarations = validated.lower_declarations();
+    debug_assert!(validated.diagnostics.is_empty());
+    let declarations: SchemaDeclarations = validated.product.lower_declarations();
     CftSchema::from_declarations(declarations, dimensions, analysis_budget)
 }
 
@@ -111,11 +145,9 @@ mod tests {
 
     #[test]
     fn phase_diagnostics_keep_source_independent_pass_order() {
-        let modules = modules(
-            "abstract sealed type Child: Missing { type: int; }",
-        );
-        let diagnostics = build_schema(&modules, &CftDimensionInputs::default())
-            .expect_err("schema must fail");
+        let modules = modules("abstract sealed type Child: Missing { type: int; }");
+        let diagnostics =
+            build_schema(&modules, &CftDimensionInputs::default()).expect_err("schema must fail");
         let codes = diagnostics
             .diagnostics
             .iter()
@@ -152,9 +184,7 @@ mod tests {
 
     #[test]
     fn failed_inheritance_does_not_enter_value_resolution() {
-        let modules = modules(
-            "type A: B { value: int = Missing; } type B: A {}",
-        );
+        let modules = modules("type A: B { value: int = Missing; } type B: A {}");
         let diagnostics = build_schema(&modules, &CftDimensionInputs::default())
             .expect_err("inheritance cycle must stop the pipeline");
         assert!(diagnostics
@@ -171,12 +201,54 @@ mod tests {
 
     #[test]
     fn symbol_stage_returns_complete_scopes_and_declarations() {
-        let modules = modules("namespace demo; enum State { Ready = 1 } type Item { state: State; }");
+        let modules =
+            modules("namespace demo; enum State { Ready = 1 } type Item { state: State; }");
         let mut budget = StructuralBudget::new(StructuralLimits::default());
         let symbols = collect_symbols(&modules, &mut budget).expect("symbol stage");
-        assert_eq!(symbols.module_scopes.len(), 1);
-        assert_eq!(symbols.enums.len(), 1);
-        assert_eq!(symbols.types.len(), 1);
+        assert_eq!(symbols.product.module_scopes.len(), 1);
+        assert_eq!(symbols.product.enums.len(), 1);
+        assert_eq!(symbols.product.types.len(), 1);
+        assert!(symbols.product.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn stage_outputs_accumulate_diagnostics_without_back_writing() {
+        let modules = modules("type Item: Missing {} type Item {}");
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        assert_eq!(symbols.diagnostics.len(), 1);
+        assert!(symbols.product.diagnostics.is_empty());
+
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        assert_eq!(types.diagnostics.len(), 2);
+        assert!(types.product.diagnostics.is_empty());
+        assert_eq!(
+            types
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect::<Vec<_>>(),
+            [
+                CftErrorCode::DuplicateGlobalName,
+                CftErrorCode::UnknownNamedType,
+            ]
+        );
+    }
+
+    #[test]
+    fn symbol_stage_enforces_its_own_structural_budget() {
+        let modules = modules("type Item {}");
+        let mut budget = StructuralBudget::new(StructuralLimits::new(100, 0, 100));
+        let Err(diagnostics) = collect_symbols(&modules, &mut budget) else {
+            panic!("symbol stage must enforce its node budget");
+        };
+        assert_eq!(diagnostics.diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics.diagnostics[0].code,
+            CftErrorCode::SchemaStructureLimitExceeded
+        );
     }
 
     #[test]
@@ -189,10 +261,24 @@ mod tests {
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
-        assert_eq!(types.full_fields["Child"].len(), 2);
+        assert_eq!(types.product.full_fields["Child"].len(), 2);
         let values = resolve_values(types);
-        assert_eq!(values.resolved_constants.len(), 1);
-        assert_eq!(values.resolved_defaults.len(), 1);
+        assert_eq!(values.product.resolved_constants.len(), 1);
+        assert_eq!(values.product.resolved_defaults.len(), 1);
+    }
+
+    #[test]
+    fn value_stage_reports_its_errors_through_the_stage_output() {
+        let modules = modules("const Broken = Missing;");
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        let values = resolve_values(types);
+        assert_eq!(values.diagnostics.len(), 1);
+        assert_eq!(values.diagnostics[0].code, CftErrorCode::UnknownConst);
+        assert!(values.product.resolved_constants.is_empty());
     }
 
     #[test]
@@ -204,7 +290,35 @@ mod tests {
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         let validated = validate_checks(resolve_values(types)).expect("check stage");
-        assert_eq!(validated.check_dimensions.len(), 1);
-        assert_eq!(validated.check_statement_dependencies.len(), 1);
+        assert_eq!(validated.product.check_dimensions.len(), 1);
+        assert_eq!(validated.product.check_statement_dependencies.len(), 1);
+    }
+
+    #[test]
+    fn check_stage_rejects_diagnostics_before_lowering() {
+        let modules = modules("check Invalid { 1 + true; }");
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        let Err(diagnostics) = validate_checks(resolve_values(types)) else {
+            panic!("check stage must reject invalid operands");
+        };
+        assert!(!diagnostics.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn lower_stage_publishes_only_a_fully_validated_schema() {
+        let modules = modules("type Item { value: int; }");
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        let validated = validate_checks(resolve_values(types)).expect("check stage");
+        let schema = lower_schema(validated, &CftDimensionInputs::default(), &mut analysis)
+            .expect("lower stage");
+        assert!(schema.resolve_type("Item").is_some());
     }
 }

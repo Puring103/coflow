@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 
 impl ValueResolver<'_, '_> {
     pub(super) fn resolve_constants(&mut self) {
-        let previous = self.previous;
+        let types = self.resolved_types;
         let mut visiting = Vec::new();
-        for name in previous.consts.keys() {
+        for name in types.consts.keys() {
             let _ = self.resolve_constant(name, &mut visiting);
         }
     }

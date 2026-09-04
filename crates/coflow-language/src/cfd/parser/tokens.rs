@@ -1,6 +1,8 @@
 use super::super::CfdSyntaxDiagnostic;
 use super::Parser;
-use crate::lexical::{decode_simple_escape, scan_string_literal, StringLiteralError};
+use crate::lexical::{
+    decode_simple_escape, scan_number_literal, scan_string_literal, scan_trivia, StringLiteralError,
+};
 use crate::Span;
 
 pub(super) struct Token {
@@ -27,8 +29,24 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_name_token(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
+        self.parse_unquoted_token(label, false)
+    }
+
+    pub(super) fn parse_value_token(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
+        self.parse_unquoted_token(label, true)
+    }
+
+    fn parse_unquoted_token(
+        &mut self,
+        label: &str,
+        scan_numeric_prefix: bool,
+    ) -> Result<Token, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         let start = self.pos;
+        if scan_numeric_prefix && self.peek_char().is_some_and(|ch| ch.is_ascii_digit()) {
+            // CFD 保留 schema-free 标量文本；共享扫描器只统一合法数字前缀的边界。
+            self.pos = scan_number_literal(self.source, start, self.source.len()).end;
+        }
         while let Some(ch) = self.peek_char() {
             if ch == ':' && self.source[self.pos..].starts_with("::") {
                 self.pos += 2;
@@ -121,10 +139,16 @@ impl Parser<'_> {
         let mut offset = start + 1;
         let content_end = scan.end - 1;
         while offset < content_end {
-            let ch = self.source[offset..].chars().next().expect("validated string boundary");
+            let ch = self.source[offset..]
+                .chars()
+                .next()
+                .expect("validated string boundary");
             if ch == '\\' {
                 offset += 1;
-                let escaped = self.source[offset..].chars().next().expect("validated escape");
+                let escaped = self.source[offset..]
+                    .chars()
+                    .next()
+                    .expect("validated escape");
                 out.push(decode_simple_escape(escaped).expect("validated escape"));
                 offset += escaped.len_utf8();
             } else {
@@ -136,19 +160,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn skip_ws_and_comments(&mut self) {
-        loop {
-            while self.peek_char().is_some_and(char::is_whitespace) {
-                self.pos += self.peek_char().map_or(0, char::len_utf8);
-            }
-            if self.source[self.pos..].starts_with('#') {
-                self.pos += 1;
-                while self.peek_char().is_some_and(|ch| ch != '\n') {
-                    self.pos += self.peek_char().map_or(0, char::len_utf8);
-                }
-                continue;
-            }
-            break;
-        }
+        self.pos = scan_trivia(self.source, self.pos, self.source.len());
     }
 
     pub(super) fn expect_char(

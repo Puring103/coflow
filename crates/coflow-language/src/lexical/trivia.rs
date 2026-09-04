@@ -34,11 +34,77 @@ impl LosslessToken {
     }
 }
 
+/// 只统计结构分隔符；字符串、注释和空白由无损 token 层统一屏蔽。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DelimiterNesting {
+    braces: u64,
+    brackets: u64,
+    parentheses: u64,
+}
+
+impl DelimiterNesting {
+    pub(crate) const fn is_top_level(self) -> bool {
+        self.braces == 0 && self.brackets == 0 && self.parentheses == 0
+    }
+
+    pub(crate) fn consume(&mut self, token: LosslessToken, source: &str) {
+        if token.kind != LosslessTokenKind::Symbol {
+            return;
+        }
+        for ch in token.text(source).chars() {
+            match ch {
+                '{' => self.braces = self.braces.saturating_add(1),
+                '}' => self.braces = self.braces.saturating_sub(1),
+                '[' => self.brackets = self.brackets.saturating_add(1),
+                ']' => self.brackets = self.brackets.saturating_sub(1),
+                '(' => self.parentheses = self.parentheses.saturating_add(1),
+                ')' => self.parentheses = self.parentheses.saturating_sub(1),
+                _ => {}
+            }
+        }
+    }
+}
+
 const SYMBOLS: &[&str] = &[
-    "..=", "->", "=>", "::", "//", "**", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
-    "+=", "-=", "*=", "/=", "..", "(", ")", "{", "}", "[", "]", ",", ":", ";", ".", "?",
-    "+", "-", "*", "/", "%", "~", "!", "&", "|", "^", "<", ">", "=", "@",
+    "..=", "->", "=>", "::", "//", "**", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "+=",
+    "-=", "*=", "/=", "..", "(", ")", "{", "}", "[", "]", ",", ":", ";", ".", "?", "+", "-", "*",
+    "/", "%", "~", "!", "&", "|", "^", "<", ">", "=", "@",
 ];
+
+/// 跳过连续空白和 `#` 行注释，返回第一个非 trivia 字节位置。
+pub(crate) fn scan_trivia(source: &str, start: usize, limit: usize) -> usize {
+    let limit = limit.min(source.len());
+    let mut offset = start.min(limit);
+    loop {
+        let before = offset;
+        while offset < limit {
+            let ch = next_char(source, offset);
+            if !ch.is_whitespace() {
+                break;
+            }
+            offset += ch.len_utf8();
+        }
+        if offset < limit && source[offset..].starts_with('#') {
+            offset = scan_line_comment(source, offset, limit);
+        }
+        if offset == before {
+            return offset;
+        }
+    }
+}
+
+fn scan_line_comment(source: &str, start: usize, limit: usize) -> usize {
+    let limit = limit.min(source.len());
+    let mut offset = (start + 1).min(limit);
+    while offset < limit {
+        let ch = next_char(source, offset);
+        if matches!(ch, '\r' | '\n') {
+            break;
+        }
+        offset += ch.len_utf8();
+    }
+    offset
+}
 
 /// 扫描完整源码并保留所有 trivia 与未知字符，任意输入都能无损重建。
 #[must_use]
@@ -60,7 +126,7 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
             });
             LosslessTokenKind::Whitespace
         } else if ch == '#' {
-            offset = take_while(source, offset + 1, |next| !matches!(next, '\r' | '\n'));
+            offset = scan_line_comment(source, offset, source.len());
             LosslessTokenKind::Comment
         } else if ch == '"' {
             offset = scan_string_literal(source, offset, source.len(), false).end;
@@ -218,9 +284,9 @@ pub(crate) fn scan_string_literal(
             let escaped = next_char(source, offset);
             if decode_simple_escape(escaped).is_none() && error.is_none() {
                 error = Some(StringLiteralError::InvalidEscape {
-                        offset: offset - 1,
-                        escaped,
-                    });
+                    offset: offset - 1,
+                    escaped,
+                });
             }
             offset += escaped.len_utf8();
         } else if ch == '"' {
@@ -373,15 +439,28 @@ fn scan_identifier(source: &str, start: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{scan_balanced_delimiter, scan_number_literal, tokenize_lossless, LosslessTokenKind};
+    use super::{
+        scan_balanced_delimiter, scan_number_literal, scan_trivia, tokenize_lossless,
+        DelimiterNesting, LosslessTokenKind,
+    };
 
     #[test]
     fn lossless_tokens_reconstruct_unicode_and_trivia() {
         let source = "变量: \"# {值}\\n\"  # 注释\r\n";
         let tokens = tokenize_lossless(source);
-        assert_eq!(tokens.iter().map(|token| token.text(source)).collect::<String>(), source);
-        assert!(tokens.iter().any(|token| token.kind == LosslessTokenKind::Comment));
-        assert!(tokens.iter().any(|token| token.kind == LosslessTokenKind::Newline));
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| token.text(source))
+                .collect::<String>(),
+            source
+        );
+        assert!(tokens
+            .iter()
+            .any(|token| token.kind == LosslessTokenKind::Comment));
+        assert!(tokens
+            .iter()
+            .any(|token| token.kind == LosslessTokenKind::Newline));
     }
 
     #[test]
@@ -395,5 +474,40 @@ mod tests {
             scan_balanced_delimiter(delimited, 0, '(', ')'),
             Some(delimited.len())
         );
+    }
+
+    #[test]
+    fn numeric_boundaries_cover_valid_and_schema_free_neighbors() {
+        for (source, end) in [
+            ("12,", 2),
+            ("12.5]", 4),
+            ("12e-3f ", 6),
+            ("12..3", 2),
+            ("12.", 2),
+            ("12e+", 4),
+            ("12f32", 2),
+        ] {
+            assert_eq!(
+                scan_number_literal(source, 0, source.len()).end,
+                end,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn trivia_and_nesting_share_comment_and_string_boundaries() {
+        let source = " \t# { [ ( ignored\r\nnext";
+        assert_eq!(
+            scan_trivia(source, 0, source.len()),
+            source.find("next").unwrap()
+        );
+
+        let nested = "{ [ (\"}])\" # }])\n) ] }";
+        let mut nesting = DelimiterNesting::default();
+        for token in tokenize_lossless(nested) {
+            nesting.consume(token, nested);
+        }
+        assert!(nesting.is_top_level());
     }
 }

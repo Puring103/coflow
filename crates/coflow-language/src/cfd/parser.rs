@@ -6,11 +6,11 @@ use super::ast::{
     CfdUseDecl, CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
-use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
 use crate::lexical::{
     is_identifier_continue, is_identifier_start, scan_balanced_delimiter, tokenize_lossless,
-    LosslessTokenKind,
+    DelimiterNesting, LosslessTokenKind,
 };
+use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
 use crate::Span;
 use tokens::Token;
 
@@ -165,26 +165,28 @@ impl<'a> Parser<'a> {
     /// Skip to a record candidate only after malformed nested syntax has
     /// returned to the structural top level.
     fn recover_to_next_record(&mut self) {
-        let mut state = RecoveryState::from_prefix(&self.source[..self.pos]);
-        let mut at_line_start = false;
-        while !self.is_eof() {
-            let Some(ch) = self.peek_char() else {
-                break;
-            };
-            if at_line_start && matches!(ch, ' ' | '\t' | '\r') {
-                self.pos += ch.len_utf8();
-                continue;
-            }
-            if at_line_start
-                && state.is_top_level()
-                && (is_identifier_start(ch) || ch == '"')
+        let mut nesting = DelimiterNesting::default();
+        let mut at_line_start = true;
+        for token in tokenize_lossless(self.source) {
+            if token.span.start >= self.pos
+                && at_line_start
+                && nesting.is_top_level()
+                && matches!(
+                    token.kind,
+                    LosslessTokenKind::Identifier | LosslessTokenKind::String
+                )
             {
-                break;
+                self.pos = token.span.start;
+                return;
             }
-            at_line_start = ch == '\n';
-            state.consume(ch, self.source[self.pos..].starts_with("//"));
-            self.pos += ch.len_utf8();
+            nesting.consume(token, self.source);
+            at_line_start = match token.kind {
+                LosslessTokenKind::Newline => true,
+                LosslessTokenKind::Whitespace | LosslessTokenKind::Comment if at_line_start => true,
+                _ => false,
+            };
         }
+        self.pos = self.source.len();
     }
 
     fn parse_top_level(&mut self) -> Result<Vec<CfdRecord>, CfdSyntaxDiagnostic> {
@@ -567,7 +569,7 @@ impl<'a> Parser<'a> {
             self.open_nesting = self.open_nesting.saturating_sub(1);
             return result;
         }
-        let token = self.parse_name_token("flag expression operand")?;
+        let token = self.parse_value_token("flag expression operand")?;
         Ok((
             CfdBitExpr {
                 kind: CfdBitExprKind::Value(token.text),
@@ -790,67 +792,9 @@ fn parse_field_reference_text(
 
 fn is_reference_name(value: &str) -> bool {
     let mut chars = value.chars();
-    chars
-        .next()
-        .is_some_and(is_identifier_start)
-        && chars.all(is_identifier_continue)
+    chars.next().is_some_and(is_identifier_start) && chars.all(is_identifier_continue)
 }
 
 fn is_qualified_reference_name(value: &str) -> bool {
     value.split("::").all(is_reference_name)
-}
-
-#[derive(Default)]
-struct RecoveryState {
-    braces: u64,
-    brackets: u64,
-    in_string: bool,
-    escaped: bool,
-    line_comment: bool,
-}
-
-impl RecoveryState {
-    fn from_prefix(source: &str) -> Self {
-        let mut state = Self::default();
-        let mut chars = source.chars().peekable();
-        while let Some(ch) = chars.next() {
-            state.consume(ch, ch == '/' && chars.peek() == Some(&'/'));
-        }
-        state
-    }
-
-    const fn is_top_level(&self) -> bool {
-        self.braces == 0 && self.brackets == 0 && !self.in_string && !self.line_comment
-    }
-
-    fn consume(&mut self, ch: char, starts_line_comment: bool) {
-        if self.line_comment {
-            if ch == '\n' {
-                self.line_comment = false;
-            }
-            return;
-        }
-        if self.in_string {
-            if self.escaped {
-                self.escaped = false;
-            } else if ch == '\\' {
-                self.escaped = true;
-            } else if ch == '"' {
-                self.in_string = false;
-            }
-            return;
-        }
-        if starts_line_comment || ch == '#' {
-            self.line_comment = true;
-            return;
-        }
-        match ch {
-            '"' => self.in_string = true,
-            '{' => self.braces = self.braces.saturating_add(1),
-            '}' => self.braces = self.braces.saturating_sub(1),
-            '[' => self.brackets = self.brackets.saturating_add(1),
-            ']' => self.brackets = self.brackets.saturating_sub(1),
-            _ => {}
-        }
-    }
 }
