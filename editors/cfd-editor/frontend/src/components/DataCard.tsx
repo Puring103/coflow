@@ -581,6 +581,7 @@ export function DataCardExpanded({
         const displayedValue = nullCollectionShape ?? shownValue
         if (
           flattenSingleComplexField
+          && !fc.missing
           && fields.length === 1
           && displayedValue.kind === 'object'
         ) {
@@ -605,6 +606,7 @@ export function DataCardExpanded({
             fieldName={fc.name}
             description={fc.annotation?.description ?? undefined}
             value={fc.value}
+            missing={fc.missing}
             depth={depth}
             onEdit={fieldEdit}
             onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
@@ -659,6 +661,7 @@ function FieldRow({
   fieldName,
   description,
   value,
+  missing = false,
   depth,
   onEdit,
   onCollectionEdit,
@@ -680,6 +683,7 @@ function FieldRow({
   fieldName?: string
   description?: string
   value: FieldValue
+  missing?: boolean
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
@@ -768,6 +772,7 @@ function FieldRow({
       fieldName={fieldName}
       description={description}
       value={shownValue}
+      missing={missing}
       depth={depth}
       onCommit={commit}
       declaredType={declaredType}
@@ -964,6 +969,7 @@ function ScalarFieldRow({
   fieldName,
   description,
   value,
+  missing,
   depth,
   onCommit,
   declaredType,
@@ -984,6 +990,7 @@ function ScalarFieldRow({
   fieldName?: string
   description?: string
   value: FieldValue
+  missing: boolean
   depth: number
   onCommit?: (newValue: FieldValue) => void
   declaredType?: string
@@ -1005,7 +1012,7 @@ function ScalarFieldRow({
     || value.kind === 'enum' || value.kind === 'ref' || value.kind === 'function'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
-  const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
+  const canEdit = !missing && !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
@@ -1080,7 +1087,9 @@ function ScalarFieldRow({
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
-          {pluginRenderer && pluginContext ? (
+          {missing ? (
+            <MissingValueRepair value={value} onRepair={onCommit ? () => onCommit(value) : undefined} />
+          ) : pluginRenderer && pluginContext ? (
             <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
             <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={nullable} />
@@ -1094,6 +1103,46 @@ function ScalarFieldRow({
         <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
       </div>
     </div>
+  )
+}
+
+export function MissingValueRepair({
+  value,
+  onRepair,
+}: {
+  value: FieldValue
+  onRepair?: () => void | Promise<void>
+}) {
+  const [repairing, setRepairing] = useState(false)
+  const repairable = value.kind !== 'option_none' && !!onRepair
+
+  async function repair() {
+    if (!repairable || repairing) return
+    setRepairing(true)
+    try {
+      await onRepair?.()
+    } finally {
+      setRepairing(false)
+    }
+  }
+
+  return (
+    <span className="dc-missing-value">
+      <span className="dc-missing-label">Missing</span>
+      <button
+        type="button"
+        className="dc-missing-repair"
+        disabled={!repairable || repairing}
+        title={repairable ? '填入默认值' : '没有可用的默认值'}
+        onClick={event => {
+          event.stopPropagation()
+          void repair()
+        }}
+      >
+        <Icon name="build" size={12} />
+        <span>{repairing ? '修复中' : '修复'}</span>
+      </button>
+    </span>
   )
 }
 

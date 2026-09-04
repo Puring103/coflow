@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { diagnosticDisplayMessage, diagnosticKey, type DiagnosticItem } from '../wire'
+import type { DiagnosticTarget } from '../bindings/DiagnosticTarget'
 import { Icon } from './Icon'
 
 interface Props {
@@ -9,11 +10,7 @@ interface Props {
    *  panel is collapsed we auto-expand it first. */
   focus?: { key: string; tick: number } | null
   onFocusConsumed?: () => void
-  /** Predicate that decides whether a "跳转" button should be offered.
-   *  Defaults to "always available when the diagnostic carries a file". */
-  isJumpable?: (filePath: string) => boolean
-  onJumpToRecord?: (file: string, key: string, actualType: string | null) => void
-  onJumpToField?: (file: string, key: string, actualType: string | null, fieldPath: string) => void
+  onJump?: (target: DiagnosticTarget) => void
 }
 
 const DEFAULT_HEIGHT = 200
@@ -37,7 +34,7 @@ export function diagnosticsHeightFromStorage(value: string | null): number {
   return Number.isFinite(stored) ? Math.max(MIN_HEIGHT, stored) : DEFAULT_HEIGHT
 }
 
-export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpable, onJumpToRecord, onJumpToField }: Props) {
+export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [height, setHeight] = useState(initialHeight)
   const [resizing, setResizing] = useState(false)
@@ -183,9 +180,7 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
           <div className="diag-list" role="list" ref={listRef}>
             {diagnostics.map((d, i) => {
               const key = diagnosticKey(d)
-              const canJump = !!d.file_path && !!d.record_key && (!isJumpable || isJumpable(d.file_path))
-              const showFieldJump = canJump && !!d.field_path && !!onJumpToField
-              const showRecordJump = canJump && !showFieldJump && !!onJumpToRecord
+              const canJump = d.target.kind !== 'none' && !!onJump
               return (
                 <div
                   key={`${key}:${i}`}
@@ -201,23 +196,14 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpab
                     />
                   </span>
                   <span className="diag-msg">{diagnosticDisplayMessage(d)}</span>
-                  {(d.code || showFieldJump || showRecordJump) && (
+                  {(d.code || canJump) && (
                     <span className="diag-actions">
                       {d.code && <span className="diag-code">{d.code}</span>}
-                      {showFieldJump ? (
+                      {canJump ? (
                         <button
                           className="diag-jump"
-                          onClick={() => onJumpToField!(d.file_path!, d.record_key!, d.actual_type, d.field_path!)}
-                          title={`跳转到字段 ${d.field_path}`}
-                        >
-                          <Icon name="jump" size={11} aria-hidden />
-                          跳转
-                        </button>
-                      ) : showRecordJump ? (
-                        <button
-                          className="diag-jump"
-                          onClick={() => onJumpToRecord!(d.file_path!, d.record_key!, d.actual_type)}
-                          aria-label={`跳转到记录 ${d.record_key}`}
+                          onClick={() => onJump!(d.target)}
+                          title="跳转到诊断位置"
                         >
                           <Icon name="jump" size={11} aria-hidden />
                           跳转

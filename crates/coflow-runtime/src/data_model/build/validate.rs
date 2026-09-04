@@ -167,6 +167,8 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 self.validate_field_value(field, value, record, field_path, cursor)
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path, cursor)
+            } else if matches!(field.value_type, CftValueType::Option(_)) {
+                Some(ValueDraft::Value(CfdValue::OptionNone))
             } else {
                 self.push(
                     CfdDiagnostic::error(
@@ -185,7 +187,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let diagnostics = &self.diagnostics[diagnostic_start..];
         if diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code == CfdErrorCode::MissingRequiredField)
+            .all(|diagnostic| {
+                matches!(
+                    diagnostic.code,
+                    CfdErrorCode::MissingRequiredField | CfdErrorCode::InvalidEnumVariant
+                )
+            })
         {
             Some(RecordDraft {
                 key: key.to_string(),

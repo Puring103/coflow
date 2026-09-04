@@ -470,7 +470,7 @@ impl SessionStore {
     ) -> Result<ProjectBootstrap, EditorError> {
         let path = self.source_file_path(id, file_path)?;
         let normalized_path = coflow_runtime::normalize_path(&path);
-        let diagnostics = if file_path.ends_with(".cft") {
+        if file_path.ends_with(".cft") {
             let yaml_path = self.project_action_context(id)?;
             let project = Project::open_schema_only(Some(&yaml_path))
                 .map_err(api_diagnostics_to_editor_error)?;
@@ -486,12 +486,9 @@ impl SessionStore {
             let schema_session = schema_runtime
                 .into_latest_attempt()
                 .ok_or_else(|| EditorError::project("candidate schema disappeared"))?;
-            Runtime::new()
+            let _candidate = Runtime::new()
                 .open_write_session_from_schema(schema_session)
-                .map_err(api_diagnostics_to_editor_error)?
-                .queries()
-                .diagnostics()
-                .flat_diagnostics()
+                .map_err(api_diagnostics_to_editor_error)?;
         } else {
             let source_override = DataSourceTextOverride {
                 normalized_path,
@@ -501,24 +498,9 @@ impl SessionStore {
             let yaml_path = self.project_action_context(id)?;
             let project = Project::open_schema_only(Some(&yaml_path))
                 .map_err(api_diagnostics_to_editor_error)?;
-            Runtime::new()
+            let _candidate = Runtime::new()
                 .open_write_session_with_source_overrides(project, &[source_override])
-                .map_err(api_diagnostics_to_editor_error)?
-                .queries()
-                .diagnostics()
-                .flat_diagnostics()
-        };
-        let blocking = diagnostics
-            .iter()
-            .filter(|diagnostic| {
-                diagnostic.severity == "error"
-                    && diagnostic.stage != "CHECK"
-                    && !matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if !blocking.is_empty() {
-            return Err(EditorError::write("source contains errors").with_diagnostics(blocking));
+                .map_err(api_diagnostics_to_editor_error)?;
         }
 
         AtomicFile::new(&path, AllowOverwrite)

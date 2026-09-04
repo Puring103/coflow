@@ -8,4 +8,10 @@ import type { FieldAnnotation } from "./FieldAnnotation";
  * `value` is the authoritative `CfdValue`, shipped straight from the core
  * model. `annotation` carries ref-target and enum metadata.
  */
-export type FieldCell = { name: string, value: CfdValue, annotation: FieldAnnotation | null, };
+export type FieldCell = { name: string, value: CfdValue,
+/**
+ * The source record does not currently contain this declared field.
+ * `value` is an editor seed and is not part of the runtime data model
+ * until the user commits it.
+ */
+missing: boolean, annotation: FieldAnnotation | null, };

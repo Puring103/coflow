@@ -1,5 +1,5 @@
 use crate::api::{
-    map_diagnostics_with_origins, origins_of, CfdLoadContext, CfdSource, CfdSourceCatalog,
+    map_diagnostics_with_origins, CfdLoadContext, CfdSource, CfdSourceCatalog,
     Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
 };
 use crate::data_model::{
@@ -131,6 +131,13 @@ struct LoadState<'a> {
     source_data: SourceDataCache,
 }
 
+struct PartialModelBuild {
+    model: CfdDataModel,
+    diagnostics: DiagnosticSet,
+    logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
+    accepted_origins: Vec<RecordOrigin>,
+}
+
 pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput, DiagnosticSet> {
     Ok(ProjectLoadOutput {
         model: empty_model(schema)?,
@@ -209,42 +216,18 @@ pub(crate) fn load_project_data(
         }
     }
 
-    if !diagnostics.is_empty() {
-        return Err(load_failure(diagnostics));
-    }
-
-    let origins: Vec<RecordOrigin> = origins_of(&state.records);
     let draft_record_count = state.records.len();
-    let record_coordinates = state
-        .records
-        .iter()
-        .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
-        .collect::<Vec<_>>();
-    let mut builder = CfdDataModel::builder(schema);
-    for record in state.records {
-        builder.add_loaded_record(record);
-    }
-    for batch in &state.source_data.batches {
-        builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
-    }
-    let editable = match builder.build_editable() {
-        Ok(output) => output,
-        Err(err) => {
-            let logical_locations = logical_locations_from_cfd(&err, |id| {
-                record_coordinates.get(id.index()).cloned().flatten()
-            });
-            let diagnostics = map_diagnostics_with_origins(err, &origins);
-            return Err(LoadDiagnostics {
-                diagnostics,
-                logical_locations,
-            });
-        }
-    };
-    let model = editable.model;
-    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
-        record_coordinates.get(id.index()).cloned().flatten()
-    });
-    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
+    let partial = build_partial_model(schema, &state.records, &state.source_data)?;
+    let model = partial.model;
+    let origins = partial.accepted_origins;
+    let mut model_logical_locations = partial.logical_locations;
+    let mut model_diagnostics = diagnostics;
+    let model_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(partial.diagnostics);
+    model_logical_locations = model_logical_locations
+        .into_iter()
+        .map(|(index, location)| (model_offset + index, location))
+        .collect();
     let check = if options.run_checks {
         run_full_project_checks(schema, &model, &origins)
     } else {
@@ -363,32 +346,32 @@ pub(crate) fn reload_project_data_from_cache(
             }
             continue;
         }
-        match catalog.loader().load(
+        match catalog.loader().load_partial(
             CfdLoadContext {
                 schema,
                 source_text: source_override_text(&batch.entry.source, options.source_overrides),
             },
             &batch.entry.source,
         ) {
-            Ok(source_data) => batch.records = source_data.records.into(),
-            Err(err) => diagnostics.extend(err),
+            Ok(loaded) => {
+                diagnostics.extend(loaded.diagnostics);
+                batch.records = loaded.records.into();
+            }
+            Err(err) => {
+                batch.records = Arc::default();
+                diagnostics.extend(err);
+            }
         }
     }
-    if !diagnostics.is_empty() {
-        return Err(LoadDiagnostics {
-            diagnostics,
-            logical_locations: BTreeMap::new(),
-        });
-    }
 
-    build_output_from_cache(schema, indexes, source_data, &options, statistics)
-}
-
-const fn load_failure(diagnostics: DiagnosticSet) -> LoadDiagnostics {
-    LoadDiagnostics {
+    build_output_from_cache(
+        schema,
+        indexes,
+        source_data,
+        &options,
+        statistics,
         diagnostics,
-        logical_locations: BTreeMap::new(),
-    }
+    )
 }
 
 fn load_resolved_sources(
@@ -417,7 +400,7 @@ fn load_resolved_sources(
             display_path: display_path.clone(),
         };
         state.indexes.sources.push(entry.clone());
-        match loader.load(
+        match loader.load_partial(
             CfdLoadContext {
                 schema,
                 source_text: source_override_text(&spec, source_overrides),
@@ -425,6 +408,7 @@ fn load_resolved_sources(
             &spec,
         ) {
             Ok(batch) => {
+                diagnostics.extend(batch.diagnostics);
                 let cached_records: Arc<[LoadedRecordDraft]> = batch.records.into();
                 push_loaded_records(
                     &mut state.records,
@@ -671,6 +655,7 @@ fn build_output_from_cache(
     source_data: SourceDataCache,
     options: &ReloadProjectDataOptions<'_>,
     mut statistics: ProjectExecutionStats,
+    source_diagnostics: DiagnosticSet,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
     for batch in &source_data.batches {
@@ -694,33 +679,18 @@ fn build_output_from_cache(
             );
         }
     }
-    let origins = origins_of(&records);
     let draft_record_count = records.len();
-    let record_coordinates = records
-        .iter()
-        .map(|record| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
-        .collect::<Vec<_>>();
-    let mut builder = CfdDataModel::builder(schema);
-    for record in records {
-        builder.add_loaded_record(record);
-    }
-    for batch in &source_data.batches {
-        builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
-    }
-    let editable = builder.build_editable().map_err(|err| {
-        let logical_locations = logical_locations_from_cfd(&err, |id| {
-            record_coordinates.get(id.index()).cloned().flatten()
-        });
-        LoadDiagnostics {
-            diagnostics: map_diagnostics_with_origins(err, &origins),
-            logical_locations,
-        }
-    })?;
-    let model = editable.model;
-    let mut model_logical_locations = logical_locations_from_cfd(&editable.diagnostics, |id| {
-        record_coordinates.get(id.index()).cloned().flatten()
-    });
-    let mut model_diagnostics = map_diagnostics_with_origins(editable.diagnostics, &origins);
+    let partial = build_partial_model(schema, &records, &source_data)?;
+    let model = partial.model;
+    let origins = partial.accepted_origins;
+    let mut model_logical_locations = partial.logical_locations;
+    let mut model_diagnostics = source_diagnostics;
+    let model_offset = model_diagnostics.diagnostics.len();
+    model_diagnostics.extend(partial.diagnostics);
+    model_logical_locations = model_logical_locations
+        .into_iter()
+        .map(|(index, location)| (model_offset + index, location))
+        .collect();
     let check = if options.load.run_checks {
         run_cached_project_checks(
             schema,
@@ -755,6 +725,105 @@ fn build_output_from_cache(
         check_state: check.state,
         statistics,
     })
+}
+
+fn build_partial_model(
+    schema: &CftSchema,
+    records: &[LoadedRecordDraft],
+    source_data: &SourceDataCache,
+) -> Result<PartialModelBuild, LoadDiagnostics> {
+    let mut candidates = records
+        .iter()
+        .cloned()
+        .enumerate()
+        .collect::<Vec<_>>();
+    let mut diagnostics = DiagnosticSet::empty();
+    let mut logical_locations = BTreeMap::new();
+
+    loop {
+        let candidate_origins = candidates
+            .iter()
+            .map(|(_, record)| record.origin.clone())
+            .collect::<Vec<_>>();
+        let candidate_coordinates = candidates
+            .iter()
+            .map(|(_, record)| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
+            .collect::<Vec<_>>();
+        let mut builder = CfdDataModel::builder(schema);
+        for (_, record) in &candidates {
+            builder.add_loaded_record(record.clone());
+        }
+        for batch in &source_data.batches {
+            builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
+        }
+        match builder.build_partial() {
+            Ok(output) => {
+                let offset = diagnostics.diagnostics.len();
+                let current_locations = logical_locations_from_cfd(&output.diagnostics, |id| {
+                    candidate_coordinates.get(id.index()).cloned().flatten()
+                });
+                logical_locations.extend(
+                    current_locations
+                        .into_iter()
+                        .map(|(index, location)| (offset + index, location)),
+                );
+                diagnostics.extend(map_diagnostics_with_origins(
+                    output.diagnostics,
+                    &candidate_origins,
+                ));
+                return Ok(PartialModelBuild {
+                    model: output.model,
+                    diagnostics,
+                    logical_locations,
+                    accepted_origins: candidate_origins,
+                });
+            }
+            Err(error) => {
+                let rejected = error
+                    .diagnostics
+                    .iter()
+                    .flat_map(|diagnostic| {
+                        diagnostic
+                            .primary
+                            .iter()
+                            .chain(&diagnostic.related)
+                            .filter_map(|label| label.record.map(CfdRecordId::index))
+                    })
+                    .collect::<BTreeSet<_>>();
+                if rejected.is_empty() {
+                    return Err(LoadDiagnostics {
+                        diagnostics: map_diagnostics_with_origins(error, &candidate_origins),
+                        logical_locations: BTreeMap::new(),
+                    });
+                }
+                let offset = diagnostics.diagnostics.len();
+                let current_locations = logical_locations_from_cfd(&error, |id| {
+                    candidate_coordinates.get(id.index()).cloned().flatten()
+                });
+                logical_locations.extend(
+                    current_locations
+                        .into_iter()
+                        .map(|(index, location)| (offset + index, location)),
+                );
+                diagnostics.extend(map_diagnostics_with_origins(error, &candidate_origins));
+                let previous_len = candidates.len();
+                candidates = candidates
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(index, candidate)| (!rejected.contains(&index)).then_some(candidate))
+                    .collect();
+                if candidates.len() == previous_len {
+                    diagnostics.extend(runtime_invariant(
+                        "partial model diagnostics did not identify a candidate record",
+                    ));
+                    return Err(LoadDiagnostics {
+                        diagnostics,
+                        logical_locations,
+                    });
+                }
+            }
+        }
+    }
 }
 
 fn run_cached_project_checks(

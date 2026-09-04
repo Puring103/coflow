@@ -1,4 +1,4 @@
-use crate::data_model::LoadedRecordDraft;
+use crate::{data_model::LoadedRecordDraft, DiagnosticSet};
 use coflow_language::CftSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -36,4 +36,5 @@ pub struct CfdLoadContext<'a> {
 #[derive(Debug, Clone)]
 pub struct LoadedCfdSource {
     pub records: Vec<LoadedRecordDraft>,
+    pub diagnostics: DiagnosticSet,
 }

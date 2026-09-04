@@ -519,6 +519,10 @@ pub struct FieldDiagnostic {
 pub struct FieldCell {
     pub name: String,
     pub value: CfdValue,
+    /// The source record does not currently contain this declared field.
+    /// `value` is an editor seed and is not part of the runtime data model
+    /// until the user commits it.
+    pub missing: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotation: Option<FieldAnnotation>,
 }

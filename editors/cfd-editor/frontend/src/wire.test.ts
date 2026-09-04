@@ -26,14 +26,12 @@ function context(kind: string, values: Partial<DiagnosticContext> = {}): Diagnos
 
 function diagnostic(contexts?: DiagnosticItem['contexts']): DiagnosticItem {
   return {
+    id: 'custom-message',
     severity: 'error',
     code: 'CHECK-001',
     stage: 'CHECK',
     message: 'custom message',
-    file_path: null,
-    actual_type: null,
-    record_key: null,
-    field_path: null,
+    target: { kind: 'none' },
     ...(contexts === undefined ? {} : { contexts }),
   } as DiagnosticItem
 }

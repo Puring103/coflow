@@ -3,6 +3,7 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import {
   coordinateId,
   diagnosticDisplayMessage,
+  diagnosticRecordTarget,
   diagnosticSeverity,
   type DiagnosticItem,
 } from '../wire'
@@ -34,15 +35,15 @@ export function buildRecordDiagnosticIndex(
 
   const index = new Map<string, RecordDiagnosticProjection>()
   for (const diagnostic of diagnostics) {
-    if (!diagnostic.file_path || !diagnostic.record_key) continue
+    const diagnosticTarget = diagnosticRecordTarget(diagnostic)
+    if (!diagnosticTarget) continue
     const candidates = targetsByAnchor.get(
-      diagnosticAnchor(diagnostic.file_path, diagnostic.record_key),
+      diagnosticAnchor(diagnosticTarget.file_path, diagnosticTarget.coordinate.key),
     )
     if (!candidates) continue
     for (const target of candidates) {
       if (
-        diagnostic.actual_type !== null
-        && diagnostic.actual_type !== target.coordinate.actual_type
+        diagnosticTarget.coordinate.actual_type !== target.coordinate.actual_type
       ) continue
       const key = recordDiagnosticKey(target.filePath, target.coordinate)
       const projection = index.get(key) ?? {
@@ -53,10 +54,10 @@ export function buildRecordDiagnosticIndex(
       if (severity === 'error' || (severity === 'warning' && projection.severity === null)) {
         projection.severity = severity
       }
-      if (diagnostic.field_path) {
+      if (diagnosticTarget.kind === 'table_field') {
         projection.fieldDiagnostics.push({
           severity,
-          field_path: diagnostic.field_path,
+          field_path: diagnosticTarget.field_path,
           message: diagnosticDisplayMessage(diagnostic),
         })
       }

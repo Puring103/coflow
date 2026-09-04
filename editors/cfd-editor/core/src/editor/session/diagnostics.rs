@@ -1,8 +1,7 @@
 //! Editor-side view of the engine's diagnostics in wire-friendly
 //! [`coflow_runtime::FlatDiagnostic`] shape.
 
-use coflow_runtime::DiagnosticsStore;
-use coflow_runtime::{path_to_slash, FlatDiagnostic};
+use coflow_runtime::{path_to_slash, DiagnosticTarget, FlatDiagnostic, ProjectQueries};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -19,15 +18,24 @@ impl Diagnostics {
     pub fn from_items(items: Vec<FlatDiagnostic>) -> Self {
         let mut borrowed = HashMap::<&str, HashMap<&str, Vec<usize>>>::new();
         for (index, diagnostic) in items.iter().enumerate() {
-            let (Some(file_path), Some(record_key)) =
-                (&diagnostic.file_path, &diagnostic.record_key)
-            else {
-                continue;
+            let (file_path, coordinate) = match &diagnostic.target {
+                DiagnosticTarget::TableField {
+                    file_path,
+                    coordinate,
+                    ..
+                }
+                | DiagnosticTarget::Record {
+                    file_path,
+                    coordinate,
+                } => (file_path, coordinate),
+                DiagnosticTarget::Source { .. }
+                | DiagnosticTarget::ProjectSource { .. }
+                | DiagnosticTarget::None => continue,
             };
             borrowed
                 .entry(file_path)
                 .or_default()
-                .entry(record_key)
+                .entry(coordinate.key.as_str())
                 .or_default()
                 .push(index);
         }
@@ -48,8 +56,8 @@ impl Diagnostics {
     }
 
     #[must_use]
-    pub fn from_store(store: &DiagnosticsStore, project_root: &Path) -> Self {
-        diagnostics_from_store(store, project_root)
+    pub fn from_queries(queries: ProjectQueries<'_>, project_root: &Path) -> Self {
+        diagnostics_from_store(queries, project_root)
     }
 
     #[must_use]
@@ -69,10 +77,12 @@ impl Diagnostics {
             .flatten()
             .filter_map(|index| self.items.get(*index))
             .filter(move |diagnostic| {
-                diagnostic
-                    .actual_type
-                    .as_deref()
-                    .is_none_or(|actual_type| actual_type == coordinate.actual_type.as_str())
+                matches!(
+                    &diagnostic.target,
+                    DiagnosticTarget::TableField { coordinate: target, .. }
+                        | DiagnosticTarget::Record { coordinate: target, .. }
+                        if target.actual_type == coordinate.actual_type
+                )
             })
     }
 }
@@ -86,7 +96,8 @@ impl Diagnostics {
 /// diagnostics-panel jump buttons and per-record/field angle badges can
 /// match against the same key the rest of the UI uses.
 #[must_use]
-pub fn diagnostics_from_store(store: &DiagnosticsStore, project_root: &Path) -> Diagnostics {
+pub fn diagnostics_from_store(queries: ProjectQueries<'_>, project_root: &Path) -> Diagnostics {
+    let store = queries.diagnostics();
     Diagnostics::from_items(
         store
             .as_set()
@@ -95,18 +106,63 @@ pub fn diagnostics_from_store(store: &DiagnosticsStore, project_root: &Path) -> 
             .enumerate()
             .map(|(index, diagnostic)| {
                 let logical = store.logical_location(index);
+                let source_range = diagnostic.primary.as_ref().map(|label| label.location.text_range());
                 let mut flat = diagnostic.flat_view(
                     logical.and_then(|loc| loc.actual_type.clone()),
                     logical.and_then(|loc| loc.record_key.clone()),
                     logical.and_then(|loc| loc.field_path.clone()),
                 );
-                if let Some(path) = flat.file_path.take() {
-                    flat.file_path = Some(project_relative_path(project_root, &path));
-                }
+                normalize_target(&mut flat.target, source_range, queries, project_root);
                 flat
             })
             .collect(),
     )
+}
+
+fn normalize_target(
+    target: &mut DiagnosticTarget,
+    source_range: Option<coflow_runtime::TextRange>,
+    queries: ProjectQueries<'_>,
+    project_root: &Path,
+) {
+    match target {
+        DiagnosticTarget::TableField {
+            file_path,
+            coordinate,
+            ..
+        }
+        | DiagnosticTarget::Record {
+            file_path,
+            coordinate,
+        } => {
+            *file_path = project_relative_path(project_root, file_path);
+            if queries
+                .file_for_record(&coordinate.actual_type, &coordinate.key)
+                .is_none()
+            {
+                let file_path = file_path.clone();
+                let range = source_range.or_else(|| queries
+                    .rejected_records_by_coordinate(&coordinate.actual_type, &coordinate.key)
+                    .find(|record| record.display_path == file_path)
+                    .and_then(|record| match &record.origin {
+                        coflow_runtime::RecordOrigin::File { span, .. } => *span,
+                        coflow_runtime::RecordOrigin::None => None,
+                    })
+                    .map(|span| coflow_runtime::TextRange::from_parts(
+                        span.start_line,
+                        span.start_character,
+                        span.end_line,
+                        span.end_character,
+                    )));
+                *target = DiagnosticTarget::Source { file_path, range };
+            }
+        }
+        DiagnosticTarget::Source { file_path, .. }
+        | DiagnosticTarget::ProjectSource { file_path, .. } => {
+            *file_path = project_relative_path(project_root, file_path);
+        }
+        DiagnosticTarget::None => {}
+    }
 }
 
 /// Best-effort conversion of an engine-emitted absolute file path back to
@@ -134,13 +190,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn record_index_preserves_order_and_matches_untyped_diagnostics() {
+    fn record_index_preserves_order_and_matches_exact_coordinates() {
         let diagnostics = Diagnostics::from_items(vec![
-            diagnostic("other.cfd", "sword", Some("Item"), "unrelated file"),
-            diagnostic("items.cfd", "shield", Some("Item"), "unrelated record"),
-            diagnostic("items.cfd", "sword", None, "untyped"),
-            diagnostic("items.cfd", "sword", Some("Npc"), "other type"),
-            diagnostic("items.cfd", "sword", Some("Item"), "typed"),
+            diagnostic("other.cfd", "sword", "Item", "unrelated file"),
+            diagnostic("items.cfd", "shield", "Item", "unrelated record"),
+            diagnostic("items.cfd", "sword", "Item", "first"),
+            diagnostic("items.cfd", "sword", "Npc", "other type"),
+            diagnostic("items.cfd", "sword", "Item", "second"),
         ]);
 
         let coordinate =
@@ -150,25 +206,30 @@ mod tests {
             .map(|diagnostic| diagnostic.message.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(messages, vec!["untyped", "typed"]);
+        assert_eq!(messages, vec!["first", "second"]);
     }
 
     fn diagnostic(
         file_path: &str,
         record_key: &str,
-        actual_type: Option<&str>,
+        actual_type: &str,
         message: &str,
     ) -> FlatDiagnostic {
         FlatDiagnostic {
+            id: "test-diagnostic".to_string(),
             severity: "warning".to_string(),
             code: "TEST".to_string(),
             stage: "test".to_string(),
             message: message.to_string(),
-            file_path: Some(file_path.to_string()),
-            actual_type: actual_type.map(str::to_string),
-            record_key: Some(record_key.to_string()),
-            field_path: Some("name".to_string()),
-            range: None,
+            target: DiagnosticTarget::TableField {
+                file_path: file_path.to_string(),
+                coordinate: RecordCoordinate::try_new(
+                    actual_type,
+                    record_key,
+                )
+                .expect("coordinate"),
+                field_path: "name".to_string(),
+            },
             contexts: Vec::new(),
         }
     }

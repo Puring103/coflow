@@ -175,7 +175,7 @@ fn missing_key_reports_ref_target_not_found() {
 }
 
 #[test]
-fn editable_build_preserves_unresolved_refs() {
+fn partial_build_preserves_unresolved_refs() {
     let schema = compile_schema("type Item {} type Holder { item: &Item; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -185,7 +185,7 @@ fn editable_build_preserves_unresolved_refs() {
     );
 
     let output = builder
-        .build_editable()
+        .build_partial()
         .expect("unresolved refs are representable in an editable model");
     assert_has_code(&output.diagnostics, CfdErrorCode::RefTargetNotFound);
     let holder_id = output
@@ -219,7 +219,7 @@ fn wrong_ref_target_type_has_a_reference_diagnostic() {
     );
 
     let output = builder
-        .build_editable()
+        .build_partial()
         .expect("wrong-type refs remain editable");
     let diagnostic = diagnostic_with_code(&output.diagnostics, CfdErrorCode::RefTargetTypeMismatch);
     assert_eq!(diagnostic.stage, CfdStage::Reference);

@@ -855,8 +855,7 @@ fn finalize_mutation(
     if !report.write_ok {
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
-    session.diagnostics =
-        Diagnostics::from_store(session.queries().diagnostics(), &session.project_root);
+    session.diagnostics = Diagnostics::from_queries(session.queries(), &session.project_root);
     if report.generation_changed {
         session.commit_internal_write(&report.written_files);
         session.ref_target_cache.clear();

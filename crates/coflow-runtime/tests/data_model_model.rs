@@ -546,19 +546,36 @@ fn semantic_edges_report_data_model_diagnostics() {
 
     let err = builder.build().expect_err("data errors");
     assert_has_code(&err, CfdErrorCode::UnknownField);
-    assert_has_code(&err, CfdErrorCode::MissingRequiredField);
     assert_has_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_has_code(&err, CfdErrorCode::DuplicateDictKey);
 }
 
 #[test]
-fn editable_build_keeps_records_with_only_missing_required_fields() {
+fn omitted_option_field_materializes_as_none_without_a_diagnostic() {
+    let schema = compile_schema("type Item { name: string; maybe: Option<int>; }");
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [("name", LoadedValueDraft::from("visible"))],
+    );
+
+    let model = builder.build().expect("omitted option is valid");
+    let item_id = model
+        .lookup_assignable(&schema, "Item", "item")
+        .expect("item record");
+    let item = model.record(item_id).expect("item");
+    assert_eq!(item.field("maybe"), Some(&CfdValue::OptionNone));
+}
+
+#[test]
+fn partial_build_keeps_records_with_only_missing_required_fields() {
     let schema = compile_schema("type Item { name: string; value: int; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
 
     let output = builder
-        .build_editable()
+        .build_partial()
         .expect("a missing field can be repaired later");
     assert_has_code(&output.diagnostics, CfdErrorCode::MissingRequiredField);
     assert_eq!(CfdErrorCode::MissingRequiredField.as_str(), "DATA-006");
@@ -572,7 +589,7 @@ fn editable_build_keeps_records_with_only_missing_required_fields() {
 }
 
 #[test]
-fn editable_build_still_rejects_non_representable_data_errors() {
+fn partial_build_still_rejects_non_representable_data_errors() {
     let schema = compile_schema("type Item { value: int; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -585,7 +602,7 @@ fn editable_build_still_rejects_non_representable_data_errors() {
     );
 
     let diagnostics = builder
-        .build_editable()
+        .build_partial()
         .expect_err("unknown fields must remain blocking");
     assert_has_code(&diagnostics, CfdErrorCode::UnknownField);
 }

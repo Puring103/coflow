@@ -92,7 +92,7 @@ impl<'a> CfdModelBuilder<'a> {
     /// Returns data-model diagnostics for invalid values, duplicate keys, or
     /// unresolved references.
     pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
-        let output = self.build_editable()?;
+        let output = self.build_partial()?;
         if output.diagnostics.is_empty() {
             Ok(output.model)
         } else {
@@ -107,7 +107,7 @@ impl<'a> CfdModelBuilder<'a> {
     ///
     /// Returns diagnostics when invalid input cannot be represented without
     /// dropping records or values.
-    pub fn build_editable(self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+    pub fn build_partial(self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         ModelCompiler::new(
             self.schema,
             self.records,
@@ -147,13 +147,25 @@ impl<'a> ModelCompiler<'a> {
     pub(crate) fn build(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         let drafts = self.validate_input_records();
         self.move_editable_diagnostics(|code| {
-            code == crate::data_model::CfdErrorCode::MissingRequiredField
+            matches!(
+                code,
+                crate::data_model::CfdErrorCode::MissingRequiredField
+                    | crate::data_model::CfdErrorCode::InvalidEnumVariant
+            )
         });
         self.fail_if_diagnostics()?;
 
         let indexes = indexes::build_indexes(self.schema, &drafts, &mut self.diagnostics);
         // Singleton diagnostics intentionally join the rest of index validation.
         indexes::validate_singletons(self.schema, &drafts, &indexes.tables, &mut self.diagnostics);
+        self.move_editable_diagnostics(|code| {
+            matches!(
+                code,
+                crate::data_model::CfdErrorCode::SingletonRecordCountInvalid
+                    | crate::data_model::CfdErrorCode::SingletonKeyMissingOrInvalid
+                    | crate::data_model::CfdErrorCode::SingletonKeyCollision
+            )
+        });
         self.fail_if_diagnostics()?;
 
         let mut records = self.resolve_records(&drafts, &indexes.record_by_domain_key);
@@ -175,21 +187,20 @@ impl<'a> ModelCompiler<'a> {
 
         let validated_dimension_values =
             self.validate_dimension_values(&records, &indexes.record_by_domain_key);
-        self.fail_if_diagnostics()?;
+        self.move_editable_diagnostics(|_| true);
 
         let dimension_values = self.resolve_dimension_values(
             &drafts,
             &indexes.record_by_domain_key,
             validated_dimension_values,
         );
-        self.fail_if_diagnostics()?;
+        self.move_editable_diagnostics(|_| true);
         attach_dimension_values(&mut records, dimension_values);
 
         let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, self.schema);
         if let Some(diagnostic) = first_ref_cycle(&ref_indexes, &records) {
-            self.diagnostics.push(diagnostic);
+            self.editable_diagnostics.push(diagnostic);
         }
-        self.fail_if_diagnostics()?;
 
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {

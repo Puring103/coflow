@@ -8,6 +8,8 @@ use crate::{
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
     ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
+use crate::mutation::defaults::default_value_for_value_type;
+use crate::DefaultMaterialization;
 
 /// Read-only capability over one immutable project generation.
 ///
@@ -124,6 +126,29 @@ impl<'a> ProjectQueries<'a> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Builds a schema-shaped value used only to present an absent field in
+    /// an editor. Failure means the type requires user input (most notably a
+    /// required record reference), so the host should present an empty typed
+    /// control instead of inventing a valid model value.
+    #[must_use]
+    pub fn editable_field_seed(self, actual_type: &str, field_name: &str) -> Option<CfdValue> {
+        let field = self.session.schema().field(actual_type, field_name)?;
+        if let CftValueType::RecordRef(expected_type) = &field.value_type {
+            return self
+                .session
+                .ref_targets(expected_type)
+                .into_iter()
+                .next()
+                .map(|target| CfdValue::Ref(target.coordinate.key));
+        }
+        default_value_for_value_type(
+            self.session.schema(),
+            &field.value_type,
+            DefaultMaterialization::EditableShape,
+        )
+        .ok()
     }
 
     #[must_use]

@@ -14,6 +14,7 @@ function node(value: string): GraphNodeView {
     fields: [{
       name: 'name',
       value: { kind: 'string', value },
+      missing: false,
       annotation: null,
     }],
     field_diagnostics: [],

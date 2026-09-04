@@ -6,6 +6,7 @@ import {
   DataCardCompact,
   DataCardExpanded,
   EnumDirectSelect,
+  MissingValueRepair,
   RefDirectSelect,
 } from './DataCard'
 import { ObjectDraftHost } from './ObjectDraftHost'
@@ -44,6 +45,7 @@ describe('DataCardCompact complex previews', () => {
       children: createElement(DataCardExpanded, {
         fields: [{
           name: 'Rewards',
+          missing: false,
           annotation: {
             ...polymorphicObjectAnnotation,
             declared_type: '[Reward]',
@@ -240,6 +242,7 @@ describe('DataCardCompact complex previews', () => {
   it('inlines singleton object collections under a count-only header', () => {
     const fields = [{
       name: 'MatterVariations',
+      missing: false,
       annotation: null,
       value: {
         kind: 'array' as const,
@@ -283,6 +286,7 @@ describe('DataCardCompact complex previews', () => {
     const html = renderToStaticMarkup(createElement(DataCardExpanded, {
       fields: [{
         name: 'Entries',
+        missing: false,
         annotation: null,
         value: {
           kind: 'array' as const,
@@ -310,6 +314,7 @@ describe('DataCardCompact complex previews', () => {
     const html = renderToStaticMarkup(createElement(DataCardExpanded, {
       fields: [{
         name: 'Values',
+        missing: false,
         annotation: null,
         value: {
           kind: 'array' as const,
@@ -338,6 +343,7 @@ describe('DataCardCompact complex previews', () => {
       children: createElement(DataCardExpanded, {
         fields: [{
           name: 'BioRemains',
+          missing: false,
           annotation: null,
           value: { kind: 'array' as const, value: [] },
         }],
@@ -357,6 +363,7 @@ describe('DataCardCompact complex previews', () => {
   it('summarizes nested diagnostics without marking ancestor labels as exact errors', () => {
     const fields = [{
       name: 'MatterVariations',
+      missing: false,
       annotation: null,
       value: {
         kind: 'array' as const,
@@ -403,7 +410,7 @@ describe('DataCardCompact complex previews', () => {
       expandedPaths.add(path)
     }
     const html = renderToStaticMarkup(createElement(DataCardExpanded, {
-      fields: [{ name: 'root', annotation: null, value: nested }],
+      fields: [{ name: 'root', annotation: null, value: nested, missing: false }],
       expandedPaths,
     }))
 
@@ -412,4 +419,27 @@ describe('DataCardCompact complex previews', () => {
     expect(html).not.toContain('markdown-value-tree')
   })
 
+})
+
+describe('missing field repair', () => {
+  it('renders an explicit repair action for a generated default', () => {
+    const html = renderToStaticMarkup(createElement(MissingValueRepair, {
+      value: { kind: 'int', value: 0n },
+      onRepair: () => {},
+    }))
+
+    expect(html).toContain('Missing')
+    expect(html).toContain('修复')
+    expect(html).not.toContain('disabled=""')
+  })
+
+  it('disables repair when no valid default can be generated', () => {
+    const html = renderToStaticMarkup(createElement(MissingValueRepair, {
+      value: { kind: 'option_none' },
+      onRepair: () => {},
+    }))
+
+    expect(html).toContain('没有可用的默认值')
+    expect(html).toContain('disabled=""')
+  })
 })

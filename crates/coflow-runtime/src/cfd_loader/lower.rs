@@ -96,22 +96,42 @@ pub(super) fn lower_records(
     schema: &CftSchema,
     ast: &CfdAst,
 ) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextDiagnostics> {
-    let names = CfdNameResolver::new(schema, ast)?;
+    let (records, diagnostics) = lower_records_with_mode(schema, ast, false);
+    finish(records, diagnostics)
+}
+
+pub(super) fn lower_records_partial(
+    schema: &CftSchema,
+    ast: &CfdAst,
+) -> (Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
+    lower_records_with_mode(schema, ast, true)
+}
+
+fn lower_records_with_mode(
+    schema: &CftSchema,
+    ast: &CfdAst,
+    preserve_repairable_values: bool,
+) -> (Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
+    let names = match CfdNameResolver::new(schema, ast) {
+        Ok(names) => names,
+        Err(error) => return (Vec::new(), error.diagnostics),
+    };
     let mut records = Vec::with_capacity(ast.records.len());
     let mut diagnostics = Vec::new();
     for record in &ast.records {
-        match lower_record(schema, &names, record) {
+        match lower_record(schema, &names, record, preserve_repairable_values) {
             Ok(record) => records.push(record),
             Err(error) => diagnostics.extend(error.diagnostics),
         }
     }
-    finish(records, diagnostics)
+    (records, diagnostics)
 }
 
 fn lower_record(
     schema: &CftSchema,
     names: &CfdNameResolver,
     record: &CfdRecord,
+    preserve_repairable_values: bool,
 ) -> Result<ParsedLoadedRecordDraft, CfdTextDiagnostics> {
     validate_record_key(&record.key, record.key_span)?;
     let type_name = names.resolve(&record.type_name);
@@ -122,7 +142,13 @@ fn lower_record(
     } else {
         validate_record_type(schema, &type_name, record.type_span)?;
     }
-    let fields = lower_object_fields(schema, names, &type_name, &record.fields)?;
+    let fields = lower_object_fields(
+        schema,
+        names,
+        &type_name,
+        &record.fields,
+        preserve_repairable_values,
+    )?;
     Ok(ParsedLoadedRecordDraft {
         record: LoadedRecordDraft::new(record.key.clone(), type_name, fields),
         span: text_span(record.span),
@@ -134,6 +160,7 @@ fn lower_object_fields(
     names: &CfdNameResolver,
     type_name: &str,
     fields: &[CfdField],
+    preserve_repairable_values: bool,
 ) -> Result<BTreeMap<String, LoadedValueDraft>, CfdTextDiagnostics> {
     let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
         error(
@@ -183,7 +210,13 @@ fn lower_object_fields(
             );
             continue;
         };
-        match lower_value_resolved(schema, names, &field.value, &meta.value_type) {
+        match lower_value_resolved(
+            schema,
+            names,
+            &field.value,
+            &meta.value_type,
+            preserve_repairable_values,
+        ) {
             Ok(value) => {
                 values.insert(field.name.clone(), value);
             }
@@ -198,7 +231,7 @@ pub(crate) fn lower_value(
     value: &CfdValue,
     ty: &CftValueType,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
-    lower_value_resolved(schema, &CfdNameResolver::root(), value, ty)
+    lower_value_resolved(schema, &CfdNameResolver::root(), value, ty, false)
 }
 
 fn lower_value_resolved(
@@ -206,28 +239,37 @@ fn lower_value_resolved(
     names: &CfdNameResolver,
     value: &CfdValue,
     ty: &CftValueType,
+    preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match ty {
         CftValueType::Int => lower_int(value),
         CftValueType::Float => lower_float(value),
         CftValueType::Bool => lower_bool(value),
         CftValueType::String => lower_string(names, value),
-        CftValueType::Enum(name) => lower_enum(schema, names, value, name),
-        CftValueType::Object(name) => lower_object(schema, names, value, name),
+        CftValueType::Enum(name) => {
+            lower_enum(schema, names, value, name, preserve_repairable_values)
+        }
+        CftValueType::Object(name) => {
+            lower_object(schema, names, value, name, preserve_repairable_values)
+        }
         CftValueType::RecordRef(name) => lower_ref(schema, names, value, name),
-        CftValueType::Array(inner) => lower_array(schema, names, value, inner),
-        CftValueType::Dict(key, item) => lower_dict(schema, names, value, key, item),
+        CftValueType::Array(inner) => {
+            lower_array(schema, names, value, inner, preserve_repairable_values)
+        }
+        CftValueType::Dict(key, item) => {
+            lower_dict(schema, names, value, key, item, preserve_repairable_values)
+        }
         CftValueType::Option(inner) => match value {
             CfdValue::OptionNone(_) => Ok(LoadedValueDraft::OptionNone),
-            CfdValue::OptionSome(value, _) => lower_value_resolved(schema, names, value, inner)
+            CfdValue::OptionSome(value, _) => lower_value_resolved(schema, names, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
-            value => lower_value_resolved(schema, names, value, inner)
+            value => lower_value_resolved(schema, names, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         },
         CftValueType::Result(ok, error_type) => match value {
-            CfdValue::ResultOk(value, _) => lower_value_resolved(schema, names, value, ok)
+            CfdValue::ResultOk(value, _) => lower_value_resolved(schema, names, value, ok, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::ResultOk(Box::new(value))),
-            CfdValue::ResultErr(value, _) => lower_value_resolved(schema, names, value, error_type)
+            CfdValue::ResultErr(value, _) => lower_value_resolved(schema, names, value, error_type, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::ResultErr(Box::new(value))),
             _ => Err(error(
                 CfdTextErrorCode::TypeMismatch,
@@ -599,6 +641,7 @@ fn lower_enum(
     names: &CfdNameResolver,
     value: &CfdValue,
     enum_name: &str,
+    preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let schema_enum = schema.resolve_enum(enum_name).ok_or_else(|| {
         error(
@@ -634,6 +677,9 @@ fn lower_enum(
             .any(|candidate| candidate.name.as_str() == variant.as_str())
     });
     if !valid {
+        if preserve_repairable_values {
+            return Ok(LoadedValueDraft::enum_variant(enum_name, variant));
+        }
         return Err(error(
             CfdTextErrorCode::InvalidEnumVariant,
             format!("unknown enum variant `{enum_name}::{variant}`"),
@@ -721,6 +767,7 @@ fn lower_object(
     names: &CfdNameResolver,
     value: &CfdValue,
     expected_type: &str,
+    preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::Block(block) => {
@@ -731,7 +778,13 @@ fn lower_object(
             } else {
                 (expected_type.to_string(), true)
             };
-            let fields = lower_object_fields(schema, names, &actual_type, &block.fields)?;
+            let fields = lower_object_fields(
+                schema,
+                names,
+                &actual_type,
+                &block.fields,
+                preserve_repairable_values,
+            )?;
             Ok(if declared {
                 LoadedValueDraft::object_with_declared_type(fields)
             } else {
@@ -782,6 +835,7 @@ fn lower_array(
     names: &CfdNameResolver,
     value: &CfdValue,
     inner: &CftValueType,
+    preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let CfdValue::Array(items, _) = value else {
         return Err(error(
@@ -793,7 +847,7 @@ fn lower_array(
     let mut lowered = Vec::with_capacity(items.len());
     let mut diagnostics = Vec::new();
     for item in items {
-        let result = lower_value_resolved(schema, names, item, inner);
+        let result = lower_value_resolved(schema, names, item, inner, preserve_repairable_values);
         match result {
             Ok(value) => lowered.push(value),
             Err(error) => diagnostics.extend(error.diagnostics),
@@ -808,6 +862,7 @@ fn lower_dict(
     value: &CfdValue,
     key_type: &CftValueType,
     value_type: &CftValueType,
+    preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let CfdValue::Block(block) = value else {
         return Err(error(
@@ -827,7 +882,13 @@ fn lower_dict(
     let mut diagnostics = Vec::new();
     for field in &block.fields {
         let key = lower_dict_key(schema, names, &field.name, field.name_span, key_type);
-        let value = lower_value_resolved(schema, names, &field.value, value_type);
+        let value = lower_value_resolved(
+            schema,
+            names,
+            &field.value,
+            value_type,
+            preserve_repairable_values,
+        );
         match (key, value) {
             (Ok(key), Ok(value)) => entries.push((key, value)),
             (key, value) => {

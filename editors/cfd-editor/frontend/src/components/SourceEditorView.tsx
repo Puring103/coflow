@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
-import { errorDiagnostics, errorMessage, type DiagnosticItem } from '../wire'
+import type { TextRange } from '../bindings/TextRange'
+import { diagnosticFilePath, errorDiagnostics, errorMessage, type DiagnosticItem } from '../wire'
 import {
   codeMirrorDiagnostics,
   completionItem,
@@ -40,9 +41,10 @@ interface Props {
   filePath: string
   readOnly: boolean
   onSaved: (result: ProjectBootstrap) => Promise<void> | void
+  focus?: { range: TextRange | null; tick: number } | null
 }
 
-export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved }: Props) {
+export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved, focus = null }: Props) {
   const key = `${sessionId}:${filePath}`
   const [base, setBase] = useState('')
   const [source, setSource] = useState('')
@@ -64,6 +66,10 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
     ...codeMirrorDiagnostics(source, diagnostics),
     ...validationCodeMirrorDiagnostics(source, validationDiagnostics),
   ], [diagnostics, source, validationDiagnostics])
+  const focusRange = useMemo(() => focus?.range
+    ? { ...rangeOffsets(source, focus.range), tick: focus.tick }
+    : null,
+  [focus, source])
 
   useEffect(() => {
     let alive = true
@@ -227,6 +233,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
           onSave={() => { void save() }}
           readOnly={readOnly || saving}
           documentUpdate={documentUpdate}
+          focusRange={focusRange}
           semanticTokens={semanticTokens}
           replaceSemanticTokens={replaceSemanticTokens}
           diagnostics={editorDiagnostics}
@@ -249,7 +256,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
 }
 
 function diagnosticBelongsToFile(diagnostic: DiagnosticItem, filePath: string): boolean {
-  const diagnosticPath = diagnostic.file_path?.replace(/\\/g, '/')
+  const diagnosticPath = diagnosticFilePath(diagnostic)?.replace(/\\/g, '/')
   const sourcePath = filePath.replace(/\\/g, '/')
   return diagnosticPath === sourcePath || diagnosticPath?.endsWith(`/${sourcePath}`) === true
 }

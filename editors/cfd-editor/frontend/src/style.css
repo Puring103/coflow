@@ -2251,6 +2251,40 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   outline: 1px solid var(--border-strong);
   outline-offset: 2px;
 }
+.dc-missing-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  max-width: 100%;
+}
+.dc-missing-label {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dc-missing-repair {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.dc-missing-repair:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dc-missing-repair:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .data-table td > .cell-edit-wrap > .dc-input {
   width: 100%;
   max-width: none;

@@ -84,27 +84,21 @@ export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = 
   },
   diagnostics: [
     {
+      id: 'mock-ref-missing',
       severity: 'error',
       code: 'ref_missing',
       stage: 'check',
       message: 'npc.cfd: record Npc_001 references missing item ItemXxx',
-      file_path: 'data/npc.cfd',
-      actual_type: 'Npc',
-      record_key: 'Npc_001',
-      field_path: 'reward_item',
-      range: null,
+      target: { kind: 'table_field', file_path: 'data/npc.cfd', coordinate: { actual_type: 'Npc', key: 'Npc_001' }, field_path: 'reward_item' },
       contexts: [],
     },
     {
+      id: 'mock-unused-field',
       severity: 'warning',
       code: 'unused_field',
       stage: 'check',
       message: 'item.cfd: field "unknown_id" is not in schema',
-      file_path: 'data/item.cfd',
-      actual_type: 'Item',
-      record_key: 'Item_001',
-      field_path: 'unknown_id',
-      range: null,
+      target: { kind: 'table_field', file_path: 'data/item.cfd', coordinate: { actual_type: 'Item', key: 'Item_001' }, field_path: 'unknown_id' },
       contexts: [],
     },
   ],
@@ -278,7 +272,11 @@ export const MOCK_GRAPH: GraphData = {
 
 export const ALL_TYPE_NAMES = ['Item', 'Weapon', 'Npc']
 
-function row(actualType: string, key: string, fields: RecordRow['fields']): RecordRow {
+function row(
+  actualType: string,
+  key: string,
+  fields: Array<Omit<RecordRow['fields'][number], 'missing'>>,
+): RecordRow {
   const field_index: Record<string, number> = {}
   const field_summaries: Record<string, string> = {}
   fields.forEach((field, index) => {
@@ -290,7 +288,7 @@ function row(actualType: string, key: string, fields: RecordRow['fields']): Reco
     display_path: `${actualType}.${key}`,
     container_index: 0,
     container_size: 1,
-    fields,
+    fields: fields.map(field => ({ ...field, missing: false })),
     field_index,
     field_summaries,
     field_diagnostics: [],

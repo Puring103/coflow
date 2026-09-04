@@ -27,6 +27,7 @@ import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordina
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
 import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
+import type { DiagnosticTarget } from './bindings/DiagnosticTarget'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
@@ -41,6 +42,7 @@ import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import {
   diagnosticKey,
+  diagnosticFilePath,
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
@@ -356,6 +358,11 @@ export default function App() {
   // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
   // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
   const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
+  const [sourceDiagnosticFocus, setSourceDiagnosticFocus] = useState<{
+    file: string
+    range: Extract<DiagnosticTarget, { kind: 'source' | 'project_source' }>['range']
+    tick: number
+  } | null>(null)
 
   useEffect(() => {
     const request = ++projectSearchRequest.current
@@ -664,7 +671,6 @@ export default function App() {
     sessionId: number,
     prefix: string,
     err: unknown,
-    includeDiagnostics = false,
     expectedRevision?: number,
   ) => {
     if (
@@ -672,14 +678,6 @@ export default function App() {
       || (expectedRevision !== undefined && !generation.isCurrent(sessionId, expectedRevision))
     ) return
     setErrorMsg(`${prefix}: ${errorMessage(err)}`)
-    if (!includeDiagnostics) return
-    const diagnostics = errorDiagnostics(err)
-    if (diagnostics.length === 0) return
-    setProject(current => (
-      current?.session_id === sessionId
-        ? { ...current, diagnostics: [...current.diagnostics, ...diagnostics] }
-        : current
-    ))
   }, [generation])
 
   useEffect(() => {
@@ -738,10 +736,6 @@ export default function App() {
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
-      const diags = errorDiagnostics(err)
-      if (diags.length > 0) {
-        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-      }
     }
   }, [adoptSnapshot, generation, history, lookups])
 
@@ -918,10 +912,6 @@ export default function App() {
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
-      const diags = errorDiagnostics(err)
-      if (diags.length > 0) {
-        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-      }
     }
   }, [adoptSnapshot, generation])
 
@@ -1068,6 +1058,34 @@ export default function App() {
     [navigateWorkspaceTab]
   )
 
+  const jumpToDiagnostic = useCallback((target: DiagnosticTarget) => {
+    if (target.kind === 'none') return
+    if (target.kind === 'table_field' || target.kind === 'record') {
+      setHighlightField(target.kind === 'table_field' ? target.field_path : RECORD_HIGHLIGHT_SENTINEL)
+      openRecord(target.file_path, target.coordinate)
+      return
+    }
+    const typeName = project?.file_types[target.file_path]?.[0]?.name ?? ''
+    const id = workspaceTabId(target.file_path, typeName)
+    const existing = workspaceTabsRef.current.find(tab => tab.id === id)
+    const tab: WorkspaceTab = {
+      ...(existing ?? defaultWorkspaceTab(target.file_path, typeName, false)),
+      viewKind: 'source',
+      viewId: DEFAULT_SOURCE_VIEW_ID,
+    }
+    const next = existing
+      ? workspaceTabsRef.current.map(item => item.id === id ? tab : item)
+      : [...workspaceTabsRef.current, tab]
+    workspaceTabsRef.current = next
+    setWorkspaceTabs(next)
+    setSourceDiagnosticFocus(previous => ({
+      file: target.file_path,
+      range: target.range,
+      tick: (previous?.tick ?? 0) + 1,
+    }))
+    navigateWorkspaceTab(tab)
+  }, [navigateWorkspaceTab, openRecord, project?.file_types])
+
   const openProjectSearchHit = useCallback((hit: ProjectSearchHit) => {
     setHighlightField(hit.field_path ?? RECORD_HIGHLIGHT_SENTINEL)
     openRecord(hit.file_path, hit.coordinate)
@@ -1101,42 +1119,6 @@ export default function App() {
       }))
     },
     [project],
-  )
-
-  const openRecordByKey = useCallback(
-    (filePath: string, recordKey: string, actualType?: string | null) => {
-      const cached = fileDataCache[filePath]
-      const cachedRow = cached?.records.find(r =>
-        r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
-      )
-      if (cachedRow) {
-        openRecord(filePath, cachedRow.coordinate)
-        return
-      }
-      if (!project || !api.isTauri) {
-        setErrorMsg(`记录 ${recordKey} 未找到`)
-        return
-      }
-      const sessionId = project.session_id
-      const revision = project.revision
-      const request = generation.captureRequest()
-      api.getFileRecords(sessionId, filePath)
-        .then(records => {
-          if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
-          setFileDataCache(c => ({ ...c, [filePath]: records }))
-          const row = records.records.find(r =>
-            r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
-          )
-          if (row) openRecord(filePath, row.coordinate)
-          else setErrorMsg(`记录 ${recordKey} 未找到`)
-        })
-        .catch(err => {
-          if (generation.isRequestCurrent(request)) {
-            reportSessionError(sessionId, '读取文件失败', err)
-          }
-        })
-    },
-    [fileDataCache, generation, openRecord, project, reportSessionError],
   )
 
   const openReference = useCallback((targetType: string, targetKey: string) => {
@@ -1305,7 +1287,6 @@ export default function App() {
             request.sessionId,
             '后台刷新仍然失败',
             retryError ?? error,
-            true,
             request.revision,
           )
         })
@@ -1313,7 +1294,7 @@ export default function App() {
       return true
     },
     reportError: (sessionId, prefix, error, expectedRevision) => {
-      reportSessionError(sessionId, prefix, error, true, expectedRevision)
+      reportSessionError(sessionId, prefix, error, expectedRevision)
     },
     optimisticWriteField,
   }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
@@ -1785,7 +1766,7 @@ export default function App() {
     return next
   }, [fileDataCache, project])
   const fileDiagnostics = useMemo(
-    () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
+    () => activeFile && project ? project.diagnostics.filter(d => diagnosticFilePath(d) === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
   // Prefer schema annotations, but also inspect values because older sessions
@@ -1885,14 +1866,6 @@ export default function App() {
       router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
     }
   }, [activeFile, activeType, projectSettings, saveViews, currentRoute, router])
-  // Set of file paths that can be opened via the record/table views. Used by
-  // the diagnostics panel to decide whether "跳转" is available for a row —
-  // if the diagnostic's file isn't part of the source set, we hide the button
-  // instead of taking the user somewhere that will just say "记录未找到".
-  const sourceFileSet = useMemo(
-    () => project ? new Set(collectSourceFiles(project)) : new Set<string>(),
-    [project],
-  )
   const projectSearchGroups = useMemo(
     () => groupProjectSearchHits(projectSearchResults?.hits ?? []),
     [projectSearchResults],
@@ -2997,6 +2970,7 @@ export default function App() {
                 filePath={currentRoute.file}
                 readOnly={false}
                 onSaved={handleSourceSaved}
+                focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
             </div>
           ) : currentRoute && activeDimensionData ? (
@@ -3201,6 +3175,7 @@ export default function App() {
                     filePath={currentRoute.file}
                     readOnly={readOnly}
                     onSaved={handleSourceSaved}
+                    focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
                   />
                 )}
               </div>
@@ -3264,15 +3239,7 @@ export default function App() {
             diagnostics={project.diagnostics}
             focus={diagFocus}
             onFocusConsumed={() => setDiagFocus(null)}
-            isJumpable={(file) => sourceFileSet.has(file)}
-            onJumpToRecord={(file, key, actualType) => {
-              setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
-              openRecordByKey(file, key, actualType)
-            }}
-            onJumpToField={(file, key, actualType, fieldPath) => {
-              setHighlightField(fieldPath)
-              openRecordByKey(file, key, actualType)
-            }}
+            onJump={jumpToDiagnostic}
           />
         )}
         </div>
