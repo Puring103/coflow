@@ -2569,8 +2569,8 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--node-color, var(--accent));
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   background: color-mix(in srgb, var(--node-color, var(--accent)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--node-color, var(--accent)) 30%, transparent);
   border-radius: 3px;
@@ -2582,6 +2582,16 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   flex-shrink: 0;
   margin-right: 4px;
 }
+
+.action-dialog { width: min(440px, calc(100vw - 32px)); }
+.action-dialog-header { height: 46px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.action-dialog-body { padding: 16px; }
+.action-dialog-body p { margin: 0 0 12px; color: var(--text-dim); line-height: 1.5; }
+.action-dialog-input-wrap { width: 100%; height: 34px; display: flex; align-items: center; color: var(--text); background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: 4px; }
+.action-dialog-input-wrap:focus-within { border-color: var(--accent); }
+.action-dialog-input { min-width: 0; flex: 1; height: 100%; padding: 0 9px; color: inherit; background: transparent; border: 0; outline: none; }
+.action-dialog-input-suffix { flex-shrink: 0; padding: 0 9px 0 4px; color: var(--text-mute); user-select: none; }
+.btn-danger { color: white; background: var(--red); border-color: var(--red); }
 
 .create-record-loading,
 .create-record-error,

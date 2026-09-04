@@ -1,4 +1,4 @@
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type Completion, type CompletionContext } from '@codemirror/autocomplete'
+import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, startCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language'
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
@@ -155,20 +155,24 @@ export function CfdCodeEditor({
   const onCompleteRef = useRef(onComplete)
   const completionCompartment = useRef(new Compartment())
   const readOnlyCompartment = useRef(new Compartment())
+  const composingRef = useRef(false)
+  const compositionGenerationRef = useRef(0)
   onChangeRef.current = onChange
   onSaveRef.current = onSave
   onCompleteRef.current = onComplete
 
   const completionSource = (context: CompletionContext) => {
+    if (composingRef.current) return null
     const complete = onCompleteRef.current
     if (!complete) return null
     const word = context.matchBefore(completionPrefixPattern)
     if (!word || (!context.explicit && word.from === word.to)) return null
+    const compositionGeneration = compositionGenerationRef.current
     const line = context.state.doc.lineAt(context.pos)
     return complete(context.state.doc.toString(), {
       line: line.number - 1,
       character: context.pos - line.from,
-    }).then(options => ({
+    }).then(options => composingRef.current || compositionGeneration !== compositionGenerationRef.current ? null : ({
       from: word.from,
       options: [...options],
       validFor: completionPrefixValidPattern,
@@ -206,6 +210,22 @@ export function CfdCodeEditor({
           completionCompartment.current.of(
             autocompletion({ override: [completionSource] }),
           ),
+          EditorView.domEventHandlers({
+            // 中文输入法组合文本尚未确认时不能触发或接受代码补全。
+            compositionstart: (_event, currentView) => {
+              composingRef.current = true
+              compositionGenerationRef.current += 1
+              closeCompletion(currentView)
+              return false
+            },
+            compositionend: (_event, currentView) => {
+              composingRef.current = false
+              requestAnimationFrame(() => {
+                if (!composingRef.current && currentView.hasFocus) startCompletion(currentView)
+              })
+              return false
+            },
+          }),
           lintGutter(),
           readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
           EditorView.lineWrapping,

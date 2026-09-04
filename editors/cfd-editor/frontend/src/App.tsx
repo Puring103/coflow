@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
+import { CreateRecordDialog } from './components/CreateRecordDialog'
+import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
@@ -258,9 +260,22 @@ export default function App() {
   const helpBoxRef = useRef<HTMLDivElement>(null)
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
+  const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
+  const [fileActionDialog, setFileActionDialog] = useState<
+    | { kind: 'create'; parentPath: string; sourceKind: 'schema' | 'data' }
+    | { kind: 'delete'; path: string }
+    | null
+  >(null)
+  const [fileActionBusy, setFileActionBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [buildPending, setBuildPending] = useState(false)
+
+  useEffect(() => {
+    const showNotice = (event: Event) => setErrorMsg((event as CustomEvent<string>).detail)
+    window.addEventListener('cfd-editor-notice', showNotice)
+    return () => window.removeEventListener('cfd-editor-notice', showNotice)
+  }, [])
   const buildStatusRequestRef = useRef(0)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
@@ -2114,6 +2129,38 @@ export default function App() {
       setErrorMsg(`打开源文件失败: ${errorMessage(error)}`)
     }
   }, [generation])
+  const addProjectInput = useCallback(async (kind: 'schema' | 'data', directory: boolean) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    const path = await api.pickProjectInput(kind, directory)
+    if (!path || !generation.isCurrent(identity.sessionId, identity.revision)) return
+    try {
+      const bootstrap = await api.addProjectInput(identity.sessionId, kind, path)
+      await refreshFromBootstrap(bootstrap)
+    } catch (error) {
+      setErrorMsg(`添加${kind === 'schema' ? '类型' : '数据'}来源失败: ${errorMessage(error)}`)
+    }
+  }, [generation, refreshFromBootstrap])
+  const createRecordFromTree = useCallback(async (filePath: string, actualType: string) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    try {
+      const data = fileDataCache[filePath]?.revision === identity.revision
+        ? fileDataCache[filePath]
+        : await api.getFileRecords(identity.sessionId, filePath)
+      if (!generation.isCurrent(identity.sessionId, identity.revision)) return
+      openFile(filePath, actualType)
+      setTreeRecordDraft({ filePath, actualType: actualType || data.type_names[0] || '', data })
+    } catch (error) {
+      setErrorMsg(`读取文件失败: ${errorMessage(error)}`)
+    }
+  }, [fileDataCache, generation, openFile])
+  const createFileFromTree = useCallback((parentPath: string, sourceKind: 'schema' | 'data') => {
+    setFileActionDialog({ kind: 'create', parentPath, sourceKind })
+  }, [])
+  const deleteEntryFromTree = useCallback((path: string) => {
+    setFileActionDialog({ kind: 'delete', path })
+  }, [])
   const tableOnEnterInspector = useCallback(() => {
     setInspectorCollapsed(false)
     setInspectorFocusRequest(request => request + 1)
@@ -2545,6 +2592,10 @@ export default function App() {
                   onSelectFile={openFile}
                   onExitRight={focusFirstRecord}
                   onOpenSourceFile={openSourceFile}
+                  onAddInput={addProjectInput}
+                  onCreateRecord={createRecordFromTree}
+                  onCreateFile={createFileFromTree}
+                  onDeleteEntry={deleteEntryFromTree}
                 />
               ) : (
                 <div className="sidebar-empty">
@@ -3300,6 +3351,73 @@ export default function App() {
         />
       )}
 
+      {treeRecordDraft && (
+        <CreateRecordDialog
+          actualType={treeRecordDraft.actualType}
+          typeOptions={treeRecordDraft.data.type_names}
+          existingKeys={treeRecordDraft.data.records.map(record => record.coordinate.key)}
+          onCreateRecordDraft={tableOnCreateRecordDraft}
+          onInsertRecord={async (key, type, fields) => {
+            await insertRecord(treeRecordDraft.filePath, key, type, fields)
+          }}
+          onClose={() => setTreeRecordDraft(null)}
+        />
+      )}
+      {fileActionDialog?.kind === 'create' && (
+        <TextInputDialog
+          title="新建文件"
+          message={`在 ${fileActionDialog.parentPath} 中创建文件`}
+          placeholder="文件名"
+          suffix={fileActionDialog.sourceKind === 'schema' ? '.cft' : '.cfd'}
+          confirmLabel="创建"
+          busy={fileActionBusy}
+          onClose={() => setFileActionDialog(null)}
+          onConfirm={async entered => {
+            const identity = generation.currentIdentity()
+            if (!identity) return
+            const extension = fileActionDialog.sourceKind === 'schema' ? '.cft' : '.cfd'
+            const baseName = entered.toLowerCase().endsWith(extension)
+              ? entered.slice(0, -extension.length)
+              : entered
+            const fileName = `${baseName}${extension}`
+            setFileActionBusy(true)
+            try {
+              const bootstrap = await api.createProjectFile(identity.sessionId, fileActionDialog.sourceKind, fileActionDialog.parentPath, fileName)
+              await refreshFromBootstrap(bootstrap)
+              setFileActionDialog(null)
+            } catch (error) {
+              setErrorMsg(`新建文件失败: ${errorMessage(error)}`)
+            } finally {
+              setFileActionBusy(false)
+            }
+          }}
+        />
+      )}
+      {fileActionDialog?.kind === 'delete' && (
+        <ConfirmDialog
+          title="删除文件"
+          message={`确认递归删除“${fileActionDialog.path}”？此操作不可撤销。`}
+          confirmLabel="删除"
+          danger
+          busy={fileActionBusy}
+          onClose={() => setFileActionDialog(null)}
+          onConfirm={async () => {
+            const identity = generation.currentIdentity()
+            if (!identity) return
+            setFileActionBusy(true)
+            try {
+              const bootstrap = await api.deleteProjectEntry(identity.sessionId, fileActionDialog.path)
+              setTreeRecordDraft(null)
+              await refreshFromBootstrap(bootstrap)
+              setFileActionDialog(null)
+            } catch (error) {
+              setErrorMsg(`删除失败: ${errorMessage(error)}`)
+            } finally {
+              setFileActionBusy(false)
+            }
+          }}
+        />
+      )}
       {showHelp && (
         <div className="help-overlay" onClick={() => setShowHelp(false)}>
           <div

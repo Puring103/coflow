@@ -5,6 +5,7 @@ import { ObjectDraftDialog } from './ObjectDraftDialog'
 
 interface Props {
   actualType: string
+  typeOptions: string[]
   existingKeys: string[]
   initialKey?: string
   onCreateRecordDraft: (actualType: string) => Promise<CreateRecordDraft>
@@ -14,12 +15,14 @@ interface Props {
 
 export function CreateRecordDialog({
   actualType,
+  typeOptions,
   existingKeys,
   initialKey = '',
   onCreateRecordDraft,
   onInsertRecord,
   onClose,
 }: Props) {
+  const [selectedType, setSelectedType] = useState(actualType)
   const [recordKeyDraft, setRecordKeyDraft] = useState(initialKey)
   const trimmedKey = recordKeyDraft.trim()
   const existingKeySet = useMemo(() => new Set(existingKeys), [existingKeys])
@@ -28,7 +31,10 @@ export function CreateRecordDialog({
   return (
     <ObjectDraftDialog
       title="新建记录"
-      actualType={actualType}
+      actualType={selectedType}
+      polymorphicTypes={typeOptions}
+      onTypeChange={setSelectedType}
+      alwaysShowTypeSelect
       onLoadDraft={onCreateRecordDraft}
       onConfirm={async payload => {
         if (payload.kind !== 'object') return

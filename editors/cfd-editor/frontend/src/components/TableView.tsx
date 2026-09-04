@@ -51,6 +51,7 @@ import {
   summaryOf as valueSummary,
 } from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
+import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { RichTextInput } from './RichTextInput'
@@ -178,6 +179,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
+  const [recordAction, setRecordAction] = useState<
+    | { kind: 'rename'; coordinate: RecordCoordinate; key: string }
+    | { kind: 'delete'; records: RecordCoordinate[]; message: string }
+    | null
+  >(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
@@ -1405,6 +1411,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
           actualType={activeType || data.type_names[0] || ''}
+          typeOptions={data.type_names}
           existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={async (key, type, fields) => {
@@ -1496,13 +1503,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             )}
           </>)}
           {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_edit_key && onRenameRecord && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
+            <div className="ctx-item" role="menuitem" onClick={() => {
               const key = recordKey(contextMenu.row)
-              const next = window.prompt('重命名 Key', key)?.trim()
               const coordinate = contextMenu.row.coordinate
               setContextMenu(null)
-              if (!next || next === key) return
-              await onRenameRecord(coordinate, next)
+              setRecordAction({ kind: 'rename', coordinate, key })
             }}>
               <Icon name="edit" size={13} aria-hidden />
               重命名 Key
@@ -1519,14 +1524,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </div>
           )}
           {!readOnly && data.capabilities.can_delete_record && onDeleteRecords && (
-            <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
+            <div className="ctx-item ctx-danger" role="menuitem" onClick={() => {
               const records = contextMenu.records
               const prompt = records.length === 1
                 ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
                 : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
               setContextMenu(null)
-              if (!window.confirm(prompt)) return
-              await onDeleteRecords(records)
+              setRecordAction({ kind: 'delete', records, message: prompt })
             }}>
               <Icon name="close" size={13} aria-hidden />
               {contextMenu.records.length === 1
@@ -1536,6 +1540,32 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           )}
         </div>,
         document.body,
+      )}
+      {recordAction?.kind === 'rename' && onRenameRecord && (
+        <TextInputDialog
+          title="重命名 Key"
+          message="输入新的记录 Key"
+          initialValue={recordAction.key}
+          confirmLabel="重命名"
+          onClose={() => setRecordAction(null)}
+          onConfirm={async next => {
+            if (next !== recordAction.key) await onRenameRecord(recordAction.coordinate, next)
+            setRecordAction(null)
+          }}
+        />
+      )}
+      {recordAction?.kind === 'delete' && onDeleteRecords && (
+        <ConfirmDialog
+          title="删除记录"
+          message={recordAction.message}
+          confirmLabel="删除"
+          danger
+          onClose={() => setRecordAction(null)}
+          onConfirm={async () => {
+            await onDeleteRecords(recordAction.records)
+            setRecordAction(null)
+          }}
+        />
       )}
     </div>
   )

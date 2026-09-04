@@ -954,8 +954,9 @@ function defaultForScalarLike({
       if (targets.ok && targets.value.length > 0) {
         return refValue(targets.value[0].coordinate.key)
       }
-      // No known ref targets — the user needs to create one first.
-      alert(`&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`)
+      window.dispatchEvent(new CustomEvent('cfd-editor-notice', {
+        detail: `&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`,
+      }))
       return null
     }
   }

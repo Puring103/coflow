@@ -525,6 +525,46 @@ async fn reload_session(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn add_project_input(
+    session_id: u32,
+    kind: String,
+    path: String,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
+    let kind = match kind.as_str() {
+        "schema" => coflow_runtime::ProjectInputKind::Schema,
+        "data" => coflow_runtime::ProjectInputKind::Data,
+        _ => return Err(EditorError::other("project input kind must be schema or data")),
+    };
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().add_project_input(session_id, kind, &PathBuf::from(path))).await
+}
+
+fn project_input_kind(kind: &str) -> Result<coflow_runtime::ProjectInputKind, EditorError> {
+    match kind {
+        "schema" => Ok(coflow_runtime::ProjectInputKind::Schema),
+        "data" => Ok(coflow_runtime::ProjectInputKind::Data),
+        _ => Err(EditorError::other("project input kind must be schema or data")),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn create_project_file(session_id: u32, kind: String, parent_path: String, file_name: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+    let kind = project_input_kind(&kind)?;
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().create_project_file(session_id, kind, Path::new(&parent_path), &file_name)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn delete_project_entry(session_id: u32, path: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().delete_project_entry(session_id, Path::new(&path))).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn get_project_settings(
     session_id: u32,
     host: State<'_, EditorHost>,
@@ -1161,6 +1201,9 @@ pub fn run() -> tauri::Result<()> {
             init_project,
             close_session,
             reload_session,
+            add_project_input,
+            create_project_file,
+            delete_project_entry,
             get_project_settings,
             get_project_dimensions,
             get_dimension_file_records,

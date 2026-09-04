@@ -104,7 +104,6 @@ export interface FunctionDocumentState extends LanguageDocumentState {
 
 export async function pickProjectYaml(): Promise<string | null> {
   if (!isTauri) {
-    alert('文件对话框仅在 Tauri 桌面环境可用，浏览器中请使用 mock 数据。')
     return null
   }
   const path = await openDialog({
@@ -116,7 +115,6 @@ export async function pickProjectYaml(): Promise<string | null> {
 
 export async function pickProjectDirectory(): Promise<string | null> {
   if (!isTauri) {
-    alert('文件对话框仅在 Tauri 桌面环境可用。')
     return null
   }
   const path = await openDialog({
@@ -128,6 +126,28 @@ export async function pickProjectDirectory(): Promise<string | null> {
 
 export async function loadProject(yamlPath: string): Promise<ProjectBootstrap> {
   return invokeCommand<ProjectBootstrap>('load_project', { yamlPath })
+}
+
+export async function pickProjectInput(kind: 'schema' | 'data', directory: boolean): Promise<string | null> {
+  if (!isTauri) return null
+  const path = await openDialog({
+    multiple: false,
+    directory,
+    ...(directory ? {} : { filters: [{ name: kind === 'schema' ? 'Coflow Schema' : 'Coflow Data', extensions: [kind === 'schema' ? 'cft' : 'cfd'] }] }),
+  })
+  return typeof path === 'string' ? path : null
+}
+
+export async function addProjectInput(sessionId: number, kind: 'schema' | 'data', path: string): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('add_project_input', { sessionId, kind, path })
+}
+
+export async function createProjectFile(sessionId: number, kind: 'schema' | 'data', parentPath: string, fileName: string): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('create_project_file', { sessionId, kind, parentPath, fileName })
+}
+
+export async function deleteProjectEntry(sessionId: number, path: string): Promise<ProjectBootstrap> {
+  return invokeCommand<ProjectBootstrap>('delete_project_entry', { sessionId, path })
 }
 
 export async function initProject(dir: string): Promise<ProjectBootstrap> {

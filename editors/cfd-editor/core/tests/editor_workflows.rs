@@ -234,6 +234,12 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     assert!(empty_types.iter().any(|ty| ty.name == "ItemReward"));
     assert!(empty_types.iter().any(|ty| ty.name == "CurrencyReward"));
     assert!(!empty_types.iter().any(|ty| ty.name == "Reward"));
+    let empty_records = store
+        .get_file_records(session_id, "data/empty.cfd")
+        .expect("empty file records");
+    assert!(empty_records.type_names.iter().any(|name| name == "ItemReward"));
+    assert!(empty_records.type_names.iter().any(|name| name == "CurrencyReward"));
+    assert!(!empty_records.type_names.iter().any(|name| name == "Reward"));
 
     let draft = store
         .create_record_draft(session_id, "ItemReward")

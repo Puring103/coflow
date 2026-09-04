@@ -13,6 +13,7 @@
 )]
 
 mod config;
+mod config_write;
 mod diagnostics;
 mod file_discovery;
 mod init;
@@ -23,6 +24,7 @@ mod validation;
 
 pub use crate::api::path_to_slash;
 pub use config::{DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig};
+pub use config_write::{add_project_input, create_project_file, delete_project_entry, ProjectInputKind};
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{
@@ -44,7 +46,7 @@ use std::path::{Path, PathBuf};
 pub struct Project {
     config_path: PathBuf,
     root_dir: PathBuf,
-    config: ProjectConfig,
+    pub(crate) config: ProjectConfig,
 }
 
 impl Project {
