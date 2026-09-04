@@ -3,7 +3,11 @@
 mod trivia;
 
 pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
-pub(crate) use trivia::{validate_formatted_string_literal, validate_number_literal};
+pub(crate) use trivia::{
+    decode_simple_escape, scan_balanced_delimiter, scan_number_literal, scan_string_literal,
+    validate_formatted_string_literal, validate_number_literal, NumberLiteralError,
+    StringLiteralError,
+};
 
 use unicode_ident::{is_xid_continue, is_xid_start};
 

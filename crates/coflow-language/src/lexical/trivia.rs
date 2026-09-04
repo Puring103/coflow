@@ -63,7 +63,7 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
             offset = take_while(source, offset + 1, |next| !matches!(next, '\r' | '\n'));
             LosslessTokenKind::Comment
         } else if ch == '"' {
-            offset = scan_string(source, offset);
+            offset = scan_string_literal(source, offset, source.len(), false).end;
             LosslessTokenKind::String
         } else if ch == '$'
             && source[offset + 1..]
@@ -77,7 +77,7 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
             offset = scan_identifier(source, offset);
             LosslessTokenKind::Identifier
         } else if ch.is_ascii_digit() {
-            offset = scan_number(source, offset);
+            offset = scan_number_literal(source, offset, source.len()).end;
             LosslessTokenKind::Number
         } else if let Some(symbol) = SYMBOLS
             .iter()
@@ -103,15 +103,191 @@ pub(crate) struct LiteralError {
     pub(crate) offset: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NumberLiteralError {
+    FractionDigitsMissing,
+    ExponentDigitsMissing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NumberLiteralScan {
+    pub(crate) end: usize,
+    pub(crate) raw_end: usize,
+    pub(crate) is_float: bool,
+    pub(crate) error: Option<(NumberLiteralError, usize)>,
+}
+
+/// 扫描数字的唯一边界规则；语法层只负责数值转换和诊断代码映射。
+pub(crate) fn scan_number_literal(source: &str, start: usize, limit: usize) -> NumberLiteralScan {
+    let bytes = source.as_bytes();
+    let limit = limit.min(source.len());
+    let mut end = start;
+    while end < limit && bytes[end].is_ascii_digit() {
+        end += 1;
+    }
+
+    let mut is_float = false;
+    let mut error = None;
+    if bytes.get(end) == Some(&b'.') && end < limit {
+        if bytes.get(end + 1).is_some_and(u8::is_ascii_digit) && end + 1 < limit {
+            is_float = true;
+            end += 1;
+            while end < limit && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+        } else if bytes.get(end + 1) != Some(&b'.') {
+            error = Some((NumberLiteralError::FractionDigitsMissing, end + 1));
+        }
+    }
+
+    if matches!(bytes.get(end), Some(b'e' | b'E')) && end < limit {
+        is_float = true;
+        end += 1;
+        if matches!(bytes.get(end), Some(b'+' | b'-')) && end < limit {
+            end += 1;
+        }
+        let digits_start = end;
+        while end < limit && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if digits_start == end {
+            error = Some((NumberLiteralError::ExponentDigitsMissing, end));
+        }
+    }
+
+    let raw_end = end;
+    if matches!(bytes.get(end), Some(b'f' | b'F')) && end < limit {
+        let suffix_end = end + 1;
+        let next = source[suffix_end..limit].chars().next();
+        if !next.is_some_and(super::is_identifier_continue) {
+            end = suffix_end;
+            is_float = true;
+        }
+    }
+
+    NumberLiteralScan {
+        end,
+        raw_end,
+        is_float,
+        error,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StringLiteralError {
+    InvalidEscape { offset: usize, escaped: char },
+    Unterminated { end: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StringLiteralScan {
+    pub(crate) end: usize,
+    pub(crate) contains_format_brace: bool,
+    pub(crate) error: Option<StringLiteralError>,
+}
+
+/// 扫描普通引号字符串并统一基础转义规则。`stop_at_newline` 由宿主文法决定。
+pub(crate) fn scan_string_literal(
+    source: &str,
+    start: usize,
+    limit: usize,
+    stop_at_newline: bool,
+) -> StringLiteralScan {
+    let limit = limit.min(source.len());
+    let mut offset = start + 1;
+    let mut contains_format_brace = false;
+    let mut error = None;
+    while offset < limit {
+        let ch = next_char(source, offset);
+        if stop_at_newline && matches!(ch, '\r' | '\n') {
+            return StringLiteralScan {
+                end: offset,
+                contains_format_brace,
+                error: error.or(Some(StringLiteralError::Unterminated { end: offset })),
+            };
+        }
+        offset += ch.len_utf8();
+        if ch == '\\' {
+            if offset >= limit {
+                return StringLiteralScan {
+                    end: offset,
+                    contains_format_brace,
+                    error: error.or(Some(StringLiteralError::Unterminated { end: offset })),
+                };
+            }
+            let escaped = next_char(source, offset);
+            if decode_simple_escape(escaped).is_none() && error.is_none() {
+                error = Some(StringLiteralError::InvalidEscape {
+                        offset: offset - 1,
+                        escaped,
+                    });
+            }
+            offset += escaped.len_utf8();
+        } else if ch == '"' {
+            return StringLiteralScan {
+                end: offset,
+                contains_format_brace,
+                error,
+            };
+        } else if matches!(ch, '{' | '}') {
+            if source[offset..limit].starts_with(ch) {
+                offset += ch.len_utf8();
+            } else {
+                contains_format_brace = true;
+            }
+        }
+    }
+    StringLiteralScan {
+        end: limit,
+        contains_format_brace,
+        error: error.or(Some(StringLiteralError::Unterminated { end: limit })),
+    }
+}
+
+pub(crate) const fn decode_simple_escape(escaped: char) -> Option<char> {
+    match escaped {
+        '"' => Some('"'),
+        '\\' => Some('\\'),
+        'n' => Some('\n'),
+        'r' => Some('\r'),
+        't' => Some('\t'),
+        _ => None,
+    }
+}
+
+/// 在无损 token 流上匹配分隔符，字符串和注释中的符号不会影响深度。
+pub(crate) fn scan_balanced_delimiter(
+    source: &str,
+    open_offset: usize,
+    open: char,
+    close: char,
+) -> Option<usize> {
+    let fragment = &source[open_offset..];
+    let mut depth = 0_usize;
+    for token in tokenize_lossless(fragment) {
+        if token.kind != LosslessTokenKind::Symbol {
+            continue;
+        }
+        for symbol in token.text(fragment).chars() {
+            if symbol == open {
+                depth += 1;
+            } else if symbol == close {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open_offset + token.span.end);
+                }
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn validate_number_literal(source: &str) -> Result<(), LiteralError> {
-    let Some(exponent) = source.find(['e', 'E']) else {
-        return Ok(());
-    };
-    let digits = source[exponent + 1..].trim_start_matches(['+', '-']);
-    if digits.is_empty() {
+    let scan = scan_number_literal(source, 0, source.len());
+    if let Some((_, offset)) = scan.error {
         Err(LiteralError {
             message: "expected exponent digits".into(),
-            offset: source.len(),
+            offset,
         })
     } else {
         Ok(())
@@ -195,46 +371,9 @@ fn scan_identifier(source: &str, start: usize) -> usize {
     take_while(source, offset, super::is_identifier_continue)
 }
 
-fn scan_number(source: &str, start: usize) -> usize {
-    let mut offset = take_while(source, start, |ch| ch.is_ascii_digit());
-    if source[offset..].starts_with('.')
-        && !source[offset..].starts_with("..")
-        && source[offset + 1..]
-            .chars()
-            .next()
-            .is_some_and(|ch| ch.is_ascii_digit())
-    {
-        offset = take_while(source, offset + 1, |ch| ch.is_ascii_digit());
-    }
-    if source[offset..].starts_with(['e', 'E']) {
-        offset += 1;
-        if source[offset..].starts_with(['+', '-']) {
-            offset += 1;
-        }
-        offset = take_while(source, offset, |ch| ch.is_ascii_digit());
-    }
-    offset
-}
-
-fn scan_string(source: &str, start: usize) -> usize {
-    let mut offset = start + 1;
-    while offset < source.len() {
-        let ch = next_char(source, offset);
-        offset += ch.len_utf8();
-        if ch == '\\' {
-            if offset < source.len() {
-                offset += next_char(source, offset).len_utf8();
-            }
-        } else if ch == '"' {
-            break;
-        }
-    }
-    offset
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{tokenize_lossless, LosslessTokenKind};
+    use super::{scan_balanced_delimiter, scan_number_literal, tokenize_lossless, LosslessTokenKind};
 
     #[test]
     fn lossless_tokens_reconstruct_unicode_and_trivia() {
@@ -243,5 +382,18 @@ mod tests {
         assert_eq!(tokens.iter().map(|token| token.text(source)).collect::<String>(), source);
         assert!(tokens.iter().any(|token| token.kind == LosslessTokenKind::Comment));
         assert!(tokens.iter().any(|token| token.kind == LosslessTokenKind::Newline));
+    }
+
+    #[test]
+    fn shared_scanners_keep_language_boundaries() {
+        let number_source = "12.5e-2f next";
+        let number = scan_number_literal(number_source, 0, number_source.len());
+        assert_eq!(number.end, 8);
+        assert!(number.is_float);
+        let delimited = "(\" ) \", (# )\n value))";
+        assert_eq!(
+            scan_balanced_delimiter(delimited, 0, '(', ')'),
+            Some(delimited.len())
+        );
     }
 }

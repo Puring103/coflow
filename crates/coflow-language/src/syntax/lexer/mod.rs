@@ -1,7 +1,10 @@
 mod tokens;
 
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
-use crate::lexical::{is_identifier_continue, is_identifier_start};
+use crate::lexical::{
+    decode_simple_escape, is_identifier_continue, is_identifier_start, scan_number_literal,
+    scan_string_literal, NumberLiteralError, StringLiteralError,
+};
 use crate::module::ModuleId;
 use crate::source::Span;
 pub use tokens::{Token, TokenKind};
@@ -279,59 +282,22 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {
-        while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
-            self.pos += 1;
+        let scan = scan_number_literal(self.source, start, self.end);
+        self.pos = scan.end;
+        if let Some((error, end)) = scan.error {
+            let message = match error {
+                NumberLiteralError::FractionDigitsMissing
+                | NumberLiteralError::ExponentDigitsMissing => "invalid float literal",
+            };
+            return Err(self.err(
+                CftErrorCode::InvalidFloatLiteral,
+                Span::new(start, end),
+                message,
+            ));
         }
 
-        let mut is_float = false;
-        if self.bytes.get(self.pos) == Some(&b'.') {
-            if self.bytes.get(self.pos + 1).is_some_and(u8::is_ascii_digit) {
-                self.pos += 1;
-                while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
-                    self.pos += 1;
-                }
-                is_float = true;
-            } else {
-                return Err(self.err(
-                    CftErrorCode::InvalidFloatLiteral,
-                    Span::new(start, self.pos + 1),
-                    "invalid float literal",
-                ));
-            }
-        }
-
-        if matches!(self.bytes.get(self.pos), Some(b'e' | b'E')) {
-            let exp_start = self.pos;
-            self.pos += 1;
-            if matches!(self.bytes.get(self.pos), Some(b'+' | b'-')) {
-                self.pos += 1;
-            }
-            let digits_start = self.pos;
-            while self.pos < self.end && self.bytes[self.pos].is_ascii_digit() {
-                self.pos += 1;
-            }
-            if digits_start == self.pos {
-                return Err(self.err(
-                    CftErrorCode::InvalidFloatLiteral,
-                    Span::new(start, self.pos.max(exp_start + 1)),
-                    "invalid float literal",
-                ));
-            }
-            is_float = true;
-        }
-
-        let raw_end = self.pos;
-        if matches!(self.bytes.get(self.pos), Some(b'f' | b'F')) {
-            let suffix_end = self.pos + 1;
-            let next = self.source[suffix_end..].chars().next();
-            if !next.is_some_and(is_identifier_continue) {
-                self.pos = suffix_end;
-                is_float = true;
-            }
-        }
-
-        let raw = &self.source[start..raw_end];
-        if is_float {
+        let raw = &self.source[start..scan.raw_end];
+        if scan.is_float {
             self.lex_float(raw, start)
         } else if let Ok(value) = raw.parse::<i64>() {
             Ok(TokenKind::Int(value))
@@ -368,66 +334,50 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_string(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {
-        self.pos += 1;
+        let scan = scan_string_literal(self.source, start, self.end, true);
+        self.pos = scan.end;
+        if let Some(error) = scan.error {
+            return Err(match error {
+                StringLiteralError::InvalidEscape { offset, escaped } => self.err(
+                    CftErrorCode::InvalidStringEscape,
+                    Span::new(offset, (offset + 1 + escaped.len_utf8()).min(self.end)),
+                    "invalid string escape",
+                ),
+                StringLiteralError::Unterminated { end } => self.err(
+                    CftErrorCode::UnterminatedString,
+                    Span::new(start, end),
+                    "unterminated string literal",
+                ),
+            });
+        }
+
         let mut out = String::new();
-        while self.pos < self.end {
-            let Some(ch) = self.source[self.pos..].chars().next() else {
-                break;
-            };
+        let mut offset = start + 1;
+        let content_end = scan.end - 1;
+        while offset < content_end {
+            let ch = self.source[offset..].chars().next().expect("validated string boundary");
             match ch {
-                '"' => {
-                    self.pos += 1;
-                    return Ok(TokenKind::String(out));
-                }
                 '\\' => {
-                    let escape_start = self.pos;
-                    self.pos += 1;
-                    let Some(escaped) = self.bytes.get(self.pos).copied() else {
-                        break;
-                    };
-                    let value = match escaped {
-                        b'"' => '"',
-                        b'\\' => '\\',
-                        b'n' => '\n',
-                        b'r' => '\r',
-                        b't' => '\t',
-                        _ => {
-                            return Err(self.err(
-                                CftErrorCode::InvalidStringEscape,
-                                Span::new(escape_start, self.pos + 1),
-                                "invalid string escape",
-                            ));
-                        }
-                    };
-                    out.push(value);
-                    self.pos += 1;
+                    offset += 1;
+                    let escaped = self.source[offset..].chars().next().expect("validated escape");
+                    out.push(decode_simple_escape(escaped).expect("validated escape"));
+                    offset += escaped.len_utf8();
                 }
-                '{' if self.starts_with("{{") => {
+                '{' if self.source[offset..content_end].starts_with("{{") => {
                     out.push('{');
-                    self.pos += 2;
+                    offset += 2;
                 }
-                '}' if self.starts_with("}}") => {
+                '}' if self.source[offset..content_end].starts_with("}}") => {
                     out.push('}');
-                    self.pos += 2;
-                }
-                '\n' | '\r' => {
-                    return Err(self.err(
-                        CftErrorCode::UnterminatedString,
-                        Span::new(start, self.pos),
-                        "unterminated string literal",
-                    ));
+                    offset += 2;
                 }
                 _ => {
                     out.push(ch);
-                    self.pos += ch.len_utf8();
+                    offset += ch.len_utf8();
                 }
             }
         }
-        Err(self.err(
-            CftErrorCode::UnterminatedString,
-            Span::new(start, self.end),
-            "unterminated string literal",
-        ))
+        Ok(TokenKind::String(out))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -503,19 +453,12 @@ impl<'a> Lexer<'a> {
                     let Some(escaped) = self.bytes.get(self.pos).copied() else {
                         break;
                     };
-                    let value = match escaped {
-                        b'"' => '"',
-                        b'\\' => '\\',
-                        b'n' => '\n',
-                        b'r' => '\r',
-                        b't' => '\t',
-                        _ => {
-                            return Err(self.err(
-                                CftErrorCode::InvalidStringEscape,
-                                Span::new(escape_start, self.pos + 1),
-                                "invalid string escape",
-                            ));
-                        }
+                    let Some(value) = decode_simple_escape(char::from(escaped)) else {
+                        return Err(self.err(
+                            CftErrorCode::InvalidStringEscape,
+                            Span::new(escape_start, self.pos + 1),
+                            "invalid string escape",
+                        ));
                     };
                     text.push(value);
                     self.pos += 1;
@@ -542,36 +485,17 @@ impl<'a> Lexer<'a> {
 
     fn string_contains_braces(&self) -> Result<bool, CftDiagnostics> {
         let start = self.pos;
-        let mut pos = start + 1;
-        let mut escaped = false;
-        while pos < self.end {
-            let Some(ch) = self.source[pos..self.end].chars().next() else {
-                break;
-            };
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                return Ok(false);
-            } else if ch == '{' && self.source[pos..self.end].starts_with("{{") {
-                pos += 2;
-                continue;
-            } else if ch == '}' && self.source[pos..self.end].starts_with("}}") {
-                pos += 2;
-                continue;
-            } else if matches!(ch, '{' | '}') {
-                return Ok(true);
-            } else if matches!(ch, '\n' | '\r') {
-                break;
+        let scan = scan_string_literal(self.source, start, self.end, true);
+        match scan.error {
+            None | Some(StringLiteralError::InvalidEscape { .. }) => {
+                Ok(scan.contains_format_brace)
             }
-            pos += ch.len_utf8();
+            Some(StringLiteralError::Unterminated { end }) => Err(self.err(
+                CftErrorCode::UnterminatedString,
+                Span::new(start, end),
+                "unterminated string literal",
+            )),
         }
-        Err(self.err(
-            CftErrorCode::UnterminatedString,
-            Span::new(start, pos),
-            "unterminated string literal",
-        ))
     }
 
     fn push_formatted_text(tokens: &mut Vec<Token>, text: &mut String, start: usize, end: usize) {
