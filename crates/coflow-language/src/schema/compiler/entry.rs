@@ -1,4 +1,4 @@
-use super::{ResolvedTypes, ResolvedValues, SymbolTable, ValidatedSchema};
+use super::{ResolvedTypes, ResolvedValues, SchemaDeclarations, SymbolTable, ValidatedSchema};
 use crate::limits::{StructuralBudget, StructuralLimits};
 use crate::module::CftModuleSet;
 use crate::schema::{AnalysisBudget, CftDimensionInputs, CftSchema};
@@ -35,29 +35,51 @@ pub fn build_schema_with_limits(
     }
     // 预算属于流水线调用，而不是任一阶段产物，所有静态分析入口都显式接收它。
     let mut structural_budget = StructuralBudget::new(limits);
+    let symbols = collect_symbols(module_set, &mut structural_budget)?;
+    let mut analysis_budget = AnalysisBudget::new(limits);
+    let types = resolve_types(symbols, &mut analysis_budget)?;
+    let values = resolve_values(types);
+    let validated = validate_checks(values)?;
+    lower_schema(validated, dimensions, &mut analysis_budget)
+}
+
+fn collect_symbols<'a>(
+    module_set: &'a CftModuleSet,
+    structural_budget: &mut StructuralBudget,
+) -> Result<SymbolTable<'a>, CftDiagnostics> {
     let mut symbols = SymbolTable::new(module_set);
-    if !symbols.validate_structure(&mut structural_budget) {
+    if !symbols.validate_structure(structural_budget) {
         return Err(CftDiagnostics::new(symbols.diagnostics));
     }
     symbols.report_dangling_annotations();
     symbols.collect_symbols();
     symbols.validate_enums();
+    Ok(symbols)
+}
 
+fn resolve_types<'a>(
+    symbols: SymbolTable<'a>,
+    analysis_budget: &mut AnalysisBudget,
+) -> Result<ResolvedTypes<'a>, CftDiagnostics> {
     let mut types = ResolvedTypes::new(symbols);
     types.validate_type_headers();
     types.validate_type_aliases();
     types.validate_field_shapes();
-    let mut analysis_budget = AnalysisBudget::new(limits);
-    if !types.validate_inheritance(&mut analysis_budget) {
+    if !types.validate_inheritance(analysis_budget) {
         return Err(CftDiagnostics::new(std::mem::take(
             &mut types.previous.diagnostics,
         )));
     }
     types.validate_annotations();
     types.build_full_fields();
+    Ok(types)
+}
 
-    let values = ResolvedValues::resolve(types);
+fn resolve_values(types: ResolvedTypes<'_>) -> ResolvedValues<'_> {
+    ResolvedValues::resolve(types)
+}
 
+fn validate_checks(values: ResolvedValues<'_>) -> Result<ValidatedSchema<'_>, CftDiagnostics> {
     let mut validated = ValidatedSchema::new(values);
     validated.validate_checks();
     if !validated.previous.previous.previous.diagnostics.is_empty() {
@@ -65,9 +87,16 @@ pub fn build_schema_with_limits(
             &mut validated.previous.previous.previous.diagnostics,
         )));
     }
-    let declarations = validated.lower_declarations();
-    let schema = CftSchema::from_declarations(declarations, dimensions, &mut analysis_budget)?;
-    Ok(schema)
+    Ok(validated)
+}
+
+fn lower_schema(
+    validated: ValidatedSchema<'_>,
+    dimensions: &CftDimensionInputs,
+    analysis_budget: &mut AnalysisBudget,
+) -> Result<CftSchema, CftDiagnostics> {
+    let declarations: SchemaDeclarations = validated.lower_declarations();
+    CftSchema::from_declarations(declarations, dimensions, analysis_budget)
 }
 
 #[cfg(test)]
@@ -138,5 +167,44 @@ mod tests {
                 CftErrorCode::UnknownConst | CftErrorCode::InvalidDefaultExpression
             )
         }));
+    }
+
+    #[test]
+    fn symbol_stage_returns_complete_scopes_and_declarations() {
+        let modules = modules("namespace demo; enum State { Ready = 1 } type Item { state: State; }");
+        let mut budget = StructuralBudget::new(StructuralLimits::default());
+        let symbols = collect_symbols(&modules, &mut budget).expect("symbol stage");
+        assert_eq!(symbols.module_scopes.len(), 1);
+        assert_eq!(symbols.enums.len(), 1);
+        assert_eq!(symbols.types.len(), 1);
+    }
+
+    #[test]
+    fn type_and_value_stages_publish_resolved_products() {
+        let modules = modules(
+            "const Default = 3; type Parent { base: int; } type Child: Parent { value: int = Default; }",
+        );
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        assert_eq!(types.full_fields["Child"].len(), 2);
+        let values = resolve_values(types);
+        assert_eq!(values.resolved_constants.len(), 1);
+        assert_eq!(values.resolved_defaults.len(), 1);
+    }
+
+    #[test]
+    fn check_stage_publishes_analysis_for_every_check_block() {
+        let modules = modules("type Item { value: int; check { value > 0; } }");
+        let limits = StructuralLimits::default();
+        let mut structural = StructuralBudget::new(limits);
+        let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
+        let mut analysis = AnalysisBudget::new(limits);
+        let types = resolve_types(symbols, &mut analysis).expect("type stage");
+        let validated = validate_checks(resolve_values(types)).expect("check stage");
+        assert_eq!(validated.check_dimensions.len(), 1);
+        assert_eq!(validated.check_statement_dependencies.len(), 1);
     }
 }

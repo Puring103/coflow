@@ -1,5 +1,6 @@
 use super::super::CfdSyntaxDiagnostic;
 use super::Parser;
+use crate::lexical::{decode_simple_escape, scan_string_literal, StringLiteralError};
 use crate::Span;
 
 pub(super) struct Token {
@@ -98,38 +99,40 @@ impl Parser<'_> {
     pub(super) fn parse_quoted_string(&mut self) -> Result<String, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         let start = self.pos;
-        self.expect_char('"', "opening `\"`")?;
+        if self.peek_char() != Some('"') {
+            return Err(self.error("expected opening `\"`"));
+        }
+        let scan = scan_string_literal(self.source, start, self.source.len(), false);
+        self.pos = scan.end;
+        if let Some(error) = scan.error {
+            return Err(match error {
+                StringLiteralError::InvalidEscape { offset, escaped } => CfdSyntaxDiagnostic {
+                    message: format!("unsupported string escape `\\{escaped}`"),
+                    span: Span::new(start, offset + 1 + escaped.len_utf8()),
+                },
+                StringLiteralError::Unterminated { end } => CfdSyntaxDiagnostic {
+                    message: "unterminated string".to_string(),
+                    span: Span::new(start, end),
+                },
+            });
+        }
+
         let mut out = String::new();
-        let mut escaped = false;
-        while let Some(ch) = self.peek_char() {
-            self.pos += ch.len_utf8();
-            if escaped {
-                match ch {
-                    '"' => out.push('"'),
-                    '\\' => out.push('\\'),
-                    'n' => out.push('\n'),
-                    'r' => out.push('\r'),
-                    't' => out.push('\t'),
-                    other => {
-                        return Err(CfdSyntaxDiagnostic {
-                            message: format!("unsupported string escape `\\{other}`"),
-                            span: Span::new(start, self.pos),
-                        });
-                    }
-                }
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                return Ok(out);
+        let mut offset = start + 1;
+        let content_end = scan.end - 1;
+        while offset < content_end {
+            let ch = self.source[offset..].chars().next().expect("validated string boundary");
+            if ch == '\\' {
+                offset += 1;
+                let escaped = self.source[offset..].chars().next().expect("validated escape");
+                out.push(decode_simple_escape(escaped).expect("validated escape"));
+                offset += escaped.len_utf8();
             } else {
                 out.push(ch);
+                offset += ch.len_utf8();
             }
         }
-        Err(CfdSyntaxDiagnostic {
-            message: "unterminated string".to_string(),
-            span: Span::new(start, self.pos),
-        })
+        Ok(out)
     }
 
     pub(super) fn skip_ws_and_comments(&mut self) {

@@ -390,12 +390,14 @@ cargo tree -p coflow-lsp
   `coflow-format`，并覆盖 token/comment 保持、幂等性和 parse-format-parse 性质。
 - crate 边界说明和源码格式化设计文档已同步到当前架构。
 
-当前还需完成以下收尾工作：
+- CFT lexer、schema-free CFD parser、formatter 与 function validator 已共同使用
+  `coflow-language::lexical` 提供的数字边界、字符串转义和成对分隔符扫描原语；函数外壳解析基于无损
+  token 的 span 定位，不再单独逐字符跳过字符串、注释和嵌套括号。
+- schema 编译入口已收口为 `collect_symbols`、`resolve_types`、`resolve_values`、`validate_checks` 和
+  `lower_schema` 阶段函数；每个阶段只发布构造完成的产物或诊断，并已覆盖符号表、继承字段、常量与
+  默认值、check 分析产物等阶段不变量。
 
-- 将 CFT lexer 及 schema-free CFD parser 中仍保留的数字边界、字符串转义和函数括号逐字符扫描收口到
-  `coflow-language::lexical`，使 parser、formatter 与 function validator 共同使用同一组基础扫描原语。
-- 进一步封装 schema 阶段入口，使每个阶段只对外返回构造完成的产物和诊断，避免入口函数直接创建空
-  阶段产物后逐项回写，并为各阶段入口补充独立的不变量测试。
+本计划所列重构工作已全部完成。
 
 当前检查点已通过：
 

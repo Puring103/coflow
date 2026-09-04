@@ -79,7 +79,7 @@ pub(super) struct ValidatedSchema<'a> {
 }
 
 impl<'a> SymbolTable<'a> {
-    pub(super) fn new(modules: &'a CftModuleSet) -> Self {
+    fn new(modules: &'a CftModuleSet) -> Self {
         Self {
             modules,
             diagnostics: Vec::new(),
@@ -106,7 +106,7 @@ impl<'a> SymbolTable<'a> {
 }
 
 impl<'a> ResolvedTypes<'a> {
-    pub(super) fn new(symbols: SymbolTable<'a>) -> Self {
+    fn new(symbols: SymbolTable<'a>) -> Self {
         Self {
             previous: symbols,
             full_fields: BTreeMap::new(),
@@ -155,7 +155,7 @@ impl<'a> Deref for ResolvedTypes<'a> {
 }
 
 impl<'a> ResolvedValues<'a> {
-    pub(super) fn resolve(mut types: ResolvedTypes<'a>) -> Self {
+    fn resolve(mut types: ResolvedTypes<'a>) -> Self {
         let (resolved_constants, resolved_defaults, diagnostics) = {
             let mut resolver = ValueResolver {
                 previous: &types,
@@ -214,7 +214,7 @@ impl ValueResolver<'_, '_> {
 }
 
 impl<'a> ValidatedSchema<'a> {
-    pub(super) fn new(values: ResolvedValues<'a>) -> Self {
+    fn new(values: ResolvedValues<'a>) -> Self {
         Self {
             previous: values,
             quantifier_bindings: BTreeMap::new(),
@@ -223,7 +223,7 @@ impl<'a> ValidatedSchema<'a> {
         }
     }
 
-    pub(super) fn validate_checks(&mut self) {
+    fn validate_checks(&mut self) {
         let mut diagnostics = Vec::new();
         for info in self.previous.types.values() {
             if let Some(check) = &info.def.check {
