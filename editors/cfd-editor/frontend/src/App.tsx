@@ -1792,7 +1792,7 @@ export default function App() {
   }, [activeFileData])
   // View tabs (default + custom) for the active (file, type).
   const viewTabs = useMemo(
-    () => activeFile && activeType
+    () => activeFile
       ? viewTabsFor(projectSettings, activeFile, activeType, isSingletonType, graphSupported)
       : [],
     [projectSettings, activeFile, activeType, isSingletonType, graphSupported],
@@ -2385,6 +2385,15 @@ export default function App() {
     if (!currentRoute || !activeFileData || viewTabs.length === 0) return
     const valid = viewTabs.some(tab => tab.id === currentRoute.viewId && tab.kind === currentRoute.view)
     if (valid) return
+    if (!activeType) {
+      router.replace({
+        view: 'source',
+        file: currentRoute.file,
+        viewId: DEFAULT_SOURCE_VIEW_ID,
+        typeFilter: '',
+      })
+      return
+    }
     if (isSingletonType) {
       const firstCoord = activeFileData.records.find(
         record => !activeType || recordActualType(record) === activeType,
@@ -3000,7 +3009,7 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                {!isSingletonType && (
+                {!!activeType && !isSingletonType && (
                   <button
                     className="btn btn-icon view-tab-add"
                     onClick={() => openViewEditor('create')}

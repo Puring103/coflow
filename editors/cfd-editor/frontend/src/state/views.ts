@@ -62,6 +62,9 @@ export function viewTabsFor(
   isSingleton: boolean,
   graphSupported: boolean,
 ): ViewTab[] {
+  if (!type) {
+    return [{ id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true }]
+  }
   if (isSingleton) {
     return [
       { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
