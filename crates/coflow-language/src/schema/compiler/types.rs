@@ -94,7 +94,7 @@ impl ResolvedTypes<'_> {
                                 "name is defined here",
                             );
                         }
-                        self.previous.diagnostics.push(diagnostic);
+                        self.diagnostics.push(diagnostic);
                         InferredType::Unknown
                     }
                     None => {
@@ -215,7 +215,7 @@ impl ResolvedTypes<'_> {
                 }
             }
         }
-        self.previous.diagnostics.extend(diagnostics);
+        self.diagnostics.extend(diagnostics);
     }
 
     pub(super) fn validate_field_shapes(&mut self) {
@@ -251,7 +251,7 @@ impl ResolvedTypes<'_> {
                 self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
             }
         }
-        self.previous.diagnostics.extend(diagnostics);
+        self.diagnostics.extend(diagnostics);
     }
 
     pub(super) fn build_full_fields(&mut self) {

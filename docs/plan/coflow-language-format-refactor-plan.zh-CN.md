@@ -376,14 +376,15 @@ cargo tree -p coflow-lsp
 
 ## 11. 实施进度
 
-截至 2026-09-04，以下工作已经完成：
+截至 2026-09-05，以下工作已经完成：
 
 - `Span` 已迁移至 `coflow-language::source`，标识符统一使用 Unicode XID 规则，公共 API 已按
   `cft`、`cfd`、`source`、`diagnostics`、`limits` 和 `lexical` 命名空间收口。
 - language 结构限制与 checker 执行限制已经分离；runtime 分别组合并传递 `StructuralLimits` 和
   `EvaluationLimits`，工作量与迭代次数使用独立预算。
 - schema 编译已建立 `SymbolTable`、`ResolvedTypes`、`ResolvedValues` 和 `ValidatedSchema` 阶段产物，
-  删除 `SchemaCompiler`、`each_type`、`each_enum` 和阶段间 `DerefMut`。
+  通过 `StageOutput<T>` 显式传递累计诊断；阶段发布时会移出局部诊断，后续阶段不会回写先前产物。
+  `SchemaCompiler`、`each_type`、`each_enum`、`previous` 产物链和阶段间 `DerefMut` 均已删除。
 - `coflow-format` 已加入 workspace 并成为 CFT/CFD 格式化入口；CLI 和 LSP 已直接依赖该 crate，
   language 中的旧 formatter 与 LSP formatter re-export 已删除。
 - formatter 与 CFD function validator 已使用共享 lossless token，格式化行为测试已迁移至
@@ -391,11 +392,12 @@ cargo tree -p coflow-lsp
 - crate 边界说明和源码格式化设计文档已同步到当前架构。
 
 - CFT lexer、schema-free CFD parser、formatter 与 function validator 已共同使用
-  `coflow-language::lexical` 提供的数字边界、字符串转义和成对分隔符扫描原语；函数外壳解析基于无损
-  token 的 span 定位，不再单独逐字符跳过字符串、注释和嵌套括号。
+  `coflow-language::lexical` 提供的 trivia、数字边界、字符串转义和成对分隔符扫描原语；CFD 错误恢复
+  和 CFT 格式字符串插值边界均基于无损 token，不再各自维护字符串、转义、注释和嵌套括号状态。
+  CFD 数字标量通过共享扫描器确定合法数字前缀，同时完整保留 schema-free AST 的原始标量文本。
 - schema 编译入口已收口为 `collect_symbols`、`resolve_types`、`resolve_values`、`validate_checks` 和
-  `lower_schema` 阶段函数；每个阶段只发布构造完成的产物或诊断，并已覆盖符号表、继承字段、常量与
-  默认值、check 分析产物等阶段不变量。
+  `lower_schema` 阶段函数；每个阶段只发布构造完成的产物或诊断，并已独立覆盖结构预算、诊断累计、
+  符号表、继承字段、常量与默认值、check 分析产物和最终 lowering 不变量。
 
 本计划所列重构工作已全部完成。
 

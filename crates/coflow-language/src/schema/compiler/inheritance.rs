@@ -115,9 +115,9 @@ impl<'a> ResolvedTypes<'a> {
             };
             if let Some(parent) = &info.def.parent {
                 let parent_name = self.resolve_name(&info.module, &parent.name);
-                if let Some(parent_info) = self.previous.types.get(&parent_name) {
+                if let Some(parent_info) = self.types.get(&parent_name) {
                     if parent_info.def.is_sealed {
-                        self.previous.diagnostics.push(
+                        self.diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::InheritSealedType,
                                 info.module.clone(),
@@ -134,7 +134,7 @@ impl<'a> ResolvedTypes<'a> {
                     let inherited = self.collect_ancestor_fields(Some(&parent_name));
                     for field in &info.def.fields {
                         if let Some(first) = inherited.get(&field.name) {
-                            self.previous.diagnostics.push(
+                            self.diagnostics.push(
                                 CftDiagnostic::error(
                                     CftErrorCode::DuplicateInheritedField,
                                     info.module.clone(),
@@ -193,7 +193,7 @@ impl<'a> ResolvedTypes<'a> {
             let (module, span) = self.inheritance_edge_location(name);
             diagnostic = diagnostic.with_related(module, span, "cycle continues here");
         }
-        self.previous.diagnostics.push(diagnostic);
+        self.diagnostics.push(diagnostic);
     }
 
     /// Walks the inheritance chain root-first and returns a snapshot of every

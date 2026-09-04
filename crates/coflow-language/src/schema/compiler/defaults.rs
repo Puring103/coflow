@@ -4,8 +4,8 @@ use crate::syntax::ast::DefaultExprKind;
 
 impl ValueResolver<'_, '_> {
     pub(super) fn validate_defaults(&mut self) {
-        let previous = self.previous;
-        for info in previous.types.values() {
+        let types = self.resolved_types;
+        for info in types.types.values() {
             let module = &info.module;
             let definition = info.def;
             let is_host = super::annotations::has_annotation(&definition.annotations, "Host");
@@ -54,13 +54,13 @@ impl ValueResolver<'_, '_> {
             }
         }
 
-        for host in previous
+        for host in types
             .types
             .values()
             .filter(|info| super::annotations::has_annotation(&info.def.annotations, "Host"))
         {
             let host_type = &host.name;
-            for ancestor in previous
+            for ancestor in types
                 .ancestry_chain(host_type)
                 .into_iter()
                 .filter(|info| info.name != *host_type)

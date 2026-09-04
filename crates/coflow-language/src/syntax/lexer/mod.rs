@@ -3,7 +3,8 @@ mod tokens;
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexical::{
     decode_simple_escape, is_identifier_continue, is_identifier_start, scan_number_literal,
-    scan_string_literal, NumberLiteralError, StringLiteralError,
+    scan_string_literal, scan_trivia, tokenize_lossless, LosslessTokenKind, NumberLiteralError,
+    StringLiteralError,
 };
 use crate::module::ModuleId;
 use crate::source::Span;
@@ -58,15 +59,8 @@ impl<'a> Lexer<'a> {
             let Some(ch) = self.source[self.pos..].chars().next() else {
                 break;
             };
-            if ch.is_whitespace() {
-                self.pos += ch.len_utf8();
-                continue;
-            }
-            if ch == '#' {
-                self.pos += 1;
-                while self.pos < self.end && self.bytes[self.pos] != b'\n' {
-                    self.pos += 1;
-                }
+            if ch.is_whitespace() || ch == '#' {
+                self.pos = scan_trivia(self.source, self.pos, self.end);
                 continue;
             }
             if ch == 'f' && self.source[self.pos..self.end].starts_with("f\"") {
@@ -355,11 +349,17 @@ impl<'a> Lexer<'a> {
         let mut offset = start + 1;
         let content_end = scan.end - 1;
         while offset < content_end {
-            let ch = self.source[offset..].chars().next().expect("validated string boundary");
+            let ch = self.source[offset..]
+                .chars()
+                .next()
+                .expect("validated string boundary");
             match ch {
                 '\\' => {
                     offset += 1;
-                    let escaped = self.source[offset..].chars().next().expect("validated escape");
+                    let escaped = self.source[offset..]
+                        .chars()
+                        .next()
+                        .expect("validated escape");
                     out.push(decode_simple_escape(escaped).expect("validated escape"));
                     offset += escaped.len_utf8();
                 }
@@ -487,9 +487,7 @@ impl<'a> Lexer<'a> {
         let start = self.pos;
         let scan = scan_string_literal(self.source, start, self.end, true);
         match scan.error {
-            None | Some(StringLiteralError::InvalidEscape { .. }) => {
-                Ok(scan.contains_format_brace)
-            }
+            None | Some(StringLiteralError::InvalidEscape { .. }) => Ok(scan.contains_format_brace),
             Some(StringLiteralError::Unterminated { end }) => Err(self.err(
                 CftErrorCode::UnterminatedString,
                 Span::new(start, end),
@@ -509,45 +507,44 @@ impl<'a> Lexer<'a> {
     }
 
     fn find_formatted_expr_end(&self, start: usize) -> Result<usize, CftDiagnostics> {
-        let mut pos = start;
         let mut brace_depth = 0_usize;
-        let mut in_string = false;
-        let mut escaped = false;
-        while pos < self.end {
-            let Some(ch) = self.source[pos..].chars().next() else {
-                break;
-            };
-            if in_string {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == '"' {
-                    in_string = false;
-                } else if matches!(ch, '\n' | '\r') {
-                    return Err(self.err(
-                        CftErrorCode::UnterminatedString,
-                        Span::new(start, pos),
-                        "unterminated string in formatted interpolation",
-                    ));
-                }
-            } else {
-                match ch {
-                    '"' => in_string = true,
-                    '{' => brace_depth += 1,
-                    '}' if brace_depth == 0 => return Ok(pos),
-                    '}' => brace_depth -= 1,
-                    '#' | '\n' | '\r' => {
+        let fragment = &self.source[start..self.end];
+        for token in tokenize_lossless(fragment) {
+            match token.kind {
+                LosslessTokenKind::String => {
+                    let scan =
+                        scan_string_literal(fragment, token.span.start, fragment.len(), true);
+                    if matches!(scan.error, Some(StringLiteralError::Unterminated { .. })) {
+                        let end = start + scan.end;
                         return Err(self.err(
-                            CftErrorCode::InvalidCheckStatement,
-                            Span::new(pos, pos + ch.len_utf8()),
-                            "formatted string interpolation must stay on one line and cannot contain comments",
+                            CftErrorCode::UnterminatedString,
+                            Span::new(start, end),
+                            "unterminated string in formatted interpolation",
                         ));
                     }
-                    _ => {}
                 }
+                LosslessTokenKind::Comment | LosslessTokenKind::Newline => {
+                    let token_start = start + token.span.start;
+                    return Err(self.err(
+                        CftErrorCode::InvalidCheckStatement,
+                        Span::new(token_start, start + token.span.end),
+                        "formatted string interpolation must stay on one line and cannot contain comments",
+                    ));
+                }
+                LosslessTokenKind::Symbol => {
+                    for (offset, ch) in token.text(fragment).char_indices() {
+                        match ch {
+                            '{' => brace_depth += 1,
+                            '}' if brace_depth == 0 => {
+                                return Ok(start + token.span.start + offset);
+                            }
+                            '}' => brace_depth -= 1,
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
             }
-            pos += ch.len_utf8();
         }
         Err(self.err(
             CftErrorCode::UnterminatedString,
