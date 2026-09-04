@@ -168,7 +168,7 @@ mod project_runtime_tests {
     use std::fs;
 
     use super::ProjectRuntime;
-    use crate::{project::normalize_path, Project, SchemaTextOverride};
+    use crate::{project::normalize_path, Project, Runtime, SchemaTextOverride};
 
     #[test]
     fn reverting_to_published_schema_discards_failed_attempt() {
@@ -199,6 +199,104 @@ mod project_runtime_tests {
         assert!(runtime
             .latest_attempt()
             .is_some_and(|attempt| !attempt.has_diagnostics()));
+    }
+
+    #[test]
+    fn data_errors_preserve_unrelated_records_and_complete_diagnostics() {
+        let root = tempfile::tempdir().expect("temp project");
+        fs::create_dir_all(root.path().join("data")).expect("create data");
+        fs::write(
+            root.path().join("schema.cft"),
+            "type Item { name: string; value: int; }\n",
+        )
+        .expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            concat!(
+                "schema: schema.cft\n",
+                "data: data/\n",
+                "codegen:\n",
+                "  - language: csharp\n",
+                "    dir: generated/\n",
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            root.path().join("data/items.cfd"),
+            concat!(
+                "Item {\n",
+                "  broken { name: 42, value: 1, extra: true, }\n",
+                "  valid { name: \"Valid\", value: 2, }\n",
+                "}\n",
+            ),
+        )
+        .expect("write data");
+
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let session = Runtime::new()
+            .open_read_only_session(project)
+            .expect("data diagnostics must not prevent a session");
+        let queries = session.queries();
+
+        assert_eq!(queries.record_count(), 1);
+        assert!(queries
+            .record_views_in_file("data/items.cfd")
+            .any(|record| record.coordinate.key.as_str() == "valid"));
+        let codes = queries
+            .diagnostics()
+            .as_set()
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.iter().any(|code| code.contains("TypeMismatch")));
+        assert!(codes.iter().any(|code| code.contains("UnknownField")));
+    }
+
+    #[test]
+    fn duplicate_records_are_all_rejected_without_hiding_other_records() {
+        let root = tempfile::tempdir().expect("temp project");
+        fs::create_dir_all(root.path().join("data")).expect("create data");
+        fs::write(root.path().join("schema.cft"), "type Item { value: int; }\n")
+            .expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            concat!(
+                "schema: schema.cft\n",
+                "data: data/\n",
+                "codegen:\n",
+                "  - language: csharp\n",
+                "    dir: generated/\n",
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            root.path().join("data/items.cfd"),
+            concat!(
+                "Item {\n",
+                "  duplicate { value: 1, }\n",
+                "  duplicate { value: 2, }\n",
+                "  survivor { value: 3, }\n",
+                "}\n",
+            ),
+        )
+        .expect("write data");
+
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let session = Runtime::new()
+            .open_read_only_session(project)
+            .expect("duplicates must produce a partial session");
+        let queries = session.queries();
+
+        assert_eq!(queries.record_count(), 1);
+        assert_eq!(queries.rejected_records().len(), 2);
+        assert!(queries
+            .record_views_in_file("data/items.cfd")
+            .any(|record| record.coordinate.key.as_str() == "survivor"));
+        assert!(queries
+            .diagnostics()
+            .as_set()
+            .iter()
+            .any(|diagnostic| diagnostic.code == "DATA-011"));
     }
 }
 

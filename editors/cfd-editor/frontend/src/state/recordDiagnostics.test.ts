@@ -18,18 +18,17 @@ const fallback = {
 function diagnostic(
   severity: string,
   fieldPath: string | null = null,
-  actualType: string | null = target.coordinate.actual_type,
+  actualType: string = target.coordinate.actual_type,
 ): DiagnosticItem {
   return {
+    id: `${severity}:${fieldPath ?? 'record'}:${actualType}`,
     severity,
     code: 'CHECK-007',
     stage: 'CHECK',
     message: `${severity} diagnostic`,
-    file_path: target.filePath,
-    actual_type: actualType,
-    record_key: target.coordinate.key,
-    field_path: fieldPath,
-    range: null,
+    target: fieldPath === null
+      ? { kind: 'record', file_path: target.filePath, coordinate: { actual_type: actualType, key: target.coordinate.key } }
+      : { kind: 'table_field', file_path: target.filePath, coordinate: { actual_type: actualType, key: target.coordinate.key }, field_path: fieldPath },
     contexts: [],
   }
 }
@@ -57,14 +56,14 @@ describe('record diagnostic index', () => {
     })
   })
 
-  it('expands untyped diagnostics only to matching file and key targets', () => {
+  it('does not expand a typed diagnostic to a sibling type with the same key', () => {
     const sibling: RecordDiagnosticTarget = {
       filePath: target.filePath,
       coordinate: { actual_type: 'Weapon', key: target.coordinate.key },
     }
-    const index = buildRecordDiagnosticIndex([target, sibling], [diagnostic('warning', null, null)])
+    const index = buildRecordDiagnosticIndex([target, sibling], [diagnostic('warning')])
     expect(diagnosticsForRecord(index, target, fallback).severity).toBe('warning')
-    expect(diagnosticsForRecord(index, sibling, fallback).severity).toBe('warning')
+    expect(diagnosticsForRecord(index, sibling, fallback).severity).toBe(null)
   })
 
   it('uses cached diagnostics only before project diagnostics are available', () => {

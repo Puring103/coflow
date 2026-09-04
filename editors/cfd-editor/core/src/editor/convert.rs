@@ -79,7 +79,9 @@ fn diagnostics_for_record(
     let mut fields = Vec::new();
     let mut best = None;
     for diagnostic in diagnostics.for_record(file_path, coordinate) {
-        if let Some(field_path) = &diagnostic.field_path {
+        if let coflow_runtime::DiagnosticTarget::TableField { field_path, .. } =
+            &diagnostic.target
+        {
             fields.push(FieldDiagnostic {
                 severity: normalized_severity(&diagnostic.severity).to_string(),
                 field_path: field_path.clone(),
@@ -123,13 +125,20 @@ fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
     declared_names
         .into_iter()
         .chain(remaining_names)
-        .filter_map(|name| {
-            let value = record.fields().get(name.as_str())?;
-            Some(FieldCell {
+        .map(|name| {
+            let present = record.fields().get(name.as_str());
+            let missing = present.is_none();
+            let value = present.cloned().unwrap_or_else(|| {
+                ctx.queries
+                    .editable_field_seed(record.actual_type(), &name)
+                    .unwrap_or(CfdValue::OptionNone)
+            });
+            FieldCell {
                 name: name.clone(),
-                value: value.clone(),
-                annotation: build_annotation(record, &name, value, ctx),
-            })
+                annotation: build_annotation(record, &name, &value, ctx),
+                value,
+                missing,
+            }
         })
         .collect()
 }
@@ -139,7 +148,14 @@ fn field_indexes(fields: &[FieldCell]) -> (BTreeMap<String, usize>, BTreeMap<Str
     let mut summaries = BTreeMap::new();
     for (idx, field) in fields.iter().enumerate() {
         index.insert(field.name.clone(), idx);
-        summaries.insert(field.name.clone(), value_summary(&field.value));
+        summaries.insert(
+            field.name.clone(),
+            if field.missing {
+                String::new()
+            } else {
+                value_summary(&field.value)
+            },
+        );
     }
     (index, summaries)
 }

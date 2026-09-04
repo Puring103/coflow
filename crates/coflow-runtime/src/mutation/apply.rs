@@ -1,4 +1,4 @@
-use crate::api::{CfdSourceCatalog, DiagnosticSet, Severity};
+use crate::api::{CfdSourceCatalog, DiagnosticSet};
 use std::collections::BTreeSet;
 
 use crate::writes::{
@@ -153,14 +153,6 @@ where
         })
         .collect::<Vec<_>>();
     let new_session = rebuilt.session;
-    let rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
-    if !rebuild_diagnostics.is_empty() {
-        if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, rebuild_diagnostics));
-        }
-        return report_without_publish(session, false, failed);
-    }
-
     let additional_files = match prepare_additional_files(&new_session, &staged) {
         Ok(files) => files,
         Err(diagnostics) => {
@@ -277,24 +269,6 @@ fn prepare_execution_plans(
             }
         })
         .collect()
-}
-
-fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
-    session
-        .diagnostics
-        .as_set()
-        .iter()
-        .filter(|diagnostic| {
-            diagnostic.severity == Severity::Error && !is_editable_diagnostic(diagnostic)
-        })
-        .cloned()
-        .collect::<Vec<_>>()
-        .into()
-}
-
-fn is_editable_diagnostic(diagnostic: &crate::api::Diagnostic) -> bool {
-    diagnostic.stage == "CHECK"
-        || matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
 }
 
 fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {

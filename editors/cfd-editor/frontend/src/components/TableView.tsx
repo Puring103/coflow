@@ -28,6 +28,7 @@ import {
   cellRefTargetType,
   diagnosticDisplayMessage,
   diagnosticMatchesCoordinate,
+  diagnosticRecordTarget,
   diagnosticSeverity,
   errorMessage,
   fieldPathField,
@@ -41,7 +42,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, EnumDirectSelect, RefDirectSelect, highlightSearchText } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, MissingValueRepair, RefDirectSelect, highlightSearchText } from './DataCard'
 import {
   parseFieldValueText,
   plainFieldValueText,
@@ -234,16 +235,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const m = new Map<string, 'error' | 'warning' | 'info'>()
     if (!diagnostics) return m
     for (const d of diagnostics) {
-      if (d.file_path !== data.file_path || !d.record_key) continue
+      const target = diagnosticRecordTarget(d)
+      if (!target || target.file_path !== data.file_path) continue
       // Take the first path segment as the column we'll mark.
-      const top = d.field_path
-        ? d.field_path.split(/[.[]/, 1)[0]
+      const top = target.kind === 'table_field'
+        ? target.field_path.split(/[.[]/, 1)[0]
         : null
-      const coordinates = d.actual_type === null
-        ? data.records
-            .filter(r => r.coordinate.key === d.record_key)
-            .map(r => r.coordinate)
-        : [{ actual_type: d.actual_type, key: d.record_key }]
+      const coordinates = [target.coordinate]
       const rank = (s: 'error' | 'warning' | 'info') => s === 'error' ? 3 : s === 'warning' ? 2 : 1
       const severity = diagnosticSeverity(d.severity)
       for (const coordinate of coordinates) {
@@ -540,7 +538,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               : sev ? findDiagMessage(diagnosticsRef.current, filePath, row.original.coordinate, name) : undefined
             return (
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
-                <EditableCell
+                {f.missing ? (
+                  <MissingValueRepair
+                    value={f.value}
+                    onRepair={cellEditable && writeFn
+                      ? () => writeFn(row.original.coordinate, [fieldPathField(name)], f.value).then(() => undefined)
+                      : undefined}
+                  />
+                ) : <EditableCell
                   value={f.value}
                   label={name}
                   editable={cellEditable}
@@ -552,7 +557,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   highlightQuery={highlightQueryRef.current}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
-                />
+                />}
                 {cellBadge}
               </span>
             )
@@ -1702,7 +1707,8 @@ function severityForCoordinate(
   if (!diagnostics) return null
   let sev: 'error' | 'warning' | null = null
   for (const d of diagnostics) {
-    if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
     if (d.severity === 'error') return 'error'
     if (d.severity === 'warning') sev = 'warning'
   }
@@ -1718,8 +1724,9 @@ function findDiagMessage(
   if (!diags) return undefined
   const msgs: string[] = []
   for (const d of diags) {
-    if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
-    const top = d.field_path ? d.field_path.split(/[.[]/, 1)[0] : null
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    const top = target.kind === 'table_field' ? target.field_path.split(/[.[]/, 1)[0] : null
     if (top !== topField) continue
     msgs.push(diagnosticDisplayMessage(d))
   }

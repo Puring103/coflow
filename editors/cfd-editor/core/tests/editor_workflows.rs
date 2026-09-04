@@ -133,6 +133,54 @@ fn function_defaults_project() -> PathBuf {
     root
 }
 
+fn repairable_invalid_project() -> PathBuf {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-repairable-invalid-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old repairable project");
+    }
+    fs::create_dir_all(root.join("data")).expect("create repairable data directory");
+    fs::write(
+        root.join("coflow.yaml"),
+        concat!(
+            "schema: schema.cft\n",
+            "data: data/\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+            "    namespace: Test.Config\n",
+        ),
+    )
+    .expect("write repairable config");
+    fs::write(
+        root.join("schema.cft"),
+        concat!(
+            "enum Rarity { Common, Rare }\n",
+            "type Target { label: string; }\n",
+            "type Item {\n",
+            "  name: string;\n",
+            "  note: Option<string>;\n",
+            "  count: int = 7;\n",
+            "  target: &Target;\n",
+            "  rarity: Rarity;\n",
+            "}\n",
+        ),
+    )
+    .expect("write repairable schema");
+    fs::write(
+        root.join("data/items.cfd"),
+        concat!(
+            "target: Target { label: \"usable\" }\n",
+            "item: Item {\n",
+            "  target: &missing,\n",
+            "  rarity: Rarity::Unknown,\n",
+            "}\n",
+        ),
+    )
+    .expect("write repairable data");
+    root
+}
+
 fn field(name: &str) -> CfdPathSegment {
     CfdPathSegment::Field(name.to_string())
 }
@@ -337,7 +385,7 @@ fn array_editor_mutations_round_trip_through_reload() {
 }
 
 #[test]
-fn source_text_edit_validates_before_atomic_save() {
+fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
     let (root, data_file) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
@@ -348,7 +396,6 @@ fn source_text_edit_validates_before_atomic_save() {
     let original = store
         .read_source_text(session_id, file_path)
         .expect("read source text");
-
     let invalid = "broken: ArrayExample {\n    tags: 12,\n}\n";
     let diagnostics = store
         .validate_source_text(session_id, file_path, invalid)
@@ -360,15 +407,27 @@ fn source_text_edit_validates_before_atomic_save() {
     assert!(
         diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.range.is_some_and(|range| range.start.line == 1)),
+            .any(|diagnostic| matches!(
+                &diagnostic.target,
+                coflow_runtime::DiagnosticTarget::Source { range: Some(range), .. }
+                    if range.start.line == 1
+            )),
         "{diagnostics:#?}"
     );
-    store
+    let bootstrap = store
         .write_source_text(session_id, file_path, invalid)
-        .expect_err("invalid source must not be written");
+        .expect("invalid data source remains editable");
+    assert!(bootstrap
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == "error"
+            && matches!(
+                &diagnostic.target,
+                coflow_runtime::DiagnosticTarget::Source { .. }
+            )));
     assert_eq!(
-        fs::read_to_string(&data_file).expect("read unchanged source"),
-        original
+        fs::read_to_string(&data_file).expect("read changed source"),
+        invalid
     );
 
     let edited = format!("{original}\n");
@@ -459,6 +518,92 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         .expect("ignore formatting for invalid CFD");
     assert_eq!(invalid_formatting.text, invalid);
     assert!(invalid_formatting.edits.is_empty());
+}
+
+#[test]
+fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
+    let root = repairable_invalid_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load repairable project");
+    let coordinate = RecordCoordinate::try_new("Item", "item").expect("coordinate");
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("read repairable rows");
+    let row = records
+        .records
+        .iter()
+        .find(|row| row.coordinate == coordinate)
+        .unwrap_or_else(|| {
+            panic!(
+                "invalid record remains visible; rows={:#?}; diagnostics={:#?}",
+                records.records, snapshot.diagnostics
+            )
+        });
+    let cell = |name: &str| {
+        let index = row.field_index.get(name).copied().expect("declared cell index");
+        &row.fields[index]
+    };
+
+    assert!(cell("name").missing);
+    assert!(matches!(cell("name").value, CfdValue::String(_)));
+    assert!(!cell("note").missing);
+    assert!(matches!(cell("note").value, CfdValue::OptionNone));
+    assert!(!cell("count").missing);
+    assert!(matches!(cell("count").value, CfdValue::Int(7)));
+    assert!(!cell("target").missing);
+    assert!(matches!(cell("target").value, CfdValue::Ref(_)));
+    assert!(cell("rarity").missing);
+    assert_eq!(cell("rarity").annotation.as_ref().and_then(|a| a.enum_type.as_deref()), Some("Rarity"));
+
+    assert!(snapshot.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DATA-006"
+            && matches!(&diagnostic.target, coflow_runtime::DiagnosticTarget::TableField { field_path, .. } if field_path == "name")
+    }));
+    assert!(snapshot.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DATA-008"
+            && matches!(&diagnostic.target, coflow_runtime::DiagnosticTarget::TableField { field_path, .. } if field_path == "rarity")
+    }));
+
+    store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("name")],
+            &CfdValue::String("fixed".to_string()),
+        )
+        .expect("repair missing scalar");
+    store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("target")],
+            &CfdValue::record_ref("target").expect("reference"),
+        )
+        .expect("repair invalid reference");
+    let repaired = store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("rarity")],
+            &CfdValue::Enum(
+                coflow_runtime::CfdEnumValue::try_new("Rarity", Some("Rare"), 1)
+                    .expect("enum value"),
+            ),
+        )
+        .expect("repair invalid enum");
+    assert!(repaired.diagnostics.iter().all(|diagnostic| diagnostic.severity != "error"));
+
+    let repaired_records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("read repaired rows");
+    let row = repaired_records
+        .records
+        .iter()
+        .find(|row| row.coordinate == coordinate)
+        .expect("repaired record");
+    assert!(row.fields.iter().all(|cell| !cell.missing));
 }
 
 #[test]

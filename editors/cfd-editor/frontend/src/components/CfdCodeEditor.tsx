@@ -129,6 +129,7 @@ interface Props {
   onComplete?: (source: string, position: { line: number; character: number }) => Promise<readonly Completion[]>
   diagnostics?: readonly Diagnostic[]
   documentUpdate?: ExternalDocumentUpdate | null
+  focusRange?: { from: number; to: number; tick: number } | null
   className?: string
 }
 
@@ -144,6 +145,7 @@ export function CfdCodeEditor({
   onComplete,
   diagnostics = [],
   documentUpdate = null,
+  focusRange = null,
   className,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -258,6 +260,18 @@ export function CfdCodeEditor({
       annotations: [externalDocumentUpdate.of(true), Transaction.addToHistory.of(true)],
     })
   }, [documentUpdate, value])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !focusRange) return
+    const from = Math.min(view.state.doc.length, Math.max(0, focusRange.from))
+    const to = Math.min(view.state.doc.length, Math.max(from, focusRange.to))
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: 'center' }),
+    })
+    view.focus()
+  }, [focusRange])
 
   useEffect(() => {
     const view = viewRef.current

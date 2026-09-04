@@ -183,6 +183,7 @@ function DraftFieldsBody({
     () => draft.fields.map(field => ({
       name: field.name,
       value: fieldValueForDraft(values[field.name] ?? null),
+      missing: false,
       annotation: annotationForDraft(field),
     })),
     [draft, values],

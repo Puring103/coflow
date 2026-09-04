@@ -62,6 +62,7 @@ export function recordFields(object: CfdObject): FieldCell[] {
     .map(([name, value]) => ({
       name,
       value,
+      missing: false,
       annotation: null,
     }))
 }
@@ -249,8 +250,24 @@ export function diagnosticMatchesCoordinate(
   diagnostic: DiagnosticItem,
   coordinate: RecordCoordinate,
 ): boolean {
-  if (diagnostic.record_key !== coordinate.key) return false
-  return diagnostic.actual_type === null || diagnostic.actual_type === coordinate.actual_type
+  const target = diagnosticRecordTarget(diagnostic)
+  return !!target
+    && target.coordinate.key === coordinate.key
+    && target.coordinate.actual_type === coordinate.actual_type
+}
+
+export function diagnosticRecordTarget(diagnostic: DiagnosticItem) {
+  return diagnostic.target.kind === 'table_field' || diagnostic.target.kind === 'record'
+    ? diagnostic.target
+    : null
+}
+
+export function diagnosticFilePath(diagnostic: DiagnosticItem): string | null {
+  return diagnostic.target.kind === 'none' ? null : diagnostic.target.file_path
+}
+
+export function diagnosticFieldPath(diagnostic: DiagnosticItem): string | null {
+  return diagnostic.target.kind === 'table_field' ? diagnostic.target.field_path : null
 }
 
 export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'info' {
@@ -277,15 +294,7 @@ export function diagnosticDisplayMessage(diagnostic: DiagnosticItem): string {
  *  so a focus request survives project snapshot refreshes even without an
  *  explicit ID field on FlatDiagnostic. */
 export function diagnosticKey(diagnostic: DiagnosticItem): string {
-  return [
-    diagnostic.file_path ?? '',
-    diagnostic.actual_type ?? '',
-    diagnostic.record_key ?? '',
-    diagnostic.field_path ?? '',
-    diagnostic.severity,
-    diagnostic.code,
-    diagnosticDisplayMessage(diagnostic),
-  ].join('')
+  return diagnostic.id
 }
 
 /** Compare a diagnostic against a (record, field?) anchor. When `fieldPath`
@@ -299,15 +308,17 @@ export function diagnosticMatchesAnchor(
   actualType: string | null,
   fieldPath: string | null,
 ): boolean {
-  if (diagnostic.file_path !== filePath) return false
-  if (diagnostic.record_key !== recordKey) return false
-  if (actualType !== null && diagnostic.actual_type !== null && diagnostic.actual_type !== actualType) {
+  const target = diagnosticRecordTarget(diagnostic)
+  if (!target || target.file_path !== filePath) return false
+  if (target.coordinate.key !== recordKey) return false
+  if (actualType !== null && target.coordinate.actual_type !== actualType) {
     return false
   }
   if (fieldPath === null) return true
-  if (!diagnostic.field_path) return false
-  if (diagnostic.field_path === fieldPath) return true
-  return topLevelSegment(diagnostic.field_path) === topLevelSegment(fieldPath)
+  const diagnosticPath = diagnosticFieldPath(diagnostic)
+  if (!diagnosticPath) return false
+  if (diagnosticPath === fieldPath) return true
+  return topLevelSegment(diagnosticPath) === topLevelSegment(fieldPath)
 }
 
 function topLevelSegment(path: string): string {

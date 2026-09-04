@@ -45,16 +45,24 @@ export function validationCodeMirrorDiagnostics(
   diagnostics: readonly FlatDiagnostic[],
 ): Diagnostic[] {
   const doc = Text.of(source.split('\n'))
-  return diagnostics.flatMap(item => item.range ? [{
-    from: positionOffset(doc, item.range.start),
-    to: positionOffset(doc, item.range.end),
+  return diagnostics.flatMap(item => {
+    const range = item.target.kind === 'source' || item.target.kind === 'project_source'
+      ? item.target.range
+      : null
+    return range ? [{
+    from: positionOffset(doc, range.start),
+    to: positionOffset(doc, range.end),
     severity: item.severity === 'error' ? 'error' as const : item.severity === 'warning' ? 'warning' as const : 'info' as const,
     message: `${item.code}: ${flatDiagnosticMessage(item)}`,
-  }] : [])
+  }] : []
+  })
 }
 
 export function flatDiagnosticMessage(diagnostic: FlatDiagnostic): string {
-  const location = [diagnostic.record_key, diagnostic.field_path].filter(Boolean).join('.')
+  const target = diagnostic.target
+  const location = target.kind === 'table_field'
+    ? `${target.coordinate.key}.${target.field_path}`
+    : target.kind === 'record' ? target.coordinate.key : ''
   return location ? `${location}: ${diagnostic.message}` : diagnostic.message
 }
 

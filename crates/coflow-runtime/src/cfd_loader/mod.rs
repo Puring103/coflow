@@ -27,7 +27,7 @@ use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-use lower::{lower_records, syntax_diagnostics, ParsedLoadedRecordDraft};
+use lower::{lower_records, lower_records_partial, syntax_diagnostics, ParsedLoadedRecordDraft};
 use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -109,7 +109,21 @@ impl CfdLoader {
         )))
     }
 
+    #[cfg(test)]
     pub fn load(
+        &self,
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
+        let loaded = self.load_partial(ctx, source)?;
+        if loaded.diagnostics.is_empty() {
+            Ok(loaded)
+        } else {
+            Err(loaded.diagnostics)
+        }
+    }
+
+    pub(crate) fn load_partial(
         &self,
         ctx: CfdLoadContext<'_>,
         source: &CfdSource,
@@ -125,21 +139,34 @@ impl CfdLoader {
                 ))
             })?),
         };
-        parse_cfd_input_records_with_spans(ctx.schema, &contents)
-            .map(|records| {
-                let records = records
-                    .into_iter()
-                    .map(|record| {
-                        let span = text_span(&contents, record.span);
-                        record.record.with_origin(RecordOrigin::File {
-                            path: file.clone(),
-                            span: Some(span),
-                        })
-                    })
-                    .collect();
-                LoadedCfdSource { records }
+        let (ast, parse_errors) = parse_cfd(&contents);
+        let (lowered, lower_errors) = lower_records_partial(ctx.schema, &ast);
+        let records = lowered
+            .into_iter()
+            .map(|record| {
+                let span = text_span(&contents, record.span);
+                record.record.with_origin(RecordOrigin::File {
+                    path: file.clone(),
+                    span: Some(span),
+                })
             })
-            .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
+            .collect();
+        let mut diagnostics = cfd_error_to_diagnostics(
+            file,
+            &contents,
+            CfdTextLoadError::Text(syntax_diagnostics(parse_errors)),
+        );
+        diagnostics.extend(cfd_error_to_diagnostics(
+            file,
+            &contents,
+            CfdTextLoadError::Text(CfdTextDiagnostics {
+                diagnostics: lower_errors,
+            }),
+        ));
+        Ok(LoadedCfdSource {
+            records,
+            diagnostics,
+        })
     }
 }
 

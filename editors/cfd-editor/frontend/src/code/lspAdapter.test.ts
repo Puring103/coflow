@@ -24,21 +24,18 @@ describe('LSP CodeMirror adapter', () => {
 
   it('maps runtime validation ranges to inline CodeMirror diagnostics', () => {
     expect(validationCodeMirrorDiagnostics('first\nprice: "wrong"', [{
+      id: 'type-error',
       severity: 'error',
       code: 'DATA-TYPE',
       stage: 'DATA',
       message: 'expected int',
-      file_path: 'data.cfd',
-      actual_type: 'Product',
-      record_key: 'draft',
-      field_path: 'price',
-      range: { start: { line: 1, character: 7 }, end: { line: 1, character: 14 } },
+      target: { kind: 'source', file_path: 'data.cfd', range: { start: { line: 1, character: 7 }, end: { line: 1, character: 14 } } },
       contexts: [],
     }])).toEqual([{
       from: 13,
       to: 20,
       severity: 'error',
-      message: 'DATA-TYPE: draft.price: expected int',
+      message: 'DATA-TYPE: expected int',
     }])
   })
 

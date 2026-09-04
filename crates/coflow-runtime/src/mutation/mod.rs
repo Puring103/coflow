@@ -7,7 +7,7 @@ use crate::ProjectSession;
 mod apply;
 mod cell_text;
 mod coercion;
-mod defaults;
+pub(crate) mod defaults;
 mod dimension;
 mod plan;
 mod prepare;

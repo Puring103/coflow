@@ -176,9 +176,9 @@ impl Diagnostic {
     }
 
     /// Flatten a diagnostic into the wire shape consumed by editor hosts.
-    /// `actual_type` / `record_key` / `field_path` are not derivable from the structured
-    /// diagnostic alone; hosts that know the record id of the diagnostic's
-    /// label populate them out-of-band.
+    /// Logical coordinates are supplied by the diagnostics store. The editor
+    /// core may narrow a structured target to a source target when the record
+    /// was rejected from the partial model.
     #[must_use]
     pub fn flat_view(
         &self,
@@ -195,15 +195,25 @@ impl Diagnostic {
             SourceLocation::ProjectConfig { .. } | SourceLocation::Artifact { .. } => None,
         });
         FlatDiagnostic {
+            id: diagnostic_id(
+                self,
+                file_path.as_deref(),
+                actual_type.as_deref(),
+                record_key.as_deref(),
+                field_path.as_deref(),
+            ),
             severity: severity_str(self.severity).to_string(),
             code: self.code.clone(),
             stage: self.stage.clone(),
             message: self.message.clone(),
-            file_path,
-            actual_type,
-            record_key,
-            field_path,
-            range,
+            target: diagnostic_target(
+                file_path,
+                range,
+                actual_type,
+                record_key,
+                field_path,
+                self.primary.as_ref().map(|label| &label.location),
+            ),
             contexts: self.contexts.clone(),
         }
     }
@@ -380,8 +390,8 @@ pub fn origins_of(records: &[LoadedRecordDraft]) -> Vec<RecordOrigin> {
 
 /// Wire-friendly flat view of a [`Diagnostic`].
 ///
-/// Editor hosts use this as a single severity/code/message tuple anchored to
-/// a file/record/field. Heavier-weight callers can keep the structured form.
+/// The target is authoritative: editor hosts execute it directly and never
+/// infer navigation behavior from diagnostic codes or optional coordinates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -389,18 +399,109 @@ pub fn origins_of(records: &[LoadedRecordDraft]) -> Vec<RecordOrigin> {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct FlatDiagnostic {
+    pub id: String,
     pub severity: String,
     pub code: String,
     pub stage: String,
     pub message: String,
-    pub file_path: Option<String>,
-    pub actual_type: Option<String>,
-    pub record_key: Option<String>,
-    pub field_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub range: Option<TextRange>,
+    pub target: DiagnosticTarget,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contexts: Vec<DiagnosticContext>,
+}
+
+fn diagnostic_id(
+    diagnostic: &Diagnostic,
+    file_path: Option<&str>,
+    actual_type: Option<&str>,
+    record_key: Option<&str>,
+    field_path: Option<&str>,
+) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let source_location = diagnostic
+        .primary
+        .as_ref()
+        .map(|label| format!("{:?}", label.location));
+    for part in [
+        Some(diagnostic.code.as_str()),
+        Some(diagnostic.stage.as_str()),
+        Some(diagnostic.message.as_str()),
+        file_path,
+        actual_type,
+        record_key,
+        field_path,
+        source_location.as_deref(),
+    ] {
+        for byte in part.unwrap_or("").bytes().chain(std::iter::once(0xff)) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("diag-{hash:016x}")
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DiagnosticTarget {
+    TableField {
+        file_path: String,
+        coordinate: crate::RecordCoordinate,
+        field_path: String,
+    },
+    Record {
+        file_path: String,
+        coordinate: crate::RecordCoordinate,
+    },
+    Source {
+        file_path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<TextRange>,
+    },
+    ProjectSource {
+        file_path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<TextRange>,
+    },
+    #[default]
+    None,
+}
+
+fn diagnostic_target(
+    file_path: Option<String>,
+    range: Option<TextRange>,
+    actual_type: Option<String>,
+    record_key: Option<String>,
+    field_path: Option<String>,
+    location: Option<&SourceLocation>,
+) -> DiagnosticTarget {
+    let Some(file_path) = file_path else {
+        return DiagnosticTarget::None;
+    };
+    let coordinate = actual_type
+        .zip(record_key)
+        .and_then(|(actual_type, key)| crate::RecordCoordinate::try_new(actual_type, key).ok());
+    if let Some(coordinate) = coordinate {
+        return match field_path {
+            Some(field_path) => DiagnosticTarget::TableField {
+                file_path,
+                coordinate,
+                field_path,
+            },
+            None => DiagnosticTarget::Record {
+                file_path,
+                coordinate,
+            },
+        };
+    }
+    if matches!(location, Some(SourceLocation::ProjectConfig { .. })) {
+        DiagnosticTarget::ProjectSource { file_path, range }
+    } else {
+        DiagnosticTarget::Source { file_path, range }
+    }
 }
 
 impl FlatDiagnostic {

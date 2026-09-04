@@ -26,15 +26,17 @@ describe('diagnostics panel list', () => {
   it('renders diagnostics directly without filters or file grouping', () => {
     const html = renderToStaticMarkup(createElement(DiagnosticsPanel, {
       diagnostics: [{
+        id: 'invalid-value',
         severity: 'error',
         code: 'CFD001',
         stage: 'check',
         message: 'Invalid value',
-        file_path: 'data/table/RegionConfig.cfd',
-        actual_type: 'RegionConfig',
-        record_key: 'Region_01',
-        field_path: 'Value',
-        range: null,
+        target: {
+          kind: 'table_field',
+          file_path: 'data/table/RegionConfig.cfd',
+          coordinate: { actual_type: 'RegionConfig', key: 'Region_01' },
+          field_path: 'Value',
+        },
         contexts: [],
       }],
     }))

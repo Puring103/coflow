@@ -52,7 +52,7 @@ pub(super) fn build_session(
         })?;
     let file_tree = engine.queries().file_tree();
     let (file_type_names, type_display_names) = type_navigation(engine.queries());
-    let diagnostics = diagnostics_from_store(engine.queries().diagnostics(), &project_root);
+    let diagnostics = diagnostics_from_store(engine.queries(), &project_root);
 
     Ok((
         EditorSession {
