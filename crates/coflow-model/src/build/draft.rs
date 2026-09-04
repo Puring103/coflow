@@ -1,7 +1,7 @@
 use crate::diagnostics::RecordOrigin;
 use crate::model::{CfdDictKey, CfdValue};
 use crate::LoadedFormattedString;
-use coflow_language::{FieldName, TypeName};
+use coflow_language::cft::{FieldName, TypeName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
 use crate::data_model::{CfdDataModel, CfdRecordId};
-use coflow_language::{CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo};
+use coflow_language::cft::{CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo};
 
 use super::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::RecordCoordinate;
@@ -83,7 +83,7 @@ pub(super) fn plan_incremental_checks_with_limit(
                 let fields = schema
                     .resolve_type(&coordinate.actual_type)
                     .into_iter()
-                    .flat_map(coflow_language::CftType::all_fields)
+                    .flat_map(coflow_language::cft::CftType::all_fields)
                     .map(|field| ChangedField {
                         field: field.name.clone(),
                         projection: ChangedProjection::Base,

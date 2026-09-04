@@ -1,6 +1,6 @@
 use super::CftValueType;
 use crate::module::ModuleId;
-use crate::syntax::Span;
+use crate::source::Span;
 use crate::{
     BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
 };

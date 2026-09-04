@@ -1,6 +1,6 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic)]
 
-use coflow_language::{
+use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use coflow_runtime::check_benchmark_support::{

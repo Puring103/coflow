@@ -9,7 +9,7 @@ use crate::semantics::{
     CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest,
 };
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
-use coflow_language::{CftField, CftValueType, TypeName};
+use coflow_language::cft::{CftField, CftValueType, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Validation and resolution helper.
@@ -142,8 +142,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         // `fields` has lifetime 's, independent of `self`, so it can be held
         // across calls to &mut self methods below.
         let fields = schema.full_fields(actual_type).collect::<Vec<_>>();
-        let work = input_fields.len().saturating_add(fields.len());
-        self.charge_work(work, record, &path)?;
         let known_fields = fields
             .iter()
             .map(|field| field.name.as_str())
@@ -481,35 +479,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         if self.budget_exhausted {
             return None;
         }
-        let result = self
-            .budget
-            .enter(parent, StructureKind::DataValue, 1)
-            .and_then(|cursor| {
-                self.budget
-                    .charge_work(StructureKind::DataValue, 1)
-                    .map(|()| cursor)
-            });
+        let result = self.budget.enter(parent, StructureKind::DataValue, 1);
         match result {
             Ok(cursor) => Some(cursor),
-            Err(error) => {
-                self.push_budget_error(error.to_string(), record, path.clone());
-                None
-            }
-        }
-    }
-
-    fn charge_work(
-        &mut self,
-        work: usize,
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-    ) -> Option<()> {
-        if self.budget_exhausted {
-            return None;
-        }
-        let work = u64::try_from(work).unwrap_or(u64::MAX);
-        match self.budget.charge_work(StructureKind::DataValue, work) {
-            Ok(()) => Some(()),
             Err(error) => {
                 self.push_budget_error(error.to_string(), record, path.clone());
                 None
@@ -536,10 +508,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 self.budget
                     .charge_nodes(StructureKind::DefaultValue, additional_nodes)
             })
-            .and_then(|()| {
-                self.budget
-                    .charge_work(StructureKind::DefaultValue, additional_nodes)
-            });
+            ;
         match result {
             Ok(()) => Some(()),
             Err(error) => {

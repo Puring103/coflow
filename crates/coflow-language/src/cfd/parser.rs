@@ -7,6 +7,7 @@ use super::ast::{
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
+use crate::lexical::{is_identifier_continue, is_identifier_start};
 use crate::Span;
 use tokens::Token;
 
@@ -173,7 +174,7 @@ impl<'a> Parser<'a> {
             }
             if at_line_start
                 && state.is_top_level()
-                && (ch.is_alphabetic() || ch == '"' || ch == '_')
+                && (is_identifier_start(ch) || ch == '"')
             {
                 break;
             }
@@ -707,12 +708,7 @@ impl<'a> Parser<'a> {
                 message: error.to_string(),
                 span,
             })?;
-        self.budget
-            .charge_work(StructureKind::SyntaxAst, 1)
-            .map_err(|error| CfdSyntaxDiagnostic {
-                message: error.to_string(),
-                span,
-            })
+        Ok(())
     }
 }
 
@@ -840,8 +836,8 @@ fn is_reference_name(value: &str) -> bool {
     let mut chars = value.chars();
     chars
         .next()
-        .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
+        .is_some_and(is_identifier_start)
+        && chars.all(is_identifier_continue)
 }
 
 fn is_qualified_reference_name(value: &str) -> bool {

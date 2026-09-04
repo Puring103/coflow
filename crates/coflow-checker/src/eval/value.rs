@@ -1,8 +1,10 @@
 use coflow_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdRecordId, CfdValue,
 };
-use coflow_language::limits::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
-use coflow_language::{CftConstValue, CftValueType, EnumName, FieldName};
+use crate::limits::{
+    EvaluationBudget, EvaluationBudgetExceeded, EvaluationCursor, EvaluationKind,
+};
+use coflow_language::cft::{CftConstValue, CftValueType, EnumName, FieldName};
 use std::collections::BTreeMap;
 
 use super::collections::{EvalEntries, EvalItems};
@@ -75,11 +77,11 @@ impl<'a> EvalValue<'a> {
         ty: Option<&CftValueType>,
         location: ValueLocation,
         model: &'a CfdDataModel,
-        budget: &mut StructuralBudget,
-        cursor: TraversalCursor,
+        budget: &mut EvaluationBudget,
+        cursor: EvaluationCursor,
     ) -> Result<Self, LocatedBudgetExceeded> {
         let cursor = budget
-            .enter(cursor, StructureKind::DataValue, 1)
+            .enter(cursor, EvaluationKind::DataValue, 1)
             .map_err(|error| LocatedBudgetExceeded {
                 error,
                 location: Box::new(Some(location.clone())),
@@ -231,7 +233,7 @@ fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
 
 #[derive(Debug)]
 pub(crate) struct LocatedBudgetExceeded {
-    pub(crate) error: BudgetExceeded,
+    pub(crate) error: EvaluationBudgetExceeded,
     pub(crate) location: Box<Option<ValueLocation>>,
 }
 
@@ -318,7 +320,7 @@ impl EvalRecordRef {
         model: &'model CfdDataModel,
         field_type: Option<&CftValueType>,
         name: &str,
-        budget: &mut StructuralBudget,
+        budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'model>>, LocatedBudgetExceeded> {
         let Some(value) = self.fields(model).and_then(|fields| fields.get(name)) else {
             return Ok(None);
@@ -333,7 +335,7 @@ impl EvalRecordRef {
                 location.clone(),
                 model,
                 budget,
-                TraversalCursor::root(),
+                EvaluationCursor::root(),
             )?,
             Some(location),
         )))

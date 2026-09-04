@@ -21,7 +21,7 @@ mod model;
 mod names;
 mod render;
 
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use coflow_model::CfdDataModel;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,7 +84,7 @@ fn build_csharp_project(
                 .map(move |field| (schema_type, field))
         })
         .find_map(|(schema_type, field)| match &field.value_type {
-            coflow_language::CftValueType::Function(parameters, _) if parameters.len() > 8 => {
+            coflow_language::cft::CftValueType::Function(parameters, _) if parameters.len() > 8 => {
                 Some(format!(
                     "C# runtime functions support at most 8 parameters; `{}.{}` declares {}",
                     schema_type.name,

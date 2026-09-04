@@ -1,18 +1,17 @@
-use super::SchemaCompiler;
+use super::SymbolTable;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
-use crate::limits::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
+use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
 use crate::module::ModuleId;
 use crate::schema::LocatedBudgetError;
 use crate::syntax::ast::{
     Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
     CheckStmt, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use crate::syntax::Span;
+use crate::source::Span;
 
-impl SchemaCompiler<'_> {
-    pub(super) fn validate_structure(&mut self) -> bool {
+impl SymbolTable<'_> {
+    pub(super) fn validate_structure(&mut self, budget: &mut StructuralBudget) -> bool {
         let modules = self.modules;
-        let budget = &mut self.budget;
         for (module_id, module) in &modules.modules {
             let Some(ast) = module.ast.as_ref() else {
                 continue;
@@ -32,19 +31,6 @@ impl SchemaCompiler<'_> {
         true
     }
 
-    pub(super) fn push_budget_error(
-        &mut self,
-        error: BudgetExceeded,
-        module: &ModuleId,
-        span: Span,
-    ) {
-        self.diagnostics.push(CftDiagnostic::error(
-            CftErrorCode::SchemaStructureLimitExceeded,
-            module.clone(),
-            span,
-            error.to_string(),
-        ));
-    }
 }
 
 fn validate_module(
@@ -132,7 +118,6 @@ fn charge_flat(
 ) -> Result<(), LocatedBudgetError> {
     budget
         .charge_nodes(StructureKind::SchemaAst, nodes)
-        .and_then(|()| budget.charge_work(StructureKind::SchemaAst, nodes))
         .map_err(|error| LocatedBudgetError {
             error,
             module: module.clone(),
@@ -149,7 +134,6 @@ fn enter(
 ) -> Result<TraversalCursor, LocatedBudgetError> {
     budget
         .enter(parent, kind, 1)
-        .and_then(|cursor| budget.charge_work(kind, 1).map(|()| cursor))
         .map_err(|error| LocatedBudgetError {
             error,
             module: module.clone(),

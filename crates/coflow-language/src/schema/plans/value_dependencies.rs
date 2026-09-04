@@ -1,5 +1,5 @@
-use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
-use crate::schema::LocatedBudgetError;
+use crate::limits::{StructureKind, TraversalCursor};
+use crate::schema::{AnalysisBudget, LocatedBudgetError};
 use crate::{
     CftField, CftSchemaDefaultValue, CftType, CftValueType, FieldName, ModuleId, Span, TypeName,
 };
@@ -76,7 +76,7 @@ pub struct ValueDependencyPlan {
 impl ValueDependencyPlan {
     pub(in crate::schema) fn compile(
         types: &BTreeMap<TypeName, CftType>,
-        budget: &mut StructuralBudget,
+        budget: &mut AnalysisBudget,
     ) -> Result<Self, LocatedBudgetError> {
         let mut roots = BTreeMap::new();
         for mode in [
@@ -117,14 +117,14 @@ impl ValueDependencyPlan {
 fn dependency_graph(
     types: &BTreeMap<TypeName, CftType>,
     mode: ValueDependencyMode,
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
 ) -> Result<BTreeMap<TypeName, Vec<ValueDependencyStep>>, LocatedBudgetError> {
     let mut graph = BTreeMap::new();
     for (type_name, meta) in types {
         let mut dependencies = Vec::new();
         for field in &meta.all_fields {
             budget
-                .charge_work(StructureKind::SchemaDependency, 1)
+                .charge(StructureKind::SchemaDependency, 1)
                 .map_err(|error| LocatedBudgetError {
                     error,
                     module: types
@@ -181,7 +181,7 @@ fn dependency_target<'a>(
 fn compile_root<'a>(
     root: &'a TypeName,
     graph: &'a BTreeMap<TypeName, Vec<ValueDependencyStep>>,
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
 ) -> Result<Result<Vec<&'a TypeName>, ValueDependencyCycle>, LocatedBudgetError> {
     let mut states = BTreeMap::<&TypeName, VisitState>::new();
     let mut nodes = Vec::new();
@@ -217,7 +217,7 @@ fn compile_root<'a>(
                         .unwrap_or(u64::MAX)
                         .saturating_add(1);
                     budget
-                        .check_additional_depth(
+                        .check_depth(
                             TraversalCursor::root(),
                             StructureKind::SchemaDependency,
                             depth,
@@ -255,11 +255,11 @@ fn compile_root<'a>(
 }
 
 fn charge_edge(
-    budget: &mut StructuralBudget,
+    budget: &mut AnalysisBudget,
     edge: &ValueDependencyStep,
 ) -> Result<(), LocatedBudgetError> {
     budget
-        .charge_work(StructureKind::SchemaDependency, 1)
+        .charge(StructureKind::SchemaDependency, 1)
         .map_err(|error| LocatedBudgetError {
             error,
             module: edge.module.clone(),
@@ -304,7 +304,7 @@ mod tests {
             graph.insert(owner, edges);
         }
 
-        let mut budget = StructuralBudget::new(crate::limits::StructuralLimits::new(
+        let mut budget = AnalysisBudget::new(crate::limits::StructuralLimits::new(
             NODE_COUNT as u64,
             1,
             NODE_COUNT as u64,

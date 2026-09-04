@@ -2,7 +2,7 @@ use crate::{
     CfdDataModel, CfdDictKey, CfdFormattedString, CfdValue, LoadedFieldReference,
     LoadedFormatSegment, LoadedFormattedString,
 };
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::cft::{CftSchema, CftValueType};
 
 /// Resolves all field references in a loaded formatted string.
 ///

@@ -67,7 +67,7 @@ impl Parser<'_> {
             .end;
         Ok(NamespaceDecl {
             path,
-            span: crate::syntax::Span::new(start, end),
+            span: crate::source::Span::new(start, end),
         })
     }
 
@@ -87,7 +87,7 @@ impl Parser<'_> {
         Ok(UseDecl {
             path,
             alias,
-            span: crate::syntax::Span::new(start, end),
+            span: crate::source::Span::new(start, end),
         })
     }
 

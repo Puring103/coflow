@@ -1,3 +1,7 @@
+use coflow_language::lexical::{
+    is_identifier, tokenize_lossless, LosslessToken, LosslessTokenKind,
+};
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FormatLanguage {
     Cft,
@@ -22,7 +26,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     let expanded = expand_structural_lines(&collapsed, language);
     let mut output = String::new();
     let mut delimiters = DelimiterIndent::default();
-    let mut function_bodies = FunctionBodyTracker::default();
+    let mut function_bodies = FunctionScopes::default();
     let mut generic_continuation_depth = 0usize;
     let mut continuation = false;
     let mut pending_blank_line = false;
@@ -132,54 +136,34 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
 }
 
 #[derive(Default)]
-struct FunctionBodyTracker {
+struct FunctionScopes {
     braces: Vec<bool>,
     pending_signature: bool,
     pending_arrow: bool,
     return_type_started: bool,
 }
 
-impl FunctionBodyTracker {
+impl FunctionScopes {
     fn is_inside(&self) -> bool {
         self.braces.iter().any(|is_function| *is_function)
     }
 
     fn apply_line(&mut self, line: &str) {
-        let chars = line.chars().collect::<Vec<_>>();
-        let mut in_string = false;
-        let mut escaped = false;
-        let mut index = 0usize;
-        while index < chars.len() {
-            let ch = chars[index];
-            if in_string {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == '"' {
-                    in_string = false;
-                }
-                index += 1;
-                continue;
-            }
-            match ch {
-                '"' => in_string = true,
-                '#' => break,
-                'f' if chars.get(index + 1) == Some(&'n')
-                    && is_keyword_boundary(chars.get(index.wrapping_sub(1)).copied())
-                    && is_keyword_boundary(chars.get(index + 2).copied()) =>
-                {
+        for token in tokenize_lossless(line)
+            .into_iter()
+            .filter(|token| !token.is_trivia())
+        {
+            match token.text(line) {
+                "fn" if token.kind == LosslessTokenKind::Identifier => {
                     self.pending_signature = true;
                     self.pending_arrow = false;
                     self.return_type_started = false;
-                    index += 1;
                 }
-                '-' if chars.get(index + 1) == Some(&'>') && self.pending_signature => {
+                "->" if self.pending_signature => {
                     self.pending_arrow = true;
                     self.return_type_started = false;
-                    index += 1;
                 }
-                '{' => {
+                "{" => {
                     let is_function = self.pending_signature
                         && self.pending_arrow
                         && self.return_type_started;
@@ -192,26 +176,21 @@ impl FunctionBodyTracker {
                         self.return_type_started = true;
                     }
                 }
-                '}' => {
+                "}" => {
                     self.braces.pop();
                 }
-                ';' if self.pending_signature => {
+                ";" if self.pending_signature => {
                     self.pending_signature = false;
                     self.pending_arrow = false;
                     self.return_type_started = false;
                 }
-                _ if self.pending_arrow && !ch.is_whitespace() => {
+                _ if self.pending_arrow => {
                     self.return_type_started = true;
                 }
                 _ => {}
             }
-            index += 1;
         }
     }
-}
-
-fn is_keyword_boundary(ch: Option<char>) -> bool {
-    ch.is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
 }
 
 fn collapse_logical_lines(source: &str) -> String {
@@ -263,46 +242,19 @@ fn collapse_logical_lines(source: &str) -> String {
 }
 
 fn uncommented_code(line: &str) -> Option<&str> {
-    let mut in_string = false;
-    let mut escaped = false;
-    for (index, ch) in line.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '#' => return line[..index].trim().is_empty().then_some(""),
-            _ => {}
-        }
+    if let Some(comment) = tokenize_lossless(line)
+        .into_iter()
+        .find(|token| token.kind == LosslessTokenKind::Comment)
+    {
+        return line[..comment.span.start].trim().is_empty().then_some("");
     }
     Some(line.trim())
 }
 
 fn code_before_comment(line: &str) -> &str {
-    let mut in_string = false;
-    let mut escaped = false;
-    for (index, ch) in line.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '#' => return line[..index].trim(),
-            _ => {}
+    for token in tokenize_lossless(line) {
+        if token.kind == LosslessTokenKind::Comment {
+            return line[..token.span.start].trim();
         }
     }
     line.trim()
@@ -321,11 +273,12 @@ fn next_joinable_line<'a>(lines: &'a [&str], index: usize) -> Option<(usize, &'a
 }
 
 fn starts_with_keyword(source: &str, keyword: &str) -> bool {
-    source.strip_prefix(keyword).is_some_and(|rest| {
-        rest.chars()
-            .next()
-            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
-    })
+    tokenize_lossless(source)
+        .into_iter()
+        .find(|token| !token.is_trivia())
+        .is_some_and(|token| {
+            token.kind == LosslessTokenKind::Identifier && token.text(source) == keyword
+        })
 }
 
 fn joinable_colon_prefix(source: &str) -> bool {
@@ -338,44 +291,27 @@ fn joinable_colon_prefix(source: &str) -> bool {
     if prefix.starts_with('"') && prefix.ends_with('"') {
         return true;
     }
-    prefix
-        .chars()
-        .all(|ch| ch == '_' || ch == ':' || ch.is_alphanumeric())
+    prefix.split("::").all(is_identifier)
         || ["type ", "abstract type ", "sealed type "]
             .iter()
             .any(|start| prefix.starts_with(start))
 }
 
 fn split_array_object_header(source: &str) -> Option<(&str, &str)> {
-    let mut in_string = false;
-    let mut escaped = false;
-    for (index, ch) in source.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
+    let tokens = tokenize_lossless(source);
+    for (index, token) in tokens.iter().enumerate() {
+        if token.kind == LosslessTokenKind::Comment {
+            return None;
         }
-        match ch {
-            '"' => in_string = true,
-            '#' => return None,
-            '[' => {
-                let after = source[index + 1..].trim_start();
-                let brace = after.find('{')?;
-                let marker = after[..brace].trim();
-                if marker.is_empty()
-                    || marker
-                        .chars()
-                        .all(|ch| ch == '_' || ch == ':' || ch.is_alphanumeric())
-                {
-                    return Some((source[..index + 1].trim_end(), after));
-                }
+        if token.text(source) == "[" {
+            let brace = tokens[index + 1..]
+                .iter()
+                .find(|candidate| candidate.text(source) == "{")?;
+            let after = source[token.span.end..].trim_start();
+            let marker = source[token.span.end..brace.span.start].trim();
+            if marker.is_empty() || marker.split("::").all(is_identifier) {
+                return Some((source[..token.span.end].trim_end(), after));
             }
-            _ => {}
         }
     }
     None
@@ -398,33 +334,25 @@ fn line_requires_continuation(line: &str) -> bool {
 }
 
 fn leading_generic_closers(line: &str, depth: usize) -> usize {
-    line.chars().take_while(|ch| *ch == '>').count().min(depth)
+    tokenize_lossless(line)
+        .into_iter()
+        .skip_while(|token| token.kind == LosslessTokenKind::Whitespace)
+        .take_while(|token| token.text(line) == ">")
+        .count()
+        .min(depth)
 }
 
 fn generic_depth_after_line(line: &str, mut depth: usize) -> usize {
     let code = code_before_comment(line);
     let mut prefix = String::new();
-    let mut in_string = false;
-    let mut escaped = false;
-    for ch in code.chars() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            prefix.push(ch);
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '<' if depth > 0 || is_generic_open(&prefix) => depth += 1,
-            '>' if depth > 0 => depth -= 1,
+    for token in tokenize_lossless(code) {
+        let text = token.text(code);
+        match text {
+            "<" if depth > 0 || is_generic_open(&prefix) => depth += 1,
+            ">" if depth > 0 => depth -= 1,
             _ => {}
         }
-        prefix.push(ch);
+        prefix.push_str(text);
     }
     depth
 }
@@ -437,116 +365,91 @@ enum BraceKind {
 }
 
 fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
-    let chars = source.chars().collect::<Vec<_>>();
+    let tokens = tokenize_lossless(source);
     let mut output = String::with_capacity(source.len() + source.len() / 4);
     let mut braces = Vec::<(BraceKind, usize)>::new();
-    let mut in_string = false;
-    let mut escaped = false;
-    let mut in_comment = false;
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
     let mut generic_depth = 0usize;
     let mut just_closed_structural = false;
 
-    for (index, ch) in chars.iter().copied().enumerate() {
-        if in_comment {
-            output.push(ch);
-            if ch == '\n' {
-                in_comment = false;
-            }
-            continue;
-        }
-        if in_string {
-            output.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if !ch.is_whitespace() && !matches!(ch, ',' | ']') {
+    for (index, token) in tokens.iter().enumerate() {
+        let text = token.text(source);
+        if !matches!(
+            token.kind,
+            LosslessTokenKind::Whitespace | LosslessTokenKind::Newline
+        ) && !matches!(text, "," | "]")
+        {
             just_closed_structural = false;
         }
-        match ch {
-            '"' => {
-                in_string = true;
-                output.push(ch);
-            }
-            '#' => {
-                in_comment = true;
-                output.push(ch);
-            }
-            '(' => {
+        match text {
+            "(" if token.kind == LosslessTokenKind::Symbol => {
                 paren_depth += 1;
-                output.push(ch);
+                output.push_str(text);
             }
-            ')' => {
+            ")" if token.kind == LosslessTokenKind::Symbol => {
                 paren_depth = paren_depth.saturating_sub(1);
-                output.push(ch);
+                output.push_str(text);
             }
-            '[' => {
+            "[" if token.kind == LosslessTokenKind::Symbol => {
                 bracket_depth += 1;
-                output.push(ch);
+                output.push_str(text);
             }
-            ']' => {
+            "]" if token.kind == LosslessTokenKind::Symbol => {
                 if just_closed_structural {
                     push_line_break_before(&mut output);
                 }
                 bracket_depth = bracket_depth.saturating_sub(1);
-                output.push(ch);
+                output.push_str(text);
                 just_closed_structural = false;
             }
-            '<' if is_generic_open(&output) => {
+            "<" if token.kind == LosslessTokenKind::Symbol && is_generic_open(&output) => {
                 generic_depth += 1;
-                output.push(ch);
+                output.push_str(text);
             }
-            '>' if generic_depth > 0 => {
+            ">" if token.kind == LosslessTokenKind::Symbol && generic_depth > 0 => {
                 generic_depth -= 1;
-                output.push(ch);
+                output.push_str(text);
             }
-            '{' => {
+            "{" if token.kind == LosslessTokenKind::Symbol => {
                 let kind = classify_open_brace(current_line_fragment(&output), language);
                 braces.push((kind, bracket_depth));
-                output.push(ch);
+                output.push_str(text);
                 if kind != BraceKind::Inline
-                    && next_non_whitespace_on_line(&chars, index + 1).is_some_and(|ch| ch != '}')
+                    && next_token_on_line(&tokens, source, index)
+                        .is_some_and(|next| next != "}")
                 {
                     push_line_break(&mut output);
                 }
             }
-            '}' => {
+            "}" if token.kind == LosslessTokenKind::Symbol => {
                 let kind = braces.pop().map_or(BraceKind::Inline, |entry| entry.0);
                 if kind != BraceKind::Inline {
                     push_line_break_before(&mut output);
                 }
-                output.push(ch);
+                output.push_str(text);
                 just_closed_structural = kind != BraceKind::Inline;
                 if kind != BraceKind::Inline
-                    && next_non_whitespace_on_line(&chars, index + 1).is_some_and(|ch| {
-                        !matches!(ch, ',' | ';' | ')' | ']' | '}')
+                    && next_token_on_line(&tokens, source, index).is_some_and(|next| {
+                        !matches!(next, "," | ";" | ")" | "]" | "}" | "else")
                     })
-                    && !next_word_is(&chars, index + 1, "else")
                 {
                     push_line_break(&mut output);
                 }
             }
-            ';' => {
-                output.push(ch);
+            ";" if token.kind == LosslessTokenKind::Symbol => {
+                output.push_str(text);
                 if language == FormatLanguage::Cft
                     && braces.iter().any(|(kind, _)| *kind != BraceKind::Inline)
                     && paren_depth == 0
-                    && next_non_whitespace_on_line(&chars, index + 1)
-                        .is_some_and(|ch| ch != '#')
+                    && next_token_on_line(&tokens, source, index)
+                        .is_some_and(|next| !next.starts_with('#'))
                 {
                     push_line_break(&mut output);
                 }
             }
-            ',' => {
-                output.push(ch);
+            "," if token.kind == LosslessTokenKind::Symbol => {
+                output.push_str(text);
                 let split_cft_enum = language == FormatLanguage::Cft
                     && generic_depth == 0
                     && braces.last().is_some_and(|(kind, depth)| {
@@ -560,16 +463,31 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
                     })
                     && paren_depth == 0;
                 if (split_cft_enum || split_cfd_field || just_closed_structural)
-                    && next_non_whitespace_on_line(&chars, index + 1).is_some()
+                    && next_token_on_line(&tokens, source, index).is_some()
                 {
                     push_line_break(&mut output);
                 }
                 just_closed_structural = false;
             }
-            _ => output.push(ch),
+            _ => output.push_str(text),
         }
     }
     output
+}
+
+fn next_token_on_line<'a>(
+    tokens: &[LosslessToken],
+    source: &'a str,
+    index: usize,
+) -> Option<&'a str> {
+    for token in &tokens[index + 1..] {
+        match token.kind {
+            LosslessTokenKind::Whitespace => {}
+            LosslessTokenKind::Newline => return None,
+            _ => return Some(token.text(source)),
+        }
+    }
+    None
 }
 
 fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
@@ -618,33 +536,11 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
 }
 
 fn is_cfd_type_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.split("::").all(|segment| {
-            !segment.is_empty()
-                && segment
-                    .chars()
-                    .all(|ch| ch == '_' || ch.is_alphanumeric())
-        })
+    !value.is_empty() && value.split("::").all(is_identifier)
 }
 
 fn current_line_fragment(output: &str) -> &str {
     output.rsplit('\n').next().unwrap_or(output)
-}
-
-fn next_non_whitespace_on_line(chars: &[char], start: usize) -> Option<char> {
-    chars
-        .get(start..)?
-        .iter()
-        .copied()
-        .take_while(|ch| *ch != '\n' && *ch != '\r')
-        .find(|ch| !ch.is_whitespace())
-}
-
-fn next_word_is(chars: &[char], start: usize, word: &str) -> bool {
-    chars
-        .get(start..)
-        .map(|suffix| suffix.iter().copied().skip_while(|ch| ch.is_whitespace()).take(word.len()).collect::<String>())
-        .is_some_and(|candidate| candidate == word)
 }
 
 fn push_line_break(output: &mut String) {
@@ -737,237 +633,189 @@ fn is_grouped_record_start(line: &str) -> bool {
     let header = line.strip_suffix('{').map(str::trim).unwrap_or_default();
     !header.contains(':')
         && !header.is_empty()
-        && header
-            .chars()
-            .all(|ch| ch == '_' || ch.is_alphanumeric())
+        && is_identifier(header)
 }
 
 fn normalize_inline_spacing(line: &str) -> String {
-    let chars = line.chars().collect::<Vec<_>>();
+    let tokens = tokenize_lossless(line);
     let type_header = is_type_header(line);
     let mut output = String::with_capacity(line.len());
     let mut pending_space = false;
     let mut tight_right = false;
-    let mut in_string = false;
-    let mut escaped = false;
     let mut generic_depth = 0usize;
     let mut inline_brace_spacing = Vec::new();
-    let mut index = 0usize;
 
-    while index < chars.len() {
-        let ch = chars[index];
-        if in_string {
-            output.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
+    for (index, token) in tokens.iter().enumerate() {
+        let text = token.text(line);
+        match token.kind {
+            LosslessTokenKind::Whitespace | LosslessTokenKind::Newline => {
+                pending_space = !tight_right;
+                continue;
             }
-            index += 1;
-            continue;
-        }
-        if ch.is_whitespace() {
-            pending_space = !tight_right;
-            index += 1;
-            continue;
-        }
-        if ch == '#' {
-            trim_end_spaces(&mut output);
-            if !output.is_empty() {
-                output.push(' ');
-            }
-            output.extend(chars[index..].iter());
-            break;
-        }
-        if ch == '"' {
-            push_pending_space(&mut output, &mut pending_space);
-            output.push(ch);
-            in_string = true;
-            tight_right = false;
-            index += 1;
-            continue;
-        }
-
-        let next = chars.get(index + 1).copied();
-        let third = chars.get(index + 2).copied();
-        match (ch, next) {
-            (':', Some(':')) => {
+            LosslessTokenKind::Comment => {
                 trim_end_spaces(&mut output);
-                output.push_str("::");
+                if !output.is_empty() {
+                    output.push(' ');
+                }
+                output.push_str(text);
+                break;
+            }
+            _ => {}
+        }
+
+        match text {
+            "::" => {
+                trim_end_spaces(&mut output);
+                output.push_str(text);
                 pending_space = false;
                 tight_right = true;
-                index += 1;
             }
-            ('-', Some('>')) => {
-                push_spaced_operator(&mut output, "->");
+            "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||"
+            | "+=" | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" => {
+                push_spaced_operator(&mut output, text);
                 pending_space = true;
                 tight_right = false;
-                index += 1;
             }
-            ('=', Some('>')) => {
-                push_spaced_operator(&mut output, "=>");
+            ":" => {
+                trim_end_spaces(&mut output);
+                if type_header
+                    && !tokens[..index].iter().any(|token| token.text(line) == "{")
+                    && !tokens[..index].iter().any(|token| token.text(line) == "=")
+                    && !output.is_empty()
+                {
+                    output.push(' ');
+                }
+                output.push(':');
                 pending_space = true;
                 tight_right = false;
-                index += 1;
             }
-            ('.', Some('.')) => {
-                let operator = if third == Some('=') { "..=" } else { ".." };
-                push_spaced_operator(&mut output, operator);
+            "," => {
+                trim_end_spaces(&mut output);
+                output.push(',');
                 pending_space = true;
                 tight_right = false;
-                index += usize::from(third == Some('=')) + 1;
             }
-            ('>', Some('>')) if generic_depth > 0 => {
+            ";" => {
+                trim_end_spaces(&mut output);
+                output.push(';');
+                pending_space = false;
+                tight_right = false;
+            }
+            "(" | "[" => {
+                trim_end_spaces(&mut output);
+                if text == "["
+                    && pending_space
+                    && output.chars().next_back().is_some_and(is_separator)
+                {
+                    output.push(' ');
+                }
+                output.push_str(text);
+                pending_space = false;
+                tight_right = true;
+            }
+            ")" | "]" => {
+                trim_end_spaces(&mut output);
+                output.push_str(text);
+                pending_space = false;
+                tight_right = false;
+            }
+            "{" => {
+                trim_end_spaces(&mut output);
+                let spaced_inside = output.chars().next_back().is_some_and(|previous| {
+                    coflow_language::lexical::is_identifier_continue(previous)
+                        || matches!(previous, ')' | ']')
+                });
+                if !output.is_empty() && !output.ends_with(' ') {
+                    output.push(' ');
+                }
+                output.push('{');
+                inline_brace_spacing.push(spaced_inside);
+                pending_space = spaced_inside;
+                tight_right = !spaced_inside;
+            }
+            "}" => {
+                let spaced_inside = inline_brace_spacing.pop().unwrap_or(false);
+                trim_end_spaces(&mut output);
+                if spaced_inside && !output.ends_with('{') {
+                    output.push(' ');
+                }
+                output.push('}');
+                pending_space = false;
+                tight_right = false;
+            }
+            "=" => {
+                push_spaced_operator(&mut output, text);
+                pending_space = true;
+                tight_right = false;
+            }
+            "<" if is_generic_open(&output) => {
+                trim_end_spaces(&mut output);
+                output.push('<');
+                generic_depth += 1;
+                pending_space = false;
+                tight_right = true;
+            }
+            ">" if generic_depth > 0 => {
                 trim_end_spaces(&mut output);
                 output.push('>');
                 generic_depth -= 1;
                 pending_space = false;
                 tight_right = true;
             }
-            ('<' | '>' | '=' | '!' | '+' | '-' | '*' | '/' | '%', Some('='))
-            | ('&', Some('&' | '='))
-            | ('|', Some('|' | '='))
-            | ('^', Some('='))
-            | ('<' | '>', Some('<' | '>'))
-            | ('*' | '/', Some('*' | '/')) => {
-                let mut operator = String::with_capacity(2);
-                operator.push(ch);
-                operator.push(next.unwrap_or_default());
-                push_spaced_operator(&mut output, &operator);
+            "<" | ">" => {
+                push_spaced_operator(&mut output, text);
                 pending_space = true;
                 tight_right = false;
-                index += 1;
             }
-            _ => match ch {
-                ':' => {
-                    trim_end_spaces(&mut output);
-                    if type_header
-                        && !chars[..index].contains(&'{')
-                        && !chars[..index].contains(&'=')
-                    {
-                        if !output.is_empty() {
-                            output.push(' ');
-                        }
-                        output.push(':');
-                    } else {
-                        output.push(':');
-                    }
-                    pending_space = true;
-                    tight_right = false;
-                }
-                ',' => {
-                    trim_end_spaces(&mut output);
-                    output.push(',');
-                    pending_space = true;
-                    tight_right = false;
-                }
-                ';' => {
-                    trim_end_spaces(&mut output);
-                    output.push(';');
-                    pending_space = false;
-                    tight_right = false;
-                }
-                '(' | '[' => {
-                    trim_end_spaces(&mut output);
-                    if ch == '['
-                        && pending_space
-                        && output.chars().next_back().is_some_and(is_separator)
-                    {
-                        output.push(' ');
-                    }
-                    output.push(ch);
-                    pending_space = false;
-                    tight_right = true;
-                }
-                ')' | ']' => {
-                    trim_end_spaces(&mut output);
-                    output.push(ch);
-                    pending_space = false;
-                    tight_right = false;
-                }
-                '{' => {
-                    trim_end_spaces(&mut output);
-                    let spaced_inside = output.chars().next_back().is_some_and(|previous| {
-                        previous.is_alphanumeric() || matches!(previous, '_' | ')' | ']')
-                    });
-                    if !output.is_empty() && !output.ends_with(' ') {
-                        output.push(' ');
-                    }
-                    output.push('{');
-                    inline_brace_spacing.push(spaced_inside);
-                    pending_space = spaced_inside;
-                    tight_right = !spaced_inside;
-                }
-                '}' => {
-                    let spaced_inside = inline_brace_spacing.pop().unwrap_or(false);
-                    trim_end_spaces(&mut output);
-                    if spaced_inside && !output.ends_with('{') {
-                        output.push(' ');
-                    }
-                    output.push('}');
-                    pending_space = false;
-                    tight_right = false;
-                }
-                '=' => {
-                    push_spaced_operator(&mut output, "=");
-                    pending_space = true;
-                    tight_right = false;
-                }
-                '<' if is_generic_open(&output) => {
-                    trim_end_spaces(&mut output);
-                    output.push('<');
-                    generic_depth += 1;
-                    pending_space = false;
-                    tight_right = true;
-                }
-                '>' if generic_depth > 0 => {
-                    trim_end_spaces(&mut output);
-                    output.push('>');
-                    generic_depth -= 1;
-                    pending_space = false;
-                    tight_right = true;
-                }
-                '<' | '>' => {
-                    let mut operator = String::new();
-                    operator.push(ch);
-                    push_spaced_operator(&mut output, &operator);
-                    pending_space = true;
-                    tight_right = false;
-                }
-                '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^'
-                    if is_binary_operator(&output, &chars, index) =>
-                {
-                    let mut operator = String::new();
-                    operator.push(ch);
-                    push_spaced_operator(&mut output, &operator);
-                    pending_space = true;
-                    tight_right = false;
-                }
-                '+' | '-' | '!' | '~' | '&' => {
-                    push_pending_space(&mut output, &mut pending_space);
-                    output.push(ch);
-                    tight_right = true;
-                }
-                '.' => {
-                    trim_end_spaces(&mut output);
-                    output.push('.');
-                    pending_space = false;
-                    tight_right = true;
-                }
-                _ => {
-                    push_pending_space(&mut output, &mut pending_space);
-                    output.push(ch);
-                    tight_right = false;
-                }
-            },
+            "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^"
+                if is_binary_operator_token(&tokens, line, index) =>
+            {
+                push_spaced_operator(&mut output, text);
+                pending_space = true;
+                tight_right = false;
+            }
+            "+" | "-" | "!" | "~" | "&" => {
+                push_pending_space(&mut output, &mut pending_space);
+                output.push_str(text);
+                tight_right = true;
+            }
+            "." => {
+                trim_end_spaces(&mut output);
+                output.push('.');
+                pending_space = false;
+                tight_right = true;
+            }
+            _ => {
+                push_pending_space(&mut output, &mut pending_space);
+                output.push_str(text);
+                tight_right = false;
+            }
         }
-        index += 1;
     }
 
     trim_end_spaces(&mut output);
     output
+}
+
+fn is_binary_operator_token(tokens: &[LosslessToken], source: &str, index: usize) -> bool {
+    let previous = tokens[..index]
+        .iter()
+        .rev()
+        .find(|token| !token.is_trivia())
+        .map(|token| token.text(source));
+    let next = tokens[index + 1..]
+        .iter()
+        .find(|token| !token.is_trivia())
+        .map(|token| token.text(source));
+    previous.is_some_and(|token| {
+        !matches!(
+            token,
+            "(" | "[" | "{" | ":" | "," | "=" | "+" | "-" | "*" | "/" | "%"
+                | "!" | "&" | "|" | "^" | "<" | ">" | "->" | "=>" | ".." | "..="
+                | "<=" | ">=" | "==" | "!=" | "&&" | "||" | "+=" | "-=" | "*="
+                | "/=" | "<<" | ">>" | "**" | "//"
+        )
+    }) && next.is_some_and(|token| !matches!(token, ")" | "]" | "}" | "," | ";"))
 }
 
 fn is_separator(ch: char) -> bool {
@@ -978,40 +826,14 @@ fn is_separator(ch: char) -> bool {
 }
 
 fn is_generic_open(output: &str) -> bool {
-    let identifier = output
-        .trim_end()
-        .rsplit(|ch: char| !ch.is_alphanumeric() && ch != '_')
-        .next();
-    matches!(identifier, Some("Option" | "Result"))
-}
-
-fn is_binary_operator(output: &str, chars: &[char], index: usize) -> bool {
-    let previous = output.chars().rev().find(|ch| !ch.is_whitespace());
-    let next = chars[index + 1..]
-        .iter()
-        .copied()
-        .find(|ch| !ch.is_whitespace());
-    previous.is_some_and(|ch| {
-        !matches!(
-            ch,
-            '(' | '['
-                | '{'
-                | ':'
-                | ','
-                | '='
-                | '+'
-                | '-'
-                | '*'
-                | '/'
-                | '%'
-                | '!'
-                | '&'
-                | '|'
-                | '^'
-                | '<'
-                | '>'
-        )
-    }) && next.is_some_and(|ch| !matches!(ch, ')' | ']' | '}' | ',' | ';'))
+    tokenize_lossless(output)
+        .into_iter()
+        .rev()
+        .find(|token| !token.is_trivia())
+        .is_some_and(|token| {
+            token.kind == LosslessTokenKind::Identifier
+                && matches!(token.text(output), "Option" | "Result")
+        })
 }
 
 fn is_type_header(line: &str) -> bool {
@@ -1111,29 +933,19 @@ impl DelimiterIndent {
 }
 
 fn delimiter_events(line: &str) -> Vec<char> {
-    let mut delimiters = Vec::new();
-    let mut in_string = false;
-    let mut escaped = false;
-    let mut chars = line.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '#' => break,
-            '{' | '[' | '(' | '}' | ']' | ')' => delimiters.push(ch),
-            _ => {}
-        }
-    }
-    delimiters
+    tokenize_lossless(line)
+        .into_iter()
+        .filter(|token| token.kind == LosslessTokenKind::Symbol)
+        .filter_map(|token| match token.text(line) {
+            "{" => Some('{'),
+            "[" => Some('['),
+            "(" => Some('('),
+            "}" => Some('}'),
+            "]" => Some(']'),
+            ")" => Some(')'),
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]

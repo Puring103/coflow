@@ -1,16 +1,13 @@
 use super::inferred_type::InferredType;
 use crate::module::ModuleId;
-use crate::schema::{CftConstValue, CftValueType};
 use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeAliasDef, TypeDef};
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub(super) struct ConstInfo<'a> {
     pub(super) module: ModuleId,
     pub(super) def: &'a ConstDef,
-    pub(super) value_type: Option<CftValueType>,
-    pub(super) value: Option<CftConstValue>,
 }
 
 #[derive(Debug, Clone)]

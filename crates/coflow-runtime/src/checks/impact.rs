@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_language::{DimensionName, FieldName, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, TypeName, VariantName};
 
 use crate::RecordCoordinate;
 

@@ -1,7 +1,7 @@
 use crate::api::{DiagnosticSet, WriteFieldPathSegment};
 use coflow_language::cfd::ast::{CfdBlock, CfdRecord as AstRecord, CfdValue as AstValue};
-use coflow_language::Span;
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::source::Span;
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::diag;
 use super::schema_nav::{

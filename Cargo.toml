@@ -26,6 +26,7 @@ required-features = ["cli"]
 
 [workspace]
 members = [
+    "crates/coflow-format",
     "crates/coflow-language",
     "crates/coflow-diagnostics",
     "crates/coflow-model",
@@ -66,6 +67,7 @@ redundant_pub_crate = "allow"
 atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"], optional = true }
 coflow-language = { path = "crates/coflow-language" }
+coflow-format = { path = "crates/coflow-format" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-runtime = { path = "crates/coflow-runtime" }
 dirs = { version = "6", optional = true }

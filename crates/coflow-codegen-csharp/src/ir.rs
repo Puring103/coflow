@@ -6,7 +6,7 @@ use crate::model::{
 };
 use crate::names::{csharp_ident_error, csharp_namespace_error, csharp_type_name};
 use crate::CsharpCodegenError;
-use coflow_language::{CftConstValue, CftSchema, CftValueType};
+use coflow_language::cft::{CftConstValue, CftSchema, CftValueType};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

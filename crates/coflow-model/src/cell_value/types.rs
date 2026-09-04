@@ -1,4 +1,4 @@
-use coflow_language::{CftField, CftSchema, CftValueType};
+use coflow_language::cft::{CftField, CftSchema, CftValueType};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,

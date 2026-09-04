@@ -1,10 +1,10 @@
 mod tokens;
 
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
+use crate::lexical::{is_identifier_continue, is_identifier_start};
 use crate::module::ModuleId;
-use crate::syntax::Span;
+use crate::source::Span;
 pub use tokens::{Token, TokenKind};
-use unicode_ident::{is_xid_continue, is_xid_start};
 
 /// Lexes one CFT module into tokens.
 ///
@@ -226,8 +226,7 @@ impl<'a> Lexer<'a> {
                 }
                 '"' => self.lex_string(start)?,
                 '0'..='9' => self.lex_number(start)?,
-                '_' => self.lex_word(),
-                value if is_xid_start(value) => self.lex_word(),
+                value if is_identifier_start(value) => self.lex_word(),
                 _ => {
                     return Err(self.err(
                         CftErrorCode::UnexpectedCharacter,
@@ -251,7 +250,7 @@ impl<'a> Lexer<'a> {
     fn lex_word(&mut self) -> TokenKind {
         let start = self.pos;
         while let Some(ch) = self.source[self.pos..].chars().next() {
-            if ch == '_' || is_xid_continue(ch) {
+            if is_identifier_continue(ch) {
                 self.pos += ch.len_utf8();
             } else {
                 break;
@@ -325,7 +324,7 @@ impl<'a> Lexer<'a> {
         if matches!(self.bytes.get(self.pos), Some(b'f' | b'F')) {
             let suffix_end = self.pos + 1;
             let next = self.source[suffix_end..].chars().next();
-            if !next.is_some_and(|ch| ch == '_' || is_xid_continue(ch)) {
+            if !next.is_some_and(is_identifier_continue) {
                 self.pos = suffix_end;
                 is_float = true;
             }

@@ -1,8 +1,8 @@
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use crate::diagnostics::CfdPath;
 use crate::model::{CfdDictKey, CfdEnumValue, CfdRecordId, CfdValue};
-use coflow_language::TypeName;
+use coflow_language::cft::TypeName;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueValidationMode {

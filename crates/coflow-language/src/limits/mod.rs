@@ -1,4 +1,4 @@
-//! Domain-neutral limits for recursive structure and evaluator work.
+//! Limits for source structure and bounded schema analysis.
 
 #![cfg_attr(
     not(test),
@@ -16,50 +16,20 @@
 
 use std::fmt;
 
-/// Half-open byte range in a source document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    #[must_use]
-    pub const fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
-
-    #[must_use]
-    pub const fn join(self, other: Self) -> Self {
-        Self {
-            start: if self.start < other.start {
-                self.start
-            } else {
-                other.start
-            },
-            end: if self.end > other.end {
-                self.end
-            } else {
-                other.end
-            },
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StructuralLimits {
     pub max_depth: u64,
     pub max_nodes: u64,
-    pub max_work: u64,
+    pub max_analysis_steps: u64,
 }
 
 impl StructuralLimits {
     #[must_use]
-    pub const fn new(max_depth: u64, max_nodes: u64, max_work: u64) -> Self {
+    pub const fn new(max_depth: u64, max_nodes: u64, max_analysis_steps: u64) -> Self {
         Self {
             max_depth,
             max_nodes,
-            max_work,
+            max_analysis_steps,
         }
     }
 }
@@ -91,7 +61,7 @@ impl TraversalCursor {
 pub enum BudgetAxis {
     Depth,
     Nodes,
-    Work,
+    AnalysisSteps,
 }
 
 impl fmt::Display for BudgetAxis {
@@ -99,7 +69,7 @@ impl fmt::Display for BudgetAxis {
         formatter.write_str(match self {
             Self::Depth => "depth",
             Self::Nodes => "nodes",
-            Self::Work => "work",
+            Self::AnalysisSteps => "analysis steps",
         })
     }
 }
@@ -113,8 +83,6 @@ pub enum StructureKind {
     SchemaAst,
     SchemaDependency,
     DataValue,
-    CheckEvaluation,
-    QuantifierIteration,
 }
 
 impl fmt::Display for StructureKind {
@@ -127,8 +95,6 @@ impl fmt::Display for StructureKind {
             Self::SchemaAst => "schema AST",
             Self::SchemaDependency => "schema dependency",
             Self::DataValue => "data value",
-            Self::CheckEvaluation => "check evaluation",
-            Self::QuantifierIteration => "quantifier iteration",
         })
     }
 }
@@ -157,7 +123,7 @@ impl std::error::Error for BudgetExceeded {}
 pub struct StructuralBudget {
     limits: StructuralLimits,
     nodes_used: u64,
-    work_used: u64,
+    analysis_steps_used: u64,
 }
 
 impl StructuralBudget {
@@ -166,7 +132,7 @@ impl StructuralBudget {
         Self {
             limits,
             nodes_used: 0,
-            work_used: 0,
+            analysis_steps_used: 0,
         }
     }
 
@@ -181,8 +147,8 @@ impl StructuralBudget {
     }
 
     #[must_use]
-    pub const fn work_used(&self) -> u64 {
-        self.work_used
+    pub const fn analysis_steps_used(&self) -> u64 {
+        self.analysis_steps_used
     }
 
     /// Enters one structural level and charges the supplied node count.
@@ -257,26 +223,26 @@ impl StructuralBudget {
         Ok(())
     }
 
-    /// Charges evaluator work against the shared structural budget.
+    /// Charges bounded static schema-analysis steps.
     ///
     /// # Errors
     ///
     /// Returns [`BudgetExceeded`] when the resulting work usage exceeds the configured limit.
-    pub const fn charge_work(
+    pub const fn charge_analysis(
         &mut self,
         kind: StructureKind,
-        work: u64,
+        steps: u64,
     ) -> Result<(), BudgetExceeded> {
-        let observed = self.work_used.saturating_add(work);
-        if observed > self.limits.max_work {
+        let observed = self.analysis_steps_used.saturating_add(steps);
+        if observed > self.limits.max_analysis_steps {
             return Err(BudgetExceeded {
-                axis: BudgetAxis::Work,
-                limit: self.limits.max_work,
+                axis: BudgetAxis::AnalysisSteps,
+                limit: self.limits.max_analysis_steps,
                 observed,
                 kind,
             });
         }
-        self.work_used = observed;
+        self.analysis_steps_used = observed;
         Ok(())
     }
 }
@@ -318,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn node_and_work_limits_have_stable_boundary_results() {
+    fn node_and_analysis_limits_have_stable_boundary_results() {
         let limits = StructuralLimits::new(10, 3, 4);
         let mut budget = StructuralBudget::new(limits);
 
@@ -335,15 +301,15 @@ mod tests {
             })
         );
         budget
-            .charge_work(StructureKind::CheckEvaluation, 4)
-            .expect("work boundary");
+            .charge_analysis(StructureKind::SchemaDependency, 4)
+            .expect("analysis boundary");
         assert_eq!(
-            budget.charge_work(StructureKind::QuantifierIteration, 1),
+            budget.charge_analysis(StructureKind::SchemaDependency, 1),
             Err(BudgetExceeded {
-                axis: BudgetAxis::Work,
+                axis: BudgetAxis::AnalysisSteps,
                 limit: 4,
                 observed: 5,
-                kind: StructureKind::QuantifierIteration,
+                kind: StructureKind::SchemaDependency,
             })
         );
     }

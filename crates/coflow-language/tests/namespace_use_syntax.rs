@@ -1,8 +1,9 @@
-use coflow_language::syntax::parser::parse_module;
-use coflow_language::{
-    build_schema, parse_modules, CftDimensionInputs, CftErrorCode, CftFile, CftValueType,
+use coflow_language::cft::syntax::parser::parse_module;
+use coflow_language::cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType,
     ModuleId, TypeName,
 };
+use coflow_language::diagnostics::CftErrorCode;
 
 #[test]
 fn parses_namespace_and_explicit_uses_before_definitions() {
@@ -132,14 +133,14 @@ fn schema_uses_qualified_type_identity_and_resolves_import_aliases() {
     assert_eq!(item.id_as_enum.as_ref().map(|name| name.as_str()), Some("shared::common::ItemId"));
     assert_eq!(
         item.field("label").expect("label field").default,
-        Some(coflow_language::CftSchemaDefaultValue::String("default".to_string()))
+        Some(coflow_language::cft::CftSchemaDefaultValue::String("default".to_string()))
     );
     assert_eq!(
         item.field("quality").expect("quality field").default,
-        Some(coflow_language::CftSchemaDefaultValue::Enum {
-            enum_name: coflow_language::EnumName::new("shared::common::Quality")
+        Some(coflow_language::cft::CftSchemaDefaultValue::Enum {
+            enum_name: coflow_language::cft::EnumName::new("shared::common::Quality")
                 .expect("qualified enum"),
-            variant: coflow_language::EnumVariantName::new("Good").expect("variant"),
+            variant: coflow_language::cft::EnumVariantName::new("Good").expect("variant"),
             value: 0,
         })
     );

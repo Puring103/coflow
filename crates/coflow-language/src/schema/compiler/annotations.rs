@@ -1,39 +1,44 @@
 use super::inferred_type::InferredType;
 use super::state::SymbolKind;
-use super::SchemaCompiler;
+use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::syntax::ast::{Annotation, AnnotationArg, FieldDef};
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::BTreeMap;
 
-impl SchemaCompiler<'_> {
+impl ResolvedTypes<'_> {
     pub(super) fn validate_annotations(&mut self) {
-        self.each_enum(|this, info| {
-            this.validate_annotation_list(
+        let mut diagnostics = Vec::new();
+        for info in self.enums.values() {
+            self.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Enum,
                 &info.def.annotations,
+                &mut diagnostics,
             );
             for variant in &info.def.variants {
-                this.validate_annotation_list(
+                self.validate_annotation_list(
                     &info.module,
                     AnnotationTarget::EnumVariant,
                     &variant.annotations,
+                    &mut diagnostics,
                 );
             }
-        });
+        }
 
         let mut id_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
-        self.each_type(|this, info| {
-            this.validate_annotation_list(
+        for info in self.types.values() {
+            self.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Type,
                 &info.def.annotations,
+                &mut diagnostics,
             );
             if let Some(annotation) = find_annotation(&info.def.annotations, "struct") {
                 if !info.def.is_sealed {
-                    this.push_diag(
+                    push_diag(
+                        &mut diagnostics,
                         CftErrorCode::StructRequiresSealedType,
                         &info.module,
                         annotation.span,
@@ -43,7 +48,8 @@ impl SchemaCompiler<'_> {
             }
             if let Some(singleton) = find_annotation(&info.def.annotations, "singleton") {
                 if info.def.is_abstract {
-                    this.push_diag(
+                    push_diag(
+                        &mut diagnostics,
                         CftErrorCode::SingletonOnAbstractType,
                         &info.module,
                         singleton.span,
@@ -51,7 +57,8 @@ impl SchemaCompiler<'_> {
                     );
                 }
                 if find_annotation(&info.def.annotations, "idAsEnum").is_some() {
-                    this.push_diag(
+                    push_diag(
+                        &mut diagnostics,
                         CftErrorCode::SingletonIdAsEnumConflict,
                         &info.module,
                         singleton.span,
@@ -61,7 +68,8 @@ impl SchemaCompiler<'_> {
             }
             if let Some(host) = find_annotation(&info.def.annotations, "Host") {
                 if info.def.is_abstract || find_annotation(&info.def.annotations, "singleton").is_none() {
-                    this.push_diag(
+                    push_diag(
+                        &mut diagnostics,
                         CftErrorCode::InvalidAnnotatedFieldType,
                         &info.module,
                         host.span,
@@ -71,39 +79,52 @@ impl SchemaCompiler<'_> {
             }
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
                 if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
-                    let resolved_name = this.resolve_name(&info.module, &enum_name.name);
-                    this.validate_id_as_enum_name(&info.module, &resolved_name, enum_name.span);
-                    this.register_id_as_enum_name(
+                    let resolved_name = self.resolve_name(&info.module, &enum_name.name);
+                    self.validate_id_as_enum_name(
+                        &info.module,
+                        &resolved_name,
+                        enum_name.span,
+                        &mut diagnostics,
+                    );
+                    Self::register_id_as_enum_name(
                         &mut id_as_enum_names,
                         &info.module,
                         annotation,
                         &resolved_name,
+                        &mut diagnostics,
                     );
                 }
             }
-        });
+        }
 
-        self.each_type(|this, info| {
+        for info in self.types.values() {
             for field in &info.def.fields {
-                this.validate_annotation_list(
+                self.validate_annotation_list(
                     &info.module,
                     AnnotationTarget::Field,
                     &field.annotations,
+                    &mut diagnostics,
                 );
-                this.validate_field_annotations(&info.module, field, info.def.is_sealed);
+                self.validate_field_annotations(
+                    &info.module,
+                    field,
+                    info.def.is_sealed,
+                    &mut diagnostics,
+                );
             }
-        });
+        }
+        self.previous.diagnostics.extend(diagnostics);
     }
 
     fn register_id_as_enum_name(
-        &mut self,
         id_as_enum_names: &mut BTreeMap<String, (ModuleId, Span)>,
         module: &ModuleId,
         annotation: &Annotation,
         enum_name: &str,
+        diagnostics: &mut Vec<CftDiagnostic>,
     ) {
         if let Some((first_module, first_span)) = id_as_enum_names.get(enum_name) {
-            self.diagnostics.push(
+            diagnostics.push(
                 CftDiagnostic::error(
                     CftErrorCode::DuplicateGlobalName,
                     module.clone(),
@@ -122,15 +143,16 @@ impl SchemaCompiler<'_> {
     }
 
     fn validate_annotation_list(
-        &mut self,
+        &self,
         module: &ModuleId,
         target: AnnotationTarget,
         annotations: &[Annotation],
+        diagnostics: &mut Vec<CftDiagnostic>,
     ) {
         let mut seen = BTreeMap::<&str, Span>::new();
         for annotation in annotations {
             if let Some(first) = seen.get(annotation.name.as_str()) {
-                self.diagnostics.push(
+                diagnostics.push(
                     CftDiagnostic::error(
                         CftErrorCode::DuplicateAnnotation,
                         module.clone(),
@@ -155,7 +177,8 @@ impl SchemaCompiler<'_> {
                 } else {
                     CftErrorCode::InvalidAnnotationTarget
                 };
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     code,
                     module,
                     annotation.span,
@@ -163,7 +186,8 @@ impl SchemaCompiler<'_> {
                 );
             }
             if !spec.args_valid(annotation) {
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     CftErrorCode::InvalidAnnotationArgument,
                     module,
                     annotation.span,
@@ -174,16 +198,18 @@ impl SchemaCompiler<'_> {
     }
 
     fn validate_field_annotations(
-        &mut self,
+        &self,
         module: &ModuleId,
         field: &FieldDef,
         owner_is_sealed: bool,
+        diagnostics: &mut Vec<CftDiagnostic>,
     ) {
         let localized = find_annotation(&field.annotations, "localized");
         let dimension = find_annotation(&field.annotations, "dimension");
         if owner_is_sealed {
             if let Some(annotation) = localized {
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     CftErrorCode::LocalizedOnInvalidTarget,
                     module,
                     annotation.span,
@@ -192,7 +218,8 @@ impl SchemaCompiler<'_> {
                 return;
             }
             if let Some(annotation) = dimension {
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     CftErrorCode::DimensionOnInvalidTarget,
                     module,
                     annotation.span,
@@ -204,7 +231,8 @@ impl SchemaCompiler<'_> {
         if let Some(annotation) = localized {
             if let Some(AnnotationArg::String(bucket, span)) = annotation.args.first() {
                 if !crate::is_cft_identifier(bucket) {
-                    self.push_diag(
+                    push_diag(
+                        diagnostics,
                         CftErrorCode::LocalizedBucketNotIdentifier,
                         module,
                         *span,
@@ -216,7 +244,8 @@ impl SchemaCompiler<'_> {
         if let Some(annotation) = dimension {
             if let Some(AnnotationArg::String(dim_name, span)) = annotation.args.first() {
                 if !crate::is_cft_identifier(dim_name) {
-                    self.push_diag(
+                    push_diag(
+                        diagnostics,
                         CftErrorCode::DimensionNameNotIdentifier,
                         module,
                         *span,
@@ -226,7 +255,8 @@ impl SchemaCompiler<'_> {
             }
         }
         if let (Some(localized), Some(_dimension)) = (localized, dimension) {
-            self.push_diag(
+            push_diag(
+                diagnostics,
                 CftErrorCode::DuplicateAnnotation,
                 module,
                 localized.span,
@@ -241,7 +271,8 @@ impl SchemaCompiler<'_> {
             // header columns.
             let resolved = self.resolve_field_type(module, &field.ty);
             if !self.expand_target_is_concrete_inline_object(&resolved) {
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
@@ -263,16 +294,17 @@ impl SchemaCompiler<'_> {
     }
 
     fn validate_id_as_enum_name(
-        &mut self,
+        &self,
         module: &ModuleId,
         enum_name: &str,
         enum_name_span: Span,
+        diagnostics: &mut Vec<CftDiagnostic>,
     ) {
-        match self.symbols.get(enum_name) {
+        match self.previous.symbols.get(enum_name) {
             Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                if let Some(info) = self.enums.get(enum_name) {
+                if let Some(info) = self.previous.enums.get(enum_name) {
                     if !info.def.variants.is_empty() {
-                        self.diagnostics.push(
+                        diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::IdAsEnumRequiresEmptyEnum,
                                 module.clone(),
@@ -291,7 +323,7 @@ impl SchemaCompiler<'_> {
                 }
             }
             Some(symbol) => {
-                self.diagnostics.push(
+                diagnostics.push(
                     CftDiagnostic::error(
                         CftErrorCode::IdAsEnumRequiresEmptyEnum,
                         module.clone(),
@@ -306,7 +338,8 @@ impl SchemaCompiler<'_> {
                 );
             }
             None => {
-                self.push_diag(
+                push_diag(
+                    diagnostics,
                     CftErrorCode::UnknownNamedType,
                     module,
                     enum_name_span,
@@ -315,6 +348,16 @@ impl SchemaCompiler<'_> {
             }
         }
     }
+}
+
+fn push_diag(
+    diagnostics: &mut Vec<CftDiagnostic>,
+    code: CftErrorCode,
+    module: &ModuleId,
+    span: Span,
+    message: impl Into<String>,
+) {
+    diagnostics.push(CftDiagnostic::error(code, module.clone(), span, message));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

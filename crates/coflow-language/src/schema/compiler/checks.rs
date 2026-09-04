@@ -5,7 +5,7 @@ mod operators;
 
 use super::inferred_type::{types_comparable, unwrap_reference, InferredType};
 use super::state::{SymbolKind, TypeInfo};
-use super::SchemaCompiler;
+use super::ResolvedValues;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::schema::CftValueType;
 use crate::schema::{
@@ -15,16 +15,27 @@ use crate::syntax::ast::{
     CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
     QualifiedName, TypePredicate,
 };
-use crate::syntax::Span;
+use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(super) struct CheckTypeAnalyzer<'a, 'b> {
-    compiler: &'a mut SchemaCompiler<'b>,
+    schema: &'a ResolvedValues<'b>,
     module: crate::ModuleId,
     scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
     dimensions: BTreeSet<crate::DimensionName>,
     dependencies: CheckStatementDependencies,
+    diagnostics: Vec<CftDiagnostic>,
+    quantifier_bindings:
+        BTreeMap<(crate::ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
+}
+
+pub(super) struct CheckAnalysis {
+    pub(super) dimensions: BTreeMap<crate::DimensionName, Vec<usize>>,
+    pub(super) dependencies: Vec<CheckStatementDependencies>,
+    pub(super) diagnostics: Vec<CftDiagnostic>,
+    pub(super) quantifier_bindings:
+        BTreeMap<(crate::ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
 }
 
 enum CheckScope {
@@ -58,35 +69,33 @@ fn is_formattable(ty: &InferredType) -> bool {
 }
 
 impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
-    pub(super) fn new(compiler: &'a mut SchemaCompiler<'b>, type_info: &'a TypeInfo<'b>) -> Self {
+    pub(super) fn new(schema: &'a ResolvedValues<'b>, type_info: &TypeInfo<'b>) -> Self {
         Self {
-            compiler,
+            schema,
             module: type_info.module.clone(),
             scope: CheckScope::Record(type_info.name.clone()),
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
             dependencies: CheckStatementDependencies::default(),
+            diagnostics: Vec::new(),
+            quantifier_bindings: BTreeMap::new(),
         }
     }
 
-    pub(super) fn top_level(compiler: &'a mut SchemaCompiler<'b>, module: crate::ModuleId) -> Self {
+    pub(super) fn top_level(schema: &'a ResolvedValues<'b>, module: crate::ModuleId) -> Self {
         Self {
-            compiler,
+            schema,
             module,
             scope: CheckScope::TopLevel,
             locals: Vec::new(),
             dimensions: BTreeSet::new(),
             dependencies: CheckStatementDependencies::default(),
+            diagnostics: Vec::new(),
+            quantifier_bindings: BTreeMap::new(),
         }
     }
 
-    pub(super) fn check_root_stmts(
-        &mut self,
-        stmts: &[CheckStmt],
-    ) -> (
-        BTreeMap<crate::DimensionName, Vec<usize>>,
-        Vec<CheckStatementDependencies>,
-    ) {
+    pub(super) fn check_root_stmts(mut self, stmts: &[CheckStmt]) -> CheckAnalysis {
         let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
         let mut dependencies = Vec::with_capacity(stmts.len());
         for (index, stmt) in stmts.iter().enumerate() {
@@ -101,7 +110,12 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             }
             dependencies.push(self.dependencies.clone());
         }
-        (by_dimension, dependencies)
+        CheckAnalysis {
+            dimensions: by_dimension,
+            dependencies,
+            diagnostics: self.diagnostics,
+            quantifier_bindings: self.quantifier_bindings,
+        }
     }
 
     pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
@@ -253,8 +267,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                         }
                     }
                 };
-                self.compiler
-                    .quantifier_bindings
+                self.quantifier_bindings
                     .insert((self.module.clone(), span.start, span.end), layout);
                 self.locals.push(scope);
                 self.check_stmts(body);
@@ -369,7 +382,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
         if let CheckScope::Record(type_name) = &self.scope {
             let field = self
-                .compiler
+                .schema
                 .full_fields
                 .get(type_name)
                 .and_then(|fields| fields.get(name))
@@ -395,11 +408,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 return InferredType::string();
             }
         }
-        let resolved_name = self.compiler.resolve_name(&self.module, name);
-        if let Some(info) = self.compiler.consts.get(&resolved_name) {
-            return InferredType::from_const(info.value_type.as_ref());
+        let resolved_name = self.schema.resolve_name(&self.module, name);
+        if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
+            return InferredType::from_const(Some(value_type));
         }
-        if self.compiler.enums.contains_key(&resolved_name) {
+        if self.schema.enums.contains_key(&resolved_name) {
             return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
         }
         self.diag(
@@ -412,11 +425,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn resolve_static_path(&mut self, path: &QualifiedName) -> InferredType {
         let raw_name = path.canonical();
-        let resolved_name = self.compiler.resolve_name(&self.module, &raw_name);
-        if let Some(info) = self.compiler.consts.get(&resolved_name) {
-            return InferredType::from_const(info.value_type.as_ref());
+        let resolved_name = self.schema.resolve_name(&self.module, &raw_name);
+        if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
+            return InferredType::from_const(Some(value_type));
         }
-        if self.compiler.enums.contains_key(&resolved_name) {
+        if self.schema.enums.contains_key(&resolved_name) {
             return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
         }
         if let Some((variant, owner)) = path.segments.split_last() {
@@ -426,8 +439,8 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     .map(|segment| segment.name.as_str())
                     .collect::<Vec<_>>()
                     .join("::");
-                let enum_name = self.compiler.resolve_name(&self.module, &owner);
-                if let Some(info) = self.compiler.enums.get(&enum_name) {
+                let enum_name = self.schema.resolve_name(&self.module, &owner);
+                if let Some(info) = self.schema.enums.get(&enum_name) {
                     if info.variants.contains(&variant.name) {
                         return InferredType::enum_value(crate::EnumName::from_validated(enum_name));
                     }
@@ -457,11 +470,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
-        let resolved_name = self.compiler.resolve_name(&self.module, &type_name.name);
-        let object_name = if self.compiler.types.contains_key(&resolved_name) {
+        let resolved_name = self.schema.resolve_name(&self.module, &type_name.name);
+        let object_name = if self.schema.types.contains_key(&resolved_name) {
             Some(resolved_name.clone())
         } else {
-            self.compiler
+            self.schema
                 .resolved_aliases
                 .get(&resolved_name)
                 .and_then(InferredType::object_name)
@@ -503,7 +516,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             return;
         }
         let owner = self
-            .compiler
+            .schema
             .full_fields
             .get(type_name.as_str())
             .and_then(|fields| fields.get(&name.name))
@@ -527,9 +540,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 if name.name == "id" {
                     return InferredType::string();
                 }
-                let type_known = self.compiler.full_fields.contains_key(type_name.as_str());
+                let type_known = self.schema.full_fields.contains_key(type_name.as_str());
                 let field = self
-                    .compiler
+                    .schema
                     .full_fields
                     .get(type_name.as_str())
                     .and_then(|fields| fields.get(&name.name))
@@ -618,11 +631,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
             TypePredicate::Type(name) => {
-                let resolved_name = self.compiler.resolve_name(&self.module, &name.name);
+                let resolved_name = self.schema.resolve_name(&self.module, &name.name);
                 let is_object = matches!(
-                    self.compiler.symbols.get(&resolved_name),
+                    self.schema.symbols.get(&resolved_name),
                     Some(symbol) if symbol.kind == SymbolKind::Type
-                ) || self.compiler
+                ) || self.schema
                     .resolved_aliases
                     .get(&resolved_name)
                     .is_some_and(|alias| alias.object_name().is_some());
@@ -657,7 +670,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     }
 
     fn diag(&mut self, code: CftErrorCode, span: Span, message: impl Into<String>) {
-        self.compiler.diagnostics.push(CftDiagnostic::error(
+        self.diagnostics.push(CftDiagnostic::error(
             code,
             self.module.clone(),
             span,

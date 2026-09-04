@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
 use crate::data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
-use coflow_language::{CftField, CftFieldDimension, CftValueType, VariantName};
+use coflow_language::cft::{CftField, CftFieldDimension, CftValueType, VariantName};
 
 use crate::write_rules;
 use crate::{ProjectSession, RecordCoordinate};

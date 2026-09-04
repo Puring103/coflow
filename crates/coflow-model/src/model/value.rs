@@ -1,7 +1,7 @@
 use super::ids::RecordCoordinate;
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{format_cfd_dict_key, CfdPath, CfdPathSegment};
-use coflow_language::{
+use coflow_language::cft::{
     CftEnumValue, CftNameError, DimensionName, EnumName, EnumVariantName, FieldName, RecordKey,
     TypeName, VariantName,
 };

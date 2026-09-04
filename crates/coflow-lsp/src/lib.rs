@@ -47,7 +47,8 @@ use definition::{
 use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
-use formatting::{format_cfd, format_cft, formatting_edits};
+use coflow_format::{format_cfd, format_cft};
+use formatting::formatting_edits;
 use hover::hover_at;
 use position::{
     byte_offset_from_position, byte_range, range_from_span, LspPosition,

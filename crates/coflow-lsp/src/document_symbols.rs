@@ -1,4 +1,5 @@
-use coflow_language::{syntax::ast::Item, Span};
+use coflow_language::cft::syntax::ast::Item;
+use coflow_language::source::Span;
 use serde_json::{json, Value};
 
 use super::{position::range_from_span, LspDocument};

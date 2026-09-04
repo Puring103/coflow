@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use super::*;
-use coflow_language::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
+use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use std::collections::BTreeMap;
 
 fn schema(source: &str) -> CftSchema {

@@ -26,7 +26,7 @@ mod strings;
 mod types;
 
 use crate::LoadedValueDraft;
-use coflow_language::{CftSchema, CftValueType};
+use coflow_language::cft::{CftSchema, CftValueType};
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::api::{CfdSourceCatalog, DiagnosticSet};
 use crate::data_model::CfdDataModel;
 use crate::project::Project;
-use coflow_language::{CftModuleSet, CftSchema};
+use coflow_language::cft::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;

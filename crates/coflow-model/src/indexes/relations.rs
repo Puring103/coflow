@@ -4,7 +4,7 @@ use crate::diagnostics::{CfdDiagnostic, CfdErrorCode};
 use crate::model::{
     CfdRecord, CfdRecordId, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite,
 };
-use coflow_language::{CftValueType, RecordKey, TypeName};
+use coflow_language::cft::{CftValueType, RecordKey, TypeName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

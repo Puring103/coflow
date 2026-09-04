@@ -1,8 +1,8 @@
-use coflow_language::CftValueType;
+use coflow_language::cft::CftValueType;
 
 use crate::lowering::CsharpLoweringPlan;
 use crate::names::csharp_type_name;
-use coflow_language::CftField;
+use coflow_language::cft::CftField;
 
 pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> String {
     match ty {

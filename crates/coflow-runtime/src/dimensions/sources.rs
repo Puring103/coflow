@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::data_model::RecordCoordinate;
 use crate::project::Project;
-use coflow_language::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
+use coflow_language::cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionField {
@@ -138,7 +138,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use crate::data_model::RecordCoordinate;
-    use coflow_language::{BucketName, DimensionName, FieldName, TypeName};
+    use coflow_language::cft::{BucketName, DimensionName, FieldName, TypeName};
 
     use super::{DimensionField, DimensionRuntimePlan};
 
@@ -165,14 +165,14 @@ mod tests {
 
     #[test]
     fn changed_record_types_select_only_assignable_dimension_fields() {
-        let modules = coflow_language::parse_modules([coflow_language::CftFile::new(
-            coflow_language::ModuleId::from("test.cft"),
+        let modules = coflow_language::cft::parse_modules([coflow_language::cft::CftFile::new(
+            coflow_language::cft::ModuleId::from("test.cft"),
             "test.cft".into(),
             "type Base { value: int; } type Child: Base {} type Other { value: int; }",
         )]);
-        let schema = coflow_language::build_schema(
+        let schema = coflow_language::cft::build_schema(
             &modules,
-            &coflow_language::CftDimensionInputs::default(),
+            &coflow_language::cft::CftDimensionInputs::default(),
         )
         .expect("schema");
         let dimension = DimensionName::new("language").expect("dimension");

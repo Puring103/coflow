@@ -8,7 +8,7 @@ mod queries;
 mod value_type;
 
 pub use check_builtins::CftCheckBuiltin;
-pub use compiler::build_schema;
+pub use compiler::{build_schema, build_schema_with_limits};
 pub use declarations::*;
 pub use dimensions::{CftDimensionInput, CftDimensionInputError, CftDimensionInputs};
 pub use names::*;
@@ -21,7 +21,7 @@ pub use queries::CftEnumValue;
 pub use value_type::{CftFunctionParameter, CftValueType};
 
 use self::compiler::SchemaDeclarations;
-use crate::limits::{BudgetExceeded, StructuralBudget};
+use crate::limits::{BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use crate::module::ModuleId;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode, Span};
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,6 +31,33 @@ pub(super) struct LocatedBudgetError {
     pub(super) error: BudgetExceeded,
     pub(super) module: ModuleId,
     pub(super) span: Span,
+}
+
+/// schema 派生图只共享深度与分析步数，不继承解析阶段的节点计数。
+pub(super) struct AnalysisBudget(StructuralBudget);
+
+impl AnalysisBudget {
+    pub(super) fn new(limits: StructuralLimits) -> Self {
+        Self(StructuralBudget::new(limits))
+    }
+
+    pub(super) fn charge(
+        &mut self,
+        kind: StructureKind,
+        amount: u64,
+    ) -> Result<(), BudgetExceeded> {
+        self.0.charge_analysis(kind, amount)
+    }
+
+    pub(super) fn check_depth(
+        &self,
+        parent: TraversalCursor,
+        kind: StructureKind,
+        additional_depth: u64,
+    ) -> Result<(), BudgetExceeded> {
+        self.0
+            .check_additional_depth(parent, kind, additional_depth)
+    }
 }
 
 impl LocatedBudgetError {
@@ -65,7 +92,7 @@ impl CftSchema {
     pub(in crate::schema) fn from_declarations(
         declarations: SchemaDeclarations,
         dimension_inputs: &CftDimensionInputs,
-        budget: &mut StructuralBudget,
+        budget: &mut AnalysisBudget,
     ) -> Result<Self, CftDiagnostics> {
         let consts = declarations.consts;
         let enums = declarations.enums;

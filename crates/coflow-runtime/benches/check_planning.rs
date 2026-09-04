@@ -1,6 +1,6 @@
 mod common;
 
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use coflow_runtime::CfdDataModel;
 use common::{
     diagnostic_fixture, dimension_fixture, fixture, full_tasks, incremental_tasks,

@@ -1,5 +1,5 @@
 use crate::{data_model::LoadedRecordDraft, DiagnosticSet};
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

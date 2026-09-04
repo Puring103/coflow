@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-pub(crate) use coflow_language::{
+pub(crate) use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
     ModuleId, RecordKey, TypeName, VariantName,
 };

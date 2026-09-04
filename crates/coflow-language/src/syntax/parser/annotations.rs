@@ -3,7 +3,7 @@ use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
 use crate::syntax::ast::{Annotation, AnnotationArg};
 use crate::syntax::lexer::TokenKind;
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {

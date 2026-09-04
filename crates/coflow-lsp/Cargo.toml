@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+coflow-format = { path = "../coflow-format" }
 coflow-language = { path = "../coflow-language" }
 coflow-runtime = { path = "../coflow-runtime" }
 serde_json = { version = "1", features = ["preserve_order"] }

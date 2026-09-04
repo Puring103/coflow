@@ -21,8 +21,8 @@ mod diagnostics;
 mod lower;
 mod writer;
 use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
-use coflow_language::cfd::parse_cfd;
-use coflow_language::CftSchema;
+use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
+use coflow_language::cft::CftSchema;
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
@@ -57,7 +57,12 @@ fn parse_cfd_input_records_with_spans(
     schema: &CftSchema,
     source: &str,
 ) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
-    let (ast, diagnostics) = parse_cfd(source);
+    let (ast, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: crate::limits::RuntimeLimits::default().structural,
+        },
+    );
     if !diagnostics.is_empty() {
         return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
     }
@@ -72,7 +77,9 @@ fn parse_cfd_input_records_with_spans(
 /// diagnostics for schema/data/reference errors.
 pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
     let records = parse_cfd_input_records_with_spans(schema, source)?;
-    let mut builder = CfdDataModel::builder(schema);
+    let mut builder = CfdDataModel::builder(schema).with_structural_limits(
+        crate::limits::RuntimeLimits::default().structural,
+    );
     let mut origins = Vec::with_capacity(records.len());
     for record in records {
         let origin = RecordOrigin::File {
@@ -139,7 +146,12 @@ impl CfdLoader {
                 ))
             })?),
         };
-        let (ast, parse_errors) = parse_cfd(&contents);
+        let (ast, parse_errors) = parse_cfd_with_options(
+            &contents,
+            CfdParseOptions {
+                structural_limits: crate::limits::RuntimeLimits::default().structural,
+            },
+        );
         let (lowered, lower_errors) = lower_records_partial(ctx.schema, &ast);
         let records = lowered
             .into_iter()
@@ -176,13 +188,13 @@ mod tests {
 
     use std::fs;
 
-    use coflow_language::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 
     use super::CfdLoader;
     use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
     use crate::{map_diagnostics_with_origins, origins_of, CfdDataModel, SourceLocation};
 
-    fn schema() -> coflow_language::CftSchema {
+    fn schema() -> coflow_language::cft::CftSchema {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
             "type Item { value: int; }",

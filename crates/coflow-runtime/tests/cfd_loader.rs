@@ -8,7 +8,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::{
+use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};

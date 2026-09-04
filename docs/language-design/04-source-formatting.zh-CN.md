@@ -4,15 +4,16 @@
 >
 > 范围：CFT/CFD 共享格式化核心、规范输出、宿主接入与项目级文件发现。
 
-格式化核心由 `coflow-language::format_cft` 和 `coflow-language::format_cfd` 持有。CLI、LSP 和 CFD
-编辑器必须复用该实现，不能分别维护排版规则。公开文档只说明命令用法和基本缩进约定；完整格式契约
-保留在本目录。
+格式化核心由 `coflow-format::format_cft` 和 `coflow-format::format_cfd` 持有。`coflow-language`
+提供保留 trivia 与 byte span 的共享无损 token 流，格式化器据此识别字符串、注释、字面量、符号和
+结构边界。CLI 与 LSP 直接复用格式化核心，CFD 编辑器通过内嵌 LSP 请求格式化。公开文档只说明命令
+用法和基本缩进约定；完整格式契约保留在本目录。
 
 ## 1. 边界与不变量
 
-格式化器是理解 token 和结构边界的空白规范化器，不是完整 AST pretty printer，也不是 parser 或
-checker。它只改变空白、换行和结构布局，不重排声明、记录、字段、数组项或字典项，不补默认值，也不
-执行 schema-guided 类型检查。
+格式化器是消费无损 token 流的空白规范化器，不是完整 AST pretty printer，也不是 parser 或 checker。
+它只改变 trivia、换行和结构布局，不重排或改写非 trivia token，不补默认值，也不执行 schema-guided
+类型检查。
 
 必须保持以下不变量：
 
@@ -90,8 +91,13 @@ Item {
 
 ## 5. 宿主接入
 
-单文件宿主直接调用共享 formatter。宿主可以在编辑中的未完整文本上调用它，但不能把“格式化成功”
-解释为文件已经通过解析或检查。宿主不得在共享结果之上追加会改变规范输出的私有排版步骤。
+单文件宿主直接调用 `coflow-format`。LSP 从当前 document snapshot 生成格式化结果，并负责转换为互不
+重叠且 UTF-16 位置正确的 `TextEdit`；规范输入返回空 edits。宿主可以在编辑中的未完整文本上调用
+formatter，但不能把“格式化成功”解释为文件已经通过解析或检查，也不得追加会改变规范输出的私有
+排版步骤。
+
+runtime writer 负责 schema-guided CFD 局部写入，直接生成规范局部文本，不调用通用 formatter，避免
+单字段修改引发整文件重排。writer 测试使用 `coflow-format` 验证完整输出已满足规范格式。
 
 项目级 `coflow format [CONFIG_OR_DIR] [--check]` 遵循以下发现与写入规则：
 

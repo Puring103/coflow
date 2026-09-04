@@ -6,8 +6,7 @@ use super::explanations;
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_diagnostics::CfdErrorCode;
-use coflow_language::limits::StructureKind;
-use coflow_language::{
+use coflow_language::cft::{
     CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt,
     CftSchemaQuantifierBindings, CftSchemaQuantifierKind,
 };
@@ -218,10 +217,7 @@ fn eval_quantifier<'model>(
         if first_item_location.is_none() {
             first_item_location.clone_from(&item.location);
         }
-        if evaluator
-            .charge_work_at(StructureKind::QuantifierIteration, 1, item.location.clone())
-            .is_err()
-        {
+        if evaluator.charge_iteration_at(item.location.clone()).is_err() {
             return EvalFlow::HardStop;
         }
         let diagnostic_start = evaluator.diagnostics.len();

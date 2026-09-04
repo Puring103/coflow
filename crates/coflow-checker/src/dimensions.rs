@@ -2,8 +2,8 @@ use coflow_model::{
     CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
 };
-use coflow_language::limits::{StructuralBudget, TraversalCursor};
-use coflow_language::{CftSchema, CftValueType, DimensionName, VariantName};
+use crate::limits::{EvaluationBudget, EvaluationCursor};
+use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 
 use crate::diagnostics::dimension_lookup_error_message;
 use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
@@ -214,7 +214,7 @@ pub(crate) fn apply_dimension_variant<'model>(
     record: &EvalRecordRef,
     field_name: &str,
     located: &mut LocatedEvalValue<'model>,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> Result<Option<CfdRecordId>, DimensionVariantAbort> {
     let Some(view) = projection else {
         return Ok(None);
@@ -241,7 +241,7 @@ pub(crate) fn apply_dimension_variant<'model>(
         materialized.location.clone(),
         model,
         budget,
-        TraversalCursor::root(),
+        EvaluationCursor::root(),
     )
     .map_err(|exceeded| DimensionVariantAbort::Error {
         code: CfdErrorCode::CheckBudgetExceeded,

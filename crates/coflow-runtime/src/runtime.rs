@@ -6,7 +6,7 @@ use crate::catalog::CfdSourceCatalog;
 use crate::data_model::CfdDataModel;
 use crate::data_model::{CfdPathSegment, CfdValue};
 use crate::project::Project;
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 
 use crate::project_schema::{
     open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,

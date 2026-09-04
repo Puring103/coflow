@@ -7,8 +7,9 @@ use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
 use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
-use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
-use coflow_language::{
+use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
+use crate::EvaluationLimits;
+use coflow_language::cft::{
     CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp,
 };
 use std::cell::RefCell;
@@ -27,8 +28,8 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) projection_view: Option<dimensions::CheckProjectionView>,
     trace: Option<EvaluationTrace>,
     regex_cache: &'model RefCell<builtins::RegexCache>,
-    budget: StructuralBudget,
-    eval_stack: Vec<TraversalCursor>,
+    budget: EvaluationBudget,
+    eval_stack: Vec<EvaluationCursor>,
     pub(super) schema_location: Option<crate::CheckSchemaLocation>,
 }
 
@@ -54,7 +55,7 @@ impl<'model> CheckEvaluator<'model> {
         check_origin: Option<ValueLocation>,
         current: EvalValue<'model>,
         regex_cache: &'model RefCell<builtins::RegexCache>,
-        structural_limits: StructuralLimits,
+        evaluation_limits: EvaluationLimits,
     ) -> Self {
         Self {
             schema,
@@ -67,7 +68,7 @@ impl<'model> CheckEvaluator<'model> {
             projection_view: None,
             trace: None,
             regex_cache,
-            budget: StructuralBudget::new(structural_limits),
+            budget: EvaluationBudget::new(evaluation_limits),
             eval_stack: Vec::new(),
             schema_location: None,
         }
@@ -122,8 +123,8 @@ impl<'model> CheckEvaluator<'model> {
             .eval_stack
             .last()
             .copied()
-            .unwrap_or_else(TraversalCursor::root);
-        let cursor = match self.budget.enter(parent, StructureKind::CheckEvaluation, 1) {
+            .unwrap_or_else(EvaluationCursor::root);
+        let cursor = match self.budget.enter(parent, EvaluationKind::Expression, 1) {
             Ok(cursor) => cursor,
             Err(error) => {
                 self.diag(CfdErrorCode::CheckBudgetExceeded, error.to_string());
@@ -143,7 +144,7 @@ impl<'model> CheckEvaluator<'model> {
 
     pub(super) fn charge_work_at(
         &mut self,
-        kind: StructureKind,
+        kind: EvaluationKind,
         work: u64,
         location: Option<ValueLocation>,
     ) -> EvalResult<()> {
@@ -159,7 +160,7 @@ impl<'model> CheckEvaluator<'model> {
 
     pub(super) fn charge_nodes_at(
         &mut self,
-        kind: StructureKind,
+        kind: EvaluationKind,
         nodes: u64,
         location: Option<ValueLocation>,
     ) -> EvalResult<()> {
@@ -181,7 +182,21 @@ impl<'model> CheckEvaluator<'model> {
             .value
             .collection_len()
             .map_or(0, |length| u64::try_from(length).unwrap_or(u64::MAX));
-        self.charge_work_at(StructureKind::CheckEvaluation, work, value.location.clone())
+        self.charge_work_at(EvaluationKind::Expression, work, value.location.clone())
+    }
+
+    pub(super) fn charge_iteration_at(
+        &mut self,
+        location: Option<ValueLocation>,
+    ) -> EvalResult<()> {
+        self.budget.charge_iterations(1).map_err(|error| {
+            self.diag_at(
+                CfdErrorCode::CheckBudgetExceeded,
+                location,
+                error.to_string(),
+            );
+            EvalAbort::Error
+        })
     }
 
     pub(super) fn eval_expr_with_trace(

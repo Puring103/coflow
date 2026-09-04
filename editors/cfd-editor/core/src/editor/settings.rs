@@ -293,7 +293,7 @@ pub(super) fn sanitized_views(
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use coflow_language::{RecordKey, TypeName};
+    use coflow_language::cft::{RecordKey, TypeName};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;

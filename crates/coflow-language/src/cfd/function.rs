@@ -4,6 +4,11 @@ pub(crate) struct FunctionSyntaxError {
     pub(crate) offset: usize,
 }
 
+use crate::lexical::{
+    tokenize_lossless, validate_formatted_string_literal, validate_number_literal,
+    LosslessTokenKind,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Kind {
     Word,
@@ -31,154 +36,33 @@ pub(crate) fn validate_function_body(source: &str) -> Result<(), FunctionSyntaxE
 
 fn lex(source: &str) -> Result<Vec<Token>, FunctionSyntaxError> {
     let mut out = Vec::new();
-    let mut pos = 0;
-    while pos < source.len() {
-        let ch = source[pos..].chars().next().unwrap_or(' ');
-        if ch.is_whitespace() {
-            pos += ch.len_utf8();
-            continue;
-        }
-        if ch == '#' {
-            while pos < source.len() && !source[pos..].starts_with('\n') {
-                pos += source[pos..].chars().next().map_or(0, char::len_utf8);
+    for lexical in tokenize_lossless(source) {
+        let text = lexical.text(source);
+        let offset = lexical.span.start;
+        let kind = match lexical.kind {
+            LosslessTokenKind::Whitespace
+            | LosslessTokenKind::Newline
+            | LosslessTokenKind::Comment => continue,
+            LosslessTokenKind::Identifier => Kind::Word,
+            LosslessTokenKind::Number => {
+                validate_number_literal(text)
+                    .map_err(|failure| error(failure.message, offset + failure.offset))?;
+                Kind::Number
             }
-            continue;
-        }
-        let start = pos;
-        if ch == '$' {
-            pos += 1;
-            let Some(first) = source[pos..].chars().next() else {
-                return Err(error("expected metadata name after `$`", start));
-            };
-            if first != '_' && !first.is_alphabetic() {
-                return Err(error("expected metadata name after `$`", start));
+            LosslessTokenKind::String => {
+                validate_formatted_string_literal(text)
+                    .map_err(|failure| error(failure.message, offset + failure.offset))?;
+                Kind::String
             }
-            pos += first.len_utf8();
-            while let Some(next) = source[pos..].chars().next() {
-                if next == '_' || next.is_alphanumeric() {
-                    pos += next.len_utf8();
-                } else {
-                    break;
-                }
+            LosslessTokenKind::Symbol => Kind::Symbol,
+            LosslessTokenKind::Unknown => {
+                return Err(error(
+                    format!("unexpected character `{text}` in function body"),
+                    offset,
+                ));
             }
-            out.push(token(Kind::Word, &source[start..pos], start));
-            continue;
-        }
-        if ch == '_' || ch.is_alphabetic() {
-            pos += ch.len_utf8();
-            while let Some(next) = source[pos..].chars().next() {
-                if next == '_' || next.is_alphanumeric() {
-                    pos += next.len_utf8();
-                } else {
-                    break;
-                }
-            }
-            out.push(token(Kind::Word, &source[start..pos], start));
-            continue;
-        }
-        if ch.is_ascii_digit() {
-            pos += 1;
-            while source[pos..]
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_digit())
-            {
-                pos += 1;
-            }
-            if source[pos..].starts_with('.')
-                && source[pos + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_digit())
-            {
-                pos += 1;
-                while source[pos..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_digit())
-                {
-                    pos += 1;
-                }
-            }
-            if source[pos..].starts_with(['e', 'E']) {
-                pos += 1;
-                if source[pos..].starts_with(['+', '-']) {
-                    pos += 1;
-                }
-                let digits = pos;
-                while source[pos..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_digit())
-                {
-                    pos += 1;
-                }
-                if pos == digits {
-                    return Err(error("expected exponent digits", pos));
-                }
-            }
-            out.push(token(Kind::Number, &source[start..pos], start));
-            continue;
-        }
-        if ch == '"' {
-            pos += 1;
-            let mut interpolation = 0_usize;
-            let mut closed = false;
-            while pos < source.len() {
-                let current = source[pos..].chars().next().unwrap_or(' ');
-                pos += current.len_utf8();
-                match current {
-                    '\\' => {
-                        let Some(escaped) = source[pos..].chars().next() else {
-                            return Err(error("unterminated string escape", start));
-                        };
-                        if !matches!(escaped, '"' | '\\' | 'n' | 'r' | 't') {
-                            return Err(error(
-                                format!("unsupported string escape `\\{escaped}`"),
-                                pos - 1,
-                            ));
-                        }
-                        pos += escaped.len_utf8();
-                    }
-                    '{' if source[pos..].starts_with('{') => pos += 1,
-                    '{' => interpolation += 1,
-                    '}' if source[pos..].starts_with('}') => pos += 1,
-                    '}' if interpolation > 0 => interpolation -= 1,
-                    '}' => return Err(error("unmatched `}` in string", pos - 1)),
-                    '"' if interpolation == 0 => {
-                        closed = true;
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            if !closed || interpolation != 0 {
-                return Err(error("unterminated string literal or interpolation", start));
-            }
-            out.push(token(Kind::String, &source[start..pos], start));
-            continue;
-        }
-        const SYMBOLS: &[&str] = &[
-            "..=", "->", "=>", "::", "//", "**", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
-            "+=", "-=", "*=", "/=", "..",
-        ];
-        if let Some(symbol) = SYMBOLS
-            .iter()
-            .find(|symbol| source[pos..].starts_with(**symbol))
-        {
-            pos += symbol.len();
-            out.push(token(Kind::Symbol, symbol, start));
-            continue;
-        }
-        if "(){}[],:;.?+-*/%~!&|^<>= ".contains(ch) {
-            pos += ch.len_utf8();
-            out.push(token(Kind::Symbol, &source[start..pos], start));
-            continue;
-        }
-        return Err(error(
-            format!("unexpected character `{ch}` in function body"),
-            start,
-        ));
+        };
+        out.push(token(kind, text, offset));
     }
     out.push(Token {
         kind: Kind::End,

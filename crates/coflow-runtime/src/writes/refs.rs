@@ -9,7 +9,7 @@ use crate::cfd_loader::CfdWriter;
 use crate::data_model::{
     CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
-use coflow_language::{CftSchema, RecordKey};
+use coflow_language::cft::{CftSchema, RecordKey};
 
 use super::writer::lookup_source_writer;
 use crate::indexes::SourceId;
@@ -70,10 +70,10 @@ impl ReferenceUpdateAction {
 
 pub(super) struct OwnedDimensionWriteRequest {
     source: CfdSource,
-    source_type: coflow_language::TypeName,
-    source_field: coflow_language::FieldName,
-    dimension: coflow_language::DimensionName,
-    variant: coflow_language::VariantName,
+    source_type: coflow_language::cft::TypeName,
+    source_field: coflow_language::cft::FieldName,
+    dimension: coflow_language::cft::DimensionName,
+    variant: coflow_language::cft::VariantName,
     source_key: RecordKey,
     new_value: CfdValue,
 }

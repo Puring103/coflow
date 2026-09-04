@@ -103,7 +103,7 @@ struct FieldMatch {
 }
 
 fn find_record_field_match(
-    fields: &std::collections::BTreeMap<coflow_language::FieldName, CfdValue>,
+    fields: &std::collections::BTreeMap<coflow_language::cft::FieldName, CfdValue>,
     query: &str,
 ) -> Option<FieldMatch> {
     fields.iter().find_map(|(name, value)| {

@@ -7,7 +7,8 @@ use coflow_language::cfd::{
     parse_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdFormatSegment, CfdFunction,
     CfdRecord, CfdSyntaxDiagnostic, CfdValue,
 };
-use coflow_language::{CftSchema, CftValueType, Span};
+use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_language::source::Span;
 use serde_json::{json, Value};
 
 use super::semantic_tokens::{
@@ -391,7 +392,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
 }
 
 fn collect_formatted_string_tokens(
-    value: &coflow_language::CfdFormattedString,
+    value: &coflow_language::cfd::CfdFormattedString,
     collector: &mut TokenCollector<'_>,
 ) {
     let mut cursor = value.span.start;
@@ -1487,7 +1488,7 @@ fn incomplete_group_keys<'a>(source: &'a str, schema: &CftSchema) -> Vec<(&'a st
         let content = line.trim_end_matches(['\r', '\n']);
         let leading = content.len() - content.trim_start().len();
         let key = content.trim();
-        if coflow_language::is_cft_identifier(key) {
+        if coflow_language::lexical::is_cft_identifier(key) {
             let span = Span::new(line_start + leading, line_start + leading + key.len());
             if let Some(group_type) = group_type_at(source, schema, span.start) {
                 keys.push((key, span, group_type));
@@ -1512,7 +1513,7 @@ fn incomplete_group_key_at<'a>(
     let leading = before_cursor.len() - before_cursor.trim_start().len();
     let key = before_cursor.trim();
     if key.is_empty()
-        || !coflow_language::is_cft_identifier(key)
+        || !coflow_language::lexical::is_cft_identifier(key)
         || !source.get(offset..line_end)?.trim().is_empty()
     {
         return None;

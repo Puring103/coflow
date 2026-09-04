@@ -3,7 +3,7 @@ use crate::names::{
     csharp_type_name, metadata_identifier,
 };
 use crate::CsharpCodegenError;
-use coflow_language::{CftEnum, CftField, CftSchema, CftType, CftValueType};
+use coflow_language::cft::{CftEnum, CftField, CftSchema, CftType, CftValueType};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
@@ -110,7 +110,7 @@ impl<'a> CsharpLoweringPlan<'a> {
         self.types.iter().copied()
     }
 
-    pub fn dimensions(&self) -> impl Iterator<Item = &coflow_language::CftDimension> {
+    pub fn dimensions(&self) -> impl Iterator<Item = &coflow_language::cft::CftDimension> {
         self.schema
             .all_dimensions()
             .filter(|dimension| !dimension.fields.is_empty())

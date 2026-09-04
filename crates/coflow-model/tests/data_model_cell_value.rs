@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::{
+use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use coflow_model::cell_value::{

@@ -24,40 +24,35 @@
     clippy::use_self
 )]
 
-mod diagnostics;
-mod formatting;
+pub mod diagnostics;
+pub mod lexical;
 mod module;
 mod schema;
-pub mod syntax;
+mod syntax;
 
 pub mod cfd;
 pub mod limits;
+pub mod source;
 
-pub use diagnostics::{
-    CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage,
-};
-pub use formatting::{format_cfd, format_cft};
-pub use module::{parse_modules, CftFile, CftModule, CftModuleSet, ModuleId};
-pub use schema::{
-    build_schema, BucketName, CftAnnotation, CftAnnotationValue, CftCheckBuiltin, CftConst,
-    CftConstValue, CftDimension, CftDimensionInput, CftDimensionInputError, CftDimensionInputs,
-    CftDisplayMetadata, CftEnum, CftEnumValue, CftEnumVariant, CftField, CftFieldDimension,
-    CftFunctionParameter, CftNameError, CftSchema, CftSchemaBinOp, CftSchemaCheckBlock,
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
-    CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue,
-    CftSchemaQuantifierBindings, CftSchemaQuantifierKind, CftSchemaSource, CftSchemaTypePredicate,
-    CftSchemaUnaryOp, CftTopLevelCheck, CftType, CftValueType, CheckDependency, CheckField,
-    CheckName, CheckOwner, CheckStatementId, CheckStatementInfo, CheckStatementRef, ConstName,
-    DimensionName, EnumName, EnumVariantName, FieldName, RecordKey, TypeName, ValueDependencyCycle,
-    ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep, VariantName,
-};
-pub use syntax::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error, Span};
+/// CFT syntax, modules, schema compilation, and semantic declarations.
+pub mod cft {
+    pub use crate::module::*;
+    pub use crate::schema::*;
 
-pub use cfd::{
-    parse_cfd, parse_cfd_with_options, CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock,
-    CfdField, CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdFunction,
-    CfdParseOptions, CfdRecord, CfdRef, CfdSyntaxDiagnostic, CfdValue,
-};
-pub use limits::{
-    BudgetAxis, BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor,
-};
+    /// Produces the lossless token stream consumed by source tooling.
+    #[must_use]
+    pub fn tokenize_cft(source: &str) -> Vec<crate::lexical::LosslessToken> {
+        crate::lexical::tokenize_lossless(source)
+    }
+
+    pub mod syntax {
+        pub use crate::syntax::*;
+    }
+}
+
+// crate 内部仍使用短名称；对外 API 只通过职责命名空间发布。
+pub(crate) use diagnostics::*;
+pub(crate) use lexical::*;
+pub(crate) use module::*;
+pub(crate) use schema::*;
+pub(crate) use source::*;

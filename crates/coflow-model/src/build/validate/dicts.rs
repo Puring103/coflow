@@ -3,7 +3,7 @@ use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::{LoadedDictKeyDraft, LoadedValueDraft};
 use crate::model::{CfdDictKey, CfdRecordId};
 use coflow_language::limits::TraversalCursor;
-use coflow_language::CftValueType;
+use coflow_language::cft::CftValueType;
 
 use super::Validator;
 

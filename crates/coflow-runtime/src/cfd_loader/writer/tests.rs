@@ -17,8 +17,9 @@ use crate::api::{
 };
 use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
 use crate::{RecordOrigin, TextSpan};
-use coflow_language::{
-    build_schema, format_cfd, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
+use coflow_format::format_cfd;
+use coflow_language::cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use std::fs;
 use std::path::{Path, PathBuf};

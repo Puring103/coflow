@@ -7,7 +7,7 @@
 
 #[path = "data_model_common/mod.rs"]
 mod common;
-use coflow_language::TypeName;
+use coflow_language::cft::TypeName;
 use coflow_model::CfdRecord;
 use common::*;
 

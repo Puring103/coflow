@@ -1,16 +1,16 @@
 use super::state::SymbolKind;
-use super::SchemaCompiler;
+use super::ValueResolver;
 use crate::schema::{CftConstValue, CftValueType};
 use crate::syntax::ast::{DefaultExpr, DefaultExprKind, QualifiedName};
 use crate::{CftErrorCode, EnumName, EnumVariantName, FieldName, ModuleId, TypeName};
 use std::collections::BTreeSet;
 
-impl SchemaCompiler<'_> {
+impl ValueResolver<'_, '_> {
     pub(super) fn resolve_constants(&mut self) {
-        let names = self.consts.keys().cloned().collect::<Vec<_>>();
+        let previous = self.previous;
         let mut visiting = Vec::new();
-        for name in names {
-            let _ = self.resolve_constant(&name, &mut visiting);
+        for name in previous.consts.keys() {
+            let _ = self.resolve_constant(name, &mut visiting);
         }
     }
 
@@ -19,10 +19,10 @@ impl SchemaCompiler<'_> {
         name: &str,
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
-        let info = self.consts.get(name)?;
-        if let (Some(value_type), Some(value)) = (&info.value_type, &info.value) {
-            return Some((value_type.clone(), value.clone()));
+        if let Some(resolved) = self.resolved_constants.get(name) {
+            return Some(resolved.clone());
         }
+        let info = self.consts.get(name)?;
         if let Some(start) = visiting.iter().position(|entry| entry == name) {
             let mut cycle = visiting[start..].to_vec();
             cycle.push(name.to_string());
@@ -68,11 +68,9 @@ impl SchemaCompiler<'_> {
         }
         let resolved = self.resolve_static_value(&module, &expression, expected.as_ref(), visiting);
         visiting.pop();
-        if let Some((value_type, value)) = &resolved {
-            if let Some(info) = self.consts.get_mut(name) {
-                info.value_type = Some(value_type.clone());
-                info.value = Some(value.clone());
-            }
+        if let Some(resolved) = &resolved {
+            self.resolved_constants
+                .insert(name.to_string(), resolved.clone());
         }
         resolved
     }
@@ -369,7 +367,7 @@ impl SchemaCompiler<'_> {
         module: &ModuleId,
         enum_name: &str,
         variant_name: &str,
-        span: crate::syntax::Span,
+        span: crate::source::Span,
     ) -> Option<(CftValueType, CftConstValue)> {
         let Some(info) = self.enums.get(enum_name) else {
             self.push_diag(

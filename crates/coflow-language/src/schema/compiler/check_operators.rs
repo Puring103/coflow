@@ -3,7 +3,7 @@ use crate::diagnostics::CftErrorCode;
 use crate::schema::compiler::inferred_type::{ordered_comparable, types_comparable, InferredType};
 use crate::schema::CftValueType;
 use crate::syntax::ast::{BinOp, CmpOp, UnaryOp};
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl CheckTypeAnalyzer<'_, '_> {
     pub(super) fn check_unary(
@@ -162,7 +162,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         let Some(name) = ty.enum_name().cloned() else {
             return false;
         };
-        self.compiler
+        self.schema
             .enums
             .get(name.as_str())
             .is_some_and(|info| info.is_flag)

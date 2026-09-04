@@ -5,7 +5,7 @@ use crate::{
     stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
 };
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
-use coflow_language::{CftValueType, FieldName, RecordKey, TypeName};
+use coflow_language::cft::{CftValueType, FieldName, RecordKey, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
@@ -498,10 +498,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         if self.budget_exhausted {
             return None;
         }
-        let result = self
-            .budget
-            .enter(parent, kind, 1)
-            .and_then(|cursor| self.budget.charge_work(kind, 1).map(|()| cursor));
+        let result = self.budget.enter(parent, kind, 1);
         match result {
             Ok(cursor) => Some(cursor),
             Err(error) => {
@@ -526,10 +523,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 self.budget
                     .charge_nodes(StructureKind::DataValue, additional_nodes)
             })
-            .and_then(|()| {
-                self.budget
-                    .charge_work(StructureKind::DataValue, additional_nodes)
-            });
+            ;
         match result {
             Ok(()) => Some(()),
             Err(error) => {

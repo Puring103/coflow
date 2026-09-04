@@ -3,7 +3,7 @@ use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
 use crate::syntax::ast::{DefaultExpr, DefaultExprKind};
 use crate::syntax::lexer::TokenKind;
-use crate::syntax::Span;
+use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_default_expr(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {

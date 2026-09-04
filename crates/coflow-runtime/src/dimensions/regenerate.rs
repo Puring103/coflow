@@ -8,7 +8,7 @@ use crate::data_model::CfdDataModel;
 use crate::dimensions::DimensionField;
 use crate::cfd_loader::CfdWriter;
 use crate::project::Project;
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -264,7 +264,7 @@ mod tests {
     use crate::catalog::CfdSourceCatalog;
     use crate::data_model::{CfdDataModel, LoadedValueDraft};
     use crate::project::Project;
-    use coflow_language::{
+    use coflow_language::cft::{
         BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
     };
 
@@ -300,14 +300,14 @@ mod tests {
         )
         .expect("write config");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
-        let modules = coflow_language::parse_modules([CftFile::new(
+        let modules = coflow_language::cft::parse_modules([CftFile::new(
             ModuleId::from("schema.cft"),
             "schema.cft".into(),
             "type Item { name: string; } type Other { label: string; }",
         )]);
         let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
             .expect("dimensions");
-        let schema = coflow_language::build_schema(&modules, &dimensions).expect("schema");
+        let schema = coflow_language::cft::build_schema(&modules, &dimensions).expect("schema");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("item", "Item", [("name", LoadedValueDraft::from("Item"))]);
         builder.add_record(

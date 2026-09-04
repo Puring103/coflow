@@ -20,7 +20,7 @@ use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
 use coflow_language::limits::StructuralLimits;
-use coflow_language::{CftSchema, CftValueType, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{CftSchema, CftValueType, FieldName, RecordKey, TypeName, VariantName};
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
 use validate::Validator;

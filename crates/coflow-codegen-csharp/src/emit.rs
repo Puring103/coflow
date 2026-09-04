@@ -6,9 +6,9 @@ use crate::model::{
     CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpFunction,
     CsharpEqualityField, CsharpHostField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
 };
-use coflow_language::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
+use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use crate::CsharpCodegenError;
-use coflow_language::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
+use coflow_language::cft::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 
 use identifiers::{
@@ -508,7 +508,7 @@ fn loader_default_inner(
     value: &CftSchemaDefaultValue,
     ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
-    object_stack: &mut Vec<coflow_language::TypeName>,
+    object_stack: &mut Vec<coflow_language::cft::TypeName>,
 ) -> Result<String, CsharpCodegenError> {
     Ok(match value {
         CftSchemaDefaultValue::OptionNone => {
@@ -691,10 +691,10 @@ fn loader_default_inner(
 }
 
 fn loader_object_default(
-    type_name: &coflow_language::TypeName,
-    fields: &[(coflow_language::FieldName, CftSchemaDefaultValue)],
+    type_name: &coflow_language::cft::TypeName,
+    fields: &[(coflow_language::cft::FieldName, CftSchemaDefaultValue)],
     view: &CsharpLoweringPlan<'_>,
-    object_stack: &mut Vec<coflow_language::TypeName>,
+    object_stack: &mut Vec<coflow_language::cft::TypeName>,
 ) -> Result<String, CsharpCodegenError> {
     if object_stack.contains(type_name) {
         let mut cycle = object_stack
@@ -844,7 +844,7 @@ fn add_field_constructor_member(
     });
 }
 
-fn csharp_summary(display: Option<&coflow_language::CftDisplayMetadata>) -> Option<String> {
+fn csharp_summary(display: Option<&coflow_language::cft::CftDisplayMetadata>) -> Option<String> {
     display
         .and_then(|display| match (&display.label, &display.description) {
             (Some(label), Some(description)) => Some(format!("{label}: {description}")),

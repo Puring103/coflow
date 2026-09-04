@@ -1,10 +1,9 @@
 #![allow(dead_code, unused_imports)]
 #![allow(clippy::redundant_pub_crate)]
 
-pub(crate) use coflow_language::{
+pub(crate) use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-pub(crate) use coflow_language::StructuralLimits;
 pub(crate) use coflow_checker::*;
 pub(crate) use coflow_model::*;
 
@@ -56,14 +55,14 @@ pub(crate) fn run_model_checks(
 pub(crate) fn run_model_checks_with_limits(
     model: &CfdDataModel,
     schema: &CftSchema,
-    structural_limits: StructuralLimits,
+    evaluation_limits: EvaluationLimits,
 ) -> Result<(), CfdDiagnostics> {
     check_result(execute_checks(
         schema,
         model,
         base_tasks(schema, model),
         CheckLimits {
-            structure: structural_limits,
+            evaluation: evaluation_limits,
             ..CheckLimits::default()
         },
     ))
@@ -99,7 +98,7 @@ pub(crate) fn base_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckT
     tasks.extend(
         schema
             .all_check_statements()
-            .filter(|statement| matches!(statement.owner, coflow_language::CheckOwner::Project(_)))
+            .filter(|statement| matches!(statement.owner, coflow_language::cft::CheckOwner::Project(_)))
             .map(|statement| CheckTask {
                 statement: statement.id,
                 target: CheckTarget::Project,

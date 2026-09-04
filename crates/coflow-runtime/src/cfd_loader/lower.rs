@@ -5,9 +5,9 @@ use crate::data_model::{
 use coflow_language::cfd::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
 };
-use coflow_language::{
-    record_key_ident_error, CftFunctionParameter, CftSchema, CftValueType, Span,
-};
+use coflow_language::cft::{CftFunctionParameter, CftSchema, CftValueType};
+use coflow_language::lexical::record_key_ident_error;
+use coflow_language::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};

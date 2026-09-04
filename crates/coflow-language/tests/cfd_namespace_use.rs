@@ -37,3 +37,12 @@ fn rejects_misordered_or_invalid_header_declarations() {
         assert!(!diagnostics.is_empty(), "source should fail: {source}");
     }
 }
+
+#[test]
+fn cfd_names_and_record_keys_use_unicode_xid_rules() {
+    let (ast, diagnostics) = parse_cfd(
+        "namespace \u{6E38}\u{620F}::\u{6389}\u{843D}; use \u{6E38}\u{620F}::\u{7269}\u{54C1}::\u{88C5}\u{5907}; \u{88C5}\u{5907} { \u{957F}\u{5251}\u{0301} {} }",
+    );
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    assert_eq!(ast.records[0].key, "\u{957F}\u{5251}\u{0301}");
+}

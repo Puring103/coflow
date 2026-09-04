@@ -8,7 +8,7 @@
 
 #[path = "data_model_common/mod.rs"]
 mod common;
-use coflow_language::CftDimensionInputs;
+use coflow_language::cft::CftDimensionInputs;
 use common::*;
 use std::path::PathBuf;
 

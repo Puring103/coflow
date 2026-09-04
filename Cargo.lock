@@ -523,6 +523,7 @@ version = "0.9.1"
 dependencies = [
  "atomicwrites",
  "clap",
+ "coflow-format",
  "coflow-language",
  "coflow-lsp",
  "coflow-runtime",
@@ -572,6 +573,13 @@ name = "coflow-diagnostics"
 version = "0.9.1"
 
 [[package]]
+name = "coflow-format"
+version = "0.9.1"
+dependencies = [
+ "coflow-language",
+]
+
+[[package]]
 name = "coflow-language"
 version = "0.9.1"
 dependencies = [
@@ -584,6 +592,7 @@ dependencies = [
 name = "coflow-lsp"
 version = "0.9.1"
 dependencies = [
+ "coflow-format",
  "coflow-language",
  "coflow-runtime",
  "serde_json",
@@ -609,6 +618,7 @@ dependencies = [
  "coflow-checker",
  "coflow-codegen",
  "coflow-codegen-csharp",
+ "coflow-format",
  "coflow-language",
  "coflow-model",
  "coflow-staging",

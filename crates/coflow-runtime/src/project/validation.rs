@@ -130,7 +130,7 @@ fn validate_dimension_collecting(
     config: &DimensionConfig,
 ) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
-    if !coflow_language::is_cft_identifier(dimension) {
+    if !coflow_language::lexical::is_cft_identifier(dimension) {
         diagnostics.push(
             ProjectDiagnostic::new(
                 format!("dimension name `{dimension}` is not a valid CFT identifier"),
@@ -177,7 +177,7 @@ fn validate_dimension_collecting(
             );
             continue;
         }
-        if !coflow_language::is_cft_identifier(variant) {
+        if !coflow_language::lexical::is_cft_identifier(variant) {
             diagnostics.push(
                 ProjectDiagnostic::new(
                     format!(

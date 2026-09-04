@@ -1,5 +1,5 @@
 use coflow_model::CfdDataModel;
-use coflow_language::{CftSchema, CftSchemaTypePredicate};
+use coflow_language::cft::{CftSchema, CftSchemaTypePredicate};
 
 use super::value::EvalValue;
 

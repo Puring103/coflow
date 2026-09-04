@@ -1,4 +1,4 @@
-use coflow_language::Span;
+use coflow_language::source::Span;
 use serde_json::Value;
 
 use super::diagnostics::lsp_range;

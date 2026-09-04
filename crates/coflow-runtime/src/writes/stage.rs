@@ -4,7 +4,7 @@ use crate::api::{
     RewriteDimensionRecordRequest, WriteCellRequest, WriteDimensionValueRequest, WriteRecordRef,
 };
 use crate::data_model::CfdValue;
-use coflow_language::RecordKey;
+use coflow_language::cft::RecordKey;
 use std::collections::BTreeSet;
 
 use crate::mutation::PreparedMutationOp;

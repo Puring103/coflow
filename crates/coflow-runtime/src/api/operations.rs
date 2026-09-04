@@ -1,6 +1,6 @@
 use crate::data_model::{CfdValue, DimensionValueDraft};
 use crate::CfdSource;
-use coflow_language::{
+use coflow_language::cft::{
     CftDimension, CftField, CftSchema, CftType, FieldName, RecordKey, VariantName,
 };
 #[derive(Debug, Clone)]

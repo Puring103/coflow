@@ -10,7 +10,7 @@
 mod common;
 use common::*;
 
-use coflow_language::StructuralLimits;
+use coflow_language::limits::StructuralLimits;
 use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftSchema) -> Result<CfdDataModel, CfdDiagnostics>;
@@ -924,7 +924,7 @@ fn check_budget_exceeded() -> CfdDiagnostics {
         )],
     )
     .expect("budget coverage model builds");
-    run_model_checks_with_limits(&model, &schema, StructuralLimits::new(100, 100, 1))
+    run_model_checks_with_limits(&model, &schema, EvaluationLimits::new(1, u64::MAX))
         .expect_err("collection work should exceed one")
 }
 
@@ -945,7 +945,7 @@ fn adjacent_check_budget_valid() {
         )],
     )
     .expect("adjacent budget model builds");
-    run_model_checks_with_limits(&model, &schema, StructuralLimits::new(100, 100, 2))
+    run_model_checks_with_limits(&model, &schema, EvaluationLimits::new(2, u64::MAX))
         .expect("work exactly at the limit should pass");
 }
 

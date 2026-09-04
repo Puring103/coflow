@@ -1,4 +1,4 @@
-use coflow_language::{CftSchema, ValueDependencyCycle, ValueDependencyMode};
+use coflow_language::cft::{CftSchema, ValueDependencyCycle, ValueDependencyMode};
 
 pub(crate) fn schema_default_cycle(
     schema: &CftSchema,

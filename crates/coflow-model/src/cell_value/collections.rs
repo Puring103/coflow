@@ -1,5 +1,5 @@
 use crate::{LoadedDictKeyDraft, LoadedValueDraft};
-use coflow_language::CftSchema;
+use coflow_language::cft::CftSchema;
 
 use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagnostics};
 use super::scan::{find_top_level_char, split_top_level, strip_outer_pair};

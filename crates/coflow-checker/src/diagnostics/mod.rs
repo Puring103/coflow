@@ -1,6 +1,6 @@
 use coflow_diagnostics::CfdErrorCode;
 use coflow_model::{CfdPath, CfdPathSegment, DimensionFieldLookupError};
-use coflow_language::{
+use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
     CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
@@ -40,8 +40,8 @@ pub struct CheckDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckSchemaLocation {
-    pub module: coflow_language::ModuleId,
-    pub span: coflow_language::Span,
+    pub module: coflow_language::cft::ModuleId,
+    pub span: coflow_language::source::Span,
 }
 
 impl From<coflow_model::CfdDiagnostic> for CheckDiagnostic {
@@ -196,11 +196,11 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
             };
             let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
             let binding = match bindings {
-                coflow_language::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
-                coflow_language::CftSchemaQuantifierBindings::Array { item, index } => {
+                coflow_language::cft::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
+                coflow_language::cft::CftSchemaQuantifierBindings::Array { item, index } => {
                     format!("{item}, {index}")
                 }
-                coflow_language::CftSchemaQuantifierBindings::Dict { key, value } => {
+                coflow_language::cft::CftSchemaQuantifierBindings::Dict { key, value } => {
                     format!("{key}, {value}")
                 }
             };
@@ -346,10 +346,10 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }
-        EvalValue::Constant(coflow_language::CftConstValue::Array(items)) => {
+        EvalValue::Constant(coflow_language::cft::CftConstValue::Array(items)) => {
             format!("<array constant len={}>", items.len())
         }
-        EvalValue::Constant(coflow_language::CftConstValue::Dictionary(entries)) => {
+        EvalValue::Constant(coflow_language::cft::CftConstValue::Dictionary(entries)) => {
             format!("<dict constant len={}>", entries.len())
         }
         EvalValue::Constant(_) => "<constant>".to_string(),
