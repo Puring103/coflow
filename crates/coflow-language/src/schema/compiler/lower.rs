@@ -293,6 +293,10 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
         CftConstValue::Float(value) => CftSchemaDefaultValue::Float(*value),
         CftConstValue::Bool(value) => CftSchemaDefaultValue::Bool(*value),
         CftConstValue::String(value) => CftSchemaDefaultValue::String(value.clone()),
+        CftConstValue::FormattedString(source) => {
+            CftSchemaDefaultValue::FormattedString(source.clone())
+        }
+        CftConstValue::Function(source) => CftSchemaDefaultValue::Function(source.clone()),
         CftConstValue::Enum {
             enum_name,
             variant,

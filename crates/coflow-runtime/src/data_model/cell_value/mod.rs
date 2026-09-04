@@ -34,7 +34,8 @@ use objects::parse_object;
 use refs::parse_ref;
 use scan::strip_outer_pair;
 pub use render::{render_cell_value, CellRenderError};
-use strings::{parse_automatic_formatted_string, parse_formatted_string, parse_string};
+pub(crate) use strings::parse_automatic_formatted_string;
+use strings::parse_string;
 use types::CellType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -129,9 +130,6 @@ fn parse_value(
             "false" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
-        CellType::String if text.starts_with("f\"") => {
-            parse_formatted_string(text).map(LoadedValueDraft::FormattedString)
-        }
         CellType::String if text.contains('{') => parse_automatic_formatted_string(text)?
             .map_or_else(
                 || parse_string(text).map(LoadedValueDraft::String),

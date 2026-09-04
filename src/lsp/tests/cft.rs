@@ -1,4 +1,7 @@
 use super::super::completion::{function_completion_items_for_type, receiver_chain_before_dot};
+use super::super::semantic_tokens::{
+    semantic_raw_tokens, MOD_DECLARATION, SEM_PARAMETER, SEM_VARIABLE,
+};
 use super::common::*;
 use super::*;
 use coflow_language::syntax::ast::Item;
@@ -674,10 +677,92 @@ values: [string] = [\n\
     );
     assert_eq!(
         format_cft(
-            "check ItemRules {\nall item in records(Item) {\nitem.value > 0:\n f\"bad {item.id}\";\n}\n}"
+            "check ItemRules {\nall item in records(Item) {\nitem.value > 0:\n \"bad {item.id}\";\n}\n}"
         ),
-        "check ItemRules {\n  all item in records(Item) {\n    item.value > 0:\n      f\"bad {item.id}\";\n  }\n}\n"
+        "check ItemRules {\n  all item in records(Item) {\n    item.value > 0:\n      \"bad {item.id}\";\n  }\n}\n"
     );
+}
+
+#[test]
+fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
+    let source = "type Rule {\n\
+  apply: fn(value: int) -> int = fn(input: int) -> int {\n\
+    var total = input + 1;\n\
+    total\n\
+  };\n\
+}\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-function-defaults", source);
+    let document = first_document(&build);
+
+    let default_offset = source.find("fn(input").expect("function default");
+    let default_items = completion_items(
+        &build,
+        document,
+        &position_from_byte(source, default_offset),
+    );
+    let function_item = default_items
+        .iter()
+        .find(|item| item["label"] == "fn")
+        .expect("function default completion");
+    assert_eq!(function_item["insertTextFormat"], 2);
+    assert_eq!(
+        function_item["insertText"],
+        "fn(${1:value}: int) -> int {\n\t${2}\n}"
+    );
+
+    let body_offset = source.find("total\n").expect("body expression");
+    let body_labels = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, body_offset),
+    ));
+    assert!(body_labels.contains(&"input".to_string()), "{body_labels:?}");
+    assert!(body_labels.contains(&"total".to_string()), "{body_labels:?}");
+    assert!(body_labels.contains(&"var".to_string()), "{body_labels:?}");
+
+    let raw_tokens = semantic_raw_tokens(&build, document);
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "fn(input: int)",
+        "input",
+        SEM_PARAMETER,
+        MOD_DECLARATION,
+    ));
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "var total",
+        "total",
+        SEM_VARIABLE,
+        MOD_DECLARATION,
+    ));
+}
+
+#[test]
+fn formatter_covers_all_new_default_forms_and_is_idempotent() {
+    let source = "type Rule {\n\
+label:string=\"rule {name} {{literal}}\";\n\
+mask:int=READ|WRITE;\n\
+effect:Effect=HealEffect { amount:1,label:\"heal {amount}\",};\n\
+apply:fn(value:int)->int=fn(input:int)->int {\n\
+var total=input+1;\n\
+total\n\
+};\n\
+}\n";
+    let expected = concat!(
+        "type Rule {\n",
+        "  label: string = \"rule {name} {{literal}}\";\n",
+        "  mask: int = READ | WRITE;\n",
+        "  effect: Effect = HealEffect { amount: 1, label: \"heal {amount}\", };\n",
+        "  apply: fn(value: int) -> int = fn(input: int) -> int {\n",
+        "    var total = input + 1;\n",
+        "    total\n",
+        "  };\n",
+        "}\n",
+    );
+    assert_eq!(format_cft(source), expected);
+    assert_eq!(format_cft(expected), expected);
 }
 
 #[test]

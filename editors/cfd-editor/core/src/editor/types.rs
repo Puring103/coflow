@@ -5,7 +5,7 @@
 //! from `coflow-runtime` and shipped
 //! straight to the front-end. The types that *remain* here are
 //! composition views — `RecordRow`, `FieldCell`, `FieldAnnotation`,
-//! `ProjectSnapshot`, ... — that bundle core data with editor-specific
+//! `ProjectBootstrap`, ... — that bundle core data with editor-specific
 //! derived metadata (file hints, enum int values, ...).
 
 use coflow_runtime::{CfdDictKey, CfdRecord, CfdValue};
@@ -121,7 +121,7 @@ impl From<String> for EditorError {
     feature = "ts-export",
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
-pub struct ProjectSnapshot {
+pub struct ProjectBootstrap {
     pub session_id: u32,
     pub revision: u32,
     pub project_root: String,

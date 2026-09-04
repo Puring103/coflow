@@ -114,6 +114,8 @@ pub enum CftConstValue {
     Float(f64),
     Bool(bool),
     String(String),
+    FormattedString(String),
+    Function(String),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,
@@ -185,6 +187,8 @@ pub enum CftSchemaDefaultValue {
     Float(f64),
     Bool(bool),
     String(String),
+    FormattedString(String),
+    Function(String),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,

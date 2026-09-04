@@ -46,75 +46,7 @@ pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
     Ok(out)
 }
 
-pub(super) fn parse_formatted_string(
-    text: &str,
-) -> Result<LoadedFormattedString, CellValueDiagnostics> {
-    let text = text.trim();
-    if !text.starts_with("f\"") || !text.ends_with('"') || text.len() < 3 {
-        return Err(syntax("formatted string must use `f\"...\"`"));
-    }
-    let mut chars = text[2..text.len() - 1].char_indices().peekable();
-    let mut segments = Vec::new();
-    let mut literal = String::new();
-    while let Some((offset, ch)) = chars.next() {
-        match ch {
-            '\\' => {
-                let Some((_, escaped)) = chars.next() else {
-                    return Err(syntax("unterminated formatted string escape"));
-                };
-                match escaped {
-                    '"' => literal.push('"'),
-                    '\\' => literal.push('\\'),
-                    'n' => literal.push('\n'),
-                    'r' => literal.push('\r'),
-                    't' => literal.push('\t'),
-                    other => return Err(syntax(format!("unsupported string escape `\\{other}`"))),
-                }
-            }
-            '{' if chars.peek().is_some_and(|(_, next)| *next == '{') => {
-                let _ = chars.next();
-                literal.push('{');
-            }
-            '}' if chars.peek().is_some_and(|(_, next)| *next == '}') => {
-                let _ = chars.next();
-                literal.push('}');
-            }
-            '{' => {
-                if !literal.is_empty() {
-                    segments.push(LoadedFormatSegment::Text(std::mem::take(&mut literal)));
-                }
-                let expression_start = offset + ch.len_utf8();
-                let mut expression_end = None;
-                for (inner_offset, inner) in chars.by_ref() {
-                    if inner == '}' {
-                        expression_end = Some(inner_offset);
-                        break;
-                    }
-                }
-                let Some(expression_end) = expression_end else {
-                    return Err(syntax("unterminated formatted string reference"));
-                };
-                let expression = text[2 + expression_start..2 + expression_end].trim();
-                segments.push(LoadedFormatSegment::Reference(parse_reference(expression)?));
-            }
-            '}' => {
-                return Err(syntax(
-                    "literal `}` in a formatted string must be written as `}}`",
-                ));
-            }
-            other => literal.push(other),
-        }
-    }
-    if !literal.is_empty() {
-        segments.push(LoadedFormatSegment::Text(literal));
-    }
-    Ok(LoadedFormattedString {
-        source: text.to_string(),
-        segments,
-    })
-}
-
-pub(super) fn parse_automatic_formatted_string(
+pub(crate) fn parse_automatic_formatted_string(
     text: &str,
 ) -> Result<Option<LoadedFormattedString>, CellValueDiagnostics> {
     let text = text.trim();

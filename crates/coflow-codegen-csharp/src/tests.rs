@@ -385,6 +385,23 @@ fn ordinary_function_loader_marks_the_cfd_body_as_required() {
 }
 
 #[test]
+fn function_defaults_use_the_runtime_function_entry_path() {
+    let files = generate_csharp_cfd(
+        &schema(
+            "type Rule { evaluate: fn(value: int) -> int = fn(value: int) -> int { value + 1 }; }",
+        ),
+        &CsharpCodegenOptions::new("CoflowConfig"),
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate function default");
+    let output = all(&files);
+    assert!(output.contains("context.DefaultFunction(\"fn(value: int) -> int { value + 1 }\", \"evaluate\", typeof(long), typeof(long))"));
+    assert!(output.contains("CfdValueReader.FindField(fields, \"evaluate\") is { } valueEvaluate"));
+    assert!(output.contains("context.RequiredFunction(valueEvaluate, \"evaluate\""));
+}
+
+#[test]
 fn generated_metadata_has_no_physical_source_paths() {
     let schema = schema("type Item { value: int; }");
     let files = generate_csharp_cfd(

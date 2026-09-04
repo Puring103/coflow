@@ -1,8 +1,8 @@
-use crate::artifacts::{
-    active_id_as_enum_values, artifact_error, replace_active_id_as_enum_values,
-};
+use crate::artifacts::{artifact_error, enum_lockfile_path, read_id_as_enum_values};
 use coflow_runtime::codegen::IdAsEnumValues;
-use coflow_runtime::{DiagnosticSet, IdAsEnumInfo, MutationReport, Project, ProjectQueries};
+use coflow_runtime::{
+    DiagnosticSet, IdAsEnumInfo, MutationAppliedOp, Project, ProjectFileUpdate, ProjectQueries,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare_values(
@@ -10,7 +10,7 @@ pub(super) fn prepare_values(
     info: Vec<IdAsEnumInfo>,
 ) -> Result<IdAsEnumValues, DiagnosticSet> {
     let current = collect_ids(info);
-    let mut values = active_id_as_enum_values(project)?;
+    let mut values = read_id_as_enum_values(project)?;
     values.retain(|enum_name, _| current.contains_key(enum_name));
 
     for (enum_name, enum_ids) in current {
@@ -30,19 +30,30 @@ pub(super) fn prepare_values(
     Ok(values)
 }
 
-pub(super) fn migrate_after_mutation(
+pub(super) fn prepare_rename_update(
     project: &Project,
     queries: ProjectQueries<'_>,
-    report: &MutationReport,
-) -> Result<bool, DiagnosticSet> {
-    let mut values = active_id_as_enum_values(project)?;
+    applied: &[MutationAppliedOp],
+) -> Result<Option<ProjectFileUpdate>, DiagnosticSet> {
+    let path = enum_lockfile_path(project);
+    let expected = match std::fs::read(&path) {
+        Ok(contents) => Some(contents),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(artifact_error(
+                &path,
+                format!("failed to read enum lock: {error}"),
+            ));
+        }
+    };
+    let mut values = read_id_as_enum_values(project)?;
     if values.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
 
     let mut changed = false;
-    for applied in &report.applied {
-        let Some((old, new)) = &applied.outcome.renamed else {
+    for item in applied {
+        let Some((old, new)) = &item.outcome.renamed else {
             continue;
         };
         let Some(enum_name) = queries.id_as_enum_name_for_type(old.actual_type.as_ref()) else {
@@ -59,9 +70,12 @@ pub(super) fn migrate_after_mutation(
     }
 
     if !changed {
-        return Ok(false);
+        return Ok(None);
     }
-    replace_active_id_as_enum_values(project, values)
+    let contents = serde_json::to_vec_pretty(&values).map_err(|error| {
+        artifact_error(&path, format!("failed to serialize enum lock: {error}"))
+    })?;
+    Ok(Some(ProjectFileUpdate::new(path, expected, contents)))
 }
 
 #[derive(Debug)]

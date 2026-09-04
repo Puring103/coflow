@@ -77,7 +77,6 @@ fn plan_configured_dimension(
             continue;
         }
         let operation = DimensionGenerationOperation {
-            dimension: dimension.to_string(),
             path: path.clone(),
             actual_type: field.source_type.to_string(),
             entries: dimension_entries(schema, model, field),

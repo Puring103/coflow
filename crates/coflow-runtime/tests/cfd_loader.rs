@@ -1080,6 +1080,47 @@ item: Rule {
     Ok(())
 }
 
+#[test]
+fn cft_formatted_string_and_function_defaults_materialize_as_cfd_values() -> TestResult {
+    let schema = compile_schema(
+        r#"
+type Rule {
+  name: string;
+  label: string = "rule {name}";
+  apply: fn(value: int) -> int = fn(value: int) -> int { value + 1 };
+  effect: Effect = Damage { amount: 2 };
+  permissions: Permission = Permission::Read | Permission::Write;
+}
+abstract type Effect { amount: int; }
+type Damage: Effect {}
+@flag enum Permission { Read = 1, Write = 2 }
+"#,
+    );
+    let model = load_cfd_model(&schema, "item: Rule { name: \"primary\" }")?;
+    let record_id = model
+        .record_by_type_key("Rule", "item")
+        .expect("defaulted function record");
+    let record = model.record(record_id).expect("defaulted function value");
+    assert!(matches!(
+        record.field("label"),
+        Some(CfdValue::FormattedString(value)) if value.rendered == "rule primary"
+    ));
+    assert!(matches!(
+        record.field("apply"),
+        Some(CfdValue::Function(value)) if value.source.contains("value + 1")
+    ));
+    assert!(matches!(
+        record.field("effect"),
+        Some(CfdValue::Object(value)) if value.actual_type.as_str() == "Damage"
+            && value.field("amount") == Some(&CfdValue::Int(2))
+    ));
+    assert!(matches!(
+        record.field("permissions"),
+        Some(CfdValue::Enum(value)) if value.value == 3
+    ));
+    Ok(())
+}
+
 fn assert_has_text_code(err: &CfdTextLoadError, code: CfdTextErrorCode) {
     let CfdTextLoadError::Text(diagnostics) = err else {
         panic!("expected text diagnostics, got {err:?}");

@@ -1,7 +1,7 @@
 #[derive(Debug)]
-pub(super) struct FunctionSyntaxError {
-    pub(super) message: String,
-    pub(super) offset: usize,
+pub(crate) struct FunctionSyntaxError {
+    pub(crate) message: String,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +20,7 @@ struct Token {
     offset: usize,
 }
 
-pub(super) fn validate_function_body(source: &str) -> Result<(), FunctionSyntaxError> {
+pub(crate) fn validate_function_body(source: &str) -> Result<(), FunctionSyntaxError> {
     let mut parser = Parser {
         tokens: lex(source)?,
         pos: 0,

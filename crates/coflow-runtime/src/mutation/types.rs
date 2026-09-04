@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::api::{DiagnosticSet, FlatDiagnostic};
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue};
@@ -7,6 +8,33 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{RecordCoordinate, WriteOutcome};
+
+/// An application-owned project file that must be published with a mutation.
+///
+/// The runtime treats this as opaque bytes. The expected contents are checked
+/// immediately before publication so an external edit cannot be overwritten.
+#[derive(Debug, Clone)]
+pub struct ProjectFileUpdate {
+    pub(crate) path: PathBuf,
+    pub(crate) expected: Option<Vec<u8>>,
+    pub(crate) contents: Vec<u8>,
+}
+
+impl ProjectFileUpdate {
+    #[must_use]
+    pub fn new(path: impl Into<PathBuf>, expected: Option<Vec<u8>>, contents: Vec<u8>) -> Self {
+        Self {
+            path: path.into(),
+            expected,
+            contents,
+        }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +63,12 @@ pub enum MutationOp {
         file: Option<String>,
         path: Vec<CfdPathSegment>,
         value: MutationValue,
+    },
+    UnsetField {
+        record: RecordCoordinate,
+        #[serde(default)]
+        file: Option<String>,
+        path: Vec<CfdPathSegment>,
     },
     SetDimensionValue {
         coordinate: DimensionValueCoordinate,
@@ -210,6 +244,12 @@ pub(crate) enum PreparedMutationOp {
         path: Vec<crate::api::WriteFieldPathSegment>,
         value: CfdValue,
     },
+    UnsetField {
+        record: RecordCoordinate,
+        write_record: RecordCoordinate,
+        write_file: String,
+        path: Vec<CfdPathSegment>,
+    },
     WriteDimensionValue {
         record: RecordCoordinate,
         coordinate: DimensionSourceCoordinate,
@@ -286,6 +326,11 @@ impl PreparedMutationOp {
             | Self::FoldedSetField {
                 record, write_file, ..
             } => ("set_field", Some(record.clone()), Some(write_file.clone())),
+            Self::UnsetField {
+                record,
+                write_file,
+                ..
+            } => ("unset_field", Some(record.clone()), Some(write_file.clone())),
             Self::WriteDimensionValue {
                 record,
                 new_value,
@@ -369,6 +414,12 @@ pub struct MutationReport {
     pub failed: Vec<MutationFailedOp>,
     /// Deduplicated project-facing source paths changed by the transaction.
     pub affected_files: Vec<String>,
+    /// Deduplicated project-relative paths physically published by the transaction.
+    ///
+    /// Hosts use this broader set to distinguish their own writes from external
+    /// filesystem changes. Unlike `affected_files`, it may contain non-CFD
+    /// project files such as `coflow.enum.lock.json`.
+    pub written_files: Vec<String>,
     /// Writer diagnostics followed by diagnostics from the published generation.
     pub diagnostics: Vec<FlatDiagnostic>,
 }

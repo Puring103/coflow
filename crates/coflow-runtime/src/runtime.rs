@@ -18,8 +18,9 @@ use crate::session_build::{
 };
 use crate::{
     CreateRecordDraft, DataSourceTextOverride, DefaultMaterialization, DimensionValueCoordinate,
-    DimensionValueExpectation, MutationFields, MutationOp, MutationReport, MutationRequest,
-    MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
+    DimensionValueExpectation, MutationAppliedOp, MutationFields, MutationOp, MutationReport,
+    MutationRequest, MutationValue, ProjectFileUpdate, ProjectQueries, RecordCoordinate,
+    WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
@@ -328,6 +329,26 @@ impl Runtime {
         open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
             .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
     }
+
+    /// Opens a mutation-capable candidate using host-provided text for
+    /// selected data files. No project file is modified.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the candidate project cannot be loaded.
+    pub fn open_write_session_with_source_overrides(
+        &self,
+        project: Project,
+        source_overrides: &[DataSourceTextOverride],
+    ) -> Result<WriteProjectSession, DiagnosticSet> {
+        open_project_session_with_source_overrides(
+            project,
+            &self.catalog,
+            SessionOpenOptions::read_only(),
+            source_overrides,
+        )
+        .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
+    }
 }
 
 fn fixed_cfd_catalog() -> CfdSourceCatalog {
@@ -542,9 +563,27 @@ impl WriteProjectSession {
     /// Apply a batch of mutation commands using the CFD catalog owned by this
     /// capability.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
-        let report = self.session.apply_mutation(&self.catalog, request);
+        self.apply_mutation_with_project_files(request, |_, _| Ok(Vec::new()))
+    }
+
+    /// Apply a mutation and publish application-owned project files in the
+    /// same file transaction as the changed CFD sources.
+    pub fn apply_mutation_with_project_files<F>(
+        &mut self,
+        request: MutationRequest,
+        prepare_files: F,
+    ) -> MutationReport
+    where
+        F: FnOnce(ProjectQueries<'_>, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+    {
+        let next_revision = self.revision.saturating_add(1);
+        let report = self.session.apply_mutation(
+            &self.catalog,
+            request,
+            |candidate, applied| prepare_files(ProjectQueries::new(candidate, next_revision), applied),
+        );
         if report.generation_changed {
-            self.revision = self.revision.saturating_add(1);
+            self.revision = next_revision;
         }
         report
     }
@@ -567,6 +606,25 @@ impl WriteProjectSession {
             file: None,
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
+        })
+    }
+
+    /// Removes one existing field from its CFD source.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
+    pub fn unset_field(
+        &mut self,
+        actual_type: &str,
+        key: &str,
+        path: &[CfdPathSegment],
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::UnsetField {
+            record: validated_coordinate(actual_type, key)?,
+            file: None,
+            path: path.to_vec(),
         })
     }
 

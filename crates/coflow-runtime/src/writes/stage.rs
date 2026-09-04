@@ -62,6 +62,24 @@ pub(crate) fn stage_mutation_op(
             stage_rename_record_key(session, plan, record, new_key)
         }
         (
+            PreparedMutationOp::UnsetField {
+                write_record,
+                path,
+                ..
+            },
+            MutationExecutionPlan::UnsetField(plan),
+        ) => {
+            let schema = session.schema();
+            let writer_outcome = plan.writer.unset_field(
+                &plan.target.origin,
+                &plan.target.coordinate.key,
+                &plan.target.coordinate.actual_type,
+                path,
+                schema,
+            )?;
+            Ok(field_write_outcome(plan, write_record, writer_outcome))
+        }
+        (
             PreparedMutationOp::RenameRecord {
                 record, new_key, ..
             },

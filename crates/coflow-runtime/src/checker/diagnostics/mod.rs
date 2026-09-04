@@ -275,7 +275,7 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
 }
 
 fn render_formatted_string(segments: &[CftSchemaCheckFormatSegment]) -> String {
-    let mut out = String::from("f\"");
+    let mut out = String::from("\"");
     for segment in segments {
         match segment {
             CftSchemaCheckFormatSegment::Text(value, _) => {

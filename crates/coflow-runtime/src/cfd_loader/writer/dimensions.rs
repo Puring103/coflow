@@ -20,15 +20,7 @@ impl CfdWriter {
         request: &DimensionSourceLoadRequest<'_>,
     ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
         let path = request.source.location.path();
-        let text = std::fs::read_to_string(path).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CFD-DIMENSION",
-                format!(
-                    "failed to read dimension source `{}`: {err}",
-                    path.display()
-                ),
-            ))
-        })?;
+        let text = self.read_source(path)?;
         let (ast, syntax) = parse_cfd(&text);
         if !syntax.is_empty() {
             return Err(DiagnosticSet::one(diag(
@@ -187,7 +179,7 @@ impl CfdWriter {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let mut rows = read_existing_dimension_cfd(path, &variants, None)?;
+        let mut rows = self.read_existing_dimension_cfd(path, &variants, None)?;
         let physical_key = if request.schema.source_type.is_singleton {
             request.schema.source_field.name.as_str()
         } else {
@@ -209,7 +201,7 @@ impl CfdWriter {
             }
         }
         let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
-        write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
+        self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
     pub(crate) fn rewrite_dimension_record(
@@ -227,7 +219,7 @@ impl CfdWriter {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let mut rows = read_existing_dimension_cfd(path, &variants, None)?;
+        let mut rows = self.read_existing_dimension_cfd(path, &variants, None)?;
         let row = rows.remove(request.old_key.as_str()).ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "CFD-DIMENSION-WRITE",
@@ -243,7 +235,7 @@ impl CfdWriter {
             }
         }
         let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
-        write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
+        self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
     pub(crate) fn sync_dimension_source(
@@ -256,7 +248,7 @@ impl CfdWriter {
             .iter()
             .map(|entry| entry.key.as_str())
             .collect::<BTreeSet<_>>();
-        let existing = read_existing_dimension_cfd(path, request.variants, Some(&expected_keys))?;
+        let existing = self.read_existing_dimension_cfd(path, request.variants, Some(&expected_keys))?;
         let mut out = String::new();
         for entry in request.entries {
             let row = existing.get(&entry.key);
@@ -276,7 +268,15 @@ impl CfdWriter {
             }
             out.push_str("}\n\n");
         }
-        write_if_changed(path, &out, "CFD-DIMENSION")
+        self.write_if_changed(path, &out, "CFD-DIMENSION")
+    }
+}
+
+fn render_cfd_cell(value: &str) -> String {
+    if value.is_empty() {
+        "None".to_string()
+    } else {
+        value.to_string()
     }
 }
 
@@ -323,23 +323,17 @@ fn render_dimension_cfd(
     out
 }
 
+impl CfdWriter {
 fn read_existing_dimension_cfd(
+    &self,
     path: &Path,
     variants: &[String],
     expected_keys: Option<&BTreeSet<&str>>,
 ) -> Result<BTreeMap<String, DimensionCfdRow>, DiagnosticSet> {
-    let text = match std::fs::read_to_string(path) {
+    let text = match self.read_source(path) {
         Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
-        Err(err) => {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-DIMENSION",
-                format!(
-                    "failed to read dimension source `{}`: {err}",
-                    path.display()
-                ),
-            )));
-        }
+        Err(_) if !path.exists() => return Ok(BTreeMap::new()),
+        Err(diagnostics) => return Err(diagnostics),
     };
     let (ast, diagnostics) = parse_cfd(&text);
     if let Some(diagnostic) = diagnostics.first() {
@@ -388,34 +382,19 @@ fn read_existing_dimension_cfd(
     Ok(out)
 }
 
-fn render_cfd_cell(value: &str) -> String {
-    if value.is_empty() {
-        "None".to_string()
-    } else {
-        value.to_string()
-    }
-}
-
 fn write_if_changed(
+    &self,
     path: &Path,
     body: &str,
     code: &'static str,
 ) -> Result<DimensionSourceResult, DiagnosticSet> {
-    match std::fs::read_to_string(path) {
+    match self.read_source(path) {
         Ok(existing) if existing == body => {
             return Ok(DimensionSourceResult { changed: false });
         }
         Ok(_) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => {
-            return Err(DiagnosticSet::one(diag(
-                code,
-                format!(
-                    "failed to read dimension source `{}`: {err}",
-                    path.display()
-                ),
-            )));
-        }
+        Err(_) if !path.exists() => {}
+        Err(diagnostics) => return Err(diagnostics),
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
@@ -425,6 +404,7 @@ fn write_if_changed(
             ))
         })?;
     }
-    CfdWriter::write_source(path, body)?;
+    self.write_source(path, body)?;
     Ok(DimensionSourceResult { changed: true })
+}
 }

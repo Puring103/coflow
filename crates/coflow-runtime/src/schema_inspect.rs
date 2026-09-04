@@ -105,6 +105,8 @@ pub enum SchemaDefaultValueInfo {
     Float(f64),
     Bool(bool),
     String(String),
+    FormattedString(String),
+    Function(String),
     Enum {
         enum_name: String,
         variant: String,
@@ -139,6 +141,8 @@ pub enum SchemaConstValueInfo {
     Float(f64),
     Bool(bool),
     String(String),
+    FormattedString(String),
+    Function(String),
     Enum {
         enum_name: String,
         variant: String,
@@ -355,6 +359,12 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::Float(value) => SchemaDefaultValueInfo::Float(*value),
         CftSchemaDefaultValue::Bool(value) => SchemaDefaultValueInfo::Bool(*value),
         CftSchemaDefaultValue::String(value) => SchemaDefaultValueInfo::String(value.clone()),
+        CftSchemaDefaultValue::FormattedString(source) => {
+            SchemaDefaultValueInfo::FormattedString(source.clone())
+        }
+        CftSchemaDefaultValue::Function(source) => {
+            SchemaDefaultValueInfo::Function(source.clone())
+        }
         CftSchemaDefaultValue::Enum {
             enum_name,
             variant,
@@ -399,6 +409,10 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::Float(value) => SchemaConstValueInfo::Float(*value),
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
+        CftConstValue::FormattedString(source) => {
+            SchemaConstValueInfo::FormattedString(source.clone())
+        }
+        CftConstValue::Function(source) => SchemaConstValueInfo::Function(source.clone()),
         CftConstValue::Enum {
             enum_name,
             variant,

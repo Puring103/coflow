@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
-import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import { errorDiagnostics, errorMessage, type DiagnosticItem } from '../wire'
 import {
   codeMirrorDiagnostics,
@@ -39,7 +39,7 @@ interface Props {
   revision: number
   filePath: string
   readOnly: boolean
-  onSaved: (snapshot: ProjectSnapshot) => Promise<void> | void
+  onSaved: (result: ProjectBootstrap) => Promise<void> | void
 }
 
 export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved }: Props) {
@@ -189,11 +189,11 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
         drafts.delete(key)
         return
       }
-      const snapshot = await api.writeSourceText(sessionId, filePath, formatted)
+      const result = await api.writeSourceText(sessionId, filePath, formatted)
       drafts.delete(key)
       setBase(formatted)
       setValidationDiagnostics([])
-      await onSaved(snapshot)
+      await onSaved(result)
     } catch (cause) {
       const details = errorDiagnostics(cause).filter(item => diagnosticBelongsToFile(item, filePath))
       setValidationDiagnostics(details)

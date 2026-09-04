@@ -20,8 +20,8 @@ use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
     EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults,
-    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    InsertRecordOutcome, PluginSchemaType, ProjectBootstrap, ProjectSearchMode,
+    ProjectSearchResults, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
     WriteDimensionValueOutcome, WriteFieldOutcome,
     FunctionDocumentState, LanguageCompletion, LanguageDocumentState, LanguageFormattingResult,
     LanguagePosition,
@@ -30,7 +30,7 @@ use extension_manifest::ExtensionManifest;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-const PROJECT_CHANGED_EVENT: &str = "project_changed";
+const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
 const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
 
 #[derive(Debug, Clone)]
@@ -41,8 +41,8 @@ struct TauriEditorEventSink {
 impl EditorEventSink for TauriEditorEventSink {
     fn emit(&self, event: EditorEvent) {
         match event {
-            EditorEvent::ProjectChanged(payload) => {
-                let _ = self.app.emit(PROJECT_CHANGED_EVENT, payload);
+            EditorEvent::ProjectReloaded(payload) => {
+                let _ = self.app.emit(PROJECT_RELOADED_EVENT, payload);
             }
             EditorEvent::ProjectWatchError(payload) => {
                 let _ = self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload);
@@ -491,7 +491,7 @@ fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), Edi
 async fn load_project(
     yaml_path: String,
     host: State<'_, EditorHost>,
-) -> Result<ProjectSnapshot, EditorError> {
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.load_project(&PathBuf::from(yaml_path))).await
 }
@@ -501,7 +501,7 @@ async fn load_project(
 async fn init_project(
     dir: String,
     host: State<'_, EditorHost>,
-) -> Result<ProjectSnapshot, EditorError> {
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.init_project(&PathBuf::from(dir))).await
 }
@@ -511,6 +511,16 @@ async fn init_project(
 async fn close_session(session_id: u32, host: State<'_, EditorHost>) -> Result<(), EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.close_session(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn reload_session(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.reload_session(session_id)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -788,7 +798,7 @@ async fn write_source_text(
     file_path: String,
     source: String,
     host: State<'_, EditorHost>,
-) -> Result<ProjectSnapshot, EditorError> {
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
         host.sessions()
@@ -1150,6 +1160,7 @@ pub fn run() -> tauri::Result<()> {
             load_project,
             init_project,
             close_session,
+            reload_session,
             get_project_settings,
             get_project_dimensions,
             get_dimension_file_records,

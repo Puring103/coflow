@@ -55,8 +55,8 @@ pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
 
 `CodeArtifactSet` 只接受相对路径，拒绝绝对路径、`..` 和重复文件。generator 不访问文件系统；
 根应用先收集所有目标的 artifacts，再统一 staging、备份和原子发布。发布前会规范化现有祖先
-和符号链接，拒绝覆盖项目根、配置、schema、data、维度目录或相互重叠的输出。活动 generation
-记录在 `.coflow/artifacts/active.json`，`coflow clean` 只删除非活动历史和遗留 staging。
+和符号链接，拒绝覆盖项目根、配置、schema、data、维度目录或相互重叠的输出。`@idAsEnum`
+的稳定编号保存在项目根的 `coflow.enum.lock.json`。
 
 ## C# direct-load 接口
 
@@ -77,6 +77,6 @@ codegen source manifest 为每个逻辑 CFD 路径标记 `Project` 或结构化�
 
 ## 原子性
 
-代码生成和编辑器写入都遵循“先验证、后 staging、最后一次发布”。多目标生成中任何一个
+代码生成和编辑器写入都遵循“候选构建、验证、最后一次发布”。多目标生成中任何一个
 目标失败时，之前的目标也不能出现在输出目录；发布阶段失败时按逆序恢复旧目录。
-成功发布后 active manifest 一次性切换到新 generation；Unity `.meta` 文件随输出替换保留。
+Unity `.meta` 文件随输出替换保留。

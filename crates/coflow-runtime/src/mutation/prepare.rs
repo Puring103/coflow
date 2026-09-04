@@ -186,6 +186,25 @@ pub(super) fn prepare_one(
                 value,
             })
         }
+        MutationOp::UnsetField { record, file, path } => {
+            write_rules::expected_type_for_cfd_path(
+                session.schema(),
+                &record.actual_type,
+                &path,
+                "MUTATION-PATH",
+                "MUTATION",
+            )?;
+            let path = validated_write_path(&path)?;
+            let (write_record, write_file, path) =
+                effective_write_target_for_set_field(session, &record, &path)?;
+            ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
+            Ok(PreparedMutationOp::UnsetField {
+                record,
+                write_record,
+                write_file,
+                path,
+            })
+        }
         MutationOp::SetDimensionValue {
             coordinate,
             expected,

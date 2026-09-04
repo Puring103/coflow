@@ -216,6 +216,13 @@ fn walk_default(
             DefaultExprKind::Object(fields) => {
                 pending.extend(fields.iter().rev().map(|(_, value)| (value, cursor)));
             }
+            DefaultExprKind::TypedObject { fields, .. } => {
+                pending.extend(fields.iter().rev().map(|(_, value)| (value, cursor)));
+            }
+            DefaultExprKind::BitExpr { lhs, rhs, .. } => {
+                pending.push((rhs, cursor));
+                pending.push((lhs, cursor));
+            }
             DefaultExprKind::Dictionary(entries) => {
                 for (key, value) in entries.iter().rev() {
                     pending.push((value, cursor));
@@ -227,6 +234,8 @@ fn walk_default(
             | DefaultExprKind::Bool(_)
             | DefaultExprKind::OptionNone
             | DefaultExprKind::String(_)
+            | DefaultExprKind::FormattedString(_)
+            | DefaultExprKind::Function { .. }
             | DefaultExprKind::StaticPath(_)
             | DefaultExprKind::RecordReference(_) => {}
             DefaultExprKind::OptionSome(value)

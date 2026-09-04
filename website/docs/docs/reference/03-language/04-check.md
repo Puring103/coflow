@@ -62,11 +62,11 @@ check {
 check {
   level > 0: "等级必须大于 0";
   damage >= 0:
-    f"怪物 {id} 的伤害不能为负数，当前为 {damage}";
+    "怪物 {id} 的伤害不能为负数，当前为 {damage}";
 }
 ```
 
-格式化字符串使用 `f"...{expression}..."`，可以作为普通字符串表达式或诊断消息。插值支持 `null`、bool、int、float、string 和 enum；集合、object 和 record ref 不能直接插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
+普通字符串包含 `{expression}` 时会自动识别为格式化字符串，可以作为字符串表达式或诊断消息；不存在 `f"..."` 语法。插值支持 `null`、bool、int、float、string 和 enum；集合、object 和 record ref 不能直接插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
 
 ## 运算符
 
@@ -191,11 +191,11 @@ all entry in resistances {
 
 ```cft
 all reward, index in rewards {
-  reward.count > 0: f"第 {index} 个奖励数量无效";
+  reward.count > 0: "第 {index} 个奖励数量无效";
 }
 
 all damage_type, weight in weights {
-  weight >= 0: f"{damage_type} 的权重不能为负数";
+  weight >= 0: "{damage_type} 的权重不能为负数";
 }
 ```
 
@@ -211,7 +211,7 @@ check ItemIntegrity {
 
   all item in records(Item) {
     item.price > 0:
-      f"物品 {item.id} 的价格必须大于 0";
+      "物品 {item.id} 的价格必须大于 0";
   }
 }
 ```
@@ -258,7 +258,7 @@ check {
 
 `matches` 的 pattern 必须是字符串字面量，使用 Rust `regex` 语法。默认执行子串匹配；完整匹配请使用 `^...$`。
 
-本版本不支持 `matches(f"...")` 动态正则模板。需要匹配由字段组成的精确 ID 时，优先使用普通格式化字符串比较，例如 `id == f"{category}_{level}"`。
+`matches` 不支持动态正则模板。需要匹配由字段组成的精确 ID 时，优先使用格式化字符串比较，例如 `id == "{category}_{level}"`。
 
 `min()` 和 `max()` 应在确认数组非空后调用：
 

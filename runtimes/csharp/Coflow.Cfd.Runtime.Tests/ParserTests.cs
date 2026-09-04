@@ -22,7 +22,7 @@ public sealed class ParserTests
               combat {
                 item: Item { target: &Item::sword },
                 direct: &game::items::Item::shield,
-                label: f"{&Item::sword.name}",
+                label: "{&Item::sword.name}",
                 element: Kind::Fire,
               }
             }
@@ -61,7 +61,7 @@ public sealed class ParserTests
               combat {
                 item: Item { target: &Item::sword },
                 direct: &game::items::Item::shield,
-                label: f"{&Item::sword.name}",
+                label: "{&Item::sword.name}",
                 element: Kind::Fire,
                 flags: Kind::Fire | Kind::Ice,
               }

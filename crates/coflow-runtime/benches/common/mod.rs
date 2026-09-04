@@ -222,7 +222,7 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
                 nums: [int];
                 check {
                     all value, index in nums {
-                        value > 0: f"value {value} at {index} must be positive";
+                        value > 0: "value {value} at {index} must be positive";
                     }
                 }
             }

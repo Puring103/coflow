@@ -26,12 +26,13 @@ import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
+import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
-import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
 import type { ProjectSearchHit } from './bindings/ProjectSearchHit'
 import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
 import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
@@ -222,7 +223,7 @@ function projectGraphRows(
 }
 
 export default function App() {
-  const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
     settings: pluginSettings,
     busy: pluginLoadBusy,
@@ -539,21 +540,21 @@ export default function App() {
   }, [router])
 
   const installWorkspace = useCallback((
-    snapshot: ProjectSnapshot,
+    bootstrap: ProjectBootstrap,
     settings: EditorProjectSettings,
   ) => {
-    const sourceFiles = collectSourceFiles(snapshot)
+    const sourceFiles = collectSourceFiles(bootstrap)
     const restored = sanitizeProjectWorkspace(
       settings.workspace,
-      snapshot.file_types,
+      bootstrap.file_types,
       new Set(sourceFiles),
     )
     let tabs = restored?.tabs ?? []
     let activeTabId = restored?.activeTabId ?? null
     if (tabs.length === 0) {
-      const firstFile = snapshot.first_source_file ?? sourceFiles[0]
+      const firstFile = bootstrap.first_source_file ?? sourceFiles[0]
       if (firstFile) {
-        const option = snapshot.file_types[firstFile]?.[0]
+        const option = bootstrap.file_types[firstFile]?.[0]
         const tab = defaultWorkspaceTab(firstFile, option?.name ?? '', option?.is_singleton ?? false)
         tabs = [tab]
         activeTabId = tab.id
@@ -568,7 +569,7 @@ export default function App() {
       setActiveType('')
       router.clear()
     }
-    setWorkspaceReadySessionId(snapshot.session_id)
+    setWorkspaceReadySessionId(bootstrap.session_id)
   }, [navigateWorkspaceTab, router])
 
   // Auto-load mock data only when not running in Tauri (browser preview).
@@ -592,17 +593,17 @@ export default function App() {
   // is identical. Also closes the previous backend session so the
   // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
-    (snapshot: ProjectSnapshot) => {
-      generation.adopt(snapshot)
-      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
+    (bootstrap: ProjectBootstrap) => {
+      generation.adopt(bootstrap)
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
         // (not `project` from the closure) so we always close exactly the
         // session we're replacing, even if state was stale at call time.
-        if (prev && api.isTauri && prev.session_id !== snapshot.session_id) {
+        if (prev && api.isTauri && prev.session_id !== bootstrap.session_id) {
           api.closeSession(prev.session_id).catch(() => { /* best-effort */ })
         }
-        return snapshot
+        return bootstrap
       })
       setFileDataCache({})
       setDimensionFileCache({})
@@ -617,27 +618,27 @@ export default function App() {
       history.clear()
       router.clear()
       if (api.isTauri) {
-        api.getProjectSettings(snapshot.session_id).then(settings => {
-          if (generation.currentSession() !== snapshot.session_id) return
+        api.getProjectSettings(bootstrap.session_id).then(settings => {
+          if (generation.currentSession() !== bootstrap.session_id) return
           setProjectSettings(settings)
-          installWorkspace(snapshot, settings)
+          installWorkspace(bootstrap, settings)
         }).catch(err => {
-          if (generation.currentSession() === snapshot.session_id) {
+          if (generation.currentSession() === bootstrap.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
             const settings = emptySettings()
             setProjectSettings(settings)
-            installWorkspace(snapshot, settings)
+            installWorkspace(bootstrap, settings)
           }
         })
-        api.getProjectDimensions(snapshot.session_id).then(dimensions => {
-          if (generation.currentSession() === snapshot.session_id) setProjectDimensions(dimensions)
+        api.getProjectDimensions(bootstrap.session_id).then(dimensions => {
+          if (generation.currentSession() === bootstrap.session_id) setProjectDimensions(dimensions)
         }).catch(err => {
-          if (generation.currentSession() === snapshot.session_id) {
+          if (generation.currentSession() === bootstrap.session_id) {
             setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
       } else {
-        installWorkspace(snapshot, MOCK_EDITOR_SETTINGS)
+        installWorkspace(bootstrap, MOCK_EDITOR_SETTINGS)
       }
     },
     [generation, history, installWorkspace, lookups, router]
@@ -649,9 +650,9 @@ export default function App() {
     const yamlPath = readLastProjectPath()
     if (!yamlPath) return
     const request = generation.beginProjectRequest()
-    api.loadProject(yamlPath).then(snapshot => {
+    api.loadProject(yamlPath).then(bootstrap => {
       if (!generation.isProjectRequestCurrent(request)) return
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     }).catch(err => {
       if (generation.isProjectRequestCurrent(request)) {
         setErrorMsg(`自动打开上次项目失败: ${errorMessage(err)}`)
@@ -730,10 +731,10 @@ export default function App() {
     if (!generation.isProjectRequestCurrent(request) || !yamlPath) return
     setErrorMsg(null)
     try {
-      const snapshot = await api.loadProject(yamlPath)
+      const bootstrap = await api.loadProject(yamlPath)
       if (!generation.isProjectRequestCurrent(request)) return
       rememberLastProject(yamlPath)
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
@@ -744,25 +745,25 @@ export default function App() {
     }
   }, [adoptSnapshot, generation, history, lookups])
 
-  const refreshFromSnapshot = useCallback(
-    async (snapshot: ProjectSnapshot) => {
-      if (!generation.acceptSnapshot(snapshot)) return
-      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
+  const refreshFromBootstrap = useCallback(
+    async (bootstrap: ProjectBootstrap) => {
+      if (!generation.acceptSnapshot(bootstrap)) return
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       const current = router.current
-      const sourceFiles = collectSourceFiles(snapshot)
+      const sourceFiles = collectSourceFiles(bootstrap)
       const keepFile = current && sourceFiles.includes(current.file)
       const nextFile = keepFile ? current.file : sourceFiles[0]
       history.clear()
       setHighlightField(null)
       if (!nextFile) {
-        setProject(snapshot)
+        setProject(bootstrap)
         setFileDataCache({})
         setGraphCache({})
         return
       }
       if (!current || !keepFile) {
-        setProject(snapshot)
-        const option = snapshot.file_types[nextFile]?.[0]
+        setProject(bootstrap)
+        const option = bootstrap.file_types[nextFile]?.[0]
         const tab = defaultWorkspaceTab(nextFile, option?.name ?? '', option?.is_singleton ?? false)
         setWorkspaceTabs(existing => {
           const next = [
@@ -777,13 +778,13 @@ export default function App() {
       }
       try {
         const fileRecords = api.isTauri
-          ? await api.getFileRecords(snapshot.session_id, nextFile)
+          ? await api.getFileRecords(bootstrap.session_id, nextFile)
           : null
         if (
-          !generation.isCurrent(snapshot.session_id, snapshot.revision) ||
-          (fileRecords && fileRecords.revision !== snapshot.revision)
+          !generation.isCurrent(bootstrap.session_id, bootstrap.revision) ||
+          (fileRecords && fileRecords.revision !== bootstrap.revision)
         ) return
-        setProject(snapshot)
+        setProject(bootstrap)
         if (fileRecords) {
           setFileDataCache(cache => ({ ...cache, [nextFile]: fileRecords }))
         }
@@ -801,10 +802,10 @@ export default function App() {
           router.replace(current)
         }
       } catch (err) {
-        if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
-          setProject(snapshot)
-          reportSessionError(snapshot.session_id, '刷新项目失败', err)
-          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
+        if (generation.isCurrent(bootstrap.session_id, bootstrap.revision)) {
+          setProject(bootstrap)
+          reportSessionError(bootstrap.session_id, '刷新项目失败', err)
+          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: bootstrap.file_types[nextFile]?.[0]?.name ?? '' })
         }
       }
     },
@@ -814,7 +815,7 @@ export default function App() {
   const commitProjectRevision = useCallback((
     sessionId: number,
     revision: number,
-    diagnostics: ProjectSnapshot['diagnostics'],
+    diagnostics: FlatDiagnostic[],
   ) => {
     if (!generation.acceptMutation(sessionId, revision)) return false
     lookups.adopt({ sessionId, revision })
@@ -825,6 +826,11 @@ export default function App() {
     ))
     return true
   }, [generation, lookups])
+
+  const handleSourceSaved = useCallback(
+    async (bootstrap: ProjectBootstrap) => refreshFromBootstrap(bootstrap),
+    [refreshFromBootstrap],
+  )
 
   const publishMutation = useCallback((request: MutationPublicationRequest) => (
     publishMutationGeneration({
@@ -861,9 +867,12 @@ export default function App() {
     let unlistenChanged: (() => void) | null = null
     let unlistenError: (() => void) | null = null
     const isCurrent = () => !disposed && generation.currentSession() === sessionId
-    api.onProjectChanged(event => {
+    api.onProjectReloaded(event => {
       if (!isCurrent() || event.session_id !== sessionId) return
-      refreshFromSnapshot(event.snapshot).catch(err => {
+      api.reloadSession(sessionId).then(bootstrap => {
+        if (!isCurrent()) return
+        return refreshFromBootstrap(bootstrap)
+      }).catch(err => {
         if (isCurrent()) reportSessionError(sessionId, '刷新项目失败', err)
       })
     }).then(unlisten => {
@@ -886,7 +895,7 @@ export default function App() {
       unlistenChanged?.()
       unlistenError?.()
     }
-  }, [generation, project?.session_id, refreshFromSnapshot, reportSessionError])
+  }, [generation, project?.session_id, refreshFromBootstrap, reportSessionError])
 
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
   // project (mirrors `coflow init`), and open it. The same back-end call
@@ -902,10 +911,10 @@ export default function App() {
     if (!generation.isProjectRequestCurrent(request) || !dir) return
     setErrorMsg(null)
     try {
-      const snapshot = await api.initProject(dir)
+      const bootstrap = await api.initProject(dir)
       if (!generation.isProjectRequestCurrent(request)) return
       rememberLastProject(projectYamlPath(dir))
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
@@ -2987,7 +2996,7 @@ export default function App() {
                 revision={project.revision}
                 filePath={currentRoute.file}
                 readOnly={false}
-                onSaved={refreshFromSnapshot}
+                onSaved={handleSourceSaved}
               />
             </div>
           ) : currentRoute && activeDimensionData ? (
@@ -3191,7 +3200,7 @@ export default function App() {
                     revision={project.revision}
                     filePath={currentRoute.file}
                     readOnly={readOnly}
-                    onSaved={refreshFromSnapshot}
+                    onSaved={handleSourceSaved}
                   />
                 )}
               </div>
@@ -3408,13 +3417,13 @@ function definedColumnWidths(
   )
 }
 
-function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
+function collectSourceFiles(bootstrap: ProjectBootstrap): string[] {
   const out: string[] = []
-  function walk(n: ProjectSnapshot['file_tree'][number]) {
+  function walk(n: ProjectBootstrap['file_tree'][number]) {
     if (!n.is_dir && n.in_sources) out.push(n.path)
     for (const c of n.children) walk(c)
   }
-  for (const n of snapshot.file_tree) walk(n)
+  for (const n of bootstrap.file_tree) walk(n)
   return out
 }
 

@@ -57,7 +57,7 @@ function hasFieldReference(value: string): boolean {
 }
 
 function formattedSourceText(source: string): string {
-  const quoted = source.startsWith('f"') ? source.slice(1) : source
+  const quoted = source
   try {
     const value: unknown = JSON.parse(quoted)
     return typeof value === 'string' ? value : source

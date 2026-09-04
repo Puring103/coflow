@@ -40,6 +40,15 @@ impl SchemaCompiler<'_> {
         let module = info.module.clone();
         let expression = info.def.value.clone();
         let declared_type = info.def.ty.clone();
+        if contains_runtime_default(&expression) {
+            self.push_diag(
+                CftErrorCode::InvalidConstValue,
+                &module,
+                expression.span,
+                "constants cannot contain formatted strings or functions",
+            );
+            return None;
+        }
         visiting.push(name.to_string());
         let expected = declared_type.as_ref().and_then(|ty| {
             self.resolve_field_type(&module, ty).value_type().cloned()
@@ -76,13 +85,73 @@ impl SchemaCompiler<'_> {
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
         let resolved = match &expression.kind {
-            DefaultExprKind::Int(value) => (CftValueType::Int, CftConstValue::Int(*value)),
+            DefaultExprKind::Int(value) => {
+                if let Some(CftValueType::Enum(enum_name)) = expected {
+                    if self.enums.get(enum_name.as_str()).is_some_and(|info| info.is_flag) {
+                        self.resolve_flag_mask(module, expression, enum_name, *value)?
+                    } else {
+                        (CftValueType::Int, CftConstValue::Int(*value))
+                    }
+                } else {
+                    (CftValueType::Int, CftConstValue::Int(*value))
+                }
+            }
             DefaultExprKind::Float(value) => {
                 (CftValueType::Float, CftConstValue::Float(*value))
             }
             DefaultExprKind::Bool(value) => (CftValueType::Bool, CftConstValue::Bool(*value)),
             DefaultExprKind::String(value) => {
                 (CftValueType::String, CftConstValue::String(value.clone()))
+            }
+            DefaultExprKind::FormattedString(source) => (
+                CftValueType::String,
+                CftConstValue::FormattedString(source.clone()),
+            ),
+            DefaultExprKind::Function { signature, source } => {
+                let Some(value_type) = self
+                    .resolve_field_type(module, signature)
+                    .value_type()
+                    .cloned()
+                else {
+                    return None;
+                };
+                (
+                    value_type,
+                    CftConstValue::Function(source.clone()),
+                )
+            }
+            DefaultExprKind::BitExpr { op, lhs, rhs } => {
+                let Some(CftValueType::Enum(enum_name)) = expected else {
+                    return self.cannot_infer_const(module, expression, "flag expression");
+                };
+                if !self.enums.get(enum_name.as_str()).is_some_and(|info| info.is_flag) {
+                    let expected_flag = CftValueType::Enum(enum_name.clone());
+                    return self.const_type_mismatch(
+                        module,
+                        expression,
+                        &expected_flag,
+                        &CftValueType::Int,
+                    );
+                }
+                let (_, lhs) = self.resolve_static_value(module, lhs, expected, visiting)?;
+                let (_, rhs) = self.resolve_static_value(module, rhs, expected, visiting)?;
+                let (CftConstValue::Enum { value: lhs, .. }, CftConstValue::Enum { value: rhs, .. }) =
+                    (lhs, rhs)
+                else {
+                    let expected_flag = CftValueType::Enum(enum_name.clone());
+                    return self.const_type_mismatch(
+                        module,
+                        expression,
+                        &expected_flag,
+                        &CftValueType::Int,
+                    );
+                };
+                let value = match op {
+                    crate::syntax::ast::DefaultBitOp::Or => lhs | rhs,
+                    crate::syntax::ast::DefaultBitOp::Xor => lhs ^ rhs,
+                    crate::syntax::ast::DefaultBitOp::And => lhs & rhs,
+                };
+                self.resolve_flag_mask(module, expression, enum_name, value)?
             }
             DefaultExprKind::OptionNone => {
                 let Some(CftValueType::Option(inner)) = expected else {
@@ -152,7 +221,7 @@ impl SchemaCompiler<'_> {
                         visiting,
                     )?;
                     if let Some(expected_item) = &item_type {
-                        if expected_item != &resolved_type {
+                        if !self.default_type_assignable(&resolved_type, expected_item) {
                             return self.const_type_mismatch(module, item, expected_item, &resolved_type);
                         }
                     } else {
@@ -178,14 +247,83 @@ impl SchemaCompiler<'_> {
                 }
                 _ => return self.cannot_infer_const(module, expression, "object"),
             },
+            DefaultExprKind::TypedObject { type_name, fields } => {
+                let resolved_name = self.resolve_name(module, &type_name.canonical());
+                if !matches!(
+                    self.symbols.get(&resolved_name),
+                    Some(symbol) if symbol.kind == SymbolKind::Type
+                ) {
+                    self.push_diag(
+                        CftErrorCode::UnknownNamedType,
+                        module,
+                        type_name.span,
+                        format!("unknown object type `{resolved_name}`"),
+                    );
+                    return None;
+                }
+                self.resolve_object(
+                    module,
+                    expression,
+                    &TypeName::from_validated(resolved_name),
+                    fields,
+                    visiting,
+                )?
+            }
         };
 
         if let Some(expected) = expected {
-            if expected != &resolved.0 {
+            if !self.default_type_assignable(&resolved.0, expected) {
                 return self.const_type_mismatch(module, expression, expected, &resolved.0);
             }
         }
         Some(resolved)
+    }
+
+    fn default_type_assignable(&self, actual: &CftValueType, expected: &CftValueType) -> bool {
+        if actual == expected {
+            return true;
+        }
+        match (actual, expected) {
+            (CftValueType::Object(actual), CftValueType::Object(expected))
+            | (CftValueType::RecordRef(actual), CftValueType::RecordRef(expected)) => self
+                .ancestry_chain(actual)
+                .iter()
+                .any(|candidate| candidate.name == expected.as_str()),
+            _ => false,
+        }
+    }
+
+    fn resolve_flag_mask(
+        &mut self,
+        module: &ModuleId,
+        expression: &DefaultExpr,
+        enum_name: &EnumName,
+        value: i64,
+    ) -> Option<(CftValueType, CftConstValue)> {
+        let info = self.enums.get(enum_name.as_str())?;
+        let declared_mask = info.values_by_name.values().fold(0_i64, |mask, value| mask | value);
+        if value < 0 || value & !declared_mask != 0 {
+            self.push_diag(
+                CftErrorCode::InvalidConstValue,
+                module,
+                expression.span,
+                format!("flag enum `{enum_name}` default contains undeclared bits"),
+            );
+            return None;
+        }
+        let variant = info
+            .values_by_name
+            .iter()
+            .find_map(|(name, candidate)| (*candidate == value).then(|| name.clone()))
+            .unwrap_or_else(|| format!("mask_{value}"));
+        Some((
+            CftValueType::Enum(enum_name.clone()),
+            CftConstValue::Enum {
+                enum_name: enum_name.clone(),
+                variant: EnumVariantName::from_validated(variant),
+                value,
+            },
+        ))
     }
 
     fn resolve_static_path_value(
@@ -333,7 +471,7 @@ impl SchemaCompiler<'_> {
                 key_type = Some(resolved_key_type);
             }
             if let Some(expected_value) = &value_type {
-                if expected_value != &resolved_value_type {
+                if !self.default_type_assignable(&resolved_value_type, expected_value) {
                     return self.const_type_mismatch(module, value, expected_value, &resolved_value_type);
                 }
             } else {
@@ -487,5 +625,31 @@ impl SchemaCompiler<'_> {
             format!("constant value has type `{actual}`, expected `{expected}`"),
         );
         None
+    }
+}
+
+fn contains_runtime_default(expression: &DefaultExpr) -> bool {
+    match &expression.kind {
+        DefaultExprKind::FormattedString(_) | DefaultExprKind::Function { .. } => true,
+        DefaultExprKind::OptionSome(value)
+        | DefaultExprKind::ResultOk(value)
+        | DefaultExprKind::ResultErr(value) => contains_runtime_default(value),
+        DefaultExprKind::Array(values) => values.iter().any(contains_runtime_default),
+        DefaultExprKind::BitExpr { lhs, rhs, .. } => {
+            contains_runtime_default(lhs) || contains_runtime_default(rhs)
+        }
+        DefaultExprKind::Object(fields) | DefaultExprKind::TypedObject { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| contains_runtime_default(value)),
+        DefaultExprKind::Dictionary(entries) => entries.iter().any(|(key, value)| {
+            contains_runtime_default(key) || contains_runtime_default(value)
+        }),
+        DefaultExprKind::Int(_)
+        | DefaultExprKind::Float(_)
+        | DefaultExprKind::Bool(_)
+        | DefaultExprKind::OptionNone
+        | DefaultExprKind::String(_)
+        | DefaultExprKind::StaticPath(_)
+        | DefaultExprKind::RecordReference(_) => false,
     }
 }

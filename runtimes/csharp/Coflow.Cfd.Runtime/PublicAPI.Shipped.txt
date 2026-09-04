@@ -73,6 +73,8 @@ CoflowRuntime.Generated.CfdFieldNode.Span.get -> CoflowRuntime.CfdSpan
 CoflowRuntime.Generated.CfdFieldNode.Value.get -> CoflowRuntime.Generated.CfdValueNode!
 CoflowRuntime.Generated.CfdLoadContext
 CoflowRuntime.Generated.CfdLoadContext.Bindings.get -> System.Collections.Generic.IReadOnlyDictionary<string!, CoflowRuntime.Generated.ICfdTypeBinding!>!
+CoflowRuntime.Generated.CfdLoadContext.DefaultFunction(string! source, string! fieldName, System.Type! resultType, params System.Type![]! parameterTypes) -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CfdLoadContext.DefaultValue(string! source) -> CoflowRuntime.Generated.CfdValueNode!
 CoflowRuntime.Generated.CfdLoadContext.Diagnostics.get -> System.Collections.Generic.List<CoflowRuntime.CfdDiagnostic!>!
 CoflowRuntime.Generated.CfdLoadContext.EnterRecord(string! declaredType, string! key) -> System.IDisposable!
 CoflowRuntime.Generated.CfdLoadContext.FindRecord(string! declaredType, string! key) -> CoflowRuntime.Generated.CfdRecordNode?

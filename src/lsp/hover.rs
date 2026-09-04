@@ -147,6 +147,9 @@ fn const_value_to_string(value: &CftConstValue) -> String {
         CftConstValue::Float(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
+        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => {
+            source.clone()
+        }
         CftConstValue::Enum {
             enum_name,
             variant,
