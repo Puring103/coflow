@@ -74,6 +74,11 @@ import {
   type TableDirection,
 } from '../state/tableCellNavigation'
 import { defaultValueForClear, selectionEditIntentForKey } from '../state/selectionKeyboard'
+import {
+  canReleaseResizeScrollFloor,
+  resizedColumnWidth,
+  resizeScrollWidthFloor,
+} from '../state/tableColumnResize'
 import { fieldTypeColor } from '../utils/typeColor'
 import {
   organizeRecordRows,
@@ -188,6 +193,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
   const [tableZoom, setTableZoom] = useState(1)
+  const [scrollWidthFloor, setScrollWidthFloor] = useState<number | null>(null)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -204,7 +210,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const updateColumnResize = (pointerId: number, clientX: number) => {
     const resize = columnResizeRef.current
     if (!resize || resize.pointerId !== pointerId) return
-    const width = Math.max(MIN_COLUMN_WIDTH, resize.startWidth + clientX - resize.startX)
+    const width = resizedColumnWidth(
+      resize.startWidth,
+      resize.startX,
+      clientX,
+      tableZoom,
+      MIN_COLUMN_WIDTH,
+    )
     const next = { ...columnSizingRef.current, [resize.columnId]: width }
     columnSizingRef.current = next
     setColumnSizing(next)
@@ -223,6 +235,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const next = columnWidths ?? {}
     columnSizingRef.current = next
     setColumnSizing(next)
+    setScrollWidthFloor(null)
   }, [data.file_path, activeType, columnWidths])
 
   // Sync search from parent global search bar.
@@ -877,9 +890,21 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <div
           className="table-scroll"
           ref={tableScrollRef}
+          onScroll={event => {
+            if (columnResizeRef.current || scrollWidthFloor === null) return
+            const tableWidth = table.getTotalSize() * tableZoom
+            if (canReleaseResizeScrollFloor(
+              tableWidth,
+              event.currentTarget.scrollLeft,
+              event.currentTarget.clientWidth,
+            )) {
+              setScrollWidthFloor(null)
+            }
+          }}
           onWheel={event => {
             if (!event.ctrlKey) return
             event.preventDefault()
+            setScrollWidthFloor(null)
             setTableZoom(current => Math.max(0.7, Math.min(1.6,
               Math.round((current + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10,
             )))
@@ -1199,6 +1224,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                               if (event.button !== 0) return
                               event.preventDefault()
                               event.currentTarget.setPointerCapture(event.pointerId)
+                              const scroller = tableScrollRef.current
+                              if (scroller) {
+                                setScrollWidthFloor(resizeScrollWidthFloor(
+                                  scroller.scrollWidth,
+                                  scroller.scrollLeft,
+                                  scroller.clientWidth,
+                                ))
+                              }
                               columnResizeRef.current = {
                                 pointerId: event.pointerId,
                                 columnId: h.column.id,
@@ -1386,6 +1419,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )}
             </tbody>
           </table>
+          {scrollWidthFloor !== null && (
+            <div className="table-scroll-width-floor" style={{ width: scrollWidthFloor }} aria-hidden />
+          )}
           {filtered.length === 0 && (
             <div className="empty-hint">暂无 {activeType} 类型的记录</div>
           )}
