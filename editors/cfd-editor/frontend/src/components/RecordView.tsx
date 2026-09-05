@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
@@ -464,6 +464,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
                 )}
           />
         ) : <>
+        <Fragment key={expansionOwner}>
         <CardHeader
           recordKey={recordKey(record)}
           actualType={recordActualType(record)}
@@ -534,6 +535,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
             : undefined}
         />
+        </Fragment>
         {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
         </>}
       </div>

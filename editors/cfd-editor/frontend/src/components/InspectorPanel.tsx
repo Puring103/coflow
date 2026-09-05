@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -26,7 +26,12 @@ import {
   buildRecordDiagnosticIndex,
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
-import type { CellAnchor, EditorSelection } from '../state/editorSelection'
+import {
+  cellAnchorsIdentity,
+  editorSelectionIdentity,
+  type CellAnchor,
+  type EditorSelection,
+} from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
 import { BatchRecordEditor } from './BatchRecordEditor'
 import { BatchCellEditor } from './BatchCellEditor'
@@ -190,6 +195,11 @@ export function InspectorPanel({
     })
   }, [data, selection?.kind, valueCells])
   const hasBatchCellEditor = !!projectBatchCells(batchCells.map(item => item.cell))
+  const editTargetIdentity = selection
+    ? (hasBatchCellEditor && data
+        ? cellAnchorsIdentity(data.file_path, batchCells.map(item => item.anchor))
+        : editorSelectionIdentity(selection))
+    : 'none'
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -407,6 +417,7 @@ export function InspectorPanel({
             bodyRef.current?.focus({ preventScroll: true })
           }}
         >
+          <Fragment key={editTargetIdentity}>
           {batchRecords && data ? (
             <BatchRecordEditor
               records={batchRecords}
@@ -482,6 +493,7 @@ export function InspectorPanel({
           ) : (
             <div className="empty-hint">未选择记录</div>
           )}
+          </Fragment>
         </div>
       )}
       {recordTreeMenu && record && data && (
