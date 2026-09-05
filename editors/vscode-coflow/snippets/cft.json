@@ -1,14 +1,4 @@
 {
-  "namespace": {
-    "prefix": "namespace",
-    "body": ["namespace ${1:project}::${2:module};"],
-    "description": "Declare the CFT module namespace."
-  },
-  "use": {
-    "prefix": "use",
-    "body": ["use ${1:project}::${2:module}::${3:Type};"],
-    "description": "Import a qualified CFT symbol."
-  },
   "const": {
     "prefix": "const",
     "body": ["const ${1:NAME}: ${2:int} = ${3:value};"],

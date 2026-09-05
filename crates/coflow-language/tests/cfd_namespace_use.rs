@@ -18,6 +18,8 @@ fn cfd_type_names_are_short_and_static_paths_remain_valid() {
         "group::Item { item {} }",
         "item: group::Item {}",
         "Item { item { nested: group::Nested {} } }",
+        "Item { item { target: &group::Item::other } }",
+        "Item { item { label: \"{&group::Item::other.name}\" } }",
     ] {
         let (_, diagnostics) = parse_cfd(source);
         assert!(!diagnostics.is_empty(), "source should fail: {source}");

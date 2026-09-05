@@ -2,7 +2,7 @@ use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
 use super::super::semantic_tokens::{
-    MOD_DECLARATION, MOD_RECORD, SEM_NAMESPACE, SEM_VARIABLE,
+    MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE,
 };
 use super::common::*;
 use super::*;
@@ -438,7 +438,7 @@ fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
     let tokens = decode_semantic_tokens(source, &semantic_result["data"]);
     assert!(tokens.contains(&DecodedSemanticToken {
         text: "asd".to_string(),
-        token_type: SEM_NAMESPACE,
+        token_type: SEM_RECORD_KEY,
         modifiers: MOD_DECLARATION | MOD_RECORD,
     }), "{tokens:?}");
 

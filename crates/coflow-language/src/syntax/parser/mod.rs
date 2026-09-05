@@ -14,7 +14,7 @@ use self::tokens::{reserved_keyword_name, token_name};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::limits::StructuralBudget;
 use crate::module::ModuleId;
-use crate::syntax::ast::{ModuleAst, NameRef, QualifiedName};
+use crate::syntax::ast::{ModuleAst, NamePath, NameRef};
 use crate::syntax::lexer::{lex, Token, TokenKind};
 use crate::source::Span;
 
@@ -79,7 +79,7 @@ impl<'a> Parser<'a> {
         self.expect_name(code, false)
     }
 
-    pub(super) fn expect_qualified_name(&mut self) -> Result<QualifiedName, CftDiagnostics> {
+    pub(super) fn expect_name_path(&mut self) -> Result<NamePath, CftDiagnostics> {
         let first = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
         let start = first.span.start;
         let mut end = first.span.end;
@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
             end = segment.span.end;
             segments.push(segment);
         }
-        Ok(QualifiedName {
+        Ok(NamePath {
             segments,
             span: Span::new(start, end),
         })

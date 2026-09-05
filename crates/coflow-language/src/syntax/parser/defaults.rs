@@ -226,12 +226,12 @@ impl Parser<'_> {
         let start = self
             .expect_simple(&TokenKind::Amp, CftErrorCode::ExpectedToken)?
             .start;
-        let path = self.expect_qualified_name()?;
-        if path.segments.len() < 2 {
+        let path = self.expect_name_path()?;
+        if path.segments.len() != 2 {
             return self.err_at(
                 CftErrorCode::InvalidDefaultExpression,
                 path.span,
-                "record reference must contain a type and key separated by `::`",
+                "record reference must use `Type::key`",
             );
         }
         let span = Span::new(start, path.span.end);
@@ -329,9 +329,23 @@ impl Parser<'_> {
             segments.push(segment);
         }
         let span = Span::new(start, end);
-        let path = crate::syntax::ast::QualifiedName { segments, span };
+        let path = crate::syntax::ast::NamePath { segments, span };
         if self.at(&TokenKind::LBrace) {
+            if path.segments.len() != 1 {
+                return self.err_at(
+                    CftErrorCode::InvalidDefaultExpression,
+                    path.span,
+                    "object default type must be a single identifier",
+                );
+            }
             return self.parse_typed_object_default(path);
+        }
+        if path.segments.len() > 2 {
+            return self.err_at(
+                CftErrorCode::InvalidDefaultExpression,
+                path.span,
+                "static path must use `Enum::Variant`",
+            );
         }
         self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
             span,
@@ -341,7 +355,7 @@ impl Parser<'_> {
 
     fn parse_typed_object_default(
         &mut self,
-        type_name: crate::syntax::ast::QualifiedName,
+        type_name: crate::syntax::ast::NamePath,
     ) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let start = type_name.span.start;
         let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;

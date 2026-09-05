@@ -18,23 +18,6 @@ pub(super) struct ParsedLoadedRecordDraft {
     pub(super) span: CfdTextSpan,
 }
 
-#[derive(Debug, Clone, Default)]
-struct CfdNameResolver;
-
-impl CfdNameResolver {
-    fn new(_schema: &CftSchema, _ast: &CfdAst) -> Result<Self, CfdTextDiagnostics> {
-        Ok(Self)
-    }
-
-    fn root() -> Self {
-        Self::default()
-    }
-
-    fn resolve(&self, name: &str) -> String {
-        name.to_string()
-    }
-}
-
 pub(super) fn lower_records(
     schema: &CftSchema,
     ast: &CfdAst,
@@ -55,14 +38,10 @@ fn lower_records_with_mode(
     ast: &CfdAst,
     preserve_repairable_values: bool,
 ) -> (Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
-    let names = match CfdNameResolver::new(schema, ast) {
-        Ok(names) => names,
-        Err(error) => return (Vec::new(), error.diagnostics),
-    };
     let mut records = Vec::with_capacity(ast.records.len());
     let mut diagnostics = Vec::new();
     for record in &ast.records {
-        match lower_record(schema, &names, record, preserve_repairable_values) {
+        match lower_record(schema, record, preserve_repairable_values) {
             Ok(record) => records.push(record),
             Err(error) => diagnostics.extend(error.diagnostics),
         }
@@ -72,22 +51,19 @@ fn lower_records_with_mode(
 
 fn lower_record(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     record: &CfdRecord,
     preserve_repairable_values: bool,
 ) -> Result<ParsedLoadedRecordDraft, CfdTextDiagnostics> {
     validate_record_key(&record.key, record.key_span)?;
-    let type_name = names.resolve(&record.type_name);
+    let type_name = record.type_name.clone();
     if let Some((group_type, span)) = &record.group_type {
-        let group_type = names.resolve(group_type);
-        validate_group_type(schema, &group_type, *span)?;
+        validate_group_type(schema, group_type, *span)?;
         validate_actual_type(schema, &group_type, &type_name, record.type_span)?;
     } else {
         validate_record_type(schema, &type_name, record.type_span)?;
     }
     let fields = lower_object_fields(
         schema,
-        names,
         &type_name,
         &record.fields,
         preserve_repairable_values,
@@ -100,7 +76,6 @@ fn lower_record(
 
 fn lower_object_fields(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     type_name: &str,
     fields: &[CfdField],
     preserve_repairable_values: bool,
@@ -155,7 +130,6 @@ fn lower_object_fields(
         };
         match lower_value_resolved(
             schema,
-            names,
             &field.value,
             &meta.value_type,
             preserve_repairable_values,
@@ -174,12 +148,11 @@ pub(crate) fn lower_value(
     value: &CfdValue,
     ty: &CftValueType,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
-    lower_value_resolved(schema, &CfdNameResolver::root(), value, ty, false)
+    lower_value_resolved(schema, value, ty, false)
 }
 
 fn lower_value_resolved(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     ty: &CftValueType,
     preserve_repairable_values: bool,
@@ -188,31 +161,31 @@ fn lower_value_resolved(
         CftValueType::Int => lower_int(value),
         CftValueType::Float => lower_float(value),
         CftValueType::Bool => lower_bool(value),
-        CftValueType::String => lower_string(names, value),
+        CftValueType::String => lower_string(value),
         CftValueType::Enum(name) => {
-            lower_enum(schema, names, value, name, preserve_repairable_values)
+            lower_enum(schema, value, name, preserve_repairable_values)
         }
         CftValueType::Object(name) => {
-            lower_object(schema, names, value, name, preserve_repairable_values)
+            lower_object(schema, value, name, preserve_repairable_values)
         }
-        CftValueType::RecordRef(name) => lower_ref(schema, names, value, name),
+        CftValueType::RecordRef(name) => lower_ref(schema, value, name),
         CftValueType::Array(inner) => {
-            lower_array(schema, names, value, inner, preserve_repairable_values)
+            lower_array(schema, value, inner, preserve_repairable_values)
         }
         CftValueType::Dict(key, item) => {
-            lower_dict(schema, names, value, key, item, preserve_repairable_values)
+            lower_dict(schema, value, key, item, preserve_repairable_values)
         }
         CftValueType::Option(inner) => match value {
             CfdValue::OptionNone(_) => Ok(LoadedValueDraft::OptionNone),
-            CfdValue::OptionSome(value, _) => lower_value_resolved(schema, names, value, inner, preserve_repairable_values)
+            CfdValue::OptionSome(value, _) => lower_value_resolved(schema, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
-            value => lower_value_resolved(schema, names, value, inner, preserve_repairable_values)
+            value => lower_value_resolved(schema, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         },
         CftValueType::Result(ok, error_type) => match value {
-            CfdValue::ResultOk(value, _) => lower_value_resolved(schema, names, value, ok, preserve_repairable_values)
+            CfdValue::ResultOk(value, _) => lower_value_resolved(schema, value, ok, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::ResultOk(Box::new(value))),
-            CfdValue::ResultErr(value, _) => lower_value_resolved(schema, names, value, error_type, preserve_repairable_values)
+            CfdValue::ResultErr(value, _) => lower_value_resolved(schema, value, error_type, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::ResultErr(Box::new(value))),
             _ => Err(error(
                 CfdTextErrorCode::TypeMismatch,
@@ -221,7 +194,7 @@ fn lower_value_resolved(
             )),
         },
         CftValueType::Function(parameters, result) => {
-            lower_function(schema, names, value, parameters, result)
+            lower_function(schema, value, parameters, result)
         }
         CftValueType::Unit => Err(error(
             CfdTextErrorCode::TypeMismatch,
@@ -233,7 +206,6 @@ fn lower_value_resolved(
 
 fn lower_function(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     expected_parameters: &[CftFunctionParameter],
     expected_result: &CftValueType,
@@ -245,7 +217,7 @@ fn lower_function(
             value.span(),
         ));
     };
-    let (parameters, result) = FunctionSignatureParser::new(schema, names, &function.source)
+    let (parameters, result) = FunctionSignatureParser::new(schema, &function.source)
         .parse()
         .map_err(|message| error(CfdTextErrorCode::TypeMismatch, message, function.span))?;
     let actual = CftValueType::Function(parameters, Box::new(result));
@@ -267,16 +239,14 @@ fn lower_function(
 
 struct FunctionSignatureParser<'a> {
     schema: &'a CftSchema,
-    names: &'a CfdNameResolver,
     source: &'a str,
     pos: usize,
 }
 
 impl<'a> FunctionSignatureParser<'a> {
-    fn new(schema: &'a CftSchema, names: &'a CfdNameResolver, source: &'a str) -> Self {
+    fn new(schema: &'a CftSchema, source: &'a str) -> Self {
         Self {
             schema,
-            names,
             source,
             pos: 0,
         }
@@ -337,10 +307,9 @@ impl<'a> FunctionSignatureParser<'a> {
         self.skip_ws();
         if self.eat('&') {
             let raw = self.required_name("record reference target")?;
-            let name = self.names.resolve(&raw);
             let schema_type = self
                 .schema
-                .resolve_type(&name)
+                .resolve_type(&raw)
                 .ok_or_else(|| format!("unknown record reference type `{raw}`"))?;
             return Ok(CftValueType::RecordRef(schema_type.name.clone()));
         }
@@ -395,10 +364,9 @@ impl<'a> FunctionSignatureParser<'a> {
             "bool" => CftValueType::Bool,
             "string" => CftValueType::String,
             _ => {
-                let resolved = self.names.resolve(&name);
-                if let Some(schema_enum) = self.schema.resolve_enum(&resolved) {
+                if let Some(schema_enum) = self.schema.resolve_enum(&name) {
                     CftValueType::Enum(schema_enum.name.clone())
-                } else if let Some(schema_type) = self.schema.resolve_type(&resolved) {
+                } else if let Some(schema_type) = self.schema.resolve_type(&name) {
                     CftValueType::Object(schema_type.name.clone())
                 } else {
                     return Err(format!("unknown function signature type `{name}`"));
@@ -523,10 +491,7 @@ fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> 
     }
 }
 
-fn lower_string(
-    names: &CfdNameResolver,
-    value: &CfdValue,
-) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
         CfdValue::FormattedString(value) => {
@@ -539,10 +504,7 @@ fn lower_string(
                         CfdFormatSegment::Text(text) => LoadedFormatSegment::Text(text.clone()),
                         CfdFormatSegment::Reference(reference) => {
                             LoadedFormatSegment::Reference(LoadedFieldReference {
-                                type_name: reference
-                                    .type_name
-                                    .as_deref()
-                                    .map(|name| names.resolve(name)),
+                                type_name: reference.type_name.clone(),
                                 key: reference.key.clone(),
                                 path: reference.path.clone(),
                             })
@@ -560,7 +522,6 @@ fn lower_string(
 }
 
 fn enum_variant(
-    names: &CfdNameResolver,
     expected_enum: &str,
     raw: &str,
     span: Span,
@@ -568,8 +529,7 @@ fn enum_variant(
     let Some((owner, variant)) = raw.rsplit_once("::") else {
         return Ok(raw.to_string());
     };
-    let resolved_owner = names.resolve(owner);
-    if resolved_owner != expected_enum || variant.is_empty() {
+    if owner != expected_enum || variant.is_empty() {
         return Err(error(
             CfdTextErrorCode::InvalidEnumVariant,
             format!("expected `{expected_enum}` enum value, found `{raw}`"),
@@ -581,7 +541,6 @@ fn enum_variant(
 
 fn lower_enum(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     enum_name: &str,
     preserve_repairable_values: bool,
@@ -596,9 +555,9 @@ fn lower_enum(
     if schema_enum.is_flag {
         let flag_value = match value {
             CfdValue::Scalar(raw, span) => {
-                lower_flag_operand(schema, names, enum_name, raw, *span)?
+                lower_flag_operand(schema, enum_name, raw, *span)?
             }
-            CfdValue::BitExpr(expr) => lower_flag_expr(schema, names, enum_name, expr)?,
+            CfdValue::BitExpr(expr) => lower_flag_expr(schema, enum_name, expr)?,
             _ => {
                 return Err(error(
                     CfdTextErrorCode::TypeMismatch,
@@ -612,7 +571,7 @@ fn lower_enum(
     }
 
     let (raw, span) = scalar(value, "enum value")?;
-    let variant = enum_variant(names, enum_name, raw, span)?;
+    let variant = enum_variant(enum_name, raw, span)?;
     let valid = schema.resolve_enum(enum_name).is_some_and(|schema_enum| {
         schema_enum
             .variants
@@ -634,15 +593,14 @@ fn lower_enum(
 
 fn lower_flag_expr(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     enum_name: &str,
     expr: &CfdBitExpr,
 ) -> Result<i64, CfdTextDiagnostics> {
     match &expr.kind {
-        CfdBitExprKind::Value(raw) => lower_flag_operand(schema, names, enum_name, raw, expr.span),
+        CfdBitExprKind::Value(raw) => lower_flag_operand(schema, enum_name, raw, expr.span),
         CfdBitExprKind::Binary { op, lhs, rhs } => {
-            let lhs = lower_flag_expr(schema, names, enum_name, lhs)?;
-            let rhs = lower_flag_expr(schema, names, enum_name, rhs)?;
+            let lhs = lower_flag_expr(schema, enum_name, lhs)?;
+            let rhs = lower_flag_expr(schema, enum_name, rhs)?;
             Ok(match op {
                 CfdBitOp::Or => lhs | rhs,
                 CfdBitOp::Xor => lhs ^ rhs,
@@ -654,7 +612,6 @@ fn lower_flag_expr(
 
 fn lower_flag_operand(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     enum_name: &str,
     raw: &str,
     span: Span,
@@ -664,7 +621,7 @@ fn lower_flag_operand(
         return Ok(value);
     }
 
-    let variant = enum_variant(names, enum_name, raw, span)?;
+    let variant = enum_variant(enum_name, raw, span)?;
     schema
         .enum_variant_value(enum_name, &variant)
         .ok_or_else(|| {
@@ -707,7 +664,6 @@ fn validate_flag_mask(
 
 fn lower_object(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     expected_type: &str,
     preserve_repairable_values: bool,
@@ -715,15 +671,13 @@ fn lower_object(
     match value {
         CfdValue::Block(block) => {
             let (actual_type, declared) = if let Some((actual_type, span)) = &block.type_marker {
-                let actual_type = names.resolve(actual_type);
-                validate_actual_type(schema, expected_type, &actual_type, *span)?;
-                (actual_type, false)
+                validate_actual_type(schema, expected_type, actual_type, *span)?;
+                (actual_type.clone(), false)
             } else {
                 (expected_type.to_string(), true)
             };
             let fields = lower_object_fields(
                 schema,
-                names,
                 &actual_type,
                 &block.fields,
                 preserve_repairable_values,
@@ -754,7 +708,6 @@ fn lower_object(
 
 fn lower_ref(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     expected_type: &str,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
@@ -766,8 +719,7 @@ fn lower_ref(
         ));
     };
     if let Some((type_name, span)) = &reference.type_name {
-        let actual_type = names.resolve(type_name);
-        validate_actual_type(schema, expected_type, &actual_type, *span)?;
+        validate_actual_type(schema, expected_type, type_name, *span)?;
     }
     validate_record_key(&reference.key.0, reference.key.1)?;
     Ok(LoadedValueDraft::record_ref(reference.key.0.clone()))
@@ -775,7 +727,6 @@ fn lower_ref(
 
 fn lower_array(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     inner: &CftValueType,
     preserve_repairable_values: bool,
@@ -790,7 +741,7 @@ fn lower_array(
     let mut lowered = Vec::with_capacity(items.len());
     let mut diagnostics = Vec::new();
     for item in items {
-        let result = lower_value_resolved(schema, names, item, inner, preserve_repairable_values);
+        let result = lower_value_resolved(schema, item, inner, preserve_repairable_values);
         match result {
             Ok(value) => lowered.push(value),
             Err(error) => diagnostics.extend(error.diagnostics),
@@ -801,7 +752,6 @@ fn lower_array(
 
 fn lower_dict(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     value: &CfdValue,
     key_type: &CftValueType,
     value_type: &CftValueType,
@@ -824,10 +774,9 @@ fn lower_dict(
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
     for field in &block.fields {
-        let key = lower_dict_key(schema, names, &field.name, field.name_span, key_type);
+        let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
         let value = lower_value_resolved(
             schema,
-            names,
             &field.value,
             value_type,
             preserve_repairable_values,
@@ -849,7 +798,6 @@ fn lower_dict(
 
 fn lower_dict_key(
     schema: &CftSchema,
-    names: &CfdNameResolver,
     raw: &str,
     span: Span,
     ty: &CftValueType,
@@ -867,7 +815,7 @@ fn lower_dict_key(
                 )
             }),
         CftValueType::Enum(enum_name) => {
-            let variant = enum_variant(names, enum_name, raw, span)?;
+            let variant = enum_variant(enum_name, raw, span)?;
             let valid = schema.resolve_enum(enum_name).is_some_and(|schema_enum| {
                 schema_enum
                     .variants

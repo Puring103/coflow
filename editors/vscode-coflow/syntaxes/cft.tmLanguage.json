@@ -6,7 +6,6 @@
     { "include": "#comments" },
     { "include": "#formatted-strings" },
     { "include": "#strings" },
-    { "include": "#module-declarations" },
     { "include": "#declarations" },
     { "include": "#annotations" },
     { "include": "#references" },
@@ -60,26 +59,6 @@
         ]
       }
     ] },
-    "module-declarations": { "patterns": [
-      {
-        "name": "meta.namespace.cft",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(namespace)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)",
-        "captures": {
-          "1": { "name": "keyword.control.namespace.cft" },
-          "2": { "name": "entity.name.namespace.cft" }
-        }
-      },
-      {
-        "name": "meta.use.cft",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(use)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)(?:\\s+(as)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*))?",
-        "captures": {
-          "1": { "name": "keyword.control.import.cft" },
-          "2": { "name": "entity.name.namespace.cft" },
-          "3": { "name": "keyword.control.import.as.cft" },
-          "4": { "name": "entity.name.type.alias.cft" }
-        }
-      }
-    ] },
     "annotations": { "patterns": [
       {
         "name": "storage.modifier.annotation.cft",
@@ -113,7 +92,7 @@
         "match": "&[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*"
       },
       {
-        "name": "constant.other.qualified.cft",
+        "name": "constant.other.path.cft",
         "match": "[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)+"
       }
     ] },
@@ -148,7 +127,7 @@
     "keywords": { "patterns": [
       {
         "name": "keyword.control.cft",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(namespace|use|as|check|when|all|any|none|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(check|when|all|any|none|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       },
       {
         "name": "storage.modifier.cft",

@@ -60,7 +60,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let resolved_name = self.resolve_name(module, name);
+                let resolved_name = name.to_string();
                 match self.symbols.get(&resolved_name).map(|symbol| symbol.kind) {
                     Some(SymbolKind::Type) => {
                         if self.type_is_singleton(&resolved_name) {
@@ -186,7 +186,7 @@ impl ResolvedTypes<'_> {
                 ));
             }
             if let Some(parent) = &info.def.parent {
-                let parent_name = self.resolve_name(&info.module, &parent.name);
+                let parent_name = parent.name.clone();
                 match self.symbols.get(&parent_name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}
                     Some(symbol) => {
@@ -289,7 +289,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let name = self.resolve_name(module, name);
+                let name = name.to_string();
                 match self.symbols.get(&name) {
                 Some(symbol) if symbol.kind == SymbolKind::Type => {
                     InferredType::object(crate::TypeName::from_validated(name))
@@ -356,7 +356,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let resolved_name = self.resolve_name(module, name);
+                let resolved_name = name.to_string();
                 match self.symbols.get(&resolved_name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {
                         if self.type_is_singleton(&resolved_name) {

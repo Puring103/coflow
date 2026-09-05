@@ -1,6 +1,7 @@
 use coflow_language::cft::syntax::parser::parse_module;
 use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, CheckName, ConstName,
+    EnumName, ModuleId, TypeName,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -65,10 +66,21 @@ fn qualified_type_names_are_rejected_but_static_paths_remain_valid() {
         "type Base {} type Item: group::Base {}",
         "type Item { value: group::Value; }",
         "type Item { check { self is group::Item; } }",
+        "type Item { value: Item = group::Item {}; }",
+        "type Item { value: &Item = &group::Item::key; }",
+        "enum Quality { Good } type Item { check { Quality::Group::Good; } }",
     ] {
         assert!(parse_module(&ModuleId::from("invalid.cft"), source).is_err());
     }
 
     let source = "enum Quality { Good } type Item { quality: Quality = Quality::Good; }";
     assert!(parse_module(&ModuleId::from("valid.cft"), source).is_ok());
+}
+
+#[test]
+fn semantic_declaration_names_are_always_short() {
+    assert!(TypeName::new("group::Item").is_err());
+    assert!(EnumName::new("group::Quality").is_err());
+    assert!(ConstName::new("group::VALUE").is_err());
+    assert!(CheckName::new("group::Valid").is_err());
 }

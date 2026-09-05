@@ -121,10 +121,10 @@ Option 的规范写法是 `None` 或不带包装的存在值；解析器也接�
 
 ```cfd
 owner: &sword,
-fallback: &Game::Items::Item::default_item,
+fallback: &Item::default_item,
 ```
 
-`&key` 根据字段声明的 `&Type` 解析；需要消除同名歧义时可写 `&Type::key`，Type 本身可以是全限定名称。
+`&key` 根据字段声明的 `&Type` 解析；需要显式写出目标类型时可写 `&Type::key`。
 引用可跨 CFD 文件，但目标必须存在且实际 type 可赋给声明的引用类型。引用不是字符串，不能使用引号。
 
 ### 格式化字符串
@@ -134,7 +134,7 @@ fallback: &Game::Items::Item::default_item,
 ```cfd
 label: "{name} x {count}",
 remote_label: "{&sword.name}",
-qualified: "{&Game::Items::Item::sword.name}",
+typed: "{&Item::sword.name}",
 ```
 
 插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`。`{{` 和 `}}` 表示字面花括号。

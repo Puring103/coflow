@@ -1,4 +1,4 @@
-# Feature: qualified record references.
+# Feature: explicitly typed record references.
 
 tools: Category {
   title: "Tools",

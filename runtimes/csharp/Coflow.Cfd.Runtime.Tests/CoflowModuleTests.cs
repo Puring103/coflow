@@ -358,6 +358,8 @@ public sealed class CoflowModuleTests
     [InlineData("\"{}\"; 0", "COFLOW-FUNCTION-INTERPOLATION")]
     [InlineData("match value { 1 => 1 }", "COFLOW-FUNCTION-MATCH")]
     [InlineData("value.len()", "COFLOW-FUNCTION-BUILTIN")]
+    [InlineData("Missing::Rule {}; 0", "COFLOW-FUNCTION-NAME")]
+    [InlineData("Missing::Group::Value", "COFLOW-FUNCTION-NAME")]
     public void CompilerRejectsInvalidControlOperatorMatchMetadataAndBuiltinSyntax(
         string body,
         string code)

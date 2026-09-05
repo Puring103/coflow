@@ -1,9 +1,6 @@
 use coflow_language::cft::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
-    ("namespace", "Declare the module's qualified namespace."),
-    ("use", "Import one qualified schema symbol into the module."),
-    ("as", "Assign a local alias to an imported schema symbol."),
     ("const", "Define a compile-time constant."),
     ("enum", "Define an enum."),
     ("type", "Define a schema type."),

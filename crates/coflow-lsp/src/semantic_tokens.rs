@@ -11,7 +11,7 @@ use super::position::position_from_byte;
 use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
-    "namespace",
+    "recordKey",
     "type",
     "enum",
     "enumMember",
@@ -29,7 +29,7 @@ pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
 pub(crate) const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
     &["declaration", "reference", "path", "record", "schema"];
 
-pub(crate) const SEM_NAMESPACE: u32 = 0;
+pub(crate) const SEM_RECORD_KEY: u32 = 0;
 pub(crate) const SEM_TYPE: u32 = 1;
 pub(crate) const SEM_ENUM: u32 = 2;
 pub(crate) const SEM_ENUM_MEMBER: u32 = 3;

@@ -34,6 +34,15 @@ pub(crate) fn validate_function_body(source: &str) -> Result<(), FunctionSyntaxE
     parser.expect_end()
 }
 
+pub(crate) fn validate_function_value(source: &str) -> Result<(), FunctionSyntaxError> {
+    let mut parser = Parser {
+        tokens: lex(source)?,
+        pos: 0,
+    };
+    parser.expr(0, false)?;
+    parser.expect_end()
+}
+
 fn lex(source: &str) -> Result<Vec<Token>, FunctionSyntaxError> {
     let mut out = Vec::new();
     for lexical in tokenize_lossless(source) {
@@ -302,9 +311,6 @@ impl Parser {
         }
         let is_function = self.word("fn");
         self.expect_kind(Kind::Word, "type name")?;
-        while self.eat("::") {
-            self.expect_kind(Kind::Word, "qualified type name")?;
-        }
         if is_function {
             self.expect("(")?;
             if !self.eat(")") {

@@ -9,7 +9,7 @@ const MAX_LSP_STDERR_LENGTH = 64 * 1024;
 
 const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
   [
-    "namespace",
+    "recordKey",
     "type",
     "enum",
     "enumMember",

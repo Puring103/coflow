@@ -228,8 +228,8 @@ fn named_top_level_check_uses_check_completion_scope() {
     );
     let labels = completion_labels(top_level_completion_items(""));
     assert!(labels.iter().any(|label| label == "check"));
-    assert!(labels.iter().any(|label| label == "namespace"));
-    assert!(labels.iter().any(|label| label == "use"));
+    assert!(!labels.iter().any(|label| label == "namespace"));
+    assert!(!labels.iter().any(|label| label == "use"));
 }
 
 #[test]

@@ -13,7 +13,7 @@ use crate::schema::{
 };
 use crate::syntax::ast::{
     CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
-    QualifiedName, TypePredicate,
+    NamePath, TypePredicate,
 };
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -408,7 +408,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 return InferredType::string();
             }
         }
-        let resolved_name = self.schema.resolve_name(&self.module, name);
+        let resolved_name = name.to_string();
         if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
             return InferredType::from_const(Some(value_type));
         }
@@ -423,14 +423,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         InferredType::Unknown
     }
 
-    fn resolve_static_path(&mut self, path: &QualifiedName) -> InferredType {
+    fn resolve_static_path(&mut self, path: &NamePath) -> InferredType {
         let raw_name = path.canonical();
-        let resolved_name = self.schema.resolve_name(&self.module, &raw_name);
-        if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
+        if let Some((value_type, _)) = self.schema.resolved_constants.get(&raw_name) {
             return InferredType::from_const(Some(value_type));
         }
-        if self.schema.enums.contains_key(&resolved_name) {
-            return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
+        if self.schema.enums.contains_key(&raw_name) {
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(raw_name));
         }
         if let Some((variant, owner)) = path.segments.split_last() {
             if !owner.is_empty() {
@@ -439,7 +438,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                     .map(|segment| segment.name.as_str())
                     .collect::<Vec<_>>()
                     .join("::");
-                let enum_name = self.schema.resolve_name(&self.module, &owner);
+                let enum_name = owner;
                 if let Some(info) = self.schema.enums.get(&enum_name) {
                     if info.variants.contains(&variant.name) {
                         return InferredType::enum_value(crate::EnumName::from_validated(enum_name));
@@ -470,7 +469,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
-        let resolved_name = self.schema.resolve_name(&self.module, &type_name.name);
+        let resolved_name = type_name.name.clone();
         let object_name = if self.schema.types.contains_key(&resolved_name) {
             Some(resolved_name.clone())
         } else {
@@ -631,7 +630,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
             TypePredicate::Type(name) => {
-                let resolved_name = self.schema.resolve_name(&self.module, &name.name);
+                let resolved_name = name.name.clone();
                 let is_object = matches!(
                     self.schema.symbols.get(&resolved_name),
                     Some(symbol) if symbol.kind == SymbolKind::Type

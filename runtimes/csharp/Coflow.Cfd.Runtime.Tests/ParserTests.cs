@@ -49,7 +49,7 @@ public sealed class ParserTests
             }
             """));
 
-        var bound = CfdNameBinder.Bind(new[] { document });
+        var bound = CfdDocumentBinder.Bind(new[] { document });
         var record = Assert.Single(bound.Documents).Records[0];
         Assert.Equal("Rule", record.DeclaredType);
         var fields = record.Fields;
@@ -77,6 +77,9 @@ public sealed class ParserTests
             "Item { item {} } use common::Item;",
             "game::Item { item {} }",
             "item: game::Item {}",
+            "Item { item { nested: game::Nested {} } }",
+            "Item { item { target: &game::Item::other } }",
+            "Item { item { label: \"{&game::Item::other.name}\" } }",
         })
         {
             var syntax = Assert.Throws<CfdParseException>(() =>

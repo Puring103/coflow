@@ -58,7 +58,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         let is_type_check = language == FormatLanguage::Cft
             && line_indent > 0
             && (formatted == "check {" || formatted.starts_with("check "));
-        let is_use = line_indent == 0 && formatted.starts_with("use ");
         let is_comment = formatted.starts_with('#');
         let is_closing = formatted.starts_with('}') || formatted.starts_with(']');
 
@@ -75,17 +74,13 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         }
 
         if pending_blank_line {
-            let collapse_use_group = is_use && last_output_line_starts_with(&output, "use ");
             let preserve_function_blank = function_bodies.is_inside();
             if preserve_function_blank
-                || (!is_closing && !last_output_line_opens_block(&output) && !collapse_use_group)
+                || (!is_closing && !last_output_line_opens_block(&output))
             {
                 ensure_blank_line(&mut output);
             }
             pending_blank_line = false;
-        }
-        if is_use && last_output_line_starts_with(&output, "namespace ") {
-            ensure_blank_line(&mut output);
         }
         if (is_top_level_annotation || is_top_level_definition)
             && !last_output_line_is_annotation(&output)
@@ -602,14 +597,6 @@ fn last_output_line_is_annotation(output: &str) -> bool {
         .is_some_and(|line| line.trim_start().starts_with('@'))
 }
 
-fn last_output_line_starts_with(output: &str, prefix: &str) -> bool {
-    output
-        .trim_end_matches('\n')
-        .rsplit('\n')
-        .next()
-        .is_some_and(|line| line.trim_start().starts_with(prefix))
-}
-
 fn is_definition_start(line: &str) -> bool {
     let line = line.trim_start();
     line.starts_with("type ")
@@ -622,10 +609,7 @@ fn is_definition_start(line: &str) -> bool {
 
 fn is_cfd_record_start(line: &str) -> bool {
     let line = line.trim();
-    line.ends_with('{')
-        && !line.starts_with("namespace ")
-        && !line.starts_with("use ")
-        && !line.starts_with('#')
+    line.ends_with('{') && !line.starts_with('#')
 }
 
 fn is_grouped_record_start(line: &str) -> bool {

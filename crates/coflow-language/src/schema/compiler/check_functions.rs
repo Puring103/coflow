@@ -16,7 +16,7 @@ impl CheckTypeAnalyzer<'_, '_> {
         args: &[CheckExpr],
         span: Span,
     ) -> InferredType {
-        let resolved_name = self.schema.resolve_name(&self.module, &name.name);
+        let resolved_name = name.name.clone();
         if self.schema.enums.contains_key(&resolved_name) {
             if args.len() != 1 {
                 self.diag(

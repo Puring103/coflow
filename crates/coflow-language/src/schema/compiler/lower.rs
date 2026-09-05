@@ -94,7 +94,7 @@ impl ValidatedSchema<'_> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
-                    annotations: self.schema_annotations(&info.module, &variant.annotations),
+                    annotations: self.schema_annotations(&variant.annotations),
                     display: display_metadata(&variant.annotations),
                     span: variant.span,
                 })
@@ -117,7 +117,7 @@ impl ValidatedSchema<'_> {
                 variant_by_name,
                 variant_by_value,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
-                annotations: self.schema_annotations(&info.module, &info.def.annotations),
+                annotations: self.schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 span: info.def.span,
             };
@@ -159,7 +159,7 @@ impl ValidatedSchema<'_> {
                 .and_then(|annotation| annotation.args.first())
                 .and_then(|arg| match arg {
                     AnnotationArg::Name(name) => Some(EnumName::from_validated(
-                        self.resolve_name(&info.module, &name.name),
+                        name.name.clone(),
                     )),
                     _ => None,
                 });
@@ -171,7 +171,7 @@ impl ValidatedSchema<'_> {
                     .parent
                     .as_ref()
                     .map(|parent| {
-                        TypeName::from_validated(self.resolve_name(&info.module, &parent.name))
+                        TypeName::from_validated(parent.name.clone())
                     }),
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
@@ -179,7 +179,7 @@ impl ValidatedSchema<'_> {
                 is_singleton,
                 is_host,
                 id_as_enum,
-                annotations: self.schema_annotations(&info.module, &info.def.annotations),
+                annotations: self.schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 own_fields: fields,
                 all_fields,
@@ -222,7 +222,7 @@ impl ValidatedSchema<'_> {
                 .and_then(|default| self.schema_default_value(module, default)),
             is_expand: has_annotation(&field.annotations, "expand"),
             dimension,
-            annotations: self.schema_annotations(module, &field.annotations),
+            annotations: self.schema_annotations(&field.annotations),
             display: display_metadata(&field.annotations),
             span: field.span,
         }
@@ -230,7 +230,6 @@ impl ValidatedSchema<'_> {
 
     fn schema_annotations(
         &self,
-        module: &crate::ModuleId,
         annotations: &[Annotation],
     ) -> Vec<CftAnnotation> {
         annotations
@@ -242,7 +241,7 @@ impl ValidatedSchema<'_> {
                     .iter()
                     .map(|argument| match argument {
                         AnnotationArg::Name(name) => CftAnnotationValue::Name(
-                            self.resolve_name(module, &name.name),
+                            name.name.clone(),
                         ),
                         AnnotationArg::String(value, _) => {
                             CftAnnotationValue::String(value.clone())
@@ -455,7 +454,7 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
             CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
             CheckExprKind::StaticPath(path) => {
                 let raw_name = path.canonical();
-                let resolved_name = self.resolve_name(module, &raw_name);
+                let resolved_name = raw_name;
                 if self.consts.contains_key(&resolved_name)
                     || self.enums.contains_key(&resolved_name)
                 {
@@ -465,13 +464,12 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
                     let (variant, owner) = path
                         .segments
                         .split_last()
-                        .expect("qualified name must contain at least one segment");
+                        .expect("name path must contain at least one segment");
                     let owner = owner
                         .iter()
                         .map(|segment| segment.name.as_str())
                         .collect::<Vec<_>>()
                         .join("::");
-                    let owner = self.resolve_name(module, &owner);
                     CftSchemaCheckExprKind::Field {
                         expr: Box::new(CftSchemaCheckExpr {
                             kind: CftSchemaCheckExprKind::Name(owner),
@@ -483,7 +481,7 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
             }
             CheckExprKind::Records { type_name } => CftSchemaCheckExprKind::Records {
                 type_name: TypeName::from_validated(
-                    self.resolve_name(module, &type_name.name),
+                    type_name.name.clone(),
                 ),
             },
             CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
@@ -502,7 +500,7 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
                 predicate: match predicate {
                     TypePredicate::Type(name) => {
                         CftSchemaTypePredicate::Type(TypeName::from_validated(
-                            self.resolve_name(module, &name.name),
+                            name.name.clone(),
                         ))
                     }
                 },

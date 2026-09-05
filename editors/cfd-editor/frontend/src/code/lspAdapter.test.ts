@@ -6,7 +6,7 @@ describe('LSP CodeMirror adapter', () => {
     expect(decodeSemanticTokens('alpha\nbeta', {
       diagnostics: [],
       semantic_token_data: [0, 0, 5, 7, 0, 1, 0, 4, 5, 0],
-      semantic_token_types: ['namespace', 'type', 'enum', 'enumMember', 'property', 'variable', 'function', 'keyword'],
+      semantic_token_types: ['recordKey', 'type', 'enum', 'enumMember', 'property', 'variable', 'function', 'keyword'],
       syntax_valid: true,
     })).toEqual([
       { from: 0, to: 5, type: 'keyword' },

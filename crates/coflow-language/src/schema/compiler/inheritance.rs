@@ -48,7 +48,7 @@ impl<'a> ResolvedTypes<'a> {
 
                 let Some(parent) = self.types.get(&current).and_then(|info| {
                     info.def.parent.as_ref().and_then(|parent| {
-                        let resolved = self.resolve_name(&info.module, &parent.name);
+                        let resolved = parent.name.clone();
                         self.types.contains_key(&resolved).then_some(resolved)
                     })
                 })
@@ -114,7 +114,7 @@ impl<'a> ResolvedTypes<'a> {
                 continue;
             };
             if let Some(parent) = &info.def.parent {
-                let parent_name = self.resolve_name(&info.module, &parent.name);
+                let parent_name = parent.name.clone();
                 if let Some(parent_info) = self.types.get(&parent_name) {
                     if parent_info.def.is_sealed {
                         self.diagnostics.push(

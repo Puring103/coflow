@@ -306,7 +306,6 @@ public sealed class CoflowFunctionEntry
         CoflowFunctionIdentity identity,
         CoflowFunctionSignature signature,
         CfdFunctionValue? source,
-        CfdNameResolver names,
         string sourcePath,
         CfdSpan? sourceSpan,
         bool requiresCfdBody = false)
@@ -314,7 +313,6 @@ public sealed class CoflowFunctionEntry
         Identity = identity;
         Signature = signature;
         Source = source;
-        Names = names;
         SourcePath = sourcePath;
         SourceSpan = sourceSpan;
         RequiresCfdBody = requiresCfdBody;
@@ -323,7 +321,6 @@ public sealed class CoflowFunctionEntry
     internal CoflowFunctionIdentity Identity { get; }
     internal CoflowFunctionSignature Signature { get; }
     internal CfdFunctionValue? Source { get; }
-    internal CfdNameResolver Names { get; }
     internal string SourcePath { get; }
     internal CfdSpan? SourceSpan { get; }
     internal bool RequiresCfdBody { get; }

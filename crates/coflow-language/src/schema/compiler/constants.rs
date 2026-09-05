@@ -1,7 +1,7 @@
 use super::state::SymbolKind;
 use super::ValueResolver;
 use crate::schema::{CftConstValue, CftValueType};
-use crate::syntax::ast::{DefaultExpr, DefaultExprKind, QualifiedName};
+use crate::syntax::ast::{DefaultExpr, DefaultExprKind, NamePath};
 use crate::{CftErrorCode, EnumName, EnumVariantName, FieldName, ModuleId, TypeName};
 use std::collections::BTreeSet;
 
@@ -246,7 +246,7 @@ impl ValueResolver<'_, '_> {
                 _ => return self.cannot_infer_const(module, expression, "object"),
             },
             DefaultExprKind::TypedObject { type_name, fields } => {
-                let resolved_name = self.resolve_name(module, &type_name.canonical());
+                let resolved_name = type_name.canonical();
                 if !matches!(
                     self.symbols.get(&resolved_name),
                     Some(symbol) if symbol.kind == SymbolKind::Type
@@ -327,12 +327,12 @@ impl ValueResolver<'_, '_> {
     fn resolve_static_path_value(
         &mut self,
         module: &ModuleId,
-        path: &QualifiedName,
+        path: &NamePath,
         expected: Option<&CftValueType>,
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
         let raw_name = path.canonical();
-        let resolved_name = self.resolve_name(module, &raw_name);
+        let resolved_name = raw_name;
         if self.consts.contains_key(&resolved_name) {
             return self.resolve_constant(&resolved_name, visiting);
         }
@@ -347,7 +347,7 @@ impl ValueResolver<'_, '_> {
                 .map(|segment| segment.name.as_str())
                 .collect::<Vec<_>>()
                 .join("::");
-            let enum_name = self.resolve_name(module, &owner);
+            let enum_name = owner;
             if self.enums.contains_key(&enum_name) {
                 return self.resolve_enum_variant(module, &enum_name, &variant.name, path.span);
             }
@@ -401,7 +401,7 @@ impl ValueResolver<'_, '_> {
     fn resolve_record_reference(
         &mut self,
         module: &ModuleId,
-        path: &QualifiedName,
+        path: &NamePath,
     ) -> Option<(CftValueType, CftConstValue)> {
         let (key, owner) = path.segments.split_last()?;
         let owner = owner
@@ -409,7 +409,7 @@ impl ValueResolver<'_, '_> {
             .map(|segment| segment.name.as_str())
             .collect::<Vec<_>>()
             .join("::");
-        let type_name = self.resolve_name(module, &owner);
+        let type_name = owner;
         if !matches!(self.symbols.get(&type_name), Some(symbol) if symbol.kind == SymbolKind::Type) {
             self.push_diag(
                 CftErrorCode::UnknownNamedType,
