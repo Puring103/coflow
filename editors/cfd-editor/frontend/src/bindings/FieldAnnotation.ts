@@ -39,6 +39,10 @@ read_only: boolean,
  */
 item_annotation: FieldAnnotation | null,
 /**
+ * 字典键的 schema 模板。新增首项时必须依据它选择键编辑器，不能从已有数据猜测。
+ */
+key_annotation?: FieldAnnotation,
+/**
  * Concrete types that could occupy this field when the declared type is
  * an abstract object. Empty for non-polymorphic fields. The editor uses
  * this to expose a type-switch control on object cells and to prompt for

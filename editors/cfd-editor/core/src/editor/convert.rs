@@ -245,6 +245,9 @@ fn annotation_for_value(
         if let Some(item_shape) = shape.collection_item.as_deref() {
             annotation.item_annotation = Some(Box::new(annotation_template(item_shape)));
         }
+        if let Some(key_shape) = shape.collection_key.as_deref() {
+            annotation.key_annotation = Some(Box::new(annotation_template(key_shape)));
+        }
     }
     match value {
         CfdValue::Enum(enum_value) => {
@@ -319,6 +322,9 @@ fn annotation_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
     };
     if let Some(inner) = item_shape.collection_item.as_deref() {
         ann.item_annotation = Some(Box::new(annotation_template(inner)));
+    }
+    if let Some(key) = item_shape.collection_key.as_deref() {
+        ann.key_annotation = Some(Box::new(annotation_template(key)));
     }
     ann
 }

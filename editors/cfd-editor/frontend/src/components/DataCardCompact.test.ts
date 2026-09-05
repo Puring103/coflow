@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   collectionObjectDraftForAnnotation,
+  dictKeyTemplate,
   DataCardCompact,
   DataCardExpanded,
   EnumDirectSelect,
@@ -29,6 +30,21 @@ describe('DataCardCompact complex previews', () => {
     field_order: [],
     children: {},
   }
+
+  it('derives empty dictionary key controls from schema annotations', () => {
+    expect(dictKeyTemplate({ ...polymorphicObjectAnnotation, declared_type: 'int' })).toEqual({
+      kind: 'int',
+      value: 0n,
+    })
+    expect(dictKeyTemplate({
+      ...polymorphicObjectAnnotation,
+      declared_type: 'Element',
+      enum_type: 'Element',
+    })).toEqual({
+      kind: 'enum',
+      value: { enum_name: 'Element', variant: null, value: 0n },
+    })
+  })
 
   it('keeps concrete type selection when adding to a populated polymorphic collection', () => {
     expect(collectionObjectDraftForAnnotation(polymorphicObjectAnnotation, false)).toEqual({
