@@ -53,6 +53,29 @@ describe('DataCardCompact complex previews', () => {
     })
   })
 
+  it('renders one concrete type selector for an editable polymorphic foldout', () => {
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'effect',
+          missing: false,
+          annotation: polymorphicObjectAnnotation,
+          value: {
+            kind: 'object' as const,
+            value: { actual_type: 'CurrencyReward', fields: {} },
+          },
+        }],
+        onEdit: () => {},
+      }),
+    }))
+
+    expect(html.match(/aria-label="选择具体类型"/g)).toHaveLength(1)
+    expect(html.match(/value="CurrencyReward"/g)).toHaveLength(1)
+  })
+
   it('renders a type switch action for a populated polymorphic array item', () => {
     const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
       lookups: {} as never,
@@ -280,7 +303,7 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('vc-ref')
   })
 
-  it('inlines singleton object collections under a count-only header', () => {
+  it('keeps singleton object collections as collapsible element rows', () => {
     const fields = [{
       name: 'MatterVariations',
       missing: false,
@@ -310,20 +333,22 @@ describe('DataCardCompact complex previews', () => {
     }))
 
     expect(html).toContain('class="vc-count">1</span>')
-    expect(html).toContain('Matter')
     expect(html).toContain('dc-group-body')
+    expect(html).toContain('dc-group-item')
+    expect(html).toContain('data-field-path="MatterVariations[0]"')
+    expect(html).toContain('dc-structure-type">RegionMatterVariationConfig</span>')
     expect(html).toContain('dc-row-actions')
     expect(html).toContain('aria-label="添加元素"')
-    expect(html).toContain('title="删除唯一元素"')
+    expect(html).toContain('title="删除"')
+    expect(html).not.toContain('>Matter</span>')
     expect(html).not.toContain('#1')
-    expect(html).not.toContain('dc-row-item')
     expect(html).not.toContain('元素 1')
     expect(html).not.toContain('>[0]<')
     expect(html).not.toContain('[RegionMatterVariationConfig]')
     expect(html).not.toContain('vc-count">·')
   })
 
-  it('uses one-based index rails for multi-element object collections', () => {
+  it('uses unified one-based foldout rows for multi-element object collections', () => {
     const html = renderToStaticMarkup(createElement(DataCardExpanded, {
       fields: [{
         name: 'Entries',
@@ -343,9 +368,12 @@ describe('DataCardCompact complex previews', () => {
       expandedPaths: new Set(['Entries']),
     }))
 
-    expect(html).toContain('dc-array-object-item')
-    expect(html).toContain('dc-array-item-index">1</span>')
-    expect(html).toContain('dc-array-item-index">2</span>')
+    expect(html).toContain('dc-group-item')
+    expect(html).toContain('dc-row-label-text">1</span>')
+    expect(html).toContain('dc-row-label-text">2</span>')
+    expect(html).toContain('dc-structure-type">Entry</span>')
+    expect(html).toContain('data-field-path="Entries[0]"')
+    expect(html).toContain('data-field-path="Entries[1]"')
     expect(html).not.toContain('#1')
     expect(html).not.toContain('#2')
     expect(html).not.toContain('dc-row-static-group')

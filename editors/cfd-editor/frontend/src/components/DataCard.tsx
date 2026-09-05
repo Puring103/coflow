@@ -786,6 +786,7 @@ function FieldRow({
       enumIsFlag={effectiveEnumIsFlag}
       refTargetType={refTargetType}
       polymorphicTypes={polyTypes}
+      showTypeSwitcher={!canExpand}
       onCommit={commit}
       onCommitValue={next => onEdit?.(fieldPath, next)}
     />
@@ -853,6 +854,7 @@ function NullableControls({
   enumIsFlag,
   refTargetType,
   polymorphicTypes,
+  showTypeSwitcher,
   onCommit,
   onCommitValue,
 }: {
@@ -864,6 +866,7 @@ function NullableControls({
   enumIsFlag?: boolean
   refTargetType?: string
   polymorphicTypes: string[]
+  showTypeSwitcher: boolean
   onCommit: (next: FieldValue) => void
   onCommitValue: (next: FieldValue) => void
 }) {
@@ -873,7 +876,7 @@ function NullableControls({
   const noneLayer = layers.indexOf('none')
   const isObject = shownValue.kind === 'object'
   const isPolymorphic = polymorphicTypes.length > 0
-  const canSwitchType = isObject && polymorphicTypes.length >= 2 && noneLayer < 0
+  const canSwitchType = showTypeSwitcher && isObject && polymorphicTypes.length >= 2 && noneLayer < 0
   const canCreate = noneLayer >= 0 && (
     noneLayer < optionDepth - 1
     || scalarDefaultForDeclaredType(declaredType) !== null
@@ -1882,10 +1885,7 @@ function ExpandableRow({
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
   const [localExpanded, setLocalExpanded] = useState(shouldAutoExpand)
-  const staticObjectItem = !!collectionItem && value.kind === 'object'
-  const expanded = staticObjectItem
-    ? true
-    : pathKey && controlledExpansion
+  const expanded = pathKey && controlledExpansion
     ? controlledExpansion.has(pathKey)
     : localExpanded
   useEffect(() => {
@@ -1907,18 +1907,11 @@ function ExpandableRow({
     : value.kind === 'array' || value.kind === 'dict'
       ? ' dc-row-collection'
       : ' dc-row-object'
-  const inlineSingletonObject = value.kind === 'array'
-    && value.value.length === 1
-    && value.value[0]?.kind === 'object'
-    ? value.value[0]
-    : null
-  const inlineSingletonItem = inlineSingletonObject !== null
-  const inlineSingletonAnnotation = inlineSingletonObject
-    ? annotationChild(valueAnnotation, 0) ?? annotationItem(valueAnnotation)
-    : undefined
+  const concreteType = value.kind === 'object' ? value.value.actual_type : null
+  const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
+  const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
 
   function toggle() {
-    if (staticObjectItem) return
     const next = !expanded
     if (!controlledExpansion) setLocalExpanded(next)
     if (pathKey) onRowToggle?.(pathKey, next)
@@ -1934,23 +1927,31 @@ function ExpandableRow({
   }
 
   return (
-    <div className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}>
-      <div className={`dc-row dc-row-structure${staticObjectItem ? ' dc-row-static-group' : ' dc-row-foldout'}${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={staticObjectItem ? undefined : toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div
+      className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
+      style={inspectorDepthStyle(depth)}
+    >
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
-          {!staticObjectItem && (
-            <span className="dc-fold-arrow">
-              <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
-            </span>
-          )}
+          <span className="dc-fold-arrow">
+            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
+          </span>
           <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
+            {canSwitchConcreteType && value.kind === 'object' ? (
+              <ExpandableObjectTypeSelect
+                value={value}
+                polymorphicTypes={polymorphicTypes}
+                onCommit={next => onEdit(fieldPath, next)}
+              />
+            ) : concreteType && <span className="dc-structure-type">{concreteType}</span>}
             {count !== null && <span className="vc-count">{count}</span>}
           </div>
         </div>
-        <div className="dc-row-actions">
+        <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
           {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
             <CollectionAddControl
               container={value}
@@ -1959,19 +1960,6 @@ function ExpandableRow({
               onCollectionEdit={editCollection}
               itemAnnotation={annotationItem(valueAnnotation)}
               keyAnnotation={annotationKey(valueAnnotation)}
-            />
-          )}
-          {onCollectionEdit && value.kind === 'array' && inlineSingletonItem && (
-            <DeleteButton
-              title="删除唯一元素"
-              onClick={() => onCollectionEdit(fieldPath, { kind: 'array_remove', index: 0 })}
-            />
-          )}
-          {onEdit && inlineSingletonObject && (
-            <ObjectTypeSwitchControl
-              value={inlineSingletonObject}
-              annotation={inlineSingletonAnnotation}
-              onCommit={next => onEdit([...fieldPath, fieldPathIndex(0)], next)}
             />
           )}
           {trailing}
@@ -1996,6 +1984,27 @@ function ExpandableRow({
   )
 }
 
+function ExpandableObjectTypeSelect({ value, polymorphicTypes, onCommit }: {
+  value: FieldValue & { kind: 'object' }
+  polymorphicTypes: string[]
+  onCommit: (next: FieldValue) => void
+}) {
+  const lookups = useEditorLookups()
+  return (
+    <SearchableSelect
+      className="dc-structure-type-select dc-polymorphic-type-select"
+      value={value.value.actual_type}
+      options={polymorphicTypes.map(type => ({ value: type }))}
+      ariaLabel="选择具体类型"
+      onCommit={async nextType => {
+        if (nextType === value.value.actual_type) return
+        const next = await lookups.makeDefaultObject(nextType)
+        if (next.ok) onCommit(next.value)
+      }}
+    />
+  )
+}
+
 function ComplexValueChildren({
   value,
   depth,
@@ -2005,7 +2014,6 @@ function ComplexValueChildren({
   onCollectionEdit,
   onRowToggle,
   valueAnnotation,
-  firstChildTrailing,
 }: {
   value: FieldValue
   depth: number
@@ -2015,13 +2023,12 @@ function ComplexValueChildren({
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   onRowToggle?: (path: string, expanded: boolean) => void
   valueAnnotation?: FieldAnnotation | null
-  firstChildTrailing?: ReactNode
 }) {
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).map((fc, index) => {
+      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).map((fc) => {
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -2042,7 +2049,6 @@ function ComplexValueChildren({
             enumType={annotationEnumType(annotation)}
             nullable={annotationNullable(annotation)}
             valueAnnotation={annotation}
-            trailing={index === 0 ? firstChildTrailing : undefined}
           />
         )
       })}
@@ -2068,6 +2074,7 @@ function ComplexValueChildren({
             value={item}
             depth={depth}
             onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
             fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
             pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
             onRowToggle={onRowToggle}
@@ -2076,6 +2083,7 @@ function ComplexValueChildren({
             enumType={annotationEnumType(annotation)}
             nullable={annotationNullable(annotation)}
             valueAnnotation={annotation}
+            collectionItem
             trailing={onEdit ? (
               <DeleteButton
                 title="删除"
@@ -2148,23 +2156,6 @@ function ArrayItems({
   const [overIdx, setOverIdx] = useState<number | null>(null)
   const dragArmedRef = useRef<number | null>(null)
 
-  const onlyItem = container.value[0]
-  if (container.value.length === 1 && onlyItem?.kind === 'object') {
-    const itemAnnotation = itemAnnotations?.['0'] ?? itemTemplate
-    return (
-      <ComplexValueChildren
-        value={onlyItem}
-        depth={depth}
-        fieldPath={[...fieldPath, fieldPathIndex(0)]}
-        pathKey={pathKey ? `${pathKey}[0]` : '[0]'}
-        onEdit={onEdit}
-        onCollectionEdit={onCollectionEdit}
-        onRowToggle={onRowToggle}
-        valueAnnotation={itemAnnotation}
-      />
-    )
-  }
-
   function dropAt(target: number) {
     if (dragIdx === null || dragIdx === target) return
     onCollectionEdit?.(fieldPath, { kind: 'array_move', from: dragIdx, to: target })
@@ -2214,9 +2205,9 @@ function ArrayItems({
         } : undefined
         if (item.kind === 'object') {
           return (
-            <ArrayObjectItem
+            <FieldRow
               key={i}
-              index={i}
+              label={String(i + 1)}
               value={item}
               depth={depth}
               fieldPath={itemPath}
@@ -2227,6 +2218,7 @@ function ArrayItems({
               valueAnnotation={itemAnnotation}
               leading={dragHandle}
               trailing={trailing}
+              collectionItem
               dragProps={itemDragProps}
             />
           )
@@ -2479,126 +2471,6 @@ export function dictKeyTemplate(annotation?: FieldAnnotation): DictKey | null {
     case 'string': return { kind: 'string', value: '' }
     default: return null
   }
-}
-
-function ArrayObjectItem({
-  index,
-  value,
-  depth,
-  fieldPath,
-  pathKey,
-  onEdit,
-  onCollectionEdit,
-  onRowToggle,
-  valueAnnotation,
-  leading,
-  trailing,
-  dragProps,
-}: {
-  index: number
-  value: FieldValue & { kind: 'object' }
-  depth: number
-  fieldPath: FieldPathSegment[]
-  pathKey: string
-  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
-  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
-  onRowToggle?: (path: string, expanded: boolean) => void
-  valueAnnotation?: FieldAnnotation
-  leading?: ReactNode
-  trailing?: ReactNode
-  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
-}) {
-  const diag = rowDiagSeverity(pathKey)
-  const rowSelection = useContext(ValueRowSelectionCtx)
-  const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
-  const hasFields = objectFields(value).length > 0
-  const itemActions = (
-    <>
-      {onEdit && (
-        <ObjectTypeSwitchControl
-          value={value}
-          annotation={valueAnnotation}
-          onCommit={next => onEdit(fieldPath, next)}
-        />
-      )}
-      {trailing}
-    </>
-  )
-
-  return (
-    <div
-      className={`dc-array-object-item${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-array-item-diag-${diag.sev}` : ''}${dragProps?.extraClass ? ` ${dragProps.extraClass}` : ''}`}
-      style={inspectorDepthStyle(depth)}
-      data-depth={depth}
-      data-field-path={pathKey}
-      data-field-path-wire={JSON.stringify(fieldPath)}
-      data-value-kind="object"
-      data-keyboard-editable={!!onEdit || undefined}
-      title={diag.messages.join('\n') || undefined}
-      onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)}
-      {...(dragProps && {
-        onDragStart: dragProps.onDragStart,
-        onDragOver: dragProps.onDragOver,
-        onDragLeave: dragProps.onDragLeave,
-        onDrop: dragProps.onDrop,
-        onDragEnd: dragProps.onDragEnd,
-        draggable: dragProps.draggable,
-      })}
-    >
-      <div className="dc-array-item-rail">
-        {leading}
-        <span className="dc-array-item-index">{index + 1}</span>
-        {(diag.sev === 'error' || diag.sev === 'warning') && (
-          <span className={`dc-array-item-diag-dot ${diag.sev}`} aria-hidden />
-        )}
-      </div>
-      <div className="dc-array-object-fields">
-        {hasFields ? (
-          <ComplexValueChildren
-            value={value}
-            depth={depth + 1}
-            fieldPath={fieldPath}
-            pathKey={pathKey}
-            onEdit={onEdit}
-            onCollectionEdit={onCollectionEdit}
-            onRowToggle={onRowToggle}
-            valueAnnotation={valueAnnotation}
-            firstChildTrailing={itemActions}
-          />
-        ) : (
-          <div className="dc-row dc-array-empty-object" style={inspectorDepthStyle(depth + 1)}>
-            <div className="dc-row-label"><span className="vc vc-null">空对象</span></div>
-            <div className="dc-row-value" />
-            <div className="dc-row-actions">{itemActions}</div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ObjectTypeSwitchControl({ value, annotation, onCommit }: {
-  value: FieldValue & { kind: 'object' }
-  annotation?: FieldAnnotation
-  onCommit: (next: FieldValue) => void
-}) {
-  const polymorphicTypes = annotationPolymorphicTypes(annotation)
-  const lookups = useEditorLookups()
-  if (polymorphicTypes.length < 2) return null
-
-  return (
-    <SearchableSelect
-      className="dc-polymorphic-type-select dc-object-item-switch"
-      value={value.value.actual_type}
-      options={polymorphicTypes.map(type => ({ value: type }))}
-      ariaLabel="选择具体类型"
-      onCommit={async nextType => {
-        if (nextType === value.value.actual_type) return
-        const next = await lookups.makeDefaultObject(nextType)
-        if (next.ok) onCommit(next.value)
-      }}
-    />
-  )
 }
 
 export function collectionObjectDraftForAnnotation(

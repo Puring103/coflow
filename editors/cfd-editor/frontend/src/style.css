@@ -3562,6 +3562,46 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   min-width: 14px;
   text-align: right;
 }
+.dc-structure-type {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-structure-type-select {
+  flex: 0 1 148px;
+  width: min(148px, 100%);
+  min-width: 72px;
+  height: 22px;
+  margin-left: auto;
+  padding: 1px 20px 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  outline: none;
+  background-color: transparent;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-xs);
+  text-align: right;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.dc-structure-type-select:hover {
+  border-color: var(--border);
+  background-color: var(--bg-1);
+  color: var(--text);
+}
+.dc-structure-type-select:focus {
+  border-color: var(--accent);
+  background-color: var(--bg-1);
+  color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+  text-align: left;
+}
 .dc-row-foldout {
   cursor: pointer;
   user-select: none;
@@ -3596,10 +3636,6 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   padding-left: calc(6px + min(var(--dc-indent, 0px), 70px));
   padding-right: 5px;
 }
-.dc-row-static-group {
-  cursor: default;
-  user-select: none;
-}
 .dc-row-item > .dc-row-label {
   padding-top: 3px;
   padding-bottom: 3px;
@@ -3626,63 +3662,6 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   left: calc(6px + min(var(--dc-indent, 0px), 70px));
 }
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
-
-.dc-array-object-item {
-  position: relative;
-  min-height: var(--h-row);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-}
-.dc-array-object-item.keyboard-selected {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.dc-array-object-fields { min-width: 0; }
-.dc-array-object-fields > .dc-row:last-child,
-.dc-array-object-fields > .dc-group:last-child > .dc-row-structure {
-  border-bottom: none;
-}
-.dc-array-item-rail {
-  position: absolute;
-  top: 0;
-  left: calc(6px + min(var(--dc-indent, 0px), 70px));
-  z-index: 3;
-  width: 32px;
-  min-height: var(--h-row);
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-muted);
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  pointer-events: none;
-}
-.dc-array-item-rail .dc-drag-handle {
-  width: 8px;
-  opacity: 0;
-  pointer-events: auto;
-}
-.dc-array-object-item:hover .dc-array-item-rail .dc-drag-handle { opacity: 0.7; }
-.dc-array-item-index {
-  min-width: 12px;
-  text-align: right;
-  line-height: 1;
-}
-.dc-array-item-diag-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dc-array-item-diag-dot.error { background: var(--red); }
-.dc-array-item-diag-dot.warning { background: var(--yellow); }
-.dc-array-object-item:hover .dc-row-delete { opacity: 0.75; }
-.dc-array-object-item.dragging { opacity: 0.45; }
-.dc-array-object-item.drop-target {
-  box-shadow: inset 0 2px 0 var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-.dc-array-empty-object .vc-null { font-style: italic; }
 
 /* Trailing controls for nullable / polymorphic fields. Sit right of the
  * value; each button is a small square icon so multiple can fit inline. */
@@ -4183,7 +4162,8 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 select.dc-input-flat,
 select.dc-input,
 input.searchable-select.dc-input-flat,
-input.searchable-select.dc-input {
+input.searchable-select.dc-input,
+input.searchable-select.dc-structure-type-select {
   appearance: none;
   -webkit-appearance: none;
   outline: none;
@@ -4197,7 +4177,8 @@ input.searchable-select.dc-input {
 [data-theme="light"] select.dc-input-flat,
 [data-theme="light"] select.dc-input,
 [data-theme="light"] input.searchable-select.dc-input-flat,
-[data-theme="light"] input.searchable-select.dc-input {
+[data-theme="light"] input.searchable-select.dc-input,
+[data-theme="light"] input.searchable-select.dc-structure-type-select {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
@@ -5092,9 +5073,82 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 .inspector-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 16px 24px;
+  padding: 10px 0 24px;
 }
 .inspector-body > .gn-header {
-  margin-bottom: 14px;
+  margin: 0 16px 10px;
   border-radius: 0;
+}
+
+/* Inspector 本身就是属性容器，这里取消内层卡片边框，形成连续的属性树。 */
+.inspector-body > .dc-inspector {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.inspector-body > .dc-inspector .dc-row {
+  grid-template-columns: minmax(126px, 38%) minmax(0, 1fr) 76px;
+}
+.inspector-body > .dc-inspector .dc-row-actions {
+  min-width: 76px;
+  padding-right: 10px;
+}
+
+/* 可编辑值始终保留轻量输入轮廓，只读值继续以纯文本显示。 */
+.inspector-body .dc-input-flat {
+  margin: 0;
+  padding: 3px 7px;
+  border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 3px;
+  background: var(--bg-1);
+}
+.inspector-body .dc-row-value-inner:hover .dc-input-flat,
+.inspector-body .dc-input-flat:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-1);
+}
+.inspector-body .dc-input-flat:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* 集合元素使用稳定的起始分隔和层级导轨，子字段不会与相邻元素混在一起。 */
+.inspector-body .dc-group-item {
+  position: relative;
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+}
+.inspector-body .dc-group-item:first-child {
+  border-top-color: color-mix(in srgb, var(--border) 72%, transparent);
+}
+.inspector-body .dc-group-item > .dc-group-body {
+  position: relative;
+  padding-bottom: 4px;
+}
+.inspector-body .dc-group-item > .dc-group-body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 4px;
+  left: calc(21px + min(var(--dc-indent, 0px), 70px));
+  width: 1px;
+  background: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  pointer-events: none;
+}
+.inspector-body .dc-row-item {
+  min-height: 30px;
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+}
+.inspector-body .dc-row-item > .dc-row-label {
+  color: var(--text);
+}
+.inspector-body .dc-row-delete {
+  visibility: hidden;
+  opacity: 0;
+}
+.inspector-body .dc-row:hover .dc-row-delete,
+.inspector-body .dc-row.keyboard-selected .dc-row-delete,
+.inspector-body .dc-row-delete:focus-visible {
+  visibility: visible;
+  opacity: 0.78;
 }
