@@ -105,17 +105,16 @@ effect: DamageEffect {
 `ConcreteType { ... }` type marker 指定实际子 type。数组保留顺序，字典 key 必须符合声明的 key 类型且
 不能重复。
 
-### Option 与 Result
+### Option
 
 ```cfd
 subtitle: None,
 owner: &sword,
-cached: Ok(10),
-failure: Err("not found"),
 ```
 
 Option 的规范写法是 `None` 或不带包装的存在值；解析器也接受显式 `Some(value)`。Coflow 编辑器和
-结构化 writer 会把 `Some(value)` 写回为 `value`。Result 使用显式 `Ok(value)` / `Err(value)`。
+结构化 writer 会把 `Some(value)` 写回为 `value`。`Result` 用于函数协议、常量和表达式，不作为 CFD
+object 数据字段。
 
 ### 记录引用
 

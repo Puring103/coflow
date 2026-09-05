@@ -3,7 +3,6 @@ ComplexValues {
     samples: [1, 2, 3],
     lookup: { "one": 1 },
     optional: None,
-    outcome: Err("invalid"),
     unexpected: 42,
   }
 }

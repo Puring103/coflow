@@ -7,5 +7,4 @@ type ComplexValues {
   samples: [int];
   lookup: {string: int};
   optional: Option<Payload>;
-  outcome: Result<Option<Payload>, string>;
 }

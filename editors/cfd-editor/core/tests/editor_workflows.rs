@@ -1,7 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use cfd_editor_core::editor::{CollectionEdit, LanguagePosition, SessionStore};
-use coflow_runtime::{CfdPathSegment, CfdValue, RecordCoordinate};
+use coflow_runtime::{CfdObject, CfdPathSegment, CfdValue, RecordCoordinate};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -68,7 +69,7 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
             "abstract type Reward { label: string; }\n",
             "type ItemReward : Reward { count: int; tags: [string]; }\n",
             "type CurrencyReward : Reward { amount: int; }\n",
-            "type Holder { reward: Option<Reward>; outcome: Result<ItemReward, CurrencyReward>; note: Option<string>; }\n",
+            "type Holder { reward: Option<Reward>; note: Option<string>; }\n",
         ),
     )
     .expect("write inheritance schema");
@@ -83,11 +84,6 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
             "        tags: [],\n",
             "    }),\n",
             "    note: Some(\"old\"),\n",
-            "    outcome: Ok(ItemReward{\n",
-            "        label: \"result\",\n",
-            "        count: 3,\n",
-            "        tags: [],\n",
-            "    }),\n",
             "}\n",
         ),
     )
@@ -306,14 +302,6 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
         )
         .expect("write child field through Option<AbstractType>");
     store
-        .write_field(
-            session_id,
-            &holder,
-            &[field("outcome"), field("count")],
-            &CfdValue::Int(4),
-        )
-        .expect("write child field through Result branch");
-    store
         .edit_collection(
             session_id,
             &holder,
@@ -337,7 +325,6 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     let source = fs::read_to_string(populated).expect("read inheritance source");
     assert!(source.contains("label: \"updated\""), "{source}");
     assert!(source.contains("count: 2"), "{source}");
-    assert!(source.contains("count: 4"), "{source}");
     assert!(source.contains("tags: [\"\"]"), "{source}");
     assert!(source.contains("note: \"new\""), "{source}");
     let empty_source = fs::read_to_string(root.join("data/empty.cfd"))
@@ -400,7 +387,9 @@ fn array_editor_mutations_round_trip_through_reload() {
     assert_eq!(records.records.len(), 1);
     assert_eq!(records.records[0].coordinate, renamed);
     let source = fs::read_to_string(data_file).expect("read final CFD source");
-    assert!(source.contains("\"recommended\", \"recommended\""), "{source}");
+    // 无显式值的追加项来自元素类型默认值，不能复制现有末项。
+    assert!(source.contains("\"recommended\", \"\""), "{source}");
+    assert!(!source.contains("\"recommended\", \"recommended\""), "{source}");
 }
 
 #[test]
@@ -623,6 +612,38 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
         .find(|row| row.coordinate == coordinate)
         .expect("repaired record");
     assert!(row.fields.iter().all(|cell| !cell.missing));
+}
+
+#[test]
+fn new_record_can_be_created_with_a_missing_required_reference() {
+    let root = repairable_invalid_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load repairable project");
+    let object = CfdObject::try_new("Item", BTreeMap::new()).expect("object");
+
+    let outcome = store
+        .insert_record(
+            snapshot.session_id,
+            "data/items.cfd",
+            "new_item",
+            "Item",
+            CfdValue::Object(Box::new(object)),
+        )
+        .expect("insert partial record");
+
+    assert!(outcome.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == "error"
+            && matches!(&diagnostic.target, coflow_runtime::DiagnosticTarget::TableField { field_path, .. } if field_path == "target")
+    }));
+    let source = fs::read_to_string(root.join("data/items.cfd")).expect("source");
+    assert!(source.contains("new_item: Item"), "{source}");
+    assert_eq!(
+        source.matches("target: &missing").count(),
+        1,
+        "new record must not receive a fabricated ref: {source}"
+    );
 }
 
 #[test]

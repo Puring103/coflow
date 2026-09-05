@@ -79,7 +79,10 @@ export function ObjectDraftDialog({
   }, [actualType, onLoadDraft])
 
   const requiredFields = useMemo(
-    () => draft?.fields.filter(field => isRequiredMissing(field, values[field.name] ?? null)) ?? [],
+    () => draft?.fields.filter(field =>
+      field.required?.kind !== 'ref'
+      && isRequiredMissing(field, values[field.name] ?? null),
+    ) ?? [],
     [draft, values],
   )
   const extraError = extraValidation ? extraValidation() : null
@@ -197,7 +200,7 @@ function DraftFieldsBody({
     () => draft.fields.map(field => ({
       name: field.name,
       value: fieldValueForDraft(values[field.name] ?? null),
-      missing: false,
+      missing: field.required?.kind === 'ref' && !values[field.name],
       annotation: annotationForDraft(field),
     })),
     [draft, values],

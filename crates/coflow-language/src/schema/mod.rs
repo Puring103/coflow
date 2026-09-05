@@ -132,6 +132,11 @@ impl CftSchema {
             },
         );
 
+        let default_diagnostics = plans::validate_default_materialization(&types);
+        if !default_diagnostics.is_empty() {
+            return Err(CftDiagnostics::new(default_diagnostics));
+        }
+
         let dimensions = dimensions::build_dimensions(&types, dimension_inputs)?;
         let type_by_id_as_enum = types
             .values()

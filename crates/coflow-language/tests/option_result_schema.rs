@@ -15,12 +15,11 @@ fn legacy_nullable_type_and_null_default_are_rejected() {
 }
 
 #[test]
-fn option_and_result_types_preserve_nested_defaults() {
+fn option_types_preserve_nested_defaults() {
     let schema = compile(
         r#"
             type Item {
                 nested: Option<Option<int>> = Some(None);
-                outcome: Result<Option<int>, string> = Ok(Some(3));
             }
         "#,
     )
@@ -35,13 +34,6 @@ fn option_and_result_types_preserve_nested_defaults() {
         nested.default,
         Some(CftSchemaDefaultValue::OptionSome(Box::new(
             CftSchemaDefaultValue::OptionNone
-        )))
-    );
-    let outcome = item.field("outcome").expect("outcome field");
-    assert_eq!(
-        outcome.default,
-        Some(CftSchemaDefaultValue::ResultOk(Box::new(
-            CftSchemaDefaultValue::OptionSome(Box::new(CftSchemaDefaultValue::Int(3)))
         )))
     );
 }

@@ -71,6 +71,39 @@ export function objectFields(value: FieldValue): FieldCell[] {
   return value.kind === 'object' ? recordFields(value.value) : []
 }
 
+/** 按 schema 顺序投影对象字段，并为尚未写入 CFD 的必填字段保留可编辑行。 */
+export function objectFieldCells(
+  value: FieldValue,
+  annotation: FieldAnnotation | null | undefined,
+): FieldCell[] {
+  if (value.kind !== 'object') return []
+
+  const fields = value.value.fields
+  const orderedNames = annotation?.field_order ?? []
+  const orderedSet = new Set(orderedNames)
+  const schemaCells = orderedNames.map(name => {
+    const child = annotation?.children?.[name] ?? null
+    const fieldValue = fields[name]
+    return {
+      name,
+      value: fieldValue ?? nullValue(),
+      missing: fieldValue === undefined,
+      annotation: child,
+    } satisfies FieldCell
+  })
+  const extraCells = Object.entries(fields)
+    .filter(([name]) => !orderedSet.has(name))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, fieldValue]) => ({
+      name,
+      value: fieldValue,
+      missing: false,
+      annotation: annotation?.children?.[name] ?? null,
+    } satisfies FieldCell))
+
+  return [...schemaCells, ...extraCells]
+}
+
 export function cellDeclaredType(cell: FieldCell): string | undefined {
   return cell.annotation?.declared_type ?? undefined
 }
@@ -178,6 +211,17 @@ export function nullValue(): FieldValue {
   return { kind: 'option_none' }
 }
 
+/** 必填缺失字段直接写值；只有明确的 Option 层才创建 Some。 */
+export function applyCreatedValue(
+  current: FieldValue,
+  optionLayer: number | null,
+  created: FieldValue,
+): FieldValue {
+  return optionLayer === null
+    ? created
+    : replaceOptionLayer(current, optionLayer, { kind: 'option_some', value: created })
+}
+
 export function isNullValue(value: FieldValue): boolean {
   return value.kind === 'option_none'
 }
@@ -196,11 +240,51 @@ export function presentationValue(value: FieldValue): FieldValue {
 export function replacePresentationValue(original: FieldValue, value: FieldValue): FieldValue {
   if (value.kind === 'option_none') return value
   switch (original.kind) {
-    case 'option_some': return { kind: 'option_some', value }
+    case 'option_some': return {
+      kind: 'option_some',
+      value: replacePresentationValue(original.value, value),
+    }
     case 'option_none': return { kind: 'option_some', value }
-    case 'result_ok': return { kind: 'result_ok', value }
-    case 'result_err': return { kind: 'result_err', value }
+    case 'result_ok': return {
+      kind: 'result_ok',
+      value: replacePresentationValue(original.value, value),
+    }
+    case 'result_err': return {
+      kind: 'result_err',
+      value: replacePresentationValue(original.value, value),
+    }
     default: return value
+  }
+}
+
+export function optionLayerStates(
+  value: FieldValue,
+  declaredDepth: number,
+): Array<'some' | 'none'> {
+  const states: Array<'some' | 'none'> = []
+  let current = value
+  for (let depth = 0; depth < declaredDepth; depth += 1) {
+    if (current.kind === 'option_some') {
+      states.push('some')
+      current = current.value
+      continue
+    }
+    states.push('none')
+    break
+  }
+  return states
+}
+
+export function replaceOptionLayer(
+  value: FieldValue,
+  layer: number,
+  replacement: FieldValue,
+): FieldValue {
+  if (layer === 0) return replacement
+  if (value.kind !== 'option_some') return value
+  return {
+    kind: 'option_some',
+    value: replaceOptionLayer(value.value, layer - 1, replacement),
   }
 }
 

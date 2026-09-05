@@ -106,48 +106,6 @@ fn invalid_dimension_values_preserve_the_overlay_origin() {
 }
 
 #[test]
-fn data_model_reports_direct_schema_default_cycle() {
-    let schema = compile_schema("type Node { child: Node = {}; }");
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "root",
-        "Node",
-        std::iter::empty::<(&str, LoadedValueDraft)>(),
-    );
-
-    let err = builder.build().expect_err("default cycle must be rejected");
-    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
-    assert_eq!(
-        diagnostic.message,
-        "schema default dependency cycle: Node.child -> Node"
-    );
-    assert_eq!(
-        primary_path_segments(diagnostic),
-        [CfdPathSegment::Field("child".to_string())]
-    );
-}
-
-#[test]
-fn data_model_reports_indirect_schema_default_cycle() {
-    let schema = compile_schema(
-        r#"
-            type A { b: B = {}; }
-            type B { c: C = {}; }
-            type C { a: A = {}; }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("root", "A", std::iter::empty::<(&str, LoadedValueDraft)>());
-
-    let err = builder.build().expect_err("default cycle must be rejected");
-    let diagnostic = diagnostic_with_code(&err, CfdErrorCode::ValueDependencyCycle);
-    assert_eq!(
-        diagnostic.message,
-        "schema default dependency cycle: A.b -> B.c -> C.a -> A"
-    );
-}
-
-#[test]
 fn data_model_reuses_shared_schema_default_subgraphs() {
     let schema = compile_schema(
         r#"

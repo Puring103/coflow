@@ -458,8 +458,6 @@ type Item {
     stats: Stats = {};
     target: Option<&Item> = None;
     fallback: Option<int> = Some(4);
-    outcome: Result<string, int> = Ok("ready");
-    failure: Result<string, int> = Err(7);
 }
 "#,
         ),
@@ -480,23 +478,6 @@ type Item {
         output.contains("valueTarget") && output.contains("Option<global::Game.Config.Item>.None")
     );
     assert!(output.contains("Option<long>.Some(4L)"));
-    assert!(output.contains("Result<string, long>.Ok(\"ready\")"));
-    assert!(output.contains("Result<string, long>.Err(7L)"));
-}
-
-#[test]
-fn rejects_recursive_object_defaults_during_codegen() {
-    let error = generate_csharp_cfd(
-        &schema("type Node { child: Node = {}; }"),
-        &CsharpCodegenOptions::new("Game.Config"),
-        BTreeMap::new(),
-        None,
-    )
-    .expect_err("recursive object defaults must not generate recursive constructors");
-
-    assert!(error
-        .to_string()
-        .contains("schema default dependency cycle"));
 }
 
 #[test]
