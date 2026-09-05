@@ -141,6 +141,7 @@ pub struct FieldShapeInfo {
     pub result_ok: Option<Box<Self>>,
     pub result_err: Option<Box<Self>>,
     pub polymorphic_types: Vec<String>,
+    pub collection_key: Option<Box<Self>>,
     pub collection_item: Option<Box<Self>>,
     pub object_type: Option<String>,
     pub field_order: Vec<String>,

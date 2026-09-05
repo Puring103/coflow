@@ -478,6 +478,10 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     .into_iter()
     .map(|name| name.to_string())
     .collect();
+    let collection_key = match semantic_ty {
+        CftValueType::Dict(key, _) => Some(Box::new(field_shape(schema, key))),
+        _ => None,
+    };
     let collection_item = match semantic_ty {
         CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
@@ -525,6 +529,7 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         result_ok,
         result_err,
         polymorphic_types,
+        collection_key,
         collection_item,
         object_type,
         field_order,
@@ -570,5 +575,32 @@ mod tests {
         assert_eq!(shape.display_label, "Option<Option<Node>>");
         assert_eq!(shape.object_type.as_deref(), Some("Node"));
         assert!(shape.nullable);
+    }
+
+    #[test]
+    fn dict_shape_exposes_key_and_value_metadata() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "enum Element { Fire, Ice, }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let dict_type = CftValueType::Dict(
+            Box::new(CftValueType::Enum(
+                coflow_language::cft::EnumName::new("Element").expect("valid enum name"),
+            )),
+            Box::new(CftValueType::Int),
+        );
+
+        let shape = field_shape(&schema, &dict_type);
+
+        assert_eq!(
+            shape.collection_key.as_deref().and_then(|key| key.enum_type.as_deref()),
+            Some("Element")
+        );
+        assert_eq!(
+            shape.collection_item.as_deref().map(|item| item.display_label.as_str()),
+            Some("int")
+        );
     }
 }

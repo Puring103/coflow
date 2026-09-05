@@ -583,6 +583,10 @@ pub struct FieldAnnotation {
     /// fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_annotation: Option<Box<Self>>,
+    /// 字典键的 schema 模板。新增首项时必须依据它选择键编辑器，不能从已有数据猜测。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub key_annotation: Option<Box<Self>>,
     /// Concrete types that could occupy this field when the declared type is
     /// an abstract object. Empty for non-polymorphic fields. The editor uses
     /// this to expose a type-switch control on object cells and to prompt for
@@ -630,6 +634,7 @@ impl FieldAnnotation {
             && !self.nullable
             && !self.read_only
             && self.item_annotation.is_none()
+            && self.key_annotation.is_none()
             && self.polymorphic_types.is_empty()
             && self.object_type.is_none()
             && self.field_order.is_empty()

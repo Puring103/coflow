@@ -23,6 +23,7 @@ import {
   annotationEnumType,
   annotationEnumIsFlag,
   annotationItem,
+  annotationKey,
   annotationNullable,
   annotationPolymorphicTypes,
   annotationRefTargetType,
@@ -1957,6 +1958,7 @@ function ExpandableRow({
               fieldPath={fieldPath}
               onCollectionEdit={editCollection}
               itemAnnotation={annotationItem(valueAnnotation)}
+              keyAnnotation={annotationKey(valueAnnotation)}
             />
           )}
           {onCollectionEdit && value.kind === 'array' && inlineSingletonItem && (
@@ -2287,12 +2289,13 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, itemAnnotation }: {
+function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, itemAnnotation, keyAnnotation }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
   fieldPath: FieldPathSegment[]
   onCollectionEdit: (edit: CollectionEdit) => void
   itemAnnotation?: FieldAnnotation
+  keyAnnotation?: FieldAnnotation
 }) {
   const [adding, setAdding] = useState(false)
   const [pendingKey, setPendingKey] = useState<DictKey | null>(null)
@@ -2384,7 +2387,8 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
     )
   }
 
-  const sampleKey: DictKey = container.value[0]?.[0] ?? { kind: 'string', value: '' }
+  // 空字典没有样本键，必须由 schema 注解决定输入控件；已有数据也以 schema 为准。
+  const sampleKey: DictKey = dictKeyTemplate(keyAnnotation) ?? container.value[0]?.[0] ?? { kind: 'string', value: '' }
   async function tryAdd(key: DictKey) {
     if (container.kind !== 'dict') return
     const dup = container.value.some(([entryKey]) => dictKeyEq(entryKey, key))
@@ -2463,6 +2467,18 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
       )}
     </span>
   )
+}
+
+export function dictKeyTemplate(annotation?: FieldAnnotation): DictKey | null {
+  const enumType = annotationEnumType(annotation)
+  if (enumType) {
+    return { kind: 'enum', value: { enum_name: enumType, variant: null, value: 0n } }
+  }
+  switch (annotationDeclaredType(annotation)) {
+    case 'int': return { kind: 'int', value: 0n }
+    case 'string': return { kind: 'string', value: '' }
+    default: return null
+  }
 }
 
 function ArrayObjectItem({

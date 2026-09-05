@@ -43,6 +43,40 @@ fn array_project() -> (PathBuf, PathBuf) {
     (root, data_file)
 }
 
+fn nested_default_collection_project() -> (PathBuf, PathBuf) {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-nested-default-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old nested-default project");
+    }
+    let data_dir = root.join("data");
+    fs::create_dir_all(&data_dir).expect("create nested-default data directory");
+    fs::write(
+        root.join("coflow.yaml"),
+        concat!(
+            "schema: schema.cft\n",
+            "data: data/\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+            "    namespace: Test.Config\n",
+        ),
+    )
+    .expect("write nested-default project config");
+    fs::write(
+        root.join("schema.cft"),
+        concat!(
+            "enum Element { Fire, Ice, }\n",
+            "type Stats { resistances: {Element: float} = {}; }\n",
+            "type Unit { stats: Stats = Stats {}; }\n",
+        ),
+    )
+    .expect("write nested-default schema");
+    let data_file = data_dir.join("units.cfd");
+    fs::write(&data_file, "unit: Unit {}\n").expect("write nested-default data");
+    (root, data_file)
+}
+
 fn inheritance_project() -> (PathBuf, PathBuf) {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("cfd-editor-inheritance-workflow-{id}"));
@@ -390,6 +424,36 @@ fn array_editor_mutations_round_trip_through_reload() {
     // 无显式值的追加项来自元素类型默认值，不能复制现有末项。
     assert!(source.contains("\"recommended\", \"\""), "{source}");
     assert!(!source.contains("\"recommended\", \"recommended\""), "{source}");
+}
+
+#[test]
+fn nested_collection_edit_materializes_a_missing_top_level_default() {
+    let (root, data_file) = nested_default_collection_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load nested-default project");
+    let coordinate = RecordCoordinate::try_new("Unit", "unit").expect("unit coordinate");
+
+    store
+        .edit_collection(
+            snapshot.session_id,
+            &coordinate,
+            &[field("stats"), field("resistances")],
+            CollectionEdit::DictInsert {
+                key: coflow_runtime::CfdDictKey::Enum(coflow_runtime::CfdEnumValue {
+                    enum_name: "Element".try_into().expect("enum name"),
+                    variant: Some("Fire".try_into().expect("variant name")),
+                    value: 0,
+                }),
+                value: Some(CfdValue::Float(0.5)),
+            },
+        )
+        .expect("insert into collection under omitted default object");
+
+    let source = fs::read_to_string(data_file).expect("read materialized source");
+    assert!(source.contains("stats: Stats"), "{source}");
+    assert!(source.contains("Fire: 0.5"), "{source}");
 }
 
 #[test]

@@ -140,6 +140,10 @@ export function annotationItem(annotation: FieldAnnotation | null | undefined): 
   return annotation?.item_annotation ?? undefined
 }
 
+export function annotationKey(annotation: FieldAnnotation | null | undefined): FieldAnnotation | undefined {
+  return annotation?.key_annotation ?? undefined
+}
+
 export function annotationPolymorphicTypes(annotation: FieldAnnotation | null | undefined): string[] {
   return annotation?.polymorphic_types ?? []
 }
