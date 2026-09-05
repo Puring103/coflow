@@ -243,7 +243,7 @@ fn annotation_for_value(
         // a nullable / empty collection still carries the template the
         // editor needs to add its first element.
         if let Some(item_shape) = shape.collection_item.as_deref() {
-            annotation.item_annotation = Some(Box::new(element_template(item_shape)));
+            annotation.item_annotation = Some(Box::new(annotation_template(item_shape)));
         }
     }
     match value {
@@ -260,6 +260,18 @@ fn annotation_for_value(
                     annotation
                         .children
                         .insert(name.to_string(), child_annotation);
+                }
+            }
+            // Editable object 草稿会省略需要用户选择的字段；仍发送其 schema 注解，
+            // 使前端可以合成缺失行并提供引用或具体类型选择器。
+            for name in &annotation.field_order {
+                if object.field(name).is_some() || annotation.children.contains_key(name) {
+                    continue;
+                }
+                if let Some(shape) = ctx.queries.field_shape(object.actual_type(), name) {
+                    annotation
+                        .children
+                        .insert(name.clone(), annotation_template(&shape));
                 }
             }
         }
@@ -293,7 +305,7 @@ fn annotation_for_value(
 /// a collection (array item / dict value). The editor consumes this when it
 /// needs the element's declared type / ref target / enum type to add a new
 /// entry into an empty or nullable collection.
-fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
+fn annotation_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
     let mut ann = FieldAnnotation {
         declared_type: Some(item_shape.display_label.clone()),
         ref_target_type: item_shape.ref_target_type.clone(),
@@ -306,7 +318,7 @@ fn element_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
         ..FieldAnnotation::default()
     };
     if let Some(inner) = item_shape.collection_item.as_deref() {
-        ann.item_annotation = Some(Box::new(element_template(inner)));
+        ann.item_annotation = Some(Box::new(annotation_template(inner)));
     }
     ann
 }

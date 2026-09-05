@@ -23,13 +23,10 @@ type ValueGallery {
   features: Feature = Feature::Tradable | Feature::Stackable;
   optionalText: Option<string> = None;
   optionalNumber: Option<int> = None;
-  success: Result<int, string> = Ok(0);
-  failure: Result<int, string> = Err("not evaluated");
   numbers: [int] = [];
   labels: {string: string} = {};
   position: Vector2 = Vector2 { x: 0.0, y: 0.0 };
   stats: Stats = Stats {};
   matrix: [[int]] = [];
   nestedLookup: {string: [Stats]} = {};
-  optionalResult: Option<Result<[Stats], string>> = None;
 }

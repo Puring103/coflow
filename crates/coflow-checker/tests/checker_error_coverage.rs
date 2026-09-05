@@ -133,11 +133,11 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_required_field_present,
         },
         Case {
-            name: "schema default dependency cycle",
-            schema: "type Node { child: Node = {}; }",
-            phase: Phase::Build(build_schema_default_dependency_cycle),
+            name: "data value dependency cycle",
+            schema: "type Item { first: string; second: string; }",
+            phase: Phase::Build(build_data_value_dependency_cycle),
             code: CfdErrorCode::ValueDependencyCycle,
-            adjacent: adjacent_acyclic_schema_default,
+            adjacent: adjacent_acyclic_data_value_dependency,
         },
         Case {
             name: "data structure limit exceeded",
@@ -509,10 +509,31 @@ fn build_missing_required_field(schema: &CftSchema) -> Result<CfdDataModel, CfdD
     model_from_records(schema, [one_record("item", "Item", [])])
 }
 
-fn build_schema_default_dependency_cycle(
+fn formatted_field_reference(source: &str, field: &str) -> LoadedValueDraft {
+    LoadedValueDraft::FormattedString(LoadedFormattedString {
+        source: source.to_string(),
+        segments: vec![LoadedFormatSegment::Reference(LoadedFieldReference {
+            type_name: None,
+            key: None,
+            path: vec![field.to_string()],
+        })],
+    })
+}
+
+fn build_data_value_dependency_cycle(
     schema: &CftSchema,
 ) -> Result<CfdDataModel, CfdDiagnostics> {
-    model_from_records(schema, [one_record("root", "Node", [])])
+    model_from_records(
+        schema,
+        [one_record(
+            "item",
+            "Item",
+            [
+                ("first", formatted_field_reference("{second}", "second")),
+                ("second", formatted_field_reference("{first}", "first")),
+            ],
+        )],
+    )
 }
 
 fn build_data_structure_limit_exceeded(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
@@ -949,13 +970,6 @@ fn adjacent_check_budget_valid() {
         .expect("work exactly at the limit should pass");
 }
 
-fn adjacent_acyclic_schema_default() {
-    assert_builds(
-        "type Leaf { value: int = 1; } type Root { child: Leaf = {}; }",
-        [one_record("root", "Root", [])],
-    );
-}
-
 fn adjacent_data_structure_at_limit() {
     let schema = compile_schema("type Item { value: [[int]]; }");
     let mut builder =
@@ -971,6 +985,20 @@ fn adjacent_data_structure_at_limit() {
     builder
         .build()
         .expect("data structure exactly at the limit should build");
+}
+
+fn adjacent_acyclic_data_value_dependency() {
+    assert_builds(
+        "type Item { first: string; second: string; }",
+        [one_record(
+            "item",
+            "Item",
+            [
+                ("first", LoadedValueDraft::from("ready")),
+                ("second", formatted_field_reference("{first}", "first")),
+            ],
+        )],
+    );
 }
 
 fn adjacent_matching_value_type() {

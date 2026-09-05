@@ -108,10 +108,13 @@ ValueShape
 
 - `Option<T>` 的语义值由缺失/存在 tag 和 `T` payload 构成。函数表达式使用 `None` / `Some(T)`；
   schema-guided CFD 对存在值允许直接写 `T`，writer 也规范写回裸值。
-- `Result<T, E>` 只通过 `Ok(T)` 或 `Err(E)` 表达业务结果。
+- `Result<T, E>` 只通过 `Ok(T)` 或 `Err(E)` 表达业务结果，不作为 object 数据字段；函数签名、常量和
+  表达式保持完整的 Result 语义。
 - 记录引用按声明的目标记录域和 key 解析，不能退化为普通 string。
 - inline object 与 record reference 是不同值类别。
 - list 保留源顺序；dictionary key 必须唯一。
+- object 值允许通过 Option、list、dictionary 和 record reference 形成有限递归结构；必填 object 包含环
+  和默认值物化环在 schema 编译阶段拒绝。
 - 发布后的数据不可变，函数执行不能修改配置记录或集合。
 - 普通配置字段不执行任意算术、控制流或 Host 调用。
 

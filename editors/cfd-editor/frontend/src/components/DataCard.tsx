@@ -26,6 +26,7 @@ import {
   annotationNullable,
   annotationPolymorphicTypes,
   annotationRefTargetType,
+  applyCreatedValue,
   boolValue,
   cellDeclaredType,
   cellEnumType,
@@ -39,9 +40,12 @@ import {
   fieldPathField,
   fieldPathIndex,
   nullValue,
+  objectFieldCells,
   objectFields,
+  optionLayerStates,
   presentationValue,
   refValue,
+  replaceOptionLayer,
   replacePresentationValue,
 } from '../wire'
 import { Icon } from './Icon'
@@ -53,13 +57,13 @@ import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
   collectionShapeForDeclaredType,
+  optionDepthForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
   referenceKeyText,
   scalarDefaultForDeclaredType,
   summaryOf,
 } from '../value/fieldValue'
-import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
@@ -167,18 +171,6 @@ export function selectedFlagVariantNames(
 
 function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
   return key.value.variant ?? String(key.value.value)
-}
-
-/** Strip trailing `?` off a declared type string. Kept for the rare cases
- *  (null-collection detection, resolveDefaultElement scalar shorthand) that
- *  still work on the wire-formatted type string. Other schema questions
- *  should read `FieldAnnotation.item_annotation` / `.ref_target_type` /
- *  `.enum_type` instead — the backend fills those directly. */
-function stripNullableType(declaredType?: string): string | undefined {
-  if (declaredType?.startsWith('Option<') && declaredType.endsWith('>')) {
-    return declaredType.slice(7, -1)
-  }
-  return declaredType?.endsWith('?') ? declaredType.slice(0, -1) : declaredType
 }
 
 function dictKeyText(k: DictKey): string {
@@ -656,18 +648,12 @@ function PolymorphicTypeRow({ value, polymorphicTypes, depth, onCommit }: {
   depth: number
   onCommit?: (next: FieldValue) => void
 }) {
-  const { openObjectDraft } = useObjectDraft()
+  const lookups = useEditorLookups()
 
-  function selectType(nextType: string) {
+  async function selectType(nextType: string) {
     if (!onCommit || nextType === value.value.actual_type) return
-    // 切换具体类型时重新生成字段草稿，确保新类型的必填字段经过同一套校验。
-    openObjectDraft({
-      title: '切换类型',
-      actualType: nextType,
-      polymorphicTypes,
-      confirmLabel: '确认切换',
-      onConfirm: onCommit,
-    })
+    const next = await lookups.makeDefaultObject(nextType)
+    if (next.ok) onCommit(next.value)
   }
 
   return (
@@ -769,11 +755,16 @@ function FieldRow({
     surface: 'record-foldout-header',
   })
   const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
+  const optionDepth = optionDepthForDeclaredType(declaredType)
+  const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
+  const innerValueAvailable = optionNoneLayer < 0 || optionNoneLayer === optionDepth - 1
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
   // "add element" instead of first coercing null → empty collection by
   // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = shownValue.kind === 'option_none' ? collectionShapeForDeclaredType(declaredType) : null
+  const nullCollectionShape = shownValue.kind === 'option_none' && innerValueAvailable
+    ? collectionShapeForDeclaredType(declaredType)
+    : null
   const displayValue = nullCollectionShape ?? shownValue
   const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
@@ -786,14 +777,16 @@ function FieldRow({
     : undefined
   const nullControls = commit ? (
     <NullableControls
-      value={shownValue}
+      value={value}
       nullable={!!nullable}
       declaredType={declaredType}
+      objectType={valueAnnotation?.object_type ?? undefined}
       enumType={enumType}
       enumIsFlag={effectiveEnumIsFlag}
       refTargetType={refTargetType}
       polymorphicTypes={polyTypes}
       onCommit={commit}
+      onCommitValue={next => onEdit?.(fieldPath, next)}
     />
   ) : null
   const mergedTrailing = nullControls
@@ -845,6 +838,7 @@ function FieldRow({
       trailing={mergedTrailing}
       dragProps={dragProps}
       collectionItem={collectionItem}
+      editorEnabled={innerValueAvailable}
     />
   )
 }
@@ -853,67 +847,99 @@ function NullableControls({
   value,
   nullable,
   declaredType,
+  objectType,
   enumType,
   enumIsFlag,
   refTargetType,
   polymorphicTypes,
   onCommit,
+  onCommitValue,
 }: {
   value: FieldValue
   nullable: boolean
   declaredType?: string
+  objectType?: string
   enumType?: string
   enumIsFlag?: boolean
   refTargetType?: string
   polymorphicTypes: string[]
   onCommit: (next: FieldValue) => void
+  onCommitValue: (next: FieldValue) => void
 }) {
-  const isNull = value.kind === 'option_none'
-  const isObject = value.kind === 'object'
+  const shownValue = presentationValue(value)
+  const optionDepth = optionDepthForDeclaredType(declaredType)
+  const layers = optionLayerStates(value, optionDepth)
+  const noneLayer = layers.indexOf('none')
+  const isObject = shownValue.kind === 'object'
   const isPolymorphic = polymorphicTypes.length > 0
-  const canSwitchType = isObject && polymorphicTypes.length >= 2 && !isNull
-  // Clear button on any nullable, currently non-null field — including enum
-  // and ref, whose own dropdowns hide the `None` option behind an extra
-  // click. A dedicated ✕ next to the value is faster.
-  const canClear = nullable && !isNull
-  // Create button on any null field where we can produce something useful:
-  // scalars/collections we materialize locally, refs/enums pull first option
-  // via the async helper, and abstract objects prompt for a concrete type.
-  const canCreate = isNull && (
+  const canSwitchType = isObject && polymorphicTypes.length >= 2 && noneLayer < 0
+  const canCreate = noneLayer >= 0 && (
+    noneLayer < optionDepth - 1
+    || scalarDefaultForDeclaredType(declaredType) !== null
+    || isPolymorphic
+    || !!enumType
+    || !!refTargetType
+    || !!objectType
+  )
+
+  // 非 Option 的旧 nullable 元数据仍按单层控件处理。
+  const legacyCanClear = optionDepth === 0 && nullable && shownValue.kind !== 'option_none'
+  const legacyCanCreate = optionDepth === 0 && shownValue.kind === 'option_none' && (
     scalarDefaultForDeclaredType(declaredType) !== null
     || isPolymorphic
     || !!enumType
     || !!refTargetType
-    || !!declaredType
+    || !!objectType
   )
 
-  const { openObjectDraft } = useObjectDraft()
   const lookups = useEditorLookups()
+  const [choosingTarget, setChoosingTarget] = useState<{ optionLayer: number | null } | null>(null)
 
-  if (!canClear && !canCreate && !canSwitchType) return null
+  if (layers.length === 0 && !legacyCanClear && !legacyCanCreate && !canSwitchType) return null
 
-  function openSwitchDialog() {
-    if (value.kind !== 'object') return
-    openObjectDraft({
-      title: '切换类型',
-      actualType: value.value.actual_type,
-      polymorphicTypes,
-      confirmLabel: '确认切换',
-      onConfirm: next => onCommit(next),
-    })
+  async function materializeObject(typeName: string) {
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) onCommit(result.value)
   }
 
-  function openCreateDialog(chosenType: string) {
-    openObjectDraft({
-      title: `创建 ${chosenType}`,
-      actualType: chosenType,
-      polymorphicTypes: isPolymorphic ? polymorphicTypes : [],
-      confirmLabel: '创建',
-      onConfirm: next => onCommit(next),
-    })
+  function commitCreated(layer: number, inner: FieldValue) {
+    onCommitValue(replaceOptionLayer(value, layer, {
+      kind: 'option_some',
+      value: inner,
+    }))
   }
 
-  async function handleCreate() {
+  function commitTarget(target: { optionLayer: number | null }, created: FieldValue) {
+    onCommitValue(applyCreatedValue(value, target.optionLayer, created))
+  }
+
+  async function handleCreate(
+    event: React.MouseEvent<HTMLButtonElement>,
+    target: { optionLayer: number | null },
+  ) {
+    const layer = target.optionLayer
+    if (layer === null) {
+      if (isPolymorphic) {
+        setChoosingTarget(target)
+        return
+      }
+      if (objectType) {
+        const result = await lookups.makeDefaultObject(objectType)
+        if (result.ok) commitTarget(target, result.value)
+      }
+      return
+    }
+    if (layer < optionDepth - 1) {
+      commitCreated(layer, nullValue())
+      return
+    }
+    if (refTargetType) {
+      const row = event.currentTarget.closest('.dc-row')
+      const target = row?.querySelector<HTMLElement>('.dc-pill-select-ref, .dc-input-ref-select')
+      target?.focus()
+      target?.click()
+      return
+    }
     // Scalars and collections stay local — cheap default + no user input needed.
     const scalarDefault = defaultForScalarLike({
       declaredType,
@@ -924,37 +950,43 @@ function NullableControls({
     })
     if (scalarDefault) {
       const resolved = await scalarDefault()
-      if (resolved) onCommit(resolved)
+      if (resolved) commitCreated(layer, resolved)
       return
     }
-    // Object materialization needs the draft dialog so required + abstract
-    // sub-fields can be filled explicitly instead of hoping the runtime
-    // hands back a writable shape.
     if (isPolymorphic) {
-      // No default — user picks concrete type inside the dialog.
-      openCreateDialog(polymorphicTypes[0])
+      setChoosingTarget(target)
       return
     }
-    if (declaredType) {
-      const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-      openCreateDialog(stripped)
+    if (objectType) {
+      const result = await lookups.makeDefaultObject(objectType)
+      if (result.ok) commitCreated(layer, result.value)
     }
   }
 
   return (
     <span className="dc-null-controls" onClick={e => e.stopPropagation()}>
-      {canSwitchType && (
-        <button
-          type="button"
-          className="dc-null-btn dc-null-btn-switch"
-          title="切换类型"
-          aria-label="切换类型"
-          onClick={openSwitchDialog}
-        >
-          <Icon name="edit" size={11} />
-        </button>
+      {canSwitchType && shownValue.kind === 'object' && (
+        <SearchableSelect
+          className="dc-polymorphic-type-select"
+          value={shownValue.value.actual_type}
+          options={polymorphicTypes.map(type => ({ value: type }))}
+          ariaLabel="选择具体类型"
+          onCommit={next => { void materializeObject(next) }}
+        />
       )}
-      {canClear && (
+      {layers.map((state, layer) => state === 'some' && (
+        <button
+          key={`clear-${layer}`}
+          type="button"
+          className="dc-null-btn dc-null-btn-clear"
+          title="清除为 None"
+          aria-label="清除为 None"
+          onClick={() => onCommitValue(replaceOptionLayer(value, layer, nullValue()))}
+        >
+          <Icon name="close" size={11} />
+        </button>
+      ))}
+      {legacyCanClear && (
         <button
           type="button"
           className="dc-null-btn dc-null-btn-clear"
@@ -969,21 +1001,45 @@ function NullableControls({
         <button
           type="button"
           className="dc-null-btn dc-null-btn-create"
-          title="创建默认值"
-          aria-label="创建默认值"
-          onClick={handleCreate}
+          title="创建值"
+          aria-label="创建值"
+          onClick={event => { void handleCreate(event, { optionLayer: noneLayer }) }}
         >
           <Icon name="plus" size={11} />
         </button>
+      )}
+      {legacyCanCreate && (
+        <button
+          type="button"
+          className="dc-null-btn dc-null-btn-create"
+          title="创建值"
+          aria-label="创建值"
+          onClick={event => { void handleCreate(event, { optionLayer: null }) }}
+        >
+          <Icon name="plus" size={11} />
+        </button>
+      )}
+      {choosingTarget !== null && (
+        <SearchableSelect
+          className="dc-polymorphic-type-select"
+          value=""
+          autoFocus
+          placeholder="选择具体类型..."
+          options={polymorphicTypes.map(type => ({ value: type }))}
+          ariaLabel="选择具体类型"
+          onCommit={async next => {
+            const result = await lookups.makeDefaultObject(next)
+            if (result.ok) commitTarget(choosingTarget, result.value)
+            setChoosingTarget(null)
+          }}
+          onExit={() => setChoosingTarget(null)}
+        />
       )}
     </span>
   )
 }
 
-/** Return a synchronous or ref/enum-fetching thunk producing a starter
- *  value for scalars, refs, enums, arrays and dicts. Object types return
- *  null — those need the object-draft dialog so required and abstract
- *  sub-fields can be filled explicitly. */
+/** Return a creator for scalar and collection type defaults. */
 function defaultForScalarLike({
   declaredType,
   enumType,
@@ -1008,16 +1064,7 @@ function defaultForScalarLike({
     }
   }
   if (refTargetType) {
-    return async () => {
-      const targets = await lookups.loadRefTargets(refTargetType)
-      if (targets.ok && targets.value.length > 0) {
-        return refValue(targets.value[0].coordinate.key)
-      }
-      window.dispatchEvent(new CustomEvent('cfd-editor-notice', {
-        detail: `&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`,
-      }))
-      return null
-    }
+    return null
   }
   const scalar = scalarDefaultForDeclaredType(declaredType)
   if (scalar) return async () => scalar
@@ -1045,6 +1092,7 @@ function ScalarFieldRow({
   collectionItem,
   pluginRenderer,
   pluginContext,
+  editorEnabled = true,
 }: {
   label: string
   fieldName?: string
@@ -1066,13 +1114,16 @@ function ScalarFieldRow({
   collectionItem?: boolean
   pluginRenderer?: FieldRenderer
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
+  editorEnabled?: boolean
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'formatted_string'
     || value.kind === 'enum' || value.kind === 'ref' || value.kind === 'function'
   const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
-  const canEdit = !missing && !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
+  const dropdownNullable = !!nullable && optionDepthForDeclaredType(declaredType) === 0
+  const canEdit = (!missing || !!resolvedRefTarget)
+    && editorEnabled && !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
@@ -1147,12 +1198,14 @@ function ScalarFieldRow({
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
-          {missing ? (
+          {missing && resolvedRefTarget && onCommit ? (
+            <DirectEditor value={displayedValue} onCommit={onCommit} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
+          ) : missing ? (
             <MissingValueRepair value={value} onRepair={onCommit ? () => onCommit(value) : undefined} />
           ) : pluginRenderer && pluginContext ? (
             <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
-            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={nullable} />
+            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
             <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} />
           )}
@@ -1635,6 +1688,7 @@ export function RefDirectSelect({
         style={{ '--ref-color': color } as CSSProperties}
         value={value.kind === 'option_none' && !nullable ? '' : selectedValue}
         autoFocus={autoFocus}
+        ariaLabel="选择引用"
         title={targetType}
         placeholder="选择引用..."
         options={[
@@ -1661,6 +1715,7 @@ export function RefDirectSelect({
       defaultValue={currentKey}
       autoFocus={autoFocus}
       placeholder="key"
+      aria-label="选择引用"
       aria-invalid={!!loadError}
       onBlur={event => {
         commit(event.target.value)
@@ -1964,7 +2019,7 @@ function ComplexValueChildren({
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFields(value).map((fc, index) => {
+      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).map((fc, index) => {
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -1973,6 +2028,7 @@ function ComplexValueChildren({
             fieldName={fc.name}
             description={annotation?.description ?? undefined}
             value={fc.value}
+            missing={fc.missing}
             depth={depth}
             onEdit={onEdit}
             onCollectionEdit={onCollectionEdit}
@@ -2239,32 +2295,40 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
   itemAnnotation?: FieldAnnotation
 }) {
   const [adding, setAdding] = useState(false)
+  const [pendingKey, setPendingKey] = useState<DictKey | null>(null)
   const [dupError, setDupError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const { openObjectDraft } = useObjectDraft()
+  const lookups = useEditorLookups()
   const rowSelection = useContext(ValueRowSelectionCtx)
   const pathWire = JSON.stringify(fieldPath)
   const selected = rowSelection?.selectedActionPathWire === pathWire
 
-  function reset() { setAdding(false); setDupError(null) }
+  function reset() { setAdding(false); setPendingKey(null); setDupError(null) }
 
   const objectDraft = collectionObjectDraftForAnnotation(
     itemAnnotation,
     container.value.length === 0,
   )
+  const requiredRefTarget = annotationRefTargetType(itemAnnotation)
+  const needsReference = !!requiredRefTarget && !annotationNullable(itemAnnotation)
 
   function addArrayItem() {
-    if (objectDraft) {
-      openObjectDraft({
-        title: `新建 ${objectDraft.actualType}`,
-        actualType: objectDraft.actualType,
-        polymorphicTypes: objectDraft.polymorphicTypes,
-        confirmLabel: '添加',
-        onConfirm: value => onCollectionEdit({ kind: 'array_append', value }),
-      })
+    if (needsReference || (objectDraft && objectDraft.polymorphicTypes.length > 0)) {
+      setAdding(true)
       return
     }
     onCollectionEdit({ kind: 'array_append' })
+  }
+
+  async function appendObject(typeName: string) {
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) onCollectionEdit({ kind: 'array_append', value: result.value })
+    reset()
+  }
+
+  function appendReference(value: FieldValue) {
+    onCollectionEdit({ kind: 'array_append', value })
+    reset()
   }
 
   if (container.kind === 'array') {
@@ -2295,6 +2359,27 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
         >
           <Icon name="plus" size={11} />
         </button>
+        {adding && needsReference && requiredRefTarget ? (
+          <RefDirectSelect
+            value={{ kind: 'option_none' }}
+            targetType={requiredRefTarget}
+            variant="input"
+            autoFocus
+            onCommit={appendReference}
+            onExit={reset}
+          />
+        ) : adding && objectDraft && (
+          <SearchableSelect
+            className="dc-polymorphic-type-select"
+            value=""
+            autoFocus
+            placeholder="选择具体类型..."
+            options={objectDraft.polymorphicTypes.map(type => ({ value: type }))}
+            ariaLabel="选择具体类型"
+            onCommit={next => { void appendObject(next) }}
+            onExit={reset}
+          />
+        )}
       </span>
     )
   }
@@ -2307,17 +2392,26 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
-    if (objectDraft) {
-      openObjectDraft({
-        title: `新建 ${objectDraft.actualType}`,
-        actualType: objectDraft.actualType,
-        polymorphicTypes: objectDraft.polymorphicTypes,
-        confirmLabel: '添加',
-        onConfirm: value => onCollectionEdit({ kind: 'dict_insert', key, value }),
-      })
-    } else {
-      onCollectionEdit({ kind: 'dict_insert', key })
+    if (needsReference || (objectDraft && objectDraft.polymorphicTypes.length > 0)) {
+      setPendingKey(key)
+      return
     }
+    onCollectionEdit({ kind: 'dict_insert', key })
+    reset()
+  }
+
+  async function insertObject(typeName: string) {
+    if (!pendingKey) return
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) {
+      onCollectionEdit({ kind: 'dict_insert', key: pendingKey, value: result.value })
+    }
+    reset()
+  }
+
+  function insertReference(value: FieldValue) {
+    if (!pendingKey) return
+    onCollectionEdit({ kind: 'dict_insert', key: pendingKey, value })
     reset()
   }
   return (
@@ -2337,11 +2431,33 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
         </button>
       ) : (
         <span className="dc-add-stack">
-          <DictKeyEntry
-            sampleKey={sampleKey}
-            onCommit={tryAdd}
-            onCancel={reset}
-          />
+          {pendingKey && needsReference && requiredRefTarget ? (
+            <RefDirectSelect
+              value={{ kind: 'option_none' }}
+              targetType={requiredRefTarget}
+              variant="input"
+              autoFocus
+              onCommit={insertReference}
+              onExit={reset}
+            />
+          ) : pendingKey && objectDraft ? (
+            <SearchableSelect
+              className="dc-polymorphic-type-select"
+              value=""
+              autoFocus
+              placeholder="选择具体类型..."
+              options={objectDraft.polymorphicTypes.map(type => ({ value: type }))}
+              ariaLabel="选择具体类型"
+              onCommit={next => { void insertObject(next) }}
+              onExit={reset}
+            />
+          ) : (
+            <DictKeyEntry
+              sampleKey={sampleKey}
+              onCommit={tryAdd}
+              onCancel={reset}
+            />
+          )}
           {dupError && <span className="dc-inline-error" role="alert">{dupError}</span>}
         </span>
       )}
@@ -2451,28 +2567,21 @@ function ObjectTypeSwitchControl({ value, annotation, onCommit }: {
   onCommit: (next: FieldValue) => void
 }) {
   const polymorphicTypes = annotationPolymorphicTypes(annotation)
-  const { openObjectDraft } = useObjectDraft()
+  const lookups = useEditorLookups()
   if (polymorphicTypes.length < 2) return null
 
   return (
-    <button
-      type="button"
-      className="dc-null-btn dc-null-btn-switch dc-object-item-switch"
-      title={`切换类型（当前：${value.value.actual_type}）`}
-      aria-label="切换类型"
-      onClick={event => {
-        event.stopPropagation()
-        openObjectDraft({
-          title: '切换类型',
-          actualType: value.value.actual_type,
-          polymorphicTypes,
-          confirmLabel: '确认切换',
-          onConfirm: onCommit,
-        })
+    <SearchableSelect
+      className="dc-polymorphic-type-select dc-object-item-switch"
+      value={value.value.actual_type}
+      options={polymorphicTypes.map(type => ({ value: type }))}
+      ariaLabel="选择具体类型"
+      onCommit={async nextType => {
+        if (nextType === value.value.actual_type) return
+        const next = await lookups.makeDefaultObject(nextType)
+        if (next.ok) onCommit(next.value)
       }}
-    >
-      <Icon name="edit" size={11} />
-    </button>
+    />
   )
 }
 

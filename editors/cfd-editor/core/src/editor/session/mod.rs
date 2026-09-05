@@ -762,9 +762,19 @@ fn apply_collection_edit(
     default_item: Option<CfdValue>,
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
+        (CfdValue::OptionSome(inner), edit) => apply_collection_edit(*inner, edit, default_item)
+            .map(|value| CfdValue::OptionSome(Box::new(value))),
+        (CfdValue::OptionNone, edit @ CollectionEdit::ArrayAppend { .. }) => {
+            apply_collection_edit(CfdValue::Array(Vec::new()), edit, default_item)
+                .map(|value| CfdValue::OptionSome(Box::new(value)))
+        }
+        (CfdValue::OptionNone, edit @ CollectionEdit::DictInsert { .. }) => {
+            apply_collection_edit(CfdValue::Dict(Vec::new()), edit, default_item)
+                .map(|value| CfdValue::OptionSome(Box::new(value)))
+        }
         (CfdValue::Array(mut items), CollectionEdit::ArrayAppend { value }) => {
             let seed = value
-                .or_else(|| items.last().cloned().or(default_item))
+                .or(default_item)
                 .ok_or_else(|| EditorError::write("array item requires an explicit value"))?;
             items.push(seed);
             Ok(CfdValue::Array(items))
@@ -791,12 +801,7 @@ fn apply_collection_edit(
                 return Err(EditorError::write("dict key already exists"));
             }
             let seed = value
-                .or_else(|| {
-                    entries
-                        .last()
-                        .map(|(_, value)| value.clone())
-                        .or(default_item)
-                })
+                .or(default_item)
                 .ok_or_else(|| EditorError::write("dict value requires an explicit value"))?;
             entries.push((key, seed));
             Ok(CfdValue::Dict(entries))
@@ -918,4 +923,49 @@ fn mutation_report_to_editor_error(
         message
     })
     .with_diagnostics(diagnostics)
+}
+
+#[cfg(test)]
+mod collection_edit_tests {
+    use super::*;
+
+    #[test]
+    fn array_append_materializes_an_optional_collection() {
+        let next = apply_collection_edit(
+            CfdValue::OptionNone,
+            CollectionEdit::ArrayAppend {
+                value: Some(CfdValue::Int(1)),
+            },
+            None,
+        )
+        .expect("optional array edit");
+
+        assert_eq!(
+            next,
+            CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)])))
+        );
+    }
+
+    #[test]
+    fn dict_insert_preserves_nested_option_layers() {
+        let next = apply_collection_edit(
+            CfdValue::OptionSome(Box::new(CfdValue::OptionNone)),
+            CollectionEdit::DictInsert {
+                key: coflow_runtime::CfdDictKey::String("key".to_string()),
+                value: Some(CfdValue::Bool(true)),
+            },
+            None,
+        )
+        .expect("nested optional dict edit");
+
+        assert_eq!(
+            next,
+            CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(
+                CfdValue::Dict(vec![(
+                    coflow_runtime::CfdDictKey::String("key".to_string()),
+                    CfdValue::Bool(true),
+                )]),
+            ))))
+        );
+    }
 }

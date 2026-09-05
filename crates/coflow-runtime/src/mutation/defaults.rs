@@ -115,11 +115,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             }
             let value = match materialization {
                 DefaultMaterialization::Minimal => self.minimal_for_field(field)?,
-                DefaultMaterialization::EditableShape => Some(self.value_for_ty(
-                    &field.value_type,
-                    field.default.as_ref(),
-                    materialization,
-                )?),
+                DefaultMaterialization::EditableShape => self.editable_for_field(field)?,
             };
             if let Some(value) = value {
                 fields.insert(field.name.clone(), value);
@@ -162,13 +158,7 @@ impl<'a> DefaultValueMaterializer<'a> {
         }
         match &field.value_type {
             CftValueType::Option(_) => Ok(Some(CfdValue::OptionNone)),
-            CftValueType::RecordRef(name) => Err(one_mutation_error(
-                "MUTATION-DEFAULT",
-                format!(
-                    "field `{}` of type `&{name}` has no schema default; provide an explicit value",
-                    field.name
-                ),
-            )),
+            CftValueType::RecordRef(_) => Ok(None),
             CftValueType::Object(name) => {
                 let fields = self.fields_for_type(name, DefaultMaterialization::Minimal, None)?;
                 Ok(Some(CfdValue::Object(Box::new(CfdObject::new(
@@ -180,6 +170,35 @@ impl<'a> DefaultValueMaterializer<'a> {
                 .zero_for_ty(&field.value_type, DefaultMaterialization::Minimal)
                 .map(Some),
         }
+    }
+
+    fn editable_for_field(
+        &mut self,
+        field: &CftField,
+    ) -> Result<Option<CfdValue>, DiagnosticSet> {
+        if let Some(default) = field.default.as_ref() {
+            return self
+                .materialize_schema_default(
+                    &field.value_type,
+                    default,
+                    DefaultMaterialization::EditableShape,
+                )
+                .map(Some);
+        }
+        // 引用和抽象 object 没有无歧义的类型默认值；省略后由编辑器暴露缺失状态。
+        let requires_choice = match &field.value_type {
+            CftValueType::RecordRef(_) => true,
+            CftValueType::Object(name) => self
+                .schema
+                .resolve_type(name)
+                .is_some_and(|meta| meta.is_abstract),
+            _ => false,
+        };
+        if requires_choice {
+            return Ok(None);
+        }
+        self.zero_for_ty(&field.value_type, DefaultMaterialization::EditableShape)
+            .map(Some)
     }
 
     fn create_field_draft(&mut self, field: &CftField) -> CreateRecordFieldDraft {
@@ -201,33 +220,25 @@ impl<'a> DefaultValueMaterializer<'a> {
             };
         }
 
+        if matches!(field.value_type, CftValueType::RecordRef(_)) {
+            return required_field_draft(self.schema, field, None, None);
+        }
+
         match self.minimal_for_field(field) {
             Ok(Some(value)) => CreateRecordFieldDraft {
                 name: field.name.to_string(),
                 value: Some(value),
-                source: CreateFieldSource::TypeSeed,
+                source: CreateFieldSource::TypeDefault,
                 required: None,
             },
             Ok(None) => CreateRecordFieldDraft {
                 name: field.name.to_string(),
                 value: None,
-                source: CreateFieldSource::TypeSeed,
+                source: CreateFieldSource::TypeDefault,
                 required: None,
             },
             Err(err) => required_field_draft(self.schema, field, Some(&err), None),
         }
-    }
-
-    fn value_for_ty(
-        &mut self,
-        ty: &CftValueType,
-        declared_default: Option<&CftSchemaDefaultValue>,
-        materialization: DefaultMaterialization,
-    ) -> Result<CfdValue, DiagnosticSet> {
-        if let Some(default) = declared_default {
-            return self.materialize_schema_default(ty, default, materialization);
-        }
-        self.zero_for_ty(ty, materialization)
     }
 
     fn materialize_schema_default(
@@ -470,16 +481,6 @@ fn required_input_for_field(
                     .collect(),
             }
         }
-        CftValueType::Object(type_name)
-            if err.is_some_and(|err| {
-                err.iter()
-                    .any(|diagnostic| diagnostic.message.contains("dependency cycle"))
-            }) =>
-        {
-            CreateRequiredInput::RecursiveObject {
-                type_name: type_name.to_string(),
-            }
-        }
         _ => CreateRequiredInput::Unsupported {
             message: err.and_then(|err| err.iter().next()).map_or_else(
                 || format!("field `{}` requires an explicit value", field.name),
@@ -509,4 +510,81 @@ fn ensure_type_can_materialize(schema: &CftSchema, type_name: &str) -> Result<()
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+
+    fn schema(source: &str) -> CftSchema {
+        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+        build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
+    }
+
+    #[test]
+    fn editable_object_omits_fields_that_require_an_explicit_choice() {
+        let schema = schema(
+            "type Item {} abstract type Effect {} type Damage : Effect {} \
+             type Reward { item: &Item; effect: Effect; count: int; }",
+        );
+        let object = default_object_for_type(
+            &schema,
+            "Reward",
+            DefaultMaterialization::EditableShape,
+        )
+        .expect("editable object");
+
+        assert!(object.field("item").is_none());
+        assert!(object.field("effect").is_none());
+        assert_eq!(object.field("count"), Some(&CfdValue::Int(0)));
+    }
+
+    #[test]
+    fn record_draft_marks_required_reference_and_type_default_sources() {
+        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let draft = create_record_draft_for_type(&schema, "Reward").expect("draft");
+        let item = draft.fields.iter().find(|field| field.name == "item").expect("item");
+        let count = draft.fields.iter().find(|field| field.name == "count").expect("count");
+
+        assert!(item.value.is_none());
+        assert!(matches!(item.required, Some(CreateRequiredInput::Ref { .. })));
+        assert_eq!(count.source, CreateFieldSource::TypeDefault);
+    }
+
+    #[test]
+    fn record_draft_prefers_schema_defaults_over_type_defaults() {
+        let schema = schema("type Item { configured: int = 7; generated: int; }");
+        let draft = create_record_draft_for_type(&schema, "Item").expect("draft");
+        let configured = draft
+            .fields
+            .iter()
+            .find(|field| field.name == "configured")
+            .expect("configured");
+        let generated = draft
+            .fields
+            .iter()
+            .find(|field| field.name == "generated")
+            .expect("generated");
+
+        assert_eq!(configured.value, Some(CfdValue::Int(7)));
+        assert_eq!(configured.source, CreateFieldSource::SchemaDefault);
+        assert_eq!(generated.value, Some(CfdValue::Int(0)));
+        assert_eq!(generated.source, CreateFieldSource::TypeDefault);
+    }
+
+    #[test]
+    fn minimal_insert_fields_omit_required_references() {
+        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let fields = default_missing_fields_for_type(
+            &schema,
+            "Reward",
+            DefaultMaterialization::Minimal,
+            &BTreeSet::new(),
+        )
+        .expect("minimal fields");
+
+        assert!(!fields.contains_key("item"));
+        assert_eq!(fields.get("count"), Some(&CfdValue::Int(0)));
+    }
 }

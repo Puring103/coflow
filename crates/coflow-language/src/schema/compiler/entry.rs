@@ -84,6 +84,7 @@ fn resolve_types<'a>(
     }
     types.validate_annotations();
     types.build_full_fields();
+    types.validate_required_object_cycles();
     diagnostics.extend(std::mem::take(&mut types.diagnostics));
     Ok(StageOutput {
         product: types,

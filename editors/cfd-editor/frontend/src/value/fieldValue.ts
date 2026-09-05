@@ -182,11 +182,23 @@ function dictKeyText(key: DictKey): string {
   }
 }
 
-function stripNullableType(declaredType: string): string {
-  if (declaredType.startsWith('Option<') && declaredType.endsWith('>')) {
-    return declaredType.slice(7, -1)
+export function optionDepthForDeclaredType(declaredType?: string): number {
+  if (!declaredType) return 0
+  let current = declaredType
+  let depth = 0
+  while (current.startsWith('Option<') && current.endsWith('>')) {
+    depth += 1
+    current = current.slice(7, -1)
   }
-  return declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
+  return depth
+}
+
+function stripNullableType(declaredType: string): string {
+  let current = declaredType
+  while (current.startsWith('Option<') && current.endsWith('>')) {
+    current = current.slice(7, -1)
+  }
+  return current.endsWith('?') ? current.slice(0, -1) : current
 }
 
 function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
