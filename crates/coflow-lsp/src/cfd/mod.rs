@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 
 use super::semantic_tokens::{
     MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_ENUM_MEMBER,
-    SEM_FUNCTION, SEM_KEYWORD, SEM_NAMESPACE, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
+    SEM_FUNCTION, SEM_KEYWORD, SEM_RECORD_KEY, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
     SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::LspBuild;
@@ -93,7 +93,7 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
 
     // Walk the AST for structured tokens.
     for record in &ast.records {
-        collector.add(record.key_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
+        collector.add(record.key_span, SEM_RECORD_KEY, MOD_DECLARATION | MOD_RECORD);
         collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
         for field in &record.fields {
             collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
@@ -102,7 +102,7 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
     }
     if let Some(schema) = schema {
         for (_, span, _) in incomplete_group_keys(source, schema) {
-            collector.add(span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
+            collector.add(span, SEM_RECORD_KEY, MOD_DECLARATION | MOD_RECORD);
         }
     }
 
@@ -368,7 +368,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             if let Some((_, type_span)) = &r.type_name {
                 c.add(*type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
             }
-            c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
+            c.add(r.key.1, SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD);
         }
     }
 }
@@ -494,7 +494,7 @@ pub(crate) fn visit_function_semantic_tokens(
                 if function_source[pos..].starts_with("::") {
                     (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
                 } else {
-                    (SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD)
+                    (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
                 }
             } else if previous == Some('.') {
                 if following == Some('(') {
@@ -503,8 +503,8 @@ pub(crate) fn visit_function_semantic_tokens(
                     (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
                 }
             } else if previous_ends_double_colon(function_source, start) {
-                if qualified_chain_is_reference(function_source, start) {
-                    (SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD)
+                if type_key_chain_is_reference(function_source, start) {
+                    (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
                 } else {
                     (SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA)
                 }
@@ -605,7 +605,7 @@ fn previous_ends_double_colon(source: &str, offset: usize) -> bool {
     source[..offset].trim_end().ends_with("::")
 }
 
-fn qualified_chain_is_reference(source: &str, offset: usize) -> bool {
+fn type_key_chain_is_reference(source: &str, offset: usize) -> bool {
     let prefix = source[..offset].trim_end_matches(':');
     let chain_start = prefix
         .char_indices()

@@ -79,7 +79,7 @@ impl ResolvedTypes<'_> {
             }
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
                 if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
-                    let resolved_name = self.resolve_name(&info.module, &enum_name.name);
+                    let resolved_name = enum_name.name.clone();
                     self.validate_id_as_enum_name(
                         &info.module,
                         &resolved_name,

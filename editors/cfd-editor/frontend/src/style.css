@@ -200,7 +200,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .cm-lsp-token-enumMember { color: var(--code-constant); }
 .cm-lsp-token-operator { color: var(--code-operator); }
 .cm-lsp-token-decorator { color: var(--code-special); }
-.cm-lsp-token-namespace,
+.cm-lsp-token-recordKey,
 .cm-lsp-token-function,
 .cm-lsp-token-parameter,
 .cm-lsp-token-variable { color: var(--code-special); }

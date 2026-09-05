@@ -114,11 +114,11 @@
       "editor.semanticHighlighting.enabled": true,
       "editor.semanticTokenColorCustomizations": {
         "rules": {
-          "namespace.declaration.record:cfd": {
+          "recordKey.declaration.record:cfd": {
             "foreground": "#4EC9B0",
             "fontStyle": "bold"
           },
-          "namespace.reference.record:cfd": {
+          "recordKey.reference.record:cfd": {
             "foreground": "#9CDCFE"
           },
           "property.declaration.schema:cfd": {

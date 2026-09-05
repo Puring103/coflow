@@ -242,7 +242,6 @@ public sealed class CoflowProgramValidationTests
             new CoflowFunctionIdentity("Validation", "test", "target"),
             new CoflowFunctionSignature(returnType, parameterTypes),
             null,
-            CfdNameResolver.Root,
             "validation.cfd",
             null);
         entry.PublishCompiled(implementation);

@@ -187,11 +187,18 @@ impl Parser<'_> {
                     segments.push(segment);
                 }
                 let span = Span::new(token.span.start, end);
+                if segments.len() > 2 {
+                    return self.err_at(
+                        CftErrorCode::InvalidCheckStatement,
+                        span,
+                        "static path must use `Enum::Variant`",
+                    );
+                }
                 self.node(StructureKind::CheckAst, span, [], || CheckExpr {
                     kind: if segments.len() == 1 {
                         CheckExprKind::Name(segments.remove(0).name)
                     } else {
-                        CheckExprKind::StaticPath(crate::syntax::ast::QualifiedName {
+                        CheckExprKind::StaticPath(crate::syntax::ast::NamePath {
                             segments,
                             span,
                         })

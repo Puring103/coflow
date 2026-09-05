@@ -191,7 +191,7 @@ internal static class CfdParser
                 var separator = reference.LastIndexOf("::", StringComparison.Ordinal);
                 var typeName = separator < 0 ? null : reference[..separator];
                 var key = separator < 0 ? reference : reference[(separator + 2)..];
-                if (!IsRecordKey(key) || (typeName is not null && !IsQualifiedName(typeName)))
+                if (!IsRecordKey(key) || (typeName is not null && !IsIdentifier(typeName)))
                     Error("CFD-SYNTAX-RECORD-KEY", $"invalid record key `{key}`", SpanFrom(start));
                 return new CfdReferenceValue(typeName, key, SpanFrom(start));
             }
@@ -217,6 +217,8 @@ internal static class CfdParser
                 SkipTrivia();
                 if (Match('{'))
                 {
+                    if (token.Contains("::", StringComparison.Ordinal))
+                        Error("CFD-SYNTAX-007", "object type must be a single identifier", SpanFrom(start));
                     var fields = ParseFields();
                     return new CfdObjectValue(token, fields, SpanFrom(start));
                 }
@@ -440,13 +442,10 @@ internal static class CfdParser
             expression.Length != 0 && !expression.Any(char.IsWhiteSpace) && path.Count != 0 &&
             (expression.StartsWith('&') ? key is not null : key is null) &&
             (typeName is null || expression.StartsWith('&')) &&
-            (typeName is null || IsQualifiedName(typeName)) &&
+            (typeName is null || IsIdentifier(typeName)) &&
             (key is null || IsReferenceName(key)) && path.All(IsReferenceName);
 
         private static bool IsReferenceName(string value) => CfdIdentifiers.IsIdentifierName(value);
-
-        private static bool IsQualifiedName(string value) =>
-            value.Split(new[] { "::" }, StringSplitOptions.None).All(IsIdentifier);
 
         private static bool IsIdentifier(string value) => CfdIdentifiers.IsIdentifier(value);
 

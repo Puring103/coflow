@@ -3,7 +3,7 @@ use super::super::document_symbols::document_symbols;
 use super::super::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_KEY,
     SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::super::text::{is_after_line_comment, is_inside_string};
@@ -48,14 +48,14 @@ fn encoded_semantic_tokens_preserve_modifiers() {
     push_semantic_span(
         source,
         Span::new(0, 2),
-        SEM_NAMESPACE,
+        SEM_RECORD_KEY,
         MOD_DECLARATION | MOD_RECORD,
         &mut tokens,
     );
     push_semantic_span(
         source,
         Span::new(3, 5),
-        SEM_NAMESPACE,
+        SEM_RECORD_KEY,
         MOD_REFERENCE | MOD_RECORD,
         &mut tokens,
     );
@@ -68,12 +68,12 @@ fn encoded_semantic_tokens_preserve_modifiers() {
             0,
             0,
             2,
-            SEM_NAMESPACE,
+            SEM_RECORD_KEY,
             MOD_DECLARATION | MOD_RECORD,
             0,
             3,
             2,
-            SEM_NAMESPACE,
+            SEM_RECORD_KEY,
             MOD_REFERENCE | MOD_RECORD,
         ]
     );
@@ -191,7 +191,7 @@ elite: Monster { target: &base }\n";
     assert!(
         tokens.contains(&DecodedSemanticToken {
             text: "base".to_string(),
-            token_type: SEM_NAMESPACE,
+            token_type: SEM_RECORD_KEY,
             modifiers: MOD_DECLARATION | MOD_RECORD,
         }),
         "{tokens:?}"
@@ -213,7 +213,7 @@ elite: Monster { target: &base }\n";
     }));
     assert!(tokens.contains(&DecodedSemanticToken {
         text: "base".to_string(),
-        token_type: SEM_NAMESPACE,
+        token_type: SEM_RECORD_KEY,
         modifiers: MOD_REFERENCE | MOD_RECORD,
     }));
 }

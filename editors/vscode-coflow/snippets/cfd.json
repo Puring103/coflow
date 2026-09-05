@@ -1,14 +1,4 @@
 {
-  "Namespace": {
-    "prefix": "namespace",
-    "body": "namespace ${1:project}::${2:module};",
-    "description": "Declare the CFD module namespace."
-  },
-  "Use": {
-    "prefix": "use",
-    "body": "use ${1:project}::${2:module}::${3:Type};",
-    "description": "Import a qualified CFD schema symbol."
-  },
   "Top-level record": {
     "prefix": "rec",
     "body": [
@@ -32,7 +22,7 @@
   "Direct reference": {
     "prefix": "&ref",
     "body": "&${1:Type}::${2:key}",
-    "description": "Qualified record reference: &Type::key"
+    "description": "Explicitly typed record reference: &Type::key"
   },
   "Array": {
     "prefix": "arr",

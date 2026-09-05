@@ -55,6 +55,17 @@ fn reports_unterminated_function_structures() {
 }
 
 #[test]
+fn rejects_qualified_function_type_names() {
+    for source in [
+        "item: Rule { apply: fn(value: Common::Input) -> int { 0 } }",
+        "item: Rule { apply: fn(value: int) -> Common::Output { value } }",
+    ] {
+        let (_, diagnostics) = parse_cfd(source);
+        assert!(!diagnostics.is_empty(), "expected an error for {source:?}");
+    }
+}
+
+#[test]
 fn validates_function_body_grammar_instead_of_skipping_it() {
     for body in [
         "+",

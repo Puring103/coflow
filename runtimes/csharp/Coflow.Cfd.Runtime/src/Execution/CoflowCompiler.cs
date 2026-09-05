@@ -81,7 +81,6 @@ internal static partial class CoflowCompiler
         private readonly IReadOnlyDictionary<Type, string> _generatedNames;
         private readonly IReadOnlyDictionary<Type, ICoflowTypeMetadata> _metadataByRuntimeType;
         private readonly IReadOnlyDictionary<Type, ICoflowEnumMetadata> _enumsByRuntimeType;
-        private readonly CfdNameResolver _names;
         private readonly List<Token> _tokens;
         private readonly List<CoflowInstruction> _instructions = new();
         private readonly List<CfdSpan?> _instructionSpans = new();
@@ -115,7 +114,6 @@ internal static partial class CoflowCompiler
             _generatedNames = catalog.GeneratedNames;
             _metadataByRuntimeType = catalog.MetadataByRuntimeType;
             _enumsByRuntimeType = catalog.EnumsByRuntimeType;
-            _names = entry.Names;
             _tokens = Lex(entry.Source!.Source);
         }
 
@@ -711,7 +709,7 @@ internal static partial class CoflowCompiler
                             binding.RuntimeType,
                             CoflowFieldAccess.Bind(ownerMetadata, binding));
                     }
-                    if (_declaredConstants.TryGetValue(_names.Resolve(token.Text), out var constant))
+                    if (_declaredConstants.TryGetValue(token.Text, out var constant))
                         return new ConstantExpr(_context.ResolveConstant(constant), constant.RuntimeType);
                     Error("COFLOW-FUNCTION-NAME", $"unknown name `{token.Text}`");
                     return null!;
@@ -807,27 +805,14 @@ internal static partial class CoflowCompiler
 
         private bool StartsObjectConstructor(string first)
         {
-            var cursor = _index;
-            var segments = new List<string> { first };
-            while (cursor + 1 < _tokens.Count &&
-                   _tokens[cursor].Kind == TokenKind.DoubleColon &&
-                   _tokens[cursor + 1].Kind == TokenKind.Identifier)
-            {
-                segments.Add(_tokens[cursor + 1].Text);
-                cursor += 2;
-            }
-            return cursor < _tokens.Count &&
-                   _tokens[cursor].Kind == TokenKind.LeftBrace &&
-                   _metadata.ContainsKey(_names.Resolve(string.Join("::", segments)));
+            return _index < _tokens.Count &&
+                   _tokens[_index].Kind == TokenKind.LeftBrace &&
+                   _metadata.ContainsKey(first);
         }
 
         private Expr ParseObjectConstructor(Token first)
         {
-            var segments = new List<string> { first.Text };
-            while (Match(TokenKind.DoubleColon))
-                segments.Add(Expect(TokenKind.Identifier, "expected a name after `::`").Text);
-            var sourceName = string.Join("::", segments);
-            var declaredName = _names.Resolve(sourceName);
+            var declaredName = first.Text;
             if (!_metadata.TryGetValue(declaredName, out var metadata))
                 Error("COFLOW-FUNCTION-OBJECT", $"unknown object type `{declaredName}`");
             if (metadata.IsAbstract)
@@ -905,12 +890,12 @@ internal static partial class CoflowCompiler
             var segments = new List<string> { first.Text };
             while (Match(TokenKind.DoubleColon))
                 segments.Add(Expect(TokenKind.Identifier, "expected a name after `::`").Text);
-            if (segments.Count < 2)
+            if (segments.Count != 2)
                 Error("COFLOW-FUNCTION-NAME", $"invalid static path `{first.Text}`");
-            var staticPath = _names.ResolveStaticPath(string.Join("::", segments));
+            var staticPath = string.Join("::", segments);
             if (_declaredConstants.TryGetValue(staticPath, out var constant))
                 return new ConstantExpr(_context.ResolveConstant(constant), constant.RuntimeType);
-            var owner = _names.Resolve(string.Join("::", segments.Take(segments.Count - 1)));
+            var owner = segments[0];
             var member = segments[^1];
             if (!_enums.TryGetValue(owner, out var enumMetadata))
                 Error("COFLOW-FUNCTION-NAME", $"unknown static owner `{owner}`");
@@ -920,7 +905,7 @@ internal static partial class CoflowCompiler
         }
 
         private bool TryResolveEnum(string name, out ICoflowEnumMetadata metadata) =>
-            _enums.TryGetValue(_names.Resolve(name), out metadata!);
+            _enums.TryGetValue(name, out metadata!);
 
         private Type? NarrowedType(string name)
         {
@@ -992,9 +977,8 @@ internal static partial class CoflowCompiler
             if (name == "bool") return typeof(bool);
             if (name == "string") return typeof(string);
             if (name == "()") return typeof(Unit);
-            var canonicalName = _names.Resolve(name);
-            if (_metadata.TryGetValue(canonicalName, out var generatedType)) return generatedType.RuntimeType;
-            if (_enums.TryGetValue(canonicalName, out var generatedEnum)) return generatedEnum.RuntimeType;
+            if (_metadata.TryGetValue(name, out var generatedType)) return generatedType.RuntimeType;
+            if (_enums.TryGetValue(name, out var generatedEnum)) return generatedEnum.RuntimeType;
             if (name.StartsWith("[", StringComparison.Ordinal) && name.EndsWith(']'))
                 return typeof(IReadOnlyList<>).MakeGenericType(ResolveTypeName(name[1..^1]));
             if (name.StartsWith("{", StringComparison.Ordinal) && name.EndsWith('}'))
@@ -1148,10 +1132,12 @@ internal static partial class CoflowCompiler
                 var segments = new List<string> { token.Text };
                 while (Match(TokenKind.DoubleColon))
                     segments.Add(Expect(TokenKind.Identifier, "expected a name after `::`").Text);
-                if (segments.Count > 1)
+                if (segments.Count > 2)
+                    Error("COFLOW-FUNCTION-MATCH", "enum pattern must use `Enum::Variant`");
+                if (segments.Count == 2)
                 {
-                    var enumName = _names.Resolve(string.Join("::", segments.Take(segments.Count - 1)));
-                    var variant = segments[^1];
+                    var enumName = segments[0];
+                    var variant = segments[1];
                     if (_enums.TryGetValue(enumName, out var enumMetadata))
                     {
                         if (!enumMetadata.Variants.TryGetValue(variant, out var enumValue))
@@ -1162,7 +1148,7 @@ internal static partial class CoflowCompiler
                     }
                 }
 
-                var typeName = _names.Resolve(string.Join("::", segments));
+                var typeName = segments[0];
                 _metadata.TryGetValue(typeName, out var generated);
                 if (generated is not null && Peek().Kind == TokenKind.Identifier)
                 {
@@ -1242,7 +1228,9 @@ internal static partial class CoflowCompiler
                 segments.Add(Expect(TokenKind.Identifier, "expected a name after `::`").Text);
             string? declaredType = null;
             var key = segments[0];
-            var fullName = _names.Resolve(string.Join("::", segments));
+            if (segments.Count > 2)
+                Error("COFLOW-FUNCTION-REFERENCE", "record reference must use `&Type::key.field`");
+            var fullName = segments[0];
             if (_metadata.TryGetValue(fullName, out var singletonMetadata) && singletonMetadata.IsSingleton)
             {
                 declaredType = fullName;
@@ -1250,8 +1238,8 @@ internal static partial class CoflowCompiler
             }
             else if (segments.Count > 1)
             {
-                declaredType = _names.Resolve(string.Join("::", segments.Take(segments.Count - 1)));
-                key = segments[^1];
+                declaredType = segments[0];
+                key = segments[1];
             }
             Expect(TokenKind.Dot, "record references in functions must select a field");
             var fieldName = Expect(TokenKind.Identifier, "expected a field name after record reference").Text;

@@ -56,10 +56,6 @@ pub(crate) fn completion_items(
         return items;
     }
 
-    if let Some(items) = module_path_completion_items(build, line_prefix) {
-        return items;
-    }
-
     if is_type_predicate_context(line_prefix) {
         return named_type_completion_items(build);
     }
@@ -128,8 +124,6 @@ pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     }
 
     [
-        ("namespace", "namespace ${1:project}::${2:module};"),
-        ("use", "use ${1:project}::${2:module}::${3:Type};"),
         ("const", "const ${1:NAME}: ${2:int} = ${3:value};"),
         ("enum", "enum ${1:Name} {\n\t${2:Variant},\n}"),
         ("type", "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
@@ -790,51 +784,6 @@ fn annotation_argument_open(line_prefix: &str, annotation: &str) -> bool {
     };
     let suffix = &line_prefix[start + annotation.len()..];
     suffix.trim_start().starts_with('(') && !suffix.contains(')')
-}
-
-fn module_path_completion_items(build: &LspBuild, line_prefix: &str) -> Option<Vec<Value>> {
-    let trimmed = line_prefix.trim_start();
-    let (keyword, suffix) = if let Some(suffix) = trimmed.strip_prefix("namespace ") {
-        ("namespace", suffix)
-    } else if let Some(suffix) = trimmed.strip_prefix("use ") {
-        ("use", suffix)
-    } else {
-        return None;
-    };
-    if suffix.contains(';') || suffix.contains(" as ") {
-        return None;
-    }
-    let mut items = build
-        .documents
-        .keys()
-        .map(|module| {
-            completion_item(
-                module,
-                COMPLETION_KIND_PROPERTY,
-                "CFT module",
-                None,
-            )
-        })
-        .collect::<Vec<_>>();
-    if keyword == "use" {
-        if let Some(schema) = build.schema() {
-            items.extend(schema.all_types().map(|ty| {
-                let label = format!("{}::{}", ty.module, ty.name);
-                completion_item(&label, COMPLETION_KIND_CLASS, "Imported CFT type", None)
-            }));
-            items.extend(schema.all_enums().map(|enum_def| {
-                let label = format!("{}::{}", enum_def.module, enum_def.name);
-                completion_item(&label, COMPLETION_KIND_ENUM, "Imported CFT enum", None)
-            }));
-        }
-        items.push(completion_item(
-            "as",
-            COMPLETION_KIND_KEYWORD,
-            "Import alias",
-            None,
-        ));
-    }
-    Some(items)
 }
 
 fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<Value>) {

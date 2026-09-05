@@ -352,12 +352,10 @@ impl<'a> Parser<'a> {
         self.pos = scan_balanced_delimiter(self.source, body_start - 1, '{', '}')
             .ok_or_else(|| self.error("unterminated function body"))?;
         let body_end = self.pos.saturating_sub(1);
-        if let Err(error) =
-            super::function::validate_function_body(&self.source[body_start..body_end])
-        {
+        if let Err(error) = super::function::validate_function_value(&self.source[start..self.pos]) {
             return Err(CfdSyntaxDiagnostic {
                 message: error.message,
-                span: Span::new(body_start + error.offset, body_start + error.offset + 1),
+                span: Span::new(start + error.offset, start + error.offset + 1),
             });
         }
         let span = Span::new(start, self.pos);
@@ -525,6 +523,12 @@ impl<'a> Parser<'a> {
             return Err(self.error("invalid record reference"));
         }
         let (type_name, key) = if let Some((type_name, key)) = reference.rsplit_once("::") {
+            if type_name.contains("::") {
+                return Err(CfdSyntaxDiagnostic {
+                    message: "record reference must use `&Type::key`".to_string(),
+                    span: reference_span,
+                });
+            }
             let type_end = reference_start + type_name.len();
             let key_start = type_end + 2;
             (
@@ -669,7 +673,7 @@ fn parse_field_reference_text(
         || key.as_deref().is_some_and(str::is_empty)
         || type_name
             .as_deref()
-            .is_some_and(|name| !is_qualified_reference_name(name))
+            .is_some_and(|name| !is_reference_name(name))
         || key.as_deref().is_some_and(|name| !is_reference_name(name))
         || path.iter().any(|name| !is_reference_name(name))
         || expression.chars().any(char::is_whitespace)
@@ -692,8 +696,4 @@ fn parse_field_reference_text(
 fn is_reference_name(value: &str) -> bool {
     let mut chars = value.chars();
     chars.next().is_some_and(is_identifier_start) && chars.all(is_identifier_continue)
-}
-
-fn is_qualified_reference_name(value: &str) -> bool {
-    value.split("::").all(is_reference_name)
 }

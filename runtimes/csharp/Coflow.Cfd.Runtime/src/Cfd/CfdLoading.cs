@@ -14,9 +14,7 @@ public sealed class CfdLoadContext
     private readonly Dictionary<(string DeclaredType, string Key), object> _cache = new();
     private readonly HashSet<(string DeclaredType, string Key)> _resolving = new();
     private readonly Stack<(string DeclaredType, string Key)> _currentRecords = new();
-    private readonly IReadOnlyDictionary<CfdRecordNode, CfdNameResolver> _recordNames;
     private readonly IReadOnlyDictionary<CfdRecordNode, string> _recordPaths;
-    private readonly Stack<CfdNameResolver> _currentNames = new();
     private readonly HashSet<CfdFormattedStringValue> _formatting = new();
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<
         CfdRecordNode, Dictionary<CfdValueNode, (string FieldName, string ValuePath)>> _valueLocations = new();
@@ -50,11 +48,10 @@ public sealed class CfdLoadContext
         Bindings = bindingMap;
         var constantMap = (constants ?? Array.Empty<CoflowConstant>())
             .ToDictionary(item => item.DeclaredName, StringComparer.Ordinal);
-        var bound = CfdNameBinder.Bind(
+        var bound = CfdDocumentBinder.Bind(
             documents,
             constantMap);
         Documents = bound.Documents;
-        _recordNames = bound.RecordNames;
         _recordPaths = bound.RecordPaths;
         Records = new CfdRecordCatalog(Documents, bindingMap);
     }
@@ -198,7 +195,6 @@ public sealed class CfdLoadContext
             new CoflowFunctionIdentity(declaredType, recordKey, fieldName, valuePath),
             new CoflowFunctionSignature(resultType, parameterTypes),
             source,
-            _currentNames.Peek(),
             CurrentPath,
             source?.Span ?? CurrentSpan,
             requiresCfdBody);
@@ -263,8 +259,7 @@ public sealed class CfdLoadContext
         var record = FindRecord(declaredType, key);
         if (record is null && key.Length != 0)
             throw new InvalidOperationException($"Cannot enter unknown CFD record `{declaredType}::{key}`.");
-        _currentNames.Push(record is null ? CfdNameResolver.Root : _recordNames[record]);
-        return new RecordScope(_currentRecords, _currentNames);
+        return new RecordScope(_currentRecords);
     }
 
     internal string? CurrentRecordType => _currentRecords.Count == 0 ? null : _currentRecords.Peek().DeclaredType;
@@ -273,15 +268,11 @@ public sealed class CfdLoadContext
     private sealed class RecordScope : IDisposable
     {
         private readonly Stack<(string DeclaredType, string Key)> _records;
-        private readonly Stack<CfdNameResolver> _names;
         private bool _disposed;
 
-        public RecordScope(
-            Stack<(string DeclaredType, string Key)> records,
-            Stack<CfdNameResolver> names)
+        public RecordScope(Stack<(string DeclaredType, string Key)> records)
         {
             _records = records;
-            _names = names;
         }
 
         public void Dispose()
@@ -289,7 +280,6 @@ public sealed class CfdLoadContext
             if (_disposed) return;
             _disposed = true;
             if (_records.Count != 0) _records.Pop();
-            if (_names.Count != 0) _names.Pop();
         }
     }
 

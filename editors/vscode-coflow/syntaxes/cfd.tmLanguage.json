@@ -4,7 +4,6 @@
   "scopeName": "source.cfd",
   "patterns": [
     { "include": "#comments" },
-    { "include": "#module-declarations" },
     { "include": "#function" },
     { "include": "#strings" },
     { "include": "#references" },
@@ -22,26 +21,6 @@
   "repository": {
     "comments": { "patterns": [
       { "name": "comment.line.number-sign.cfd", "match": "#.*$" }
-    ] },
-    "module-declarations": { "patterns": [
-      {
-        "name": "meta.namespace.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(namespace)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)",
-        "captures": {
-          "1": { "name": "keyword.control.namespace.cfd" },
-          "2": { "name": "entity.name.namespace.cfd" }
-        }
-      },
-      {
-        "name": "meta.use.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(use)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)(?:\\s+(as)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*))?",
-        "captures": {
-          "1": { "name": "keyword.control.import.cfd" },
-          "2": { "name": "entity.name.namespace.cfd" },
-          "3": { "name": "keyword.control.import.as.cfd" },
-          "4": { "name": "entity.name.type.alias.cfd" }
-        }
-      }
     ] },
     "strings": { "patterns": [
       {

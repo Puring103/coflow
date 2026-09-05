@@ -89,7 +89,7 @@ impl SymbolTable<'_> {
                 match item {
                     Item::Const(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = self.declaration_name(module_id, &def.name);
+                        let name = def.name.clone();
                         if self.insert_symbol(
                             &name,
                             SymbolKind::Const,
@@ -107,7 +107,7 @@ impl SymbolTable<'_> {
                     }
                     Item::Enum(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = self.declaration_name(module_id, &def.name);
+                        let name = def.name.clone();
                         if self.insert_symbol(&name, SymbolKind::Enum, module_id, def.name_span)
                         {
                             self.enums.insert(
@@ -125,7 +125,7 @@ impl SymbolTable<'_> {
                     }
                     Item::Type(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = self.declaration_name(module_id, &def.name);
+                        let name = def.name.clone();
                         if self.insert_symbol(&name, SymbolKind::Type, module_id, def.name_span)
                         {
                             self.types.insert(
@@ -140,7 +140,7 @@ impl SymbolTable<'_> {
                     }
                     Item::TypeAlias(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = self.declaration_name(module_id, &def.name);
+                        let name = def.name.clone();
                         if self.insert_symbol(
                             &name,
                             SymbolKind::TypeAlias,
@@ -158,7 +158,7 @@ impl SymbolTable<'_> {
                     }
                     Item::Check(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = self.declaration_name(module_id, &def.name);
+                        let name = def.name.clone();
                         if let Some(first) = self.checks.get(&name) {
                             self.diagnostics.push(
                                 CftDiagnostic::error(
@@ -186,14 +186,6 @@ impl SymbolTable<'_> {
                 }
             }
         }
-    }
-
-    pub(super) fn declaration_name(&self, _module: &ModuleId, name: &str) -> String {
-        name.to_string()
-    }
-
-    pub(super) fn resolve_name(&self, _module: &ModuleId, name: &str) -> String {
-        name.to_string()
     }
 
     pub(super) fn validate_identifier(&mut self, name: &str, module_id: &ModuleId, span: Span) {

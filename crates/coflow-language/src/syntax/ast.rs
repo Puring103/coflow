@@ -12,12 +12,12 @@ pub struct ModuleAst {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QualifiedName {
+pub struct NamePath {
     pub segments: Vec<NameRef>,
     pub span: Span,
 }
 
-impl QualifiedName {
+impl NamePath {
     #[must_use]
     pub fn canonical(&self) -> String {
         self.segments
@@ -219,12 +219,12 @@ pub enum DefaultExprKind {
         lhs: Box<DefaultExpr>,
         rhs: Box<DefaultExpr>,
     },
-    StaticPath(QualifiedName),
-    RecordReference(QualifiedName),
+    StaticPath(NamePath),
+    RecordReference(NamePath),
     Array(Vec<DefaultExpr>),
     Object(Vec<(NameRef, DefaultExpr)>),
     TypedObject {
-        type_name: QualifiedName,
+        type_name: NamePath,
         fields: Vec<(NameRef, DefaultExpr)>,
     },
     Dictionary(Vec<(DefaultExpr, DefaultExpr)>),
@@ -314,7 +314,7 @@ pub enum CheckExprKind {
     String(String),
     FormattedString(Vec<CheckFormatSegment>),
     Name(String),
-    StaticPath(QualifiedName),
+    StaticPath(NamePath),
     Records {
         type_name: NameRef,
     },
