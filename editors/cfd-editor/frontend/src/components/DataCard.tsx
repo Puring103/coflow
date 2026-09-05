@@ -182,9 +182,15 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, refTargetType, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; surface?: FieldRenderSurface; highlightQuery?: string }) {
+export function DataCardCompact({ value, label, declaredType, refTargetType, annotation, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; annotation?: FieldAnnotation | null; surface?: FieldRenderSurface; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
-    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} highlightQuery={highlightQuery} />
+    ? (
+      <HighlightQueryCtx.Provider value={highlightQuery}>
+        <div className="dc-inspector dc-inspector-compact">
+          <ComplexValueChildren value={value} depth={0} fieldPath={[]} valueAnnotation={annotation} />
+        </div>
+      </HighlightQueryCtx.Provider>
+    )
     : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
   const nullable = declaredType?.startsWith('Option<') || declaredType?.endsWith('?') || false
   const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
@@ -193,94 +199,8 @@ export function DataCardCompact({ value, label, declaredType, refTargetType, sur
   )
 }
 
-function MarkdownValueTree({ value, label, depth, highlightQuery }: {
-  value: FieldValue & { kind: 'object' | 'array' | 'dict' }
-  label?: string
-  depth: number
-  highlightQuery?: string
-}) {
-  const entries = treeEntries(value)
-  const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
-  const inlineScalarArray = value.kind === 'array'
-    && entries.every(entry => !isComplexValue(entry.value))
-
-  return (
-    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}${inlineScalarArray ? ' inline-scalar-array' : ''}`}>
-      {label && <div className="markdown-tree-branch-label">{highlightSearchText(label, highlightQuery)}</div>}
-      {entries.length === 0 ? (
-        <div className="markdown-tree-empty">—</div>
-      ) : (
-        <div className="markdown-tree-items">
-          {entries.map((entry, index) => (
-            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} highlightQuery={highlightQuery} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface MarkdownTreeEntry {
-  marker: string
-  markerKind: 'plain' | 'index' | 'key'
-  branchLabel?: string
-  value: FieldValue
-}
-
-function MarkdownTreeItem({ entry, depth, highlightQuery }: { entry: MarkdownTreeEntry; depth: number; highlightQuery?: string }) {
-  const complex = isComplexValue(entry.value) ? entry.value : null
-  return (
-    <div className={`markdown-tree-item${complex ? ' complex-item' : ''}`}>
-      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{highlightSearchText(entry.marker, highlightQuery)}</span>
-      <div className="markdown-tree-content">
-        {complex ? (
-          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} highlightQuery={highlightQuery} />
-        ) : (
-          <span className="markdown-tree-leaf"><ValueChip value={entry.value} highlightQuery={highlightQuery} /></span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function treeEntries(value: FieldValue & { kind: 'object' | 'array' | 'dict' }): MarkdownTreeEntry[] {
-  if (value.kind === 'object') {
-    return Object.entries(value.value.fields)
-      .filter((entry): entry is [string, FieldValue] => entry[1] !== undefined)
-      .map(([fieldName, fieldValue]) => ({
-        marker: '',
-        markerKind: 'plain',
-        branchLabel: isComplexValue(fieldValue) ? fieldName : undefined,
-        value: fieldValue,
-      }))
-  }
-  if (value.kind === 'array') {
-    return value.value.map((item, index) => {
-      const complex = isComplexValue(item)
-      return {
-        marker: complex ? `${index + 1}.` : '',
-        markerKind: complex ? 'index' : 'plain',
-        value: item,
-      }
-    })
-  }
-  return value.value.map(([key, item]) => ({
-    marker: `${dictTreeKey(key)} →`,
-    markerKind: 'key',
-    value: item,
-  }))
-}
-
 function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
   return value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
-}
-
-function dictTreeKey(key: DictKey): string {
-  switch (key.kind) {
-    case 'string': return key.value
-    case 'int': return String(key.value)
-    case 'enum': return dictEnumVariantText(key)
-  }
 }
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
@@ -375,6 +295,7 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  it once the highlight has been consumed. */
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
+const HighlightQueryCtx = createContext<string | undefined>(undefined)
 const ValueRowSelectionCtx = createContext<{
   selectedFieldPath?: FieldPathSegment[] | null
   selectedActionPathWire?: string | null
@@ -392,6 +313,12 @@ function sameFieldPath(
     && left.every((segment, index) => (
       segment.kind === right[index].kind && segment.value === right[index].value
     ))
+}
+
+function fieldLabelTitle(label: string, fieldName?: string, description?: string): string | undefined {
+  if (!fieldName) return undefined
+  const metadata = fieldMetadataTitle(fieldName, description)
+  return label === fieldName ? metadata : `${label}\n${metadata}`
 }
 
 function severityRank(s: 'error' | 'warning' | 'info'): number {
@@ -1120,6 +1047,7 @@ function ScalarFieldRow({
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
   editorEnabled?: boolean
 }) {
+  const highlightQuery = useContext(HighlightQueryCtx)
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'formatted_string'
     || value.kind === 'enum' || value.kind === 'ref' || value.kind === 'function'
@@ -1198,7 +1126,7 @@ function ScalarFieldRow({
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
       >
         {leading}
-        <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
+        <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
@@ -1211,7 +1139,7 @@ function ScalarFieldRow({
           ) : canEdit ? (
             <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
-            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} />
+            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
           )}
         </div>
       </div>
@@ -1937,7 +1865,7 @@ function ExpandableRow({
           <span className="dc-fold-arrow">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
           </span>
-          <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
+          <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">

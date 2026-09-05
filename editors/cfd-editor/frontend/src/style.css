@@ -3272,136 +3272,13 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   background: color-mix(in srgb, var(--text) 5%, transparent);
   border: 1px solid var(--border);
 }
-.markdown-value-tree {
-  --tree-font-size: 12px;
-  display: block;
-  width: 100%;
-  min-width: 0;
-  color: var(--text-dim);
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-  font-size: var(--tree-font-size);
-  line-height: 1.45;
-  white-space: normal;
-}
-.markdown-tree-depth-1 { --tree-font-size: 11px; }
-.markdown-tree-depth-2 { --tree-font-size: 11px; }
-.markdown-tree-branch-label {
-  min-width: 0;
-  margin-bottom: 2px;
-  color: var(--text);
-  font-size: var(--tree-font-size);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.markdown-tree-items {
-  min-width: 0;
-}
-.markdown-value-tree.inline-scalar-array > .markdown-tree-items {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px 5px;
-}
-.markdown-value-tree.inline-scalar-array > .markdown-tree-items > .markdown-tree-item {
-  display: block;
-  flex: 0 0 auto;
-  max-width: 100%;
-  padding: 0;
-}
-.markdown-value-tree.inline-scalar-array > .markdown-tree-items > .markdown-tree-item > .markdown-tree-marker {
-  display: none;
-}
-.markdown-value-tree.inline-scalar-array .vc-ref {
-  align-items: flex-start;
-  max-width: 100%;
-  overflow: visible;
-  white-space: normal;
-}
-.markdown-value-tree.inline-scalar-array .vc-ref-key {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.markdown-value-tree.has-branch-label > .markdown-tree-items {
-  margin-left: 2px;
-  padding-left: 10px;
-  border-left: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-}
-.markdown-tree-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: start;
-  min-width: 0;
-  padding: 1px 0;
-  font-size: var(--tree-font-size);
-}
-.markdown-tree-item.complex-item {
-  margin-bottom: 5px;
-}
-.markdown-tree-item.complex-item:last-child { margin-bottom: 0; }
-.markdown-tree-marker {
-  min-width: 16px;
-  padding-right: 6px;
-  color: var(--text-mute);
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-size: inherit;
-  line-height: 1.45;
-  text-align: right;
-  white-space: nowrap;
-}
-.markdown-tree-marker.marker-plain {
-  min-width: 0;
-  width: 0;
-  padding-right: 0;
-}
-.markdown-tree-marker.marker-index {
-  width: 26px;
-  min-width: 26px;
-  padding-right: 7px;
-}
-.markdown-tree-marker.marker-key {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.markdown-tree-content,
-.markdown-tree-leaf {
-  display: block;
-  min-width: 0;
-  font-size: inherit;
-}
-.markdown-tree-content > .markdown-value-tree {
-  padding-bottom: 1px;
-}
-.markdown-tree-leaf > .vc {
-  max-width: 100%;
-  font-size: inherit;
-}
-.markdown-tree-leaf > .vc-ref {
-  padding: 0 5px;
-  border: 0;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-.markdown-tree-leaf > .vc-str {
-  display: block;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.markdown-tree-more,
-.markdown-tree-empty {
-  padding: 1px 0;
-  color: var(--text-mute);
-  font-size: inherit;
-  font-style: italic;
-}
-.dimension-table td:has(.markdown-value-tree) {
+.dimension-table td:has(.dc-inspector-compact) {
   min-width: 300px;
   height: auto;
   vertical-align: top;
   white-space: normal;
 }
-.dimension-record-row:has(.markdown-value-tree) {
+.dimension-record-row:has(.dc-inspector-compact) {
   height: auto;
   align-items: start;
 }
@@ -3531,6 +3408,72 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .dc-row-value-inner.editable:hover {
   background: var(--bg-4);
   outline: 1px solid var(--border-strong);
+}
+
+/* 表格单元格复用 inspector 属性树，只压缩布局密度，不改变值的结构表达。 */
+.dc-inspector-compact {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 11px;
+}
+.dc-inspector-compact:empty::before {
+  content: '—';
+  padding: 2px 5px;
+  color: var(--text-mute);
+  font-style: italic;
+}
+.dc-inspector-compact .dc-row {
+  grid-template-columns: fit-content(45%) minmax(0, 1fr) 0;
+  min-height: 22px;
+  border-bottom-color: color-mix(in srgb, var(--border) 45%, transparent);
+}
+/* 覆盖 inspector 对集合序号使用的固定窄列，让 key 按内容占宽并保留上限。 */
+.dc-inspector-compact .dc-row.dc-row-field.dc-row-item {
+  grid-template-columns: fit-content(45%) minmax(0, 1fr) 0;
+}
+.dc-inspector-compact .dc-row-label {
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 4px 2px calc(6px + min(var(--dc-indent, 0px), 20px));
+  border-right: 0;
+  font-size: 11px;
+}
+.dc-inspector-compact .dc-row-label-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-inspector-compact .dc-row-value {
+  gap: 4px;
+  padding: 2px 4px 2px 6px;
+}
+.dc-inspector-compact .dc-row-value-inner {
+  min-height: 16px;
+  gap: 4px;
+}
+.dc-inspector-compact .dc-row-actions {
+  display: none;
+}
+.dc-inspector-compact .dc-row-structure {
+  min-height: 23px;
+  background: color-mix(in srgb, var(--text) 1.5%, transparent);
+}
+.dc-inspector-compact .dc-row-structure > .dc-row-label,
+.dc-inspector-compact .dc-row-structure > .dc-row-value {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.dc-inspector-compact .dc-fold-arrow {
+  width: 9px;
+}
+.dc-inspector-compact .vc,
+.dc-inspector-compact .vc-enum,
+.dc-inspector-compact .vc-ref {
+  font-size: 11px;
 }
 
 /* Structure headers span the full row. Only leaf fields use the two-column
