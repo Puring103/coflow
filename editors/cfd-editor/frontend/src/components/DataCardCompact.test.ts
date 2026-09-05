@@ -175,7 +175,7 @@ describe('DataCardCompact complex previews', () => {
     expect(html).not.toContain('disabled')
   })
 
-  it('renders the complete markdown tree while preserving scalar value styles', () => {
+  it('renders first-level inspector rows and collapses nested structures', () => {
     const value: FieldValue = {
       kind: 'object',
       value: {
@@ -206,20 +206,18 @@ describe('DataCardCompact complex previews', () => {
 
     const html = renderToStaticMarkup(createElement(DataCardCompact, { value, label: 'config' }))
 
-    expect(html).toContain('config')
+    expect(html).toContain('dc-inspector-compact')
     expect(html).toContain('rewards')
     expect(html).toContain('rates')
-    expect(html).not.toContain('hiddenLeafLabel')
+    expect(html).toContain('hiddenLeafLabel')
     expect(html).toContain('vc-ref')
     expect(html).toContain('vc-enum')
-    expect(html).not.toContain('marker-bullet')
-    expect(html).toContain('mobile')
-    expect(html).toContain('iron')
-    expect(html).not.toContain('… +1')
-    expect(html).not.toContain('marker-index')
+    expect(html).toContain('vc-count">5')
+    expect(html).not.toContain('mobile')
+    expect(html).not.toContain('iron')
   })
 
-  it('does not omit deeply nested values', () => {
+  it('keeps deeply nested values collapsed at the first structure row', () => {
     const value: FieldValue = {
       kind: 'array',
       value: [{
@@ -249,11 +247,12 @@ describe('DataCardCompact complex previews', () => {
 
     const html = renderToStaticMarkup(createElement(DataCardCompact, { value }))
 
-    expect(html).toContain('fully-visible')
-    expect(html).not.toContain('markdown-tree-more')
+    expect(html).toContain('Level1')
+    expect(html).not.toContain('fully-visible')
+    expect(html).toContain('dc-inspector-compact')
   })
 
-  it('hides the root array label and concrete object item types', () => {
+  it('uses inspector labels and concrete types for object array items', () => {
     const value: FieldValue = {
       kind: 'array',
       value: [{
@@ -268,9 +267,9 @@ describe('DataCardCompact complex previews', () => {
     const html = renderToStaticMarkup(createElement(DataCardCompact, { value, label: 'drops' }))
 
     expect(html).not.toContain('drops')
-    expect(html).toContain('1.')
-    expect(html).not.toContain('Reward')
-    expect(html).toContain('20')
+    expect(html).toContain('>1<')
+    expect(html).toContain('Reward')
+    expect(html).not.toContain('20')
     expect(html).not.toContain('amount')
   })
 
@@ -288,8 +287,37 @@ describe('DataCardCompact complex previews', () => {
     for (let index = 1; index <= 8; index += 1) {
       expect(html).toContain(`Gene_${index}`)
     }
-    expect(html).toContain('inline-scalar-array')
-    expect(html).not.toContain('markdown-tree-more')
+    expect(html).toContain('dc-inspector-compact')
+    expect(html).toContain('data-field-path="[7]"')
+  })
+
+  it('keeps the complete display label in the field tooltip', () => {
+    const childAnnotation: FieldAnnotation = {
+      ...polymorphicObjectAnnotation,
+      declared_type: 'string',
+      polymorphic_types: [],
+      object_type: null,
+      label: 'A very long field display label',
+    }
+    const value: FieldValue = {
+      kind: 'object',
+      value: {
+        actual_type: 'Config',
+        fields: { internalName: { kind: 'string', value: 'value' } },
+      },
+    }
+    const html = renderToStaticMarkup(createElement(DataCardCompact, {
+      value,
+      annotation: {
+        ...polymorphicObjectAnnotation,
+        object_type: 'Config',
+        field_order: ['internalName'],
+        children: { internalName: childAnnotation },
+      },
+    }))
+
+    expect(html).toContain('A very long field display label')
+    expect(html).toContain('实际名称：internalName')
   })
 
   it('applies the referenced type color to scalar previews', () => {

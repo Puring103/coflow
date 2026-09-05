@@ -555,6 +555,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   value={f.value}
                   label={name}
                   editable={cellEditable}
+                  annotation={f.annotation}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
                   enumIsFlag={cellEnumIsFlag(f)}
@@ -1814,11 +1815,12 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
   editable: boolean
+  annotation?: RecordRow['fields'][number]['annotation']
   refTargetType?: string
   enumType?: string
   enumIsFlag?: boolean
@@ -1922,6 +1924,7 @@ function EditableCell({
         value={shownValue}
         label={label}
         declaredType={declaredType}
+        annotation={annotation}
         refTargetType={refTargetType}
         surface="table-cell"
         highlightQuery={highlightQuery}
