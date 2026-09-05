@@ -82,7 +82,8 @@ type EffectBundle {
 ```
 
 `Effect` 字段保存内联对象，`&Effect` 保存按 record key 解析的记录引用。派生 type 继承父 type 的字段和
-check；一个 type 最多有一个直接父 type。
+check；一个 type 最多有一个直接父 type。object 可以通过 `Option`、数组、字典或记录引用递归包含自身，
+直接或间接的必填 object 包含环会在 schema 检查时报错。
 
 ### 类型别名、常量和顶层 check
 
@@ -115,12 +116,13 @@ check ItemIntegrity {
 | 数组 | `[T]` | `[a, b]` |
 | 字典 | `{K: V}` | `{ "hp": 100 }` |
 | 可选值 | `Option<T>` | `None`、`value`（也接受 `Some(value)`） |
-| 结果值 | `Result<T, E>` | `Ok(value)`、`Err(error)` |
+| 结果值 | `Result<T, E>` | 函数协议、常量和表达式中的 `Ok(value)`、`Err(error)` |
 | 函数 | `fn(name: T) -> R` | `fn(name: T) -> R { ... }` |
 | unit | `()` | 仅用于函数签名 |
 
-nullable 使用 `Option<T>`，没有 `T?` 类型简写。primitive、集合和 `Option` / `Result` 类型参数不做
-隐式转换；enum 也不会隐式转换为 int。
+nullable 使用 `Option<T>`，没有 `T?` 类型简写。`Result<T, E>` 不作为 object 数据字段类型，可用于函数
+参数、函数返回、常量和表达式。primitive、集合和 `Option` / `Result` 类型参数不做隐式转换；enum 也
+不会隐式转换为 int。
 
 ## 字段与默认值
 
@@ -138,7 +140,6 @@ type Stats {
   tags: [string] = [];
   attrs: {string: int} = { "attack": 10 };
   next: Option<&Item> = None;
-  fallback: Result<int, string> = Ok(0);
   owner: &Item = &Item::default_item;
   effect: Effect = DamageEffect { label: "default", amount: 10 };
   normalize: fn(value: int) -> int = fn(input: int) -> int {
@@ -148,7 +149,7 @@ type Stats {
 ```
 
 默认值支持 scalar、格式化字符串、enum/const 路径、flag 位表达式、数组、字典、内联对象、
-`None`、`Some(...)`、`Ok(...)`、`Err(...)`、记录引用和函数字面量。多态 object 字段可用
+`None`、`Some(...)`、记录引用和函数字面量。多态 object 字段可用
 `ConcreteType { ... }` 指定具体子 type。CFT 中的记录引用默认值必须写为 `&Type::key`，以便在没有字段
 上下文时确定目标记录类型。普通字符串包含插值时会自动识别为格式化字符串，`{{` / `}}` 分别表示
 字面量 `{` / `}`，不存在 `f"..."` 语法。
@@ -156,7 +157,8 @@ type Stats {
 函数字段的默认实现必须与字段签名一致，参数名不参与签名相等性。CFD 显式提供同字段函数时覆盖 CFT
 默认实现；`@Host` type 的函数字段不能声明默认实现。函数默认值仅支持直接用于函数字段，不能嵌套在
 集合、Option、Result 或 object 默认值中。Rust 数据模型保留函数源码；C# Runtime 的 `Load` 保留函数，
-`LoadAndCompile` 才类型检查并编译函数体。
+`LoadAndCompile` 才类型检查并编译函数体。默认值展开必须有限；`Some(object)`、非空集合或省略的 object
+字段形成默认物化环时，schema 检查会报告错误。
 
 ## 注解
 

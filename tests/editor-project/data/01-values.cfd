@@ -17,8 +17,6 @@ ValueGallery {
     features: Feature::Tradable | Feature::Hidden,
     optionalText: "present",
     optionalNumber: Some(7),
-    success: Ok(99),
-    failure: Err("expected fixture error value"),
     numbers: [1, 2, 3, 5, 8],
     labels: { "short": "value", "escaped": "quote: \" and slash: \\" },
     position: Vector2 { x: 12.5, y: -4.25 },
@@ -32,6 +30,5 @@ ValueGallery {
       "first": [Stats { health: 10 }, Stats { health: 20, speed: 2.0 }],
       "empty": [],
     },
-    optionalResult: Ok([Stats { health: 5 }]),
   }
 }

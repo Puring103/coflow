@@ -67,8 +67,8 @@ describe('DataCardCompact complex previews', () => {
       }),
     }))
 
-    expect(html).toContain('aria-label="切换类型"')
-    expect(html).toContain('当前：ItemReward')
+    expect(html).toContain('aria-label="选择具体类型"')
+    expect(html).toContain('value="ItemReward"')
   })
 
   it('shows the concrete type dropdown for a flattened polymorphic field', () => {
@@ -447,6 +447,110 @@ describe('DataCardCompact complex previews', () => {
 })
 
 describe('missing field repair', () => {
+  it('renders omitted object fields from schema annotations', () => {
+    const lookups = new EditorLookupController({
+      getEnumVariants: async () => [],
+      getRefTargets: async () => [],
+      makeDefaultObject: async () => ({ kind: 'option_none' }),
+      createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
+    } satisfies EditorLookupBackend)
+    lookups.adopt({ sessionId: 1, revision: 1 })
+    const childBase = {
+      enum_int_value: null,
+      enum_type: null,
+      enum_is_flag: false,
+      nullable: false,
+      read_only: false,
+      item_annotation: null,
+      field_order: [],
+      children: {},
+    }
+    const annotation = {
+      ...childBase,
+      declared_type: 'Holder',
+      ref_target_type: null,
+      polymorphic_types: [],
+      object_type: 'Holder',
+      field_order: ['target', 'effect'],
+      children: {
+        target: {
+          ...childBase,
+          declared_type: '&Item',
+          ref_target_type: 'Item',
+          polymorphic_types: [],
+          object_type: null,
+        },
+        effect: {
+          ...childBase,
+          declared_type: 'Effect',
+          ref_target_type: null,
+          polymorphic_types: ['Damage', 'Heal'],
+          object_type: 'Effect',
+        },
+      },
+    } satisfies FieldAnnotation
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'holder',
+          value: { kind: 'object', value: { actual_type: 'Holder', fields: {} } },
+          missing: false,
+          annotation,
+        }],
+        expandedPaths: new Set(['holder']),
+        onEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('aria-label="选择引用"')
+    expect(html).toContain('aria-label="创建值"')
+    expect(html).toContain('target')
+    expect(html).toContain('effect')
+  })
+
+  it('renders a missing required reference as a reference selector', () => {
+    const lookups = new EditorLookupController({
+      getEnumVariants: async () => [],
+      getRefTargets: async () => [],
+      makeDefaultObject: async () => ({ kind: 'option_none' }),
+      createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
+    } satisfies EditorLookupBackend)
+    lookups.adopt({ sessionId: 1, revision: 1 })
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'target',
+          value: { kind: 'option_none' },
+          missing: true,
+          annotation: {
+            enum_int_value: null,
+            declared_type: '&Item',
+            ref_target_type: 'Item',
+            enum_type: null,
+            enum_is_flag: false,
+            nullable: false,
+            read_only: false,
+            item_annotation: null,
+            polymorphic_types: [],
+            object_type: null,
+            field_order: [],
+            children: {},
+          },
+        }],
+        onEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('aria-label="选择引用"')
+    expect(html).not.toContain('没有可用的默认值')
+  })
+
   it('renders an explicit repair action for a generated default', () => {
     const html = renderToStaticMarkup(createElement(MissingValueRepair, {
       value: { kind: 'int', value: 0n },
@@ -466,5 +570,84 @@ describe('missing field repair', () => {
 
     expect(html).toContain('没有可用的默认值')
     expect(html).toContain('disabled=""')
+  })
+})
+
+describe('Option value controls', () => {
+  const annotation: FieldAnnotation = {
+    enum_int_value: null,
+    declared_type: 'Option<int>',
+    ref_target_type: null,
+    enum_type: null,
+    enum_is_flag: false,
+    nullable: true,
+    read_only: false,
+    item_annotation: null,
+    polymorphic_types: [],
+    object_type: null,
+    field_order: [],
+    children: {},
+  }
+
+  function render(value: FieldValue) {
+    return renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{ name: 'value', value, missing: false, annotation }],
+        onEdit: () => {},
+      }),
+    }))
+  }
+
+  it('shows a plus action for None', () => {
+    const html = render({ kind: 'option_none' })
+
+    expect(html).toContain('aria-label="创建值"')
+    expect(html).not.toContain('aria-label="清除为 None"')
+  })
+
+  it('shows a clear action for Some', () => {
+    const html = render({
+      kind: 'option_some',
+      value: { kind: 'int', value: 1n },
+    })
+
+    expect(html).toContain('aria-label="清除为 None"')
+    expect(html).not.toContain('aria-label="创建值"')
+  })
+
+  it('renders controls for each nested Option layer', () => {
+    const nestedAnnotation = {
+      ...annotation,
+      declared_type: 'Option<Option<int>>',
+    }
+    const renderNested = (value: FieldValue) => renderToStaticMarkup(createElement(
+      ObjectDraftHost,
+      {
+        lookups: {} as never,
+        generationKey: 'test',
+        onOpenReference: () => {},
+        children: createElement(DataCardExpanded, {
+          fields: [{ name: 'value', value, missing: false, annotation: nestedAnnotation }],
+          onEdit: () => {},
+        }),
+      },
+    ))
+
+    const someNone = renderNested({
+      kind: 'option_some',
+      value: { kind: 'option_none' },
+    })
+    expect(someNone.match(/aria-label="清除为 None"/g)).toHaveLength(1)
+    expect(someNone.match(/aria-label="创建值"/g)).toHaveLength(1)
+
+    const someSome = renderNested({
+      kind: 'option_some',
+      value: { kind: 'option_some', value: { kind: 'int', value: 1n } },
+    })
+    expect(someSome.match(/aria-label="清除为 None"/g)).toHaveLength(2)
+    expect(someSome).not.toContain('aria-label="创建值"')
   })
 })

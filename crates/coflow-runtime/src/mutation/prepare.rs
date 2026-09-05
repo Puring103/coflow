@@ -103,26 +103,11 @@ impl ProjectSession {
                 ));
             }
         };
-        match item_ty {
-            CftValueType::RecordRef(target_type) => self
-                .ref_targets(target_type)
-                .into_iter()
-                .next()
-                .map(|target| CfdValue::Ref(target.coordinate.key))
-                .ok_or_else(|| {
-                    one_mutation_error(
-                        "MUTATION-DEFAULT",
-                        format!(
-                            "collection item type `&{target_type}` has no available target record"
-                        ),
-                    )
-                }),
-            _ => default_value_for_value_type(
-                self.schema(),
-                item_ty,
-                DefaultMaterialization::EditableShape,
-            ),
-        }
+        default_value_for_value_type(
+            self.schema(),
+            item_ty,
+            DefaultMaterialization::EditableShape,
+        )
     }
 }
 

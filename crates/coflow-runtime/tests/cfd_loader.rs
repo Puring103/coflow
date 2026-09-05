@@ -138,12 +138,11 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
 }
 
 #[test]
-fn nested_option_and_result_tags_survive_loading() -> TestResult {
+fn nested_option_tags_survive_loading() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
                 nested: Option<Option<int>>;
-                outcome: Result<Option<int>, string>;
             }
         "#,
     );
@@ -152,7 +151,6 @@ fn nested_option_and_result_tags_survive_loading() -> TestResult {
         r#"
             item: Item {
                 nested: Some(None),
-                outcome: Ok(Some(3)),
             }
         "#,
     )?;
@@ -163,12 +161,6 @@ fn nested_option_and_result_tags_survive_loading() -> TestResult {
     assert_eq!(
         item.field("nested"),
         Some(&CfdValue::OptionSome(Box::new(CfdValue::OptionNone)))
-    );
-    assert_eq!(
-        item.field("outcome"),
-        Some(&CfdValue::ResultOk(Box::new(CfdValue::OptionSome(
-            Box::new(CfdValue::Int(3))
-        ))))
     );
     Ok(())
 }

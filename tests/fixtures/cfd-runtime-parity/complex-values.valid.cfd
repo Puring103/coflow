@@ -3,6 +3,5 @@ ComplexValues {
     samples: [1, 2, 3, 5, 8],
     lookup: { "one": 1, "two": 2 },
     optional: Some(Payload { enabled: true, score: 13 }),
-    outcome: Ok(Some(Payload { enabled: false, score: 21 })),
   }
 }
