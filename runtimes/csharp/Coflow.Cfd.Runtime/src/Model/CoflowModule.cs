@@ -160,7 +160,7 @@ public sealed class CoflowModule
         var documents = CfdParser.ParseAll(sources.Select((text, index) =>
             new CfdSource($"source[{index}]", text ?? throw new ArgumentException("CFD source cannot be null.", nameof(sources)))));
         var context = new CfdLoadContext(
-            documents, contract.Types, contract.Enums, contract.Constants, compile);
+            documents, contract.Types, contract.Constants, compile);
         documents = context.Documents;
         var metadataByName = contract.Types.ToDictionary(value => value.DeclaredType, StringComparer.Ordinal);
         var allRecords = context.Records.All;

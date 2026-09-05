@@ -136,7 +136,7 @@ impl Parser<'_> {
             }));
         }
         let parent = if self.eat(&TokenKind::Colon).is_some() {
-            Some(self.expect_qualified_name_ref()?)
+            Some(self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?)
         } else {
             None
         };
@@ -334,7 +334,7 @@ impl Parser<'_> {
                 kind: TypeRefKind::Dict(Box::new(key.value), Box::new(value.value)),
             })
         } else {
-            let name = self.expect_qualified_name_ref()?;
+            let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
             let kind = match name.name.as_str() {
                 "int" => TypeRefKind::Int,
                 "float" => TypeRefKind::Float,

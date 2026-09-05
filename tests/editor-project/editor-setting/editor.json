@@ -2,7 +2,7 @@
   "version": 1,
   "views": {
     "data/02-entities.cfd": {
-      "EditorFixture::Model::Entity": [
+      "Entity": [
         {
           "id": "entity-summary",
           "name": "实体摘要",
@@ -41,7 +41,7 @@
   },
   "default_table_column_widths": {
     "data/01-values.cfd": {
-      "EditorFixture::Model::ValueGallery": {
+      "ValueGallery": {
         "longText": 320.0,
         "nestedLookup": 280.0
       }
@@ -49,18 +49,18 @@
   },
   "record_groups": {
     "data/02-entities.cfd": {
-      "EditorFixture::Model::Entity": [
+      "Entity": [
         {
           "id": "party",
           "name": "队伍成员",
           "color": "blue",
           "records": [
             {
-              "actual_type": "EditorFixture::Model::Entity",
+              "actual_type": "Entity",
               "key": "warrior"
             },
             {
-              "actual_type": "EditorFixture::Model::Entity",
+              "actual_type": "Entity",
               "key": "mage"
             }
           ]
@@ -71,24 +71,52 @@
   "workspace": {
     "tabs": [
       {
-        "file_path": "data/02-entities.cfd",
-        "type_name": "EditorFixture::Model::Entity",
-        "view_id": "entity-relations",
-        "view_kind": "graph"
+        "file_path": "schema/02-values.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "schema/01-common.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
       },
       {
         "file_path": "data/01-values.cfd",
-        "type_name": "EditorFixture::Model::ValueGallery",
+        "type_name": "ValueGallery",
         "view_id": "__default_table",
         "view_kind": "table"
       },
       {
-        "file_path": "schema/03-relations.cft",
-        "type_name": "",
-        "view_id": "__default_source",
-        "view_kind": "source"
+        "file_path": "data/02-entities.cfd",
+        "type_name": "Entity",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/03-quests.cfd",
+        "type_name": "Quest",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/04-functions.cfd",
+        "type_name": "RuleSet",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/05-ui.cfd",
+        "type_name": "UiText",
+        "view_id": "__default_record",
+        "view_kind": "record",
+        "coordinate": {
+          "actual_type": "UiText",
+          "key": "UiText"
+        }
       }
     ],
-    "active_tab_id": "data/02-entities.cfd\u001fEditorFixture::Model::Entity"
+    "active_tab_id": "data/01-values.cfd\u001fValueGallery"
   }
 }

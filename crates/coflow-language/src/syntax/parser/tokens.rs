@@ -23,9 +23,6 @@ pub(super) fn token_name(kind: &TokenKind) -> &'static str {
 
 pub(super) fn reserved_keyword_name(kind: &TokenKind) -> Option<&'static str> {
     match kind {
-        TokenKind::Namespace => Some("namespace"),
-        TokenKind::Use => Some("use"),
-        TokenKind::As => Some("as"),
         TokenKind::Const => Some("const"),
         TokenKind::Enum => Some("enum"),
         TokenKind::Type => Some("type"),

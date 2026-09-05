@@ -2,8 +2,7 @@ mod tokens;
 
 use super::ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdNamespaceDecl, CfdRecord, CfdRef,
-    CfdUseDecl, CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdRecord, CfdRef, CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::lexical::{
@@ -40,50 +39,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_root(&mut self) -> CfdAst {
-        let mut namespace = None;
-        let mut uses = Vec::new();
         let mut records = Vec::new();
         self.skip_ws_and_comments();
 
-        if self.peek_keyword("namespace") {
-            match self.parse_namespace_decl() {
-                Ok(declaration) => namespace = Some(declaration),
-                Err(diagnostic) => {
-                    self.diagnostics.push(diagnostic);
-                    self.recover_to_next_record();
-                }
-            }
-            self.skip_ws_and_comments();
-        }
-
-        while self.peek_keyword("use") {
-            match self.parse_use_decl() {
-                Ok(declaration) => uses.push(declaration),
-                Err(diagnostic) => {
-                    self.diagnostics.push(diagnostic);
-                    self.recover_to_next_record();
-                }
-            }
-            self.skip_ws_and_comments();
-        }
-
         while !self.is_eof() {
-            if self.peek_keyword("namespace") || self.peek_keyword("use") {
-                let start = self.pos;
-                let keyword = if self.peek_keyword("namespace") {
-                    "namespace"
-                } else {
-                    "use"
-                };
-                self.diagnostics.push(CfdSyntaxDiagnostic {
-                    message: format!("`{keyword}` must appear before all CFD records"),
-                    span: Span::new(start, start + keyword.len()),
-                });
-                self.pos += keyword.len();
-                self.recover_to_next_record();
-                self.skip_ws_and_comments();
-                continue;
-            }
             match self.parse_top_level() {
                 Ok(new) => records.extend(new),
                 Err(diag) => {
@@ -93,73 +52,7 @@ impl<'a> Parser<'a> {
             }
             self.skip_ws_and_comments();
         }
-        CfdAst {
-            namespace,
-            uses,
-            records,
-        }
-    }
-
-    fn parse_namespace_decl(&mut self) -> Result<CfdNamespaceDecl, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        if !self.eat_keyword("namespace") {
-            return Err(self.error("expected `namespace`"));
-        }
-        let path = self.parse_qualified_path("namespace path", false)?;
-        self.expect_char(';', "`;` after namespace declaration")?;
-        Ok(CfdNamespaceDecl {
-            path: path.text,
-            path_span: path.span,
-            span: Span::new(start, self.pos),
-        })
-    }
-
-    fn parse_use_decl(&mut self) -> Result<CfdUseDecl, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        if !self.eat_keyword("use") {
-            return Err(self.error("expected `use`"));
-        }
-        let path = self.parse_qualified_path("use path", true)?;
-        self.skip_ws_and_comments();
-        let alias = if self.eat_keyword("as") {
-            let alias = self.parse_name_token("use alias")?;
-            if alias.text.contains("::") || !crate::is_cft_identifier(&alias.text) {
-                return Err(CfdSyntaxDiagnostic {
-                    message: format!("invalid use alias `{}`", alias.text),
-                    span: alias.span,
-                });
-            }
-            Some((alias.text, alias.span))
-        } else {
-            None
-        };
-        self.expect_char(';', "`;` after use declaration")?;
-        Ok(CfdUseDecl {
-            path: path.text,
-            path_span: path.span,
-            alias,
-            span: Span::new(start, self.pos),
-        })
-    }
-
-    fn parse_qualified_path(
-        &mut self,
-        label: &str,
-        require_qualified: bool,
-    ) -> Result<Token, CfdSyntaxDiagnostic> {
-        let token = self.parse_name_token(label)?;
-        let segments = token.text.split("::").collect::<Vec<_>>();
-        if (require_qualified && segments.len() < 2)
-            || segments
-                .iter()
-                .any(|segment| !crate::is_cft_identifier(segment))
-        {
-            return Err(CfdSyntaxDiagnostic {
-                message: format!("invalid {label} `{}`", token.text),
-                span: token.span,
-            });
-        }
-        Ok(token)
+        CfdAst { records }
     }
 
     /// Skip to a record candidate only after malformed nested syntax has
@@ -197,7 +90,7 @@ impl<'a> Parser<'a> {
             // `key: TypeName { ... }`
             self.skip_ws_and_comments();
             let type_start = self.pos;
-            let type_name = self.parse_name("record type")?;
+            let type_name = self.parse_type_name("record type")?;
             let type_span = Span::new(type_start, self.pos);
             let block = self.parse_block()?;
             let span = Span::new(first.span.start, block.span.end);
@@ -221,6 +114,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_group(&mut self, group_token: &Token) -> Result<Vec<CfdRecord>, CfdSyntaxDiagnostic> {
+        if group_token.text.contains("::") {
+            return Err(CfdSyntaxDiagnostic {
+                message: "group type must be a single identifier".to_string(),
+                span: group_token.span,
+            });
+        }
         self.expect_char('{', "group body `{`")?;
         let mut records = Vec::new();
         loop {
@@ -237,7 +136,7 @@ impl<'a> Parser<'a> {
             let (type_name, type_span) = if self.eat_char(':') {
                 self.skip_ws_and_comments();
                 let ts = self.pos;
-                let name = self.parse_name("record type")?;
+                let name = self.parse_type_name("record type")?;
                 (name, Span::new(ts, self.pos))
             } else {
                 (group_token.text.clone(), group_token.span)
@@ -279,7 +178,7 @@ impl<'a> Parser<'a> {
             None
         } else {
             let ts = self.pos;
-            let name = self.parse_name("block type or `{`")?;
+            let name = self.parse_type_name("block type or `{`")?;
             let name_end = self.pos; // capture before whitespace skip
             self.skip_ws_and_comments();
             if self.peek_char() != Some('{') {

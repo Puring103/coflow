@@ -1,52 +1,18 @@
 use coflow_language::cft::syntax::parser::parse_module;
 use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType,
-    ModuleId, TypeName,
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
 #[test]
-fn parses_namespace_and_explicit_uses_before_definitions() {
-    let ast = parse_module(
-        &ModuleId::from("items.cft"),
-        r#"
-            namespace game::items;
-            use game::common::Position;
-            use game::services::Services as Api;
-
-            type Item {
-                position: Position;
-                api: &Api;
-            }
-        "#,
-    )
-    .expect("namespace and use declarations should parse");
-
-    assert_eq!(
-        ast.namespace
-            .as_ref()
-            .expect("namespace")
-            .path
-            .canonical(),
-        "game::items"
-    );
-    assert_eq!(ast.uses.len(), 2);
-    assert_eq!(ast.uses[0].path.canonical(), "game::common::Position");
-    assert_eq!(ast.uses[0].local_name().name, "Position");
-    assert_eq!(ast.uses[1].path.canonical(), "game::services::Services");
-    assert_eq!(ast.uses[1].local_name().name, "Api");
-    assert_eq!(ast.items.len(), 1);
-}
-
-#[test]
-fn rejects_namespace_or_use_after_a_definition() {
+fn namespace_and_use_are_not_language_syntax() {
     for source in [
-        "type Item {} namespace game::items;",
-        "type Item {} use game::common::Position;",
-        "use game::common::Position; namespace game::items; type Item {}",
+        "namespace game; type Item {}",
+        "use common::Item; type Item {}",
+        "use common::Item as Imported; type Item {}",
     ] {
         let diagnostics = parse_module(&ModuleId::from("invalid.cft"), source)
-            .expect_err("file header declarations must be ordered");
+            .expect_err("removed declarations must be rejected");
         assert!(diagnostics
             .diagnostics
             .iter()
@@ -55,145 +21,54 @@ fn rejects_namespace_or_use_after_a_definition() {
 }
 
 #[test]
-fn rejects_wildcard_and_incomplete_paths() {
-    for source in [
-        "use game::*; type Item {}",
-        "namespace game::; type Item {}",
-        "use game::services::Services as; type Item {}",
-    ] {
-        assert!(parse_module(&ModuleId::from("invalid.cft"), source).is_err());
-    }
-}
-
-#[test]
-fn schema_uses_qualified_type_identity_and_resolves_import_aliases() {
+fn declarations_are_project_global_across_files() {
     let modules = parse_modules([
         CftFile::from_source(
             ModuleId::from("common.cft"),
-            r#"
-                namespace shared::common;
-                type Position { x: int; }
-                enum Quality { Good }
-                enum ItemId {}
-                const DEFAULT_LABEL: string = "default";
-            "#,
+            "type Position { x: int; } enum Quality { Good }",
         ),
         CftFile::from_source(
-            ModuleId::from("items.cft"),
-            r#"
-                namespace game::items;
-                use shared::common::Position as Point;
-                use shared::common::Quality;
-                use shared::common::ItemId;
-                use shared::common::DEFAULT_LABEL as Label;
-
-                @idAsEnum(ItemId)
-                type Item {
-                    local: ItemData;
-                    imported: Point;
-                    absolute: shared::common::Position;
-                    quality: Quality = Quality::Good;
-                    label: string = Label;
-                    check {
-                        quality == Quality::Good;
-                    }
-                }
-                sealed type ItemData : shared::common::Position { value: int; }
-
-                check ValidItems {
-                    all item in records(game::items::Item) {
-                        item.quality == Quality::Good;
-                    }
-                }
-            "#,
-        ),
-        CftFile::from_source(
-            ModuleId::from("other.cft"),
-            "namespace other; type Item { name: string; }",
+            ModuleId::from("item.cft"),
+            "type Item { position: Position; quality: Quality = Quality::Good; }",
         ),
     ]);
     let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("qualified declarations should compile");
-
-    let item = schema
-        .resolve_type("game::items::Item")
-        .expect("qualified Item type");
-    assert_eq!(
-        item.field("local").expect("local field").value_type,
-        CftValueType::Object(TypeName::new("game::items::ItemData").expect("qualified name"))
-    );
-    let position = CftValueType::Object(
-        TypeName::new("shared::common::Position").expect("qualified name"),
-    );
-    assert_eq!(item.field("imported").expect("imported field").value_type, position);
-    assert_eq!(
-        item.field("absolute").expect("absolute field").value_type,
-        position
-    );
-    assert_eq!(item.id_as_enum.as_ref().map(|name| name.as_str()), Some("shared::common::ItemId"));
-    assert_eq!(
-        item.field("label").expect("label field").default,
-        Some(coflow_language::cft::CftSchemaDefaultValue::String("default".to_string()))
-    );
-    assert_eq!(
-        item.field("quality").expect("quality field").default,
-        Some(coflow_language::cft::CftSchemaDefaultValue::Enum {
-            enum_name: coflow_language::cft::EnumName::new("shared::common::Quality")
-                .expect("qualified enum"),
-            variant: coflow_language::cft::EnumVariantName::new("Good").expect("variant"),
-            value: 0,
-        })
-    );
+        .expect("short names should resolve across files");
     assert_eq!(
         schema
-            .resolve_type("game::items::ItemData")
-            .expect("derived type")
-            .parent
-            .as_ref()
-            .map(|name| name.as_str()),
-        Some("shared::common::Position")
+            .resolve_type("Item")
+            .expect("Item")
+            .field("position")
+            .expect("position")
+            .value_type,
+        CftValueType::Object(TypeName::new("Position").expect("short name"))
     );
-    assert!(schema.resolve_type("other::Item").is_some());
-    assert!(schema.resolve_type("Item").is_none());
 }
 
 #[test]
-fn same_qualified_name_and_unknown_use_are_rejected() {
-    let duplicate = parse_modules([
-        CftFile::from_source(
-            ModuleId::from("one.cft"),
-            "namespace shared; type Item {}",
-        ),
-        CftFile::from_source(
-            ModuleId::from("two.cft"),
-            "namespace shared; type Item {}",
-        ),
+fn project_global_declarations_must_be_unique() {
+    let modules = parse_modules([
+        CftFile::from_source(ModuleId::from("one.cft"), "type Item {}"),
+        CftFile::from_source(ModuleId::from("two.cft"), "type Item {}"),
     ]);
-    let diagnostics = build_schema(&duplicate, &CftDimensionInputs::default())
-        .expect_err("same qualified name must be unique");
+    let diagnostics = build_schema(&modules, &CftDimensionInputs::default())
+        .expect_err("duplicate global name must fail");
     assert!(diagnostics
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == CftErrorCode::DuplicateGlobalName));
-
-    let unknown = parse_modules([CftFile::from_source(
-        ModuleId::from("main.cft"),
-        "use missing::Position; type Item { position: Position; }",
-    )]);
-    assert!(build_schema(&unknown, &CftDimensionInputs::default()).is_err());
 }
 
 #[test]
-fn legacy_dot_enum_static_access_is_not_accepted() {
-    let modules = parse_modules([CftFile::from_source(
-        ModuleId::from("main.cft"),
-        r#"
-            enum Quality { Good }
-            type Item {
-                quality: Quality = Quality.Good;
-                check { quality == Quality.Good; }
-            }
-        "#,
-    )]);
-    assert!(build_schema(&modules, &CftDimensionInputs::default()).is_err());
+fn qualified_type_names_are_rejected_but_static_paths_remain_valid() {
+    for source in [
+        "type Base {} type Item: group::Base {}",
+        "type Item { value: group::Value; }",
+        "type Item { check { self is group::Item; } }",
+    ] {
+        assert!(parse_module(&ModuleId::from("invalid.cft"), source).is_err());
+    }
+
+    let source = "enum Quality { Good } type Item { quality: Quality = Quality::Good; }";
+    assert!(parse_module(&ModuleId::from("valid.cft"), source).is_ok());
 }

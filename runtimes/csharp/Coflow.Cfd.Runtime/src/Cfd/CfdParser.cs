@@ -43,55 +43,27 @@ internal static class CfdParser
 
         public CfdDocument ParseDocument()
         {
-            string? declaredNamespace = null;
-            var uses = new List<CfdUseDirective>();
             var records = new List<CfdRecordNode>();
             SkipTrivia();
-            if (MatchKeyword("namespace"))
-            {
-                declaredNamespace = ParseQualifiedPath("namespace path", requireQualified: false);
-                Expect(';', "expected `;` after namespace declaration");
-                SkipTrivia();
-            }
-            while (MatchKeyword("use"))
-            {
-                var start = Cursor;
-                var path = ParseQualifiedPath("use path", requireQualified: true);
-                SkipTrivia();
-                var localName = path[(path.LastIndexOf("::", StringComparison.Ordinal) + 2)..];
-                if (MatchKeyword("as"))
-                {
-                    localName = ParseName("use alias");
-                    if (!IsIdentifier(localName))
-                        Error("CFD-SYNTAX-USE", $"invalid use alias `{localName}`", SpanFrom(start));
-                }
-                Expect(';', "expected `;` after use declaration");
-                uses.Add(new CfdUseDirective(path, localName, SpanFrom(start)));
-                SkipTrivia();
-            }
             while (!End)
             {
                 SkipTrivia();
                 if (End) break;
-                if (MatchKeyword("namespace") || MatchKeyword("use"))
-                {
-                    Error("CFD-SYNTAX-HEADER", "namespace and use declarations must appear before all CFD records", CurrentSpan());
-                    RecoverTopLevel();
-                    continue;
-                }
                 var start = Cursor;
                 var firstWasQuoted = Peek() == '"';
                 var first = ParseKey("record key or type");
                 SkipTrivia();
                 if (Match(':'))
                 {
-                    var type = ParseName("record type");
+                    var type = ParseTypeName("record type");
                     AddRecord(records, ParseRecord(first, type, start));
                 }
                 else if (Match('{'))
                 {
                     if (firstWasQuoted)
                         Error("CFD-SYNTAX-007", "group type must be an unquoted name", SpanFrom(start));
+                    if (first.Contains("::", StringComparison.Ordinal))
+                        Error("CFD-SYNTAX-007", "group type must be a single identifier", SpanFrom(start));
                     ParseGroupedRecords(records, first, start);
                 }
                 else
@@ -101,7 +73,7 @@ internal static class CfdParser
                 }
             }
             ThrowIfErrors();
-            return new CfdDocument(_source.Path, declaredNamespace, uses, records);
+            return new CfdDocument(_source.Path, records);
         }
 
         public CfdValueNode ParseSingleValue()
@@ -111,16 +83,6 @@ internal static class CfdParser
             if (!End) Error("CFD-SYNTAX-DEFAULT", "unexpected text after default value", CurrentSpan());
             ThrowIfErrors();
             return value;
-        }
-
-        private string ParseQualifiedPath(string expected, bool requireQualified)
-        {
-            var start = Cursor;
-            var path = ParseName(expected);
-            var segments = path.Split(new[] { "::" }, StringSplitOptions.None);
-            if ((requireQualified && segments.Length < 2) || segments.Any(segment => !IsIdentifier(segment)))
-                Error("CFD-SYNTAX-HEADER", $"invalid {expected} `{path}`", SpanFrom(start));
-            return path;
         }
 
         private void ParseGroupedRecords(List<CfdRecordNode> records, string groupType, Position start)
@@ -133,7 +95,7 @@ internal static class CfdParser
                 var key = ParseKey("record key");
                 SkipTrivia();
                 string type = groupType;
-                if (Match(':')) type = ParseName("record type");
+                if (Match(':')) type = ParseTypeName("record type");
                 AddRecord(records, ParseRecord(key, type, keyStart, groupType));
                 SkipTrivia();
                 Match(',');
@@ -588,6 +550,15 @@ internal static class CfdParser
                 return "_";
             }
             return builder.ToString();
+        }
+
+        private string ParseTypeName(string expected)
+        {
+            var start = Cursor;
+            var name = ParseName(expected);
+            if (name.Contains("::", StringComparison.Ordinal))
+                Error("CFD-SYNTAX-007", $"{expected} must be a single identifier", SpanFrom(start));
+            return name;
         }
 
         private void RecoverTopLevel()

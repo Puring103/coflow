@@ -47,11 +47,11 @@ CFD 值或函数作用域。
 
 名称解析遵循以下边界：
 
-- canonical type identity 包含 namespace 和类型名。
-- `namespace` 与显式 `use` 决定非限定名称的解析，不执行模糊 fallback。
+- type、enum、constant、类型别名和命名 check 使用项目全局唯一的短名；源文件和目录不创建作用域。
+- 类型位置只接受短名；`::` 仅用于 enum 静态成员和带类型的 record reference。
 - 同一作用域不能重复声明局部名称；内层 block 可以遮蔽外层局部值。
 - 参数名不参与函数类型相等性或调用 ABI。
-- 字段和函数 identity 由所属 canonical type、record key 与字段名共同确定。
+- 字段和函数 identity 由所属 type、record key 与字段名共同确定。
 - `$type`、`$field`、`$id` 等编译期元数据只能在其定义的函数上下文使用。
 
 ## 3. 类型系统

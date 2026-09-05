@@ -372,10 +372,8 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
 }
 
 #[test]
-fn cfd_semantic_tokens_cover_migrated_modules_and_function_language() {
-    let source = "namespace game::runtime;\n\
-use game::schema::Runner;\n\
-runner: Runner {\n\
+fn cfd_semantic_tokens_cover_project_global_types_and_function_language() {
+    let source = "runner: Runner {\n\
   execute: fn(value: int) -> int {\n\
     # function comment\n\
     var label = \"value\";\n\

@@ -39,12 +39,6 @@ pub(super) struct EnumInfo<'a> {
     pub(super) is_flag: bool,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct ModuleScope {
-    pub(super) namespace: Option<String>,
-    pub(super) uses: BTreeMap<String, String>,
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct FieldInfo {
     pub(super) declaring_type: crate::TypeName,

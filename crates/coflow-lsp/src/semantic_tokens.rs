@@ -215,10 +215,7 @@ fn add_lex_semantic_token(
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     let token_type = match kind {
-        TokenKind::Namespace
-        | TokenKind::Use
-        | TokenKind::As
-        | TokenKind::Const
+        TokenKind::Const
         | TokenKind::Enum
         | TokenKind::Type
         | TokenKind::Abstract
@@ -279,37 +276,6 @@ fn add_ast_semantic_tokens(
     ast: &coflow_language::cft::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
-    if let Some(namespace) = &ast.namespace {
-        for segment in &namespace.path.segments {
-            push_semantic_span(
-                &document.source,
-                segment.span,
-                SEM_NAMESPACE,
-                MOD_DECLARATION | MOD_SCHEMA,
-                tokens,
-            );
-        }
-    }
-    for import in &ast.uses {
-        for segment in &import.path.segments {
-            push_semantic_span(
-                &document.source,
-                segment.span,
-                SEM_TYPE,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
-        }
-        if let Some(alias) = &import.alias {
-            push_semantic_span(
-                &document.source,
-                alias.span,
-                SEM_TYPE,
-                MOD_DECLARATION | MOD_SCHEMA,
-                tokens,
-            );
-        }
-    }
     for annotation in &ast.dangling_annotations {
         add_annotation_semantic(document, annotation, tokens);
     }

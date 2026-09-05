@@ -121,7 +121,7 @@ type Rule {
 fn emits_scalar_constants_in_internal_runtime_metadata() {
     let files = generate_csharp_cfd(
         &schema(
-            "namespace common; const LEVEL: int = 42; const RATIO: float = 0.5; const ENABLED: bool = true; const LABEL: string = \"line\\ntext\"; type Item { value: int; }",
+            "const LEVEL: int = 42; const RATIO: float = 0.5; const ENABLED: bool = true; const LABEL: string = \"line\\ntext\"; type Item { value: int; }",
         ),
         &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
@@ -131,11 +131,11 @@ fn emits_scalar_constants_in_internal_runtime_metadata() {
     let output = all(&files);
 
     assert!(output.contains("public IReadOnlyList<CoflowConstant> Constants"));
-    assert!(output.contains("new CoflowConstant(\"common::LEVEL\", typeof(long), 42L)"));
-    assert!(output.contains("new CoflowConstant(\"common::RATIO\", typeof(double), 0.5D)"));
-    assert!(output.contains("new CoflowConstant(\"common::ENABLED\", typeof(bool), true)"));
+    assert!(output.contains("new CoflowConstant(\"LEVEL\", typeof(long), 42L)"));
+    assert!(output.contains("new CoflowConstant(\"RATIO\", typeof(double), 0.5D)"));
+    assert!(output.contains("new CoflowConstant(\"ENABLED\", typeof(bool), true)"));
     assert!(
-        output.contains("new CoflowConstant(\"common::LABEL\", typeof(string), \"line\\ntext\")")
+        output.contains("new CoflowConstant(\"LABEL\", typeof(string), \"line\\ntext\")")
     );
     assert!(!output.contains("public class Constants"));
 }
@@ -221,8 +221,7 @@ fn preserves_custom_annotations_in_runtime_metadata() {
     let files = generate_csharp_cfd(
         &schema(
             r#"
-namespace game;
-@CustomTag(game::Marker, "text", 1, 1.5, true)
+@CustomTag(Marker, "text", 1, 1.5, true)
 type Item {
   @EditorHint("compact") value: int;
 }
@@ -236,7 +235,7 @@ type Item {
     let output = all(&files);
 
     assert!(output.contains("new CoflowAnnotation(\"CustomTag\""));
-    assert!(output.contains("CoflowAnnotationArgumentKind.Name, \"game::Marker\""));
+    assert!(output.contains("CoflowAnnotationArgumentKind.Name, \"Marker\""));
     assert!(output.contains("CoflowAnnotationArgumentKind.String, \"text\""));
     assert!(output.contains("CoflowAnnotationArgumentKind.Int, 1L"));
     assert!(output.contains("CoflowAnnotationArgumentKind.Float, 1.5D"));
@@ -544,11 +543,10 @@ type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base
 }
 
 #[test]
-fn maps_cft_namespaces_to_csharp_namespaces_and_stable_metadata() {
+fn emits_global_cft_names_in_the_configured_csharp_namespace() {
     let files = generate_csharp_cfd(
         &schema(
             r#"
-namespace game::items;
 enum Rarity { Common }
 type Item { rarity: Rarity = Rarity::Common; }
 "#,
@@ -561,17 +559,17 @@ type Item { rarity: Rarity = Rarity::Common; }
 
     let item = files
         .iter()
-        .find(|file| file.relative_path.as_os_str() == "game/items/Item.cs")
-        .expect("namespaced Item file");
+        .find(|file| file.relative_path.as_os_str() == "Item.cs")
+        .expect("Item file");
     assert!(item
         .contents
-        .contains("namespace Project.Config.game.items"));
+        .contains("namespace Project.Config"));
 
     let output = all(&files);
-    assert!(output.contains("DeclaredType => \"game::items::Item\""));
-    assert!(output.contains("typeof(global::Project.Config.game.items.Item)"));
-    assert!(output.contains("global::Project.Config.game.items.Rarity.Common"));
-    assert!(output.contains("ReadEnumCft_67616D653A3A6974656D733A3A526172697479"));
+    assert!(output.contains("DeclaredType => \"Item\""));
+    assert!(output.contains("typeof(global::Project.Config.Item)"));
+    assert!(output.contains("global::Project.Config.Rarity.Common"));
+    assert!(output.contains("ReadEnumCft_526172697479"));
 }
 
 #[test]

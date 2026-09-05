@@ -91,24 +91,6 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
     // Lex all comment spans.
     collect_comment_tokens(source, &mut collector);
 
-    if let Some(namespace) = &ast.namespace {
-        collector.add_plain(
-            Span::new(namespace.span.start, namespace.span.start + "namespace".len()),
-            SEM_KEYWORD,
-        );
-        collector.add(namespace.path_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_SCHEMA);
-    }
-    for import in &ast.uses {
-        collector.add_plain(
-            Span::new(import.span.start, import.span.start + "use".len()),
-            SEM_KEYWORD,
-        );
-        collector.add(import.path_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
-        if let Some((_, alias_span)) = &import.alias {
-            collector.add(*alias_span, SEM_TYPE, MOD_DECLARATION | MOD_SCHEMA);
-        }
-    }
-
     // Walk the AST for structured tokens.
     for record in &ast.records {
         collector.add(record.key_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);

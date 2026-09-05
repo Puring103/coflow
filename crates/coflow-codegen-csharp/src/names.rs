@@ -57,22 +57,11 @@ pub fn pascal_case(name: &str) -> String {
 }
 
 pub fn csharp_type_name(name: &str) -> String {
-    pascal_case(cft_short_name(name))
+    pascal_case(name)
 }
 
-pub fn cft_short_name(name: &str) -> &str {
-    name.rsplit("::").next().unwrap_or(name)
-}
-
-pub fn cft_namespace(name: &str) -> Option<&str> {
-    name.rsplit_once("::").map(|(namespace, _)| namespace)
-}
-
-pub fn csharp_declaration_namespace(root: &str, name: &str) -> String {
-    cft_namespace(name).map_or_else(
-        || root.to_string(),
-        |namespace| format!("{}.{}", root, namespace.replace("::", ".")),
-    )
+pub fn csharp_declaration_namespace(root: &str, _name: &str) -> String {
+    root.to_string()
 }
 
 pub fn csharp_qualified_type_name(root: &str, name: &str) -> String {
@@ -84,16 +73,7 @@ pub fn csharp_qualified_type_name(root: &str, name: &str) -> String {
 }
 
 pub fn csharp_relative_type_path(name: &str) -> String {
-    cft_namespace(name).map_or_else(
-        || format!("{}.cs", csharp_type_name(name)),
-        |namespace| {
-            format!(
-                "{}/{}.cs",
-                namespace.replace("::", "/"),
-                csharp_type_name(name)
-            )
-        },
-    )
+    format!("{}.cs", csharp_type_name(name))
 }
 
 pub fn metadata_identifier(name: &str) -> String {

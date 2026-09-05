@@ -254,9 +254,6 @@ impl<'a> Lexer<'a> {
             }
         }
         match &self.source[start..self.pos] {
-            "namespace" => TokenKind::Namespace,
-            "use" => TokenKind::Use,
-            "as" => TokenKind::As,
             "const" => TokenKind::Const,
             "enum" => TokenKind::Enum,
             "type" => TokenKind::Type,

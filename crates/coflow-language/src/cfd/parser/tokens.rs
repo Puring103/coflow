@@ -28,6 +28,17 @@ impl Parser<'_> {
         self.parse_name_token(label).map(|t| t.text)
     }
 
+    pub(super) fn parse_type_name(&mut self, label: &str) -> Result<String, CfdSyntaxDiagnostic> {
+        let token = self.parse_name_token(label)?;
+        if token.text.contains("::") {
+            return Err(CfdSyntaxDiagnostic {
+                message: format!("{label} must be a single identifier"),
+                span: token.span,
+            });
+        }
+        Ok(token.text)
+    }
+
     pub(super) fn parse_name_token(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
         self.parse_unquoted_token(label, false)
     }

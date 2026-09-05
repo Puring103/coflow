@@ -43,17 +43,15 @@ fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
 }
 
 #[test]
-fn cfd_namespace_and_uses_resolve_types_enums_dict_keys_and_references() -> TestResult {
+fn project_global_names_resolve_types_enums_dict_keys_and_references() -> TestResult {
     let schema = compile_schema_files(&[
         (
             "common.cft",
-            "namespace shared::common; enum Rarity { Common, Rare }",
+            "enum Rarity { Common, Rare }",
         ),
         (
             "items.cft",
             r#"
-namespace game::items;
-use shared::common::Rarity;
 type Item {
   rarity: Rarity;
   weights: {Rarity: int};
@@ -66,17 +64,14 @@ type Item {
     let records = parse_cfd_input_records(
         &schema,
         r#"
-namespace game::items;
-use shared::common::Rarity as Quality;
-
 Item {
   sword {
-    rarity: Quality::Rare,
-    weights: { Quality::Common: 1 },
+    rarity: Rarity::Rare,
+    weights: { Rarity::Common: 1 },
   }
   shield {
-    rarity: shared::common::Rarity::Common,
-    weights: { shared::common::Rarity::Rare: 2 },
+    rarity: Rarity::Common,
+    weights: { Rarity::Rare: 2 },
     backup: &Item::sword,
   }
 }
@@ -86,7 +81,7 @@ Item {
     assert_eq!(records.len(), 2);
     assert!(records
         .iter()
-        .all(|record| record.actual_type == "game::items::Item"));
+        .all(|record| record.actual_type == "Item"));
     assert_eq!(
         records[1].fields.get("backup"),
         Some(&LoadedValueDraft::OptionSome(Box::new(
@@ -97,22 +92,18 @@ Item {
 }
 
 #[test]
-fn cfd_rejects_unknown_or_conflicting_uses_without_name_fallback() {
-    let schema = compile_schema_files(&[
-        ("root.cft", "type Item {}"),
-        ("local.cft", "namespace game; type Item {}"),
-        ("shared.cft", "namespace shared; type Item {}"),
-    ]);
+fn cfd_rejects_removed_namespace_and_use_headers() {
+    let schema = compile_schema("type Item {}");
 
     let unknown = parse_cfd_input_records(&schema, "use missing::Item; Item { value {} }")
-        .expect_err("unknown use target");
+        .expect_err("use is not syntax");
     assert_has_text_code(&unknown, CfdTextErrorCode::Syntax);
 
     let conflict = parse_cfd_input_records(
         &schema,
-        "namespace game; use shared::Item; Item { value {} }",
+        "namespace game; Item { value {} }",
     )
-    .expect_err("unqualified use path or local declaration conflict");
+    .expect_err("namespace is not syntax");
     assert_has_text_code(&conflict, CfdTextErrorCode::Syntax);
 }
 
@@ -1039,7 +1030,6 @@ fn showcase_files_load_together() -> TestResult {
 fn function_values_are_retained_and_signature_checked() -> TestResult {
     let schema = compile_schema(
         r#"
-namespace app;
 type Rule {
   apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string>;
   factories: [fn(int) -> int];
@@ -1047,7 +1037,6 @@ type Rule {
 "#,
     );
     let source = r#"
-namespace app;
 item: Rule {
   apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string> {
     Ok(callback(value))
@@ -1057,7 +1046,7 @@ item: Rule {
 "#;
     let model = load_cfd_model(&schema, source)?;
     let record_id = model
-        .record_by_type_key("app::Rule", "item")
+        .record_by_type_key("Rule", "item")
         .expect("function record");
     let record = model.record(record_id).expect("function record value");
     let Some(CfdValue::Function(function)) = record.field("apply") else {
@@ -1070,9 +1059,9 @@ item: Rule {
     assert!(matches!(factories.as_slice(), [CfdValue::Function(_)]));
 
     for invalid in [
-        "item: app::Rule { apply: fn(value: float, callback: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
-        "item: app::Rule { apply: fn(value: int, callback: fn(int) -> int) -> int { 1 }, factories: [] }",
-        "item: app::Rule { apply: fn(value: int, value: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+        "item: Rule { apply: fn(value: float, callback: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+        "item: Rule { apply: fn(value: int, callback: fn(int) -> int) -> int { 1 }, factories: [] }",
+        "item: Rule { apply: fn(value: int, value: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
     ] {
         let error = load_cfd_model(&schema, invalid).expect_err("invalid function signature");
         assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);

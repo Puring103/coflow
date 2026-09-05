@@ -16,7 +16,7 @@ pub use entry::{build_schema, build_schema_with_limits};
 
 use self::checks::CheckTypeAnalyzer;
 use self::state::{
-    CheckInfo, ConstInfo, EnumInfo, FieldInfo, ModuleScope, Symbol, TypeAliasInfo, TypeInfo,
+    CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeAliasInfo, TypeInfo,
 };
 use crate::module::{CftModuleSet, ModuleId};
 use crate::schema::{
@@ -45,7 +45,6 @@ pub(super) struct SymbolTable<'a> {
     aliases: BTreeMap<String, TypeAliasInfo<'a>>,
     enums: BTreeMap<String, EnumInfo<'a>>,
     checks: BTreeMap<String, CheckInfo<'a>>,
-    module_scopes: BTreeMap<ModuleId, ModuleScope>,
 }
 
 pub(super) struct ResolvedTypes<'a> {
@@ -92,7 +91,6 @@ impl<'a> SymbolTable<'a> {
             aliases: BTreeMap::new(),
             enums: BTreeMap::new(),
             checks: BTreeMap::new(),
-            module_scopes: BTreeMap::new(),
         }
     }
 

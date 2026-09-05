@@ -200,12 +200,10 @@ mod tests {
     }
 
     #[test]
-    fn symbol_stage_returns_complete_scopes_and_declarations() {
-        let modules =
-            modules("namespace demo; enum State { Ready = 1 } type Item { state: State; }");
+    fn symbol_stage_returns_complete_declarations() {
+        let modules = modules("enum State { Ready = 1 } type Item { state: State; }");
         let mut budget = StructuralBudget::new(StructuralLimits::default());
         let symbols = collect_symbols(&modules, &mut budget).expect("symbol stage");
-        assert_eq!(symbols.product.module_scopes.len(), 1);
         assert_eq!(symbols.product.enums.len(), 1);
         assert_eq!(symbols.product.types.len(), 1);
         assert!(symbols.product.diagnostics.is_empty());

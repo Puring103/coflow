@@ -461,10 +461,11 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
                 {
                     CftSchemaCheckExprKind::Name(resolved_name)
                 } else {
-                    let (variant, owner) = path.segments.split_last().map_or(
-                        (path.last(), &path.segments[..0]),
-                        |(variant, owner)| (variant, owner),
-                    );
+                    // 语法层保证限定名至少包含一个段，这里直接拆出末段作为枚举成员。
+                    let (variant, owner) = path
+                        .segments
+                        .split_last()
+                        .expect("qualified name must contain at least one segment");
                     let owner = owner
                         .iter()
                         .map(|segment| segment.name.as_str())
