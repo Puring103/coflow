@@ -460,7 +460,7 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
                 {
                     CftSchemaCheckExprKind::Name(resolved_name)
                 } else {
-                    // 语法层保证限定名至少包含一个段，这里直接拆出末段作为枚举成员。
+                    // 语法层保证名称路径至少包含一个段，这里直接拆出末段作为枚举成员。
                     let (variant, owner) = path
                         .segments
                         .split_last()
