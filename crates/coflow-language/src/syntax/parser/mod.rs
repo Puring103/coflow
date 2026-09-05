@@ -95,14 +95,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub(super) fn expect_qualified_name_ref(&mut self) -> Result<NameRef, CftDiagnostics> {
-        let path = self.expect_qualified_name()?;
-        Ok(NameRef {
-            name: path.canonical(),
-            span: path.span,
-        })
-    }
-
     fn expect_name(
         &mut self,
         code: CftErrorCode,

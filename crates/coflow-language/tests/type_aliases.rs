@@ -54,12 +54,11 @@ fn aliases_expand_in_fields_constants_and_nested_function_results() {
 }
 
 #[test]
-fn aliases_resolve_across_namespaces_and_use_declarations() {
+fn aliases_resolve_by_project_global_short_name_across_files() {
     let modules = parse_modules([
         CftFile::from_source(
             ModuleId::from("shared.cft"),
             r#"
-                namespace shared;
                 type Identifier = string;
                 type MaybeIdentifier = Option<Identifier>;
             "#,
@@ -67,18 +66,16 @@ fn aliases_resolve_across_namespaces_and_use_declarations() {
         CftFile::from_source(
             ModuleId::from("main.cft"),
             r#"
-                namespace app;
-                use shared::MaybeIdentifier as ImportedIdentifier;
-                type LocalIdentifier = ImportedIdentifier;
+                type LocalIdentifier = MaybeIdentifier;
                 type Item { identifier: LocalIdentifier = None; }
             "#,
         ),
     ]);
     let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("qualified aliases should resolve");
+        .expect("project-global aliases should resolve");
     assert_eq!(
         schema
-            .resolve_type("app::Item")
+            .resolve_type("Item")
             .expect("Item")
             .field("identifier")
             .expect("identifier")

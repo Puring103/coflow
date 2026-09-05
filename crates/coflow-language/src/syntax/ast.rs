@@ -7,32 +7,8 @@ use crate::source::Span;
 
 #[derive(Debug, Clone)]
 pub struct ModuleAst {
-    pub namespace: Option<NamespaceDecl>,
-    pub uses: Vec<UseDecl>,
     pub items: Vec<Item>,
     pub dangling_annotations: Vec<Annotation>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NamespaceDecl {
-    pub path: QualifiedName,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct UseDecl {
-    pub path: QualifiedName,
-    pub alias: Option<NameRef>,
-    pub span: Span,
-}
-
-impl UseDecl {
-    #[must_use]
-    pub fn local_name(&self) -> &NameRef {
-        self.alias
-            .as_ref()
-            .unwrap_or_else(|| self.path.last())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,12 +18,6 @@ pub struct QualifiedName {
 }
 
 impl QualifiedName {
-    #[must_use]
-    pub fn last(&self) -> &NameRef {
-        // A qualified name is only constructed after parsing its first segment.
-        &self.segments[self.segments.len() - 1]
-    }
-
     #[must_use]
     pub fn canonical(&self) -> String {
         self.segments

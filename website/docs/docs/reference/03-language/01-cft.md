@@ -4,8 +4,6 @@ CFT（Coflow Type）定义配置数据的静态结构与校验规则。CFT 文�
 `coflow cft check` 负责解析所有配置的 schema 模块并完成名称、类型、继承、默认值和注解检查。
 
 ```cft
-namespace Game::Items;
-
 enum Rarity {
   Common,
   Rare = 10,
@@ -22,23 +20,23 @@ type Item {
 }
 ```
 
-空白不参与语义，注释从 `#` 延续到行尾。标识符区分大小写；跨模块名称使用 `::` 分隔。项目统一使用
+空白不参与语义，注释从 `#` 延续到行尾。标识符区分大小写。项目统一使用
 2 空格缩进，可通过 `coflow format` 规范化排版。
 
-## 模块与名称
+## 文件与名称
 
-一个文件最多声明一个 `namespace`，它必须位于文件开头。其后可以使用多个 `use`，并可通过 `as`
-指定本地别名：
+项目中的所有 CFT 文件共同组成一个 schema。文件和目录只用于组织源码，不创建名称作用域。顶层
+type、enum、const、类型别名和命名 check 均使用短名，并且必须在整个项目中唯一。
 
 ```cft
-namespace Game::Drops;
+type ItemId = string;
 
-use Game::Items::Item;
-use Game::Common::Result as DropResult;
+type Item {
+  id: ItemId;
+}
 ```
 
-未声明 namespace 的文件位于全局命名空间。顶层 type、enum、const、类型别名和命名 check 在完整
-schema 中使用全限定名称唯一标识。`use` 只导入一个具体名称，不导入整个命名空间。
+类型引用同样使用短名。`::` 用于 `Enum::Variant` 等静态成员路径，不用于限定类型名。
 
 ## 顶层声明
 

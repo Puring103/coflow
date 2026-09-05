@@ -48,7 +48,7 @@ impl Parser<'_> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Ident(_) => self
-                .expect_qualified_name_ref()
+                .expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
                 .map(AnnotationArg::Name),
             TokenKind::String(value) => {
                 self.bump();

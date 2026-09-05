@@ -2,34 +2,7 @@ use crate::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdAst {
-    pub namespace: Option<CfdNamespaceDecl>,
-    pub uses: Vec<CfdUseDecl>,
     pub records: Vec<CfdRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CfdNamespaceDecl {
-    pub path: String,
-    pub path_span: Span,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CfdUseDecl {
-    pub path: String,
-    pub path_span: Span,
-    pub alias: Option<(String, Span)>,
-    pub span: Span,
-}
-
-impl CfdUseDecl {
-    #[must_use]
-    pub fn local_name(&self) -> &str {
-        self.alias.as_ref().map_or_else(
-            || self.path.rsplit("::").next().unwrap_or(&self.path),
-            |alias| alias.0.as_str(),
-        )
-    }
 }
 
 /// A top-level record or a record inside a group.

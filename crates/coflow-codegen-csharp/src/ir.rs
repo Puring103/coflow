@@ -360,7 +360,6 @@ fn validate_schema_names(
 
     for schema_enum in view.cft_enum_metas() {
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
-        validate_cft_namespace(&schema_enum.name, diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
         for variant in &schema_enum.variants {
             let csharp_variant = csharp_type_name(&variant.name);
@@ -377,7 +376,6 @@ fn validate_schema_names(
 
     for schema_type in view.all_types() {
         validate_ident("type", &csharp_type_name(&schema_type.name), diagnostics);
-        validate_cft_namespace(&schema_type.name, diagnostics);
         if let Some(parent) = &schema_type.parent {
             validate_ident("parent type", &csharp_type_name(parent), diagnostics);
         }
@@ -658,14 +656,5 @@ fn validate_ident(kind: &str, value: &str, diagnostics: &mut Vec<CsharpCodegenDi
             diagnostics,
             format!("invalid C# {kind} name `{value}`: {reason}"),
         );
-    }
-}
-
-fn validate_cft_namespace(name: &str, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
-    let Some((namespace, _)) = name.rsplit_once("::") else {
-        return;
-    };
-    for segment in namespace.split("::") {
-        validate_ident("namespace segment", segment, diagnostics);
     }
 }

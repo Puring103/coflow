@@ -8,8 +8,7 @@ pub(crate) use function::validate_function_body;
 
 pub use ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdNamespaceDecl, CfdRecord, CfdRef,
-    CfdUseDecl, CfdValue,
+    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdRecord, CfdRef, CfdValue,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

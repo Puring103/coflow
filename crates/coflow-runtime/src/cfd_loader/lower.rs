@@ -19,50 +19,11 @@ pub(super) struct ParsedLoadedRecordDraft {
 }
 
 #[derive(Debug, Clone, Default)]
-struct CfdNameResolver {
-    namespace: Option<String>,
-    uses: BTreeMap<String, String>,
-}
+struct CfdNameResolver;
 
 impl CfdNameResolver {
-    fn new(schema: &CftSchema, ast: &CfdAst) -> Result<Self, CfdTextDiagnostics> {
-        let namespace = ast.namespace.as_ref().map(|item| item.path.clone());
-        let mut uses = BTreeMap::new();
-        let mut diagnostics = Vec::new();
-        for declaration in &ast.uses {
-            if !symbol_exists(schema, &declaration.path) {
-                diagnostics.push(CfdTextDiagnostic::error(
-                    CfdTextErrorCode::Syntax,
-                    format!("unknown use target `{}`", declaration.path),
-                    text_span(declaration.path_span),
-                ));
-                continue;
-            }
-            let local_name = declaration.local_name();
-            let local_symbol = namespace.as_ref().map_or_else(
-                || local_name.to_string(),
-                |namespace| format!("{namespace}::{local_name}"),
-            );
-            if symbol_exists(schema, &local_symbol) {
-                diagnostics.push(CfdTextDiagnostic::error(
-                    CfdTextErrorCode::Syntax,
-                    format!("use name `{local_name}` conflicts with `{local_symbol}`"),
-                    text_span(declaration.span),
-                ));
-                continue;
-            }
-            if let Some(existing) = uses.insert(local_name.to_string(), declaration.path.clone()) {
-                diagnostics.push(CfdTextDiagnostic::error(
-                    CfdTextErrorCode::Syntax,
-                    format!(
-                        "use name `{local_name}` refers to both `{existing}` and `{}`",
-                        declaration.path
-                    ),
-                    text_span(declaration.span),
-                ));
-            }
-        }
-        finish(Self { namespace, uses }, diagnostics)
+    fn new(_schema: &CftSchema, _ast: &CfdAst) -> Result<Self, CfdTextDiagnostics> {
+        Ok(Self)
     }
 
     fn root() -> Self {
@@ -70,26 +31,8 @@ impl CfdNameResolver {
     }
 
     fn resolve(&self, name: &str) -> String {
-        if let Some((head, tail)) = name.split_once("::") {
-            return self
-                .uses
-                .get(head)
-                .map_or_else(|| name.to_string(), |target| format!("{target}::{tail}"));
-        }
-        if let Some(target) = self.uses.get(name) {
-            return target.clone();
-        }
-        self.namespace.as_ref().map_or_else(
-            || name.to_string(),
-            |namespace| format!("{namespace}::{name}"),
-        )
+        name.to_string()
     }
-}
-
-fn symbol_exists(schema: &CftSchema, name: &str) -> bool {
-    schema.resolve_type(name).is_some()
-        || schema.resolve_enum(name).is_some()
-        || schema.resolve_const(name).is_some()
 }
 
 pub(super) fn lower_records(

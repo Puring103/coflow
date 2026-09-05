@@ -1,22 +1,11 @@
 use super::Parser;
 use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
-use crate::syntax::ast::{
-    Annotation, Item, ModuleAst, NamespaceDecl, UseDecl,
-};
+use crate::syntax::ast::{Annotation, Item, ModuleAst};
 use crate::syntax::lexer::TokenKind;
 
 impl Parser<'_> {
     pub(super) fn parse_module(&mut self) -> Result<ModuleAst, CftDiagnostics> {
-        let namespace = if self.at(&TokenKind::Namespace) {
-            Some(self.parse_namespace_decl()?)
-        } else {
-            None
-        };
-        let mut uses = Vec::new();
-        while self.at(&TokenKind::Use) {
-            uses.push(self.parse_use_decl()?);
-        }
         let mut items = Vec::new();
         let mut pending_annotations = Vec::new();
         let mut diagnostics = Vec::new();
@@ -50,44 +39,8 @@ impl Parser<'_> {
             return Err(CftDiagnostics::new(diagnostics));
         }
         Ok(ModuleAst {
-            namespace,
-            uses,
             items,
             dangling_annotations: pending_annotations,
-        })
-    }
-
-    fn parse_namespace_decl(&mut self) -> Result<NamespaceDecl, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::Namespace, CftErrorCode::UnexpectedToken)?
-            .start;
-        let path = self.expect_qualified_name()?;
-        let end = self
-            .expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?
-            .end;
-        Ok(NamespaceDecl {
-            path,
-            span: crate::source::Span::new(start, end),
-        })
-    }
-
-    fn parse_use_decl(&mut self) -> Result<UseDecl, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::Use, CftErrorCode::UnexpectedToken)?
-            .start;
-        let path = self.expect_qualified_name()?;
-        let alias = if self.eat(&TokenKind::As).is_some() {
-            Some(self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?)
-        } else {
-            None
-        };
-        let end = self
-            .expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?
-            .end;
-        Ok(UseDecl {
-            path,
-            alias,
-            span: crate::source::Span::new(start, end),
         })
     }
 
@@ -118,7 +71,7 @@ impl Parser<'_> {
         } else {
             self.err(
                 CftErrorCode::InvalidTopLevelItem,
-                "namespace and use declarations must precede all top-level definitions",
+                "expected a top-level const, enum, type, or check definition",
             )
         }
     }
@@ -145,9 +98,7 @@ impl Parser<'_> {
     }
 
     fn at_declaration_start(&self) -> bool {
-        self.at(&TokenKind::Namespace)
-            || self.at(&TokenKind::Use)
-            || self.at(&TokenKind::At)
+        self.at(&TokenKind::At)
             || self.at(&TokenKind::Const)
             || self.at(&TokenKind::Enum)
             || self.at(&TokenKind::Type)

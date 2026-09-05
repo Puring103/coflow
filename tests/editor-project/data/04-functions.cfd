@@ -1,9 +1,5 @@
-namespace EditorFixture::Logic;
-
-use EditorFixture::Model::Stats;
-
 rules: RuleSet {
-  owner: &EditorFixture::Model::Entity::mage,
+  owner: &Entity::mage,
   samples: [-3, 0, 4, 9],
   classify: fn(value: int) -> string {
     if value >= 10 {

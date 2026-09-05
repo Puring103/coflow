@@ -6,23 +6,15 @@ internal sealed class CfdDocument
 {
     public CfdDocument(
         string path,
-        string? declaredNamespace,
-        IReadOnlyList<CfdUseDirective> uses,
         IReadOnlyList<CfdRecordNode> records)
     {
         Path = path;
-        Namespace = declaredNamespace;
-        Uses = uses;
         Records = records;
     }
 
     public string Path { get; }
-    public string? Namespace { get; }
-    public IReadOnlyList<CfdUseDirective> Uses { get; }
     public IReadOnlyList<CfdRecordNode> Records { get; }
 }
-
-internal sealed record CfdUseDirective(string Path, string LocalName, CfdSpan Span);
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CfdRecordNode

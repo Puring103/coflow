@@ -14,23 +14,18 @@ sword: Item {
 空白不参与语义，注释从 `#` 延续到行尾。字段和集合项使用逗号分隔并允许尾逗号。项目统一使用 2 空格
 缩进，可通过 `coflow format` 规范化排版。
 
-## 模块声明
+## 文件与名称
 
-CFD 与 CFT 使用相同的 namespace 和 use 形式。namespace 最多一个且必须位于文件开头，use 必须位于
-所有记录之前：
+项目中的 CFD 文件共同提供配置记录。文件和目录只用于组织数据，不创建名称作用域。记录声明和内联
+对象的类型直接使用 CFT 中项目全局唯一的短名：
 
 ```cfd
-namespace Game::Drops;
-
-use Game::Items::Item;
-use Game::Items::Rarity as ItemRarity;
-
 sword: Item {
-  rarity: ItemRarity::Rare,
+  rarity: Rarity::Rare,
 }
 ```
 
-未声明 namespace 的文件位于全局命名空间。类型、enum 和显式限定引用使用 `::` 分隔名称段。
+`::` 用于枚举成员和带类型的记录引用，例如 `Rarity::Rare` 与 `&Item::sword`，不用于限定类型名。
 
 ## 顶层记录
 

@@ -81,7 +81,6 @@ impl SymbolTable<'_> {
     }
 
     pub(super) fn collect_symbols(&mut self) {
-        self.collect_module_scopes();
         for (module_id, module) in &self.modules.modules {
             let Some(ast) = module.ast.as_ref() else {
                 continue;
@@ -187,120 +186,14 @@ impl SymbolTable<'_> {
                 }
             }
         }
-        self.validate_uses();
     }
 
-    fn collect_module_scopes(&mut self) {
-        let mut scopes = BTreeMap::new();
-        for (module_id, module) in &self.modules.modules {
-            let Some(ast) = module.ast.as_ref() else {
-                continue;
-            };
-            let namespace = ast
-                .namespace
-                .as_ref()
-                .map(|declaration| declaration.path.canonical());
-            let declaration_names = ast
-                .items
-                .iter()
-                .map(|item| match item {
-                    Item::Const(def) => (&def.name, def.name_span),
-                    Item::Enum(def) => (&def.name, def.name_span),
-                    Item::Type(def) => (&def.name, def.name_span),
-                    Item::TypeAlias(def) => (&def.name, def.name_span),
-                    Item::Check(def) => (&def.name, def.name_span),
-                })
-                .collect::<BTreeMap<_, _>>();
-            let mut uses = BTreeMap::<String, String>::new();
-            let mut use_spans = BTreeMap::<String, Span>::new();
-            for declaration in &ast.uses {
-                let local_name = declaration.local_name().name.clone();
-                if let Some(first_span) = use_spans.get(&local_name) {
-                    self.diagnostics.push(
-                        CftDiagnostic::error(
-                            CftErrorCode::DuplicateGlobalName,
-                            module_id.clone(),
-                            declaration.span,
-                            format!("duplicate use name `{local_name}`"),
-                        )
-                        .with_related(module_id.clone(), *first_span, "first use is here"),
-                    );
-                    continue;
-                }
-                if let Some(first_span) = declaration_names.get(&local_name) {
-                    self.diagnostics.push(
-                        CftDiagnostic::error(
-                            CftErrorCode::DuplicateGlobalName,
-                            module_id.clone(),
-                            declaration.span,
-                            format!("use name `{local_name}` conflicts with a local declaration"),
-                        )
-                        .with_related(
-                            module_id.clone(),
-                            *first_span,
-                            "local declaration is here",
-                        ),
-                    );
-                    continue;
-                }
-                use_spans.insert(local_name.clone(), declaration.span);
-                uses.insert(local_name, declaration.path.canonical());
-            }
-            scopes.insert(module_id.clone(), super::state::ModuleScope { namespace, uses });
-        }
-        self.module_scopes = scopes;
+    pub(super) fn declaration_name(&self, _module: &ModuleId, name: &str) -> String {
+        name.to_string()
     }
 
-    fn validate_uses(&mut self) {
-        let uses = self
-            .module_scopes
-            .iter()
-            .flat_map(|(module, scope)| {
-                scope
-                    .uses
-                    .iter()
-                    .map(|(local, target)| (module.clone(), local.clone(), target.clone()))
-            })
-            .collect::<Vec<_>>();
-        for (module, local, target) in uses {
-            if !self.symbols.contains_key(&target) {
-                self.push_diag(
-                    CftErrorCode::UnknownNamedType,
-                    &module,
-                    self.modules
-                        .module(&module)
-                        .and_then(|module| module.ast())
-                        .and_then(|ast| {
-                            ast.uses
-                                .iter()
-                                .find(|declaration| declaration.local_name().name == local)
-                        })
-                        .map_or(Span::new(0, 0), |declaration| declaration.span),
-                    format!("use target `{target}` does not name a declaration"),
-                );
-            }
-        }
-    }
-
-    pub(super) fn declaration_name(&self, module: &ModuleId, name: &str) -> String {
-        self.module_scopes
-            .get(module)
-            .and_then(|scope| scope.namespace.as_ref())
-            .map_or_else(|| name.to_string(), |namespace| format!("{namespace}::{name}"))
-    }
-
-    pub(super) fn resolve_name(&self, module: &ModuleId, name: &str) -> String {
-        if name.contains("::") {
-            return name.to_string();
-        }
-        if let Some(target) = self
-            .module_scopes
-            .get(module)
-            .and_then(|scope| scope.uses.get(name))
-        {
-            return target.clone();
-        }
-        self.declaration_name(module, name)
+    pub(super) fn resolve_name(&self, _module: &ModuleId, name: &str) -> String {
+        name.to_string()
     }
 
     pub(super) fn validate_identifier(&mut self, name: &str, module_id: &ModuleId, span: Span) {

@@ -2,81 +2,12 @@ namespace CoflowRuntime.Generated;
 
 internal sealed class CfdNameResolver
 {
-    private readonly string? _namespace;
-    private readonly IReadOnlyDictionary<string, string> _uses;
+    internal static CfdNameResolver Root { get; } = new();
 
-    private CfdNameResolver(string? declaredNamespace, IReadOnlyDictionary<string, string> uses)
-    {
-        _namespace = declaredNamespace;
-        _uses = uses;
-    }
-
-    internal static CfdNameResolver Root { get; } = new(
-        null,
-        new Dictionary<string, string>(StringComparer.Ordinal));
-
-    internal static CfdNameResolver Create(
-        CfdDocument document,
-        HashSet<string> symbols)
-    {
-        var uses = new Dictionary<string, string>(StringComparer.Ordinal);
-        var diagnostics = new List<CfdDiagnostic>();
-        foreach (var directive in document.Uses)
-        {
-            if (!symbols.Contains(directive.Path))
-            {
-                diagnostics.Add(new CfdDiagnostic(
-                    "CFD-NAME-UNKNOWN-USE",
-                    $"unknown use target `{directive.Path}`",
-                    document.Path,
-                    directive.Span));
-                continue;
-            }
-
-            var localSymbol = document.Namespace is null
-                ? directive.LocalName
-                : $"{document.Namespace}::{directive.LocalName}";
-            if (symbols.Contains(localSymbol))
-            {
-                diagnostics.Add(new CfdDiagnostic(
-                    "CFD-NAME-USE-CONFLICT",
-                    $"use name `{directive.LocalName}` conflicts with `{localSymbol}`",
-                    document.Path,
-                    directive.Span));
-                continue;
-            }
-
-            if (!uses.TryAdd(directive.LocalName, directive.Path))
-            {
-                diagnostics.Add(new CfdDiagnostic(
-                    "CFD-NAME-USE-CONFLICT",
-                    $"use name `{directive.LocalName}` is declared more than once",
-                    document.Path,
-                    directive.Span));
-            }
-        }
-
-        if (diagnostics.Count != 0) throw new CfdLoadException(diagnostics);
-        return new CfdNameResolver(document.Namespace, uses);
-    }
-
-    internal string Resolve(string name)
-    {
-        var separator = name.IndexOf("::", StringComparison.Ordinal);
-        if (separator >= 0)
-        {
-            var head = name[..separator];
-            return _uses.TryGetValue(head, out var target)
-                ? target + name[separator..]
-                : name;
-        }
-
-        if (_uses.TryGetValue(name, out var imported)) return imported;
-        return _namespace is null ? name : $"{_namespace}::{name}";
-    }
+    internal string Resolve(string name) => name;
 
     internal string ResolveStaticPath(string path) =>
-        path.Contains("::", StringComparison.Ordinal) ? Resolve(path) : path;
+        path;
 }
 
 internal sealed class CfdBoundDocuments
@@ -100,27 +31,21 @@ internal static class CfdNameBinder
 {
     internal static CfdBoundDocuments Bind(
         IReadOnlyList<CfdDocument> documents,
-        IEnumerable<string> symbols,
         IReadOnlyDictionary<string, CoflowConstant>? constants = null)
     {
-        var knownSymbols = new HashSet<string>(symbols, StringComparer.Ordinal);
         var boundDocuments = new List<CfdDocument>(documents.Count);
         var recordNames = new Dictionary<CfdRecordNode, CfdNameResolver>();
         var recordPaths = new Dictionary<CfdRecordNode, string>();
         foreach (var document in documents)
         {
-            var names = CfdNameResolver.Create(document, knownSymbols);
+            var names = CfdNameResolver.Root;
             var records = document.Records.Select(record => BindRecord(record, names, constants)).ToArray();
             foreach (var record in records)
             {
                 recordNames.Add(record, names);
                 recordPaths.Add(record, document.Path);
             }
-            boundDocuments.Add(new CfdDocument(
-                document.Path,
-                document.Namespace,
-                document.Uses,
-                records));
+            boundDocuments.Add(new CfdDocument(document.Path, records));
         }
         return new CfdBoundDocuments(boundDocuments, recordNames, recordPaths);
     }

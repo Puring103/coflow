@@ -272,6 +272,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_type_predicate(&mut self) -> Result<TypePredicate, CftDiagnostics> {
-        self.expect_qualified_name_ref().map(TypePredicate::Type)
+        self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
+            .map(TypePredicate::Type)
     }
 }

@@ -11,115 +11,77 @@ namespace CoflowRuntime.Tests;
 public sealed class ParserTests
 {
     [Fact]
-    public void ParsesNamespaceUsesAliasesAndQualifiedReferences()
+    public void ParsesProjectGlobalTypesAndStructuralQualifiedPaths()
     {
         var document = CfdParser.Parse(new CfdSource("rules.cfd", """
-            namespace game::rules;
-            use common::items::Item;
-            use common::types::Element as Kind;
-
             Rule {
               combat {
                 item: Item { target: &Item::sword },
-                direct: &game::items::Item::shield,
+                direct: &Item::shield,
                 label: "{&Item::sword.name}",
-                element: Kind::Fire,
+                element: Element::Fire,
               }
             }
             """));
 
-        Assert.Equal("game::rules", document.Namespace);
-        Assert.Collection(document.Uses,
-            item =>
-            {
-                Assert.Equal("common::items::Item", item.Path);
-                Assert.Equal("Item", item.LocalName);
-            },
-            item =>
-            {
-                Assert.Equal("common::types::Element", item.Path);
-                Assert.Equal("Kind", item.LocalName);
-            });
         var fields = document.Records[0].Fields;
         Assert.Equal("Item", Assert.IsType<CfdObjectValue>(fields[0].Value).DeclaredType);
         var direct = Assert.IsType<CfdReferenceValue>(fields[1].Value);
-        Assert.Equal("game::items::Item", direct.TypeName);
+        Assert.Equal("Item", direct.TypeName);
         Assert.Equal("shield", direct.Key);
         var formatted = Assert.IsType<CfdFormattedStringValue>(fields[2].Value);
         Assert.Equal("Item", Assert.IsType<CfdFormatReference>(formatted.Segments[0]).TypeName);
-        Assert.Equal("Kind::Fire", Assert.IsType<CfdScalarValue>(fields[3].Value).Value);
+        Assert.Equal("Element::Fire", Assert.IsType<CfdScalarValue>(fields[3].Value).Value);
     }
 
     [Fact]
-    public void BindsCfdNamesWithoutRootFallback()
+    public void BindingPreservesProjectGlobalNames()
     {
         var document = CfdParser.Parse(new CfdSource("rules.cfd", """
-            namespace game::rules;
-            use common::items::Item;
-            use common::types::Element as Kind;
             Rule {
               combat {
                 item: Item { target: &Item::sword },
-                direct: &game::items::Item::shield,
+                direct: &Item::shield,
                 label: "{&Item::sword.name}",
-                element: Kind::Fire,
-                flags: Kind::Fire | Kind::Ice,
+                element: Element::Fire,
+                flags: Element::Fire | Element::Ice,
               }
             }
             """));
 
-        var bound = CfdNameBinder.Bind(new[] { document }, new[]
-        {
-            "game::rules::Rule",
-            "common::items::Item",
-            "common::types::Element",
-        });
+        var bound = CfdNameBinder.Bind(new[] { document });
         var record = Assert.Single(bound.Documents).Records[0];
-        Assert.Equal("game::rules::Rule", record.DeclaredType);
+        Assert.Equal("Rule", record.DeclaredType);
         var fields = record.Fields;
         var item = Assert.IsType<CfdObjectValue>(fields[0].Value);
-        Assert.Equal("common::items::Item", item.DeclaredType);
-        Assert.Equal("common::items::Item", Assert.IsType<CfdReferenceValue>(item.Fields[0].Value).TypeName);
-        Assert.Equal("game::items::Item", Assert.IsType<CfdReferenceValue>(fields[1].Value).TypeName);
+        Assert.Equal("Item", item.DeclaredType);
+        Assert.Equal("Item", Assert.IsType<CfdReferenceValue>(item.Fields[0].Value).TypeName);
+        Assert.Equal("Item", Assert.IsType<CfdReferenceValue>(fields[1].Value).TypeName);
         var formatted = Assert.IsType<CfdFormattedStringValue>(fields[2].Value);
-        Assert.Equal("common::items::Item", Assert.IsType<CfdFormatReference>(formatted.Segments[0]).TypeName);
-        Assert.Equal("common::types::Element::Fire", Assert.IsType<CfdScalarValue>(fields[3].Value).Value);
+        Assert.Equal("Item", Assert.IsType<CfdFormatReference>(formatted.Segments[0]).TypeName);
+        Assert.Equal("Element::Fire", Assert.IsType<CfdScalarValue>(fields[3].Value).Value);
         var flags = Assert.IsType<CfdBitExpressionValue>(fields[4].Value).Expression;
         var binary = Assert.IsType<CfdBitExpressionKind.Binary>(flags.Kind);
-        Assert.Equal("common::types::Element::Fire", Assert.IsType<CfdBitExpressionKind.Value>(binary.Left.Kind).Text);
-        Assert.Equal("common::types::Element::Ice", Assert.IsType<CfdBitExpressionKind.Value>(binary.Right.Kind).Text);
+        Assert.Equal("Element::Fire", Assert.IsType<CfdBitExpressionKind.Value>(binary.Left.Kind).Text);
+        Assert.Equal("Element::Ice", Assert.IsType<CfdBitExpressionKind.Value>(binary.Right.Kind).Text);
     }
 
     [Fact]
-    public void RejectsUnknownConflictingAndMisorderedUses()
+    public void RejectsRemovedNamespaceUseAndQualifiedTypeSyntax()
     {
-        var unknown = CfdParser.Parse(new CfdSource("unknown.cfd", "use missing::Item; Item { item {} }"));
-        var unknownError = Assert.Throws<CfdLoadException>(() =>
-            CfdNameBinder.Bind(new[] { unknown }, new[] { "Item" }));
-        Assert.Equal("CFD-NAME-UNKNOWN-USE", unknownError.Diagnostics[0].Code);
-
-        var conflict = CfdParser.Parse(new CfdSource("conflict.cfd", """
-            namespace game;
-            use common::Item;
-            game::Rule { item {} }
-            """));
-        var conflictError = Assert.Throws<CfdLoadException>(() => CfdNameBinder.Bind(
-            new[] { conflict },
-            new[] { "common::Item", "game::Item", "game::Rule" }));
-        Assert.Equal("CFD-NAME-USE-CONFLICT", conflictError.Diagnostics[0].Code);
-
         foreach (var source in new[]
         {
+            "namespace game; Item { item {} }",
+            "use common::Item; Item { item {} }",
             "Item { item {} } namespace game;",
             "Item { item {} } use common::Item;",
-            "use Item; Item { item {} }",
-            "use common::*; Item { item {} }",
-            "namespace game::; Item { item {} }",
+            "game::Item { item {} }",
+            "item: game::Item {}",
         })
         {
             var syntax = Assert.Throws<CfdParseException>(() =>
                 CfdParser.Parse(new CfdSource("invalid-header.cfd", source)));
-            Assert.Contains(syntax.Diagnostics, item => item.Code is "CFD-SYNTAX-HEADER" or "CFD-SYNTAX-007");
+            Assert.Contains(syntax.Diagnostics, item => item.Code.StartsWith("CFD-SYNTAX", StringComparison.Ordinal));
         }
     }
 
@@ -291,7 +253,7 @@ public sealed class ParserTests
 
         foreach (var key in new[]
         {
-            "_", "id", "1item", "item-name", "namespace", "fn", "var", "return", "break",
+            "_", "id", "1item", "item-name", "fn", "var", "return", "break",
             "continue", "None", "Some", "Ok", "Err", "Option", "Result", "Host", "alert", "records",
         })
         {
@@ -299,6 +261,11 @@ public sealed class ParserTests
                 new CfdSource("data/invalid-key.cfd", $"Item {{ \"{key}\" {{}} }}")));
             Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-RECORD-KEY");
         }
+
+        var ordinaryNames = CfdParser.Parse(new CfdSource(
+            "data/ordinary-names.cfd",
+            "Item { namespace {}, use {}, as {} }"));
+        Assert.Equal(new[] { "namespace", "use", "as" }, ordinaryNames.Records.Select(item => item.Key));
     }
 
     [Fact]

@@ -225,7 +225,7 @@ fn repository_projects_open_in_editor() {
             assert!(settings
                 .record_groups
                 .get("data/02-entities.cfd")
-                .and_then(|types| types.get("EditorFixture::Model::Entity"))
+                .and_then(|types| types.get("Entity"))
                 .is_some_and(|groups| groups.len() == 1));
         }
     }

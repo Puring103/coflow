@@ -28,7 +28,6 @@ public sealed class CfdLoadContext
     internal CfdLoadContext(
         IReadOnlyList<CfdDocument> documents,
         IEnumerable<ICfdTypeBinding>? bindings = null,
-        IEnumerable<ICoflowEnumMetadata>? enums = null,
         IEnumerable<CoflowConstant>? constants = null,
         bool functionsCompiled = false)
     {
@@ -53,9 +52,6 @@ public sealed class CfdLoadContext
             .ToDictionary(item => item.DeclaredName, StringComparer.Ordinal);
         var bound = CfdNameBinder.Bind(
             documents,
-            bindingMap.Keys.Concat((enums ?? Array.Empty<ICoflowEnumMetadata>())
-                .Select(item => item.DeclaredType))
-                .Concat(constantMap.Keys),
             constantMap);
         Documents = bound.Documents;
         _recordNames = bound.RecordNames;
