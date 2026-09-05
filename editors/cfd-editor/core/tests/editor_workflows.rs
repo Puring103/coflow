@@ -69,7 +69,9 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
         root.join("schema.cft"),
         concat!(
             "enum Element { Fire, Ice, }\n",
-            "type Stats { health: int = 100; resistances: {Element: float} = {}; }\n",
+            "type Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
+            "type Stats { label: string = \"default\"; health: int = 100; ",
+            "resistances: {Element: float} = {}; combat: Combat = Combat {}; }\n",
             "type Unit { stats: Stats = Stats {}; }\n",
         ),
     )
@@ -77,7 +79,12 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
     let data_file = data_dir.join("units.cfd");
     fs::write(
         &data_file,
-        "scalar: Unit {}\ncollection: Unit {}\n",
+        concat!(
+            "scalar: Unit {}\n",
+            "collection: Unit {}\n",
+            "deep_collection: Unit { stats: Stats { label: \"keep\" } }\n",
+            "deep_batch: Unit { stats: Stats { label: \"keep\" } }\n",
+        ),
     )
     .expect("write nested-default data");
     (root, data_file)
@@ -526,6 +533,67 @@ fn batch_nested_edits_materialize_missing_top_level_defaults() {
     let source = fs::read_to_string(data_file).expect("read materialized source");
     assert!(source.contains("health: 120"), "{source}");
     assert!(source.contains("health: 130"), "{source}");
+}
+
+#[test]
+fn deep_default_parents_materialize_for_collection_and_batch_edits() {
+    let (root, data_file) = nested_default_collection_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load nested-default project");
+    let deep_collection = RecordCoordinate::try_new("Unit", "deep_collection")
+        .expect("deep collection coordinate");
+    let enum_key = coflow_runtime::CfdDictKey::Enum(coflow_runtime::CfdEnumValue {
+        enum_name: "Element".try_into().expect("enum name"),
+        variant: Some("Ice".try_into().expect("variant name")),
+        value: 1,
+    });
+
+    let collection_outcome = store
+        .edit_collection(
+            snapshot.session_id,
+            &deep_collection,
+            &[field("stats"), field("combat"), field("resistances")],
+            CollectionEdit::DictInsert {
+                key: enum_key.clone(),
+                value: Some(CfdValue::Float(0.25)),
+            },
+        )
+        .expect("edit collection through an omitted intermediate default");
+    assert!(matches!(collection_outcome.old_value, Some(CfdValue::Dict(_))));
+    assert!(matches!(collection_outcome.new_value, Some(CfdValue::Dict(_))));
+
+    let deep_batch =
+        RecordCoordinate::try_new("Unit", "deep_batch").expect("deep batch coordinate");
+    let batch_outcome = store
+        .write_fields(
+            snapshot.session_id,
+            &[
+                BatchWriteFieldInput {
+                    coordinate: deep_batch.clone(),
+                    field_path: vec![field("stats"), field("combat"), field("health")],
+                    new_value: CfdValue::Int(175),
+                },
+                BatchWriteFieldInput {
+                    coordinate: deep_batch,
+                    field_path: vec![field("stats"), field("combat"), field("resistances")],
+                    new_value: CfdValue::Dict(vec![(enum_key, CfdValue::Float(0.75))]),
+                },
+            ],
+        )
+        .expect("batch edit through the same omitted intermediate default");
+    assert_eq!(batch_outcome.edits.len(), 2);
+    assert_eq!(batch_outcome.edits[0].old_value, Some(CfdValue::Int(100)));
+    assert_eq!(batch_outcome.edits[0].new_value, Some(CfdValue::Int(175)));
+    assert!(matches!(batch_outcome.edits[1].old_value, Some(CfdValue::Dict(_))));
+    assert!(matches!(batch_outcome.edits[1].new_value, Some(CfdValue::Dict(_))));
+
+    let source = fs::read_to_string(data_file).expect("read deeply materialized source");
+    assert_eq!(source.matches("label: \"keep\"").count(), 2, "{source}");
+    assert!(source.contains("health: 175"), "{source}");
+    assert!(source.contains("Ice: 0.25"), "{source}");
+    assert!(source.contains("Ice: 0.75"), "{source}");
 }
 
 #[test]

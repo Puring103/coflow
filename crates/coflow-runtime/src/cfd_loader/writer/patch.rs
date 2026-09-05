@@ -32,38 +32,40 @@ pub(super) fn apply_patch(
             "field_path must not be empty",
         )));
     }
-    let WriteFieldPathSegment::Field(requested_top_field) = &request.field_path[0] else {
+    let WriteFieldPathSegment::Field(top_field) = &request.field_path[0] else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "top-level path must start with a field name",
         )));
     };
-    // 模型中的默认对象可能尚未出现在 CFD。首次嵌套编辑时改为插入修改后的完整顶层值。
-    let top_level_missing = record.fields().all(|field| field.name != *requested_top_field);
     let root_path;
-    let (field_path, new_value) = if request.field_path.len() > 1 && top_level_missing {
-        let materialized = request.materialized_top_level.ok_or_else(|| {
-            DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                format!("top-level field `{requested_top_field}` requires materialization"),
-            ))
-        })?;
-        root_path = [WriteFieldPathSegment::Field(requested_top_field.clone())];
-        (&root_path[..], materialized)
-    } else {
-        (request.field_path, request.new_value)
-    };
-    validate_value(new_value)?;
-    let WriteFieldPathSegment::Field(top_field) = &field_path[0] else {
-        unreachable!("validated field path must start with a field")
-    };
-
-    match locate_target(
+    // 有效模型保证路径合法；源码定位失败说明某个默认父值尚未实体化。
+    // 此时写入修改后的完整顶层值，任意深度的缺省父对象都使用同一规则。
+    let (target, new_value) = match locate_target(
         request.schema,
         request.actual_type,
         record,
-        field_path,
-    )? {
+        request.field_path,
+    ) {
+        Ok(target) => (target, request.new_value),
+        Err(error) if request.field_path.len() > 1 => {
+            let Some(materialized) = request.materialized_top_level else {
+                return Err(error);
+            };
+            root_path = [WriteFieldPathSegment::Field(top_field.clone())];
+            let target = locate_target(
+                request.schema,
+                request.actual_type,
+                record,
+                &root_path,
+            )?;
+            (target, materialized)
+        }
+        Err(error) => return Err(error),
+    };
+    validate_value(new_value)?;
+
+    match target {
         WriteTarget::Replace { span, ty } => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
                 return Err(DiagnosticSet::one(diag(
