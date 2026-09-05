@@ -1991,17 +1991,23 @@ function ExpandableObjectTypeSelect({ value, polymorphicTypes, onCommit }: {
 }) {
   const lookups = useEditorLookups()
   return (
-    <SearchableSelect
-      className="dc-structure-type-select dc-polymorphic-type-select"
-      value={value.value.actual_type}
-      options={polymorphicTypes.map(type => ({ value: type }))}
-      ariaLabel="选择具体类型"
-      onCommit={async nextType => {
-        if (nextType === value.value.actual_type) return
-        const next = await lookups.makeDefaultObject(nextType)
-        if (next.ok) onCommit(next.value)
-      }}
-    />
+    <span
+      className="dc-structure-type-control"
+      onMouseDown={event => event.stopPropagation()}
+      onClick={event => event.stopPropagation()}
+    >
+      <SearchableSelect
+        className="dc-structure-type-select dc-polymorphic-type-select"
+        value={value.value.actual_type}
+        options={polymorphicTypes.map(type => ({ value: type }))}
+        ariaLabel="选择具体类型"
+        onCommit={async nextType => {
+          if (nextType === value.value.actual_type) return
+          const next = await lookups.makeDefaultObject(nextType)
+          if (next.ok) onCommit(next.value)
+        }}
+      />
+    </span>
   )
 }
 
