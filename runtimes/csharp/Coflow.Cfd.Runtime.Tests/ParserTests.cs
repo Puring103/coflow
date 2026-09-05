@@ -11,7 +11,7 @@ namespace CoflowRuntime.Tests;
 public sealed class ParserTests
 {
     [Fact]
-    public void ParsesProjectGlobalTypesAndStructuralQualifiedPaths()
+    public void ParsesProjectGlobalTypesAndStructuralPaths()
     {
         var document = CfdParser.Parse(new CfdSource("rules.cfd", """
             Rule {
@@ -442,10 +442,10 @@ public sealed class ParserTests
     }
 
     [Fact]
-    public void RejectsUnknownOrOutOfMaskFlagsAndAcceptsQualifiedEnumNames()
+    public void RejectsUnknownOrOutOfMaskFlagsAndAcceptsEnumMemberPaths()
     {
-        var qualified = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { item { value: TestFlags::Fire } }"));
-        Assert.Equal(TestFlags.Fire, CfdValueReader.Enum<TestFlags>(qualified.Records[0].Fields[0].Value));
+        var enumMember = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { item { value: TestFlags::Fire } }"));
+        Assert.Equal(TestFlags.Fire, CfdValueReader.Enum<TestFlags>(enumMember.Records[0].Fields[0].Value));
 
         var legacy = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { item { value: TestFlags.Fire } }"));
         Assert.Throws<CfdLoadException>(() => CfdValueReader.Enum<TestFlags>(legacy.Records[0].Fields[0].Value));

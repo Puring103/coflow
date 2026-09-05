@@ -480,19 +480,19 @@ type Item {\n\
     assert!(method_labels.contains(&"isSorted".to_string()));
     assert!(method_labels.contains(&"isSubsetOf".to_string()));
 
-    let enum_qualified_source = source.replacen("value > LIMIT", "kind == Kind::", 1);
-    let enum_qualified_offset = enum_qualified_source
+    let enum_member_source = source.replacen("value > LIMIT", "kind == Kind::", 1);
+    let enum_member_offset = enum_member_source
         .find("kind == Kind::")
-        .expect("qualified enum")
+        .expect("enum member")
         + "kind == Kind::".len();
-    let (_enum_qualified_cleanup, enum_qualified_build) =
-        test_lsp_build("lsp-cft-qualified-enum-completion", &enum_qualified_source);
-    let enum_qualified_document = first_document(&enum_qualified_build);
+    let (_enum_member_cleanup, enum_member_build) =
+        test_lsp_build("lsp-cft-enum-member-completion", &enum_member_source);
+    let enum_member_document = first_document(&enum_member_build);
     assert_eq!(
         completion_labels(completion_items(
-            &enum_qualified_build,
-            enum_qualified_document,
-            &position_from_byte(&enum_qualified_source, enum_qualified_offset),
+            &enum_member_build,
+            enum_member_document,
+            &position_from_byte(&enum_member_source, enum_member_offset),
         )),
         vec!["One".to_string(), "Two".to_string()]
     );

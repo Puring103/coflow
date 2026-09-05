@@ -740,7 +740,7 @@ shared: Skill {
 }
 
 #[test]
-fn writes_enum_dict_key_path_using_qualified_display_text() {
+fn writes_enum_dict_key_path_using_member_display_text() {
     let dir = temp_dir("enum-dict-key-path");
     let file = dir.join("loot.cfd");
     fs::write(

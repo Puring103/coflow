@@ -366,7 +366,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 CftErrorCode::OperatorTypeMismatch,
                 expr.span,
                 format!(
-                    "enum type `{name}` cannot be used as a value; use `{name}.Variant` or `{name}(0)` instead",
+                    "enum type `{name}` cannot be used as a value; use `{name}::Variant` or `{name}(0)` instead",
                 ),
             );
             return InferredType::Unknown;
