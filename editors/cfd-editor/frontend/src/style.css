@@ -3590,6 +3590,12 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   text-overflow: ellipsis;
   cursor: pointer;
 }
+.dc-structure-type-control {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: auto;
+}
 .dc-structure-type-select:hover {
   border-color: var(--border);
   background-color: var(--bg-1);
@@ -5094,6 +5100,9 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   min-width: 76px;
   padding-right: 10px;
 }
+.inspector-body > .dc-inspector .dc-row[data-depth]:not([data-depth="0"]) > .dc-row-label {
+  border-right-color: color-mix(in srgb, var(--border) 38%, transparent);
+}
 
 /* 可编辑值始终保留轻量输入轮廓，只读值继续以纯文本显示。 */
 .inspector-body .dc-input-flat {
@@ -5116,31 +5125,38 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 /* 集合元素使用稳定的起始分隔和层级导轨，子字段不会与相邻元素混在一起。 */
 .inspector-body .dc-group-item {
   position: relative;
-  border-top: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 56%, transparent);
 }
 .inspector-body .dc-group-item:first-child {
   border-top-color: color-mix(in srgb, var(--border) 72%, transparent);
 }
 .inspector-body .dc-group-item > .dc-group-body {
   position: relative;
-  padding-bottom: 4px;
+  padding: 2px 0 6px;
 }
 .inspector-body .dc-group-item > .dc-group-body::before {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 4px;
+  top: 3px;
+  bottom: 7px;
   left: calc(21px + min(var(--dc-indent, 0px), 70px));
   width: 1px;
-  background: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  background: color-mix(in srgb, var(--text-mute) 34%, transparent);
   pointer-events: none;
 }
 .inspector-body .dc-row-item {
   min-height: 30px;
-  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+  background: color-mix(in srgb, var(--text) 1.8%, transparent);
 }
 .inspector-body .dc-row-item > .dc-row-label {
   color: var(--text);
+}
+.inspector-body .dc-group-item > .dc-row-item {
+  border-bottom-color: color-mix(in srgb, var(--border) 48%, transparent);
+}
+.inspector-body .dc-group-item > .dc-group-body > .dc-row,
+.inspector-body .dc-group-item > .dc-group-body > .dc-group > .dc-row {
+  border-bottom-color: color-mix(in srgb, var(--border) 42%, transparent);
 }
 .inspector-body .dc-row-delete {
   visibility: hidden;
