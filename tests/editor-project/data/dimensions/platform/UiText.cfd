@@ -1,0 +1,6 @@
+namespace EditorFixture::Ui;
+
+hint: UiText {
+  desktop: "Press Enter",
+  mobile: "Tap to continue",
+}

@@ -45,8 +45,8 @@ export function CreateRecordDialog({
       onClose={onClose}
       confirmLabel="创建"
       extraValidation={() => {
-        if (!trimmedKey) return keyTouched ? '请输入记录 Key' : ' '
-        if (duplicateKey) return `Key "${trimmedKey}" 已存在于该类型的继承域中，请换一个 Key。`
+        // Key 错误由输入框状态表达，空白字符串仅用于阻止提交。
+        if (!trimmedKey || duplicateKey) return ' '
         return null
       }}
       headerExtras={(
@@ -54,10 +54,10 @@ export function CreateRecordDialog({
           className="create-record-key-input"
           value={recordKeyDraft}
           autoFocus
-          placeholder="record_key"
+          placeholder="请输入记录 Key"
           aria-label="记录 Key"
           aria-invalid={(keyTouched && !trimmedKey) || duplicateKey}
-          title={duplicateKey ? `Key "${trimmedKey}" 已存在` : undefined}
+          title={duplicateKey ? `Key "${trimmedKey}" 已存在于该类型的继承域中` : undefined}
           onChange={e => {
             setKeyTouched(true)
             setRecordKeyDraft(e.target.value)

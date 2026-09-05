@@ -246,7 +246,8 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
         is_host: ty.is_host,
         is_abstract: ty.is_abstract,
         is_sealed: ty.is_sealed,
-        is_record: ty.loader_id_type.is_some(),
+        // 普通 singleton 由 CFD 提供，虽然不生成 Table，仍必须拥有记录加载 metadata。
+        is_record: ty.loader_id_type.is_some() || (singleton && !ty.is_host),
         can_create_record: !ty.is_host && !ty.is_struct && !ty.is_abstract,
         assignable_types: ty.loader_assignable_to.iter()
             .map(|value| escape_csharp_string(value)).collect(),

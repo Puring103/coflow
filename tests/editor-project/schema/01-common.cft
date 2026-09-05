@@ -1,0 +1,31 @@
+namespace EditorFixture::Common;
+
+@label("品质")
+enum Rarity {
+  Common = 0,
+  Rare = 10,
+  Epic,
+}
+
+@flag
+enum Feature {
+  Empty = 0,
+  Tradable = 1,
+  Stackable = 2,
+  Hidden = 4,
+}
+
+enum Element {
+  Physical,
+  Fire,
+  Ice,
+  Arcane,
+}
+
+enum EntityId {}
+
+type Identifier = string;
+type IntegerTransform = fn(value: int) -> int;
+
+const DEFAULT_LEVEL: int = 1;
+const DEFAULT_TAGS = ["fixture", "editable"];

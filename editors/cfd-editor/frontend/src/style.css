@@ -2676,6 +2676,14 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   min-height: 0;
 }
 
+/* 创建表单的顶层字段使用稳定的标签宽度，避免宽弹窗把字段名和控件拉散。 */
+.create-record-fields > .dc-inspector > .dc-row {
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) 44px;
+}
+.create-record-fields > .dc-inspector > .dc-row > .dc-row-label {
+  padding-left: 14px;
+}
+
 /* Schema-default, unedited rows: fade the value so users can tell they'd be
  * skipped on write. Also dims text-based DirectEditor inputs; controls remain
  * clickable and regain full contrast on focus. */
@@ -3471,6 +3479,17 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   gap: 4px;
   min-width: 0;
   padding: 3px 7px 3px 4px;
+}
+/* 单元格详情中的具体类型占满右侧区域，让下拉入口稳定贴近面板右缘。 */
+.dc-polymorphic-type-row > .dc-row-value {
+  grid-column: 2 / 4;
+  padding-right: 8px;
+}
+.dc-polymorphic-type-row > .dc-row-actions {
+  display: none;
+}
+.dc-polymorphic-type-select {
+  color: var(--text);
 }
 .dc-row.keyboard-selected {
   background: var(--bg-4);

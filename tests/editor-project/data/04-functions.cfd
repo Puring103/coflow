@@ -1,0 +1,21 @@
+namespace EditorFixture::Logic;
+
+use EditorFixture::Model::Stats;
+
+rules: RuleSet {
+  owner: &EditorFixture::Model::Entity::mage,
+  samples: [-3, 0, 4, 9],
+  classify: fn(value: int) -> string {
+    if value >= 10 {
+      "large"
+    } else {
+      "small"
+    }
+  },
+  buildStats: fn(value: int) -> Stats {
+    Stats { health: value, speed: 1.0 }
+  },
+  pipeline: fn(values: [int], operation: fn(item: int) -> int) -> [int] {
+    values.map(fn(item: int) -> int { operation(item) })
+  },
+}

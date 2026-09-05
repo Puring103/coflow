@@ -1,0 +1,43 @@
+namespace EditorFixture::Model;
+
+use EditorFixture::Common::Element;
+use EditorFixture::Common::Feature;
+use EditorFixture::Common::Rarity;
+
+ValueGallery {
+  defaults {
+    integerValue: 0,
+    floatValue: 0.0,
+    booleanValue: false,
+    shortText: "",
+    longText: "Default-heavy record",
+  }
+
+  populated {
+    integerValue: -42,
+    floatValue: 3.14159,
+    booleanValue: true,
+    shortText: "line 1\nline 2",
+    longText: "A deliberately long value used to verify table truncation, inspector wrapping, source navigation, and editing without changing the surrounding layout.",
+    rarity: Rarity::Epic,
+    features: Feature::Tradable | Feature::Hidden,
+    optionalText: "present",
+    optionalNumber: Some(7),
+    success: Ok(99),
+    failure: Err("expected fixture error value"),
+    numbers: [1, 2, 3, 5, 8],
+    labels: { "short": "value", "escaped": "quote: \" and slash: \\" },
+    position: Vector2 { x: 12.5, y: -4.25 },
+    stats: Stats {
+      health: 250,
+      speed: 1.75,
+      resistances: { Element::Fire: 0.5, Element::Ice: 0.25 },
+    },
+    matrix: [[1, 2], [], [3, 4, 5]],
+    nestedLookup: {
+      "first": [Stats { health: 10 }, Stats { health: 20, speed: 2.0 }],
+      "empty": [],
+    },
+    optionalResult: Ok([Stats { health: 5 }]),
+  }
+}

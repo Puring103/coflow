@@ -1,7 +1,8 @@
 # C# Runtime Integration Fixture
 
-This CI fixture verifies generated C# types, CFD loading, host functions, function calls,
-record queries, and module replacement. It is not a user-facing example.
+This CI fixture verifies generated C# types, scalar and composite values, defaults, enums, flags,
+polymorphic objects, CFD loading, record references, host functions, function calls, record
+queries, and immutable module replacement. It is not a user-facing example.
 
 Run it from the repository root:
 

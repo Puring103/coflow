@@ -479,9 +479,9 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
-    .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
-    .filter(|(_, meta)| meta.is_abstract)
-    .and_then(|(name, _)| schema.concrete_assignable_types(name))
+    // 具体基类同样可以承载派生对象；只按 abstract 判断会让编辑器缺少类型切换候选。
+    .filter(|name| schema.range_is_polymorphic(name))
+    .and_then(|name| schema.concrete_assignable_types(name))
     .unwrap_or_default()
     .into_iter()
     .map(|name| name.to_string())
@@ -536,5 +536,28 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         collection_item,
         object_type,
         field_order,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field_shape;
+    use coflow_language::cft::{
+        build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
+    };
+
+    #[test]
+    fn concrete_base_object_shape_exposes_all_assignable_types() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
+
+        let shape = field_shape(&schema, &npc_type);
+
+        assert_eq!(shape.polymorphic_types, ["NPC", "Game"]);
     }
 }

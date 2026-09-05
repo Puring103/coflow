@@ -53,7 +53,7 @@
         foreach (var variant in variants)
         {
             var node = CfdValueReader.FindField(record.Fields, variant);
-            if (node is not null && node is not CfdNoneValue)
+            if (node is not null && !CfdValueReader.IsNone(node))
                 values.Add(variant, context.WithRecordPath(record, () => read(node, context)));
         }
         return new {{ dimension.name }}<T>(defaultValue, values);
@@ -124,14 +124,8 @@
         CfdValueNode node,
         CfdLoadContext context)
     {
-        if (node is CfdDictionaryValue)
-            return CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields);
-        if (node is not CfdObjectValue objectValue)
-            throw new CfdLoadException(new[]
-            {
-                new CfdDiagnostic("CFD-VALUE-TYPE", "expected an object", string.Empty, node.Span),
-            });
-        return objectValue.DeclaredType switch
+        var objectType = CfdValueReader.ObjectDeclaredType(node);
+        return objectType switch
         {
             null or "{{ reader.source_name }}" =>
                 CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields),
@@ -140,7 +134,7 @@
             {
                 new CfdDiagnostic(
                     "CFD-REF-UNKNOWN-TYPE",
-                    $"unknown concrete type `{objectValue.DeclaredType}` for `{{ reader.source_name }}`",
+                    $"unknown concrete type `{objectType}` for `{{ reader.source_name }}`",
                     string.Empty,
                     node.Span),
             }),
@@ -162,7 +156,8 @@
         CfdValueNode node,
         CfdLoadContext context)
     {
-        if (node is not CfdObjectValue objectValue || objectValue.DeclaredType is null)
+        var objectType = CfdValueReader.ObjectDeclaredType(node);
+        if (objectType is null)
             throw new CfdLoadException(new[]
             {
                 new CfdDiagnostic(
@@ -171,14 +166,14 @@
                     string.Empty,
                     node.Span),
             });
-        return objectValue.DeclaredType switch
+        return objectType switch
         {
 {% for variant in reader.variants %}            "{{ variant.source_name }}" => Read{{ variant.reader_name }}(node, context),
 {% endfor %}            _ => throw new CfdLoadException(new[]
             {
                 new CfdDiagnostic(
                     "CFD-REF-UNKNOWN-TYPE",
-                    $"unknown concrete type `{objectValue.DeclaredType}` for `{{ reader.source_name }}`",
+                    $"unknown concrete type `{objectType}` for `{{ reader.source_name }}`",
                     string.Empty,
                     node.Span),
             }),

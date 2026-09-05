@@ -112,7 +112,9 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 {% endif %}{% endfor %}            _ => null,
         };
 {% if type.is_record %}        public object ParseKey(string key) => {{ type.parse_key }};
-        public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, {{ type.key_type }}>(static record => record.Id);
+{% if type.is_singleton %}        public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, string>(static _ => string.Empty);
+{% else %}        public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, {{ type.key_type }}>(static record => record.Id);
+{% endif %}
 {% endif %}
         public object Read(CfdRecordNode record, CfdLoadContext context) => Read{{ type.metadata_name }}(record, context);
 {% if type.is_host %}        public object CreateHost(CfdLoadContext context) => {{ type.create_host }};
