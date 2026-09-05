@@ -310,13 +310,13 @@ type Item {\n\
 fn completion_items_cover_context_filters_and_default_boundaries() {
     let source = "const LIMIT: int = 5;\n\
 const NAME: string = \"boss\";\n\
+const OUTCOME: Result<int, string> = Ok(1);\n\
 enum Kind { One = 1, Two = 2, }\n\
 type Target { key: string; value: int; }\n\
 type Item {\n\
   enabled: bool = true;\n\
   kind: Kind = Kind::One;\n\
   maybe: Option<int> = None;\n\
-  outcome: Result<int, string> = Ok(1);\n\
   xs: [int] = [];\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
@@ -423,8 +423,10 @@ type Item {\n\
 
     let result_position = position_from_byte(
         source,
-        source.find("outcome: Result<int, string> = Ok(1)").expect("Result")
-            + "outcome: Result<int, string> = ".len(),
+        source
+            .find("const OUTCOME: Result<int, string> = Ok(1)")
+            .expect("Result")
+            + "const OUTCOME: Result<int, string> = ".len(),
     );
     let result_labels = completion_labels(completion_items(&build, document, &result_position));
     assert!(result_labels.contains(&"Ok".to_string()));

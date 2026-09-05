@@ -248,7 +248,16 @@ impl ResolvedTypes<'_> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
+                let value_type =
+                    self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
+                if value_type_contains_data_result(&value_type) {
+                    diagnostics.push(CftDiagnostic::error(
+                        CftErrorCode::ResultDataField,
+                        info.module.clone(),
+                        field.ty.span,
+                        "Result cannot be used as an object data field type",
+                    ));
+                }
             }
         }
         self.diagnostics.extend(diagnostics);
@@ -269,6 +278,7 @@ impl ResolvedTypes<'_> {
                                 declaring_type: crate::TypeName::from_validated(info.name.clone()),
                                 inferred_type: declared_ty,
                                 dimension: super::annotations::field_dimension_name(field),
+                                span: field.span,
                             },
                         );
                     }
@@ -276,6 +286,100 @@ impl ResolvedTypes<'_> {
                 (name.clone(), map)
             })
             .collect();
+    }
+
+    /// 必填 object 字段必须能够有限展开；Option、集合和引用会终止默认创建路径。
+    pub(super) fn validate_required_object_cycles(&mut self) {
+        #[derive(Clone)]
+        struct Edge {
+            field: String,
+            target: String,
+            declaring_type: String,
+            span: Span,
+        }
+
+        let graph = self
+            .full_fields
+            .iter()
+            .map(|(owner, fields)| {
+                let edges = fields
+                    .iter()
+                    .filter_map(|(name, field)| match &field.inferred_type {
+                        InferredType::Value(crate::CftValueType::Object(target)) => Some(Edge {
+                            field: name.clone(),
+                            target: target.to_string(),
+                            declaring_type: field.declaring_type.to_string(),
+                            span: field.span,
+                        }),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                (owner.clone(), edges)
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        let mut states = BTreeMap::<String, u8>::new();
+        for root in graph.keys() {
+            if states.get(root).copied() == Some(2) {
+                continue;
+            }
+            let mut nodes = vec![root.clone()];
+            let mut incoming = Vec::<Edge>::new();
+            let mut frames = vec![(root.clone(), 0usize)];
+            states.insert(root.clone(), 1);
+
+            while let Some((owner, next_edge)) = frames.last_mut() {
+                let edges = graph.get(owner).map_or(&[][..], Vec::as_slice);
+                let Some(edge) = edges.get(*next_edge).cloned() else {
+                    let completed = owner.clone();
+                    frames.pop();
+                    nodes.pop();
+                    if !frames.is_empty() {
+                        incoming.pop();
+                    }
+                    states.insert(completed, 2);
+                    continue;
+                };
+                *next_edge += 1;
+
+                match states.get(&edge.target).copied() {
+                    Some(1) => {
+                        let start = nodes
+                            .iter()
+                            .position(|node| node == &edge.target)
+                            .unwrap_or(0);
+                        let mut cycle = incoming[start..]
+                            .iter()
+                            .map(|step| format!("{}.{}", nodes[start], step.field))
+                            .collect::<Vec<_>>();
+                        cycle.push(format!("{owner}.{}", edge.field));
+                        cycle.push(edge.target.clone());
+                        let module = self
+                            .types
+                            .get(&edge.declaring_type)
+                            .map_or_else(|| self.types[owner].module.clone(), |info| {
+                                info.module.clone()
+                            });
+                        self.diagnostics.push(CftDiagnostic::error(
+                            CftErrorCode::RequiredObjectCycle,
+                            module,
+                            edge.span,
+                            format!(
+                                "required object field cycle: {}",
+                                cycle.join(" -> ")
+                            ),
+                        ));
+                    }
+                    Some(2) => {}
+                    _ => {
+                        states.insert(edge.target.clone(), 1);
+                        nodes.push(edge.target.clone());
+                        incoming.push(edge.clone());
+                        frames.push((edge.target, 0));
+                    }
+                }
+            }
+        }
     }
 
     /// Resolves a `TypeRef` to an `InferredType` without emitting diagnostics. Errors
@@ -463,5 +567,34 @@ impl ResolvedTypes<'_> {
         self.types
             .get(name)
             .is_some_and(|info| has_annotation(&info.def.annotations, "singleton"))
+    }
+}
+
+fn value_type_contains_data_result(ty: &InferredType) -> bool {
+    match ty {
+        InferredType::Value(crate::CftValueType::Result(_, _)) => true,
+        InferredType::Value(
+            crate::CftValueType::Array(inner) | crate::CftValueType::Option(inner),
+        ) => value_type_contains_result(inner),
+        InferredType::Value(crate::CftValueType::Dict(key, value)) => {
+            value_type_contains_result(key) || value_type_contains_result(value)
+        }
+        // 函数字段中的 Result 是函数协议的一部分，不是 object 数据字段。
+        InferredType::Value(crate::CftValueType::Function(_, _)) | InferredType::Unknown => false,
+        InferredType::Value(_) | InferredType::EnumNamespace(_) | InferredType::Entry(_, _) => false,
+    }
+}
+
+fn value_type_contains_result(ty: &crate::CftValueType) -> bool {
+    match ty {
+        crate::CftValueType::Result(_, _) => true,
+        crate::CftValueType::Array(inner) | crate::CftValueType::Option(inner) => {
+            value_type_contains_result(inner)
+        }
+        crate::CftValueType::Dict(key, value) => {
+            value_type_contains_result(key) || value_type_contains_result(value)
+        }
+        crate::CftValueType::Function(_, _) => false,
+        _ => false,
     }
 }

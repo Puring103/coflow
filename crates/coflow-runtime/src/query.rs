@@ -135,14 +135,6 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub fn editable_field_seed(self, actual_type: &str, field_name: &str) -> Option<CfdValue> {
         let field = self.session.schema().field(actual_type, field_name)?;
-        if let CftValueType::RecordRef(expected_type) = &field.value_type {
-            return self
-                .session
-                .ref_targets(expected_type)
-                .into_iter()
-                .next()
-                .map(|target| CfdValue::Ref(target.coordinate.key));
-        }
         default_value_for_value_type(
             self.session.schema(),
             &field.value_type,
@@ -459,10 +451,10 @@ fn dimension_value_at_path<'a>(
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
-    let semantic_ty = match ty {
-        CftValueType::Option(inner) => inner.as_ref(),
-        _ => ty,
-    };
+    let mut semantic_ty = ty;
+    while let CftValueType::Option(inner) = semantic_ty {
+        semantic_ty = inner.as_ref();
+    }
     let ref_target_type = match semantic_ty {
         CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
@@ -559,5 +551,24 @@ mod tests {
         let shape = field_shape(&schema, &npc_type);
 
         assert_eq!(shape.polymorphic_types, ["NPC", "Game"]);
+    }
+
+    #[test]
+    fn optional_concrete_object_shape_exposes_its_inner_object_type() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type Node {}",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
+            CftValueType::Object(TypeName::new("Node").expect("valid type name")),
+        ))));
+
+        let shape = field_shape(&schema, &node_type);
+
+        assert_eq!(shape.display_label, "Option<Option<Node>>");
+        assert_eq!(shape.object_type.as_deref(), Some("Node"));
+        assert!(shape.nullable);
     }
 }

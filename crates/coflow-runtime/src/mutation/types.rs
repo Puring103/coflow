@@ -202,7 +202,7 @@ pub struct CreateRecordFieldDraft {
 #[serde(rename_all = "snake_case")]
 pub enum CreateFieldSource {
     SchemaDefault,
-    TypeSeed,
+    TypeDefault,
     RequiredInput,
 }
 
@@ -220,9 +220,6 @@ pub enum CreateRequiredInput {
     AbstractObject {
         expected_type: String,
         concrete_types: Vec<String>,
-    },
-    RecursiveObject {
-        type_name: String,
     },
     Unsupported {
         message: String,
