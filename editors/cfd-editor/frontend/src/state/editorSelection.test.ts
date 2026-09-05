@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import { fieldPathField } from '../wire'
 import {
+  cellAnchorsIdentity,
+  editorSelectionIdentity,
   recordSelection,
   recordSelectionCoordinates,
   rebindSelection,
@@ -135,5 +137,46 @@ describe('editor selection', () => {
 
     expect(valueSelectionCells(second, rows, ['name', 'hp'])).toHaveLength(6)
     expect(second.rangeAnchor.coordinate).toEqual(rows[0])
+  })
+
+  it('changes the edit identity when the record or field target changes', () => {
+    const name = valueSelection('data/npc.cfd', coordinate, [fieldPathField('name')])
+    const health = valueSelection('data/npc.cfd', coordinate, [fieldPathField('health')])
+    const merchant = valueSelection(
+      'data/npc.cfd',
+      { actual_type: 'Npc', key: 'merchant' },
+      [fieldPathField('name')],
+    )
+
+    expect(editorSelectionIdentity(name)).not.toBe(editorSelectionIdentity(health))
+    expect(editorSelectionIdentity(name)).not.toBe(editorSelectionIdentity(merchant))
+  })
+
+  it('uses an order-independent identity for batch record and cell targets', () => {
+    const merchant = { actual_type: 'Npc', key: 'merchant' }
+    const first = updateRecordSelection(
+      recordSelection('data/npc.cfd', coordinate),
+      'data/npc.cfd',
+      merchant,
+      [coordinate, merchant],
+      'toggle',
+    )!
+    const second = updateRecordSelection(
+      recordSelection('data/npc.cfd', merchant),
+      'data/npc.cfd',
+      coordinate,
+      [coordinate, merchant],
+      'toggle',
+    )!
+    const name = [fieldPathField('name')]
+
+    expect(editorSelectionIdentity(first)).toBe(editorSelectionIdentity(second))
+    expect(cellAnchorsIdentity('data/npc.cfd', [
+      { coordinate, fieldPath: name },
+      { coordinate: merchant, fieldPath: name },
+    ])).toBe(cellAnchorsIdentity('data/npc.cfd', [
+      { coordinate: merchant, fieldPath: name },
+      { coordinate, fieldPath: name },
+    ]))
   })
 })

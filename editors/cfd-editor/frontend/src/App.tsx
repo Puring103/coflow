@@ -8,6 +8,7 @@ import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
+import { finishActiveDataEdit } from './state/editSession'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
@@ -515,6 +516,7 @@ export default function App() {
     try { localStorage.setItem('cfd-editor-inspector-w', String(inspectorW)) } catch { /* quota */ }
   }, [inspectorW])
   const openInspector = useCallback((file: string, coordinate: RecordCoordinate) => {
+    finishActiveDataEdit()
     setInspectorSelection(prev => {
       if (prev?.kind === 'record' && prev.filePath === file && sameCoordinate(prev.coordinate, coordinate)) return prev
       return recordSelection(file, coordinate)
@@ -525,15 +527,20 @@ export default function App() {
     coordinate: RecordCoordinate,
     fieldPath: FieldPathSegment[],
   ) => {
+    finishActiveDataEdit()
     setInspectorCollapsed(false)
     setInspectorSelection(valueSelection(file, coordinate, fieldPath))
   }, [])
-  const closeInspector = useCallback(() => setInspectorSelection(null), [])
+  const closeInspector = useCallback(() => {
+    finishActiveDataEdit()
+    setInspectorSelection(null)
+  }, [])
 
   const navigateWorkspaceTab = useCallback((
     tab: WorkspaceTab,
     coordinate?: RecordCoordinate,
   ) => {
+    finishActiveDataEdit()
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
     if (tab.filePath.endsWith('.cft')) {
@@ -1055,6 +1062,7 @@ export default function App() {
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
+      finishActiveDataEdit()
       const id = workspaceTabId(filePath, coordinate.actual_type)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
       const tab: WorkspaceTab = {
@@ -1651,6 +1659,7 @@ export default function App() {
     visibleCoordinates: readonly RecordCoordinate[],
     mode: RecordSelectionMode,
   ) => {
+    finishActiveDataEdit()
     setInspectorCollapsed(false)
     setInspectorSelection(current => updateRecordSelection(
       current,
@@ -1998,6 +2007,7 @@ export default function App() {
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
       if (currentRoute?.view !== 'table') return
+      finishActiveDataEdit()
       setInspectorCollapsed(false)
       setInspectorSelection(current => updateValueSelection(
         current,
@@ -3181,6 +3191,7 @@ export default function App() {
                     )}
                     selection={inspectorSelection}
                     onSelectValue={(coordinate, path) => {
+                      finishActiveDataEdit()
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
                     }}
                     onRenderCellText={tableOnRenderCellText}
