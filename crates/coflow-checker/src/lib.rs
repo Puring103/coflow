@@ -30,14 +30,15 @@ mod diagnostics;
 mod dimensions;
 mod engine;
 mod eval;
+mod limits;
 mod operations;
 mod output;
 mod task;
 
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdDataModel;
-pub use coflow_structure::StructuralLimits;
+use coflow_model::CfdDataModel;
+use coflow_language::cft::CftSchema;
 pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
+pub use limits::EvaluationLimits;
 pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult};
 pub use task::{CheckLimits, CheckProjection, CheckTarget, CheckTask};
 

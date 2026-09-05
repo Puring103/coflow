@@ -1,0 +1,17 @@
+# Feature: all, any, and none collection quantifiers.
+
+type QuantifierRule {
+  numbers: [int];
+
+  check {
+    all value in numbers {
+      value >= 0;
+    }
+    any value in numbers {
+      value == 0;
+    }
+    none value in numbers {
+      value < 0;
+    }
+  }
+}

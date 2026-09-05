@@ -1,0 +1,52 @@
+@Host
+@singleton
+type HostServices {
+  environment: string;
+  trace: fn(message: string) -> ();
+  adjust: fn(value: int, operation: fn(input: int) -> int) -> int;
+  decorate: fn(value: string) -> string;
+  normalize: fn(value: Option<int>) -> Result<int, string>;
+}
+
+type Scenario {
+  hero: &Character;
+  config: ScenarioConfig;
+  stages: [fn(value: int) -> int];
+
+  execute: fn(value: int) -> int;
+  callHost: fn(value: int) -> int;
+  makeScaler: fn(scale: int) -> fn(value: int) -> int;
+  apply: fn(value: int, operation: fn(input: int) -> int) -> int;
+  compose: fn(first: fn(value: int) -> int, second: fn(value: int) -> int) -> fn(value: int) -> int;
+
+  integerLoop: fn(iterations: int) -> int;
+  floatLoop: fn(iterations: int) -> float;
+  numericConversions: fn(value: int, ratio: float) -> int;
+  enumRoundTrip: fn(value: CharacterId) -> bool;
+  increment: fn(value: int) -> int;
+  directCallChain: fn(value: int) -> int;
+  tailRecursion: fn(iterations: int) -> int;
+  tailAccumulator: fn(iterations: int, total: int) -> int;
+  fieldReadLoop: fn(iterations: int) -> int;
+  collectionPipeline: fn(value: int) -> int;
+  hostCall: fn(value: int) -> int;
+  hostComposite: fn(value: Option<int>) -> Result<int, string>;
+  propagateOption: fn(value: Option<int>) -> Option<int>;
+  propagateResult: fn(value: Result<int, string>) -> Result<int, string>;
+  propagateNested: fn(value: Result<Result<int, string>, string>) -> Result<int, string>;
+  makeOptionalAdder: fn(value: Option<int>) -> fn(input: int) -> int;
+  collectionQueries: fn(value: int) -> int;
+  emptyCollectionQueries: fn() -> int;
+  makeStats: fn(value: int) -> Stats;
+  makeDefaultStats: fn(value: int) -> Stats;
+  formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string;
+  syntaxControlFlow: fn(input: int) -> int;
+  syntaxOperators: fn(left: int, right: int, text: string) -> bool;
+  syntaxMatch: fn(value: int, optional: Option<int>, outcome: Result<int, string>, character: CharacterId) -> int;
+  typeMetadata: fn() -> string;
+  builtinSyntax: fn(text: string) -> bool;
+  formatSyntax: fn(text: string) -> string;
+  primeSum: fn(limit: int) -> int;
+  matrixKernel: fn(size: int) -> int;
+  fibonacci: fn(value: int) -> int;
+}

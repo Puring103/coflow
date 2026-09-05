@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "views": {},
+  "default_table_column_widths": {},
+  "record_groups": {},
+  "workspace": {
+    "tabs": [
+      {
+        "file_path": "schema/type.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "data/main.cfd",
+        "type_name": "NPC",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/main.cfd",
+        "type_name": "game",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/main.cfd",
+        "type_name": "Building",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      }
+    ],
+    "active_tab_id": "data/main.cfd\u001fNPC"
+  }
+}

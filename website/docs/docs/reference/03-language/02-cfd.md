@@ -1,416 +1,171 @@
-# CFD 语法参考
+# CFD 文本数据语言
 
-CFD（Coflow Data File，`.cfd`）是 coflow 的文本数据文件格式，用来编写 CFT schema 定义下的配置记录。
+CFD（Coflow Data）是项目唯一的数据输入格式。解析器先生成带 source span 的无 schema 语法树，runtime
+再根据 CFT 完成类型转换、默认值、继承、引用、维度 overlay 和业务 check。
 
-它适合承载表格不容易表达的数据：单例、嵌套对象、数组、字典、多态对象和记录引用。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。项目中的不同数据源会合并检查，因此可以互相引用。
+```cfd
+sword: Item {
+  name: "Fire Sword",
+  rarity: Rare,
+  tags: [weapon, fire],
+}
+```
 
-下面是一个简单 CFD 文件：
+空白不参与语义，注释从 `#` 延续到行尾。字段和集合项使用逗号分隔并允许尾逗号。项目统一使用 2 空格
+缩进，可通过 `coflow format` 规范化排版。
+
+## 文件与名称
+
+项目中的 CFD 文件共同提供配置记录。文件和目录只用于组织数据，不创建名称作用域。记录声明和内联
+对象的类型直接使用 CFT 中项目全局唯一的短名：
+
+```cfd
+sword: Item {
+  rarity: Rarity::Rare,
+}
+```
+
+`::` 用于枚举成员和带类型的记录引用，例如 `Rarity::Rare` 与 `&Item::sword`，不用于限定类型名。
+
+## 顶层记录
+
+普通记录由 record key、实际 type 和字段块组成：
+
+```cfd
+sword: Item {
+  name: "Sword",
+}
+```
+
+同类型记录可以放入 group，省略每条记录重复的 type：
 
 ```cfd
 Item {
-  sword_fire {
-    name: "Fire Sword",
-    element: Fire,
-    price: 100,
-    tags: ["weapon", "melee"],
-  }
-}
-
-basic_monster: Monster {
-  name: "Training Dummy",
-  stats: { hp: 100, attack: 5 },
-  drop: {
-    rewards: [
-      ItemReward { item: &sword_fire, count: 1 },
-      CurrencyReward { amount: 10 },
-    ],
-  },
-}
-```
-
-## 文件与注释
-
-CFD 文件只保存数据，不声明 schema。字段、类型、枚举、默认值、引用规则和 check 规则来自 CFT。
-
-注释使用 `#`：
-
-```cfd
-# 整行注释
-sword_fire: Item {
-  name: "Fire Sword", # 行尾注释
-}
-```
-
-字段、数组元素和字典条目使用 `,` 分隔，允许尾逗号。
-分组记录之间的逗号是可选的。
-
-```cfd
-tags: ["weapon", "melee",]
-```
-
-## 记录
-
-记录是 CFD 的顶层数据单元。每条记录都有 record key 和 CFT 类型。
-
-```cfd
-sword_01: Item {
-  name: "Iron Sword",
-  price: 100,
-}
-```
-
-规则：
-
-- `sword_01` 是 record key。
-- `Item` 是 CFT 类型名。
-- record key 承担 `id` 语义，不要在顶层记录块里再写 `id` 字段。
-- 记录块由 `{ ... }` 包裹；普通记录字段、数组元素和字典条目使用 `,` 分隔。
-- 分组记录之间可以写 `,`，也可以仅用空白或换行分隔。
-- 记录里的字段名必须来自目标 CFT type，不能随意添加 schema 外字段。
-
-### 分组记录
-
-同类型记录可以放在同一个类型分组下，减少重复类型名：
-
-```cfd
-Item {
-  sword_fire {
-    name: "Fire Sword",
-    price: 100,
+  sword {
+    name: "Sword",
   }
 
-  staff_ice {
-    name: "Ice Staff",
-    price: 150,
+  shield {
+    name: "Shield",
   }
 }
 ```
 
-这里的 `sword_fire` 和 `staff_ice` 都是 `Item` 记录。
+group 内也可用 `key: DerivedType { ... }` 指定具体派生 type。group 只是文本简写，不创建额外的数据
+层级。record key 必须是非保留的 CFT 标识符，并在其查询类型域中唯一。
 
-分组记录之间的逗号可选，以下写法等价：
+## 字段与省略
+
+字段写作 `name: value`。字段顺序不改变 schema 语义，但来源顺序和 source identity 会稳定保留。省略字段
+时，runtime 使用 CFT 默认值；没有默认值的必填字段不能省略。未知字段和重复字段会产生诊断。
 
 ```cfd
-Item {
-  sword_fire {
-    name: "Fire Sword",
-    price: 100,
-  },
-
-  staff_ice {
-    name: "Ice Staff",
-    price: 150,
-  },
+starter: Item {
+  name: "Starter",
+  enabled: true,
 }
 ```
 
-### 多态分组
+CFD 不能声明 type、默认值或 check，也不允许在数据文件中写 `check { ... }`。
 
-如果分组类型是抽象类型，分组内的记录需要显式写出具体子类型：
+## 值语法
 
-```cfd
-Reward {
-  sword_reward: ItemReward {
-    item: &sword_fire,
-    count: 1,
-  }
-
-  coin_reward: CurrencyReward {
-    amount: 50,
-  }
-}
-```
-
-`Reward` 是统一的分组入口，`ItemReward` 和 `CurrencyReward` 是实际实例化的 CFT 子类型。
-
-## 字段值
-
-CFD 是 schema-guided 解析：同一段文本在不同 CFT 字段类型下可能得到不同的解释。
+### Scalar、字符串和 enum
 
 ```cfd
-monster_01: Monster {
-  name: "Slime",
-  level: 3,
-  boss: false,
-  stats: { hp: 100, attack: 20 },
-  tags: ["early", "forest"],
-  weaknesses: { Fire: 1.25, Ice: 1.0 },
-}
+count: 10,
+ratio: 0.25,
+enabled: true,
+name: "line 1\nline 2",
+rarity: Rare,
+permissions: Read | Write,
 ```
 
-### 标量
+bool 只接受小写 `true`、`false`。字符串使用双引号，支持 `\"`、`\\`、`\n`、`\r`、`\t`。
+普通 enum 使用变体名称；`@flag` enum 可用 `|`、`^`、`&` 和括号组成位表达式。
 
-常见标量按目标字段类型解析：
+### 数组、字典与内联对象
 
-| 写法 | 目标类型 | 说明 |
-| --- | --- | --- |
-| `100` | `int` / `float` | 整数或浮点数字面量 |
-| `1.25` | `float` | 浮点数字面量 |
-| `true` / `false` | `bool` | 布尔值 |
-| `"Fire Sword"` | `string` | 双引号字符串，string 值必须使用这种写法 |
-| `null` | `T?` | 只允许用于 nullable 字段 |
+```cfd
+tags: [weapon, rare],
+weights: {
+  Fire: 10,
+  Ice: 5,
+},
+stats: {
+  hp: 100,
+  speed: 1.5,
+},
+effect: DamageEffect {
+  amount: 20,
+},
+```
 
-字符串必须使用双引号。支持 `\"`、`\\`、`\n`、`\r` 和 `\t` 转义。
-数字、布尔值和 enum 值仍使用各自的裸字面量写法；它们不会被当作字符串。
+`{ key: value }` 由字段的 CFT 类型决定是字典还是内联对象。抽象父 type 字段必须使用
+`ConcreteType { ... }` type marker 指定实际子 type。数组保留顺序，字典 key 必须符合声明的 key 类型且
+不能重复。
+
+### Option
+
+```cfd
+subtitle: None,
+owner: &sword,
+```
+
+Option 的规范写法是 `None` 或不带包装的存在值；解析器也接受显式 `Some(value)`。Coflow 编辑器和
+结构化 writer 会把 `Some(value)` 写回为 `value`。`Result` 用于函数协议、常量和表达式，不作为 CFD
+object 数据字段。
+
+### 记录引用
+
+```cfd
+owner: &sword,
+fallback: &Item::default_item,
+```
+
+`&key` 根据字段声明的 `&Type` 解析；需要显式写出目标类型时可写 `&Type::key`。
+引用可跨 CFD 文件，但目标必须存在且实际 type 可赋给声明的引用类型。引用不是字符串，不能使用引号。
 
 ### 格式化字符串
 
-字符串需要内嵌字段值时，直接在普通字符串中使用以下三种引用，不需要 `f` 或其他额外前缀：
-
-- 本记录的字段：`{field}`
-- 同类型其他记录的字段：`{&key.field}`
-- 其他类型记录的字段：`{&Type::key.field}`
+普通字符串包含有效字段引用时会自动识别为格式化字符串，不存在单独的字符串前缀：
 
 ```cfd
-description: "获得 <b>{&Item::sword_fire.name}</b>，价格 {&Item::sword_fire.price}"
+label: "{name} x {count}",
+remote_label: "{&sword.name}",
+typed: "{&Item::sword.name}",
 ```
 
-引用由可选的目标类型、可选的 record key 和一段或多段字段路径组成。`{field}` 从当前记录开始；`{&key.field}` 在当前记录类型及其子类型中查找 key；`{&Type::key.field}` 显式指定目标类型。字段路径可以继续穿过内联对象或记录引用，例如 `{item.owner.name}`。
+插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`。`{{` 和 `}}` 表示字面花括号。
+解析完成后 runtime 根据记录和字段路径求值，同时保留原始 source。
 
-被引用的终值会转换为确定的 CFD 文本；这适用于 null、标量、enum、记录引用、对象、数组和字典。包含引用的字符串里，字面量 `{`、`}` 分别写成 `{{`、`}}`：
+### 函数值
+
+函数类型字段可以在 CFD 中提供与 CFT 声明一致的签名和函数体：
 
 ```cfd
-template_help: "使用 {{name}} 表示占位符；当前名称为 {name}"
-```
-
-格式化字符串在项目数据加载完成后求值，导出结果仍然是普通 string。循环引用、目标记录
-不存在、字段不存在或路径无法继续访问时，项目检查会报告诊断。编辑器回写时会保留包含引用的作者源码；普通查询、check、JSON / MessagePack 导出和代码生成读取求值后的字符串。
-
-### 枚举
-
-枚举值可以只写变体名，也可以写完整枚举名：
-
-```cfd
-element: Fire
-element: Element.Fire
-```
-
-当上下文清楚时，短写法更简洁；当多个枚举有相同变体名时，完整写法更明确。
-
-`@flag` enum 还可以写整数 mask 或按位表达式：
-
-```cfd
-permissions: Read | Write
-permissions: Permission.Read | Permission.Execute
-permissions: Read | Write & (Execute | Admin)
-permissions: 5
-```
-
-支持 `&`、`^`、`|` 和括号，优先级从高到低为 `&`、`^`、`|`。操作数可以是短变体名、带 enum 前缀的变体名或非负整数。所有名称必须属于字段声明的 flag enum，整数和计算结果不能包含未声明的位。普通 enum 不接受按位表达式或整数值。
-
-writer 会把有效 mask 按 schema 变体声明顺序规范化为 `Read | Write`；零值优先写已声明的零值变体，否则写 `0`。原始表达式的括号和运算形式不会保留。
-
-### 数组
-
-数组使用 `[...]`，元素之间用 `,` 分隔：
-
-```cfd
-tags: ["weapon", "melee"]
-```
-
-当 CFT 数组元素类型是对象时，每个元素都是内联对象。元素类型存在子类型时，可以在元素前写具体类型名来表达多态：
-
-```cfd
-rewards: [
-  ItemReward { item: &sword_fire, count: 1 },
-  CurrencyReward { amount: 10 },
-]
-```
-
-### 对象
-
-对象字段可以写内联对象：
-
-```cfd
-stats: {
-  hp: 100,
-  attack: 20,
-}
-```
-
-如果字段类型是抽象父类型，需要写具体子类型：
-
-```cfd
-reward: ItemReward {
-  item: &sword_fire,
-  count: 1,
-}
-```
-
-### 字典
-
-字典使用 `{ key: value }`：
-
-```cfd
-weaknesses: {
-  Fire: 1.25,
-  Ice: 1.0,
-}
-```
-
-字典 key 类型由 CFT 字段类型决定，只能是 `string`、`int` 或 enum。
-
-## 引用
-
-引用用于让一条记录或对象指向另一条顶层记录。CFT 字段类型必须写成 `&Type`、`&Type?`、`[&Type]` 或 `{key: &Type}`。
-
-```cfd
-item: &sword_fire
-```
-
-### `&key`
-
-记录引用写成 `&key`：
-
-```cfd
-featured_item: &sword_fire
-```
-
-规则：
-
-- 只能用于期望类型为 `&Type` 的位置。
-- 目标类型来自 CFT 字段类型。
-- 引用目标是由 key 标识的顶层 record。
-- `&Reward` 可以引用实际类型为 `Reward` 或其子类的 record；不能引用父类、兄弟类型或无关 type。
-
-加载项目时会检查引用：目标必须存在，目标 record 的实际类型必须能赋给字段声明的引用类型。子类可以赋给父类字段，父类不能直接赋给更窄的子类字段。
-
-裸 record key 不会被当成对象引用：
-
-```cfd
-# 错误：对象字段中不要只写 key
-featured_item: sword_fire
-
-# 正确
-featured_item: &sword_fire
-```
-
-### 引用与内联对象
-
-```cft
-type Drop {
-  item: &Item;
-  reward: Reward;
-}
-```
-
-字段类型为 `&Item` 时，CFD 必须写引用：
-
-```cfd
-item: &sword_fire
-```
-
-字段类型为 `Reward` 时，CFD 必须写内联对象。数组和字典会递归应用内层类型。
-
-## 和 CFT 的关系
-
-CFD 只描述数据值，具体语义由 CFT 决定：
-
-- 顶层记录类型必须是 CFT 中存在的 `type`。
-- 字段名必须来自目标 type 或其父类。
-- 字段值会按照 CFT 字段类型解析。
-- 未填写字段会使用 CFT 默认值。
-- `&Type` 引用会按照 CFT 继承关系检查可赋值性。
-- `check` 块会在对象构建、默认值填充和引用解析后执行。
-
-因此，修改 CFT 字段类型、默认值或继承关系，都可能影响 CFD 文件是否仍然通过检查。
-
-## 和表格数据源的关系
-
-Excel / CSV 的一行等价于 CFD 的一条顶层记录；表格里的 `id` 列等价于 CFD 的 record key。
-
-```cfd
-shop_01: Shop {
-  featured_item: &sword_fire,
-}
-```
-
-只要项目中存在 key 为 `sword_fire`、实际类型可赋给 `Item` 的记录，CFD 就可以通过 `&sword_fire` 引用它。目标记录可以来自 CFD，也可以来自 Excel、CSV 或其他数据源。
-
-## 完整示例
-
-```cfd
-Item {
-  sword_fire {
-    name: "Fire Sword",
-    element: Fire,
-    price: 100,
-    tags: ["weapon", "melee"],
-  }
-
-  staff_ice {
-    name: "Ice Staff",
-    element: Ice,
-    price: 150,
-    tags: ["weapon", "magic"],
-  }
-}
-
-basic_monster: Monster {
-  name: "Training Dummy",
-  stats: { hp: 100, attack: 5 },
-  weaknesses: { Fire: 1.25, Ice: 1.0 },
-  drop: {
-    rewards: [
-      ItemReward { item: &sword_fire, count: 1 },
-      CurrencyReward { amount: 10 },
-    ],
-    weights: { Fire: 10, Ice: 5 },
+calculator: Calculator {
+  classify: fn(value: int) -> string {
+    if value >= 10 {
+      "large"
+    } else {
+      "small"
+    }
   },
 }
-
-Reward {
-  sword_reward: ItemReward {
-    item: &sword_fire,
-    count: 1,
-  }
-
-  coin_reward: CurrencyReward {
-    amount: 50,
-  }
-}
-
-default_drops: DropTable {
-  rewards: [
-    ItemReward { item: &sword_fire, count: 1 },
-    CurrencyReward { amount: 50 },
-  ],
-  weights: {
-    Fire: 70,
-    Ice: 30,
-  },
-}
-
-elite_monster: Monster {
-  name: "Elite Training Dummy",
-  stats: { hp: 250, attack: 5 },
-  weaknesses: { Fire: 1.25, Ice: 1.5 },
-  drop: {
-    rewards: [
-      ItemReward { item: &sword_fire, count: 1 },
-      CurrencyReward { amount: 10 },
-    ],
-    weights: { Fire: 10, Ice: 5 },
-  },
-}
-
-fire_encounter: Encounter {
-  monster: &elite_monster,
-  featured_item: &sword_fire,
-  weakness_hint: 1.5,
-}
 ```
 
-## 常见错误
+函数体是受静态类型约束的表达式语言。函数签名必须与 CFT 字段类型一致；函数字段也可以在 CFT 中
+声明默认实现，CFD 中的显式值会覆盖它。`@Host` 服务函数由宿主配置，不能在 CFT 中声明默认实现，也
+不能在 CFD 中实现。C# Runtime 的 `Load` 只保留函数值，`LoadAndCompile` 才类型检查并编译函数体。
+Rust runtime 当前不执行函数。当前 C# Runtime 的 VM 尚未提供执行预算，函数只应来自受信任、可控的
+配置源。
 
-| 错误写法 | 为什么错 | 推荐做法 |
-| --- | --- | --- |
-| `sword_01 Item { ... }` | 记录 key 和类型之间缺少 `:` | 写 `sword_01: Item { ... }` |
-| 在顶层记录里写 `id: "sword_01"` | record key 已承担 `id` 语义 | 把 key 写在记录开头 |
-| `featured_item: sword_fire` | 裸 key 不会被解析为对象引用 | 写 `&sword_fire` |
-| `name: Fire Sword` | string 值必须使用引号 | 写 `name: "Fire Sword"` |
-| `Reward { r1 { ... } }` 且 `Reward` 是抽象类型 | 抽象类型不能直接实例化 | 写 `r1: ItemReward { ... }` |
-| `name: null` 且 `name` 不是 nullable | `null` 只能赋给 `T?` | 改字段类型为 `string?` 或提供字符串 |
-| `element: Flame` | enum variant 不存在 | 检查 CFT enum 定义并写正确 variant |
-| 普通 enum 写 `A | B` | 只有 `@flag` enum 支持按位表达式 | 改为单个变体，或把 enum 声明为 `@flag` |
-| flag enum 写 `16`，但没有声明该位 | mask 包含未声明位 | 只组合已声明变体对应的位 |
+## 文件发现与检查
+
+`coflow.yaml` 的 `data` 可列出 `.cfd` 文件或目录；目录递归发现小写 `.cfd` 扩展名，其他文件不参与
+数据模型。多个来源按稳定路径顺序加载。维度输出仍为 CFD，但其覆盖位置由 CFT 注解和项目 dimensions
+配置共同决定。
+
+`coflow check` 会报告语法错误、未知或重复字段、类型不匹配、缺少必填字段、重复 record key、悬空或
+错误类型引用以及 check 失败。`coflow format` 只格式化配置的文本，不替代这些检查。

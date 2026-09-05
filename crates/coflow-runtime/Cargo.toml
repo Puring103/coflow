@@ -14,24 +14,27 @@ default = []
 internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
-    "coflow-api/ts-export",
-    "coflow-data-model/ts-export",
+    "coflow-model/ts-export",
 ]
 
 [dependencies]
-coflow-api = { path = "../coflow-api" }
-coflow-cft = { path = "../coflow-cft" }
+coflow-language = { path = "../coflow-language" }
+coflow-model = { path = "../coflow-model" }
 coflow-checker = { path = "../coflow-checker" }
-coflow-data-model = { path = "../coflow-data-model" }
-coflow-project = { path = "../coflow-project" }
+coflow-codegen = { path = "../coflow-codegen" }
+coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
+coflow-staging = { path = "../coflow-staging" }
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
 ts-rs = { version = "10", optional = true }
+unicode-ident = "1"
 walkdir = "2"
 
 [dev-dependencies]
-coflow-builtins = { path = "../coflow-builtins" }
-coflow-loader-csv = { path = "../coflow-loader-csv" }
+coflow-format = { path = "../coflow-format" }
+tempfile = "3"
 
 [[bench]]
 name = "check_planning"

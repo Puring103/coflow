@@ -27,25 +27,13 @@ pub fn csharp_namespace_error(value: &str) -> Option<String> {
     if value.is_empty() {
         return Some("namespace is empty".to_string());
     }
+    if value.split('.').next() == Some("Coflow") {
+        return Some("namespace root `Coflow` is reserved by the Runtime entry type".to_string());
+    }
     for part in value.split('.') {
         if let Some(reason) = csharp_ident_error(part) {
             return Some(format!("namespace segment `{part}` {reason}"));
         }
-    }
-    None
-}
-
-pub fn csharp_member_ident_error(value: &str) -> Option<String> {
-    let Some(unprefixed) = value.strip_prefix('_') else {
-        return csharp_ident_error(value);
-    };
-    if unprefixed.is_empty() {
-        return None;
-    }
-    if unprefixed.chars().any(|ch| !is_csharp_ident_continue(ch)) {
-        return Some(
-            "identifier must contain only `_` or Unicode identifier characters".to_string(),
-        );
     }
     None
 }
@@ -70,6 +58,31 @@ pub fn pascal_case(name: &str) -> String {
 
 pub fn csharp_type_name(name: &str) -> String {
     pascal_case(name)
+}
+
+pub fn csharp_declaration_namespace(root: &str, _name: &str) -> String {
+    root.to_string()
+}
+
+pub fn csharp_qualified_type_name(root: &str, name: &str) -> String {
+    format!(
+        "global::{}.{}",
+        csharp_declaration_namespace(root, name),
+        csharp_type_name(name)
+    )
+}
+
+pub fn csharp_relative_type_path(name: &str) -> String {
+    format!("{}.cs", csharp_type_name(name))
+}
+
+pub fn metadata_identifier(name: &str) -> String {
+    let mut out = String::from("Cft_");
+    for byte in name.as_bytes() {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{byte:02X}");
+    }
+    out
 }
 
 fn is_csharp_ident_start(ch: char) -> bool {
@@ -170,33 +183,4 @@ pub fn camel_case(name: &str) -> String {
         return String::new();
     };
     first.to_lowercase().collect::<String>() + chars.as_str()
-}
-
-pub fn pluralize(name: &str) -> String {
-    if name.ends_with('s') {
-        format!("{name}es")
-    } else {
-        format!("{name}s")
-    }
-}
-
-pub fn index_param_name(type_name: &str) -> String {
-    format!("{}Index", camel_case(type_name))
-}
-
-pub fn format_float(value: f64) -> String {
-    let mut text = value.to_string();
-    if !text.contains('.') && !text.contains('e') && !text.contains('E') {
-        text.push_str(".0");
-    }
-    text
-}
-
-pub fn escape_csharp_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
 }

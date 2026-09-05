@@ -2,17 +2,16 @@
 
 ## 一、存储
 
-### 1.1 设置文件（按关注点拆分）
+### 1.1 设置文件
 - 目录：`editor-setting/`（文件夹和文件都不带点前缀）
-- 单一 `settings.json` 拆分为多个文件，各自独立读写：
-  - `views.json` —— 自定义视图配置（含每视图列宽）
-  - `record-groups.json` —— 记录分组
+- 单一版本化文件：`editor.json`。视图、默认表格列宽、记录分组和 workspace 状态在同一文件中读写
+- 文件格式：`{ version: 1, views, default_table_column_widths, record_groups, workspace }`
 - **旧配置不兼容**：不读取、不迁移 `.coflow/editor.json`；直接采用新格式。用户既有的列宽 / 分组 / `graph_enabled_fields` 全部丢弃，从空配置开始
 - 废弃 `graph_enabled_fields`：新语义"自定义图视图的字段"由 ViewConfig 承载，无对应迁移
 
 ### 1.2 数据结构
-- `views`（`views.json`）：keyed by (filePath, actualType)，值为自定义视图列表
-- `record_groups`（`record-groups.json`）：keyed by (filePath, actualType)，现状保留
+- `views`：keyed by (filePath, actualType)，值为自定义视图列表
+- `record_groups`：keyed by (filePath, actualType)，现状保留
 - **列宽并入 ViewConfig**：不再有独立的 `table_column_widths`；每个表格视图（含默认表格视图）的列宽存在各自 ViewConfig 内
 
 每个 ViewConfig 包含：
@@ -23,7 +22,7 @@
 
 ### 1.2.1 默认表格视图的列宽
 - 默认表格视图不在 `views` 数组中，但仍需持久化列宽
-- 用保留 id `"__default_table"` 在 `views.json` 里单独存一条"仅含 column_widths 的隐式 ViewConfig 存根"，或在结构上单列一个 `default_table_column_widths`（keyed by filePath, actualType）
+- 用结构上单列的 `default_table_column_widths`（keyed by filePath, actualType），避免默认视图混入自定义 `views` 列表
 - 实现取后者：结构更清晰，避免默认视图混入自定义 `views` 列表（见 §10 数据类型）
 
 ### 1.3 视图配置的 key
@@ -211,7 +210,7 @@ Route = { file, typeFilter, viewId }
 每步可独立提交：
 
 1. 后端：`FileTypeOption` 加 `is_singleton`，透出 + regen binding（纯增量）
-2. 后端：settings 数据结构改造（拆分 `views.json` / `record-groups.json`、`views` + `default_table_column_widths`、drop 旧格式与 `graph_enabled_fields`）+ sanitize + 测试
+2. 后端：settings 数据结构改造（单一 `editor.json`、`views` + `default_table_column_widths`、drop 旧格式与 `graph_enabled_fields`）+ sanitize + 测试
 3. 后端：视图 CRUD Tauri 命令（增删改查 + 列宽写入）
 4. 前端：`Route` 加 `viewId`，改 `useRouter` 和所有 push 点，默认视图跑通
 5. 前端：视图 tab 行 UI（布局下移）+ 构建按钮移位 + 单例隐藏逻辑
@@ -285,7 +284,7 @@ pub struct ViewConfig {
     pub fields: Vec<String>,            // 卡片显示字段（同表格列选择逻辑）
 }
 
-// 顶层设置（拆分后仍在同一结构里，但落到两个文件）
+// 顶层设置（内存结构与磁盘单文件一致）
 pub struct EditorProjectSettings {
     #[serde(default)]
     pub views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
@@ -298,20 +297,19 @@ pub struct EditorProjectSettings {
 }
 ```
 
-> 备注：`views.json` 持久化 `{ views, default_table_column_widths }`，`record-groups.json` 持久化 `{ record_groups }`。运行时仍合并成一个 `EditorProjectSettings` 返回给前端（前端一份 state），只是磁盘上分两文件。
+> 备注：`editor.json` 持久化完整的 `EditorProjectSettings`，包含 `version: 1`。运行时和前端都只使用这一份设置状态。
 
 ### 10.2 后端读写与 sanitize（`editor/settings.rs`）
 
 ```rust
-const VIEWS_PATH: &str = "editor-setting/views.json";
-const RECORD_GROUPS_PATH: &str = "editor-setting/record-groups.json";
+const SETTINGS_FILE: &str = "editor-setting/editor.json";
 const MIN_COLUMN_WIDTH: f64 = 48.0;
 
-// 读：两文件各自读，缺失即默认，合并返回。不再读 .coflow/editor.json
+// 读：缺失即默认；version 不是 1 时报错。不再读 .coflow/editor.json
 pub(super) fn read_project_settings(project_root: &Path)
     -> Result<EditorProjectSettings, EditorError>;
 
-// 写：按字段拆两文件原子写（沿用 AtomicFile）
+// 写：单文件原子写（沿用 AtomicFile）
 pub(super) fn write_project_settings(project_root: &Path, settings: &EditorProjectSettings)
     -> Result<(), EditorError>;
 
@@ -365,7 +363,7 @@ impl Sessions {
         view_id: String, widths: BTreeMap<String, f64>)
         -> Result<EditorProjectSettings, EditorError>;
 
-    // record_groups 保持现状（set_record_groups 不变，路径改到 record-groups.json）
+    // record_groups 保持现状（set_record_groups 不变，落盘到 editor.json）
 }
 ```
 

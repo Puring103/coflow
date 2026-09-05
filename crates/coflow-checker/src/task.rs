@@ -1,5 +1,5 @@
-use coflow_cft::{CftSchema, CheckStatementId, DimensionName, VariantName};
-use coflow_data_model::CfdRecordId;
+use coflow_model::CfdRecordId;
+use coflow_language::cft::{CftSchema, CheckStatementId, DimensionName, VariantName};
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -75,7 +75,7 @@ impl CheckProjection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CheckLimits {
-    pub structure: coflow_structure::StructuralLimits,
+    pub evaluation: crate::EvaluationLimits,
     pub max_tasks: usize,
     pub max_request_work: u64,
 }
@@ -83,7 +83,7 @@ pub struct CheckLimits {
 impl Default for CheckLimits {
     fn default() -> Self {
         Self {
-            structure: coflow_structure::StructuralLimits::default(),
+            evaluation: crate::EvaluationLimits::default(),
             max_tasks: 1_000_000,
             max_request_work: 100_000_000,
         }

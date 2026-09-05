@@ -3,9 +3,9 @@ import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import { fieldPathField } from '../wire'
 import {
-  parseTsv,
+  parseCfdClipboard,
   planPaste,
-  serializeCellMatrix,
+  serializeCfdCellMatrix,
   shouldExpandSinglePasteTarget,
   type PasteCell,
 } from './clipboard'
@@ -35,19 +35,26 @@ const cell = (field: string, overrides: Partial<PasteCell> = {}): PasteCell => (
   ...overrides,
 })
 
-describe('TSV clipboard codec', () => {
-  it('round-trips tabs, quotes, newlines, CRLF, and trailing empty cells', async () => {
+describe('CFD clipboard codec', () => {
+  it('round-trips CFD values with nested collections and formatted strings', async () => {
     const cells = [[
       { coordinate, fieldPath: [fieldPathField('a')] },
       { coordinate, fieldPath: [fieldPathField('b')] },
     ]]
-    const text = await serializeCellMatrix(cells, async (_coordinate, path) => (
-      path[0].value === 'a' ? 'a\t"b"\nline' : ''
+    const text = await serializeCfdCellMatrix(cells, async (_coordinate, path) => (
+      path[0].value === 'a' ? 'Stats { hp: 10, tags: ["a,b", "line\\ntext"] }' : '"{name}: {{ok}}"'
     ))
 
-    expect(parseTsv(text.replace('\nline', '\r\nline'))).toEqual([['a\t"b"\r\nline', '']])
-    expect(() => parseTsv('"unterminated')).toThrow(/not closed/)
-    expect(() => parseTsv('"ok"tail')).toThrow(/trailing/)
+    expect(parseCfdClipboard(text)).toEqual([[
+      'Stats { hp: 10, tags: ["a,b", "line\\ntext"] }',
+      '"{name}: {{ok}}"',
+    ]])
+    expect(parseCfdClipboard('[1, 2]')).toEqual([['[1, 2]']])
+    expect(parseCfdClipboard('[]')).toEqual([['[]']])
+    expect(parseCfdClipboard('[[], []]')).toEqual([['[[], []]']])
+    expect(parseCfdClipboard('"direct"')).toEqual([['"direct"']])
+    expect(() => parseCfdClipboard('[["unterminated]]')).toThrow(/未闭合/)
+    expect(() => parseCfdClipboard('[[1], [2, 3]]')).toThrow(/相同列数/)
   })
 })
 
@@ -106,7 +113,7 @@ describe('paste planner', () => {
       }),
       value: { kind: 'array', value: [] },
     })
-    const result = await planPaste(parseTsv('&sword\n&shield'), [[target]], {
+    const result = await planPaste(parseCfdClipboard('[[&sword], [&shield]]'), [[target]], {
       mode: 'replace',
       parse: async (_coordinate, path, text) => {
         if (path[path.length - 1]?.kind !== 'index' || !text.startsWith('&')) {
@@ -127,7 +134,7 @@ describe('paste planner', () => {
   })
 
   it('keeps a multi-cell source on one collection target', () => {
-    const source = parseTsv('&sword\n&shield')
+    const source = parseCfdClipboard('[[&sword], [&shield]]')
     const scalar = cell('name')
     const list = cell('items', {
       annotation: annotation({ item_annotation: annotation({ ref_target_type: 'Item' }) }),

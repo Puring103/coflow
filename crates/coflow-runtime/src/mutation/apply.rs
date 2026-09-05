@@ -1,14 +1,16 @@
-use coflow_api::{DiagnosticSet, ProviderRegistry, Severity, WriteContext};
+use crate::api::{CfdSourceCatalog, DiagnosticSet};
 use std::collections::BTreeSet;
 
 use crate::writes::{
-    preflight_mutation_op, prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op,
-    MutationBatchFailure, MutationExecutionPlan, MutationImpact, MutationTransaction,
+    prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op, MutationBatchFailure,
+    MutationExecutionPlan, MutationImpact,
 };
 use crate::ProjectSession;
 
 use super::plan::{plan_mutations, PlannedMutationOp};
-use super::{MutationAppliedOp, MutationFailedOp, MutationReport, MutationRequest};
+use super::{
+    MutationAppliedOp, MutationFailedOp, MutationReport, MutationRequest, ProjectFileUpdate,
+};
 
 struct ExecutableMutation {
     planned: PlannedMutationOp,
@@ -17,31 +19,28 @@ struct ExecutableMutation {
 
 impl ProjectSession {
     /// Prepare, stage, and atomically publish a mutation request.
-    pub fn apply_mutation(
+    pub fn apply_mutation<F>(
         &mut self,
-        registry: &ProviderRegistry,
+        catalog: &CfdSourceCatalog,
         request: MutationRequest,
-    ) -> MutationReport {
+        prepare_additional_files: F,
+    ) -> MutationReport
+    where
+        F: FnOnce(&ProjectSession, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+    {
         let (planned, mut failed, write_ok, stopped) = plan_mutations(self, request);
         if stopped || planned.is_empty() {
             return report_without_publish(self, write_ok, failed);
         }
 
-        let executable = match prepare_execution_plans(self, registry, planned) {
+        let staged_catalog = catalog.staged_writes();
+        let executable = match prepare_execution_plans(self, &staged_catalog, planned) {
             Ok(executable) => executable,
             Err(failure) => {
                 failed.push(failure);
                 return report_without_publish(self, false, failed);
             }
         };
-
-        for item in &executable {
-            if let Err(diagnostics) = preflight_mutation_op(self, &item.planned.op, &item.execution)
-            {
-                failed.push(failed_op(&item.planned, diagnostics));
-                return report_without_publish(self, false, failed);
-            }
-        }
 
         if executable
             .iter()
@@ -50,35 +49,29 @@ impl ProjectSession {
             return stage_without_generation(self, write_ok, failed, &executable);
         }
 
-        execute_generation_mutation(self, registry, write_ok, failed, &executable)
+        execute_generation_mutation(
+            self,
+            &staged_catalog,
+            write_ok,
+            failed,
+            &executable,
+            prepare_additional_files,
+        )
     }
 }
 
 #[allow(clippy::too_many_lines)]
-fn execute_generation_mutation(
+fn execute_generation_mutation<F>(
     session: &mut ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     write_ok: bool,
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
-) -> MutationReport {
-    let schema = session.schema();
-    let ctx = WriteContext {
-        project_root: session.project.root_dir(),
-        schema,
-        model: Some(&session.model),
-    };
-    let transaction =
-        match MutationTransaction::begin(ctx, executable.iter().map(|item| &item.execution)) {
-            Ok(transaction) => transaction,
-            Err(diagnostics) => {
-                if let Some(first) = executable.first() {
-                    failed.push(failed_op(&first.planned, diagnostics));
-                }
-                return report_without_publish(session, false, failed);
-            }
-        };
-
+    prepare_additional_files: F,
+) -> MutationReport
+where
+    F: FnOnce(&ProjectSession, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+{
     let mut staged = Vec::with_capacity(executable.len());
     let mut cursor = 0;
     while cursor < executable.len() {
@@ -104,9 +97,8 @@ fn execute_generation_mutation(
                 ),
                 Err(MutationBatchFailure {
                     index,
-                    mut diagnostics,
+                    diagnostics,
                 }) => {
-                    transaction.compensate_into(&mut diagnostics);
                     let failed_item = &executable[cursor + index.min(end - cursor - 1)];
                     failed.push(failed_op(&failed_item.planned, diagnostics));
                     return report_without_publish(session, false, failed);
@@ -116,8 +108,7 @@ fn execute_generation_mutation(
             let item = &executable[cursor];
             match stage_mutation_op(session, &item.planned.op, &item.execution) {
                 Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
-                Err(mut diagnostics) => {
-                    transaction.compensate_into(&mut diagnostics);
+                Err(diagnostics) => {
                     failed.push(failed_op(&item.planned, diagnostics));
                     return report_without_publish(session, false, failed);
                 }
@@ -132,10 +123,19 @@ fn execute_generation_mutation(
             .zip(&staged)
             .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
     );
-    let rebuilt = match rebuild_after_mutation(session, registry, &impact) {
+    let writer = catalog.writer();
+    let source_overrides = match writer.source_overrides() {
+        Ok(source_overrides) => source_overrides,
+        Err(diagnostics) => {
+            if let Some(last) = executable.last() {
+                failed.push(failed_op(&last.planned, diagnostics));
+            }
+            return report_without_publish(session, false, failed);
+        }
+    };
+    let rebuilt = match rebuild_after_mutation(session, catalog, &impact, &source_overrides) {
         Ok(rebuilt) => rebuilt,
-        Err(mut diagnostics) => {
-            transaction.compensate_into(&mut diagnostics);
+        Err(diagnostics) => {
             if let Some(last) = executable.last() {
                 failed.push(failed_op(&last.planned, diagnostics));
             }
@@ -148,21 +148,25 @@ fn execute_generation_mutation(
         .map(|path| {
             path.strip_prefix(session.project.root_dir()).map_or_else(
                 |_| path.display().to_string(),
-                coflow_project::path_to_slash,
+                crate::project::path_to_slash,
             )
         })
         .collect::<Vec<_>>();
     let new_session = rebuilt.session;
-    let mut rebuild_diagnostics = blocking_rebuild_diagnostics(&new_session);
-    if !rebuild_diagnostics.is_empty() {
-        transaction.compensate_into(&mut rebuild_diagnostics);
-        if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, rebuild_diagnostics));
+    let additional_files = match prepare_additional_files(&new_session, &staged) {
+        Ok(files) => files,
+        Err(diagnostics) => {
+            if let Some(last) = executable.last() {
+                failed.push(failed_op(&last.planned, diagnostics));
+            }
+            return report_without_publish(session, false, failed);
         }
-        return report_without_publish(session, false, failed);
-    }
-
-    if let Err(diagnostics) = transaction.commit() {
+    };
+    let additional_paths = additional_files
+        .iter()
+        .map(|update| project_display_path(session, update.path()))
+        .collect::<Vec<_>>();
+    if let Err(diagnostics) = writer.add_project_file_updates(additional_files) {
         if let Some(last) = executable.last() {
             failed.push(failed_op(&last.planned, diagnostics));
         }
@@ -176,11 +180,24 @@ fn execute_generation_mutation(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let written_files = affected_files
+        .iter()
+        .cloned()
+        .chain(additional_paths)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let mut diagnostics = staged
         .iter()
         .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
         .collect::<Vec<_>>();
     diagnostics.extend(new_session.diagnostics.flat_diagnostics());
+    if let Err(diagnostics) = writer.publish() {
+        if let Some(last) = executable.last() {
+            failed.push(failed_op(&last.planned, diagnostics));
+        }
+        return report_without_publish(session, false, failed);
+    }
     *session = new_session;
     staged.sort_by_key(|applied| applied.index);
     failed.sort_by_key(|failure| failure.index);
@@ -195,6 +212,7 @@ fn execute_generation_mutation(
         applied: staged,
         failed,
         affected_files,
+        written_files,
         diagnostics,
     }
 }
@@ -231,43 +249,26 @@ fn stage_without_generation(
         applied,
         failed,
         affected_files: Vec::new(),
+        written_files: Vec::new(),
         diagnostics,
     }
 }
 
 fn prepare_execution_plans(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     planned: Vec<PlannedMutationOp>,
 ) -> Result<Vec<ExecutableMutation>, MutationFailedOp> {
     let allow_noop = planned.len() == 1;
     planned
         .into_iter()
         .map(|planned| {
-            match prepare_mutation_execution(session, registry, &planned.op, allow_noop) {
+            match prepare_mutation_execution(session, catalog, &planned.op, allow_noop) {
                 Ok(execution) => Ok(ExecutableMutation { planned, execution }),
                 Err(diagnostics) => Err(failed_op(&planned, diagnostics)),
             }
         })
         .collect()
-}
-
-fn blocking_rebuild_diagnostics(session: &ProjectSession) -> DiagnosticSet {
-    session
-        .diagnostics
-        .as_set()
-        .iter()
-        .filter(|diagnostic| {
-            diagnostic.severity == Severity::Error && !is_editable_diagnostic(diagnostic)
-        })
-        .cloned()
-        .collect::<Vec<_>>()
-        .into()
-}
-
-fn is_editable_diagnostic(diagnostic: &coflow_api::Diagnostic) -> bool {
-    diagnostic.stage == "CHECK"
-        || matches!(diagnostic.code.as_str(), "DATA-006" | "REF-001" | "REF-002")
 }
 
 fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {
@@ -298,6 +299,14 @@ fn report_without_publish(
         applied: Vec::new(),
         failed,
         affected_files: Vec::new(),
+        written_files: Vec::new(),
         diagnostics: session.diagnostics.flat_diagnostics(),
     }
+}
+
+fn project_display_path(session: &ProjectSession, path: &std::path::Path) -> String {
+    path.strip_prefix(session.project.root_dir()).map_or_else(
+        |_| path.display().to_string().replace('\\', "/"),
+        crate::project::path_to_slash,
+    )
 }

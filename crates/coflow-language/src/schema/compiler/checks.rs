@@ -1,0 +1,679 @@
+#[path = "check_functions.rs"]
+mod functions;
+#[path = "check_operators.rs"]
+mod operators;
+
+use super::inferred_type::{types_comparable, unwrap_reference, InferredType};
+use super::state::{SymbolKind, TypeInfo};
+use super::ResolvedValues;
+use crate::diagnostics::{CftDiagnostic, CftErrorCode};
+use crate::schema::CftValueType;
+use crate::schema::{
+    CheckDependency, CheckDependencyLocality, CheckField, CheckStatementDependencies,
+};
+use crate::syntax::ast::{
+    CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
+    NamePath, TypePredicate,
+};
+use crate::source::Span;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+pub(super) struct CheckTypeAnalyzer<'a, 'b> {
+    schema: &'a ResolvedValues<'b>,
+    module: crate::ModuleId,
+    scope: CheckScope,
+    locals: Vec<HashMap<String, InferredType>>,
+    dimensions: BTreeSet<crate::DimensionName>,
+    dependencies: CheckStatementDependencies,
+    diagnostics: Vec<CftDiagnostic>,
+    quantifier_bindings:
+        BTreeMap<(crate::ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
+}
+
+pub(super) struct CheckAnalysis {
+    pub(super) dimensions: BTreeMap<crate::DimensionName, Vec<usize>>,
+    pub(super) dependencies: Vec<CheckStatementDependencies>,
+    pub(super) diagnostics: Vec<CftDiagnostic>,
+    pub(super) quantifier_bindings:
+        BTreeMap<(crate::ModuleId, usize, usize), crate::schema::CftSchemaQuantifierBindings>,
+}
+
+enum CheckScope {
+    Record(String),
+    TopLevel,
+}
+
+fn is_formattable(ty: &InferredType) -> bool {
+    match ty {
+        InferredType::Unknown
+        | InferredType::Value(
+            CftValueType::Int
+            | CftValueType::Float
+            | CftValueType::Bool
+            | CftValueType::String
+            | CftValueType::Enum(_),
+        ) => true,
+        InferredType::Value(
+            CftValueType::Array(_)
+            | CftValueType::Dict(_, _)
+            | CftValueType::Option(_)
+            | CftValueType::Result(_, _)
+            | CftValueType::Function(_, _)
+            | CftValueType::Unit
+            | CftValueType::Object(_)
+            | CftValueType::RecordRef(_),
+        )
+        | InferredType::EnumNamespace(_)
+        | InferredType::Entry(_, _) => false,
+    }
+}
+
+impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
+    pub(super) fn new(schema: &'a ResolvedValues<'b>, type_info: &TypeInfo<'b>) -> Self {
+        Self {
+            schema,
+            module: type_info.module.clone(),
+            scope: CheckScope::Record(type_info.name.clone()),
+            locals: Vec::new(),
+            dimensions: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
+            diagnostics: Vec::new(),
+            quantifier_bindings: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn top_level(schema: &'a ResolvedValues<'b>, module: crate::ModuleId) -> Self {
+        Self {
+            schema,
+            module,
+            scope: CheckScope::TopLevel,
+            locals: Vec::new(),
+            dimensions: BTreeSet::new(),
+            dependencies: CheckStatementDependencies::default(),
+            diagnostics: Vec::new(),
+            quantifier_bindings: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn check_root_stmts(mut self, stmts: &[CheckStmt]) -> CheckAnalysis {
+        let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
+        let mut dependencies = Vec::with_capacity(stmts.len());
+        for (index, stmt) in stmts.iter().enumerate() {
+            self.dimensions.clear();
+            self.dependencies = CheckStatementDependencies::default();
+            self.check_stmt(stmt);
+            for dimension in &self.dimensions {
+                by_dimension
+                    .entry(dimension.clone())
+                    .or_default()
+                    .push(index);
+            }
+            dependencies.push(self.dependencies.clone());
+        }
+        CheckAnalysis {
+            dimensions: by_dimension,
+            dependencies,
+            diagnostics: self.diagnostics,
+            quantifier_bindings: self.quantifier_bindings,
+        }
+    }
+
+    pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
+        for stmt in stmts {
+            self.check_stmt(stmt);
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn check_stmt(&mut self, stmt: &CheckStmt) {
+        match stmt {
+            CheckStmt::Expr {
+                condition, message, ..
+            } => {
+                let ty = self.check_expr_value(condition);
+                self.expect_bool(&ty, condition.span);
+                if let Some(message) = message {
+                    if let CheckMessageKind::Formatted(segments) = &message.kind {
+                        self.check_format_segments(segments);
+                    }
+                }
+            }
+            CheckStmt::When {
+                condition, body, ..
+            } => {
+                let ty = self.check_expr_value(condition);
+                self.expect_bool(&ty, condition.span);
+                self.check_stmts(body);
+            }
+            CheckStmt::Quantifier {
+                bindings,
+                collection,
+                body,
+                span,
+                ..
+            } => {
+                for binding in bindings {
+                    if crate::is_cft_reserved_identifier(&binding.name) {
+                        self.diag(
+                            CftErrorCode::ReservedIdentifier,
+                            binding.span,
+                            format!("`{}` is a reserved identifier", binding.name),
+                        );
+                    }
+                    if bindings
+                        .iter()
+                        .filter(|candidate| candidate.name == binding.name)
+                        .count()
+                        > 1
+                        || self
+                            .locals
+                            .iter()
+                            .rev()
+                            .any(|scope| scope.contains_key(&binding.name))
+                    {
+                        self.diag(
+                            CftErrorCode::InvalidQuantifierBindings,
+                            binding.span,
+                            format!(
+                                "quantifier binding `{}` is duplicated or shadows an outer binding",
+                                binding.name
+                            ),
+                        );
+                    }
+                }
+                let col_ty = self.check_expr_value(collection);
+                let (scope, layout) = match (col_ty, bindings.as_slice()) {
+                    (InferredType::Value(CftValueType::Array(inner)), [binding]) => (
+                        HashMap::from([(binding.name.clone(), InferredType::Value(*inner))]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
+                    ),
+                    (InferredType::Value(CftValueType::Array(inner)), [item, index]) => (
+                        HashMap::from([
+                            (item.name.clone(), InferredType::Value(*inner)),
+                            (index.name.clone(), InferredType::int()),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Array {
+                            item: item.name.clone(),
+                            index: index.name.clone(),
+                        },
+                    ),
+                    (InferredType::Value(CftValueType::Dict(key, value)), [binding]) => (
+                        HashMap::from([(
+                            binding.name.clone(),
+                            InferredType::Entry(
+                                Box::new(InferredType::Value(*key)),
+                                Box::new(InferredType::Value(*value)),
+                            ),
+                        )]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
+                    ),
+                    (
+                        InferredType::Value(CftValueType::Dict(key, value)),
+                        [key_binding, value_binding],
+                    ) => (
+                        HashMap::from([
+                            (key_binding.name.clone(), InferredType::Value(*key)),
+                            (value_binding.name.clone(), InferredType::Value(*value)),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Dict {
+                            key: key_binding.name.clone(),
+                            value: value_binding.name.clone(),
+                        },
+                    ),
+                    (InferredType::Unknown, [binding]) => (
+                        HashMap::from([(binding.name.clone(), InferredType::Unknown)]),
+                        crate::schema::CftSchemaQuantifierBindings::Single {
+                            binding: binding.name.clone(),
+                        },
+                    ),
+                    (InferredType::Unknown, [first, second]) => (
+                        HashMap::from([
+                            (first.name.clone(), InferredType::Unknown),
+                            (second.name.clone(), InferredType::Unknown),
+                        ]),
+                        crate::schema::CftSchemaQuantifierBindings::Array {
+                            item: first.name.clone(),
+                            index: second.name.clone(),
+                        },
+                    ),
+                    _ => {
+                        self.diag(
+                            CftErrorCode::QuantifierRequiresCollection,
+                            *span,
+                            "quantifier target must be an array or dict",
+                        );
+                        match bindings.as_slice() {
+                            [binding] => (
+                                HashMap::from([(binding.name.clone(), InferredType::Unknown)]),
+                                crate::schema::CftSchemaQuantifierBindings::Single {
+                                    binding: binding.name.clone(),
+                                },
+                            ),
+                            [first, second] => (
+                                HashMap::from([
+                                    (first.name.clone(), InferredType::Unknown),
+                                    (second.name.clone(), InferredType::Unknown),
+                                ]),
+                                crate::schema::CftSchemaQuantifierBindings::Array {
+                                    item: first.name.clone(),
+                                    index: second.name.clone(),
+                                },
+                            ),
+                            _ => return,
+                        }
+                    }
+                };
+                self.quantifier_bindings
+                    .insert((self.module.clone(), span.start, span.end), layout);
+                self.locals.push(scope);
+                self.check_stmts(body);
+                self.locals.pop();
+            }
+        }
+    }
+
+    fn check_expr(&mut self, expr: &CheckExpr) -> InferredType {
+        match &expr.kind {
+            CheckExprKind::Int(_) => InferredType::int(),
+            CheckExprKind::Float(_) => InferredType::float(),
+            CheckExprKind::Bool(_) => InferredType::bool(),
+            CheckExprKind::String(_) => InferredType::string(),
+            CheckExprKind::FormattedString(segments) => {
+                self.check_format_segments(segments);
+                InferredType::string()
+            }
+            CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
+            CheckExprKind::StaticPath(path) => self.resolve_static_path(path),
+            CheckExprKind::Records { type_name } => self.check_records(type_name),
+            CheckExprKind::Unary { op, expr: inner } => {
+                let ty = self.check_expr_value(inner);
+                self.check_unary(*op, &ty, expr.span)
+            }
+            CheckExprKind::BinOp { op, lhs, rhs } => {
+                let lhs_ty = self.check_expr_value(lhs);
+                let rhs_ty = self.check_expr_value(rhs);
+                self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
+            }
+            CheckExprKind::CmpChain { first, rest } => {
+                let mut lhs_ty = self.check_expr_value(first);
+                for (op, rhs) in rest {
+                    let rhs_ty = self.check_expr_value(rhs);
+                    self.check_comparison(*op, &lhs_ty, &rhs_ty, rhs.span);
+                    lhs_ty = rhs_ty;
+                }
+                InferredType::bool()
+            }
+            CheckExprKind::Field { expr: inner, name } => self.check_field(inner, name, expr.span),
+            CheckExprKind::Index { expr: inner, index } => {
+                self.check_index(inner, index, expr.span)
+            }
+            CheckExprKind::Is {
+                expr: inner,
+                predicate,
+            } => {
+                let inner_ty = self.check_expr_value(inner);
+                self.check_is(&inner_ty, predicate, expr.span);
+                InferredType::bool()
+            }
+            CheckExprKind::Call { name, args } if name.name == "records" => {
+                for arg in args {
+                    let _ = self.check_expr_value(arg);
+                }
+                self.diag(
+                    CftErrorCode::InvalidRecordSetQuery,
+                    expr.span,
+                    "records expects exactly one static object type name",
+                );
+                InferredType::Unknown
+            }
+            CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
+            CheckExprKind::MethodCall {
+                receiver,
+                name,
+                args,
+            } => self.check_method_call(receiver, name, args, expr.span),
+        }
+    }
+
+    fn check_format_segments(&mut self, segments: &[CheckFormatSegment]) {
+        for segment in segments {
+            let CheckFormatSegment::Expr(expr) = segment else {
+                continue;
+            };
+            let ty = self.check_expr_value(expr);
+            if !is_formattable(&ty) {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    expr.span,
+                    "formatted string interpolation requires a scalar or enum value",
+                );
+            }
+        }
+    }
+
+    /// Like `check_expr`, but rejects bare enum-name references in operand
+    /// positions (e.g. `Rarity > 5`). Without this guard, the plain
+    /// `OperatorTypeMismatch` diagnostic would obscure the real mistake of
+    /// using the enum type itself as a value.
+    fn check_expr_value(&mut self, expr: &CheckExpr) -> InferredType {
+        let ty = self.check_expr(expr);
+        if let InferredType::EnumNamespace(name) = &ty {
+            self.diag(
+                CftErrorCode::OperatorTypeMismatch,
+                expr.span,
+                format!(
+                    "enum type `{name}` cannot be used as a value; use `{name}::Variant` or `{name}(0)` instead",
+                ),
+            );
+            return InferredType::Unknown;
+        }
+        ty
+    }
+
+    fn resolve_value_name(&mut self, name: &str, span: Span) -> InferredType {
+        for scope in self.locals.iter().rev() {
+            if let Some(ty) = scope.get(name) {
+                return ty.clone();
+            }
+        }
+        if let CheckScope::Record(type_name) = &self.scope {
+            let field = self
+                .schema
+                .full_fields
+                .get(type_name)
+                .and_then(|fields| fields.get(name))
+                .cloned();
+            if let Some(field) = field {
+                self.dependencies.insert(
+                    CheckDependency::Field(CheckField {
+                        owner: field.declaring_type.clone(),
+                        field: crate::FieldName::from_validated(name.to_string()),
+                    }),
+                    CheckDependencyLocality::Local,
+                );
+                if let Some(dimension) = field.dimension {
+                    self.dimensions.insert(dimension);
+                }
+                return field.inferred_type;
+            }
+            if name == "id" {
+                self.dependencies.insert(
+                    CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.clone())),
+                    CheckDependencyLocality::Local,
+                );
+                return InferredType::string();
+            }
+        }
+        let resolved_name = name.to_string();
+        if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
+            return InferredType::from_const(Some(value_type));
+        }
+        if self.schema.enums.contains_key(&resolved_name) {
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(resolved_name));
+        }
+        self.diag(
+            CftErrorCode::UnknownValueName,
+            span,
+            format!("unknown value `{name}`"),
+        );
+        InferredType::Unknown
+    }
+
+    fn resolve_static_path(&mut self, path: &NamePath) -> InferredType {
+        let raw_name = path.canonical();
+        if let Some((value_type, _)) = self.schema.resolved_constants.get(&raw_name) {
+            return InferredType::from_const(Some(value_type));
+        }
+        if self.schema.enums.contains_key(&raw_name) {
+            return InferredType::EnumNamespace(crate::EnumName::from_validated(raw_name));
+        }
+        if let Some((variant, owner)) = path.segments.split_last() {
+            if !owner.is_empty() {
+                let owner = owner
+                    .iter()
+                    .map(|segment| segment.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                let enum_name = owner;
+                if let Some(info) = self.schema.enums.get(&enum_name) {
+                    if info.variants.contains(&variant.name) {
+                        return InferredType::enum_value(crate::EnumName::from_validated(enum_name));
+                    }
+                    self.diag(
+                        CftErrorCode::TypeUnknownEnumVariant,
+                        variant.span,
+                        format!("unknown enum variant `{}`", variant.name),
+                    );
+                    return InferredType::Unknown;
+                }
+            }
+        }
+        self.diag(
+            CftErrorCode::UnknownValueName,
+            path.span,
+            format!("unknown static path `{raw_name}`"),
+        );
+        InferredType::Unknown
+    }
+
+    fn check_records(&mut self, type_name: &NameRef) -> InferredType {
+        if !matches!(self.scope, CheckScope::TopLevel) {
+            self.diag(
+                CftErrorCode::InvalidRecordSetQuery,
+                type_name.span,
+                "records is only available in named top-level checks",
+            );
+            return InferredType::Unknown;
+        }
+        let resolved_name = type_name.name.clone();
+        let object_name = if self.schema.types.contains_key(&resolved_name) {
+            Some(resolved_name.clone())
+        } else {
+            self.schema
+                .resolved_aliases
+                .get(&resolved_name)
+                .and_then(InferredType::object_name)
+                .map(ToString::to_string)
+        };
+        let Some(object_name) = object_name else {
+            self.diag(
+                CftErrorCode::InvalidRecordSetQuery,
+                type_name.span,
+                format!("`{resolved_name}` is not an object type"),
+            );
+            return InferredType::Unknown;
+        };
+        self.dependencies.insert(
+            CheckDependency::RecordSet(crate::TypeName::from_validated(object_name.clone())),
+            CheckDependencyLocality::Local,
+        );
+        InferredType::array(InferredType::record_ref(InferredType::object(
+            crate::TypeName::from_validated(object_name),
+        )))
+    }
+
+    fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> InferredType {
+        let inner_ty = self.check_expr_value(inner);
+        self.note_referenced_field(&inner_ty, name);
+        self.check_field_type(&inner_ty, name, span)
+    }
+
+    fn note_referenced_field(&mut self, receiver: &InferredType, name: &NameRef) {
+        let InferredType::Value(CftValueType::RecordRef(target)) = receiver else {
+            return;
+        };
+        let type_name = target;
+        if name.name == "id" {
+            self.dependencies.insert(
+                CheckDependency::RecordSet(type_name.clone()),
+                CheckDependencyLocality::CrossRecord,
+            );
+            return;
+        }
+        let owner = self
+            .schema
+            .full_fields
+            .get(type_name.as_str())
+            .and_then(|fields| fields.get(&name.name))
+            .map_or_else(|| type_name.clone(), |field| field.declaring_type.clone());
+        let dependency = CheckDependency::Field(CheckField {
+            owner,
+            field: crate::FieldName::from_validated(name.name.clone()),
+        });
+        self.dependencies
+            .insert(dependency, CheckDependencyLocality::CrossRecord);
+    }
+
+    fn check_field_type(
+        &mut self,
+        inner_ty: &InferredType,
+        name: &NameRef,
+        span: Span,
+    ) -> InferredType {
+        match unwrap_reference(inner_ty) {
+            InferredType::Value(CftValueType::Object(type_name)) => {
+                if name.name == "id" {
+                    return InferredType::string();
+                }
+                let type_known = self.schema.full_fields.contains_key(type_name.as_str());
+                let field = self
+                    .schema
+                    .full_fields
+                    .get(type_name.as_str())
+                    .and_then(|fields| fields.get(&name.name))
+                    .cloned();
+                if let Some(field) = field {
+                    if let Some(dimension) = field.dimension {
+                        self.dimensions.insert(dimension);
+                    }
+                    return field.inferred_type;
+                }
+                if type_known {
+                    self.diag(
+                        CftErrorCode::UnknownField,
+                        name.span,
+                        format!("unknown field `{}`", name.name),
+                    );
+                }
+                InferredType::Unknown
+            }
+            InferredType::Entry(key, value) => match name.name.as_str() {
+                "key" => *key,
+                "value" => *value,
+                _ => {
+                    self.diag(
+                        CftErrorCode::UnknownField,
+                        name.span,
+                        "dict entry only has key and value fields",
+                    );
+                    InferredType::Unknown
+                }
+            },
+            InferredType::Unknown => InferredType::Unknown,
+            _ => {
+                self.diag(
+                    CftErrorCode::FieldAccessOnNonObject,
+                    span,
+                    "field access requires an object",
+                );
+                InferredType::Unknown
+            }
+        }
+    }
+
+    fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> InferredType {
+        let inner_ty = self.check_expr_value(inner);
+        self.check_index_type(&inner_ty, index, span)
+    }
+
+    fn check_index_type(
+        &mut self,
+        inner_ty: &InferredType,
+        index: &CheckExpr,
+        span: Span,
+    ) -> InferredType {
+        let index_ty = self.check_expr_value(index);
+        if let Some(elem) = inner_ty.array_element() {
+            if !types_comparable(&index_ty, &InferredType::int()) && !index_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::IndexTypeMismatch,
+                    index.span,
+                    "array index must be int",
+                );
+            }
+            elem
+        } else if let Some((key, value)) = inner_ty.dict_types() {
+            if !types_comparable(&key, &index_ty) && !index_ty.is_unknown() {
+                self.diag(
+                    CftErrorCode::IndexTypeMismatch,
+                    index.span,
+                    "dict index type does not match key type",
+                );
+            }
+            value
+        } else if inner_ty.is_unknown() {
+            InferredType::Unknown
+        } else {
+            self.diag(
+                CftErrorCode::IndexOnNonIndexable,
+                span,
+                "index access requires an array or dict",
+            );
+            InferredType::Unknown
+        }
+    }
+
+    fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
+        match predicate {
+            TypePredicate::Type(name) => {
+                let resolved_name = name.name.clone();
+                let is_object = matches!(
+                    self.schema.symbols.get(&resolved_name),
+                    Some(symbol) if symbol.kind == SymbolKind::Type
+                ) || self.schema
+                    .resolved_aliases
+                    .get(&resolved_name)
+                    .is_some_and(|alias| alias.object_name().is_some());
+                if !is_object {
+                        self.diag(
+                            CftErrorCode::InvalidIsPredicate,
+                            name.span,
+                            "is predicate must name a type",
+                        );
+                        return;
+                }
+                let operand = unwrap_reference(lhs);
+                if operand.object_name().is_none() && !operand.is_unknown() {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "`is` type predicates require an object operand",
+                    );
+                }
+            }
+        }
+    }
+
+    fn expect_bool(&mut self, ty: &InferredType, span: Span) {
+        if !types_comparable(ty, &InferredType::bool()) && !ty.is_unknown() {
+            self.diag(
+                CftErrorCode::ConditionMustBeBool,
+                span,
+                "check conditions must be bool",
+            );
+        }
+    }
+
+    fn diag(&mut self, code: CftErrorCode, span: Span, message: impl Into<String>) {
+        self.diagnostics.push(CftDiagnostic::error(
+            code,
+            self.module.clone(),
+            span,
+            message,
+        ));
+    }
+}

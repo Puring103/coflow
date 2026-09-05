@@ -1,0 +1,356 @@
+//! Limits for source structure and bounded schema analysis.
+
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+use std::fmt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StructuralLimits {
+    pub max_depth: u64,
+    pub max_nodes: u64,
+    pub max_analysis_steps: u64,
+}
+
+impl StructuralLimits {
+    #[must_use]
+    pub const fn new(max_depth: u64, max_nodes: u64, max_analysis_steps: u64) -> Self {
+        Self {
+            max_depth,
+            max_nodes,
+            max_analysis_steps,
+        }
+    }
+}
+
+impl Default for StructuralLimits {
+    fn default() -> Self {
+        Self::new(256, 1_000_000, 10_000_000)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TraversalCursor {
+    depth: u64,
+}
+
+impl TraversalCursor {
+    #[must_use]
+    pub const fn root() -> Self {
+        Self { depth: 0 }
+    }
+
+    #[must_use]
+    pub const fn depth(self) -> u64 {
+        self.depth
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetAxis {
+    Depth,
+    Nodes,
+    AnalysisSteps,
+}
+
+impl fmt::Display for BudgetAxis {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Depth => "depth",
+            Self::Nodes => "nodes",
+            Self::AnalysisSteps => "analysis steps",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureKind {
+    SyntaxAst,
+    TypeRef,
+    DefaultValue,
+    CheckAst,
+    SchemaAst,
+    SchemaDependency,
+    DataValue,
+}
+
+impl fmt::Display for StructureKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::SyntaxAst => "syntax AST",
+            Self::TypeRef => "type ref",
+            Self::DefaultValue => "default value",
+            Self::CheckAst => "check AST",
+            Self::SchemaAst => "schema AST",
+            Self::SchemaDependency => "schema dependency",
+            Self::DataValue => "data value",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BudgetExceeded {
+    pub axis: BudgetAxis,
+    pub limit: u64,
+    pub observed: u64,
+    pub kind: StructureKind,
+}
+
+impl fmt::Display for BudgetExceeded {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{} exceeds structural {} limit {} (observed {})",
+            self.kind, self.axis, self.limit, self.observed
+        )
+    }
+}
+
+impl std::error::Error for BudgetExceeded {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructuralBudget {
+    limits: StructuralLimits,
+    nodes_used: u64,
+    analysis_steps_used: u64,
+}
+
+impl StructuralBudget {
+    #[must_use]
+    pub const fn new(limits: StructuralLimits) -> Self {
+        Self {
+            limits,
+            nodes_used: 0,
+            analysis_steps_used: 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn limits(&self) -> StructuralLimits {
+        self.limits
+    }
+
+    #[must_use]
+    pub const fn nodes_used(&self) -> u64 {
+        self.nodes_used
+    }
+
+    #[must_use]
+    pub const fn analysis_steps_used(&self) -> u64 {
+        self.analysis_steps_used
+    }
+
+    /// Enters one structural level and charges the supplied node count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting depth or node usage exceeds its limit.
+    pub fn enter(
+        &mut self,
+        cursor: TraversalCursor,
+        kind: StructureKind,
+        nodes: u64,
+    ) -> Result<TraversalCursor, BudgetExceeded> {
+        let observed_depth = cursor.depth.saturating_add(1);
+        if observed_depth > self.limits.max_depth {
+            return Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: self.limits.max_depth,
+                observed: observed_depth,
+                kind,
+            });
+        }
+        self.charge_nodes(kind, nodes)?;
+        Ok(TraversalCursor {
+            depth: observed_depth,
+        })
+    }
+
+    /// Checks whether a cached subtree can fit below the current cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the additional depth exceeds the configured limit.
+    pub const fn check_additional_depth(
+        &self,
+        cursor: TraversalCursor,
+        kind: StructureKind,
+        additional_depth: u64,
+    ) -> Result<(), BudgetExceeded> {
+        let observed = cursor.depth.saturating_add(additional_depth);
+        if observed > self.limits.max_depth {
+            return Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: self.limits.max_depth,
+                observed,
+                kind,
+            });
+        }
+        Ok(())
+    }
+
+    /// Charges nodes against the shared structural budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting node usage exceeds the configured limit.
+    pub const fn charge_nodes(
+        &mut self,
+        kind: StructureKind,
+        nodes: u64,
+    ) -> Result<(), BudgetExceeded> {
+        let observed = self.nodes_used.saturating_add(nodes);
+        if observed > self.limits.max_nodes {
+            return Err(BudgetExceeded {
+                axis: BudgetAxis::Nodes,
+                limit: self.limits.max_nodes,
+                observed,
+                kind,
+            });
+        }
+        self.nodes_used = observed;
+        Ok(())
+    }
+
+    /// Charges bounded static schema-analysis steps.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BudgetExceeded`] when the resulting work usage exceeds the configured limit.
+    pub const fn charge_analysis(
+        &mut self,
+        kind: StructureKind,
+        steps: u64,
+    ) -> Result<(), BudgetExceeded> {
+        let observed = self.analysis_steps_used.saturating_add(steps);
+        if observed > self.limits.max_analysis_steps {
+            return Err(BudgetExceeded {
+                axis: BudgetAxis::AnalysisSteps,
+                limit: self.limits.max_analysis_steps,
+                observed,
+                kind,
+            });
+        }
+        self.analysis_steps_used = observed;
+        Ok(())
+    }
+}
+
+impl Default for StructuralBudget {
+    fn default() -> Self {
+        Self::new(StructuralLimits::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn depth_limit_accepts_boundary_and_rejects_first_child_beyond_it() {
+        let mut budget = StructuralBudget::new(StructuralLimits::new(2, 10, 10));
+        let one = budget
+            .enter(TraversalCursor::root(), StructureKind::DataValue, 1)
+            .expect("depth one");
+        let two = budget
+            .enter(one, StructureKind::DataValue, 1)
+            .expect("depth two");
+
+        assert_eq!(two.depth(), 2);
+        assert_eq!(budget.nodes_used(), 2);
+        assert_eq!(
+            budget.enter(two, StructureKind::DataValue, 1),
+            Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: 2,
+                observed: 3,
+                kind: StructureKind::DataValue,
+            })
+        );
+        assert_eq!(budget.nodes_used(), 2, "rejected nodes are not charged");
+    }
+
+    #[test]
+    fn node_and_analysis_limits_have_stable_boundary_results() {
+        let limits = StructuralLimits::new(10, 3, 4);
+        let mut budget = StructuralBudget::new(limits);
+
+        budget
+            .charge_nodes(StructureKind::CheckAst, 3)
+            .expect("node boundary");
+        assert_eq!(
+            budget.charge_nodes(StructureKind::CheckAst, 1),
+            Err(BudgetExceeded {
+                axis: BudgetAxis::Nodes,
+                limit: 3,
+                observed: 4,
+                kind: StructureKind::CheckAst,
+            })
+        );
+        budget
+            .charge_analysis(StructureKind::SchemaDependency, 4)
+            .expect("analysis boundary");
+        assert_eq!(
+            budget.charge_analysis(StructureKind::SchemaDependency, 1),
+            Err(BudgetExceeded {
+                axis: BudgetAxis::AnalysisSteps,
+                limit: 4,
+                observed: 5,
+                kind: StructureKind::SchemaDependency,
+            })
+        );
+    }
+
+    #[test]
+    fn overflow_reports_saturated_observation_without_mutating_usage() {
+        let mut budget = StructuralBudget::new(StructuralLimits::new(1, u64::MAX - 1, 0));
+        budget
+            .charge_nodes(StructureKind::SchemaDependency, u64::MAX - 1)
+            .expect("initial charge");
+
+        let error = budget
+            .charge_nodes(StructureKind::SchemaDependency, 10)
+            .expect_err("overflowing charge exceeds limit");
+        assert_eq!(error.observed, u64::MAX);
+        assert_eq!(budget.nodes_used(), u64::MAX - 1);
+        assert_eq!(
+            error.to_string(),
+            "schema dependency exceeds structural nodes limit 18446744073709551614 (observed 18446744073709551615)"
+        );
+    }
+
+    #[test]
+    fn cached_subtree_depth_can_be_checked_without_charging_nodes() {
+        let mut budget = StructuralBudget::new(StructuralLimits::new(3, 10, 10));
+        let root = budget
+            .enter(TraversalCursor::root(), StructureKind::DataValue, 1)
+            .expect("root");
+
+        budget
+            .check_additional_depth(root, StructureKind::DataValue, 2)
+            .expect("boundary depth");
+        assert_eq!(budget.nodes_used(), 1);
+        assert_eq!(
+            budget.check_additional_depth(root, StructureKind::DataValue, 3),
+            Err(BudgetExceeded {
+                axis: BudgetAxis::Depth,
+                limit: 3,
+                observed: 4,
+                kind: StructureKind::DataValue,
+            })
+        );
+    }
+}

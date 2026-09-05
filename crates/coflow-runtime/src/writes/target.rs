@@ -1,5 +1,5 @@
-use coflow_api::{Diagnostic, WriteFieldPathSegment};
-use coflow_data_model::RecordOrigin;
+use crate::api::{Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use crate::data_model::RecordOrigin;
 
 use crate::indexes::{RecordRef, SourceId};
 use crate::{ProjectSession, RecordCoordinate};
@@ -29,12 +29,12 @@ pub(super) fn write_target_for_path(
     _session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
-) -> WriteTarget {
-    WriteTarget {
+) -> Result<WriteTarget, DiagnosticSet> {
+    Ok(WriteTarget {
         coordinate: host_ref.coordinate.clone(),
         origin: host_ref.origin.clone(),
         source_id: host_ref.source_id,
         display_path: host_ref.display_path.clone(),
         field_path: path.to_vec(),
-    }
+    })
 }

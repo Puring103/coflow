@@ -1,17 +1,17 @@
-use super::common::*;
-use super::*;
-use crate::diagnostics::lsp_range;
-use crate::document_symbols::document_symbols;
-use crate::semantic_tokens::{
+use super::super::diagnostics::lsp_range;
+use super::super::document_symbols::document_symbols;
+use super::super::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_KEY,
     SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
-use crate::text::{is_after_line_comment, is_inside_string};
-use crate::uri::{hex_value, percent_decode};
-use coflow_cfd::parse_cfd;
-use coflow_cft::Span;
+use super::super::text::{is_after_line_comment, is_inside_string};
+use super::super::uri::{hex_value, percent_decode};
+use super::common::*;
+use super::*;
+use coflow_language::cfd::parse_cfd;
+use coflow_language::source::Span;
 
 #[test]
 fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {
@@ -48,14 +48,14 @@ fn encoded_semantic_tokens_preserve_modifiers() {
     push_semantic_span(
         source,
         Span::new(0, 2),
-        SEM_NAMESPACE,
+        SEM_RECORD_KEY,
         MOD_DECLARATION | MOD_RECORD,
         &mut tokens,
     );
     push_semantic_span(
         source,
         Span::new(3, 5),
-        SEM_NAMESPACE,
+        SEM_RECORD_KEY,
         MOD_REFERENCE | MOD_RECORD,
         &mut tokens,
     );
@@ -68,12 +68,12 @@ fn encoded_semantic_tokens_preserve_modifiers() {
             0,
             0,
             2,
-            SEM_NAMESPACE,
+            SEM_RECORD_KEY,
             MOD_DECLARATION | MOD_RECORD,
             0,
             3,
             2,
-            SEM_NAMESPACE,
+            SEM_RECORD_KEY,
             MOD_REFERENCE | MOD_RECORD,
         ]
     );
@@ -154,17 +154,44 @@ fn named_top_level_checks_are_symbols_and_semantic_declarations() {
 }
 
 #[test]
+fn type_aliases_are_symbols_semantic_declarations_and_definition_targets() {
+    let source = "type Count = int;\ntype Item { value: Count; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cft-type-alias", source);
+    let document = first_document(&build);
+    let raw_tokens = semantic_raw_tokens(&build, document);
+
+    assert!(has_semantic_token(
+        source,
+        &raw_tokens,
+        "type Count",
+        "Count",
+        SEM_TYPE,
+        MOD_DECLARATION | MOD_SCHEMA,
+    ));
+    let symbols = document_symbols(document);
+    assert!(symbols.iter().any(|symbol| symbol["name"] == "Count"));
+
+    let position = position_from_byte(
+        source,
+        source.rfind("Count").expect("alias use") + 1,
+    );
+    let definitions = definitions_at(&build, document, &position);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0]["range"]["start"]["line"], 0);
+}
+
+#[test]
 fn cfd_semantic_tokens_distinguish_record_refs_and_schema_fields() {
     let source = "base: Monster { stats: { hp: 10 } }\n\
 elite: Monster { target: &base }\n";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let tokens = decode_semantic_tokens(source, &result["data"]);
 
     assert!(
         tokens.contains(&DecodedSemanticToken {
             text: "base".to_string(),
-            token_type: SEM_NAMESPACE,
+            token_type: SEM_RECORD_KEY,
             modifiers: MOD_DECLARATION | MOD_RECORD,
         }),
         "{tokens:?}"
@@ -186,7 +213,7 @@ elite: Monster { target: &base }\n";
     }));
     assert!(tokens.contains(&DecodedSemanticToken {
         text: "base".to_string(),
-        token_type: SEM_NAMESPACE,
+        token_type: SEM_RECORD_KEY,
         modifiers: MOD_REFERENCE | MOD_RECORD,
     }));
 }

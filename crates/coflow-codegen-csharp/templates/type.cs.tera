@@ -2,23 +2,65 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using CoflowRuntime;
+using CoflowRuntime.Generated;
 
-namespace {{ project.namespace }}
+namespace {{ type.namespace }}
 {
 
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
 {% endif %}{% if type.obsolete %}[Obsolete]
 {% endif %}{{ type.declaration }}
 {
-{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
+{% if type.table_token_type %}    public static {{ type.table_token_type }} Table { get; } = new();
+
+{% endif %}
+{% if type.declares_host_slot %}    internal readonly CoflowHostState? _coflowHost;
+
+{% endif %}{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
 
 {% endif %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
 {% endif %}{% if property.obsolete %}    [Obsolete]
-{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get{% if property.backing_field %} => {{ property.backing_field }}{% endif %}; }
+{% endif %}{% if property.backing_field %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }}
+    {
+        get
+        {
+{% if property.guard_host %}            _coflowHost?.EnsureBound();
+{% endif %}            return {{ property.backing_field }};
+        }
+    }
+{% else %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; internal set; } = default!;
+{% endif %}
 {% if not loop.last %}
 {% endif %}{% endfor %}{% if type.properties | length > 0 %}
 
-{% endif %}    {{ type.constructor_visibility }} {{ type.name }}(
+{% endif %}{% for function in type.functions %}{% if function.declared_here %}    internal CoflowFunctionEntry<{{ function.delegate_type }}> {{ function.entry_name }} = default!;
+
+{% if function.summary %}    /// <summary>{{ function.summary }}</summary>
+{% endif %}{% if function.returns_void %}    public void {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {
+{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
+{% endif %}        {{ function.entry_name }}.Function({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+    }
+{% else %}    public {{ function.result_type }} {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {
+{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
+{% endif %}        return {{ function.entry_name }}.Function({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+    }
+{% endif %}
+{% endif %}{% endfor %}{% if type.is_host %}    public void Configure(
+{% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},
+{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
+{% endfor %}    ) => _coflowHost!.Configure(
+        () =>
+        {
+{% for field in type.host_fields %}            {{ field.target }} = {{ field.parameter.name }};
+{% endfor %}        }{% for function in type.functions %},
+        CoflowHostFunctionBinding.Create({{ function.entry_name }}.RuntimeEntry, {{ function.bind_parameter_name }}){% endfor %});
+
+{% endif %}    internal {{ type.name }}() { }
+
+    {{ type.constructor_visibility }} {{ type.name }}(
 {% for parameter in type.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    ){{ type.base_constructor_call | default(value="") }}
     {
@@ -32,7 +74,7 @@ namespace {{ project.namespace }}
 {% else %}    public bool Equals({{ type.name }}? other) =>
         other is not null{% if type.equality.fields | length > 0 %} &&{% endif %}
 {% endif %}{% if type.equality.fields | length == 0 %}        true;
-{% else %}{% for f in type.equality.fields %}        System.Collections.Generic.EqualityComparer<object>.Default.Equals({{ f }}, other.{{ f }}){% if not loop.last %} &&
+{% else %}{% for f in type.equality.fields %}        System.Collections.Generic.EqualityComparer<{{ f.ty }}>.Default.Equals({{ f.name }}, other.{{ f.name }}){% if not loop.last %} &&
 {% else %};
 {% endif %}{% endfor %}{% endif %}
     public override bool Equals(object? obj) =>
@@ -41,7 +83,7 @@ namespace {{ project.namespace }}
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-{% for f in type.equality.fields %}        hash.Add({{ f }});
+{% for f in type.equality.fields %}        hash.Add({{ f.name }});
 {% endfor %}        return hash.ToHashCode();
     }
 {% else %}    public override string ToString() => "{{ type.name }}(" + {{ type.equality.key_property }} + ")";

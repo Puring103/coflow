@@ -1,8 +1,10 @@
-use coflow_cft::{CftConstValue, CftValueType, EnumName, FieldName};
-use coflow_data_model::{
+use coflow_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdRecordId, CfdValue,
 };
-use coflow_structure::{BudgetExceeded, StructuralBudget, StructureKind, TraversalCursor};
+use crate::limits::{
+    EvaluationBudget, EvaluationBudgetExceeded, EvaluationCursor, EvaluationKind,
+};
+use coflow_language::cft::{CftConstValue, CftValueType, EnumName, FieldName};
 use std::collections::BTreeMap;
 
 use super::collections::{EvalEntries, EvalItems};
@@ -13,6 +15,7 @@ pub(crate) enum EvalValue<'a> {
     Model(&'a CfdValue),
     DictKey(&'a CfdDictKey),
     Temporary(TemporaryValue),
+    Constant(CftConstValue),
     EnumNamespace(EnumName),
     Record(EvalRecordRef),
     Entry(Box<EvalEntry<'a>>),
@@ -49,12 +52,24 @@ pub(crate) enum ScalarValue<'a> {
 
 impl<'a> EvalValue<'a> {
     pub(crate) fn from_const(value: &CftConstValue) -> Self {
-        Self::Temporary(match value {
-            CftConstValue::Int(value) => TemporaryValue::Int(*value),
-            CftConstValue::Float(value) => TemporaryValue::Float(*value),
-            CftConstValue::Bool(value) => TemporaryValue::Bool(*value),
-            CftConstValue::String(value) => TemporaryValue::String(value.clone()),
-        })
+        match value {
+            CftConstValue::Int(value) => Self::Temporary(TemporaryValue::Int(*value)),
+            CftConstValue::Float(value) => Self::Temporary(TemporaryValue::Float(*value)),
+            CftConstValue::Bool(value) => Self::Temporary(TemporaryValue::Bool(*value)),
+            CftConstValue::String(value) => {
+                Self::Temporary(TemporaryValue::String(value.clone()))
+            }
+            CftConstValue::Enum {
+                enum_name,
+                variant,
+                value,
+            } => Self::Temporary(TemporaryValue::Enum(CfdEnumValue {
+                enum_name: enum_name.clone(),
+                variant: Some(variant.clone()),
+                value: *value,
+            })),
+            other => Self::Constant(other.clone()),
+        }
     }
 
     pub(crate) fn from_cfd_value(
@@ -62,22 +77,26 @@ impl<'a> EvalValue<'a> {
         ty: Option<&CftValueType>,
         location: ValueLocation,
         model: &'a CfdDataModel,
-        budget: &mut StructuralBudget,
-        cursor: TraversalCursor,
+        budget: &mut EvaluationBudget,
+        cursor: EvaluationCursor,
     ) -> Result<Self, LocatedBudgetExceeded> {
         let cursor = budget
-            .enter(cursor, StructureKind::DataValue, 1)
+            .enter(cursor, EvaluationKind::DataValue, 1)
             .map_err(|error| LocatedBudgetExceeded {
                 error,
                 location: Box::new(Some(location.clone())),
             })?;
         Ok(match value {
-            CfdValue::Null
+            CfdValue::OptionNone
+            | CfdValue::OptionSome(_)
+            | CfdValue::ResultOk(_)
+            | CfdValue::ResultErr(_)
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
+            | CfdValue::Function(_)
             | CfdValue::Enum(_) => Self::Model(value),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
@@ -127,6 +146,8 @@ impl<'a> EvalValue<'a> {
         match self {
             Self::Array { items, .. } => Some(items.len()),
             Self::Dict { entries, .. } => Some(entries.len()),
+            Self::Constant(CftConstValue::Array(items)) => Some(items.len()),
+            Self::Constant(CftConstValue::Dictionary(entries)) => Some(entries.len()),
             _ => match self.scalar() {
                 Some(ScalarValue::String(value)) => Some(value.chars().count()),
                 _ => None,
@@ -150,6 +171,13 @@ impl<'a> EvalValue<'a> {
                 TemporaryValue::String(value) => ScalarValue::String(value),
                 TemporaryValue::Enum(value) => ScalarValue::Enum(value),
             }),
+            Self::Constant(value) => match value {
+                CftConstValue::Int(value) => Some(ScalarValue::Int(*value)),
+                CftConstValue::Float(value) => Some(ScalarValue::Float(*value)),
+                CftConstValue::Bool(value) => Some(ScalarValue::Bool(*value)),
+                CftConstValue::String(value) => Some(ScalarValue::String(value)),
+                _ => None,
+            },
             Self::EnumNamespace(_)
             | Self::Record(_)
             | Self::Entry(_)
@@ -185,20 +213,27 @@ impl<'a> EvalValue<'a> {
 
 fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
     match value {
-        CfdValue::Null => Some(ScalarValue::Null),
+        CfdValue::OptionNone => Some(ScalarValue::Null),
         CfdValue::Bool(value) => Some(ScalarValue::Bool(*value)),
         CfdValue::Int(value) => Some(ScalarValue::Int(*value)),
         CfdValue::Float(value) => Some(ScalarValue::Float(*value)),
         CfdValue::String(value) => Some(ScalarValue::String(value)),
         CfdValue::FormattedString(value) => Some(ScalarValue::String(&value.rendered)),
         CfdValue::Enum(value) => Some(ScalarValue::Enum(value)),
-        CfdValue::Object(_) | CfdValue::Ref(_) | CfdValue::Array(_) | CfdValue::Dict(_) => None,
+        CfdValue::OptionSome(_)
+        | CfdValue::ResultOk(_)
+        | CfdValue::ResultErr(_)
+        | CfdValue::Object(_)
+        | CfdValue::Ref(_)
+        | CfdValue::Array(_)
+        | CfdValue::Dict(_)
+        | CfdValue::Function(_) => None,
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct LocatedBudgetExceeded {
-    pub(crate) error: BudgetExceeded,
+    pub(crate) error: EvaluationBudgetExceeded,
     pub(crate) location: Box<Option<ValueLocation>>,
 }
 
@@ -285,7 +320,7 @@ impl EvalRecordRef {
         model: &'model CfdDataModel,
         field_type: Option<&CftValueType>,
         name: &str,
-        budget: &mut StructuralBudget,
+        budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'model>>, LocatedBudgetExceeded> {
         let Some(value) = self.fields(model).and_then(|fields| fields.get(name)) else {
             return Ok(None);
@@ -300,7 +335,7 @@ impl EvalRecordRef {
                 location.clone(),
                 model,
                 budget,
-                TraversalCursor::root(),
+                EvaluationCursor::root(),
             )?,
             Some(location),
         )))
@@ -367,7 +402,7 @@ fn resolved_object_type<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Op
 }
 
 fn inline_object<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a CfdObject> {
-    match model_value(model, cursor)? {
+    match transparent_value(model_value(model, cursor)?) {
         CfdValue::Object(object) => Some(object),
         _ => None,
     }
@@ -378,25 +413,31 @@ pub(crate) fn model_value<'a>(
     cursor: &ModelCursor,
 ) -> Option<&'a CfdValue> {
     let record = model.record(cursor.record)?;
-    let Some(dimension) = &cursor.dimension else {
-        return record.value_at_path(&cursor.path);
+    let mut segments = cursor.path.segments.iter();
+    let mut value = if let Some(dimension) = &cursor.dimension {
+        &record
+            .dimension_field(&dimension.field)?
+            .variants
+            .get(dimension.variant.as_str())?
+            .value
+    } else {
+        let coflow_model::CfdPathSegment::Field(field) = segments.next()? else {
+            return None;
+        };
+        record.fields().get(field.as_str())?
     };
-    let mut value = &record
-        .dimension_field(&dimension.field)?
-        .variants
-        .get(dimension.variant.as_str())?
-        .value;
-    for segment in &cursor.path.segments {
-        value = match (segment, value) {
-            (coflow_data_model::CfdPathSegment::Field(field), CfdValue::Object(object)) => {
+
+    for segment in segments {
+        value = match (segment, transparent_value(value)) {
+            (coflow_model::CfdPathSegment::Field(field), CfdValue::Object(object)) => {
                 object.fields().get(field.as_str())?
             }
-            (coflow_data_model::CfdPathSegment::Index(index), CfdValue::Array(items)) => {
+            (coflow_model::CfdPathSegment::Index(index), CfdValue::Array(items)) => {
                 items.get(*index)?
             }
-            (coflow_data_model::CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
+            (coflow_model::CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
                 .iter()
-                .find(|(entry_key, _)| coflow_data_model::format_cfd_dict_key(entry_key) == *key)
+                .find(|(entry_key, _)| coflow_model::format_cfd_dict_key(entry_key) == *key)
                 .map(|(_, value)| value)?,
             _ => return None,
         };
@@ -404,9 +445,18 @@ pub(crate) fn model_value<'a>(
     Some(value)
 }
 
+fn transparent_value(mut value: &CfdValue) -> &CfdValue {
+    while let CfdValue::OptionSome(inner)
+    | CfdValue::ResultOk(inner)
+    | CfdValue::ResultErr(inner) = value
+    {
+        value = inner;
+    }
+    value
+}
+
 fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => array_element_type(Some(inner)),
         Some(CftValueType::Array(inner)) => Some(inner),
         _ => None,
     }
@@ -414,7 +464,6 @@ fn array_element_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
 
 fn dict_value_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => dict_value_type(Some(inner)),
         Some(CftValueType::Dict(_, value)) => Some(value),
         _ => None,
     }
@@ -422,7 +471,6 @@ fn dict_value_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
 
 fn dict_key_type(ty: Option<&CftValueType>) -> Option<&CftValueType> {
     match ty {
-        Some(CftValueType::Nullable(inner)) => dict_key_type(Some(inner)),
         Some(CftValueType::Dict(key, _)) => Some(key),
         _ => None,
     }

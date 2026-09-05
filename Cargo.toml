@@ -14,8 +14,6 @@ workspace = true
 default = ["cli"]
 cli = [
     "dep:clap",
-    "dep:coflow-builtins",
-    "dep:coflow-lsp",
     "dep:dirs",
     "dep:include_dir",
     "dep:self_update",
@@ -28,26 +26,18 @@ required-features = ["cli"]
 
 [workspace]
 members = [
-    "crates/coflow-api",
-    "crates/coflow-cft",
-    "crates/coflow-cfd",
-    "crates/coflow-builtins",
-    "crates/coflow-loader-cfd",
-    "crates/coflow-data-model",
+    "crates/coflow-format",
+    "crates/coflow-language",
+    "crates/coflow-diagnostics",
+    "crates/coflow-model",
     "crates/coflow-checker",
-    "crates/coflow-runtime",
-    "crates/coflow-loader-table-core",
-    "crates/coflow-loader-csv",
-    "crates/coflow-loader-excel",
-    "crates/coflow-exporter-json",
-    "crates/coflow-exporter-core",
-    "crates/coflow-exporter-messagepack",
-    "crates/coflow-codegen-csharp",
-    "crates/coflow-project",
+    "crates/coflow-codegen",
     "crates/coflow-lsp",
-    "crates/coflow-structure",
+    "crates/coflow-runtime",
+    "crates/coflow-staging",
+    "crates/coflow-codegen-csharp",
+    "editors/cfd-editor/core",
     "editors/cfd-editor/src-tauri",
-    "editors/cfd-editor/extension-api",
 ]
 resolver = "2"
 
@@ -76,25 +66,16 @@ redundant_pub_crate = "allow"
 [dependencies]
 atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"], optional = true }
-coflow-api = { path = "crates/coflow-api" }
-coflow-builtins = { path = "crates/coflow-builtins", optional = true }
-coflow-lsp = { path = "crates/coflow-lsp", optional = true }
-coflow-project = { path = "crates/coflow-project" }
+coflow-language = { path = "crates/coflow-language" }
+coflow-format = { path = "crates/coflow-format" }
+coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-runtime = { path = "crates/coflow-runtime" }
 dirs = { version = "6", optional = true }
 include_dir = { version = "0.7", optional = true }
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+similar = "2"
 
 [dev-dependencies]
-coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
-coflow-cft = { path = "crates/coflow-cft" }
-coflow-data-model = { path = "crates/coflow-data-model" }
-coflow-exporter-json = { path = "crates/coflow-exporter-json" }
-coflow-loader-csv = { path = "crates/coflow-loader-csv" }
-coflow-loader-excel = { path = "crates/coflow-loader-excel" }
-calamine = "0.35"
-rust_xlsxwriter = "0.95"
 tempfile = "3"
-toml = "0.9"

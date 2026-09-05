@@ -22,13 +22,13 @@ export function selectionEditIntentForKey(
 
 /** Returns the value to write when the user presses Delete on a cell. */
 export function defaultValueForClear(annotation: FieldAnnotation | null, valueKind: FieldValue['kind']): FieldValue {
-  if (annotation?.nullable) return { kind: 'null' }
+  if (annotation?.nullable) return { kind: 'option_none' }
   if (valueKind === 'array') return { kind: 'array', value: [] }
   if (valueKind === 'dict') return { kind: 'dict', value: [] }
   if (valueKind === 'bool') return { kind: 'bool', value: false }
   if (valueKind === 'int') return { kind: 'int', value: 0n }
   if (valueKind === 'float') return { kind: 'float', value: 0 }
   if (valueKind === 'string') return { kind: 'string', value: '' }
-  // enum / ref / object / null — fall back to null
-  return { kind: 'null' }
+  // enum / ref / object / empty option fall back to an empty option.
+  return { kind: 'option_none' }
 }

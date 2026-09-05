@@ -1,7 +1,17 @@
+use super::super::definition::{
+    cft_schema_field_definition_location, cft_type_definition_location,
+};
+use super::super::semantic_tokens::{
+    MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE,
+};
 use super::common::*;
 use super::*;
-use crate::definition::{cft_schema_field_definition_location, cft_type_definition_location};
-use coflow_cfd::parse_cfd;
+use coflow_language::cfd::parse_cfd;
+
+
+
+
+
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
@@ -153,6 +163,32 @@ type Holder { key: string; item: Item; }\n";
     assert_eq!(messages[0]["result"]["range"]["start"]["line"], 0);
     assert_eq!(messages[0]["result"]["range"]["start"]["character"], 0);
     assert_eq!(messages[0]["result"]["range"]["end"]["character"], 5);
+
+    server.writer.clear();
+    let completion_position = position_from_byte(source, source.find("&sword").expect("reference") + 1);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": source_uri },
+                "position": {
+                    "line": completion_position.line,
+                    "character": completion_position.character
+                }
+            }
+        }))
+        .expect("record reference completion request");
+    let completion_result = written_messages(&server.writer)[0]["result"]
+        .as_array()
+        .expect("completion array")
+        .clone();
+    let sword = completion_result
+        .iter()
+        .find(|item| item["label"] == "sword")
+        .expect("indexed record key completion");
+    assert_eq!(sword["insertText"], "&sword");
 }
 
 #[test]
@@ -305,9 +341,9 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
     // A comment token spanning bytes 0..10 and an AST token at 5..8
     // should not produce overlapping output.
     // Use a real source that has a comment followed by a record.
-    let source = "// comment\nsword: Item { }";
+    let source = "# comment\nsword: Item { }";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let data = result["data"].as_array().expect("data array");
     // Walk the delta-encoded data and reconstruct absolute positions.
     let mut line = 0usize;
@@ -336,11 +372,373 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
 }
 
 #[test]
+fn cfd_semantic_tokens_cover_project_global_types_and_function_language() {
+    let source = "runner: Runner {\n\
+  execute: fn(value: int) -> int {\n\
+    # function comment\n\
+    var label = \"value\";\n\
+    if true { helper(value) + 1 } else { 0 }\n\
+  },\n\
+}\n";
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let result = cfd::semantic_tokens(source, &ast, None);
+    let data = result["data"].as_array().expect("data");
+    let token_types = data
+        .chunks(5)
+        .filter_map(|chunk| chunk.get(3).and_then(Value::as_u64))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for expected in [0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 13] {
+        assert!(
+            token_types.contains(&expected),
+            "missing semantic token type {expected}: {token_types:?}"
+        );
+    }
+    assert!(
+        data.chunks(5)
+            .all(|chunk| chunk.get(2).and_then(Value::as_u64).unwrap_or(0) < 32),
+        "function values must be tokenized instead of emitted as one string"
+    );
+}
+
+#[test]
+fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
+    let schema_source = "type Product { name: string; }\n";
+    let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
+    let cfd_path = project.root_dir().join("data.cfd");
+    let cfd_uri = path_to_file_uri(&cfd_path);
+    let source = "Product {\n    notebook { name: \"Notebook\", }\n    asd\n    test { name: \"Test\", }\n}\n";
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": cfd_uri,
+                    "version": 1,
+                    "text": source,
+                }
+            }
+        }))
+        .expect("open dirty cfd document");
+
+    server.writer.clear();
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "textDocument/semanticTokens/full",
+            "params": { "textDocument": { "uri": cfd_uri } }
+        }))
+        .expect("semantic token request");
+    let semantic_result = written_messages(&server.writer)[0]["result"].clone();
+    assert_eq!(semantic_result["x-coflow-syntax-valid"], true);
+    let tokens = decode_semantic_tokens(source, &semantic_result["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "asd".to_string(),
+        token_type: SEM_RECORD_KEY,
+        modifiers: MOD_DECLARATION | MOD_RECORD,
+    }), "{tokens:?}");
+
+    server.writer.clear();
+    let position = position_from_byte(source, source.find("asd").expect("asd") + 3);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": cfd_uri },
+                "position": { "line": position.line, "character": position.character }
+            }
+        }))
+        .expect("completion request");
+    let completion_result = written_messages(&server.writer)[0]["result"].clone();
+    assert_eq!(completion_result[0]["label"], "asd");
+    assert_eq!(
+        completion_result[0]["insertText"],
+        "asd {\n  name: ${1:\"value\"},\n}"
+    );
+    assert_eq!(completion_result[0]["detail"], "new Product record");
+}
+
+#[test]
+fn incomplete_group_record_field_completion_uses_record_schema_context() {
+    let schema_source = "type Product { name: string; price: int; enabled: bool; }\n\
+type Unrelated { payload: string; }\n";
+    let (_cleanup, project) = test_project("lsp-cfd-dirty-group-field", schema_source);
+    let cfd_path = project.root_dir().join("data.cfd");
+    let cfd_uri = path_to_file_uri(&cfd_path);
+    let source = "Product {\n    make {\n        name: \"Draft\",\n        p\n    }\n}\n";
+    let mut server = LspServer::new(project, Vec::new());
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": cfd_uri,
+                    "version": 1,
+                    "text": source,
+                }
+            }
+        }))
+        .expect("open incomplete grouped record field");
+
+    server.writer.clear();
+    let position = position_from_byte(source, source.find("p\n").expect("field prefix") + 1);
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 43,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": cfd_uri },
+                "position": { "line": position.line, "character": position.character }
+            }
+        }))
+        .expect("complete incomplete grouped record field");
+    let messages = written_messages(&server.writer);
+    let completion_result = messages[0]["result"].as_array().expect("completion array");
+    let labels = completion_result
+        .iter()
+        .filter_map(|item| item["label"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, vec!["price", "enabled"]);
+    assert_eq!(completion_result[0]["detail"], "int");
+}
+
+#[test]
+fn cfd_value_completion_uses_schema_type_and_function_body_context() {
+    let schema_source = "enum Rarity { Common, Rare, }\n\
+type Settings {\n\
+  enabled: bool;\n\
+  rarity: Rarity;\n\
+  compute: fn(value: int) -> int;\n\
+}\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-value-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+
+    let complete = |source: &str, needle: &str| {
+        let (ast, _) = parse_cfd(source);
+        let offset = source.find(needle).expect("completion needle") + needle.len();
+        cfd::completion(source, &ast, Some(schema), offset)
+    };
+
+    let bool_items = complete("settings: Settings { enabled: t }", "enabled: t");
+    assert_eq!(
+        completion_labels(bool_items.as_array().expect("bool items").clone()),
+        vec!["true", "false"]
+    );
+
+    let enum_items = complete("settings: Settings { rarity: R }", "rarity: R");
+    assert_eq!(
+        completion_labels(enum_items.as_array().expect("enum items").clone()),
+        vec!["Common", "Rare"]
+    );
+
+    let function_items = complete("settings: Settings { compute: f }", "compute: f");
+    assert_eq!(function_items[0]["label"], "fn");
+    assert_eq!(
+        function_items[0]["insertText"],
+        "fn(value: int) -> int {\n    ${1}\n}"
+    );
+    assert_eq!(function_items[0]["insertTextFormat"], 2);
+
+    let body_items = complete(
+        "settings: Settings { compute: fn(value: int) -> int { ret } }",
+        "ret",
+    );
+    let body_labels = completion_labels(body_items.as_array().expect("function body items").clone());
+    assert!(body_labels.contains(&"return".to_string()));
+    assert!(body_labels.contains(&"value".to_string()));
+}
+
+#[test]
+fn cfd_formatted_strings_highlight_and_complete_record_fields() {
+    let schema_source = "type Message { amount: int; enabled: Option<bool>; label: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-string", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"message: Message { amount: 7, enabled: true, label: "amount={amount}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let tokens = decode_semantic_tokens(source, &semantic["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "{amount}".to_string(),
+        token_type: SEM_VARIABLE,
+        modifiers: 0,
+    }), "{tokens:?}");
+
+    let offset = source.find("{amount}").expect("formatted reference") + 3;
+    let completions = cfd::completion(source, &ast, Some(schema), offset);
+    assert_eq!(
+        completion_labels(completions.as_array().expect("completion array").clone()),
+        vec!["amount", "enabled", "label", "Message"]
+    );
+
+    let option_source = "message: Message { enabled: t }";
+    let (option_ast, _) = parse_cfd(option_source);
+    let option_items = cfd::completion(
+        option_source,
+        &option_ast,
+        Some(schema),
+        option_source.find('t').expect("option value") + 1,
+    );
+    assert_eq!(
+        completion_labels(option_items.as_array().expect("option items").clone()),
+        vec!["None", "Some", "true", "false"]
+    );
+}
+
+#[test]
+fn cfd_formatted_string_completion_includes_nested_paths() {
+    let schema_source = "type Details { count: int; }\n\
+type Message { details: Details; label: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-nested", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"message: Message { details: { count: 1 }, label: "{det}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let offset = source.find("{det}").expect("formatted path") + "{det".len();
+
+    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let labels = completion_labels(items.as_array().expect("formatted completions").clone());
+    assert!(labels.contains(&"details".to_string()));
+    assert!(labels.contains(&"details.count".to_string()));
+}
+
+#[test]
+fn cfd_formatted_string_completion_supports_record_reference_syntax() {
+    let schema_source = "type DefaultSettings { visible: bool; title: string; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-record-ref", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = r#"standard: DefaultSettings { visible: true, title: "{&standard.visible}" }"#;
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let field_offset = source.find("&standard.v").expect("field reference") + "&standard.v".len();
+    let field_items = cfd::completion(source, &ast, Some(schema), field_offset);
+    let visible = field_items
+        .as_array()
+        .expect("field completions")
+        .iter()
+        .find(|item| item["label"] == "&standard.visible")
+        .expect("referenced record field");
+    assert_eq!(visible["textEdit"]["newText"], "&standard.visible");
+    let reference_start = position_from_byte(source, source.find('&').expect("reference start"));
+    assert_eq!(
+        visible["textEdit"]["range"]["start"]["character"],
+        reference_start.character
+    );
+
+    let key_offset = source.find("&standard.v").expect("field reference") + 3;
+    let key_items = cfd::completion(source, &ast, Some(schema), key_offset);
+    assert!(key_items
+        .as_array()
+        .expect("key completions")
+        .iter()
+        .any(|item| item["label"] == "&standard"));
+
+    let incomplete_source = r#"standard: DefaultSettings { visible: true, title: "{&standard.}" }"#;
+    let (incomplete_ast, incomplete_diagnostics) = parse_cfd(incomplete_source);
+    assert!(!incomplete_diagnostics.is_empty());
+    let incomplete_offset = incomplete_source.find("&standard.").expect("incomplete reference")
+        + "&standard.".len();
+    let incomplete_items = cfd::completion(
+        incomplete_source,
+        &incomplete_ast,
+        Some(schema),
+        incomplete_offset,
+    );
+    assert!(incomplete_items
+        .as_array()
+        .expect("incomplete reference completions")
+        .iter()
+        .any(|item| item["label"] == "&standard.visible"));
+
+    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let tokens = decode_semantic_tokens(source, &semantic["data"]);
+    assert!(tokens.contains(&DecodedSemanticToken {
+        text: "{&standard.visible}".to_string(),
+        token_type: SEM_VARIABLE,
+        modifiers: 0,
+    }), "{tokens:?}");
+}
+
+#[test]
+fn cfd_completion_recurses_through_arrays_and_inline_objects() {
+    let schema_source = "type Child { enabled: bool; label: string = \"default\"; }\n\
+type Root { children: [Child]; child: Child; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-nested-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+
+    let value_source = "root: Root { children: [{ enabled: t, }], child: {}, }";
+    let (value_ast, diagnostics) = parse_cfd(value_source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let value_offset = value_source.find("enabled: t").expect("nested bool") + "enabled: t".len();
+    let value_items = cfd::completion(value_source, &value_ast, Some(schema), value_offset);
+    assert_eq!(
+        completion_labels(value_items.as_array().expect("nested value items").clone()),
+        vec!["true", "false"]
+    );
+
+    let field_offset = value_source.find("child: {").expect("inline object") + "child: {".len();
+    let field_items = cfd::completion(value_source, &value_ast, Some(schema), field_offset);
+    let fields = field_items.as_array().expect("nested field items");
+    assert_eq!(completion_labels(fields.clone()), vec!["enabled", "label"]);
+    assert_eq!(fields[0]["insertText"], "enabled: ${1:true}");
+    assert_eq!(fields[0]["insertTextFormat"], 2);
+    assert_eq!(fields[0]["sortText"], "0enabled");
+    assert_eq!(fields[1]["sortText"], "1label");
+}
+
+#[test]
+fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
+    let schema_source = "type Product { name: string; enabled: bool = true; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-record-snippet", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let (ast, diagnostics) = parse_cfd("");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let items = cfd::completion("", &ast, Some(schema), 0);
+    let product = items
+        .as_array()
+        .expect("top-level items")
+        .iter()
+        .find(|item| item["label"] == "Product")
+        .expect("Product completion");
+    assert_eq!(product["insertTextFormat"], 2);
+    assert_eq!(
+        product["insertText"],
+        "${1:key}: Product {\n  name: ${2:\"value\"},\n}"
+    );
+}
+
+#[test]
+fn cfd_flag_completion_excludes_variants_already_in_an_incomplete_expression() {
+    let schema_source = "@flag enum Access { Read = 1, Write = 2, Execute = 4, }\n\
+type Settings { access: Access; }\n";
+    let (_cleanup, build) = test_lsp_build("lsp-cfd-flag-completion", schema_source);
+    let schema = build.schema().expect("compiled schema");
+    let source = "settings: Settings { access: Read |  }";
+    let (ast, _) = parse_cfd(source);
+    let offset = source.find('|').expect("flag operator") + 2;
+
+    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let labels = completion_labels(items.as_array().expect("flag completions").clone());
+    assert_eq!(labels, vec!["Write", "Execute"]);
+}
+
+#[test]
 fn cfd_semantic_tokens_no_comment_token_inside_string() {
     // A URL inside a string must not be treated as a comment.
     let source = r#"r: T { url: "http://example.com" }"#;
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast);
+    let result = cfd::semantic_tokens(source, &ast, None);
     let data = result["data"].as_array().expect("data");
     // Each group of 5: [dline, dchar, len, type, modifiers]
     // SEM_COMMENT index is 10.
@@ -435,4 +833,64 @@ fn cfd_goto_def_continues_past_unparseable_document() {
     // Unknown type — should return None without panicking.
     let result2 = cft_type_definition_location(&build, "NonExistent");
     assert!(result2.is_none());
+}
+
+#[test]
+fn function_document_uses_cfd_parser_and_lsp_tokens() {
+    let source = "fn(left: int, operation: fn(int, int) -> int, right: int) -> int {\nleft + right\n}";
+    let result = cfd::function_document(&json!({ "source": source }));
+
+    assert_eq!(
+        result["signature"],
+        "fn(left: int, operation: fn(int, int) -> int, right: int) -> int"
+    );
+    assert_eq!(result["body"], "left + right");
+    assert_eq!(result["bodyRange"]["start"]["line"], 1);
+    assert_eq!(result["bodyRange"]["start"]["character"], 0);
+    assert_eq!(result["bodyRange"]["end"]["line"], 1);
+    assert_eq!(result["bodyRange"]["end"]["character"], 12);
+    assert!(result["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert!(result["semanticTokens"]["data"]
+        .as_array()
+        .is_some_and(|data| !data.is_empty()));
+    let labels = result["completions"]
+        .as_array()
+        .expect("completion array")
+        .iter()
+        .filter_map(|item| item["label"].as_str())
+        .collect::<Vec<_>>();
+    assert!(labels.contains(&"left"));
+    assert!(labels.contains(&"right"));
+    assert!(labels.contains(&"operation"));
+    assert!(labels.contains(&"return"));
+}
+
+#[test]
+fn function_document_rebuilds_source_and_reports_body_errors() {
+    let source = "fn(value: int) -> int { value }";
+    let result = cfd::function_document(&json!({
+        "source": source,
+        "body": "var broken = ;",
+    }));
+
+    assert_eq!(result["source"], "fn(value: int) -> int { var broken = ; }");
+    assert!(result["diagnostics"]
+        .as_array()
+        .is_some_and(|diagnostics| !diagnostics.is_empty()));
+}
+
+#[test]
+fn function_document_completion_includes_local_variables_and_snippets() {
+    let source = "fn(value: int) -> int { var total = value; return total; }";
+    let result = cfd::function_document(&json!({ "source": source }));
+    let completions = result["completions"].as_array().expect("completions");
+    assert!(completions.iter().any(|item| {
+        item["label"] == "total" && item["detail"] == "local variable"
+    }));
+    let len = completions
+        .iter()
+        .find(|item| item["label"] == "len")
+        .expect("builtin completion");
+    assert_eq!(len["insertText"], "len(${1})");
+    assert_eq!(len["insertTextFormat"], 2);
 }

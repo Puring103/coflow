@@ -1,0 +1,22 @@
+enum mode {
+  mode1,
+  mode2,
+  mode3
+}
+
+enum Gender {
+  Male,
+  Female
+}
+
+type NPC {
+  name: string;
+  gender: Gender;
+}
+
+type game : NPC {
+}
+
+type Building {
+  npc: NPC;
+}

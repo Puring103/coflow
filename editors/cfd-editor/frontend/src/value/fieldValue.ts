@@ -8,6 +8,13 @@ const FIELD_REFERENCE_PATTERN = new RegExp(
 )
 
 export function parseFieldValueText(original: FieldValue, raw: string): FieldValue | null {
+  if (original.kind === 'option_some' || original.kind === 'result_ok' || original.kind === 'result_err') {
+    const parsed = parseFieldValueText(original.value, raw)
+    if (!parsed) return null
+    if (original.kind === 'option_some') return { kind: 'option_some', value: parsed }
+    if (original.kind === 'result_ok') return { kind: 'result_ok', value: parsed }
+    return { kind: 'result_err', value: parsed }
+  }
   switch (original.kind) {
     case 'bool':
       if (raw !== 'true' && raw !== 'false') return null
@@ -50,7 +57,7 @@ function hasFieldReference(value: string): boolean {
 }
 
 function formattedSourceText(source: string): string {
-  const quoted = source.startsWith('f"') ? source.slice(1) : source
+  const quoted = source
   try {
     const value: unknown = JSON.parse(quoted)
     return typeof value === 'string' ? value : source
@@ -60,12 +67,16 @@ function formattedSourceText(source: string): string {
 }
 
 function scalarText(value: FieldValue): string | null {
+  if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
+    return scalarText(value.value)
+  }
   switch (value.kind) {
     case 'bool': return value.value ? 'true' : 'false'
     case 'int': return String(value.value)
     case 'float': return String(value.value)
     case 'string': return value.value
     case 'formatted_string': return value.value.rendered
+    case 'function': return value.value.source
     case 'enum': return enumVariantText(value)
     case 'ref': return referenceKeyText(value.value)
     default: return null
@@ -102,7 +113,10 @@ export function summaryOf(value: FieldValue): string {
   const scalar = scalarText(value)
   if (scalar !== null) return scalar
   switch (value.kind) {
-    case 'null': return '-'
+    case 'option_none': return '-'
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err': return summaryOf(value.value)
     case 'object': return value.value.actual_type
     case 'array': {
       if (value.value.length === 0) return '[]'
@@ -146,7 +160,10 @@ function fullTextOf(value: FieldValue): string {
   const scalar = scalarText(value)
   if (scalar !== null) return scalar
   switch (value.kind) {
-    case 'null': return 'null'
+    case 'option_none': return 'None'
+    case 'option_some': return fullTextOf(value.value)
+    case 'result_ok': return `ok ${fullTextOf(value.value)}`
+    case 'result_err': return `err ${fullTextOf(value.value)}`
     case 'object': return [
       value.value.actual_type,
       ...Object.entries(value.value.fields).flatMap(([name, child]) => child ? [name, fullTextOf(child)] : [name]),
@@ -165,8 +182,23 @@ function dictKeyText(key: DictKey): string {
   }
 }
 
+export function optionDepthForDeclaredType(declaredType?: string): number {
+  if (!declaredType) return 0
+  let current = declaredType
+  let depth = 0
+  while (current.startsWith('Option<') && current.endsWith('>')) {
+    depth += 1
+    current = current.slice(7, -1)
+  }
+  return depth
+}
+
 function stripNullableType(declaredType: string): string {
-  return declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
+  let current = declaredType
+  while (current.startsWith('Option<') && current.endsWith('>')) {
+    current = current.slice(7, -1)
+  }
+  return current.endsWith('?') ? current.slice(0, -1) : current
 }
 
 function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
@@ -183,12 +215,16 @@ function dictKindLabel(key: DictKey): string {
 
 function valueKindLabel(value: FieldValue): string {
   switch (value.kind) {
-    case 'null': return 'null'
+    case 'option_none': return 'None'
+    case 'option_some': return valueKindLabel(value.value)
+    case 'result_ok': return `Ok<${valueKindLabel(value.value)}>`
+    case 'result_err': return `Err<${valueKindLabel(value.value)}>`
     case 'bool': return 'bool'
     case 'int': return 'int'
     case 'float': return 'float'
     case 'string': return 'string'
     case 'formatted_string': return 'string'
+    case 'function': return 'fn'
     case 'enum': return value.value.enum_name
     case 'object': return value.value.actual_type
     case 'ref': return '&'

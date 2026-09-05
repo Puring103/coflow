@@ -2,6 +2,7 @@
 import type { CfdDictKey } from "./CfdDictKey";
 import type { CfdEnumValue } from "./CfdEnumValue";
 import type { CfdFormattedString } from "./CfdFormattedString";
+import type { CfdFunction } from "./CfdFunction";
 import type { CfdObject } from "./CfdObject";
 
-export type CfdValue = { "kind": "null" } | { "kind": "bool", "value": boolean } | { "kind": "int", "value": bigint } | { "kind": "float", "value": number } | { "kind": "string", "value": string } | { "kind": "formatted_string", "value": CfdFormattedString } | { "kind": "enum", "value": CfdEnumValue } | { "kind": "object", "value": CfdObject } | { "kind": "ref", "value": string } | { "kind": "array", "value": Array<CfdValue> } | { "kind": "dict", "value": Array<[CfdDictKey, CfdValue]> };
+export type CfdValue = { "kind": "option_none" } | { "kind": "option_some", "value": CfdValue } | { "kind": "result_ok", "value": CfdValue } | { "kind": "result_err", "value": CfdValue } | { "kind": "bool", "value": boolean } | { "kind": "int", "value": bigint } | { "kind": "float", "value": number } | { "kind": "string", "value": string } | { "kind": "formatted_string", "value": CfdFormattedString } | { "kind": "function", "value": CfdFunction } | { "kind": "enum", "value": CfdEnumValue } | { "kind": "object", "value": CfdObject } | { "kind": "ref", "value": string } | { "kind": "array", "value": Array<CfdValue> } | { "kind": "dict", "value": Array<[CfdDictKey, CfdValue]> };

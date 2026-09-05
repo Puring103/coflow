@@ -1,0 +1,10 @@
+entry: Item {
+  enabled: true,
+  count: -42,
+  ratio: 1.25e2,
+  target: &other,
+  stats: Stats { hp: 10, armor: 2 },
+  attributes: { "display-name": "value", weight: 3 },
+  flags: (Access::Read | Write) ^ Execute,
+  note: "{&Item::other.name}: {{ready}}",
+}

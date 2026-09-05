@@ -24,6 +24,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
       - name: Validate release version
         shell: pwsh
         run: |
@@ -55,6 +60,31 @@ jobs:
 
       - name: Test workspace
         run: cargo test --workspace
+
+      - name: Build all C# runtime targets
+        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj --configuration Release
+
+      - name: Consume the netstandard2.1 C# runtime
+        run: dotnet run --project runtimes/csharp/Coflow.Cfd.Runtime.NetStandardSmoke/Coflow.Cfd.Runtime.NetStandardSmoke.csproj --configuration Release
+
+      - name: Test C# runtime with coverage
+        shell: pwsh
+        run: >-
+          dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
+          --configuration Release
+          /p:CollectCoverage=true
+          /p:CoverletOutput="$env:RUNNER_TEMP/csharp-runtime-coverage/"
+          /p:CoverletOutputFormat=cobertura
+          /p:Threshold=40
+          /p:ThresholdType=line%2cbranch
+          /p:ThresholdStat=total
+
+      - name: Regenerate and run C# integration
+        shell: pwsh
+        run: |
+          cargo run -- codegen tests/csharp-runtime-integration
+          dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
+          dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release
 
       - name: Check TypeScript bindings
         shell: pwsh

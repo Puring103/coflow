@@ -5,7 +5,7 @@ description: "Coflow CFT schema 与配置数据结构建模：当用户需要设
 
 # Coflow Schema
 
-使用本 skill 设计和维护外部 Coflow 项目的 CFT schema。只处理 schema 和建模决策；记录数据、CFD 内容、表格 source 写回使用 `coflow-data`。
+使用本 skill 设计和维护外部 Coflow 项目的 CFT schema。只处理 schema 和建模决策；数据只通过 CFD 文件进入 runtime，代码产物由 `coflow codegen` 生成。
 
 ## 建模流程
 
@@ -18,7 +18,7 @@ description: "Coflow CFT schema 与配置数据结构建模：当用户需要设
 coflow schema write-file <project> --file schema/main.cft --check
 ```
 
-5. 如果字段变化影响表格或 CFD 顶层字段，交给 `coflow-data` 运行 `coflow data sync-header`。
+5. 如果字段变化影响 CFD 顶层字段，更新对应 `.cfd` 记录并运行 `coflow check`。
 6. 完成后运行 `coflow check <project>`。
 
 ## 快速规则

@@ -72,8 +72,12 @@ export function projectFieldValue(
 export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
   if (left.kind !== right.kind) return false
   switch (left.kind) {
-    case 'null':
+    case 'option_none':
       return true
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return sameFieldValue(left.value, (right as typeof left).value)
     case 'bool':
     case 'float':
     case 'string':
@@ -83,6 +87,8 @@ export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
       const value = (right as typeof left).value
       return left.value.source === value.source && left.value.rendered === value.rendered
     }
+    case 'function':
+      return left.value.source === (right as typeof left).value.source
     case 'int':
       return BigInt(left.value) === BigInt((right as typeof left).value)
     case 'enum': {

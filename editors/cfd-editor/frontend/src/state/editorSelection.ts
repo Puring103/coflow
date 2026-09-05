@@ -27,6 +27,36 @@ export interface CellAnchor {
   fieldPath: FieldPathSegment[]
 }
 
+function fieldPathIdentity(fieldPath: readonly FieldPathSegment[]): string {
+  return JSON.stringify(fieldPath)
+}
+
+/**
+ * 编辑目标身份必须包含文件、记录与字段。React 只能在身份完全相同时复用
+ * 带草稿的编辑器，避免旧选择的临时状态流入新选择。
+ */
+export function editorSelectionIdentity(selection: EditorSelection): string {
+  const record = `${selection.filePath}:${coordinateIdForSelection(selection.coordinate)}`
+  if (selection.kind === 'value') {
+    return `value:${record}:${fieldPathIdentity(selection.fieldPath)}`
+  }
+  return `records:${selection.filePath}:${selection.coordinates
+    .map(coordinateIdForSelection)
+    .sort()
+    .join('|')}`
+}
+
+export function cellAnchorsIdentity(filePath: string, anchors: readonly CellAnchor[]): string {
+  return `cells:${filePath}:${anchors
+    .map(anchor => `${coordinateIdForSelection(anchor.coordinate)}:${fieldPathIdentity(anchor.fieldPath)}`)
+    .sort()
+    .join('|')}`
+}
+
+function coordinateIdForSelection(coordinate: RecordCoordinate): string {
+  return JSON.stringify([coordinate.actual_type, coordinate.key])
+}
+
 export type ValueSelectionMode = 'replace' | 'range'
 
 export function recordSelection(

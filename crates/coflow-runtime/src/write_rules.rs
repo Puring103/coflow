@@ -1,9 +1,9 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftSchema, CftValueType, TypeName};
-use coflow_data_model::{
-    CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
-    ValueValidationRequest,
+use crate::api::{Diagnostic, DiagnosticSet, Severity};
+use crate::data_model::{
+    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext,
+    ValueValidationMode, ValueValidationRequest,
 };
+use coflow_language::cft::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 use crate::ProjectSession;
@@ -13,7 +13,7 @@ fn validate_record_key_for_stage(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::lexical::record_key_ident_error(key) {
         return Err(one_error(
             code,
             stage,
@@ -64,30 +64,6 @@ pub fn ensure_record_key_available_with_conflict_code(
     ))
 }
 
-pub(crate) fn expected_type_for_write_path(
-    schema: &CftSchema,
-    actual_type: &str,
-    path: &[WriteFieldPathSegment],
-    code: &'static str,
-    stage: &'static str,
-) -> Result<CftValueType, DiagnosticSet> {
-    let cfd_path = write_path_to_cfd_path(path, code, stage)?;
-    expected_type_for_cfd_path(schema, actual_type, &cfd_path.segments, code, stage)
-}
-
-pub(crate) fn validate_value_at_write_path(
-    session: &ProjectSession,
-    actual_type: &str,
-    path: &[WriteFieldPathSegment],
-    value: &CfdValue,
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    let schema = session.schema();
-    let expected = expected_type_for_write_path(schema, actual_type, path, code, stage)?;
-    validate_value_for_write(session, schema, &expected, value, code, stage)
-}
-
 pub(crate) fn expected_type_for_cfd_path(
     schema: &CftSchema,
     actual_type: &str,
@@ -107,9 +83,12 @@ pub(crate) fn expected_type_for_cfd_path(
     };
     let mut current = CftValueType::Object(root_type.name.clone());
     for segment in path {
+        while let CftValueType::Option(inner) = current {
+            current = *inner;
+        }
         current = match segment {
             CfdPathSegment::Field(field) => {
-                let CftValueType::Object(type_name) = current.non_nullable() else {
+                let CftValueType::Object(type_name) = &current else {
                     return Err(one_error(
                         code,
                         stage,
@@ -131,7 +110,7 @@ pub(crate) fn expected_type_for_cfd_path(
                     })?
             }
             CfdPathSegment::Index(index) => {
-                let CftValueType::Array(inner) = current.non_nullable() else {
+                let CftValueType::Array(inner) = &current else {
                     return Err(one_error(
                         code,
                         stage,
@@ -141,7 +120,7 @@ pub(crate) fn expected_type_for_cfd_path(
                 (**inner).clone()
             }
             CfdPathSegment::DictKey(key) => {
-                let CftValueType::Dict(_, item) = current.non_nullable() else {
+                let CftValueType::Dict(_, item) = &current else {
                     return Err(one_error(
                         code,
                         stage,
@@ -153,6 +132,94 @@ pub(crate) fn expected_type_for_cfd_path(
         };
     }
     Ok(current)
+}
+
+pub(crate) fn expected_type_for_record_path(
+    schema: &CftSchema,
+    record: &CfdRecord,
+    path: &[CfdPathSegment],
+    code: &'static str,
+    stage: &'static str,
+) -> Result<CftValueType, DiagnosticSet> {
+    if path.is_empty() {
+        return Err(one_error(code, stage, "field path must not be empty"));
+    }
+    let mut current_type = CftValueType::Object(record.actual_type_name().clone());
+    let mut current_value: Option<&CfdValue> = None;
+    for (index, segment) in path.iter().enumerate() {
+        loop {
+            match (&current_type, current_value) {
+                (CftValueType::Option(inner), Some(CfdValue::OptionSome(value))) => {
+                    current_type = (**inner).clone();
+                    current_value = Some(value);
+                }
+                (CftValueType::Result(ok, _), Some(CfdValue::ResultOk(value))) => {
+                    current_type = (**ok).clone();
+                    current_value = Some(value);
+                }
+                (CftValueType::Result(_, err), Some(CfdValue::ResultErr(value))) => {
+                    current_type = (**err).clone();
+                    current_value = Some(value);
+                }
+                _ => break,
+            }
+        }
+        if let Some(CfdValue::Object(object)) = current_value {
+            current_type = CftValueType::Object(object.actual_type_name().clone());
+        }
+        let (next_type, next_value) = match segment {
+            CfdPathSegment::Field(field) => {
+                let CftValueType::Object(type_name) = &current_type else {
+                    return Err(one_error(
+                        code,
+                        stage,
+                        format!("field `{field}` cannot be selected from this value"),
+                    ));
+                };
+                let next_type = schema.field(type_name, field).ok_or_else(|| {
+                    one_error(
+                        code,
+                        stage,
+                        format!("unknown field `{field}` on type `{type_name}`"),
+                    )
+                })?;
+                let next_value = if index == 0 {
+                    record.field(field)
+                } else {
+                    current_value.and_then(|value| match value {
+                        CfdValue::Object(object) => object.field(field),
+                        _ => None,
+                    })
+                };
+                (next_type.value_type.clone(), next_value)
+            }
+            CfdPathSegment::Index(item_index) => {
+                let CftValueType::Array(inner) = &current_type else {
+                    return Err(one_error(code, stage, "array index cannot be selected here"));
+                };
+                let next_value = current_value.and_then(|value| match value {
+                    CfdValue::Array(items) => items.get(*item_index),
+                    _ => None,
+                });
+                ((**inner).clone(), next_value)
+            }
+            CfdPathSegment::DictKey(key) => {
+                let CftValueType::Dict(_, inner) = &current_type else {
+                    return Err(one_error(code, stage, "dictionary key cannot be selected here"));
+                };
+                let next_value = current_value.and_then(|value| match value {
+                    CfdValue::Dict(entries) => entries.iter().find_map(|(candidate, value)| {
+                        (crate::data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                    }),
+                    _ => None,
+                });
+                ((**inner).clone(), next_value)
+            }
+        };
+        current_type = next_type;
+        current_value = next_value;
+    }
+    Ok(current_type)
 }
 
 pub(crate) fn validate_value_for_write(
@@ -187,12 +254,12 @@ pub(crate) fn validate_value_semantics(
         session,
         pending_records,
     };
-    coflow_data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
+    crate::data_model::validate_value_for_schema(schema, &context, request).map_err(|err| {
         let reference_error = matches!(
             err.kind(),
-            coflow_data_model::CfdValueSemanticErrorKind::RefTargetNotFound
-                | coflow_data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
-                | coflow_data_model::CfdValueSemanticErrorKind::MissingRequiredField
+            crate::data_model::CfdValueSemanticErrorKind::RefTargetNotFound
+                | crate::data_model::CfdValueSemanticErrorKind::RefTargetTypeMismatch
+                | crate::data_model::CfdValueSemanticErrorKind::MissingRequiredField
         );
         let code = if reference_error {
             reference_code
@@ -200,7 +267,7 @@ pub(crate) fn validate_value_semantics(
             value_code
         };
         let message = if code == "MUTATION-VALUE"
-            && err.kind() == coflow_data_model::CfdValueSemanticErrorKind::TypeMismatch
+            && err.kind() == crate::data_model::CfdValueSemanticErrorKind::TypeMismatch
         {
             format!(
                 "value does not match expected schema type: {}",
@@ -220,7 +287,7 @@ pub(crate) fn ensure_object_type_assignable(
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    coflow_data_model::validate_object_type_assignable(schema, expected_type, actual_type)
+    crate::data_model::validate_object_type_assignable(schema, expected_type, actual_type)
         .map_err(|err| one_error(code, stage, err.message()))
 }
 
@@ -240,7 +307,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
         self.session
             .model
             .record(id)
-            .map(coflow_data_model::CfdRecord::actual_type)
+            .map(CfdRecord::actual_type)
     }
 
     fn pending_record_actual_type(&self, inheritance_root: &TypeName, key: &str) -> Option<&str> {
@@ -253,19 +320,6 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
             })
             .map(|record| record.actual_type.as_str())
     }
-}
-
-pub fn write_path_to_cfd_path(
-    path: &[WriteFieldPathSegment],
-    code: &'static str,
-    stage: &'static str,
-) -> Result<CfdPath, DiagnosticSet> {
-    if path.is_empty() {
-        return Err(one_error(code, stage, "field path must not be empty"));
-    }
-    Ok(CfdPath {
-        segments: path.to_vec(),
-    })
 }
 
 fn one_error(code: &'static str, stage: &'static str, message: impl Into<String>) -> DiagnosticSet {

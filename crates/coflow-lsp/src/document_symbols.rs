@@ -1,7 +1,8 @@
-use coflow_cft::{syntax::ast::Item, Span};
+use coflow_language::cft::syntax::ast::Item;
+use coflow_language::source::Span;
 use serde_json::{json, Value};
 
-use crate::{position::range_from_span, LspDocument};
+use super::{position::range_from_span, LspDocument};
 
 const SYMBOL_KIND_CLASS: u8 = 5;
 const SYMBOL_KIND_FIELD: u8 = 8;
@@ -73,6 +74,14 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     &children,
                 ));
             }
+            Item::TypeAlias(alias) => symbols.push(document_symbol_item(
+                &document.source,
+                &alias.name,
+                SYMBOL_KIND_CLASS,
+                alias.span,
+                alias.name_span,
+                &[],
+            )),
             Item::Check(check) => symbols.push(document_symbol_item(
                 &document.source,
                 &check.name,

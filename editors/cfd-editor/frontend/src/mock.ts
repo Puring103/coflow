@@ -1,7 +1,7 @@
 // Mock data for UI prototype — no Tauri backend required.
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
-import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
 import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
@@ -18,7 +18,6 @@ import {
 } from './wire'
 
 const MOCK_CFD_CAPS: WriterCapabilities = {
-  provider_id: 'cfd',
   can_edit_field: true,
   can_edit_key: true,
   can_insert_record: true,
@@ -27,7 +26,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   requires_full_refresh_after_write: true,
 }
 
-export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
+export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = {
   session_id: 1,
   revision: 1,
   project_root: '(mock project)',
@@ -38,9 +37,11 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       path: 'data/dimensions/language',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_name.csv', path: 'data/dimensions/language/Item_name.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/language/Item_name.csv', children: [] },
+        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
       ],
     },
     {
@@ -48,9 +49,11 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       path: 'data/dimensions/platform',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_icon.csv', path: 'data/dimensions/platform/Item_icon.csv', is_dir: false, in_sources: true, first_source_descendant: 'data/dimensions/platform/Item_icon.csv', children: [] },
+        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
       ],
     },
     {
@@ -58,14 +61,16 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
       path: 'data',
       is_dir: true,
       in_sources: true,
+      in_schema: false,
+      in_data: true,
       first_source_descendant: 'data/item.cfd',
       children: [
-        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/item.cfd', children: [] },
-        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/archive.cfd', children: [] },
-        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, first_source_descendant: 'data/npc.cfd', children: [] },
+        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/item.cfd', children: [] },
+        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/archive.cfd', children: [] },
+        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/npc.cfd', children: [] },
       ],
     },
-    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, first_source_descendant: null, children: [] },
+    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
     { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], out_dir: 'data/dimensions/language', fields: [] },
@@ -85,25 +90,21 @@ export const MOCK_PROJECT: ProjectSnapshot & { dimensions: DimensionInfo[] } = {
   },
   diagnostics: [
     {
+      id: 'mock-ref-missing',
       severity: 'error',
       code: 'ref_missing',
       stage: 'check',
       message: 'npc.cfd: record Npc_001 references missing item ItemXxx',
-      file_path: 'data/npc.cfd',
-      actual_type: 'Npc',
-      record_key: 'Npc_001',
-      field_path: 'reward_item',
+      target: { kind: 'table_field', file_path: 'data/npc.cfd', coordinate: { actual_type: 'Npc', key: 'Npc_001' }, field_path: 'reward_item' },
       contexts: [],
     },
     {
+      id: 'mock-unused-field',
       severity: 'warning',
       code: 'unused_field',
       stage: 'check',
       message: 'item.cfd: field "unknown_id" is not in schema',
-      file_path: 'data/item.cfd',
-      actual_type: 'Item',
-      record_key: 'Item_001',
-      field_path: 'unknown_id',
+      target: { kind: 'table_field', file_path: 'data/item.cfd', coordinate: { actual_type: 'Item', key: 'Item_001' }, field_path: 'unknown_id' },
       contexts: [],
     },
   ],
@@ -207,9 +208,9 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
 }
 
 export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {
-  'data/dimensions/language/Item_name.csv': {
+  'data/dimensions/language/Item_name.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/language/Item_name.csv',
+    file_path: 'data/dimensions/language/Item_name.cfd',
     dimension: 'language',
     display_name: '本地化',
     variants: ['zh-CN', 'en-US'],
@@ -236,9 +237,9 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
     ],
   },
-  'data/dimensions/platform/Item_icon.csv': {
+  'data/dimensions/platform/Item_icon.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/platform/Item_icon.csv',
+    file_path: 'data/dimensions/platform/Item_icon.cfd',
     dimension: 'platform',
     display_name: '平台',
     variants: ['mobile', 'desktop'],
@@ -277,7 +278,11 @@ export const MOCK_GRAPH: GraphData = {
 
 export const ALL_TYPE_NAMES = ['Item', 'Weapon', 'Npc']
 
-function row(actualType: string, key: string, fields: RecordRow['fields']): RecordRow {
+function row(
+  actualType: string,
+  key: string,
+  fields: Array<Omit<RecordRow['fields'][number], 'missing'>>,
+): RecordRow {
   const field_index: Record<string, number> = {}
   const field_summaries: Record<string, string> = {}
   fields.forEach((field, index) => {
@@ -289,7 +294,7 @@ function row(actualType: string, key: string, fields: RecordRow['fields']): Reco
     display_path: `${actualType}.${key}`,
     container_index: 0,
     container_size: 1,
-    fields,
+    fields: fields.map(field => ({ ...field, missing: false })),
     field_index,
     field_summaries,
     field_diagnostics: [],
@@ -319,12 +324,16 @@ function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
 
 function mockSummary(value: FieldValue): string {
   switch (value.kind) {
-    case 'null': return '-'
+    case 'option_none': return '-'
+    case 'option_some': return mockSummary(value.value)
+    case 'result_ok': return `Ok(${mockSummary(value.value)})`
+    case 'result_err': return `Err(${mockSummary(value.value)})`
     case 'bool': return value.value ? 'true' : 'false'
     case 'int':
     case 'float': return String(value.value)
     case 'string': return value.value
     case 'formatted_string': return value.value.rendered
+    case 'function': return value.value.source
     case 'enum': return value.value.variant ?? String(value.value.value)
     case 'ref': return value.value
     case 'object': return value.value.actual_type

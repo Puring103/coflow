@@ -2,12 +2,17 @@
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
-pub mod editor;
-mod host;
-mod watcher;
+mod extension_manifest;
 
-use coflow_data_model::{CfdPathSegment, CfdValue};
+/// Compatibility re-export for generated TypeScript binding tests and host consumers.
+pub mod editor {
+    pub use cfd_editor_core::editor::*;
+}
+
+use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
+use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
 };
@@ -15,14 +20,36 @@ use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
     EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults,
-    ProjectSnapshot, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
+    InsertRecordOutcome, PluginSchemaType, ProjectBootstrap, ProjectSearchMode,
+    ProjectSearchResults, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
     WriteDimensionValueOutcome, WriteFieldOutcome,
+    FunctionDocumentState, LanguageCompletion, LanguageDocumentState, LanguageFormattingResult,
+    LanguagePosition,
 };
-use extension_api::ExtensionManifest;
-use host::EditorHost;
+use extension_manifest::ExtensionManifest;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
+const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
+
+#[derive(Debug, Clone)]
+struct TauriEditorEventSink {
+    app: AppHandle,
+}
+
+impl EditorEventSink for TauriEditorEventSink {
+    fn emit(&self, event: EditorEvent) {
+        match event {
+            EditorEvent::ProjectReloaded(payload) => {
+                let _ = self.app.emit(PROJECT_RELOADED_EVENT, payload);
+            }
+            EditorEvent::ProjectWatchError(payload) => {
+                let _ = self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload);
+            }
+        }
+    }
+}
 
 const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
@@ -464,10 +491,9 @@ fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), Edi
 async fn load_project(
     yaml_path: String,
     host: State<'_, EditorHost>,
-    app: AppHandle,
-) -> Result<ProjectSnapshot, EditorError> {
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.load_project(app, &PathBuf::from(yaml_path))).await
+    run_blocking(move || host.load_project(&PathBuf::from(yaml_path))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -475,10 +501,9 @@ async fn load_project(
 async fn init_project(
     dir: String,
     host: State<'_, EditorHost>,
-    app: AppHandle,
-) -> Result<ProjectSnapshot, EditorError> {
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.init_project(app, &PathBuf::from(dir))).await
+    run_blocking(move || host.init_project(&PathBuf::from(dir))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -486,6 +511,56 @@ async fn init_project(
 async fn close_session(session_id: u32, host: State<'_, EditorHost>) -> Result<(), EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.close_session(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn reload_session(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.reload_session(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn add_project_input(
+    session_id: u32,
+    kind: String,
+    path: String,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
+    let kind = match kind.as_str() {
+        "schema" => coflow_runtime::ProjectInputKind::Schema,
+        "data" => coflow_runtime::ProjectInputKind::Data,
+        _ => return Err(EditorError::other("project input kind must be schema or data")),
+    };
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().add_project_input(session_id, kind, &PathBuf::from(path))).await
+}
+
+fn project_input_kind(kind: &str) -> Result<coflow_runtime::ProjectInputKind, EditorError> {
+    match kind {
+        "schema" => Ok(coflow_runtime::ProjectInputKind::Schema),
+        "data" => Ok(coflow_runtime::ProjectInputKind::Data),
+        _ => Err(EditorError::other("project input kind must be schema or data")),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn create_project_file(session_id: u32, kind: String, parent_path: String, file_name: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+    let kind = project_input_kind(&kind)?;
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().create_project_file(session_id, kind, Path::new(&parent_path), &file_name)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn delete_project_entry(session_id: u32, path: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().delete_project_entry(session_id, Path::new(&path))).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -644,6 +719,130 @@ async fn open_source_file(
     run_blocking(move || {
         let path = host.sessions().source_file_path(session_id, &file_path)?;
         open_with_default_application(&path)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn read_source_text(
+    session_id: u32,
+    file_path: String,
+    host: State<'_, EditorHost>,
+) -> Result<String, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().read_source_text(session_id, &file_path)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn sync_language_document(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    version: i64,
+    host: State<'_, EditorHost>,
+) -> Result<LanguageDocumentState, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .sync_language_document(session_id, &file_path, &source, version)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn validate_source_text(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<FlatDiagnostic>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .validate_source_text(session_id, &file_path, &source)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn complete_language_document(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    version: i64,
+    position: LanguagePosition,
+    host: State<'_, EditorHost>,
+) -> Result<Vec<LanguageCompletion>, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions().complete_language_document(
+            session_id,
+            &file_path,
+            &source,
+            version,
+            &position,
+        )
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn format_language_document(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    version: i64,
+    host: State<'_, EditorHost>,
+) -> Result<LanguageFormattingResult, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .format_language_document(session_id, &file_path, &source, version)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn close_language_document(
+    session_id: u32,
+    file_path: String,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().close_language_document(session_id, &file_path)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn function_document(
+    session_id: u32,
+    source: String,
+    body: Option<String>,
+    host: State<'_, EditorHost>,
+) -> Result<FunctionDocumentState, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().function_document(session_id, &source, body.as_deref()))
+        .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn write_source_text(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions()
+            .write_source_text(session_id, &file_path, &source)
     })
     .await
 }
@@ -956,19 +1155,13 @@ async fn transfer_record(
     session_id: u32,
     coordinate: RecordCoordinate,
     destination_file: String,
-    destination_sheet: Option<String>,
     target_index: usize,
     host: State<'_, EditorHost>,
 ) -> Result<ReorderRecordsOutcome, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
-        host.sessions().transfer_record(
-            session_id,
-            &coordinate,
-            &destination_file,
-            destination_sheet.as_deref(),
-            target_index,
-        )
+        host.sessions()
+            .transfer_record(session_id, &coordinate, &destination_file, target_index)
     })
     .await
 }
@@ -996,7 +1189,10 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let host = EditorHost::new().map_err(|err| err.to_string())?;
+            let events = Arc::new(TauriEditorEventSink {
+                app: app.handle().clone(),
+            });
+            let host = EditorHost::new(events).map_err(|err| err.to_string())?;
             app.manage(host);
             Ok(())
         })
@@ -1004,6 +1200,10 @@ pub fn run() -> tauri::Result<()> {
             load_project,
             init_project,
             close_session,
+            reload_session,
+            add_project_input,
+            create_project_file,
+            delete_project_entry,
             get_project_settings,
             get_project_dimensions,
             get_dimension_file_records,
@@ -1016,6 +1216,14 @@ pub fn run() -> tauri::Result<()> {
             build_project,
             build_project_status,
             open_source_file,
+            read_source_text,
+            sync_language_document,
+            validate_source_text,
+            complete_language_document,
+            format_language_document,
+            close_language_document,
+            function_document,
+            write_source_text,
             get_file_records,
             search_records,
             get_plugin_schema,

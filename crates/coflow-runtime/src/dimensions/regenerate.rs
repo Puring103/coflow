@@ -1,17 +1,17 @@
 mod plan;
 
-use crate::dimensions::DimensionField;
-use coflow_api::{
-    DecodedSourceOptions, Diagnostic, DiagnosticSet, DimensionSourceEntry,
-    DimensionSourceOptionsRequest, DimensionSourceRequest, Label, ProviderRegistry, ResolvedSource,
-    Severity, SourceLocation, SourceLocationSpec, TableContext,
+use crate::api::{
+    CfdSource, CfdSourceCatalog, CfdSourcePath, Diagnostic, DiagnosticSet, DimensionSourceEntry,
+    DimensionSourceRequest, Label, Severity, SourceLocation,
 };
-use coflow_cft::CftSchema;
-use coflow_data_model::CfdDataModel;
-use coflow_project::Project;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use crate::data_model::CfdDataModel;
+use crate::dimensions::DimensionField;
+use crate::cfd_loader::CfdWriter;
+use crate::project::Project;
+use coflow_language::cft::CftSchema;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use plan::plan_dimension_generation_scoped;
 
@@ -22,7 +22,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
     model: &CfdDataModel,
     fields: &[DimensionField],
     affected_fields: Option<&BTreeSet<usize>>,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
 ) -> DimensionGenerationResult {
     let plan_result =
         plan_dimension_generation_scoped(project, schema, model, fields, affected_fields);
@@ -31,10 +31,12 @@ pub(crate) fn regenerate_dimension_sources_scoped(
         return DimensionGenerationResult {
             diagnostics: plan_result.diagnostics,
             planned_sources,
-            ..DimensionGenerationResult::default()
+            writer: None,
+            changed_paths: Vec::new(),
+            written_sources: 0,
         };
     }
-    let mut result = commit_dimension_generation(project, plan_result.plan, registry);
+    let mut result = commit_dimension_generation(project, plan_result.plan, catalog);
     let mut diagnostics = plan_result.diagnostics;
     diagnostics.extend(result.diagnostics);
     result.diagnostics = diagnostics;
@@ -45,10 +47,9 @@ pub(crate) fn regenerate_dimension_sources_scoped(
 fn commit_dimension_generation(
     project: &Project,
     plan: DimensionGenerationPlan,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
 ) -> DimensionGenerationResult {
     let mut diagnostics = DiagnosticSet::empty();
-    let mut transaction = DimensionGenerationTransaction::default();
     let mut changed_paths = BTreeSet::new();
     let planned_sources = plan.operations.len();
     let mut written_sources = 0_usize;
@@ -56,24 +57,21 @@ fn commit_dimension_generation(
     for operation in plan.operations {
         let changed = match operation {
             DimensionGenerationPlanOp::Move { from, to } => commit_dimension_move(
-                &mut transaction,
-                project.config_path(),
+                catalog,
                 from,
                 to,
                 &mut diagnostics,
                 &mut changed_paths,
             ),
             DimensionGenerationPlanOp::Remove(path) => commit_dimension_remove(
-                &mut transaction,
-                project.config_path(),
+                catalog,
                 path,
                 &mut diagnostics,
                 &mut changed_paths,
             ),
             DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
                 project,
-                registry,
-                &mut transaction,
+                &catalog.writer(),
                 operation,
                 &mut diagnostics,
                 &mut changed_paths,
@@ -85,7 +83,7 @@ fn commit_dimension_generation(
     }
 
     DimensionGenerationResult {
-        transaction,
+        writer: Some(catalog.writer()),
         diagnostics,
         changed_paths: changed_paths.into_iter().collect(),
         planned_sources,
@@ -94,18 +92,14 @@ fn commit_dimension_generation(
 }
 
 fn commit_dimension_move(
-    transaction: &mut DimensionGenerationTransaction,
-    config_path: &Path,
+    catalog: &CfdSourceCatalog,
     from: PathBuf,
     to: PathBuf,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
 ) -> bool {
-    if let Err(error) = transaction.move_file(&from, &to, config_path) {
-        diagnostics.extend(error);
-        return false;
-    }
-    if let Err(error) = fs::rename(&from, &to) {
+    let writer = catalog.writer();
+    if let Err(error) = writer.move_source(&from, &to) {
         diagnostics.push(Diagnostic::error(
             "DIM-SOURCE-005",
             "PROJECT",
@@ -124,17 +118,13 @@ fn commit_dimension_move(
 }
 
 fn commit_dimension_remove(
-    transaction: &mut DimensionGenerationTransaction,
-    config_path: &Path,
+    catalog: &CfdSourceCatalog,
     path: PathBuf,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
 ) -> bool {
-    if let Err(error) = transaction.remove_file(&path, config_path) {
-        diagnostics.extend(error);
-        return false;
-    }
-    if let Err(error) = fs::remove_file(&path) {
+    let writer = catalog.writer();
+    if let Err(error) = writer.delete_source(&path) {
         diagnostics.push(Diagnostic::error(
             "DIM-SOURCE-006",
             "PROJECT",
@@ -152,52 +142,17 @@ fn commit_dimension_remove(
 
 fn commit_dimension_sync(
     project: &Project,
-    registry: &ProviderRegistry,
-    transaction: &mut DimensionGenerationTransaction,
+    writer: &Arc<CfdWriter>,
     operation: DimensionGenerationOperation,
     diagnostics: &mut DiagnosticSet,
     changed_paths: &mut BTreeSet<PathBuf>,
 ) -> bool {
-    let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
-        diagnostics.push(dimension_diagnostic(
-            project.config_path(),
-            &operation.dimension,
-            "DIM-SOURCE-002",
-            format!(
-                "dimension source provider `{}` is not registered",
-                operation.provider_id
-            ),
-        ));
-        return false;
-    };
-    let options = match manager.source_options(&DimensionSourceOptionsRequest {
-        sheet: &operation.sheet,
-        actual_type: &operation.actual_type,
-    }) {
-        Ok(options) => options,
-        Err(error) => {
-            diagnostics.extend(error);
-            return false;
-        }
-    };
-    let source =
-        dimension_resolved_source(project, &operation.path, &operation.provider_id, options);
-    if let Err(error) =
-        transaction.snapshot_file(&operation.path, &operation.dimension, project.config_path())
-    {
-        diagnostics.extend(error);
-        return false;
-    }
-    let result = manager.sync_dimension_source(
-        TableContext {
-            project_root: project.root_dir(),
-        },
-        &DimensionSourceRequest {
-            source: &source,
-            entries: &operation.entries,
-            variants: &operation.variants,
-        },
-    );
+    let source = dimension_resolved_source(project, &operation.path);
+    let result = writer.sync_dimension_source(&DimensionSourceRequest {
+        source: &source,
+        entries: &operation.entries,
+        variants: &operation.variants,
+    });
     match result {
         Ok(result) if result.changed => {
             changed_paths.insert(operation.path);
@@ -205,7 +160,12 @@ fn commit_dimension_sync(
         }
         Ok(_) => false,
         Err(error) => {
-            diagnostics.extend(error);
+            for diagnostic in error.diagnostics {
+                diagnostics.push(Diagnostic {
+                    code: "DIM-SOURCE-006".to_string(),
+                    ..diagnostic
+                });
+            }
             false
         }
     }
@@ -231,10 +191,7 @@ pub(super) enum DimensionGenerationPlanOp {
 
 #[derive(Debug)]
 pub(super) struct DimensionGenerationOperation {
-    pub(super) dimension: String,
-    pub(super) provider_id: String,
     pub(super) path: PathBuf,
-    pub(super) sheet: String,
     pub(super) actual_type: String,
     pub(super) entries: Vec<DimensionSourceEntry>,
     pub(super) variants: Vec<String>,
@@ -245,7 +202,7 @@ pub(super) struct DimensionGenerationOperation {
 impl DimensionGenerationOperation {
     pub(super) fn matches_renamed_source(&self, path: &Path) -> bool {
         !self.is_singleton
-            && path.extension().and_then(|extension| extension.to_str()) == Some("csv")
+            && path.extension().and_then(|extension| extension.to_str()) == Some("cfd")
             && path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -255,126 +212,20 @@ impl DimensionGenerationOperation {
 
 #[derive(Debug, Default)]
 pub struct DimensionGenerationResult {
-    pub transaction: DimensionGenerationTransaction,
+    pub writer: Option<Arc<CfdWriter>>,
     pub diagnostics: DiagnosticSet,
     pub changed_paths: Vec<PathBuf>,
     pub planned_sources: usize,
     pub written_sources: usize,
 }
 
-#[derive(Debug, Default)]
-pub struct DimensionGenerationTransaction {
-    snapshots: BTreeMap<PathBuf, FileSnapshot>,
-}
-
-impl DimensionGenerationTransaction {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.snapshots.is_empty()
-    }
-
-    pub fn rollback(self, config_path: &Path) -> DiagnosticSet {
-        let mut diagnostics = DiagnosticSet::empty();
-        for snapshot in self.snapshots.into_values().rev() {
-            if let Err(err) = snapshot.restore() {
-                diagnostics.push(dimension_diagnostic(
-                    config_path,
-                    &snapshot.dimension,
-                    "DIM-SOURCE-ROLLBACK-001",
-                    format!(
-                        "failed to roll back dimension source `{}`: {err}",
-                        snapshot.path.display()
-                    ),
-                ));
-            }
-        }
-        diagnostics
-    }
-
-    fn snapshot_file(
-        &mut self,
-        path: &Path,
-        dimension: &str,
-        config_path: &Path,
-    ) -> Result<(), DiagnosticSet> {
-        if self.snapshots.contains_key(path) {
-            return Ok(());
-        }
-        let original = match fs::read(path) {
-            Ok(bytes) => Some(bytes),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-            Err(err) => {
-                return Err(DiagnosticSet::one(dimension_diagnostic(
-                    config_path,
-                    dimension,
-                    "DIM-SOURCE-SNAPSHOT-001",
-                    format!(
-                        "failed to snapshot dimension source `{}` before generation: {err}",
-                        path.display()
-                    ),
-                )));
-            }
-        };
-        self.snapshots.insert(
-            path.to_path_buf(),
-            FileSnapshot {
-                path: path.to_path_buf(),
-                dimension: dimension.to_string(),
-                original,
-            },
-        );
-        Ok(())
-    }
-
-    fn move_file(
-        &mut self,
-        from: &Path,
-        to: &Path,
-        config_path: &Path,
-    ) -> Result<(), DiagnosticSet> {
-        self.snapshot_file(from, "generated", config_path)?;
-        self.snapshot_file(to, "generated", config_path)
-    }
-
-    fn remove_file(&mut self, path: &Path, config_path: &Path) -> Result<(), DiagnosticSet> {
-        self.snapshot_file(path, "generated", config_path)
-    }
-}
-
-#[derive(Debug)]
-struct FileSnapshot {
-    path: PathBuf,
-    dimension: String,
-    original: Option<Vec<u8>>,
-}
-
-impl FileSnapshot {
-    fn restore(&self) -> std::io::Result<()> {
-        self.original.as_ref().map_or_else(
-            || match fs::remove_file(&self.path) {
-                Ok(()) => Ok(()),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(err) => Err(err),
-            },
-            |bytes| fs::write(&self.path, bytes),
-        )
-    }
-}
-
-fn dimension_resolved_source(
-    project: &Project,
-    path: &Path,
-    provider_id: &str,
-    options: DecodedSourceOptions,
-) -> ResolvedSource {
+fn dimension_resolved_source(project: &Project, path: &Path) -> CfdSource {
     let display_name = path.strip_prefix(project.root_dir()).map_or_else(
         |_| path.display().to_string(),
-        coflow_project::path_to_slash,
+        crate::project::path_to_slash,
     );
-    ResolvedSource {
-        provider_id: provider_id.to_string(),
-        location: SourceLocationSpec::new(path.to_path_buf()),
-        options,
+    CfdSource {
+        location: CfdSourcePath::new(path.to_path_buf()),
         display_name,
     }
 }
@@ -409,14 +260,13 @@ mod tests {
     use super::{
         commit_dimension_generation, plan_dimension_generation_scoped,
         DimensionGenerationOperation, DimensionGenerationPlan, DimensionGenerationPlanOp,
-        DimensionGenerationTransaction,
     };
-    use coflow_api::ProviderRegistry;
-    use coflow_cft::{
+    use crate::catalog::CfdSourceCatalog;
+    use crate::data_model::{CfdDataModel, LoadedValueDraft};
+    use crate::project::Project;
+    use coflow_language::cft::{
         BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
     };
-    use coflow_data_model::{CfdDataModel, LoadedValueDraft};
-    use coflow_project::Project;
 
     use crate::dimensions::DimensionField;
 
@@ -425,7 +275,7 @@ mod tests {
             .expect("write schema");
         std::fs::write(
             root.join("coflow.yaml"),
-            "schema: schema.cft\nsources: []\n",
+            "schema: schema.cft\ndata: []\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
         )
         .expect("write config");
         Project::open_schema_only(Some(root)).expect("open project")
@@ -446,18 +296,18 @@ mod tests {
         .expect("write schema");
         std::fs::write(
             root.join("coflow.yaml"),
-            "schema: schema.cft\nsources: []\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\n",
+            "schema: schema.cft\ndata: []\ncodegen:\n  - language: csharp\n    dir: generated/csharp\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\n",
         )
         .expect("write config");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
-        let modules = coflow_cft::parse_modules([CftFile::new(
+        let modules = coflow_language::cft::parse_modules([CftFile::new(
             ModuleId::from("schema.cft"),
             "schema.cft".into(),
             "type Item { name: string; } type Other { label: string; }",
         )]);
         let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
             .expect("dimensions");
-        let schema = coflow_cft::build_schema(&modules, &dimensions).expect("schema");
+        let schema = coflow_language::cft::build_schema(&modules, &dimensions).expect("schema");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("item", "Item", [("name", LoadedValueDraft::from("Item"))]);
         builder.add_record(
@@ -502,30 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_errors_are_reported_and_do_not_enlist_the_path() {
-        let root = std::env::temp_dir().join(format!(
-            "coflow-runtime-dimension-snapshot-error-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        let source = root.join("Item_name.csv");
-        std::fs::create_dir_all(&source).expect("create directory at source path");
-        let config = root.join("coflow.yaml");
-        let mut transaction = DimensionGenerationTransaction::default();
-
-        let diagnostics = transaction
-            .snapshot_file(&source, "language", &config)
-            .expect_err("directories cannot be snapshotted as generated files");
-
-        assert!(diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "DIM-SOURCE-SNAPSHOT-001"));
-        assert!(transaction.is_empty());
-        std::fs::remove_dir_all(root).expect("remove temp dir");
-    }
-
-    #[test]
     fn generation_operation_failures_report_stable_codes() {
         let root = std::env::temp_dir().join(format!(
             "coflow-runtime-dimension-operation-errors-{}",
@@ -534,21 +360,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create temp dir");
         let project = test_project(&root);
-        let missing_move = root.join("missing-old.csv");
-        let missing_remove = root.join("missing-stale.csv");
-        let generated = root.join("generated.csv");
+        let missing_move = root.join("missing-old.cfd");
+        let missing_remove = root.join("missing-stale.cfd");
+        let generated = root.join("generated.cfd");
+        std::fs::create_dir(&generated).expect("create invalid generated source");
         let plan = DimensionGenerationPlan {
             operations: vec![
                 DimensionGenerationPlanOp::Move {
                     from: missing_move,
-                    to: root.join("moved.csv"),
+                    to: root.join("moved.cfd"),
                 },
                 DimensionGenerationPlanOp::Remove(missing_remove),
                 DimensionGenerationPlanOp::Sync(DimensionGenerationOperation {
-                    dimension: "language".to_string(),
-                    provider_id: "missing-provider".to_string(),
                     path: generated,
-                    sheet: "Item_name".to_string(),
                     actual_type: "Item".to_string(),
                     entries: Vec::new(),
                     variants: vec!["zh".to_string()],
@@ -558,43 +382,16 @@ mod tests {
             ],
         };
 
-        let result = commit_dimension_generation(&project, plan, &ProviderRegistry::default());
+        let result = commit_dimension_generation(&project, plan, &CfdSourceCatalog::default());
         let codes = result
             .diagnostics
             .diagnostics
             .iter()
             .map(|diagnostic| diagnostic.code.as_str())
             .collect::<std::collections::BTreeSet<_>>();
-        assert!(codes.contains("DIM-SOURCE-002"));
         assert!(codes.contains("DIM-SOURCE-005"));
         assert!(codes.contains("DIM-SOURCE-006"));
         std::fs::remove_dir_all(root).expect("remove temp dir");
     }
 
-    #[test]
-    fn rollback_reports_restore_failures() {
-        let root = std::env::temp_dir().join(format!(
-            "coflow-runtime-dimension-rollback-error-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("create temp dir");
-        let source = root.join("Item_name.csv");
-        let config = root.join("coflow.yaml");
-        std::fs::write(&source, "original").expect("write source");
-        let mut transaction = DimensionGenerationTransaction::default();
-        transaction
-            .snapshot_file(&source, "language", &config)
-            .expect("snapshot source");
-        std::fs::remove_file(&source).expect("remove source");
-        std::fs::create_dir(&source).expect("replace source with directory");
-
-        let diagnostics = transaction.rollback(&config);
-
-        assert!(diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "DIM-SOURCE-ROLLBACK-001"));
-        std::fs::remove_dir_all(root).expect("remove temp dir");
-    }
 }

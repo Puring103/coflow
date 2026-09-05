@@ -3,33 +3,42 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct CsharpProject {
     pub namespace: String,
-    pub database_class: String,
-    pub uses_localization: bool,
-    pub int_type: &'static str,
-    pub float_type: &'static str,
+    pub dimensions: Vec<CsharpDimension>,
+    pub delegate_adapters: Vec<String>,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
-    pub database: CsharpDatabase,
     pub singletons: Vec<CsharpSingleton>,
+    pub constants: Vec<CsharpConstant>,
 }
 
-/// Per-singleton metadata used by the database template. Singletons do not
-/// generate `Tb*` accessors; the database class exposes a property whose name
-/// is the type name (lower-cased identifier) and whose value loads the single
-/// row from `<TypeName>.<ext>`.
+#[derive(Clone, Debug, Serialize)]
+pub struct CsharpDimension {
+    pub name: String,
+    pub source_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpConstant {
+    pub source_name: String,
+    pub runtime_type: String,
+    pub value_expression: String,
+    pub deferred: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CsharpSingleton {
-    pub type_name: String,
     pub source_name: String,
-    /// Public property name on the database class. Equals `type_name` per
-    /// spec — no `PascalCase` rewrite.
-    pub accessor_property: String,
-    pub records_var: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpEnum {
     pub name: String,
+    pub namespace: String,
+    pub qualified_name: String,
+    pub relative_path: String,
+    pub metadata_name: String,
+    pub source_name: String,
+    pub annotations: Vec<CsharpAnnotation>,
     pub is_flags: bool,
     pub summary: Option<String>,
     pub obsolete: bool,
@@ -39,7 +48,9 @@ pub struct CsharpEnum {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnumVariant {
     pub name: String,
+    pub source_name: String,
     pub value: i64,
+    pub annotations: Vec<CsharpAnnotation>,
     pub summary: Option<String>,
     pub obsolete: bool,
 }
@@ -47,17 +58,89 @@ pub struct CsharpEnumVariant {
 #[derive(Debug, Serialize)]
 pub struct CsharpType {
     pub name: String,
+    pub namespace: String,
+    pub qualified_name: String,
+    pub relative_path: String,
+    pub metadata_name: String,
+    pub source_name: String,
+    pub annotations: Vec<CsharpAnnotation>,
     pub declaration: String,
     pub constructor_visibility: String,
     pub summary: Option<String>,
     pub obsolete: bool,
     pub properties: Vec<CsharpProperty>,
+    pub functions: Vec<CsharpFunction>,
+    pub host_fields: Vec<CsharpHostField>,
+    pub uses_host_slot: bool,
+    pub declares_host_slot: bool,
     pub constructor_parameters: Vec<CsharpParameter>,
     pub base_constructor_args: Vec<String>,
     pub base_constructor_call: Option<String>,
     pub assignments: Vec<CsharpConstructorAssignment>,
-    pub loader: Option<CsharpLoader>,
     pub equality: Option<CsharpEquality>,
+    pub loader_fields: Vec<CsharpLoaderField>,
+    pub loader_id_type: Option<String>,
+    pub table_token_type: Option<String>,
+    pub loader_id_reader: Option<String>,
+    pub loader_enabled: bool,
+    pub is_host: bool,
+    pub is_abstract: bool,
+    pub is_sealed: bool,
+    pub is_struct: bool,
+    pub loader_assignable_to: Vec<String>,
+    pub loader_variants: Vec<CsharpLoaderVariant>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpHostField {
+    pub target: String,
+    pub parameter: CsharpParameter,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpFunction {
+    pub source_name: String,
+    pub method_name: String,
+    pub bind_method_name: String,
+    pub bind_parameter_name: String,
+    pub entry_name: String,
+    pub declared_here: bool,
+    pub result_type: String,
+    pub delegate_type: String,
+    pub parameters: Vec<CsharpParameter>,
+    pub returns_void: bool,
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpLoaderField {
+    pub source_name: String,
+    pub property_name: String,
+    pub value_type: String,
+    pub is_function: bool,
+    pub reader_expression: String,
+    pub default_expression: Option<String>,
+    pub object_type: Option<String>,
+    pub reference_type: Option<String>,
+    pub annotations: Vec<CsharpAnnotation>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpAnnotation {
+    pub name: String,
+    pub arguments: Vec<CsharpAnnotationArgument>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpAnnotationArgument {
+    pub kind: &'static str,
+    pub value_expression: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpLoaderVariant {
+    pub source_name: String,
+    pub type_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,6 +149,7 @@ pub struct CsharpProperty {
     pub name: String,
     pub type_name: String,
     pub backing_field: Option<String>,
+    pub guard_host: bool,
     pub summary: Option<String>,
     pub obsolete: bool,
 }
@@ -78,111 +162,9 @@ pub struct CsharpConstructorAssignment {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CsharpDatabase {
-    pub tables: Vec<CsharpTable>,
-    pub constructor_parameters: Vec<CsharpParameter>,
-    pub constructor_args: Vec<String>,
-    pub context_fields: Vec<CsharpContextField>,
-    pub context_lookups: Vec<CsharpContextLookup>,
-    pub context_constructor_parameters: Vec<CsharpParameter>,
-    pub context_assignments: Vec<CsharpContextAssignment>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpTable {
-    pub name: String,
-    pub source_name: String,
-    pub accessor_property: String,
-    pub accessor_parameter: String,
-    pub records_var: String,
-    pub raw_rows_var: String,
-    pub id_type: String,
-    pub id_property: String,
-    pub id_source_name: String,
-    pub index_var: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpContextField {
-    pub source_name: String,
-    pub field_name: String,
-    pub id_type: String,
-    pub type_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpContextAssignment {
-    pub field_name: String,
-    pub parameter_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpContextLookup {
-    pub method_name: String,
-    pub id_type: String,
-    pub return_type: String,
-    pub fields: Vec<CsharpContextLookupField>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpContextLookupField {
-    pub field_name: String,
-    pub value_name: String,
-}
-
-#[derive(Debug, Serialize)]
 pub struct CsharpParameter {
     pub ty: String,
     pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct CsharpLoader {
-    pub type_name: String,
-    pub source_name: String,
-    pub key_type_name: String,
-    pub key_local_name: String,
-    pub key_property: String,
-    pub key_read_expr: String,
-    pub key_messagepack_read_expr: String,
-    pub is_table: bool,
-    /// True when the type lands in a top-level JSON / msgpack file as an
-    /// array of records. Tables and singletons both qualify; abstract /
-    /// inline-only types do not. The loader templates emit `LoadTable`
-    /// for any disk-loadable type so the shared database template can
-    /// call it uniformly.
-    pub is_disk_loadable: bool,
-    pub is_struct: bool,
-    pub requires_hydration: bool,
-    pub fields: Vec<CsharpLoadField>,
-    pub polymorphic_cases: Vec<CsharpPolymorphicCase>,
-    pub is_polymorphic: bool,
-    pub expected: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpLoadField {
-    pub property: String,
-    pub source_name: String,
-    pub local_name: String,
-    pub type_name: String,
-    pub assignment_target: String,
-    pub read_expr: String,
-    pub inline_read_expr: String,
-    pub messagepack_read_expr: String,
-    pub inline_messagepack_read_expr: String,
-    pub default_expr: Option<String>,
-    pub missing_expr: Option<String>,
-    pub is_required: bool,
-    pub requires_context: bool,
-    pub has_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpPolymorphicCase {
-    pub type_name: String,
-    pub source_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -192,6 +174,12 @@ pub struct CsharpEquality {
     /// When true, equality compares all fields (used for inline-only types
     /// without an Id). When false, compares only `key_property`.
     pub by_fields: bool,
-    /// Property names participating in by-fields equality.
-    pub fields: Vec<String>,
+    /// Precisely typed properties participating in by-fields equality.
+    pub fields: Vec<CsharpEqualityField>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpEqualityField {
+    pub name: String,
+    pub ty: String,
 }

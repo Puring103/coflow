@@ -2,8 +2,8 @@ use super::evaluator::{CheckEvaluator, EvalResult};
 use super::ops;
 use super::type_predicates;
 use super::value::{EvalValue, LocatedEvalValue};
-use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment};
-use coflow_structure::StructureKind;
+use crate::limits::EvaluationKind;
+use coflow_language::cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment};
 
 pub(super) fn eval_expr<'model>(
     evaluator: &mut CheckEvaluator<'model>,
@@ -15,7 +15,6 @@ pub(super) fn eval_expr<'model>(
             Ok(LocatedEvalValue::value(EvalValue::float(*value)))
         }
         CftSchemaCheckExprKind::Bool(value) => Ok(LocatedEvalValue::value(EvalValue::bool(*value))),
-        CftSchemaCheckExprKind::Null => Ok(LocatedEvalValue::value(EvalValue::null())),
         CftSchemaCheckExprKind::String(value) => {
             Ok(LocatedEvalValue::value(EvalValue::string(value.clone())))
         }
@@ -29,50 +28,25 @@ pub(super) fn eval_expr<'model>(
                 .model
                 .assignable_records(evaluator.schema, type_name);
             evaluator.charge_work_at(
-                StructureKind::CheckEvaluation,
+                EvaluationKind::Expression,
                 u64::try_from(records.len()).unwrap_or(u64::MAX),
                 None,
             )?;
             evaluator.charge_nodes_at(
-                StructureKind::CheckEvaluation,
+                EvaluationKind::Expression,
                 u64::try_from(records.len()).unwrap_or(u64::MAX),
                 None,
             )?;
             Ok(LocatedEvalValue::value(EvalValue::Array {
                 items: super::value::EvalItems::Records(records),
-                element_type: Some(coflow_cft::CftValueType::RecordRef(type_name.clone())),
+                element_type: Some(coflow_language::cft::CftValueType::RecordRef(type_name.clone())),
             }))
         }
         CftSchemaCheckExprKind::Field { expr: inner, name } => {
             eval_field_expr(evaluator, inner, name)
         }
-        CftSchemaCheckExprKind::SafeField { expr: inner, name } => {
-            let target = evaluator.eval_expr(inner)?;
-            if matches!(target.value.scalar(), Some(super::value::ScalarValue::Null)) {
-                Ok(target)
-            } else {
-                evaluator.eval_field(target, name)
-            }
-        }
         CftSchemaCheckExprKind::Index { expr: inner, index } => {
             eval_index_expr(evaluator, inner, index)
-        }
-        CftSchemaCheckExprKind::SafeIndex { expr: inner, index } => {
-            let target = evaluator.eval_expr(inner)?;
-            if matches!(target.value.scalar(), Some(super::value::ScalarValue::Null)) {
-                Ok(target)
-            } else {
-                let index = evaluator.eval_expr(index)?;
-                evaluator.eval_index(target, index)
-            }
-        }
-        CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
-            let value = evaluator.eval_expr(lhs)?;
-            if matches!(value.value.scalar(), Some(super::value::ScalarValue::Null)) {
-                evaluator.eval_expr(rhs)
-            } else {
-                Ok(value)
-            }
         }
         CftSchemaCheckExprKind::Is {
             expr: inner,
@@ -107,7 +81,7 @@ pub(super) fn eval_formatted_segments(
                 let value = evaluator.eval_expr(expr)?;
                 format_interpolated_scalar(&value.value).ok_or_else(|| {
                     evaluator.diag_at(
-                        coflow_data_model::CfdErrorCode::CheckEvalTypeError,
+                        coflow_diagnostics::CfdErrorCode::CheckEvalTypeError,
                         value.location,
                         "formatted string interpolation did not evaluate to a scalar value",
                     );
@@ -116,7 +90,7 @@ pub(super) fn eval_formatted_segments(
             }
         };
         evaluator.charge_work_at(
-            StructureKind::CheckEvaluation,
+            EvaluationKind::Expression,
             u64::try_from(rendered.len()).unwrap_or(u64::MAX),
             None,
         )?;
@@ -161,7 +135,7 @@ fn eval_index_expr<'model>(
 fn eval_is_expr<'model>(
     evaluator: &mut CheckEvaluator<'model>,
     inner: &CftSchemaCheckExpr,
-    predicate: &coflow_cft::CftSchemaTypePredicate,
+    predicate: &coflow_language::cft::CftSchemaTypePredicate,
 ) -> EvalResult<LocatedEvalValue<'model>> {
     let value = evaluator.eval_expr(inner)?;
     Ok(LocatedEvalValue::new(
@@ -178,7 +152,7 @@ fn eval_is_expr<'model>(
 fn eval_cmp_chain_expr<'model>(
     evaluator: &mut CheckEvaluator<'model>,
     first: &CftSchemaCheckExpr,
-    rest: &[(coflow_cft::CftSchemaCmpOp, CftSchemaCheckExpr)],
+    rest: &[(coflow_language::cft::CftSchemaCmpOp, CftSchemaCheckExpr)],
 ) -> EvalResult<LocatedEvalValue<'model>> {
     let mut lhs_expr = first;
     let mut lhs = evaluator.eval_expr(first)?;

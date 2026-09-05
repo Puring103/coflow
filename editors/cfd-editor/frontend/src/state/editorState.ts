@@ -1,4 +1,5 @@
-import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
+import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
+import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
@@ -35,7 +36,7 @@ export class ProjectGenerationController {
       : { sessionId: this.sessionId, revision: this.revision }
   }
 
-  adopt(snapshot: Pick<ProjectSnapshot, 'session_id' | 'revision'>): number | null {
+  adopt(snapshot: Pick<ProjectBootstrap, 'session_id' | 'revision'>): number | null {
     const previous = this.sessionId
     this.sessionId = snapshot.session_id
     this.revision = snapshot.revision
@@ -43,7 +44,7 @@ export class ProjectGenerationController {
     return previous
   }
 
-  acceptSnapshot(snapshot: Pick<ProjectSnapshot, 'session_id' | 'revision'>): boolean {
+  acceptSnapshot(snapshot: Pick<ProjectBootstrap, 'session_id' | 'revision'>): boolean {
     if (snapshot.session_id !== this.sessionId || snapshot.revision <= this.revision) return false
     this.revision = snapshot.revision
     this.requestGeneration += 1
@@ -82,7 +83,7 @@ export class ProjectGenerationController {
 export interface MutationPublicationRequest {
   sessionId: number
   revision: number
-  diagnostics: ProjectSnapshot['diagnostics']
+  diagnostics: FlatDiagnostic[]
   affectedFiles: readonly string[]
   fallbackFile: string
   knownRecords?: FileRecords
@@ -93,7 +94,7 @@ export interface MutationPublicationPort {
   acceptRevision: (
     sessionId: number,
     revision: number,
-    diagnostics: ProjectSnapshot['diagnostics'],
+    diagnostics: FlatDiagnostic[],
   ) => boolean
   isCurrent: (sessionId: number, revision: number) => boolean
   getFileRecords: (sessionId: number, filePath: string) => Promise<FileRecords>

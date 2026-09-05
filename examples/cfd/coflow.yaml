@@ -1,4 +1,0 @@
-schema: schema.cft
-
-sources:
-  - path: data

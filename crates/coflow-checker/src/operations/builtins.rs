@@ -1,6 +1,6 @@
-pub(crate) use coflow_cft::CftCheckBuiltin as Builtin;
+pub(crate) use coflow_language::cft::CftCheckBuiltin as Builtin;
 
-use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
+use coflow_language::cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
 
 pub(crate) enum CallTarget {
     EnumConstructor,
@@ -81,8 +81,8 @@ fn require_arity(
     })
 }
 
-use coflow_cft::{CftSchema, EnumName};
-use coflow_data_model::CfdEnumValue;
+use coflow_model::CfdEnumValue;
+use coflow_language::cft::{CftSchema, EnumName};
 
 pub(crate) fn enum_with_value(
     schema: &CftSchema,
@@ -105,8 +105,8 @@ pub(crate) fn anonymous_enum_value(enum_name: &EnumName, value: i64) -> CfdEnumV
 
 use std::collections::BTreeMap;
 
-use coflow_data_model::{CfdDataModel, CfdErrorCode};
-use coflow_structure::StructuralBudget;
+use coflow_model::{CfdDataModel, CfdErrorCode};
+use crate::limits::{EvaluationBudget, EvaluationKind};
 use regex::Regex;
 
 use super::diagnostics::{format_value_for_message, value_type_is_float};
@@ -148,7 +148,7 @@ pub(crate) fn contains_value(
     collection: &LocatedEvalValue<'_>,
     value: &EvalValue<'_>,
     model: &CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<bool> {
     if let Some(ScalarValue::String(text)) = collection.value.scalar() {
         let Some(ScalarValue::String(needle)) = value.scalar() else {
@@ -324,7 +324,7 @@ pub(crate) fn contains_value_in_dict(
     collection: &LocatedEvalValue<'_>,
     needle: &EvalValue<'_>,
     model: &CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<bool> {
     let EvalValue::Dict {
         entries,
@@ -360,7 +360,7 @@ pub(crate) fn contains_value_in_dict(
 pub(crate) fn sorted_value(
     collection: &LocatedEvalValue<'_>,
     model: &CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
     strict: bool,
 ) -> OpsResult<bool> {
     let EvalValue::Array {
@@ -403,7 +403,7 @@ pub(crate) fn set_relation_value(
     left: &LocatedEvalValue<'_>,
     right: &LocatedEvalValue<'_>,
     model: &CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<bool> {
     let EvalValue::Array {
         items: left_items,
@@ -455,7 +455,7 @@ pub(crate) fn set_relation_value(
                 };
                 for right_index in 0..right_items.len() {
                     budget
-                        .charge_work(coflow_structure::StructureKind::CheckEvaluation, 1)
+                        .charge_work(EvaluationKind::Expression, 1)
                         .map_err(|error| {
                             OpsError::new(
                                 CfdErrorCode::CheckBudgetExceeded,
@@ -497,14 +497,14 @@ pub(crate) fn set_relation_value(
 #[derive(Clone, Copy)]
 struct ArrayValues<'a> {
     items: &'a EvalItems,
-    element_type: Option<&'a coflow_cft::CftValueType>,
+    element_type: Option<&'a coflow_language::cft::CftValueType>,
     location: Option<&'a ValueLocation>,
 }
 
 impl<'a> ArrayValues<'a> {
     const fn new(
         items: &'a EvalItems,
-        element_type: Option<&'a coflow_cft::CftValueType>,
+        element_type: Option<&'a coflow_language::cft::CftValueType>,
         location: Option<&'a ValueLocation>,
     ) -> Self {
         Self {
@@ -519,7 +519,7 @@ fn set_contains_all(
     needles: ArrayValues<'_>,
     haystack: ArrayValues<'_>,
     model: &CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<bool> {
     for needle_index in 0..needles.items.len() {
         let Some(needle) = needles
@@ -538,7 +538,7 @@ fn set_contains_all(
         let mut found = false;
         for candidate_index in 0..haystack.items.len() {
             budget
-                .charge_work(coflow_structure::StructureKind::CheckEvaluation, 1)
+                .charge_work(EvaluationKind::Expression, 1)
                 .map_err(|error| {
                     OpsError::new(
                         CfdErrorCode::CheckBudgetExceeded,
@@ -579,7 +579,7 @@ pub(crate) struct UniqueEvaluation<'model> {
 pub(crate) fn unique_value<'model>(
     value: LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<UniqueEvaluation<'model>> {
     let EvalValue::Array {
         items,
@@ -700,7 +700,7 @@ pub(crate) fn min_max_value<'model>(
     builtin: Builtin,
     value: &LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
     let EvalValue::Array {
@@ -770,7 +770,7 @@ pub(crate) fn min_max_value<'model>(
 pub(crate) fn sum_value<'model>(
     value: LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     let location = value.location.clone();
     let EvalValue::Array {

@@ -4,6 +4,7 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { Route } from '../wire'
 import {
   DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_SOURCE_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
   type ViewRenderKind,
 } from './views'
@@ -31,12 +32,13 @@ export function defaultWorkspaceTab(
   typeName: string,
   isSingleton: boolean,
 ): WorkspaceTab {
+  const sourceOnly = filePath.endsWith('.cft')
   return {
     id: workspaceTabId(filePath, typeName),
     filePath,
     typeName,
-    viewId: isSingleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
-    viewKind: isSingleton ? 'record' : 'table',
+    viewId: sourceOnly ? DEFAULT_SOURCE_VIEW_ID : isSingleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
+    viewKind: sourceOnly ? 'source' : isSingleton ? 'record' : 'table',
   }
 }
 
@@ -71,6 +73,20 @@ export function routeForWorkspaceTab(
   }
 }
 
+export function workspaceTabWithView(
+  tab: WorkspaceTab,
+  viewKind: ViewRenderKind,
+  viewId: string,
+  coordinate?: RecordCoordinate,
+): WorkspaceTab {
+  return {
+    ...tab,
+    viewKind,
+    viewId,
+    coordinate: coordinate ?? tab.coordinate,
+  }
+}
+
 export function sanitizeProjectWorkspace(
   value: unknown,
   fileTypes: { [file: string]: FileTypeOption[] | undefined },
@@ -93,12 +109,14 @@ export function sanitizeProjectWorkspace(
     const rawKind = candidate.view_kind ?? candidate.viewKind
     const requestedKind = isViewKind(rawKind) ? rawKind : 'table'
     const viewKind: ViewRenderKind = option?.is_singleton
-      ? 'record'
+      ? requestedKind === 'source' ? 'source' : 'record'
       : isDimensionFile && requestedKind === 'graph' ? 'table' : requestedKind
     const requestedId = stringProperty(candidate, 'view_id', 'viewId')
     const viewId = option?.is_singleton
-      ? DEFAULT_RECORD_VIEW_ID
-      : requestedId || (viewKind === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID)
+      ? viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_RECORD_VIEW_ID
+      : requestedId || (viewKind === 'record'
+        ? DEFAULT_RECORD_VIEW_ID
+        : viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_TABLE_VIEW_ID)
     const coordinate = viewKind === 'record' && isCoordinate(candidate.coordinate, typeName)
       ? candidate.coordinate
       : undefined
@@ -131,7 +149,7 @@ export function workspaceToWire(
 }
 
 function isViewKind(value: unknown): value is ViewRenderKind {
-  return value === 'record' || value === 'table' || value === 'graph'
+  return value === 'record' || value === 'table' || value === 'graph' || value === 'source'
 }
 
 function isCoordinate(value: unknown, typeName: string): value is RecordCoordinate {

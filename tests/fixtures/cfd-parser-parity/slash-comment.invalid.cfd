@@ -1,0 +1,6 @@
+Item {
+  item {
+    // CFD only accepts hash comments
+    value: 1,
+  }
+}

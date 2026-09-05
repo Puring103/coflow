@@ -1,12 +1,40 @@
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
-use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue};
+use crate::api::{DiagnosticSet, FlatDiagnostic};
+use crate::data_model::{CfdPath, CfdPathSegment, CfdValue};
+use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{RecordCoordinate, WriteOutcome};
+
+/// An application-owned project file that must be published with a mutation.
+///
+/// The runtime treats this as opaque bytes. The expected contents are checked
+/// immediately before publication so an external edit cannot be overwritten.
+#[derive(Debug, Clone)]
+pub struct ProjectFileUpdate {
+    pub(crate) path: PathBuf,
+    pub(crate) expected: Option<Vec<u8>>,
+    pub(crate) contents: Vec<u8>,
+}
+
+impl ProjectFileUpdate {
+    #[must_use]
+    pub fn new(path: impl Into<PathBuf>, expected: Option<Vec<u8>>, contents: Vec<u8>) -> Self {
+        Self {
+            path: path.into(),
+            expected,
+            contents,
+        }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,8 +49,6 @@ pub struct MutationRequest {
 pub enum MutationOp {
     InsertRecord {
         file: String,
-        #[serde(default)]
-        sheet: Option<String>,
         #[serde(rename = "type")]
         actual_type: String,
         key: String,
@@ -37,6 +63,12 @@ pub enum MutationOp {
         file: Option<String>,
         path: Vec<CfdPathSegment>,
         value: MutationValue,
+    },
+    UnsetField {
+        record: RecordCoordinate,
+        #[serde(default)]
+        file: Option<String>,
+        path: Vec<CfdPathSegment>,
     },
     SetDimensionValue {
         coordinate: DimensionValueCoordinate,
@@ -75,8 +107,6 @@ pub enum MutationOp {
     TransferRecord {
         record: RecordCoordinate,
         destination_file: String,
-        #[serde(default)]
-        destination_sheet: Option<String>,
         target_index: usize,
         #[serde(default)]
         source_file: Option<String>,
@@ -172,7 +202,7 @@ pub struct CreateRecordFieldDraft {
 #[serde(rename_all = "snake_case")]
 pub enum CreateFieldSource {
     SchemaDefault,
-    TypeSeed,
+    TypeDefault,
     RequiredInput,
 }
 
@@ -191,9 +221,6 @@ pub enum CreateRequiredInput {
         expected_type: String,
         concrete_types: Vec<String>,
     },
-    RecursiveObject {
-        type_name: String,
-    },
     Unsupported {
         message: String,
     },
@@ -203,7 +230,6 @@ pub enum CreateRequiredInput {
 pub(crate) enum PreparedMutationOp {
     InsertRecord {
         file: String,
-        sheet: Option<String>,
         actual_type: TypeName,
         key: RecordKey,
         fields: BTreeMap<String, CfdValue>,
@@ -212,8 +238,15 @@ pub(crate) enum PreparedMutationOp {
         record: RecordCoordinate,
         write_record: RecordCoordinate,
         write_file: String,
-        path: Vec<coflow_api::WriteFieldPathSegment>,
+        path: Vec<crate::api::WriteFieldPathSegment>,
         value: CfdValue,
+        materialized_top_level: Option<CfdValue>,
+    },
+    UnsetField {
+        record: RecordCoordinate,
+        write_record: RecordCoordinate,
+        write_file: String,
+        path: Vec<CfdPathSegment>,
     },
     WriteDimensionValue {
         record: RecordCoordinate,
@@ -243,7 +276,6 @@ pub(crate) enum PreparedMutationOp {
     TransferRecord {
         record: RecordCoordinate,
         destination_file: String,
-        destination_sheet: Option<String>,
         target_index: usize,
     },
     FoldedSetField {
@@ -292,6 +324,11 @@ impl PreparedMutationOp {
             | Self::FoldedSetField {
                 record, write_file, ..
             } => ("set_field", Some(record.clone()), Some(write_file.clone())),
+            Self::UnsetField {
+                record,
+                write_file,
+                ..
+            } => ("unset_field", Some(record.clone()), Some(write_file.clone())),
             Self::WriteDimensionValue {
                 record,
                 new_value,
@@ -375,7 +412,13 @@ pub struct MutationReport {
     pub failed: Vec<MutationFailedOp>,
     /// Deduplicated project-facing source paths changed by the transaction.
     pub affected_files: Vec<String>,
-    /// Provider diagnostics followed by diagnostics from the published generation.
+    /// Deduplicated project-relative paths physically published by the transaction.
+    ///
+    /// Hosts use this broader set to distinguish their own writes from external
+    /// filesystem changes. Unlike `affected_files`, it may contain non-CFD
+    /// project files such as `coflow.enum.lock.json`.
+    pub written_files: Vec<String>,
+    /// Writer diagnostics followed by diagnostics from the published generation.
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -423,34 +466,36 @@ const fn default_true() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use coflow_api::{Diagnostic, Label, Severity, SourceLocation};
+    use crate::api::{Diagnostic, Label, Severity, SourceLocation};
 
     use super::MutationFailedOp;
 
     #[test]
     fn mutation_failure_keeps_structured_diagnostics_after_flattening() {
         let primary = Label {
-            location: SourceLocation::TableCell {
-                path: "items.csv".into(),
-                sheet: Some("items".to_string()),
-                row: 2,
-                column: 3,
+            location: SourceLocation::FileSpan {
+                path: "items.cfd".into(),
+                start_line: 1,
+                start_character: 0,
+                end_line: 1,
+                end_character: 1,
             },
             message: Some("primary".to_string()),
         };
         let related = Label {
-            location: SourceLocation::TableCell {
-                path: "items.csv".into(),
-                sheet: Some("items".to_string()),
-                row: 4,
-                column: 3,
+            location: SourceLocation::FileSpan {
+                path: "items.cfd".into(),
+                start_line: 3,
+                start_character: 0,
+                end_line: 3,
+                end_character: 1,
             },
             message: Some("related".to_string()),
         };
         let failure = MutationFailedOp::from_diagnostics(
             0,
             "set_field",
-            coflow_api::DiagnosticSet::one(Diagnostic {
+            crate::api::DiagnosticSet::one(Diagnostic {
                 code: "TEST-STRUCTURED".to_string(),
                 stage: "WRITE".to_string(),
                 severity: Severity::Warning,

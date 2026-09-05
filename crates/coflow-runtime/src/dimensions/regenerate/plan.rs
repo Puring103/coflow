@@ -2,11 +2,11 @@ use super::{
     dimension_diagnostic, DimensionGenerationOperation, DimensionGenerationPlan,
     DimensionGenerationPlanOp, DimensionGenerationPlanResult,
 };
+use crate::api::DiagnosticSet;
+use crate::data_model::{CfdDataModel, CfdValue};
 use crate::dimensions::DimensionField;
-use coflow_api::DiagnosticSet;
-use coflow_cft::CftSchema;
-use coflow_data_model::{CfdDataModel, CfdValue};
-use coflow_project::Project;
+use crate::project::Project;
+use coflow_language::cft::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -47,7 +47,7 @@ fn plan_configured_dimension(
     fields: &[DimensionField],
     affected_fields: Option<&BTreeSet<usize>>,
     dimension: &str,
-    config: &coflow_project::DimensionConfig,
+    config: &crate::project::DimensionConfig,
 ) -> DimensionGenerationPlanResult {
     let mut diagnostics = DiagnosticSet::empty();
     let Some(out_dir) = config.out_dir.as_ref() else {
@@ -70,18 +70,14 @@ fn plan_configured_dimension(
         .enumerate()
         .filter(|(_, field)| field.dimension.as_str() == dimension)
     {
-        let provider_id = if field.is_singleton { "cfd" } else { "csv" };
         let path = out_dir.join(field.source_file_name());
-        let path_identity = coflow_project::normalized_path_identity(&path);
+        let path_identity = crate::project::normalized_path_identity(&path);
         expected_paths.insert(path_identity.clone());
         if affected_fields.is_some_and(|affected| !affected.contains(&field_index)) {
             continue;
         }
         let operation = DimensionGenerationOperation {
-            dimension: dimension.to_string(),
-            provider_id: provider_id.to_string(),
             path: path.clone(),
-            sheet: format!("{}_{}", field.bucket, field.source_field),
             actual_type: field.source_type.to_string(),
             entries: dimension_entries(schema, model, field),
             variants: config.variants.clone(),
@@ -189,8 +185,8 @@ fn reconcile_dimension_sources(
         .filter(|path| {
             path.extension()
                 .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| matches!(extension, "csv" | "cfd"))
-                && !expected_paths.contains(&coflow_project::normalized_path_identity(path))
+                .is_some_and(|extension| extension == "cfd")
+                && !expected_paths.contains(&crate::project::normalized_path_identity(path))
         })
         .collect::<Vec<_>>();
     let mut reconciliations = Vec::new();
@@ -239,33 +235,33 @@ fn dimension_entries(
     schema: &CftSchema,
     model: &CfdDataModel,
     field: &DimensionField,
-) -> Vec<coflow_api::DimensionSourceEntry> {
+) -> Vec<crate::api::DimensionSourceEntry> {
     if field.is_singleton {
         model
             .records_assignable_to(schema, &field.source_type)
             .next()
-            .map(|(_, record)| coflow_api::DimensionSourceEntry {
+            .map(|(_, record)| crate::api::DimensionSourceEntry {
                 key: field.source_field.to_string(),
                 actual_type: field.source_type.to_string(),
                 default: record
                     .fields()
                     .get(field.source_field.as_str())
                     .cloned()
-                    .unwrap_or(CfdValue::Null),
+                    .unwrap_or(CfdValue::OptionNone),
             })
             .into_iter()
             .collect()
     } else {
         model
             .records_assignable_to(schema, &field.source_type)
-            .map(|(_, record)| coflow_api::DimensionSourceEntry {
+            .map(|(_, record)| crate::api::DimensionSourceEntry {
                 key: record.key().to_string(),
                 actual_type: field.source_type.to_string(),
                 default: record
                     .fields()
                     .get(field.source_field.as_str())
                     .cloned()
-                    .unwrap_or(CfdValue::Null),
+                    .unwrap_or(CfdValue::OptionNone),
             })
             .collect()
     }

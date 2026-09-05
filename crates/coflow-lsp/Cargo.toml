@@ -2,18 +2,16 @@
 name = "coflow-lsp"
 version = "0.9.2"
 edition = "2021"
-description = "Language server implementation for Coflow CFT and CFD."
+description = "Language Server Protocol implementation for Coflow."
 license = "Apache-2.0"
-repository = "https://github.com/Puring103/coflow"
 publish = false
 
 [lints]
 workspace = true
 
 [dependencies]
-coflow-api = { path = "../coflow-api" }
-coflow-cft = { path = "../coflow-cft" }
-coflow-cfd = { path = "../coflow-cfd" }
-coflow-project = { path = "../coflow-project" }
+coflow-format = { path = "../coflow-format" }
+coflow-language = { path = "../coflow-language" }
 coflow-runtime = { path = "../coflow-runtime" }
 serde_json = { version = "1", features = ["preserve_order"] }
+similar = "2"

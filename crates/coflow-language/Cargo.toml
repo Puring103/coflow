@@ -1,0 +1,15 @@
+[package]
+name = "coflow-language"
+version = "0.9.1"
+edition = "2021"
+description = "Coflow's unified CFT and CFD language facade."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+unicode-ident = "1"

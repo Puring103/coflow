@@ -1,0 +1,321 @@
+#nullable enable
+abstract CoflowRuntime.CoflowTable.Count.get -> int
+abstract CoflowRuntime.CoflowTable.GetEnumerator() -> System.Collections.IEnumerator!
+abstract CoflowRuntime.CoflowTable.KeyType.get -> System.Type!
+abstract CoflowRuntime.CoflowTable.RecordType.get -> System.Type!
+Coflow
+CoflowRuntime.CfdDiagnostic
+CoflowRuntime.CfdDiagnostic.CfdDiagnostic(string! code, string! message, string! path, CoflowRuntime.CfdSpan? span = null) -> void
+CoflowRuntime.CfdDiagnostic.Code.get -> string!
+CoflowRuntime.CfdDiagnostic.Message.get -> string!
+CoflowRuntime.CfdDiagnostic.Path.get -> string!
+CoflowRuntime.CfdDiagnostic.Span.get -> CoflowRuntime.CfdSpan?
+CoflowRuntime.CfdLoadException
+CoflowRuntime.CfdLoadException.CfdLoadException(System.Collections.Generic.IReadOnlyList<CoflowRuntime.CfdDiagnostic!>! diagnostics) -> void
+CoflowRuntime.CfdLoadException.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.CfdDiagnostic!>!
+CoflowRuntime.CfdParseException
+CoflowRuntime.CfdParseException.CfdParseException(System.Collections.Generic.IReadOnlyList<CoflowRuntime.CfdDiagnostic!>! errors) -> void
+CoflowRuntime.CfdSpan
+CoflowRuntime.CfdSpan.CfdSpan() -> void
+CoflowRuntime.CfdSpan.CfdSpan(int startLine, int startColumn, int endLine, int endColumn) -> void
+CoflowRuntime.CfdSpan.EndColumn.get -> int
+CoflowRuntime.CfdSpan.EndLine.get -> int
+CoflowRuntime.CfdSpan.Equals(CoflowRuntime.CfdSpan other) -> bool
+CoflowRuntime.CfdSpan.StartColumn.get -> int
+CoflowRuntime.CfdSpan.StartLine.get -> int
+CoflowRuntime.CoflowEnumTable<T, TKey>
+CoflowRuntime.CoflowEnumTable<T, TKey>.Get(TKey key) -> CoflowRuntime.Option<T!>
+CoflowRuntime.CoflowEnumTable<T, TKey>.this[int index].get -> T!
+CoflowRuntime.CoflowFaultException
+CoflowRuntime.CoflowFaultException.CallStack.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.CoflowFunctionIdentity>!
+CoflowRuntime.CoflowFaultException.Function.get -> CoflowRuntime.CoflowFunctionIdentity
+CoflowRuntime.CoflowFaultException.SourcePath.get -> string!
+CoflowRuntime.CoflowFaultException.SourceSpan.get -> CoflowRuntime.CfdSpan?
+CoflowRuntime.CoflowFunctionIdentity
+CoflowRuntime.CoflowFunctionIdentity.CoflowFunctionIdentity() -> void
+CoflowRuntime.CoflowFunctionIdentity.CoflowFunctionIdentity(string! DeclaredType, string! RecordKey, string! FieldName, string! ValuePath = "") -> void
+CoflowRuntime.CoflowFunctionIdentity.DeclaredType.get -> string!
+CoflowRuntime.CoflowFunctionIdentity.DeclaredType.init -> void
+CoflowRuntime.CoflowFunctionIdentity.FieldName.get -> string!
+CoflowRuntime.CoflowFunctionIdentity.FieldName.init -> void
+CoflowRuntime.CoflowFunctionIdentity.RecordKey.get -> string!
+CoflowRuntime.CoflowFunctionIdentity.RecordKey.init -> void
+CoflowRuntime.CoflowFunctionIdentity.ValuePath.get -> string!
+CoflowRuntime.CoflowFunctionIdentity.ValuePath.init -> void
+CoflowRuntime.CoflowFunctionNotBoundException
+CoflowRuntime.CoflowFunctionNotBoundException.CoflowFunctionNotBoundException() -> void
+CoflowRuntime.CoflowFunctionNotCompiledException
+CoflowRuntime.CoflowFunctionNotCompiledException.CoflowFunctionNotCompiledException() -> void
+CoflowRuntime.CoflowHostNotBoundException
+CoflowRuntime.CoflowHostNotBoundException.CoflowHostNotBoundException() -> void
+CoflowRuntime.CoflowLoadException
+CoflowRuntime.CoflowLoadException.CoflowLoadException(System.Collections.Generic.IReadOnlyList<CoflowRuntime.CfdDiagnostic!>! diagnostics) -> void
+CoflowRuntime.CoflowModule
+CoflowRuntime.CoflowModule.FunctionsCompiled.get -> bool
+CoflowRuntime.CoflowModule.Singleton<T>() -> CoflowRuntime.Option<T!>
+CoflowRuntime.CoflowModule.Table<TTable>(CoflowRuntime.Generated.ICoflowTableToken<TTable!>! token) -> TTable!
+CoflowRuntime.CoflowModuleSet
+CoflowRuntime.CoflowModuleSet.Add(CoflowRuntime.CoflowModule! module) -> CoflowRuntime.CoflowModuleSet!
+CoflowRuntime.CoflowModuleSet.CoflowModuleSet(params CoflowRuntime.CoflowModule![]! modules) -> void
+CoflowRuntime.CoflowModuleSet.Modules.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.CoflowModule!>!
+CoflowRuntime.CoflowModuleSet.Remove(CoflowRuntime.CoflowModule! module) -> CoflowRuntime.CoflowModuleSet!
+CoflowRuntime.CoflowModuleSet.Replace(CoflowRuntime.CoflowModule! current, CoflowRuntime.CoflowModule! replacement) -> CoflowRuntime.CoflowModuleSet!
+CoflowRuntime.CoflowModuleSet.Singleton<T>() -> CoflowRuntime.Option<T!>
+CoflowRuntime.CoflowModuleSet.Table<TTable>(CoflowRuntime.Generated.ICoflowTableToken<TTable!>! token) -> TTable!
+CoflowRuntime.CoflowStringTable<T>
+CoflowRuntime.CoflowStringTable<T>.Get(string! key) -> CoflowRuntime.Option<T!>
+CoflowRuntime.CoflowStringTable<T>.this[int index].get -> T!
+CoflowRuntime.CoflowTable
+CoflowRuntime.CoflowTable.CoflowTable() -> void
+CoflowRuntime.Generated.CfdFieldNode
+CoflowRuntime.Generated.CfdFieldNode.Name.get -> string!
+CoflowRuntime.Generated.CfdFieldNode.Span.get -> CoflowRuntime.CfdSpan
+CoflowRuntime.Generated.CfdFieldNode.Value.get -> CoflowRuntime.Generated.CfdValueNode!
+CoflowRuntime.Generated.CfdLoadContext
+CoflowRuntime.Generated.CfdLoadContext.Bindings.get -> System.Collections.Generic.IReadOnlyDictionary<string!, CoflowRuntime.Generated.ICfdTypeBinding!>!
+CoflowRuntime.Generated.CfdLoadContext.DefaultFunction(string! source, string! fieldName, System.Type! resultType, params System.Type![]! parameterTypes) -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CfdLoadContext.DefaultValue(string! source) -> CoflowRuntime.Generated.CfdValueNode!
+CoflowRuntime.Generated.CfdLoadContext.Diagnostics.get -> System.Collections.Generic.List<CoflowRuntime.CfdDiagnostic!>!
+CoflowRuntime.Generated.CfdLoadContext.EnterRecord(string! declaredType, string! key) -> System.IDisposable!
+CoflowRuntime.Generated.CfdLoadContext.FindRecord(string! declaredType, string! key) -> CoflowRuntime.Generated.CfdRecordNode?
+CoflowRuntime.Generated.CfdLoadContext.Function(CoflowRuntime.Generated.CfdValueNode? node, string! fieldName, System.Type! resultType, params System.Type![]! parameterTypes) -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CfdLoadContext.FunctionValue<TDelegate>(CoflowRuntime.Generated.CfdValueNode! node, System.Type! resultType, System.Type![]! parameterTypes, System.Func<CoflowRuntime.Generated.CoflowFunctionEntry!, TDelegate!>! factory) -> TDelegate!
+CoflowRuntime.Generated.CfdLoadContext.FunctionValueAot<TDelegate>(CoflowRuntime.Generated.CfdValueNode! node, System.Type! resultType, System.Type![]! parameterTypes, System.Func<CoflowRuntime.Generated.CoflowCallable, TDelegate!>! factory) -> TDelegate!
+CoflowRuntime.Generated.CfdLoadContext.Host() -> CoflowRuntime.Generated.CoflowHostState!
+CoflowRuntime.Generated.CfdLoadContext.RequiredFunction(CoflowRuntime.Generated.CfdValueNode? node, string! fieldName, System.Type! resultType, params System.Type![]! parameterTypes) -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CfdLoadContext.Resolve<T>(string! declaredType, string! key) -> T
+CoflowRuntime.Generated.CfdLoadContext.Resolve<T>(string! key) -> T
+CoflowRuntime.Generated.CfdLoadContext.WithRecordPath(CoflowRuntime.Generated.CfdRecordNode! record, System.Action! read) -> void
+CoflowRuntime.Generated.CfdLoadContext.WithRecordPath<T>(CoflowRuntime.Generated.CfdRecordNode! record, System.Func<T>! read) -> T
+CoflowRuntime.Generated.CfdRecordNode
+CoflowRuntime.Generated.CfdRecordNode.DeclaredType.get -> string!
+CoflowRuntime.Generated.CfdRecordNode.Fields.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>!
+CoflowRuntime.Generated.CfdRecordNode.GroupType.get -> string?
+CoflowRuntime.Generated.CfdRecordNode.Key.get -> string!
+CoflowRuntime.Generated.CfdRecordNode.Span.get -> CoflowRuntime.CfdSpan
+CoflowRuntime.Generated.CfdValueNode
+CoflowRuntime.Generated.CfdValueNode.Span.get -> CoflowRuntime.CfdSpan
+CoflowRuntime.Generated.CfdValueReader
+CoflowRuntime.Generated.CoflowAnnotation
+CoflowRuntime.Generated.CoflowAnnotation.Arguments.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotationArgument!>!
+CoflowRuntime.Generated.CoflowAnnotation.CoflowAnnotation(string! name, System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotationArgument!>! arguments) -> void
+CoflowRuntime.Generated.CoflowAnnotation.Name.get -> string!
+CoflowRuntime.Generated.CoflowAnnotationArgument
+CoflowRuntime.Generated.CoflowAnnotationArgument.CoflowAnnotationArgument(CoflowRuntime.Generated.CoflowAnnotationArgumentKind kind, object! value) -> void
+CoflowRuntime.Generated.CoflowAnnotationArgument.Kind.get -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgument.Value.get -> object!
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind.Bool = 4 -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind.Float = 3 -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind.Int = 2 -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind.Name = 0 -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowAnnotationArgumentKind.String = 1 -> CoflowRuntime.Generated.CoflowAnnotationArgumentKind
+CoflowRuntime.Generated.CoflowCallable
+CoflowRuntime.Generated.CoflowCallable.CoflowCallable() -> void
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<T1, TResult>(T1 arg1) -> TResult
+CoflowRuntime.Generated.CoflowCallable.Invoke<TResult>() -> TResult
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid() -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1, T2>(T1 arg1, T2 arg2) -> void
+CoflowRuntime.Generated.CoflowCallable.InvokeVoid<T1>(T1 arg1) -> void
+CoflowRuntime.Generated.CoflowConstant
+CoflowRuntime.Generated.CoflowConstant.CoflowConstant(string! declaredName, System.Type! runtimeType, object! value) -> void
+CoflowRuntime.Generated.CoflowConstant.CoflowConstant(string! declaredName, System.Type! runtimeType, System.Func<CoflowRuntime.Generated.CfdLoadContext!, object!>! factory) -> void
+CoflowRuntime.Generated.CoflowConstant.DeclaredName.get -> string!
+CoflowRuntime.Generated.CoflowConstant.RuntimeType.get -> System.Type!
+CoflowRuntime.Generated.CoflowConstant.Value.get -> object!
+CoflowRuntime.Generated.CoflowConstantValues
+CoflowRuntime.Generated.CoflowDelegateAdapter
+CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>
+CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.CoflowEnumTableToken() -> void
+CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.Empty.get -> CoflowRuntime.CoflowEnumTable<T!, TKey>!
+CoflowRuntime.Generated.CoflowEnumTableToken<T, TKey>.RecordType.get -> System.Type!
+CoflowRuntime.Generated.CoflowFieldBinding
+CoflowRuntime.Generated.CoflowFieldBinding.Name.get -> string!
+CoflowRuntime.Generated.CoflowFieldBinding.Read(object! record) -> object!
+CoflowRuntime.Generated.CoflowFieldBinding.Reader.get -> System.Delegate!
+CoflowRuntime.Generated.CoflowFieldBinding.RuntimeType.get -> System.Type!
+CoflowRuntime.Generated.CoflowFunctionEntry
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, T4, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, T2, TResult>(T1 arg1, T2 arg2) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<T1, TResult>(T1 arg1) -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.Invoke<TResult>() -> TResult
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid() -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3, T4, T5, T6, T7, T8>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3, T4, T5, T6, T7>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3, T4, T5, T6>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3, T4, T5>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3, T4>(T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1, T2>(T1 arg1, T2 arg2) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry.InvokeVoid<T1>(T1 arg1) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>
+CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.CoflowFunctionEntry(CoflowRuntime.Generated.CoflowFunctionEntry! entry, TDelegate! function) -> void
+CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.Function.get -> TDelegate!
+CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.RuntimeEntry.get -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CoflowHostFunctionBinding
+CoflowRuntime.Generated.CoflowHostFunctionBinding.CoflowHostFunctionBinding() -> void
+CoflowRuntime.Generated.CoflowHostFunctionBinding.CoflowHostFunctionBinding(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Delegate! implementation) -> void
+CoflowRuntime.Generated.CoflowHostFunctionBinding.Entry.get -> CoflowRuntime.Generated.CoflowFunctionEntry!
+CoflowRuntime.Generated.CoflowHostFunctionBinding.Implementation.get -> System.Delegate!
+CoflowRuntime.Generated.CoflowHostState
+CoflowRuntime.Generated.CoflowHostState.Configure(System.Action! assignFields, params CoflowRuntime.Generated.CoflowHostFunctionBinding[]! functions) -> void
+CoflowRuntime.Generated.CoflowHostState.EnsureBound() -> void
+CoflowRuntime.Generated.CoflowStringTableToken<T>
+CoflowRuntime.Generated.CoflowStringTableToken<T>.CoflowStringTableToken() -> void
+CoflowRuntime.Generated.CoflowStringTableToken<T>.Empty.get -> CoflowRuntime.CoflowStringTable<T!>!
+CoflowRuntime.Generated.CoflowStringTableToken<T>.RecordType.get -> System.Type!
+CoflowRuntime.Generated.ICfdTypeBinding
+CoflowRuntime.Generated.ICfdTypeBinding.AssignableTypes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+CoflowRuntime.Generated.ICfdTypeBinding.DeclaredType.get -> string!
+CoflowRuntime.Generated.ICfdTypeBinding.ObjectFieldType(string! fieldName) -> string?
+CoflowRuntime.Generated.ICfdTypeBinding.Read(CoflowRuntime.Generated.CfdRecordNode! record, CoflowRuntime.Generated.CfdLoadContext! context) -> object!
+CoflowRuntime.Generated.ICfdTypeBinding.ReferenceFieldType(string! fieldName) -> string?
+CoflowRuntime.Generated.ICoflowEnumMetadata
+CoflowRuntime.Generated.ICoflowEnumMetadata.Annotations.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
+CoflowRuntime.Generated.ICoflowEnumMetadata.DeclaredType.get -> string!
+CoflowRuntime.Generated.ICoflowEnumMetadata.FromInt64(long value) -> object!
+CoflowRuntime.Generated.ICoflowEnumMetadata.IsFlags.get -> bool
+CoflowRuntime.Generated.ICoflowEnumMetadata.RuntimeType.get -> System.Type!
+CoflowRuntime.Generated.ICoflowEnumMetadata.VariantAnnotations(string! variantName) -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
+CoflowRuntime.Generated.ICoflowEnumMetadata.Variants.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>!
+CoflowRuntime.Generated.ICoflowGeneratedContract
+CoflowRuntime.Generated.ICoflowGeneratedContract.Constants.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowConstant!>!
+CoflowRuntime.Generated.ICoflowGeneratedContract.Enums.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.ICoflowEnumMetadata!>!
+CoflowRuntime.Generated.ICoflowGeneratedContract.Types.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.ICoflowTypeMetadata!>!
+CoflowRuntime.Generated.ICoflowHostMetadata
+CoflowRuntime.Generated.ICoflowHostMetadata.CreateHost(CoflowRuntime.Generated.CfdLoadContext! context) -> object!
+CoflowRuntime.Generated.ICoflowRecordMetadata
+CoflowRuntime.Generated.ICoflowRecordMetadata.CreateRecord(string! key, CoflowRuntime.Generated.CfdLoadContext! context) -> object!
+CoflowRuntime.Generated.ICoflowRecordMetadata.GetKeyReader() -> System.Delegate!
+CoflowRuntime.Generated.ICoflowRecordMetadata.KeyType.get -> System.Type!
+CoflowRuntime.Generated.ICoflowRecordMetadata.ParseKey(string! key) -> object!
+CoflowRuntime.Generated.ICoflowRecordMetadata.PopulateRecord(object! target, CoflowRuntime.Generated.CfdRecordNode! record, CoflowRuntime.Generated.CfdLoadContext! context) -> void
+CoflowRuntime.Generated.ICoflowTableToken<TTable>
+CoflowRuntime.Generated.ICoflowTableToken<TTable>.Empty.get -> TTable!
+CoflowRuntime.Generated.ICoflowTableToken<TTable>.RecordType.get -> System.Type!
+CoflowRuntime.Generated.ICoflowTypeMetadata
+CoflowRuntime.Generated.ICoflowTypeMetadata.Annotations.get -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
+CoflowRuntime.Generated.ICoflowTypeMetadata.CreateObject(CoflowRuntime.Generated.CfdLoadContext! context, System.Collections.Generic.IReadOnlyDictionary<string!, object?>! fields) -> object!
+CoflowRuntime.Generated.ICoflowTypeMetadata.CreateVmDefaultFactory(string! fieldName, CoflowRuntime.Generated.CfdLoadContext! context) -> System.Delegate!
+CoflowRuntime.Generated.ICoflowTypeMetadata.CreateVmObjectFactory(CoflowRuntime.Generated.CfdLoadContext! context) -> System.Delegate!
+CoflowRuntime.Generated.ICoflowTypeMetadata.FieldAnnotations(string! fieldName) -> System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CoflowAnnotation!>!
+CoflowRuntime.Generated.ICoflowTypeMetadata.FieldNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+CoflowRuntime.Generated.ICoflowTypeMetadata.GetFieldBinding(string! fieldName) -> CoflowRuntime.Generated.CoflowFieldBinding!
+CoflowRuntime.Generated.ICoflowTypeMetadata.HasFieldDefault(string! fieldName) -> bool
+CoflowRuntime.Generated.ICoflowTypeMetadata.IsAbstract.get -> bool
+CoflowRuntime.Generated.ICoflowTypeMetadata.IsSealed.get -> bool
+CoflowRuntime.Generated.ICoflowTypeMetadata.IsSingleton.get -> bool
+CoflowRuntime.Generated.ICoflowTypeMetadata.RuntimeType.get -> System.Type!
+CoflowRuntime.Option<T>
+CoflowRuntime.Option<T>.Equals(CoflowRuntime.Option<T> other) -> bool
+CoflowRuntime.Option<T>.HasValue.get -> bool
+CoflowRuntime.Option<T>.Option() -> void
+CoflowRuntime.Option<T>.TryGetValue(out T value) -> bool
+CoflowRuntime.Option<T>.Value.get -> T
+CoflowRuntime.Result<T, TError>
+CoflowRuntime.Result<T, TError>.Equals(CoflowRuntime.Result<T, TError> other) -> bool
+CoflowRuntime.Result<T, TError>.Error.get -> TError
+CoflowRuntime.Result<T, TError>.IsErr.get -> bool
+CoflowRuntime.Result<T, TError>.IsOk.get -> bool
+CoflowRuntime.Result<T, TError>.Result() -> void
+CoflowRuntime.Result<T, TError>.Value.get -> T
+CoflowRuntime.Unit
+CoflowRuntime.Unit.Equals(CoflowRuntime.Unit other) -> bool
+CoflowRuntime.Unit.Unit() -> void
+override CoflowRuntime.CfdDiagnostic.ToString() -> string!
+override CoflowRuntime.CfdSpan.Equals(object? obj) -> bool
+override CoflowRuntime.CfdSpan.GetHashCode() -> int
+override CoflowRuntime.CfdSpan.ToString() -> string!
+override CoflowRuntime.CoflowEnumTable<T, TKey>.Count.get -> int
+override CoflowRuntime.CoflowEnumTable<T, TKey>.GetEnumerator() -> System.Collections.IEnumerator!
+override CoflowRuntime.CoflowEnumTable<T, TKey>.KeyType.get -> System.Type!
+override CoflowRuntime.CoflowEnumTable<T, TKey>.RecordType.get -> System.Type!
+override CoflowRuntime.CoflowStringTable<T>.Count.get -> int
+override CoflowRuntime.CoflowStringTable<T>.GetEnumerator() -> System.Collections.IEnumerator!
+override CoflowRuntime.CoflowStringTable<T>.KeyType.get -> System.Type!
+override CoflowRuntime.CoflowStringTable<T>.RecordType.get -> System.Type!
+override CoflowRuntime.Option<T>.Equals(object? obj) -> bool
+override CoflowRuntime.Option<T>.GetHashCode() -> int
+override CoflowRuntime.Option<T>.ToString() -> string!
+override CoflowRuntime.Result<T, TError>.Equals(object? obj) -> bool
+override CoflowRuntime.Result<T, TError>.GetHashCode() -> int
+override CoflowRuntime.Unit.Equals(object? obj) -> bool
+override CoflowRuntime.Unit.GetHashCode() -> int
+override CoflowRuntime.Unit.ToString() -> string!
+static Coflow.LoadAndCompile(string! cfd, CoflowRuntime.Generated.ICoflowGeneratedContract! contract) -> CoflowRuntime.CoflowModule!
+static Coflow.LoadAndCompile(string![]! cfdSources, CoflowRuntime.Generated.ICoflowGeneratedContract! contract) -> CoflowRuntime.CoflowModule!
+static Coflow.LoadData(string! cfd, CoflowRuntime.Generated.ICoflowGeneratedContract! contract) -> CoflowRuntime.CoflowModule!
+static Coflow.LoadData(string![]! cfdSources, CoflowRuntime.Generated.ICoflowGeneratedContract! contract) -> CoflowRuntime.CoflowModule!
+static Coflow.Modules(params CoflowRuntime.CoflowModule![]! modules) -> CoflowRuntime.CoflowModuleSet!
+static CoflowRuntime.Generated.CfdValueReader.Array<T>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, T>! read) -> System.Collections.Generic.IReadOnlyList<T>!
+static CoflowRuntime.Generated.CfdValueReader.Boolean(CoflowRuntime.Generated.CfdValueNode! node) -> bool
+static CoflowRuntime.Generated.CfdValueReader.Dictionary<TKey, TValue>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, TKey>! readKey, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, TValue>! readValue) -> System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>!
+static CoflowRuntime.Generated.CfdValueReader.Enum<T>(CoflowRuntime.Generated.CfdValueNode! node) -> T
+static CoflowRuntime.Generated.CfdValueReader.Enum<T>(CoflowRuntime.Generated.CfdValueNode! node, string! enumName, System.Func<string!, T?>! resolve) -> T
+static CoflowRuntime.Generated.CfdValueReader.EnumText<T>(string! value) -> T
+static CoflowRuntime.Generated.CfdValueReader.EnumText<T>(string! value, string! enumName, System.Func<string!, T?>! resolve) -> T
+static CoflowRuntime.Generated.CfdValueReader.EnumToken(CoflowRuntime.Generated.CfdValueNode! node, string! enumName) -> string!
+static CoflowRuntime.Generated.CfdValueReader.EnumToken<T>(CoflowRuntime.Generated.CfdValueNode! node, string! enumName, System.Func<string!, T?>! resolve) -> T
+static CoflowRuntime.Generated.CfdValueReader.Field(System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>! fields, string! name) -> CoflowRuntime.Generated.CfdValueNode!
+static CoflowRuntime.Generated.CfdValueReader.FindField(System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>! fields, string! name) -> CoflowRuntime.Generated.CfdValueNode?
+static CoflowRuntime.Generated.CfdValueReader.Flags<T>(CoflowRuntime.Generated.CfdValueNode! node, string! enumName, long declaredMask, System.Func<string!, long?>! resolve) -> T
+static CoflowRuntime.Generated.CfdValueReader.Float32(CoflowRuntime.Generated.CfdValueNode! node) -> float
+static CoflowRuntime.Generated.CfdValueReader.Float64(CoflowRuntime.Generated.CfdValueNode! node) -> double
+static CoflowRuntime.Generated.CfdValueReader.Int32(CoflowRuntime.Generated.CfdValueNode! node) -> int
+static CoflowRuntime.Generated.CfdValueReader.Int64(CoflowRuntime.Generated.CfdValueNode! node) -> long
+static CoflowRuntime.Generated.CfdValueReader.Object<T>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, string? expectedType, System.Func<System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>!, string!, CoflowRuntime.Generated.CfdLoadContext!, T>! read) -> T
+static CoflowRuntime.Generated.CfdValueReader.Object<T>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, System.Func<System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>!, string!, CoflowRuntime.Generated.CfdLoadContext!, T>! read) -> T
+static CoflowRuntime.Generated.CfdValueReader.Option<T>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, T>! read) -> CoflowRuntime.Option<T>
+static CoflowRuntime.Generated.CfdValueReader.Reference<T>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, string! declaredType) -> T
+static CoflowRuntime.Generated.CfdValueReader.Result<T, TError>(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, T>! readValue, System.Func<CoflowRuntime.Generated.CfdValueNode!, CoflowRuntime.Generated.CfdLoadContext!, TError>! readError) -> CoflowRuntime.Result<T, TError>
+static CoflowRuntime.Generated.CfdValueReader.String(CoflowRuntime.Generated.CfdValueNode! node) -> string!
+static CoflowRuntime.Generated.CfdValueReader.String(CoflowRuntime.Generated.CfdValueNode! node, CoflowRuntime.Generated.CfdLoadContext! context) -> string!
+static CoflowRuntime.Generated.CfdValueReader.ValidateFields(System.Collections.Generic.IReadOnlyList<CoflowRuntime.Generated.CfdFieldNode!>! fields, params string![]! expected) -> void
+static CoflowRuntime.Generated.CoflowConstantValues.Dictionary<TKey, TValue>(params System.Collections.Generic.KeyValuePair<TKey, TValue>[]! entries) -> System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>!
+static CoflowRuntime.Generated.CoflowConstantValues.List<T>(params T[]! values) -> System.Collections.Generic.IReadOnlyList<T>!
+static CoflowRuntime.Generated.CoflowDelegateAdapter.Register<TDelegate>(System.Func<CoflowRuntime.Generated.CoflowCallable, TDelegate!>! factory) -> void
+static CoflowRuntime.Generated.CoflowFieldBinding.Create<TRecord, TValue>(string! name, System.Func<TRecord, TValue>! reader) -> CoflowRuntime.Generated.CoflowFieldBinding!
+static CoflowRuntime.Generated.CoflowFieldBinding.CreateEnum<TRecord, TEnum>(string! name, System.Func<TRecord, TEnum>! reader, System.Func<TEnum, long>! toInt64) -> CoflowRuntime.Generated.CoflowFieldBinding!
+static CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.Create(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<CoflowRuntime.Generated.CoflowFunctionEntry!, TDelegate!>! factory) -> CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate!>!
+static CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate>.CreateAot(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<CoflowRuntime.Generated.CoflowCallable, TDelegate!>! factory) -> CoflowRuntime.Generated.CoflowFunctionEntry<TDelegate!>!
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6, T7, T8>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3, T4, T5, T6, T7, T8>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6, T7, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, T4, T5, T6, T7, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6, T7>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3, T4, T5, T6, T7>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, T4, T5, T6, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, T6>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3, T4, T5, T6>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, T4, T5, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, T5>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3, T4, T5>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, T4, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, T4>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3, T4>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, T3, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, T3>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2, T3>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, T2, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, T2>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1, T2>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1, TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<T1, TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<T1>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Action<T1>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Generated.CoflowHostFunctionBinding.Create<TResult>(CoflowRuntime.Generated.CoflowFunctionEntry! entry, System.Func<TResult>! implementation) -> CoflowRuntime.Generated.CoflowHostFunctionBinding
+static CoflowRuntime.Option<T>.None.get -> CoflowRuntime.Option<T>
+static CoflowRuntime.Option<T>.Some(T value) -> CoflowRuntime.Option<T>
+static CoflowRuntime.Result<T, TError>.Err(TError error) -> CoflowRuntime.Result<T, TError>
+static CoflowRuntime.Result<T, TError>.Ok(T value) -> CoflowRuntime.Result<T, TError>
+static CoflowRuntime.Unit.Value.get -> CoflowRuntime.Unit

@@ -29,8 +29,8 @@ mod uri;
 mod validation;
 
 #[cfg(test)]
-use coflow_project::normalize_path;
-use coflow_project::Project;
+use coflow_runtime::normalize_path;
+use coflow_runtime::Project;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{
@@ -47,10 +47,11 @@ use definition::{
 use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
-use formatting::format_cft;
+use coflow_format::{format_cfd, format_cft};
+use formatting::formatting_edits;
 use hover::hover_at;
 use position::{
-    byte_offset_from_position, byte_range, full_document_range, range_from_span, LspPosition,
+    byte_offset_from_position, byte_range, range_from_span, LspPosition,
 };
 use protocol::{
     did_change_document, did_change_watched_files, did_open_document, did_save_document,
@@ -65,6 +66,7 @@ pub(crate) use state::{
 };
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
+use std::io::Cursor as EmbeddedCursor;
 #[cfg(test)]
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -74,14 +76,13 @@ pub(crate) use text::{
     parse_dotted_ident_chain, previous_char, word_at,
 };
 use uri::path_from_file_uri;
-#[cfg(test)]
 pub(crate) use uri::path_to_file_uri;
 pub(crate) use validation::{
     DiagnosticPublication, LspRequestDocument, LspValidationCore, ValidationSnapshot,
     ValidationWorker,
 };
 
-enum RunEvent {
+pub(crate) enum RunEvent {
     Incoming(Vec<u8>),
     ReadError(String),
     EndOfInput,
@@ -257,6 +258,7 @@ enum RequestMethod {
     DocumentSymbol,
     Formatting,
     SemanticTokens,
+    FunctionDocument,
     Shutdown,
 }
 
@@ -270,13 +272,14 @@ impl RequestMethod {
             "textDocument/documentSymbol" => Some(Self::DocumentSymbol),
             "textDocument/formatting" => Some(Self::Formatting),
             "textDocument/semanticTokens/full" => Some(Self::SemanticTokens),
+            "coflow/functionDocument" => Some(Self::FunctionDocument),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
         }
     }
 
     const fn requires_snapshot(self) -> bool {
-        !matches!(self, Self::Initialize | Self::Shutdown)
+        !matches!(self, Self::Initialize | Self::FunctionDocument | Self::Shutdown)
     }
 }
 
@@ -294,6 +297,108 @@ struct LspServer<W> {
     writer: W,
     shutdown_requested: bool,
     should_exit: bool,
+}
+
+/// In-process transport for hosts that embed the Coflow language server.
+///
+/// Requests and notifications pass through the same [`LspServer`] dispatcher
+/// used by the stdio CLI. The returned values are ordinary JSON-RPC messages,
+/// including diagnostics published while a document is synchronized.
+pub struct EmbeddedLsp {
+    server: LspServer<Vec<u8>>,
+    next_request_id: u64,
+}
+
+impl std::fmt::Debug for EmbeddedLsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmbeddedLsp")
+            .field("next_request_id", &self.next_request_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl EmbeddedLsp {
+    #[must_use]
+    pub fn new(project: Project) -> Self {
+        Self {
+            server: LspServer::new(project, Vec::new()),
+            next_request_id: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn file_uri(path: &std::path::Path) -> String {
+        path_to_file_uri(path)
+    }
+
+    #[must_use]
+    pub fn semantic_token_types() -> Vec<String> {
+        SEMANTIC_TOKEN_TYPES
+            .iter()
+            .map(|token_type| (*token_type).to_string())
+            .collect()
+    }
+
+    /// Sends an LSP notification and returns every notification emitted by the server.
+    ///
+    /// # Errors
+    /// Returns an error when the LSP handler or embedded transport fails.
+    pub fn notify(&mut self, method: &str, params: Value) -> Result<Vec<Value>, String> {
+        self.server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        }))?;
+        self.take_messages()
+    }
+
+    /// Sends an LSP request and returns its result plus notifications emitted while handling it.
+    ///
+    /// # Errors
+    /// Returns an error when the LSP handler, response, or embedded transport fails.
+    pub fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<(Value, Vec<Value>), String> {
+        self.next_request_id = self.next_request_id.saturating_add(1);
+        let id = self.next_request_id;
+        self.server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }))?;
+        let messages = self.take_messages()?;
+        let mut result = None;
+        let mut notifications = Vec::new();
+        for message in messages {
+            if message.get("id").and_then(Value::as_u64) == Some(id) {
+                if let Some(error) = message.get("error") {
+                    return Err(format!("embedded LSP request `{method}` failed: {error}"));
+                }
+                result = message.get("result").cloned();
+            } else {
+                notifications.push(message);
+            }
+        }
+        result
+            .map(|result| (result, notifications))
+            .ok_or_else(|| format!("embedded LSP request `{method}` returned no response"))
+    }
+
+    fn take_messages(&mut self) -> Result<Vec<Value>, String> {
+        let bytes = std::mem::take(&mut self.server.writer);
+        let mut reader = EmbeddedCursor::new(bytes);
+        let mut messages = Vec::new();
+        while let Some(body) = read_message(&mut reader)? {
+            messages.push(
+                serde_json::from_slice(&body)
+                    .map_err(|error| format!("failed to parse embedded LSP response: {error}"))?,
+            );
+        }
+        Ok(messages)
+    }
 }
 
 fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) -> Value {
@@ -377,6 +482,9 @@ impl<W: Write> LspServer<W> {
             (Some(id), Some(RequestMethod::DocumentSymbol), _) => self.document_symbol(&id, params),
             (Some(id), Some(RequestMethod::Formatting), _) => self.formatting(&id, params),
             (Some(id), Some(RequestMethod::SemanticTokens), _) => self.semantic_tokens(&id, params),
+            (Some(id), Some(RequestMethod::FunctionDocument), _) => {
+                self.write_response(&id, &cfd::function_document(params))
+            }
             (Some(id), Some(RequestMethod::Shutdown), _) => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)
@@ -450,7 +558,7 @@ impl<W: Write> LspServer<W> {
                     }
                 },
                 "serverInfo": {
-                    "name": "coflow-lsp",
+                    "name": "coflow",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }),
@@ -511,7 +619,13 @@ impl<W: Write> LspServer<W> {
         let result = match self.request_document(&request.uri)? {
             LspRequestDocument::Cfd(document) => {
                 let offset = byte_offset_from_position(document.source, request.position);
-                cfd::completion(document.source, document.ast, document.schema, offset)
+                cfd::completion_with_build(
+                    document.source,
+                    document.ast,
+                    document.schema,
+                    document.build,
+                    offset,
+                )
             }
             LspRequestDocument::Cft { build, document } => {
                 json!(completion_items(build, document, &request.position))
@@ -573,22 +687,22 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = {
-            let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, &json!([]));
-            };
-            let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, &json!([]));
-            };
-            let formatted = format_cft(&document.source);
-            if formatted == document.source() {
-                json!([])
-            } else {
-                json!([{
-                    "range": full_document_range(&document.source),
-                    "newText": formatted
-                }])
+        let result = match self.request_document(&uri)? {
+            LspRequestDocument::Cfd(document) => {
+                if !document.syntax_valid {
+                    return self.write_response(id, &json!([]));
+                }
+                let formatted = format_cfd(document.source);
+                json!(formatting_edits(document.source, &formatted))
             }
+            LspRequestDocument::Cft { document, .. } => {
+                if document.ast().is_none() {
+                    return self.write_response(id, &json!([]));
+                }
+                let formatted = format_cft(&document.source);
+                json!(formatting_edits(&document.source, &formatted))
+            }
+            LspRequestDocument::Missing => json!([]),
         };
         self.write_response(id, &result)
     }
@@ -599,11 +713,14 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                cfd::semantic_tokens(document.source, document.ast)
+                let mut result = cfd::semantic_tokens(document.source, document.ast, document.schema);
+                result["x-coflow-syntax-valid"] = json!(document.syntax_valid);
+                result
             }
             LspRequestDocument::Cft { build, document } => {
                 json!({
-                    "data": semantic_token_data(build, document)
+                    "data": semantic_token_data(build, document),
+                    "x-coflow-syntax-valid": true
                 })
             }
             LspRequestDocument::Missing => json!({"data": []}),
@@ -615,12 +732,6 @@ impl<W: Write> LspServer<W> {
         let publications = self.core.prepare_request_document(uri);
         self.publish_diagnostic_publications(publications)?;
         Ok(self.core.request_document(uri))
-    }
-
-    fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
-        let publications = self.core.ensure_build_publications();
-        self.publish_diagnostic_publications(publications)?;
-        Ok(self.core.build())
     }
 
     fn publish_diagnostics(
@@ -723,8 +834,8 @@ fn is_fatal_lsp_handler_error(message: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::too_many_lines)]
 mod tests {
+    use super::position::position_from_byte;
     use super::*;
-    use crate::position::position_from_byte;
 
     mod cfd_tests;
     mod cft;

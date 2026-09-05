@@ -22,6 +22,7 @@ export type Route =
   | { view: 'table'; file: string; viewId: string; typeFilter?: string }
   | { view: 'record'; file: string; viewId: string; coordinate: RecordCoordinate }
   | { view: 'graph'; file: string; viewId: string; typeFilter?: string }
+  | { view: 'source'; file: string; viewId: string; typeFilter?: string }
 
 export type GraphNodeView = GraphNode & {
   id: string
@@ -61,12 +62,46 @@ export function recordFields(object: CfdObject): FieldCell[] {
     .map(([name, value]) => ({
       name,
       value,
+      missing: false,
       annotation: null,
     }))
 }
 
 export function objectFields(value: FieldValue): FieldCell[] {
   return value.kind === 'object' ? recordFields(value.value) : []
+}
+
+/** 按 schema 顺序投影对象字段，并为尚未写入 CFD 的必填字段保留可编辑行。 */
+export function objectFieldCells(
+  value: FieldValue,
+  annotation: FieldAnnotation | null | undefined,
+): FieldCell[] {
+  if (value.kind !== 'object') return []
+
+  const fields = value.value.fields
+  const orderedNames = annotation?.field_order ?? []
+  const orderedSet = new Set(orderedNames)
+  const schemaCells = orderedNames.map(name => {
+    const child = annotation?.children?.[name] ?? null
+    const fieldValue = fields[name]
+    return {
+      name,
+      value: fieldValue ?? nullValue(),
+      missing: fieldValue === undefined,
+      annotation: child,
+    } satisfies FieldCell
+  })
+  const extraCells = Object.entries(fields)
+    .filter(([name]) => !orderedSet.has(name))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, fieldValue]) => ({
+      name,
+      value: fieldValue,
+      missing: false,
+      annotation: annotation?.children?.[name] ?? null,
+    } satisfies FieldCell))
+
+  return [...schemaCells, ...extraCells]
 }
 
 export function cellDeclaredType(cell: FieldCell): string | undefined {
@@ -103,6 +138,10 @@ export function annotationReadOnly(annotation: FieldAnnotation | null | undefine
 
 export function annotationItem(annotation: FieldAnnotation | null | undefined): FieldAnnotation | undefined {
   return annotation?.item_annotation ?? undefined
+}
+
+export function annotationKey(annotation: FieldAnnotation | null | undefined): FieldAnnotation | undefined {
+  return annotation?.key_annotation ?? undefined
 }
 
 export function annotationPolymorphicTypes(annotation: FieldAnnotation | null | undefined): string[] {
@@ -173,7 +212,84 @@ export function deletedSnapshotValue(snapshot: DeletedRecordSnapshot): FieldValu
 }
 
 export function nullValue(): FieldValue {
-  return { kind: 'null' }
+  return { kind: 'option_none' }
+}
+
+/** 必填缺失字段直接写值；只有明确的 Option 层才创建 Some。 */
+export function applyCreatedValue(
+  current: FieldValue,
+  optionLayer: number | null,
+  created: FieldValue,
+): FieldValue {
+  return optionLayer === null
+    ? created
+    : replaceOptionLayer(current, optionLayer, { kind: 'option_some', value: created })
+}
+
+export function isNullValue(value: FieldValue): boolean {
+  return value.kind === 'option_none'
+}
+
+export function presentationValue(value: FieldValue): FieldValue {
+  switch (value.kind) {
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return presentationValue(value.value)
+    default:
+      return value
+  }
+}
+
+export function replacePresentationValue(original: FieldValue, value: FieldValue): FieldValue {
+  if (value.kind === 'option_none') return value
+  switch (original.kind) {
+    case 'option_some': return {
+      kind: 'option_some',
+      value: replacePresentationValue(original.value, value),
+    }
+    case 'option_none': return { kind: 'option_some', value }
+    case 'result_ok': return {
+      kind: 'result_ok',
+      value: replacePresentationValue(original.value, value),
+    }
+    case 'result_err': return {
+      kind: 'result_err',
+      value: replacePresentationValue(original.value, value),
+    }
+    default: return value
+  }
+}
+
+export function optionLayerStates(
+  value: FieldValue,
+  declaredDepth: number,
+): Array<'some' | 'none'> {
+  const states: Array<'some' | 'none'> = []
+  let current = value
+  for (let depth = 0; depth < declaredDepth; depth += 1) {
+    if (current.kind === 'option_some') {
+      states.push('some')
+      current = current.value
+      continue
+    }
+    states.push('none')
+    break
+  }
+  return states
+}
+
+export function replaceOptionLayer(
+  value: FieldValue,
+  layer: number,
+  replacement: FieldValue,
+): FieldValue {
+  if (layer === 0) return replacement
+  if (value.kind !== 'option_some') return value
+  return {
+    kind: 'option_some',
+    value: replaceOptionLayer(value.value, layer - 1, replacement),
+  }
 }
 
 export function stringValue(value: string): FieldValue {
@@ -222,8 +338,24 @@ export function diagnosticMatchesCoordinate(
   diagnostic: DiagnosticItem,
   coordinate: RecordCoordinate,
 ): boolean {
-  if (diagnostic.record_key !== coordinate.key) return false
-  return diagnostic.actual_type === null || diagnostic.actual_type === coordinate.actual_type
+  const target = diagnosticRecordTarget(diagnostic)
+  return !!target
+    && target.coordinate.key === coordinate.key
+    && target.coordinate.actual_type === coordinate.actual_type
+}
+
+export function diagnosticRecordTarget(diagnostic: DiagnosticItem) {
+  return diagnostic.target.kind === 'table_field' || diagnostic.target.kind === 'record'
+    ? diagnostic.target
+    : null
+}
+
+export function diagnosticFilePath(diagnostic: DiagnosticItem): string | null {
+  return diagnostic.target.kind === 'none' ? null : diagnostic.target.file_path
+}
+
+export function diagnosticFieldPath(diagnostic: DiagnosticItem): string | null {
+  return diagnostic.target.kind === 'table_field' ? diagnostic.target.field_path : null
 }
 
 export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'info' {
@@ -250,15 +382,7 @@ export function diagnosticDisplayMessage(diagnostic: DiagnosticItem): string {
  *  so a focus request survives project snapshot refreshes even without an
  *  explicit ID field on FlatDiagnostic. */
 export function diagnosticKey(diagnostic: DiagnosticItem): string {
-  return [
-    diagnostic.file_path ?? '',
-    diagnostic.actual_type ?? '',
-    diagnostic.record_key ?? '',
-    diagnostic.field_path ?? '',
-    diagnostic.severity,
-    diagnostic.code,
-    diagnosticDisplayMessage(diagnostic),
-  ].join('')
+  return diagnostic.id
 }
 
 /** Compare a diagnostic against a (record, field?) anchor. When `fieldPath`
@@ -272,15 +396,17 @@ export function diagnosticMatchesAnchor(
   actualType: string | null,
   fieldPath: string | null,
 ): boolean {
-  if (diagnostic.file_path !== filePath) return false
-  if (diagnostic.record_key !== recordKey) return false
-  if (actualType !== null && diagnostic.actual_type !== null && diagnostic.actual_type !== actualType) {
+  const target = diagnosticRecordTarget(diagnostic)
+  if (!target || target.file_path !== filePath) return false
+  if (target.coordinate.key !== recordKey) return false
+  if (actualType !== null && target.coordinate.actual_type !== actualType) {
     return false
   }
   if (fieldPath === null) return true
-  if (!diagnostic.field_path) return false
-  if (diagnostic.field_path === fieldPath) return true
-  return topLevelSegment(diagnostic.field_path) === topLevelSegment(fieldPath)
+  const diagnosticPath = diagnosticFieldPath(diagnostic)
+  if (!diagnosticPath) return false
+  if (diagnosticPath === fieldPath) return true
+  return topLevelSegment(diagnosticPath) === topLevelSegment(fieldPath)
 }
 
 function topLevelSegment(path: string): string {
@@ -364,6 +490,10 @@ function normalizeTaggedWireObject(object: Record<string, unknown>): unknown {
       return { ...object, value: normalizeEnumWireValue(object.value) }
     case 'object':
       return { ...object, value: normalizeWireValue(object.value) }
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return { ...object, value: normalizeWireValue(object.value) }
     case 'array':
       return {
         ...object,
@@ -422,8 +552,14 @@ function isEditorError(err: unknown): err is EditorError {
 
 export function cloneValue(value: FieldValue): FieldValue {
   switch (value.kind) {
-    case 'null':
-      return { kind: 'null' }
+    case 'option_none':
+      return { kind: 'option_none' }
+    case 'option_some':
+      return { kind: 'option_some', value: cloneValue(value.value) }
+    case 'result_ok':
+      return { kind: 'result_ok', value: cloneValue(value.value) }
+    case 'result_err':
+      return { kind: 'result_err', value: cloneValue(value.value) }
     case 'bool':
       return { kind: 'bool', value: value.value }
     case 'int':
@@ -434,6 +570,8 @@ export function cloneValue(value: FieldValue): FieldValue {
       return { kind: 'string', value: value.value }
     case 'formatted_string':
       return { kind: 'formatted_string', value: { ...value.value } }
+    case 'function':
+      return { kind: 'function', value: { ...value.value } }
     case 'enum':
       return {
         kind: 'enum',

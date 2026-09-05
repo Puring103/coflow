@@ -1,17 +1,17 @@
 mod snapshot;
 mod worker;
 
-use coflow_api::DiagnosticSet;
-use coflow_cfd::CfdAst;
-use coflow_cft::CftSchema;
-use coflow_project::{normalize_path, Project};
+use coflow_language::cfd::CfdAst;
+use coflow_language::cft::CftSchema;
+use coflow_runtime::DiagnosticSet;
+use coflow_runtime::{normalize_path, Project};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::path_from_file_uri;
-use crate::state::{LspBuild, LspDocument};
+use super::path_from_file_uri;
+use super::state::{LspBuild, LspDocument};
 use coflow_runtime::ProjectRuntime;
 
 pub(crate) use snapshot::{
@@ -56,6 +56,7 @@ pub(crate) enum LspRequestDocument<'a> {
 pub(crate) struct CfdRequestDocument<'a> {
     pub(crate) source: &'a str,
     pub(crate) ast: &'a CfdAst,
+    pub(crate) syntax_valid: bool,
     pub(crate) schema: Option<&'a CftSchema>,
     pub(crate) build: Option<&'a LspBuild>,
 }
@@ -255,6 +256,7 @@ impl LspValidationCore {
             return LspRequestDocument::Cfd(CfdRequestDocument {
                 source: &document.source,
                 ast: &document.ast,
+                syntax_valid: document.syntax_valid,
                 schema: self.schema(),
                 build: self.build(),
             });

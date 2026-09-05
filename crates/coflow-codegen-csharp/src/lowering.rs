@@ -1,45 +1,32 @@
-use crate::names::csharp_type_name;
+use crate::names::{
+    csharp_declaration_namespace, csharp_qualified_type_name, csharp_relative_type_path,
+    csharp_type_name, metadata_identifier,
+};
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnum, CftField, CftSchema, CftType, CftValueType, FieldName, TypeName};
+use coflow_language::cft::{CftEnum, CftField, CftSchema, CftType, CftValueType};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
-    pub int_32: bool,
-    pub float_32: bool,
+    root_namespace: String,
     schema: &'a CftSchema,
     types: Vec<&'a CftType>,
-    dimension_tables: Vec<CsharpDimensionTable>,
     enums: Vec<&'a CftEnum>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
-    declared_tables: Vec<String>,
-    loadable_tables: Vec<String>,
     loadable_table_set: BTreeSet<String>,
     singleton_types: Vec<String>,
-    polymorphic_types: Vec<String>,
-    polymorphic_type_set: BTreeSet<String>,
-    ref_targets: Vec<String>,
     id_as_enum_names: BTreeSet<String>,
     type_id_as_enum: BTreeMap<String, String>,
     assignable_types: BTreeMap<String, Vec<String>>,
     types_with_descendants: BTreeSet<String>,
-    uses_localization: bool,
-}
-
-#[derive(Debug)]
-pub struct CsharpDimensionTable {
-    pub source_name: String,
-    pub source_type: String,
-    pub fields: Vec<CftField>,
 }
 
 impl<'a> CsharpLoweringPlan<'a> {
     #[allow(clippy::too_many_lines)]
     pub fn lower(
         schema: &'a CftSchema,
-        int_32: bool,
-        float_32: bool,
+        root_namespace: &str,
         non_empty_tables: Option<&BTreeSet<String>>,
     ) -> Result<Self, CsharpCodegenError> {
         let enums = schema.all_enums().collect::<Vec<_>>();
@@ -49,14 +36,10 @@ impl<'a> CsharpLoweringPlan<'a> {
         let mut csharp_types = BTreeMap::new();
         let mut declared_tables = Vec::new();
         let mut singleton_types = Vec::new();
-        let mut polymorphic_types = Vec::new();
-        let mut polymorphic_type_set = BTreeSet::new();
-        let mut ref_targets = BTreeSet::new();
         let mut id_as_enum_names = BTreeSet::new();
         let mut type_id_as_enum = BTreeMap::new();
         let mut assignable_types: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut types_with_descendants = BTreeSet::new();
-        let mut uses_localization = false;
 
         for ty in &types {
             csharp_types.insert(ty.name.to_string(), csharp_type_name(&ty.name));
@@ -65,10 +48,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             }
             if ty.is_singleton {
                 singleton_types.push(ty.name.to_string());
-            }
-            if schema.range_is_polymorphic(&ty.name) {
-                polymorphic_types.push(ty.name.to_string());
-                polymorphic_type_set.insert(ty.name.to_string());
             }
             if let Some(parent) = &ty.parent {
                 types_with_descendants.insert(parent.to_string());
@@ -87,59 +66,29 @@ impl<'a> CsharpLoweringPlan<'a> {
                     .map(|name| name.to_string())
                     .collect(),
             );
-            for field in ty.own_fields() {
-                uses_localization |= field.dimension.is_some();
-                collect_ref_targets(&field.value_type, &mut ref_targets);
-            }
         }
 
-        let dimension_tables =
-            lower_dimension_tables(schema, &mut csharp_types, &mut declared_tables)?;
         declared_tables.sort();
-        let dimension_source_types = dimension_tables
-            .iter()
-            .map(|table| (table.source_name.as_str(), table.source_type.as_str()))
-            .collect::<BTreeMap<_, _>>();
 
         let loadable_tables = declared_tables
             .iter()
-            .filter(|name| {
-                non_empty_tables.is_none_or(|tables| {
-                    dimension_source_types.get(name.as_str()).map_or_else(
-                        || tables.contains(*name),
-                        |source_type| {
-                            assignable_types.get(*source_type).is_some_and(|types| {
-                                types.iter().any(|type_name| tables.contains(type_name))
-                            })
-                        },
-                    )
-                })
-            })
+            .filter(|name| non_empty_tables.is_none_or(|tables| tables.contains(*name)))
             .cloned()
             .collect::<Vec<_>>();
         let loadable_table_set = loadable_tables.iter().cloned().collect();
-        let ref_targets = ref_targets.into_iter().collect::<Vec<_>>();
         Ok(Self {
-            int_32,
-            float_32,
+            root_namespace: root_namespace.to_string(),
             schema,
             types,
-            dimension_tables,
             enums,
             csharp_types,
             csharp_enums,
-            declared_tables,
-            loadable_tables,
             loadable_table_set,
             singleton_types,
-            polymorphic_types,
-            polymorphic_type_set,
-            ref_targets,
             id_as_enum_names,
             type_id_as_enum,
             assignable_types,
             types_with_descendants,
-            uses_localization,
         })
     }
 
@@ -161,12 +110,10 @@ impl<'a> CsharpLoweringPlan<'a> {
         self.types.iter().copied()
     }
 
-    pub fn dimension_tables(&self) -> &[CsharpDimensionTable] {
-        &self.dimension_tables
-    }
-
-    pub const fn uses_localization(&self) -> bool {
-        self.uses_localization
+    pub fn dimensions(&self) -> impl Iterator<Item = &coflow_language::cft::CftDimension> {
+        self.schema
+            .all_dimensions()
+            .filter(|dimension| !dimension.fields.is_empty())
     }
 
     pub const fn id_as_enum_names(&self) -> &BTreeSet<String> {
@@ -198,31 +145,11 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 
     pub fn all_type_names(&self) -> impl Iterator<Item = &str> {
-        self.types.iter().map(|ty| ty.name.as_str()).chain(
-            self.dimension_tables
-                .iter()
-                .map(|table| table.source_name.as_str()),
-        )
-    }
-
-    pub fn declared_table_names(&self) -> &[String] {
-        &self.declared_tables
-    }
-
-    pub fn table_names(&self) -> &[String] {
-        &self.loadable_tables
+        self.types.iter().map(|ty| ty.name.as_str())
     }
 
     pub fn singleton_type_names(&self) -> &[String] {
         &self.singleton_types
-    }
-
-    pub fn polymorphic_type_names(&self) -> &[String] {
-        &self.polymorphic_types
-    }
-
-    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.polymorphic_type_set.contains(type_name)
     }
 
     pub fn csharp_type_name(&self, type_name: &str) -> String {
@@ -239,12 +166,28 @@ impl<'a> CsharpLoweringPlan<'a> {
             .unwrap_or_else(|| csharp_type_name(enum_name))
     }
 
-    pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
-        self.type_id_as_enum.get(type_name).cloned()
+    pub fn csharp_type_ref(&self, type_name: &str) -> String {
+        csharp_qualified_type_name(&self.root_namespace, type_name)
     }
 
-    pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.id_as_enum_names.contains(enum_name)
+    pub fn csharp_enum_ref(&self, enum_name: &str) -> String {
+        csharp_qualified_type_name(&self.root_namespace, enum_name)
+    }
+
+    pub fn csharp_namespace(&self, name: &str) -> String {
+        csharp_declaration_namespace(&self.root_namespace, name)
+    }
+
+    pub fn csharp_relative_path(&self, name: &str) -> String {
+        csharp_relative_type_path(name)
+    }
+
+    pub fn metadata_name(&self, name: &str) -> String {
+        metadata_identifier(name)
+    }
+
+    pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
+        self.type_id_as_enum.get(type_name).cloned()
     }
 
     pub fn key_field_type(&self, type_name: &str) -> CftValueType {
@@ -270,8 +213,32 @@ impl<'a> CsharpLoweringPlan<'a> {
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{type_name}`")))
     }
 
-    pub fn ref_target_names(&self) -> &[String] {
-        &self.ref_targets
+    pub fn assignable_target_names(
+        &self,
+        actual_type: &str,
+    ) -> Result<Vec<String>, CsharpCodegenError> {
+        let ancestors = self
+            .schema
+            .ancestor_type_names(actual_type)
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{actual_type}`")))?;
+        Ok(std::iter::once(actual_type.to_string())
+            .chain(ancestors.iter().map(ToString::to_string))
+            .collect())
+    }
+
+    pub fn dimension_variants(
+        &self,
+        dimension: &str,
+    ) -> Result<Vec<String>, CsharpCodegenError> {
+        self.schema
+            .resolve_dimension(dimension)
+            .map(|dimension| dimension.variants.iter().map(ToString::to_string).collect())
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT dimension `{dimension}`")))
+    }
+
+    pub fn type_is_singleton(&self, type_name: &str) -> Result<bool, CsharpCodegenError> {
+        self.resolve_type(type_name)
+            .map(|schema_type| schema_type.is_singleton)
     }
 }
 
@@ -285,78 +252,4 @@ fn lower_enum_names(enums: &[&CftEnum]) -> BTreeMap<String, String> {
             )
         })
         .collect()
-}
-
-fn lower_dimension_tables(
-    schema: &CftSchema,
-    csharp_types: &mut BTreeMap<String, String>,
-    declared_tables: &mut Vec<String>,
-) -> Result<Vec<CsharpDimensionTable>, CsharpCodegenError> {
-    let mut tables = BTreeMap::new();
-    for dimension in schema.all_dimensions() {
-        for source_field in &dimension.fields {
-            let source_name = format!(
-                "{}_{}Variants",
-                source_field.declaring_type, source_field.name
-            );
-            let declaring_type = TypeName::new(source_name.clone()).map_err(|err| {
-                CsharpCodegenError::new(format!(
-                    "invalid generated dimension table name `{source_name}`: {err}"
-                ))
-            })?;
-            let field_type =
-                CftValueType::Nullable(Box::new(source_field.value_type.non_nullable().clone()));
-            let mut fields = Vec::with_capacity(dimension.variants.len() + 1);
-            for name in
-                std::iter::once("default").chain(dimension.variants.iter().map(AsRef::as_ref))
-            {
-                fields.push(CftField {
-                    declaring_type: declaring_type.clone(),
-                    name: FieldName::new(name).map_err(|err| {
-                        CsharpCodegenError::new(format!(
-                            "invalid generated dimension field name `{name}`: {err}"
-                        ))
-                    })?,
-                    value_type: field_type.clone(),
-                    default: None,
-                    is_expand: false,
-                    dimension: None,
-                    display: None,
-                    span: source_field.span,
-                });
-            }
-            csharp_types.insert(source_name.clone(), csharp_type_name(&source_name));
-            declared_tables.push(source_name.clone());
-            tables.insert(
-                source_name.clone(),
-                CsharpDimensionTable {
-                    source_name,
-                    source_type: source_field.declaring_type.to_string(),
-                    fields,
-                },
-            );
-        }
-    }
-    Ok(tables.into_values().collect())
-}
-
-fn collect_ref_targets(ty: &CftValueType, out: &mut BTreeSet<String>) {
-    match ty {
-        CftValueType::RecordRef(name) => {
-            out.insert(name.to_string());
-        }
-        CftValueType::Array(inner) | CftValueType::Nullable(inner) => {
-            collect_ref_targets(inner, out);
-        }
-        CftValueType::Dict(key, value) => {
-            collect_ref_targets(key, out);
-            collect_ref_targets(value, out);
-        }
-        CftValueType::Int
-        | CftValueType::Float
-        | CftValueType::Bool
-        | CftValueType::String
-        | CftValueType::Object(_)
-        | CftValueType::Enum(_) => {}
-    }
 }

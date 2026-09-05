@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "views": {},
+  "default_table_column_widths": {},
+  "record_groups": {},
+  "workspace": {
+    "tabs": [
+      {
+        "file_path": "data/dimensions/language/UiText_text.cfd",
+        "type_name": "ArrayExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "schema/07-inheritance.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "schema/03-enums.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "schema/09-options.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "data/09-options.cfd",
+        "type_name": "OptionExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/03-enums.cfd",
+        "type_name": "EnumExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/01-records.cfd",
+        "type_name": "Product",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/02-defaults.cfd",
+        "type_name": "DefaultSettings",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/04-flags.cfd",
+        "type_name": "FlagExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/05-arrays.cfd",
+        "type_name": "ArrayExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/06-dictionaries.cfd",
+        "type_name": "DictionaryExample",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/07-inheritance.cfd",
+        "type_name": "EffectBundle",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/01-records.cfd",
+        "type_name": "ArrayExample",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      },
+      {
+        "file_path": "data/12-quantifiers.cfd",
+        "type_name": "QuantifierRule",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      }
+    ],
+    "active_tab_id": "data/01-records.cfd\u001fProduct"
+  }
+}

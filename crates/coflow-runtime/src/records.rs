@@ -1,10 +1,10 @@
 //! Record views and write outcomes exposed at the engine boundary.
 
-use coflow_api::DiagnosticSet;
-use coflow_data_model::{
+use crate::api::DiagnosticSet;
+use crate::data_model::{
     format_cfd_dict_key, CfdDictKey, CfdPath, CfdPathSegment, CfdRecord, CfdValue,
 };
-use coflow_data_model::{RecordOrigin, SourceLocation};
+use crate::data_model::{RecordOrigin, SourceLocation};
 use serde::{Deserialize, Serialize};
 
 use super::RecordCoordinate;
@@ -17,12 +17,11 @@ pub struct RecordView<'a> {
     pub display_path: &'a str,
     pub record: &'a CfdRecord,
     pub origin: &'a RecordOrigin,
-    pub provider_id: &'a str,
 }
 
 /// Outcome of one staged write operation inside a mutation transaction.
 ///
-/// Provider diagnostics stay attached to the operation that emitted them.
+/// Writer diagnostics stay attached to the operation that emitted them.
 /// Generation diagnostics are reported once by [`crate::MutationReport`].
 ///
 /// `renamed` is `Some(old, new)` when the write modified a record's `id`
@@ -65,7 +64,7 @@ pub struct RefTargetInfo {
 pub struct RecordReferenceInfo {
     pub target: RecordCoordinate,
     pub path: CfdPath,
-    pub dimension: Option<coflow_data_model::DimensionRefCoordinate>,
+    pub dimension: Option<crate::data_model::DimensionRefCoordinate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -107,13 +106,6 @@ pub enum DimensionValueOrigin {
         end_line: usize,
         end_character: usize,
     },
-    TableCell {
-        path: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        sheet: Option<String>,
-        row: usize,
-        column: usize,
-    },
 }
 
 impl DimensionValueOrigin {
@@ -132,17 +124,6 @@ impl DimensionValueOrigin {
                 end_line,
                 end_character,
             }),
-            SourceLocation::TableCell {
-                path,
-                sheet,
-                row,
-                column,
-            } => Some(Self::TableCell {
-                path: path.display().to_string(),
-                sheet,
-                row,
-                column,
-            }),
         }
     }
 }
@@ -156,7 +137,11 @@ pub struct FieldShapeInfo {
     pub enum_type: Option<String>,
     pub enum_is_flag: bool,
     pub nullable: bool,
+    pub option_inner: Option<Box<Self>>,
+    pub result_ok: Option<Box<Self>>,
+    pub result_err: Option<Box<Self>>,
     pub polymorphic_types: Vec<String>,
+    pub collection_key: Option<Box<Self>>,
     pub collection_item: Option<Box<Self>>,
     pub object_type: Option<String>,
     pub field_order: Vec<String>,
@@ -181,12 +166,16 @@ pub struct EffectiveFieldWrite {
 #[must_use]
 pub fn value_summary(value: &CfdValue) -> String {
     match value {
-        CfdValue::Null => "-".to_string(),
+        CfdValue::OptionNone => "None".to_string(),
+        CfdValue::OptionSome(value) => format!("Some({})", value_summary(value)),
+        CfdValue::ResultOk(value) => format!("Ok({})", value_summary(value)),
+        CfdValue::ResultErr(value) => format!("Err({})", value_summary(value)),
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
         CfdValue::String(value) => string_summary(value),
         CfdValue::FormattedString(value) => string_summary(&value.rendered),
+        CfdValue::Function(value) => string_summary(&value.source),
         CfdValue::Enum(value) => value
             .variant
             .as_ref()
@@ -240,11 +229,15 @@ fn previous_char_boundary(value: &str, preferred_end: usize) -> usize {
 
 const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
-        CfdValue::Null => "null",
+        CfdValue::OptionNone => "None",
+        CfdValue::OptionSome(_) => "Some",
+        CfdValue::ResultOk(_) => "Ok",
+        CfdValue::ResultErr(_) => "Err",
         CfdValue::Bool(_) => "bool",
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",
         CfdValue::String(_) | CfdValue::FormattedString(_) => "string",
+        CfdValue::Function(_) => "fn",
         CfdValue::Enum(_) => "enum",
         CfdValue::Ref(_) => "&",
         CfdValue::Object(_) => "object",

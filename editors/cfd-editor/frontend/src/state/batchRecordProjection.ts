@@ -55,7 +55,10 @@ export function projectBatchRecordFields(records: readonly RecordRow[]): BatchFi
 export function fieldValuesEqual(left: FieldValue, right: FieldValue): boolean {
   if (left.kind !== right.kind) return false
   switch (left.kind) {
-    case 'null': return true
+    case 'option_none': return true
+    case 'option_some': return right.kind === 'option_some' && fieldValuesEqual(left.value, right.value)
+    case 'result_ok': return right.kind === 'result_ok' && fieldValuesEqual(left.value, right.value)
+    case 'result_err': return right.kind === 'result_err' && fieldValuesEqual(left.value, right.value)
     case 'bool': return right.kind === 'bool' && left.value === right.value
     case 'int': return right.kind === 'int' && left.value === right.value
     case 'float': return right.kind === 'float' && left.value === right.value
@@ -63,6 +66,7 @@ export function fieldValuesEqual(left: FieldValue, right: FieldValue): boolean {
     case 'formatted_string': return right.kind === 'formatted_string'
       && left.value.source === right.value.source
       && left.value.rendered === right.value.rendered
+    case 'function': return right.kind === 'function' && left.value.source === right.value.source
     case 'enum': return right.kind === 'enum'
       && left.value.enum_name === right.value.enum_name
       && left.value.variant === right.value.variant

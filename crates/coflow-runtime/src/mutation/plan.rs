@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use coflow_api::{Diagnostic, DiagnosticSet};
+use crate::api::{Diagnostic, DiagnosticSet};
 
 use crate::{ProjectSession, RecordCoordinate};
 
@@ -104,12 +104,16 @@ fn prepare_planned_op(
                 value,
             },
         ),
+        MutationOp::UnsetField { record, file, path } => prepare_one(
+            session,
+            MutationOp::UnsetField { record, file, path },
+            pending_inserts,
+        ),
         op @ (MutationOp::SetDimensionValue { .. } | MutationOp::ClearDimensionValue { .. }) => {
             prepare_one(session, op, pending_inserts)
         }
         MutationOp::InsertRecord {
             file,
-            sheet,
             actual_type,
             key,
             fields,
@@ -120,7 +124,6 @@ fn prepare_planned_op(
             pending_inserts,
             MutationOp::InsertRecord {
                 file,
-                sheet,
                 actual_type,
                 key,
                 fields,
@@ -406,6 +409,7 @@ pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
     match op {
         MutationOp::InsertRecord { .. } => "insert_record",
         MutationOp::SetField { .. } => "set_field",
+        MutationOp::UnsetField { .. } => "unset_field",
         MutationOp::SetDimensionValue { .. } => "set_dimension_value",
         MutationOp::ClearDimensionValue { .. } => "clear_dimension_value",
         MutationOp::RenameRecord { .. } => "rename_record",

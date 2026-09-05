@@ -1,10 +1,10 @@
-use crate::uri::path_to_file_uri;
-use coflow_project::normalize_path;
+use super::uri::path_to_file_uri;
+use coflow_runtime::normalize_path;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
+pub fn lsp_diagnostic(diagnostic: &coflow_runtime::Diagnostic) -> Value {
     let related: Vec<_> = diagnostic
         .related
         .iter()
@@ -63,11 +63,11 @@ pub fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
     Value::Object(out)
 }
 
-const fn lsp_diagnostic_severity(severity: coflow_api::Severity) -> u8 {
+const fn lsp_diagnostic_severity(severity: coflow_runtime::Severity) -> u8 {
     match severity {
-        coflow_api::Severity::Error => 1,
-        coflow_api::Severity::Warning => 2,
-        coflow_api::Severity::Info => 3,
+        coflow_runtime::Severity::Error => 1,
+        coflow_runtime::Severity::Warning => 2,
+        coflow_runtime::Severity::Info => 3,
     }
 }
 
@@ -87,13 +87,12 @@ enum LspLabelDocument {
     Path(PathBuf),
 }
 
-pub fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
+pub fn lsp_label_location(location: &coflow_runtime::SourceLocation) -> LspLabelLocation {
     let range = location.text_range();
     match location {
-        coflow_api::SourceLocation::FileSpan { path, .. }
-        | coflow_api::SourceLocation::ProjectConfig { path, .. }
-        | coflow_api::SourceLocation::Artifact { path }
-        | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
+        coflow_runtime::SourceLocation::FileSpan { path, .. }
+        | coflow_runtime::SourceLocation::ProjectConfig { path, .. }
+        | coflow_runtime::SourceLocation::Artifact { path } => LspLabelLocation {
             document: LspLabelDocument::Path(path.clone()),
             start_line: range.start.line,
             start_character: range.start.character,

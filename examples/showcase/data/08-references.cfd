@@ -1,0 +1,15 @@
+# Feature: explicitly typed record references.
+
+tools: Category {
+  title: "Tools",
+}
+
+hammer: CatalogEntry {
+  category: &Category::tools,
+  related: &screwdriver,
+}
+
+screwdriver: CatalogEntry {
+  category: &tools,
+  related: None,
+}

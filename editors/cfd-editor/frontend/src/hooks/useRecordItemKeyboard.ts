@@ -115,7 +115,7 @@ export function useRecordItemKeyboard(options: Options) {
       if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
         try {
           const next: FieldValue = intent.kind === 'clear'
-            ? { kind: 'null' }
+            ? { kind: 'option_none' }
             : { kind: 'bool', value: current.dataset.boolValue !== 'true' }
           await options.onWriteField(path, next)
           options.onNotice?.(null)
@@ -167,7 +167,7 @@ export function useRecordItemKeyboard(options: Options) {
 
 function recordItemElements(root: HTMLElement | null): HTMLElement[] {
   return Array.from(root?.querySelectorAll<HTMLElement>(
-    '.dc-row[data-field-path-wire], .dc-array-object-item[data-field-path-wire], .dc-row-add[data-add-path-wire]',
+    '.dc-row[data-field-path-wire], .dc-row-add[data-add-path-wire]',
   ) ?? [])
 }
 

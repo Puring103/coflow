@@ -1,4 +1,4 @@
-use coflow_data_model::{
+use coflow_model::{
     CfdDataModel, CfdDictKey, CfdPath, CfdRecordId, DimensionRefCoordinate, RefSite,
 };
 

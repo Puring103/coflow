@@ -9,7 +9,7 @@ function record(value: RecordRow['fields'][number]['value'], annotation: FieldAn
     display_path: 'Npc.Npc_001',
     container_index: 0,
     container_size: 1,
-    fields: [{ name: 'reward', value, annotation }],
+    fields: [{ name: 'reward', value, missing: false, annotation }],
     field_index: { reward: 0 },
     field_summaries: { reward: '' },
     field_diagnostics: [],
@@ -41,7 +41,7 @@ describe('recordsSupportGraph', () => {
       item_annotation: null,
       children: {},
     } as FieldAnnotation
-    expect(recordsSupportGraph([record({ kind: 'null' }, annotation)])).toBe(true)
+    expect(recordsSupportGraph([record({ kind: 'option_none' }, annotation)])).toBe(true)
   })
 
   it('rejects records without reference values or annotations', () => {

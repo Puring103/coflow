@@ -14,6 +14,10 @@ interface Props {
   onSelectFile: (path: string, typeName: string) => void
   onExitRight?: () => void
   onOpenSourceFile?: (path: string) => void
+  onAddInput?: (kind: 'schema' | 'data', directory: boolean) => void
+  onCreateRecord?: (path: string, typeName: string) => void
+  onCreateFile?: (path: string, kind: 'schema' | 'data') => void
+  onDeleteEntry?: (path: string) => void
 }
 
 const COLLAPSE_KEY = 'cfd-editor-tree-collapsed'
@@ -46,7 +50,7 @@ type FlatItem =
 export interface FileTreeGroup {
   key: string
   label: string
-  icon: 'data' | 'localization' | 'dimension'
+  icon: 'data' | 'localization' | 'dimension' | 'code'
   nodes: FileTreeNode[]
 }
 
@@ -56,10 +60,19 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     dimensions.flatMap(dimension => dimension.out_dir ? [normalizePath(dimension.out_dir)] : []),
   )
   const groups: FileTreeGroup[] = [{
+    key: '__schema__',
+    label: '类型',
+    icon: 'code',
+    nodes: filterTree(nodes, node => node.name.endsWith('.cft'), node => node.in_schema),
+  }, {
     key: '__data__',
     label: '数据',
     icon: 'data',
-    nodes: nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+    nodes: filterTree(
+      nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+      node => !node.name.endsWith('.cft'),
+      node => node.in_data,
+    ),
   }]
   const orderedDimensions = [...dimensions].sort((left, right) => {
     if (left.name === 'language') return -1
@@ -78,6 +91,18 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     })
   }
   return groups
+}
+
+function filterTree(
+  nodes: FileTreeNode[],
+  includeFile: (node: FileTreeNode) => boolean,
+  includeDirectory: (node: FileTreeNode) => boolean,
+): FileTreeNode[] {
+  return nodes.flatMap(node => {
+    if (!node.is_dir) return includeFile(node) ? [node] : []
+    const children = filterTree(node.children, includeFile, includeDirectory)
+    return includeDirectory(node) || children.length > 0 ? [{ ...node, children }] : []
+  })
 }
 
 function normalizePath(path: string): string {
@@ -119,10 +144,13 @@ function countSourceFiles(nodes: FileTreeNode[]): number {
   return count
 }
 
-export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile }: Props) {
+export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; path?: string; typeName?: string; group?: 'schema' | 'data'
+    isDir?: boolean; sourceKind?: 'schema' | 'data'; canManage?: boolean
+  } | null>(null)
   const contextReturnPath = useRef<string | null>(null)
   const groups = buildFileTreeGroups(nodes, dimensions)
 
@@ -266,6 +294,12 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
             className="tree-heading"
             onClick={() => toggle(group.key)}
             aria-expanded={!collapsed.has(group.key)}
+            onContextMenu={event => {
+              const kind = group.key === '__schema__' ? 'schema' : group.key === '__data__' ? 'data' : null
+              if (!kind || !onAddInput) return
+              event.preventDefault()
+              setContextMenu({ x: event.clientX, y: event.clientY, group: kind })
+            }}
           >
             <Icon
               name={collapsed.has(group.key) ? 'chevron-right' : 'chevron-down'}
@@ -290,11 +324,10 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
                   depth={0}
                   collapsed={collapsed}
                   onToggle={toggle}
-                  onContextMenu={(event, path) => {
-                    if (!onOpenSourceFile) return
+                  onContextMenu={(event, path, typeName, isDir, sourceKind, canManage = true) => {
                     event.preventDefault()
                     contextReturnPath.current = path
-                    setContextMenu({ x: event.clientX, y: event.clientY, path })
+                    setContextMenu({ x: event.clientX, y: event.clientY, path, typeName, isDir, sourceKind, canManage })
                   }}
                 />
               ))}
@@ -302,7 +335,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
           )}
         </div>
       ))}
-      {contextMenu && onOpenSourceFile && (
+      {contextMenu && (
         <div
           className="context-menu file-tree-context-menu"
           role="menu"
@@ -315,19 +348,53 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
             if (path) requestAnimationFrame(() => focusByPath(rootRef.current, path))
           }}
         >
-          <button
+          {contextMenu.group && onAddInput && <>
+          <button type="button" className="ctx-item" role="menuitem" onClick={() => {
+            const kind = contextMenu.group!
+            setContextMenu(null)
+            onAddInput(kind, false)
+          }}><Icon name="file" size={13} aria-hidden />添加文件</button>
+          <button type="button" className="ctx-item" role="menuitem" onClick={() => {
+            const kind = contextMenu.group!
+            setContextMenu(null)
+            onAddInput(kind, true)
+          }}><Icon name="folder" size={13} aria-hidden />添加文件夹</button>
+          </>}
+          {contextMenu.path?.endsWith('.cfd') && contextMenu.sourceKind === 'data' && onCreateRecord && (
+          <button type="button" className="ctx-item" role="menuitem" onClick={() => {
+            const path = contextMenu.path!
+            const typeName = contextMenu.typeName ?? fileTypes[path]?.[0]?.name ?? ''
+            setContextMenu(null)
+            onCreateRecord(path, typeName)
+          }}><Icon name="plus" size={13} aria-hidden />新建记录</button>
+          )}
+          {contextMenu.path && contextMenu.isDir && contextMenu.sourceKind && onCreateFile && (
+            <button type="button" className="ctx-item" role="menuitem" onClick={() => {
+              const { path, sourceKind } = contextMenu
+              setContextMenu(null)
+              onCreateFile(path!, sourceKind!)
+            }}><Icon name="plus" size={13} aria-hidden />新建文件</button>
+          )}
+          {contextMenu.path && contextMenu.canManage && onDeleteEntry && (
+            <button type="button" className="ctx-item danger" role="menuitem" onClick={() => {
+              const path = contextMenu.path!
+              setContextMenu(null)
+              onDeleteEntry(path)
+            }}><Icon name="trash" size={13} aria-hidden />删除</button>
+          )}
+          {contextMenu.path && onOpenSourceFile && <button
             type="button"
             className="ctx-item"
             role="menuitem"
             onClick={() => {
-              const path = contextMenu.path
+              const path = contextMenu.path!
               setContextMenu(null)
               onOpenSourceFile(path)
             }}
           >
             <Icon name="open" size={13} aria-hidden />
             打开源文件
-          </button>
+          </button>}
         </div>
       )}
     </div>
@@ -412,7 +479,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
   depth: number
   collapsed: Set<string>
   onToggle: (path: string) => void
-  onContextMenu: (event: React.MouseEvent, path: string) => void
+  onContextMenu: (event: React.MouseEvent, path: string, typeName?: string, isDir?: boolean, sourceKind?: 'schema' | 'data', canManage?: boolean) => void
 }) {
   if (node.is_dir) {
     const isCollapsed = collapsed.has(node.path)
@@ -426,6 +493,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
           aria-expanded={!isCollapsed}
           tabIndex={-1}
           data-path={node.path}
+          onContextMenu={event => onContextMenu(event, node.path, undefined, true, node.in_schema ? 'schema' : node.in_data ? 'data' : undefined)}
           onClick={() => onToggle(node.path)}
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -482,7 +550,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
           data-path={node.path}
           data-file-path={node.path}
           onClick={() => onToggle(node.path)}
-          onContextMenu={event => onContextMenu(event, node.path)}
+          onContextMenu={event => onContextMenu(event, node.path, undefined, false, node.in_schema ? 'schema' : node.in_data ? 'data' : undefined)}
           title={node.path}
         >
           <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={12} className="tree-file-chevron" aria-hidden />
@@ -502,7 +570,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
             data-file-path={node.path}
             data-type-name={type.name}
             onClick={() => onSelectFile(node.path, type.name)}
-            onContextMenu={event => onContextMenu(event, node.path)}
+            onContextMenu={event => onContextMenu(event, node.path, type.name, false, undefined, false)}
             title={type.display_name === type.name ? type.name : `${type.display_name} (${type.name})`}
           >
             <span className="tree-type-dot" aria-hidden />
@@ -527,7 +595,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
       data-file-path={node.path}
       data-type-name={types[0]?.name}
       onClick={() => !ghost && onSelectFile(node.path, types[0]?.name ?? '')}
-      onContextMenu={event => { if (!ghost) onContextMenu(event, node.path) }}
+      onContextMenu={event => onContextMenu(event, node.path, undefined, false, node.in_schema ? 'schema' : node.in_data ? 'data' : undefined)}
       onKeyDown={e => {
         if (e.key === 'Enter' && !ghost) {
           e.preventDefault()

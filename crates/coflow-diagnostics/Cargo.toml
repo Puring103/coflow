@@ -1,0 +1,10 @@
+[package]
+name = "coflow-diagnostics"
+version = "0.9.1"
+edition = "2021"
+description = "Shared diagnostic taxonomy for Coflow."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
