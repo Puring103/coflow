@@ -481,16 +481,28 @@ pub fn source_location_display_path(location: &SourceLocation) -> String {
 
 #[must_use]
 pub fn path_to_slash(path: &Path) -> String {
-    let raw = path
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
-            Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
-            Component::RootDir | Component::CurDir => None,
-            Component::ParentDir => Some("..".to_string()),
-        })
-        .collect::<Vec<_>>()
-        .join("/");
+    let mut raw = String::new();
+    for component in path.components() {
+        let part = match component {
+            Component::Prefix(prefix) => {
+                prefix.as_os_str().to_string_lossy().replace('\\', "/")
+            }
+            Component::RootDir => {
+                // 根目录必须保留，否则绝对配置路径会被项目根目录再次解析。
+                if !raw.ends_with('/') {
+                    raw.push('/');
+                }
+                continue;
+            }
+            Component::CurDir => continue,
+            Component::ParentDir => "..".to_string(),
+            Component::Normal(part) => part.to_string_lossy().replace('\\', "/"),
+        };
+        if !raw.is_empty() && !raw.ends_with('/') {
+            raw.push('/');
+        }
+        raw.push_str(&part);
+    }
     raw.strip_prefix(r"\\?\")
         .or_else(|| raw.strip_prefix("//?/"))
         .map_or_else(|| raw.clone(), str::to_owned)
@@ -521,7 +533,22 @@ fn spreadsheet_column_name(column: usize) -> String {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{Diagnostic, DiagnosticContext};
+    use super::{path_to_slash, Diagnostic, DiagnosticContext};
+    use std::path::Path;
+
+    #[test]
+    fn path_to_slash_preserves_relative_and_absolute_paths() {
+        assert_eq!(
+            path_to_slash(Path::new("schema").join("main.cft").as_path()),
+            "schema/main.cft"
+        );
+        if cfg!(unix) {
+            assert_eq!(
+                path_to_slash(Path::new("/external/schema/main.cft")),
+                "/external/schema/main.cft"
+            );
+        }
+    }
 
     #[test]
     fn diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds() {
