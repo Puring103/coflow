@@ -71,6 +71,31 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('当前：ItemReward')
   })
 
+  it('shows the concrete type dropdown for a flattened polymorphic field', () => {
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardExpanded, {
+        fields: [{
+          name: 'reward',
+          missing: false,
+          annotation: polymorphicObjectAnnotation,
+          value: {
+            kind: 'object' as const,
+            value: { actual_type: 'ItemReward', fields: {} },
+          },
+        }],
+        flattenSingleComplexField: true,
+        onEdit: () => {},
+      }),
+    }))
+
+    expect(html).toContain('>类型<')
+    expect(html).toContain('aria-label="选择具体类型"')
+    expect(html).toContain('value="ItemReward"')
+  })
+
   it('renders cached dropdown options immediately after a revision change', async () => {
     const lookups = new EditorLookupController({
       getEnumVariants: async () => [{ name: 'Epic', value: 2n, label: 'Epic', description: null }],

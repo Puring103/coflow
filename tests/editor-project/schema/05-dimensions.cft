@@ -1,0 +1,12 @@
+namespace EditorFixture::Ui;
+
+@singleton
+type UiText {
+  key: string;
+
+  @localized
+  text: string;
+
+  @dimension("platform")
+  hint: Option<string> = None;
+}

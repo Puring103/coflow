@@ -13,3 +13,10 @@ type NPC {
   name: string;
   gender: Gender;
 }
+
+type game : NPC {
+}
+
+type Building {
+  npc: NPC;
+}

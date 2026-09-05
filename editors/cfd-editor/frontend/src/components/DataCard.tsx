@@ -4,6 +4,7 @@ import {
   useRef,
   useContext,
   createContext,
+  Fragment,
   useMemo,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -585,18 +586,33 @@ export function DataCardExpanded({
           && fields.length === 1
           && displayedValue.kind === 'object'
         ) {
+          const polymorphicTypes = annotationPolymorphicTypes(fc.annotation)
           return (
-            <ComplexValueChildren
-              key={fc.name}
-              value={displayedValue}
-              depth={depth}
-              fieldPath={[fieldPathField(fc.name)]}
-              pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
-              onEdit={fieldEdit}
-              onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
-              onRowToggle={onRowToggle}
-              valueAnnotation={fc.annotation}
-            />
+            <Fragment key={fc.name}>
+              {polymorphicTypes.length >= 2 && (
+                <PolymorphicTypeRow
+                  value={displayedValue}
+                  polymorphicTypes={polymorphicTypes}
+                  depth={depth}
+                  onCommit={fieldEdit
+                    ? next => fieldEdit(
+                        [fieldPathField(fc.name)],
+                        replacePresentationValue(fc.value, next),
+                      )
+                    : undefined}
+                />
+              )}
+              <ComplexValueChildren
+                value={displayedValue}
+                depth={depth}
+                fieldPath={[fieldPathField(fc.name)]}
+                pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
+                onEdit={fieldEdit}
+                onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
+                onRowToggle={onRowToggle}
+                valueAnnotation={fc.annotation}
+              />
+            </Fragment>
           )
         }
         return (
@@ -632,6 +648,49 @@ export function DataCardExpanded({
     </ValueRowSelectionCtx.Provider>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
+}
+
+function PolymorphicTypeRow({ value, polymorphicTypes, depth, onCommit }: {
+  value: FieldValue & { kind: 'object' }
+  polymorphicTypes: string[]
+  depth: number
+  onCommit?: (next: FieldValue) => void
+}) {
+  const { openObjectDraft } = useObjectDraft()
+
+  function selectType(nextType: string) {
+    if (!onCommit || nextType === value.value.actual_type) return
+    // 切换具体类型时重新生成字段草稿，确保新类型的必填字段经过同一套校验。
+    openObjectDraft({
+      title: '切换类型',
+      actualType: nextType,
+      polymorphicTypes,
+      confirmLabel: '确认切换',
+      onConfirm: onCommit,
+    })
+  }
+
+  return (
+    <div className="dc-row dc-polymorphic-type-row" style={inspectorDepthStyle(depth)}>
+      <div className="dc-row-label">
+        <span className="dc-row-label-text">类型</span>
+      </div>
+      <div className="dc-row-value">
+        {onCommit ? (
+          <SearchableSelect
+            className="dc-input-flat dc-polymorphic-type-select"
+            value={value.value.actual_type}
+            options={polymorphicTypes.map(type => ({ value: type }))}
+            ariaLabel="选择具体类型"
+            onCommit={selectType}
+          />
+        ) : (
+          <span className="vc vc-obj">{value.value.actual_type}</span>
+        )}
+      </div>
+      <div className="dc-row-actions" />
+    </div>
+  )
 }
 
 function rowDiagSeverity(pathKey: string | undefined): {

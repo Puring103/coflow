@@ -1,7 +1,14 @@
 namespace integration::domain;
 
+RuntimeSettings: RuntimeSettings {
+  environment: "integration",
+}
+
 Character {
   guardian {
+    name: "Guardian",
+    class: Guardian,
+    traits: Durable,
     stats: Stats {
       health: 120,
       attack: 8,
@@ -9,9 +16,14 @@ Character {
     },
     tags: ["tank", "starter"],
     attributes: { "level": 5, "rarity": 2 },
+    primaryAbility: HealAbility { label: "Fortify", healing: 12 },
+    status: Err("resting"),
   }
 
   arcanist {
+    name: "Arcanist",
+    class: Arcanist,
+    traits: Ranged | Magical,
     stats: Stats {
       health: 75,
       attack: 19,
@@ -19,6 +31,11 @@ Character {
     },
     tags: ["caster", "advanced"],
     attributes: { "level": 8, "rarity": 4 },
+    primaryAbility: DamageAbility { label: "Arcane bolt", damage: 35 },
+    abilities: [
+      DamageAbility { label: "Arcane bolt", damage: 35 },
+      HealAbility { label: "Mana shield", healing: 7 },
+    ],
     fallback: Some(&Character::guardian),
   }
 }

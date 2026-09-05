@@ -1,0 +1,92 @@
+namespace EditorFixture::Model;
+
+use EditorFixture::Common::DEFAULT_LEVEL;
+use EditorFixture::Common::DEFAULT_TAGS;
+use EditorFixture::Common::Element;
+use EditorFixture::Common::EntityId;
+use EditorFixture::Common::Identifier;
+use EditorFixture::Common::Rarity;
+
+abstract type Effect {
+  label: string;
+  duration: Option<float> = None;
+}
+
+sealed type DamageEffect : Effect {
+  element: Element;
+  amount: int;
+}
+
+sealed type HealEffect : Effect {
+  amount: int;
+}
+
+sealed type CompositeEffect : Effect {
+  effects: [Effect];
+}
+
+@idAsEnum(EntityId)
+type Entity {
+  @label("显示名称")
+  name: string;
+
+  level: int = DEFAULT_LEVEL;
+  rarity: Rarity = Common;
+  tags: [string] = DEFAULT_TAGS;
+
+  @expand
+  stats: Stats = Stats {};
+
+  primaryEffect: Effect;
+  alternateEffects: [Effect] = [];
+  parent: Option<&Entity> = None;
+  related: [&Entity] = [];
+
+  check {
+    level > 0: "实体 {id} 的等级必须大于 0";
+    name.isBlank() == false;
+    tags.isUnique();
+    all effect in alternateEffects {
+      effect.label.isBlank() == false;
+    }
+  }
+}
+
+type RewardEntry {
+  reward: &Entity;
+  count: int;
+}
+
+type QuestStep {
+  title: string;
+  targets: [&Entity];
+  rewards: [RewardEntry];
+  next: Option<&Quest> = None;
+}
+
+type Quest {
+  displayId: Identifier;
+  title: string;
+  prerequisite: Option<&Quest> = None;
+  steps: [QuestStep];
+  rewardGroups: {string: [RewardEntry]} = {};
+
+  check {
+    displayId.isBlank() == false;
+    steps.len() > 0;
+    all step, index in steps {
+      step.title.isBlank() == false: "第 {index} 个步骤缺少标题";
+      step.targets.len() > 0;
+      all reward in step.rewards {
+        reward.count > 0;
+      }
+    }
+  }
+}
+
+check EntityCatalog {
+  records(Entity).len() >= 3;
+  any entity in records(Entity) {
+    entity.rarity == Rarity::Epic;
+  }
+}

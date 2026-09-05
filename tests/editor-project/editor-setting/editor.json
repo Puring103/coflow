@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "views": {
+    "data/02-entities.cfd": {
+      "EditorFixture::Model::Entity": [
+        {
+          "id": "entity-summary",
+          "name": "实体摘要",
+          "kind": "table",
+          "columns": [
+            "name",
+            "level",
+            "rarity",
+            "stats"
+          ],
+          "column_widths": {
+            "name": 180.0,
+            "stats": 240.0
+          },
+          "relations": [],
+          "fields": []
+        },
+        {
+          "id": "entity-relations",
+          "name": "实体关系",
+          "kind": "graph",
+          "columns": [],
+          "column_widths": {},
+          "relations": [
+            "parent",
+            "related"
+          ],
+          "fields": [
+            "name",
+            "level",
+            "rarity"
+          ]
+        }
+      ]
+    }
+  },
+  "default_table_column_widths": {
+    "data/01-values.cfd": {
+      "EditorFixture::Model::ValueGallery": {
+        "longText": 320.0,
+        "nestedLookup": 280.0
+      }
+    }
+  },
+  "record_groups": {
+    "data/02-entities.cfd": {
+      "EditorFixture::Model::Entity": [
+        {
+          "id": "party",
+          "name": "队伍成员",
+          "color": "blue",
+          "records": [
+            {
+              "actual_type": "EditorFixture::Model::Entity",
+              "key": "warrior"
+            },
+            {
+              "actual_type": "EditorFixture::Model::Entity",
+              "key": "mage"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "workspace": {
+    "tabs": [
+      {
+        "file_path": "data/02-entities.cfd",
+        "type_name": "EditorFixture::Model::Entity",
+        "view_id": "entity-relations",
+        "view_kind": "graph"
+      },
+      {
+        "file_path": "data/01-values.cfd",
+        "type_name": "EditorFixture::Model::ValueGallery",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "schema/03-relations.cft",
+        "type_name": "",
+        "view_id": "__default_source",
+        "view_kind": "source"
+      }
+    ],
+    "active_tab_id": "data/02-entities.cfd\u001fEditorFixture::Model::Entity"
+  }
+}

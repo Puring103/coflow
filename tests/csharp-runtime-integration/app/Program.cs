@@ -23,13 +23,29 @@ host.Configure(
         : Result<long, string>.Err("missing"));
 
 var characters = root.Table(Character.Table);
+var settings = Require(root.Singleton<RuntimeSettings>(), "RuntimeSettings");
 var arcanist = Require(characters.Get(CharacterId.Arcanist), "arcanist");
 var guardian = Require(characters.Get(CharacterId.Guardian), "guardian");
 var scenario = Require(root.Table(Scenario.Table).Get("fullRoundTrip"), "fullRoundTrip");
 
 Assert(arcanist.Stats.Attack == 19, "nested object was not loaded");
+Assert(settings.Environment == "integration" && settings.Retries == 3,
+    "ordinary singleton record or its schema default was not loaded");
 Assert(arcanist.Stats.Resistances["ice"] == 9, "nested dictionary was not loaded");
 Assert(arcanist.Tags.SequenceEqual(new[] { "caster", "advanced" }), "array was not loaded");
+Assert(arcanist.Class == CharacterClass.Arcanist,
+    "enum field was not generated or loaded correctly");
+Assert(arcanist.Traits == (CharacterTrait.Ranged | CharacterTrait.Magical),
+    "flag enum combination was not preserved");
+Assert(arcanist.Enabled && guardian.Enabled,
+    "schema field default was not materialized");
+Assert(arcanist.PrimaryAbility is DamageAbility damageAbility && damageAbility.Damage == 35,
+    "polymorphic inline object lost its concrete type");
+Assert(arcanist.Abilities.Count == 2 && arcanist.Abilities[1] is HealAbility,
+    "polymorphic object collection was not loaded");
+Assert(arcanist.Status.IsOk && arcanist.Status.Value == 0 &&
+       guardian.Status.IsErr && guardian.Status.Error == "resting",
+    "Result default or explicit error branch was not loaded");
 Assert(arcanist.Fallback.HasValue && ReferenceEquals(arcanist.Fallback.Value, guardian),
     "optional record reference was not resolved");
 Assert(scenario.Config.OptionalBonus.HasValue && scenario.Config.OptionalBonus.Value.Attack == 5,

@@ -13,19 +13,21 @@
       },
       {
         "file_path": "data/main.cfd",
-        "type_name": "",
-        "view_id": "__default_source",
-        "view_kind": "source"
+        "type_name": "NPC",
+        "view_id": "__default_table",
+        "view_kind": "table"
       },
       {
         "file_path": "data/main.cfd",
-        "type_name": "NPC",
-        "view_id": "__default_record",
-        "view_kind": "record",
-        "coordinate": {
-          "actual_type": "NPC",
-          "key": "name"
-        }
+        "type_name": "game",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/main.cfd",
+        "type_name": "Building",
+        "view_id": "__default_table",
+        "view_kind": "table"
       }
     ],
     "active_tab_id": "data/main.cfd\u001fNPC"

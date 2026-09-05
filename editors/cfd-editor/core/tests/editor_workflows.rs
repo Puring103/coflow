@@ -186,18 +186,20 @@ fn field(name: &str) -> CfdPathSegment {
 }
 
 #[test]
-fn repository_examples_open_in_editor() {
+fn repository_projects_open_in_editor() {
     let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
 
-    for example in ["showcase"] {
-        let config = repository_root
-            .join("examples")
-            .join(example)
-            .join("coflow.yaml");
+    for (project, config) in [
+        ("showcase", repository_root.join("examples/showcase/coflow.yaml")),
+        (
+            "editor-project",
+            repository_root.join("tests/editor-project/coflow.yaml"),
+        ),
+    ] {
         let store = SessionStore::new().expect("create editor session store");
         let snapshot = store.load_project(&config).unwrap_or_else(|error| {
             panic!(
-                "editor failed to open repository example `{example}` at {}: {error}",
+                "editor failed to open repository project `{project}` at {}: {error}",
                 config.display()
             )
         });
@@ -212,9 +214,20 @@ fn repository_examples_open_in_editor() {
                 .diagnostics
                 .iter()
                 .all(|diagnostic| diagnostic.severity != "error"),
-            "editor reported errors for repository example `{example}`: {:#?}",
+            "editor reported errors for repository project `{project}`: {:#?}",
             snapshot.diagnostics
         );
+
+        if project == "editor-project" {
+            let settings = store
+                .get_project_settings(snapshot.session_id)
+                .expect("editor fixture settings must parse");
+            assert!(settings
+                .record_groups
+                .get("data/02-entities.cfd")
+                .and_then(|types| types.get("EditorFixture::Model::Entity"))
+                .is_some_and(|groups| groups.len() == 1));
+        }
     }
 }
 

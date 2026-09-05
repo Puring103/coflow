@@ -281,6 +281,9 @@ fn emits_singleton_metadata_without_a_generated_database() {
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
     assert!(output.contains("public Type RuntimeType => typeof(global::Game.Config.Settings);"));
+    assert!(output.contains("Cft_53657474696E6773CoflowMetadata : ICoflowRecordMetadata"));
+    assert!(output.contains("new Func<global::Game.Config.Settings, string>(static _ => string.Empty)"));
+    assert!(output.contains("new global::Game.Config.Settings()"));
     assert!(!output.contains("public sealed partial class CoflowTables"));
 }
 
@@ -519,6 +522,10 @@ type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base
     assert!(output
         .contains("AssignableTypes { get; } = new string[] { \"fixed_reward\", \"reward_base\" }"));
     assert!(output.contains("\"fixed_reward\" => ReadCft_66697865645F726577617264(node, context)"));
+    assert!(output.contains("var objectType = CfdValueReader.ObjectDeclaredType(node);"));
+    assert!(!output.contains("CfdObjectValue"));
+    assert!(!output.contains("CfdDictionaryValue"));
+    assert!(!output.contains("CfdNoneValue"));
     assert!(!output.contains("Readfixed_reward"));
     assert!(output.contains(
         "CfdValueReader.Reference<global::Game.Config.RewardBase>(CfdValueReader.Field(fields, \"target\"), context, \"reward_base\")"

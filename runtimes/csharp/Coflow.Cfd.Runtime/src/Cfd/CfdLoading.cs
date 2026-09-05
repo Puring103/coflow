@@ -673,6 +673,18 @@ public static class CfdValueReader
         Func<IReadOnlyList<CfdFieldNode>, string, CfdLoadContext, T> read) =>
         Object(node, context, null, read);
 
+    /// <summary>Returns the explicit type marker carried by an object value.</summary>
+    public static string? ObjectDeclaredType(CfdValueNode node) => node switch
+    {
+        // 生成代码只能依赖公开 ABI，不能识别 Runtime 内部的语法树节点类型。
+        CfdObjectValue value => value.DeclaredType,
+        CfdDictionaryValue => null,
+        _ => throw Invalid(node, "object"),
+    };
+
+    /// <summary>Returns whether the value is the explicit <c>None</c> literal.</summary>
+    public static bool IsNone(CfdValueNode node) => node is CfdNoneValue;
+
     public static T Object<T>(CfdValueNode node, CfdLoadContext context, string? expectedType,
         Func<IReadOnlyList<CfdFieldNode>, string, CfdLoadContext, T> read)
     {

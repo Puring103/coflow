@@ -1,0 +1,7 @@
+namespace EditorFixture::Ui;
+
+UiText: UiText {
+  key: "ui",
+  text: "Welcome",
+  hint: "Press Enter",
+}
