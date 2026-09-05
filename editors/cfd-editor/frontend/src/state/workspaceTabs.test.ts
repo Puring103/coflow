@@ -3,6 +3,7 @@ import {
   defaultWorkspaceTab,
   routeForWorkspaceTab,
   sanitizeProjectWorkspace,
+  workspaceTabWithView,
   workspaceToWire,
   workspaceTabId,
 } from './workspaceTabs'
@@ -13,6 +14,16 @@ const fileTypes = {
 }
 
 describe('project workspace tabs', () => {
+  it('opens CFT files directly in their only source view', () => {
+    const tab = defaultWorkspaceTab('schema/items.cft', '', false)
+    expect(tab).toMatchObject({ viewKind: 'source', viewId: '__default_source' })
+    expect(routeForWorkspaceTab(tab)).toMatchObject({
+      view: 'source',
+      file: 'schema/items.cft',
+      typeFilter: '',
+    })
+  })
+
   it('waits for a real singleton coordinate before entering record view', () => {
     const tab = defaultWorkspaceTab('data/settings.cfd', 'Settings', true)
     expect(tab).toMatchObject({ viewKind: 'record', viewId: '__default_record' })
@@ -50,6 +61,38 @@ describe('project workspace tabs', () => {
     expect(restored?.activeTabId).toBe(itemId)
   })
 
+  it('restores source view for singleton files', () => {
+    const restored = sanitizeProjectWorkspace({
+      active_tab_id: workspaceTabId('data/settings.cfd', 'Settings'),
+      tabs: [{
+        file_path: 'data/settings.cfd',
+        type_name: 'Settings',
+        view_kind: 'source',
+        view_id: '__default_source',
+      }],
+    }, fileTypes)
+    const tab = restored?.tabs[0]
+    expect(tab).toMatchObject({ viewKind: 'source', viewId: '__default_source' })
+    expect(routeForWorkspaceTab(tab!)).toMatchObject({ view: 'source', viewId: '__default_source' })
+  })
+
+  it('switches a record workspace tab back to source before routing', () => {
+    const record = {
+      ...defaultWorkspaceTab('data/item.cfd', 'Item', false),
+      viewKind: 'record' as const,
+      viewId: '__default_record',
+      coordinate: { actual_type: 'Item', key: 'sword' },
+    }
+    const source = workspaceTabWithView(record, 'source', '__default_source')
+
+    expect(source).toMatchObject({ viewKind: 'source', viewId: '__default_source' })
+    expect(routeForWorkspaceTab(source)).toMatchObject({
+      view: 'source',
+      viewId: '__default_source',
+      typeFilter: 'Item',
+    })
+  })
+
   it('serializes workspace state using the backend wire names', () => {
     const tab = defaultWorkspaceTab('data/item.cfd', 'Item', false)
     expect(workspaceToWire([tab], tab.id)).toEqual({
@@ -73,7 +116,7 @@ describe('project workspace tabs', () => {
   })
 
   it('restores a dimension file tab with an empty type name', () => {
-    const filePath = 'data/dimensions/language/item.csv'
+    const filePath = 'data/dimensions/language/item.cfd'
     const id = workspaceTabId(filePath, '')
     const restored = sanitizeProjectWorkspace({
       active_tab_id: id,

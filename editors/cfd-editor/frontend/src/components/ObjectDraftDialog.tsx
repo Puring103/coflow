@@ -18,6 +18,7 @@ interface Props {
    *  a type <select>. Picking a different type calls onTypeChange. */
   polymorphicTypes?: string[]
   onTypeChange?: (nextType: string) => void
+  alwaysShowTypeSelect?: boolean
   /** Fetch a fresh field draft for the current actualType. */
   onLoadDraft: (actualType: string) => Promise<CreateRecordDraft>
   /** Optional header extras rendered before the type tag (e.g. a key input). */
@@ -39,6 +40,7 @@ export function ObjectDraftDialog({
   actualType,
   polymorphicTypes = [],
   onTypeChange,
+  alwaysShowTypeSelect = false,
   onLoadDraft,
   headerExtras,
   confirmLabel = '确定',
@@ -77,7 +79,10 @@ export function ObjectDraftDialog({
   }, [actualType, onLoadDraft])
 
   const requiredFields = useMemo(
-    () => draft?.fields.filter(field => isRequiredMissing(field, values[field.name] ?? null)) ?? [],
+    () => draft?.fields.filter(field =>
+      field.required?.kind !== 'ref'
+      && isRequiredMissing(field, values[field.name] ?? null),
+    ) ?? [],
     [draft, values],
   )
   const extraError = extraValidation ? extraValidation() : null
@@ -118,32 +123,44 @@ export function ObjectDraftDialog({
         onMouseDown={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Escape') onClose() }}
       >
-        <div className="create-record-card-header" style={{ '--node-color': typeColorValue } as CSSProperties}>
+        <header className="create-record-card-header" style={{ '--node-color': typeColorValue } as CSSProperties}>
           <div className="gn-color-bar" />
-          {headerExtras}
-          {polymorphicTypes.length >= 2 && onTypeChange ? (
-            <SearchableSelect
-              className="create-record-type-select"
-              value={actualType}
-              ariaLabel="选择类型"
-              options={[
-                ...(!polymorphicTypes.includes(actualType) ? [{ value: actualType }] : []),
-                ...polymorphicTypes.map(type => ({ value: type })),
-              ]}
-              onCommit={next => {
-                if (next && next !== actualType) onTypeChange(next)
-              }}
-            />
-          ) : (
-            <span className="create-record-type-tag">{actualType}</span>
-          )}
+          <h2>{title}</h2>
           <button className="btn-icon create-record-close" onClick={onClose} aria-label={`关闭 ${title}`}>
             <Icon name="close" size={14} />
           </button>
+        </header>
+
+        <div className={`create-record-identity${headerExtras ? '' : ' type-only'}`}>
+          {headerExtras && (
+            <label className="create-record-identity-field">
+              <span>记录 Key</span>
+              {headerExtras}
+            </label>
+          )}
+          <label className="create-record-identity-field">
+            <span>类型</span>
+            {(alwaysShowTypeSelect ? polymorphicTypes.length >= 1 : polymorphicTypes.length >= 2) && onTypeChange ? (
+              <SearchableSelect
+                className="create-record-type-select"
+                value={actualType}
+                ariaLabel="选择类型"
+                options={[
+                  ...(!polymorphicTypes.includes(actualType) ? [{ value: actualType }] : []),
+                  ...polymorphicTypes.map(type => ({ value: type })),
+                ]}
+                onCommit={next => {
+                  if (next && next !== actualType) onTypeChange(next)
+                }}
+              />
+            ) : (
+              <span className="create-record-type-tag">{actualType}</span>
+            )}
+          </label>
         </div>
 
         {banner}
-        {extraError && <div className="create-record-error" role="alert">{extraError}</div>}
+        {extraError?.trim() && <div className="create-record-error" role="alert">{extraError}</div>}
         {loadError && <div className="create-record-error" role="alert">{loadError}</div>}
         {loading && <div className="create-record-loading">正在读取字段默认值...</div>}
 
@@ -183,6 +200,7 @@ function DraftFieldsBody({
     () => draft.fields.map(field => ({
       name: field.name,
       value: fieldValueForDraft(values[field.name] ?? null),
+      missing: field.required?.kind === 'ref' && !values[field.name],
       annotation: annotationForDraft(field),
     })),
     [draft, values],
@@ -221,7 +239,7 @@ function DraftFieldsBody({
 
 function fieldValueForDraft(value: FieldValue | null): FieldValue {
   if (value) return value
-  return { kind: 'null' }
+  return { kind: 'option_none' }
 }
 
 function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | null {
@@ -237,6 +255,7 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
     nullable: base?.nullable ?? false,
     read_only: base?.read_only ?? false,
     item_annotation: base?.item_annotation ?? null,
+    key_annotation: base?.key_annotation,
     polymorphic_types: base?.polymorphic_types ?? [],
     object_type: base?.object_type ?? null,
     field_order: base?.field_order ?? [],

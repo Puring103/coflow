@@ -5,9 +5,9 @@ VS Code language support for Coflow Type File (`.cft`) schemas and Coflow Data F
 ## Features
 
 - `.cft` and `.cfd` file associations.
-- TextMate syntax highlighting plus LSP semantic tokens for declarations, annotations, strings, numbers, keywords, operators, primitive types, and built-in check functions.
+- TextMate syntax highlighting plus LSP semantic tokens for declarations, annotations, Option/Result values, function types and bodies, strings, numbers, operators, references, and built-ins.
 - Language configuration for comments, brackets, indentation, and auto-closing pairs.
-- Snippets for `const`, `enum`, `type`, `check`, `when`, quantifier blocks, and common annotations.
+- Snippets for declarations, checks, Option/Result values, function types and values, and supported annotations.
 - LSP-backed completion items for CFT keywords, primitive types, annotations, built-in functions, workspace `const`/`enum`/`type` declarations, enum variants, and current type fields.
 - LSP-backed hover text for core keywords, annotations, built-in functions, and discovered workspace symbols.
 - LSP-backed outline symbols for constants, enums, enum variants, types, and fields.

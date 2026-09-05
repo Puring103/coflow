@@ -1,11 +1,11 @@
-use coflow_cft::syntax::ast::{Annotation, Item};
-use coflow_cft::{CftConstValue, CftType};
+use coflow_language::cft::syntax::ast::{Annotation, Item};
+use coflow_language::cft::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
-use crate::documentation::{annotation_documentation, static_documentation};
-use crate::position::{byte_offset_from_position, byte_range, range_from_span, LspPosition};
-use crate::{
+use super::documentation::{annotation_documentation, static_documentation};
+use super::position::{byte_offset_from_position, byte_range, range_from_span, LspPosition};
+use super::{
     current_type_at, dotted_chain_at, enum_variant_by_chain, field_by_chain, is_trivia_position,
     word_at, LspBuild, LspDocument,
 };
@@ -36,12 +36,24 @@ pub(crate) fn hover_at(
         ));
     }
 
+    if let Some(alias) = build.documents.values().find_map(|candidate| {
+        candidate.ast.as_ref()?.items.iter().find_map(|item| match item {
+            Item::TypeAlias(alias) if alias.name == word.text => Some(alias),
+            _ => None,
+        })
+    }) {
+        return Some(hover_response(
+            &format!("CFT type alias `{}`.", alias.name),
+            &byte_range(&document.source, word.start, word.end),
+        ));
+    }
+
     if let Some(chain) = dotted_chain_at(&document.source, &word) {
-        if chain.len() == 2 {
+        if chain.len() >= 2 {
             if let Some((enum_def, variant)) = enum_variant_by_chain(build, &chain) {
                 return Some(hover_response(
                     &format!(
-                        "CFT enum variant `{}`.`{}` = `{}`.",
+                        "CFT enum variant `{}`::`{}` = `{}`.",
                         enum_def.name, variant.name, variant.value
                     ),
                     &byte_range(&document.source, word.start, word.end),
@@ -135,6 +147,42 @@ fn const_value_to_string(value: &CftConstValue) -> String {
         CftConstValue::Float(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
+        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => {
+            source.clone()
+        }
+        CftConstValue::Enum {
+            enum_name,
+            variant,
+            ..
+        } => format!("{enum_name}::{variant}"),
+        CftConstValue::OptionNone => "None".to_string(),
+        CftConstValue::OptionSome(value) => format!("Some({})", const_value_to_string(value)),
+        CftConstValue::ResultOk(value) => format!("Ok({})", const_value_to_string(value)),
+        CftConstValue::ResultErr(value) => format!("Err({})", const_value_to_string(value)),
+        CftConstValue::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(const_value_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        CftConstValue::Dictionary(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    const_value_to_string(key),
+                    const_value_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        CftConstValue::Object { type_name, .. } => format!("{type_name} {{ ... }}"),
+        CftConstValue::RecordReference { type_name, key } => {
+            format!("&{type_name}::{key}")
+        }
     }
 }
 
@@ -190,6 +238,7 @@ fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {
                     }
                 }
             }
+            Item::TypeAlias(_) => {}
             Item::Check(check) => {
                 if let Some(annotation) = find_in(&check.annotations, offset) {
                     return Some(annotation);

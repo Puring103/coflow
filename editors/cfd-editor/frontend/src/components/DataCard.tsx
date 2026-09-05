@@ -4,6 +4,7 @@ import {
   useRef,
   useContext,
   createContext,
+  Fragment,
   useMemo,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -22,9 +23,11 @@ import {
   annotationEnumType,
   annotationEnumIsFlag,
   annotationItem,
+  annotationKey,
   annotationNullable,
   annotationPolymorphicTypes,
   annotationRefTargetType,
+  applyCreatedValue,
   boolValue,
   cellDeclaredType,
   cellEnumType,
@@ -38,8 +41,13 @@ import {
   fieldPathField,
   fieldPathIndex,
   nullValue,
+  objectFieldCells,
   objectFields,
+  optionLayerStates,
+  presentationValue,
   refValue,
+  replaceOptionLayer,
+  replacePresentationValue,
 } from '../wire'
 import { Icon } from './Icon'
 import { RichTextString } from './RichTextString'
@@ -50,17 +58,19 @@ import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
   collectionShapeForDeclaredType,
+  optionDepthForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
   referenceKeyText,
   scalarDefaultForDeclaredType,
   summaryOf,
 } from '../value/fieldValue'
-import { useObjectDraft } from './ObjectDraftHost'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
 import { PluginRendererMount, useFieldRenderer } from '../plugins'
 import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
+import { FunctionEditorButton } from './FunctionBodyDialog'
+import { FunctionSourcePreview } from './FunctionSourcePreview'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 
@@ -164,15 +174,6 @@ function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
   return key.value.variant ?? String(key.value.value)
 }
 
-/** Strip trailing `?` off a declared type string. Kept for the rare cases
- *  (null-collection detection, resolveDefaultElement scalar shorthand) that
- *  still work on the wire-formatted type string. Other schema questions
- *  should read `FieldAnnotation.item_annotation` / `.ref_target_type` /
- *  `.enum_type` instead — the backend fills those directly. */
-function stripNullableType(declaredType?: string): string | undefined {
-  return declaredType?.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-}
-
 function dictKeyText(k: DictKey): string {
   switch (k.kind) {
     case 'string': return `"${k.value}"`
@@ -181,112 +182,36 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, refTargetType, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; surface?: FieldRenderSurface; highlightQuery?: string }) {
+export function DataCardCompact({ value, label, declaredType, refTargetType, annotation, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; annotation?: FieldAnnotation | null; surface?: FieldRenderSurface; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
-    ? <MarkdownValueTree value={value} label={value.kind === 'array' ? undefined : label} depth={0} highlightQuery={highlightQuery} />
+    ? (
+      <HighlightQueryCtx.Provider value={highlightQuery}>
+        <div className="dc-inspector dc-inspector-compact">
+          <ComplexValueChildren value={value} depth={0} fieldPath={[]} valueAnnotation={annotation} />
+        </div>
+      </HighlightQueryCtx.Provider>
+    )
     : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
-  const nullable = declaredType?.endsWith('?') ?? false
+  const nullable = declaredType?.startsWith('Option<') || declaredType?.endsWith('?') || false
   const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
   return (
     <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', nullable, surface }} fallback={fallback} />
   )
 }
 
-function MarkdownValueTree({ value, label, depth, highlightQuery }: {
-  value: FieldValue & { kind: 'object' | 'array' | 'dict' }
-  label?: string
-  depth: number
-  highlightQuery?: string
-}) {
-  const entries = treeEntries(value)
-  const depthClass = `markdown-tree-depth-${Math.min(depth, 2)}`
-  const inlineScalarArray = value.kind === 'array'
-    && entries.every(entry => !isComplexValue(entry.value))
-
-  return (
-    <div className={`markdown-value-tree ${depthClass}${label ? ' has-branch-label' : ''}${inlineScalarArray ? ' inline-scalar-array' : ''}`}>
-      {label && <div className="markdown-tree-branch-label">{highlightSearchText(label, highlightQuery)}</div>}
-      {entries.length === 0 ? (
-        <div className="markdown-tree-empty">—</div>
-      ) : (
-        <div className="markdown-tree-items">
-          {entries.map((entry, index) => (
-            <MarkdownTreeItem key={`${entry.marker}:${index}`} entry={entry} depth={depth} highlightQuery={highlightQuery} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface MarkdownTreeEntry {
-  marker: string
-  markerKind: 'plain' | 'index' | 'key'
-  branchLabel?: string
-  value: FieldValue
-}
-
-function MarkdownTreeItem({ entry, depth, highlightQuery }: { entry: MarkdownTreeEntry; depth: number; highlightQuery?: string }) {
-  const complex = isComplexValue(entry.value) ? entry.value : null
-  return (
-    <div className={`markdown-tree-item${complex ? ' complex-item' : ''}`}>
-      <span className={`markdown-tree-marker marker-${entry.markerKind}`}>{highlightSearchText(entry.marker, highlightQuery)}</span>
-      <div className="markdown-tree-content">
-        {complex ? (
-          <MarkdownValueTree value={complex} label={entry.branchLabel} depth={depth + 1} highlightQuery={highlightQuery} />
-        ) : (
-          <span className="markdown-tree-leaf"><ValueChip value={entry.value} highlightQuery={highlightQuery} /></span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function treeEntries(value: FieldValue & { kind: 'object' | 'array' | 'dict' }): MarkdownTreeEntry[] {
-  if (value.kind === 'object') {
-    return Object.entries(value.value.fields)
-      .filter((entry): entry is [string, FieldValue] => entry[1] !== undefined)
-      .map(([fieldName, fieldValue]) => ({
-        marker: '',
-        markerKind: 'plain',
-        branchLabel: isComplexValue(fieldValue) ? fieldName : undefined,
-        value: fieldValue,
-      }))
-  }
-  if (value.kind === 'array') {
-    return value.value.map((item, index) => {
-      const complex = isComplexValue(item)
-      return {
-        marker: complex ? `${index + 1}.` : '',
-        markerKind: complex ? 'index' : 'plain',
-        value: item,
-      }
-    })
-  }
-  return value.value.map(([key, item]) => ({
-    marker: `${dictTreeKey(key)} →`,
-    markerKind: 'key',
-    value: item,
-  }))
-}
-
 function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
   return value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
-}
-
-function dictTreeKey(key: DictKey): string {
-  switch (key.kind) {
-    case 'string': return key.value
-    case 'int': return String(key.value)
-    case 'enum': return dictEnumVariantText(key)
-  }
 }
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
   const navigation = useEditorNavigation()
   switch (value.kind) {
-    case 'null':
-      return <span className="vc vc-null">{highlightSearchText('null', highlightQuery)}</span>
+    case 'option_none':
+      return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
+    case 'option_some':
+    case 'result_ok':
+    case 'result_err':
+      return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
     case 'bool':
       return (
         <span className={`vc vc-bool${value.value ? ' on' : ''}`}>
@@ -332,6 +257,8 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
       return <span className="vc vc-arr">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
     case 'dict':
       return <span className="vc vc-dict">{highlightSearchText(summaryOf(value), highlightQuery)}</span>
+    case 'function':
+      return <span className="vc vc-function"><FunctionSourcePreview source={value.value.source} /></span>
   }
 }
 
@@ -368,6 +295,7 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  it once the highlight has been consumed. */
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
+const HighlightQueryCtx = createContext<string | undefined>(undefined)
 const ValueRowSelectionCtx = createContext<{
   selectedFieldPath?: FieldPathSegment[] | null
   selectedActionPathWire?: string | null
@@ -385,6 +313,12 @@ function sameFieldPath(
     && left.every((segment, index) => (
       segment.kind === right[index].kind && segment.value === right[index].value
     ))
+}
+
+function fieldLabelTitle(label: string, fieldName?: string, description?: string): string | undefined {
+  if (!fieldName) return undefined
+  const metadata = fieldMetadataTitle(fieldName, description)
+  return label === fieldName ? metadata : `${label}\n${metadata}`
 }
 
 function severityRank(s: 'error' | 'warning' | 'info'): number {
@@ -561,27 +495,44 @@ export function DataCardExpanded({
         const enumType = cellEnumType(fc)
         const enumIsFlag = cellEnumIsFlag(fc)
         const nullable = cellNullable(fc)
-        const nullCollectionShape = fc.value.kind === 'null'
+        const shownValue = presentationValue(fc.value)
+        const nullCollectionShape = shownValue.kind === 'option_none'
           ? collectionShapeForDeclaredType(declaredType)
           : null
-        const displayedValue = nullCollectionShape ?? fc.value
+        const displayedValue = nullCollectionShape ?? shownValue
         if (
           flattenSingleComplexField
+          && !fc.missing
           && fields.length === 1
           && displayedValue.kind === 'object'
         ) {
+          const polymorphicTypes = annotationPolymorphicTypes(fc.annotation)
           return (
-            <ComplexValueChildren
-              key={fc.name}
-              value={displayedValue}
-              depth={depth}
-              fieldPath={[fieldPathField(fc.name)]}
-              pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
-              onEdit={fieldEdit}
-              onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
-              onRowToggle={onRowToggle}
-              valueAnnotation={fc.annotation}
-            />
+            <Fragment key={fc.name}>
+              {polymorphicTypes.length >= 2 && (
+                <PolymorphicTypeRow
+                  value={displayedValue}
+                  polymorphicTypes={polymorphicTypes}
+                  depth={depth}
+                  onCommit={fieldEdit
+                    ? next => fieldEdit(
+                        [fieldPathField(fc.name)],
+                        replacePresentationValue(fc.value, next),
+                      )
+                    : undefined}
+                />
+              )}
+              <ComplexValueChildren
+                value={displayedValue}
+                depth={depth}
+                fieldPath={[fieldPathField(fc.name)]}
+                pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
+                onEdit={fieldEdit}
+                onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
+                onRowToggle={onRowToggle}
+                valueAnnotation={fc.annotation}
+              />
+            </Fragment>
           )
         }
         return (
@@ -591,6 +542,7 @@ export function DataCardExpanded({
             fieldName={fc.name}
             description={fc.annotation?.description ?? undefined}
             value={fc.value}
+            missing={fc.missing}
             depth={depth}
             onEdit={fieldEdit}
             onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
@@ -616,6 +568,43 @@ export function DataCardExpanded({
     </ValueRowSelectionCtx.Provider>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
+}
+
+function PolymorphicTypeRow({ value, polymorphicTypes, depth, onCommit }: {
+  value: FieldValue & { kind: 'object' }
+  polymorphicTypes: string[]
+  depth: number
+  onCommit?: (next: FieldValue) => void
+}) {
+  const lookups = useEditorLookups()
+
+  async function selectType(nextType: string) {
+    if (!onCommit || nextType === value.value.actual_type) return
+    const next = await lookups.makeDefaultObject(nextType)
+    if (next.ok) onCommit(next.value)
+  }
+
+  return (
+    <div className="dc-row dc-polymorphic-type-row" style={inspectorDepthStyle(depth)}>
+      <div className="dc-row-label">
+        <span className="dc-row-label-text">类型</span>
+      </div>
+      <div className="dc-row-value">
+        {onCommit ? (
+          <SearchableSelect
+            className="dc-input-flat dc-polymorphic-type-select"
+            value={value.value.actual_type}
+            options={polymorphicTypes.map(type => ({ value: type }))}
+            ariaLabel="选择具体类型"
+            onCommit={selectType}
+          />
+        ) : (
+          <span className="vc vc-obj">{value.value.actual_type}</span>
+        )}
+      </div>
+      <div className="dc-row-actions" />
+    </div>
+  )
 }
 
 function rowDiagSeverity(pathKey: string | undefined): {
@@ -645,6 +634,7 @@ function FieldRow({
   fieldName,
   description,
   value,
+  missing = false,
   depth,
   onEdit,
   onCollectionEdit,
@@ -666,6 +656,7 @@ function FieldRow({
   fieldName?: string
   description?: string
   value: FieldValue
+  missing?: boolean
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
@@ -684,36 +675,47 @@ function FieldRow({
   collectionItem?: boolean
 }) {
   const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
+  const shownValue = presentationValue(value)
   const pluginRenderer = useFieldRenderer({
-    value,
+    value: shownValue,
     type: declaredType ?? '',
     nullable: !!nullable,
     surface: 'record-foldout-header',
   })
-  const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
+  const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
+  const optionDepth = optionDepthForDeclaredType(declaredType)
+  const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
+  const innerValueAvailable = optionNoneLayer < 0 || optionNoneLayer === optionDepth - 1
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
   // "add element" instead of first coercing null → empty collection by
   // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = value.kind === 'null' ? collectionShapeForDeclaredType(declaredType) : null
-  const displayValue = nullCollectionShape ?? value
+  const nullCollectionShape = shownValue.kind === 'option_none' && innerValueAvailable
+    ? collectionShapeForDeclaredType(declaredType)
+    : null
+  const displayValue = nullCollectionShape ?? shownValue
   const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
   // Extra trailing controls for nullable / polymorphic fields. Enum and ref
-  // scalars already expose a "(null)" option in their pill selects, so we
+  // scalars already expose a `None` option in their pill selects, so we
   // don't double up there. Bool doesn't get a clear button unless nullable.
-  const commit = onEdit ? (next: FieldValue) => onEdit(fieldPath, next) : undefined
+  const commit = onEdit
+    ? (next: FieldValue) => onEdit(fieldPath, replacePresentationValue(value, next))
+    : undefined
   const nullControls = commit ? (
     <NullableControls
       value={value}
       nullable={!!nullable}
       declaredType={declaredType}
+      objectType={valueAnnotation?.object_type ?? undefined}
       enumType={enumType}
       enumIsFlag={effectiveEnumIsFlag}
       refTargetType={refTargetType}
       polymorphicTypes={polyTypes}
+      showTypeSwitcher={!canExpand}
       onCommit={commit}
+      onCommitValue={next => onEdit?.(fieldPath, next)}
     />
   ) : null
   const mergedTrailing = nullControls
@@ -741,7 +743,7 @@ function FieldRow({
         dragProps={dragProps}
         collectionItem={collectionItem}
         pluginRenderer={pluginRenderer}
-        pluginContext={pluginRenderer ? { value, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
+        pluginContext={pluginRenderer ? { value: shownValue, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
       />
     )
   }
@@ -750,7 +752,8 @@ function FieldRow({
       label={label}
       fieldName={fieldName}
       description={description}
-      value={value}
+      value={shownValue}
+      missing={missing}
       depth={depth}
       onCommit={commit}
       declaredType={declaredType}
@@ -764,6 +767,7 @@ function FieldRow({
       trailing={mergedTrailing}
       dragProps={dragProps}
       collectionItem={collectionItem}
+      editorEnabled={innerValueAvailable}
     />
   )
 }
@@ -772,67 +776,101 @@ function NullableControls({
   value,
   nullable,
   declaredType,
+  objectType,
   enumType,
   enumIsFlag,
   refTargetType,
   polymorphicTypes,
+  showTypeSwitcher,
   onCommit,
+  onCommitValue,
 }: {
   value: FieldValue
   nullable: boolean
   declaredType?: string
+  objectType?: string
   enumType?: string
   enumIsFlag?: boolean
   refTargetType?: string
   polymorphicTypes: string[]
+  showTypeSwitcher: boolean
   onCommit: (next: FieldValue) => void
+  onCommitValue: (next: FieldValue) => void
 }) {
-  const isNull = value.kind === 'null'
-  const isObject = value.kind === 'object'
-  const isPolymorphic = polymorphicTypes.length >= 2
-  const canSwitchType = isObject && isPolymorphic && !isNull
-  // Clear button on any nullable, currently non-null field — including enum
-  // and ref, whose own dropdowns hide the "(null)" option behind an extra
-  // click. A dedicated ✕ next to the value is faster.
-  const canClear = nullable && !isNull
-  // Create button on any null field where we can produce something useful:
-  // scalars/collections we materialize locally, refs/enums pull first option
-  // via the async helper, and abstract objects prompt for a concrete type.
-  const canCreate = isNull && (
+  const shownValue = presentationValue(value)
+  const optionDepth = optionDepthForDeclaredType(declaredType)
+  const layers = optionLayerStates(value, optionDepth)
+  const noneLayer = layers.indexOf('none')
+  const isObject = shownValue.kind === 'object'
+  const isPolymorphic = polymorphicTypes.length > 0
+  const canSwitchType = showTypeSwitcher && isObject && polymorphicTypes.length >= 2 && noneLayer < 0
+  const canCreate = noneLayer >= 0 && (
+    noneLayer < optionDepth - 1
+    || scalarDefaultForDeclaredType(declaredType) !== null
+    || isPolymorphic
+    || !!enumType
+    || !!refTargetType
+    || !!objectType
+  )
+
+  // 非 Option 的旧 nullable 元数据仍按单层控件处理。
+  const legacyCanClear = optionDepth === 0 && nullable && shownValue.kind !== 'option_none'
+  const legacyCanCreate = optionDepth === 0 && shownValue.kind === 'option_none' && (
     scalarDefaultForDeclaredType(declaredType) !== null
     || isPolymorphic
     || !!enumType
     || !!refTargetType
-    || !!declaredType
+    || !!objectType
   )
 
-  const { openObjectDraft } = useObjectDraft()
   const lookups = useEditorLookups()
+  const [choosingTarget, setChoosingTarget] = useState<{ optionLayer: number | null } | null>(null)
 
-  if (!canClear && !canCreate && !canSwitchType) return null
+  if (layers.length === 0 && !legacyCanClear && !legacyCanCreate && !canSwitchType) return null
 
-  function openSwitchDialog() {
-    if (value.kind !== 'object') return
-    openObjectDraft({
-      title: '切换类型',
-      actualType: value.value.actual_type,
-      polymorphicTypes,
-      confirmLabel: '确认切换',
-      onConfirm: next => onCommit(next),
-    })
+  async function materializeObject(typeName: string) {
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) onCommit(result.value)
   }
 
-  function openCreateDialog(chosenType: string) {
-    openObjectDraft({
-      title: `创建 ${chosenType}`,
-      actualType: chosenType,
-      polymorphicTypes: isPolymorphic ? polymorphicTypes : [],
-      confirmLabel: '创建',
-      onConfirm: next => onCommit(next),
-    })
+  function commitCreated(layer: number, inner: FieldValue) {
+    onCommitValue(replaceOptionLayer(value, layer, {
+      kind: 'option_some',
+      value: inner,
+    }))
   }
 
-  async function handleCreate() {
+  function commitTarget(target: { optionLayer: number | null }, created: FieldValue) {
+    onCommitValue(applyCreatedValue(value, target.optionLayer, created))
+  }
+
+  async function handleCreate(
+    event: React.MouseEvent<HTMLButtonElement>,
+    target: { optionLayer: number | null },
+  ) {
+    const layer = target.optionLayer
+    if (layer === null) {
+      if (isPolymorphic) {
+        setChoosingTarget(target)
+        return
+      }
+      if (objectType) {
+        const result = await lookups.makeDefaultObject(objectType)
+        if (result.ok) commitTarget(target, result.value)
+      }
+      return
+    }
+    if (layer < optionDepth - 1) {
+      commitCreated(layer, nullValue())
+      return
+    }
+    if (refTargetType) {
+      const row = event.currentTarget.closest('.dc-row')
+      const target = row?.querySelector<HTMLElement>('.dc-pill-select-ref, .dc-input-ref-select')
+      target?.focus()
+      target?.click()
+      return
+    }
     // Scalars and collections stay local — cheap default + no user input needed.
     const scalarDefault = defaultForScalarLike({
       declaredType,
@@ -843,42 +881,48 @@ function NullableControls({
     })
     if (scalarDefault) {
       const resolved = await scalarDefault()
-      if (resolved) onCommit(resolved)
+      if (resolved) commitCreated(layer, resolved)
       return
     }
-    // Object materialization needs the draft dialog so required + abstract
-    // sub-fields can be filled explicitly instead of hoping the runtime
-    // hands back a writable shape.
     if (isPolymorphic) {
-      // No default — user picks concrete type inside the dialog.
-      openCreateDialog(polymorphicTypes[0])
+      setChoosingTarget(target)
       return
     }
-    if (declaredType) {
-      const stripped = declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-      openCreateDialog(stripped)
+    if (objectType) {
+      const result = await lookups.makeDefaultObject(objectType)
+      if (result.ok) commitCreated(layer, result.value)
     }
   }
 
   return (
     <span className="dc-null-controls" onClick={e => e.stopPropagation()}>
-      {canSwitchType && (
-        <button
-          type="button"
-          className="dc-null-btn dc-null-btn-switch"
-          title="切换类型"
-          aria-label="切换类型"
-          onClick={openSwitchDialog}
-        >
-          <Icon name="edit" size={11} />
-        </button>
+      {canSwitchType && shownValue.kind === 'object' && (
+        <SearchableSelect
+          className="dc-polymorphic-type-select"
+          value={shownValue.value.actual_type}
+          options={polymorphicTypes.map(type => ({ value: type }))}
+          ariaLabel="选择具体类型"
+          onCommit={next => { void materializeObject(next) }}
+        />
       )}
-      {canClear && (
+      {layers.map((state, layer) => state === 'some' && (
+        <button
+          key={`clear-${layer}`}
+          type="button"
+          className="dc-null-btn dc-null-btn-clear"
+          title="清除为 None"
+          aria-label="清除为 None"
+          onClick={() => onCommitValue(replaceOptionLayer(value, layer, nullValue()))}
+        >
+          <Icon name="close" size={11} />
+        </button>
+      ))}
+      {legacyCanClear && (
         <button
           type="button"
           className="dc-null-btn dc-null-btn-clear"
-          title="清除为 null"
-          aria-label="清除为 null"
+          title="清除为 None"
+          aria-label="清除为 None"
           onClick={() => onCommit(nullValue())}
         >
           <Icon name="close" size={11} />
@@ -888,21 +932,45 @@ function NullableControls({
         <button
           type="button"
           className="dc-null-btn dc-null-btn-create"
-          title="创建默认值"
-          aria-label="创建默认值"
-          onClick={handleCreate}
+          title="创建值"
+          aria-label="创建值"
+          onClick={event => { void handleCreate(event, { optionLayer: noneLayer }) }}
         >
           <Icon name="plus" size={11} />
         </button>
+      )}
+      {legacyCanCreate && (
+        <button
+          type="button"
+          className="dc-null-btn dc-null-btn-create"
+          title="创建值"
+          aria-label="创建值"
+          onClick={event => { void handleCreate(event, { optionLayer: null }) }}
+        >
+          <Icon name="plus" size={11} />
+        </button>
+      )}
+      {choosingTarget !== null && (
+        <SearchableSelect
+          className="dc-polymorphic-type-select"
+          value=""
+          autoFocus
+          placeholder="选择具体类型..."
+          options={polymorphicTypes.map(type => ({ value: type }))}
+          ariaLabel="选择具体类型"
+          onCommit={async next => {
+            const result = await lookups.makeDefaultObject(next)
+            if (result.ok) commitTarget(choosingTarget, result.value)
+            setChoosingTarget(null)
+          }}
+          onExit={() => setChoosingTarget(null)}
+        />
       )}
     </span>
   )
 }
 
-/** Return a synchronous or ref/enum-fetching thunk producing a starter
- *  value for scalars, refs, enums, arrays and dicts. Object types return
- *  null — those need the object-draft dialog so required and abstract
- *  sub-fields can be filled explicitly. */
+/** Return a creator for scalar and collection type defaults. */
 function defaultForScalarLike({
   declaredType,
   enumType,
@@ -927,15 +995,7 @@ function defaultForScalarLike({
     }
   }
   if (refTargetType) {
-    return async () => {
-      const targets = await lookups.loadRefTargets(refTargetType)
-      if (targets.ok && targets.value.length > 0) {
-        return refValue(targets.value[0].coordinate.key)
-      }
-      // No known ref targets — the user needs to create one first.
-      alert(`&${refTargetType} 类型没有可用的记录，请先在对应的表中创建一条。`)
-      return null
-    }
+    return null
   }
   const scalar = scalarDefaultForDeclaredType(declaredType)
   if (scalar) return async () => scalar
@@ -947,6 +1007,7 @@ function ScalarFieldRow({
   fieldName,
   description,
   value,
+  missing,
   depth,
   onCommit,
   declaredType,
@@ -962,11 +1023,13 @@ function ScalarFieldRow({
   collectionItem,
   pluginRenderer,
   pluginContext,
+  editorEnabled = true,
 }: {
   label: string
   fieldName?: string
   description?: string
   value: FieldValue
+  missing: boolean
   depth: number
   onCommit?: (newValue: FieldValue) => void
   declaredType?: string
@@ -982,13 +1045,17 @@ function ScalarFieldRow({
   collectionItem?: boolean
   pluginRenderer?: FieldRenderer
   pluginContext?: Parameters<typeof useFieldRenderer>[0]
+  editorEnabled?: boolean
 }) {
+  const highlightQuery = useContext(HighlightQueryCtx)
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'formatted_string'
-    || value.kind === 'enum' || value.kind === 'ref'
+    || value.kind === 'enum' || value.kind === 'ref' || value.kind === 'function'
   const resolvedRefTarget = refTargetType
-  const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
-  const canEdit = !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
+  const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
+  const dropdownNullable = !!nullable && optionDepthForDeclaredType(declaredType) === 0
+  const canEdit = (!missing || !!resolvedRefTarget)
+    && editorEnabled && !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
@@ -1059,16 +1126,20 @@ function ScalarFieldRow({
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
       >
         {leading}
-        <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
+        <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
       </div>
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
-          {pluginRenderer && pluginContext ? (
+          {missing && resolvedRefTarget && onCommit ? (
+            <DirectEditor value={displayedValue} onCommit={onCommit} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
+          ) : missing ? (
+            <MissingValueRepair value={value} onRepair={onCommit ? () => onCommit(value) : undefined} />
+          ) : pluginRenderer && pluginContext ? (
             <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
-            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={nullable} />
+            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
-            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} />
+            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
           )}
         </div>
       </div>
@@ -1077,6 +1148,46 @@ function ScalarFieldRow({
         <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
       </div>
     </div>
+  )
+}
+
+export function MissingValueRepair({
+  value,
+  onRepair,
+}: {
+  value: FieldValue
+  onRepair?: () => void | Promise<void>
+}) {
+  const [repairing, setRepairing] = useState(false)
+  const repairable = value.kind !== 'option_none' && !!onRepair
+
+  async function repair() {
+    if (!repairable || repairing) return
+    setRepairing(true)
+    try {
+      await onRepair?.()
+    } finally {
+      setRepairing(false)
+    }
+  }
+
+  return (
+    <span className="dc-missing-value">
+      <span className="dc-missing-label">Missing</span>
+      <button
+        type="button"
+        className="dc-missing-repair"
+        disabled={!repairable || repairing}
+        title={repairable ? '填入默认值' : '没有可用的默认值'}
+        onClick={event => {
+          event.stopPropagation()
+          void repair()
+        }}
+      >
+        <Icon name="build" size={12} />
+        <span>{repairing ? '修复中' : '修复'}</span>
+      </button>
+    </span>
   )
 }
 
@@ -1125,14 +1236,17 @@ export function DirectEditor({
       />
     )
   }
-  if (value.kind === 'enum' || (value.kind === 'null' && enumType)) {
-    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} />
+  if (value.kind === 'enum' || (value.kind === 'option_none' && enumType)) {
+    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} enumType={enumType} isFlag={enumIsFlag} nullable={nullable} />
   }
-  if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
-    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
+  if (value.kind === 'ref' || (value.kind === 'option_none' && refTargetType)) {
+    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
+  }
+  if (value.kind === 'function') {
+    return <FunctionEditorButton value={value} onCommit={onCommit} />
   }
   return <ValueChip value={value} />
 }
@@ -1215,45 +1329,50 @@ export function EnumDirectSelect({
   nullable = false,
   variant = 'pill',
 }: {
-  value: FieldValue & { kind: 'enum' | 'null' }
+  value: FieldValue & { kind: 'enum' | 'option_none' }
   onCommit: (next: FieldValue) => void
   onExit?: () => void
-  /** Required when `value.kind === 'null'`: the enum type this field expects. */
+  /** Required when the option is empty: the enum type this field expects. */
   enumType?: string
   autoFocus?: boolean
   isFlag?: boolean
-  /** When true, offer a "(null)" option so the field can be cleared. */
+  /** When true, offer a `None` option so the field can be cleared. */
   nullable?: boolean
   variant?: 'pill' | 'input'
 }) {
   const lookups = useEditorLookups()
   const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
-  const [variants, setVariants] = useState<import('../bindings/EnumVariantOption').EnumVariantOption[] | null>(null)
+  const [variants, setVariants] = useState<import('../bindings/EnumVariantOption').EnumVariantOption[] | null>(
+    () => enumName ? lookups.cachedEnumVariants(enumName) ?? null : [],
+  )
   const [loadError, setLoadError] = useState<string | null>(null)
   const incomingMask = value.kind === 'enum' ? value.value.value : 0n
   const [draftMask, setDraftMask] = useState(incomingMask)
-  const [draftNull, setDraftNull] = useState(value.kind === 'null')
+  const [draftNull, setDraftNull] = useState(value.kind === 'option_none')
   const pendingFlagValue = useRef<bigint | 'null' | undefined>(undefined)
   const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
   const color = fieldTypeColor(enumName ?? 'enum')
   useEffect(() => {
     if (!enumName) { setVariants([]); return }
     let alive = true
-    setVariants(null)
+    setVariants(lookups.cachedEnumVariants(enumName) ?? null)
     setLoadError(null)
     lookups.loadEnumVariants(enumName).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.value)
-      else { setVariants([]); setLoadError(r.error ?? null) }
+      else {
+        setVariants(currentVariants => currentVariants ?? [])
+        setLoadError(r.error ?? null)
+      }
     })
     return () => { alive = false }
   }, [enumName, lookups])
   useEffect(() => {
-    const incoming = value.kind === 'null' ? 'null' : incomingMask
+    const incoming = value.kind === 'option_none' ? 'null' : incomingMask
     if (pendingFlagValue.current !== undefined && pendingFlagValue.current !== incoming) return
     pendingFlagValue.current = undefined
     setDraftMask(incomingMask)
-    setDraftNull(value.kind === 'null')
+    setDraftNull(value.kind === 'option_none')
   }, [incomingMask, value.kind])
 
   function commit(next: string) {
@@ -1294,7 +1413,7 @@ export function EnumDirectSelect({
     const pending = pendingFlagValue.current
     pendingFlagValue.current = undefined
     if (pending === 'null') {
-      if (value.kind !== 'null') onCommit(nullValue())
+      if (value.kind !== 'option_none') onCommit(nullValue())
     } else if (pending !== undefined && enumName) {
       if (value.kind !== 'enum' || pending !== incomingMask) {
         onCommit(enumValue(enumName, null, pending))
@@ -1322,7 +1441,7 @@ export function EnumDirectSelect({
         onBlur={event => {
           const next = event.target.value
           if (!(value.kind === 'enum' && next === enumVariantText(value))
-            && !(value.kind === 'null' && next === '')) {
+            && !(value.kind === 'option_none' && next === '')) {
             commit(next || (nullable ? NULL_SENTINEL : ''))
           }
           requestAnimationFrame(() => onExit?.())
@@ -1398,7 +1517,7 @@ export function EnumDirectSelect({
     <SearchableSelect
       className={inputClass}
       style={{ '--enum-color': color } as React.CSSProperties}
-      value={value.kind === 'null' && !nullable ? '' : current}
+      value={value.kind === 'option_none' && !nullable ? '' : current}
       autoFocus={autoFocus}
       placeholder="选择枚举..."
       options={[
@@ -1412,7 +1531,7 @@ export function EnumDirectSelect({
   )
 }
 
-const NULL_SENTINEL = '(null)'
+const NULL_SENTINEL = 'None'
 const FLAG_EVERY_SENTINEL = '(every)'
 const FLAG_NONE_SENTINEL = '(none)'
 
@@ -1425,21 +1544,28 @@ export function RefDirectSelect({
   nullable = false,
   variant = 'pill',
 }: {
-  value: FieldValue & { kind: 'ref' | 'null' }
+  value: FieldValue & { kind: 'ref' | 'option_none' }
   onCommit: (next: FieldValue) => void
   onExit?: () => void
   targetType?: string
   autoFocus?: boolean
-  /** When true, offer a "(null)" option so the field can be cleared. */
+  /** When true, offer a `None` option so the field can be cleared. */
   nullable?: boolean
   variant?: 'pill' | 'input'
 }) {
   const lookups = useEditorLookups()
   const navigation = useEditorNavigation()
-  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
+  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(() => (
+    targetType
+      ? lookups.cachedRefTargets(targetType)?.map(target => ({
+        key: target.coordinate.key,
+        label: target.coordinate.key,
+      })) ?? null
+      : null
+  ))
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
-  const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
+  const selectedValue = value.kind === 'option_none' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
   const inputClass = variant === 'input'
     ? 'dc-input dc-input-ref-select'
@@ -1452,7 +1578,10 @@ export function RefDirectSelect({
       return
     }
     let alive = true
-    setTargets(null)
+    setTargets(lookups.cachedRefTargets(targetType)?.map(target => ({
+      key: target.coordinate.key,
+      label: target.coordinate.key,
+    })) ?? null)
     setLoadError(null)
     lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return
@@ -1462,7 +1591,7 @@ export function RefDirectSelect({
           label: target.coordinate.key,
         })))
       } else {
-        setTargets([])
+        setTargets(currentTargets => currentTargets ?? [])
         setLoadError(r.error ?? null)
       }
     })
@@ -1475,7 +1604,7 @@ export function RefDirectSelect({
 
   function commit(key: string) {
     if (key === NULL_SENTINEL) {
-      if (value.kind !== 'null') onCommit(nullValue())
+      if (value.kind !== 'option_none') onCommit(nullValue())
       return
     }
     if (value.kind !== 'ref' || key !== referenceKeyText(value.value)) {
@@ -1489,8 +1618,9 @@ export function RefDirectSelect({
       <SearchableSelect
         className={inputClass}
         style={{ '--ref-color': color } as CSSProperties}
-        value={value.kind === 'null' && !nullable ? '' : selectedValue}
+        value={value.kind === 'option_none' && !nullable ? '' : selectedValue}
         autoFocus={autoFocus}
+        ariaLabel="选择引用"
         title={targetType}
         placeholder="选择引用..."
         options={[
@@ -1517,6 +1647,7 @@ export function RefDirectSelect({
       defaultValue={currentKey}
       autoFocus={autoFocus}
       placeholder="key"
+      aria-label="选择引用"
       aria-invalid={!!loadError}
       onBlur={event => {
         commit(event.target.value)
@@ -1682,10 +1813,7 @@ function ExpandableRow({
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
   const [localExpanded, setLocalExpanded] = useState(shouldAutoExpand)
-  const staticObjectItem = !!collectionItem && value.kind === 'object'
-  const expanded = staticObjectItem
-    ? true
-    : pathKey && controlledExpansion
+  const expanded = pathKey && controlledExpansion
     ? controlledExpansion.has(pathKey)
     : localExpanded
   useEffect(() => {
@@ -1707,12 +1835,11 @@ function ExpandableRow({
     : value.kind === 'array' || value.kind === 'dict'
       ? ' dc-row-collection'
       : ' dc-row-object'
-  const inlineSingletonItem = value.kind === 'array'
-    && value.value.length === 1
-    && value.value[0]?.kind === 'object'
+  const concreteType = value.kind === 'object' ? value.value.actual_type : null
+  const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
+  const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
 
   function toggle() {
-    if (staticObjectItem) return
     const next = !expanded
     if (!controlledExpansion) setLocalExpanded(next)
     if (pathKey) onRowToggle?.(pathKey, next)
@@ -1728,23 +1855,31 @@ function ExpandableRow({
   }
 
   return (
-    <div className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}>
-      <div className={`dc-row dc-row-structure${staticObjectItem ? ' dc-row-static-group' : ' dc-row-foldout'}${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={staticObjectItem ? undefined : toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div
+      className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
+      style={inspectorDepthStyle(depth)}
+    >
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
-          {!staticObjectItem && (
-            <span className="dc-fold-arrow">
-              <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
-            </span>
-          )}
-          <span className="dc-row-label-text" title={fieldName ? fieldMetadataTitle(fieldName, description) : undefined}>{label}</span>
+          <span className="dc-fold-arrow">
+            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
+          </span>
+          <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
+            {canSwitchConcreteType && value.kind === 'object' ? (
+              <ExpandableObjectTypeSelect
+                value={value}
+                polymorphicTypes={polymorphicTypes}
+                onCommit={next => onEdit(fieldPath, next)}
+              />
+            ) : concreteType && <span className="dc-structure-type">{concreteType}</span>}
             {count !== null && <span className="vc-count">{count}</span>}
           </div>
         </div>
-        <div className="dc-row-actions">
+        <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
           {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
             <CollectionAddControl
               container={value}
@@ -1752,12 +1887,7 @@ function ExpandableRow({
               fieldPath={fieldPath}
               onCollectionEdit={editCollection}
               itemAnnotation={annotationItem(valueAnnotation)}
-            />
-          )}
-          {onCollectionEdit && value.kind === 'array' && inlineSingletonItem && (
-            <DeleteButton
-              title="删除唯一元素"
-              onClick={() => onCollectionEdit(fieldPath, { kind: 'array_remove', index: 0 })}
+              keyAnnotation={annotationKey(valueAnnotation)}
             />
           )}
           {trailing}
@@ -1782,6 +1912,33 @@ function ExpandableRow({
   )
 }
 
+function ExpandableObjectTypeSelect({ value, polymorphicTypes, onCommit }: {
+  value: FieldValue & { kind: 'object' }
+  polymorphicTypes: string[]
+  onCommit: (next: FieldValue) => void
+}) {
+  const lookups = useEditorLookups()
+  return (
+    <span
+      className="dc-structure-type-control"
+      onMouseDown={event => event.stopPropagation()}
+      onClick={event => event.stopPropagation()}
+    >
+      <SearchableSelect
+        className="dc-structure-type-select dc-polymorphic-type-select"
+        value={value.value.actual_type}
+        options={polymorphicTypes.map(type => ({ value: type }))}
+        ariaLabel="选择具体类型"
+        onCommit={async nextType => {
+          if (nextType === value.value.actual_type) return
+          const next = await lookups.makeDefaultObject(nextType)
+          if (next.ok) onCommit(next.value)
+        }}
+      />
+    </span>
+  )
+}
+
 function ComplexValueChildren({
   value,
   depth,
@@ -1791,7 +1948,6 @@ function ComplexValueChildren({
   onCollectionEdit,
   onRowToggle,
   valueAnnotation,
-  firstChildTrailing,
 }: {
   value: FieldValue
   depth: number
@@ -1801,13 +1957,12 @@ function ComplexValueChildren({
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   onRowToggle?: (path: string, expanded: boolean) => void
   valueAnnotation?: FieldAnnotation | null
-  firstChildTrailing?: ReactNode
 }) {
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFields(value).map((fc, index) => {
+      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).map((fc) => {
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -1816,6 +1971,7 @@ function ComplexValueChildren({
             fieldName={fc.name}
             description={annotation?.description ?? undefined}
             value={fc.value}
+            missing={fc.missing}
             depth={depth}
             onEdit={onEdit}
             onCollectionEdit={onCollectionEdit}
@@ -1827,7 +1983,6 @@ function ComplexValueChildren({
             enumType={annotationEnumType(annotation)}
             nullable={annotationNullable(annotation)}
             valueAnnotation={annotation}
-            trailing={index === 0 ? firstChildTrailing : undefined}
           />
         )
       })}
@@ -1853,6 +2008,7 @@ function ComplexValueChildren({
             value={item}
             depth={depth}
             onEdit={onEdit}
+            onCollectionEdit={onCollectionEdit}
             fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
             pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
             onRowToggle={onRowToggle}
@@ -1861,6 +2017,7 @@ function ComplexValueChildren({
             enumType={annotationEnumType(annotation)}
             nullable={annotationNullable(annotation)}
             valueAnnotation={annotation}
+            collectionItem
             trailing={onEdit ? (
               <DeleteButton
                 title="删除"
@@ -1933,23 +2090,6 @@ function ArrayItems({
   const [overIdx, setOverIdx] = useState<number | null>(null)
   const dragArmedRef = useRef<number | null>(null)
 
-  const onlyItem = container.value[0]
-  if (container.value.length === 1 && onlyItem?.kind === 'object') {
-    const itemAnnotation = itemAnnotations?.['0'] ?? itemTemplate
-    return (
-      <ComplexValueChildren
-        value={onlyItem}
-        depth={depth}
-        fieldPath={[...fieldPath, fieldPathIndex(0)]}
-        pathKey={pathKey ? `${pathKey}[0]` : '[0]'}
-        onEdit={onEdit}
-        onCollectionEdit={onCollectionEdit}
-        onRowToggle={onRowToggle}
-        valueAnnotation={itemAnnotation}
-      />
-    )
-  }
-
   function dropAt(target: number) {
     if (dragIdx === null || dragIdx === target) return
     onCollectionEdit?.(fieldPath, { kind: 'array_move', from: dragIdx, to: target })
@@ -1999,9 +2139,9 @@ function ArrayItems({
         } : undefined
         if (item.kind === 'object') {
           return (
-            <ArrayObjectItem
+            <FieldRow
               key={i}
-              index={i}
+              label={String(i + 1)}
               value={item}
               depth={depth}
               fieldPath={itemPath}
@@ -2012,6 +2152,7 @@ function ArrayItems({
               valueAnnotation={itemAnnotation}
               leading={dragHandle}
               trailing={trailing}
+              collectionItem
               dragProps={itemDragProps}
             />
           )
@@ -2074,39 +2215,49 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, itemAnnotation }: {
+function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, itemAnnotation, keyAnnotation }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
   fieldPath: FieldPathSegment[]
   onCollectionEdit: (edit: CollectionEdit) => void
   itemAnnotation?: FieldAnnotation
+  keyAnnotation?: FieldAnnotation
 }) {
   const [adding, setAdding] = useState(false)
+  const [pendingKey, setPendingKey] = useState<DictKey | null>(null)
   const [dupError, setDupError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const { openObjectDraft } = useObjectDraft()
+  const lookups = useEditorLookups()
   const rowSelection = useContext(ValueRowSelectionCtx)
   const pathWire = JSON.stringify(fieldPath)
   const selected = rowSelection?.selectedActionPathWire === pathWire
 
-  function reset() { setAdding(false); setDupError(null) }
+  function reset() { setAdding(false); setPendingKey(null); setDupError(null) }
 
-  const objectDraft = container.value.length === 0
-    ? objectDraftForAnnotation(itemAnnotation)
-    : null
+  const objectDraft = collectionObjectDraftForAnnotation(
+    itemAnnotation,
+    container.value.length === 0,
+  )
+  const requiredRefTarget = annotationRefTargetType(itemAnnotation)
+  const needsReference = !!requiredRefTarget && !annotationNullable(itemAnnotation)
 
   function addArrayItem() {
-    if (objectDraft) {
-      openObjectDraft({
-        title: `新建 ${objectDraft.actualType}`,
-        actualType: objectDraft.actualType,
-        polymorphicTypes: objectDraft.polymorphicTypes,
-        confirmLabel: '添加',
-        onConfirm: value => onCollectionEdit({ kind: 'array_append', value }),
-      })
+    if (needsReference || (objectDraft && objectDraft.polymorphicTypes.length > 0)) {
+      setAdding(true)
       return
     }
     onCollectionEdit({ kind: 'array_append' })
+  }
+
+  async function appendObject(typeName: string) {
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) onCollectionEdit({ kind: 'array_append', value: result.value })
+    reset()
+  }
+
+  function appendReference(value: FieldValue) {
+    onCollectionEdit({ kind: 'array_append', value })
+    reset()
   }
 
   if (container.kind === 'array') {
@@ -2137,11 +2288,33 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
         >
           <Icon name="plus" size={11} />
         </button>
+        {adding && needsReference && requiredRefTarget ? (
+          <RefDirectSelect
+            value={{ kind: 'option_none' }}
+            targetType={requiredRefTarget}
+            variant="input"
+            autoFocus
+            onCommit={appendReference}
+            onExit={reset}
+          />
+        ) : adding && objectDraft && (
+          <SearchableSelect
+            className="dc-polymorphic-type-select"
+            value=""
+            autoFocus
+            placeholder="选择具体类型..."
+            options={objectDraft.polymorphicTypes.map(type => ({ value: type }))}
+            ariaLabel="选择具体类型"
+            onCommit={next => { void appendObject(next) }}
+            onExit={reset}
+          />
+        )}
       </span>
     )
   }
 
-  const sampleKey: DictKey = container.value[0]?.[0] ?? { kind: 'string', value: '' }
+  // 空字典没有样本键，必须由 schema 注解决定输入控件；已有数据也以 schema 为准。
+  const sampleKey: DictKey = dictKeyTemplate(keyAnnotation) ?? container.value[0]?.[0] ?? { kind: 'string', value: '' }
   async function tryAdd(key: DictKey) {
     if (container.kind !== 'dict') return
     const dup = container.value.some(([entryKey]) => dictKeyEq(entryKey, key))
@@ -2149,17 +2322,26 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
-    if (objectDraft) {
-      openObjectDraft({
-        title: `新建 ${objectDraft.actualType}`,
-        actualType: objectDraft.actualType,
-        polymorphicTypes: objectDraft.polymorphicTypes,
-        confirmLabel: '添加',
-        onConfirm: value => onCollectionEdit({ kind: 'dict_insert', key, value }),
-      })
-    } else {
-      onCollectionEdit({ kind: 'dict_insert', key })
+    if (needsReference || (objectDraft && objectDraft.polymorphicTypes.length > 0)) {
+      setPendingKey(key)
+      return
     }
+    onCollectionEdit({ kind: 'dict_insert', key })
+    reset()
+  }
+
+  async function insertObject(typeName: string) {
+    if (!pendingKey) return
+    const result = await lookups.makeDefaultObject(typeName)
+    if (result.ok) {
+      onCollectionEdit({ kind: 'dict_insert', key: pendingKey, value: result.value })
+    }
+    reset()
+  }
+
+  function insertReference(value: FieldValue) {
+    if (!pendingKey) return
+    onCollectionEdit({ kind: 'dict_insert', key: pendingKey, value })
     reset()
   }
   return (
@@ -2179,11 +2361,33 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
         </button>
       ) : (
         <span className="dc-add-stack">
-          <DictKeyEntry
-            sampleKey={sampleKey}
-            onCommit={tryAdd}
-            onCancel={reset}
-          />
+          {pendingKey && needsReference && requiredRefTarget ? (
+            <RefDirectSelect
+              value={{ kind: 'option_none' }}
+              targetType={requiredRefTarget}
+              variant="input"
+              autoFocus
+              onCommit={insertReference}
+              onExit={reset}
+            />
+          ) : pendingKey && objectDraft ? (
+            <SearchableSelect
+              className="dc-polymorphic-type-select"
+              value=""
+              autoFocus
+              placeholder="选择具体类型..."
+              options={objectDraft.polymorphicTypes.map(type => ({ value: type }))}
+              ariaLabel="选择具体类型"
+              onCommit={next => { void insertObject(next) }}
+              onExit={reset}
+            />
+          ) : (
+            <DictKeyEntry
+              sampleKey={sampleKey}
+              onCommit={tryAdd}
+              onCancel={reset}
+            />
+          )}
           {dupError && <span className="dc-inline-error" role="alert">{dupError}</span>}
         </span>
       )}
@@ -2191,88 +2395,25 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
   )
 }
 
-function ArrayObjectItem({
-  index,
-  value,
-  depth,
-  fieldPath,
-  pathKey,
-  onEdit,
-  onCollectionEdit,
-  onRowToggle,
-  valueAnnotation,
-  leading,
-  trailing,
-  dragProps,
-}: {
-  index: number
-  value: FieldValue & { kind: 'object' }
-  depth: number
-  fieldPath: FieldPathSegment[]
-  pathKey: string
-  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
-  onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
-  onRowToggle?: (path: string, expanded: boolean) => void
-  valueAnnotation?: FieldAnnotation
-  leading?: ReactNode
-  trailing?: ReactNode
-  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
-}) {
-  const diag = rowDiagSeverity(pathKey)
-  const rowSelection = useContext(ValueRowSelectionCtx)
-  const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
-  const hasFields = objectFields(value).length > 0
+export function dictKeyTemplate(annotation?: FieldAnnotation): DictKey | null {
+  const enumType = annotationEnumType(annotation)
+  if (enumType) {
+    return { kind: 'enum', value: { enum_name: enumType, variant: null, value: 0n } }
+  }
+  switch (annotationDeclaredType(annotation)) {
+    case 'int': return { kind: 'int', value: 0n }
+    case 'string': return { kind: 'string', value: '' }
+    default: return null
+  }
+}
 
-  return (
-    <div
-      className={`dc-array-object-item${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-array-item-diag-${diag.sev}` : ''}${dragProps?.extraClass ? ` ${dragProps.extraClass}` : ''}`}
-      style={inspectorDepthStyle(depth)}
-      data-depth={depth}
-      data-field-path={pathKey}
-      data-field-path-wire={JSON.stringify(fieldPath)}
-      data-value-kind="object"
-      data-keyboard-editable={!!onEdit || undefined}
-      title={diag.messages.join('\n') || undefined}
-      onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)}
-      {...(dragProps && {
-        onDragStart: dragProps.onDragStart,
-        onDragOver: dragProps.onDragOver,
-        onDragLeave: dragProps.onDragLeave,
-        onDrop: dragProps.onDrop,
-        onDragEnd: dragProps.onDragEnd,
-        draggable: dragProps.draggable,
-      })}
-    >
-      <div className="dc-array-item-rail">
-        {leading}
-        <span className="dc-array-item-index">{index + 1}</span>
-        {(diag.sev === 'error' || diag.sev === 'warning') && (
-          <span className={`dc-array-item-diag-dot ${diag.sev}`} aria-hidden />
-        )}
-      </div>
-      <div className="dc-array-object-fields">
-        {hasFields ? (
-          <ComplexValueChildren
-            value={value}
-            depth={depth + 1}
-            fieldPath={fieldPath}
-            pathKey={pathKey}
-            onEdit={onEdit}
-            onCollectionEdit={onCollectionEdit}
-            onRowToggle={onRowToggle}
-            valueAnnotation={valueAnnotation}
-            firstChildTrailing={trailing}
-          />
-        ) : (
-          <div className="dc-row dc-array-empty-object" style={inspectorDepthStyle(depth + 1)}>
-            <div className="dc-row-label"><span className="vc vc-null">空对象</span></div>
-            <div className="dc-row-value" />
-            <div className="dc-row-actions">{trailing}</div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+export function collectionObjectDraftForAnnotation(
+  annotation: FieldAnnotation | undefined,
+  collectionIsEmpty: boolean,
+): { actualType: string, polymorphicTypes: string[] } | null {
+  const draft = objectDraftForAnnotation(annotation)
+  if (!draft) return null
+  return collectionIsEmpty || draft.polymorphicTypes.length >= 2 ? draft : null
 }
 
 function objectDraftForAnnotation(annotation?: FieldAnnotation): {
@@ -2294,16 +2435,24 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
 }) {
   const lookups = useEditorLookups()
   const [text, setText] = useState('')
-  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(null)
+  const [variants, setVariants] = useState<{ name: string, label: string | null, description: string | null }[] | null>(() => (
+    sampleKey.kind === 'enum'
+      ? lookups.cachedEnumVariants(sampleKey.value.enum_name) ?? null
+      : null
+  ))
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     if (sampleKey.kind !== 'enum') return
     let alive = true
+    setVariants(lookups.cachedEnumVariants(sampleKey.value.enum_name) ?? null)
     setLoadError(null)
     lookups.loadEnumVariants(sampleKey.value.enum_name).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.value)
-      else { setVariants([]); setLoadError(r.error ?? null) }
+      else {
+        setVariants(currentVariants => currentVariants ?? [])
+        setLoadError(r.error ?? null)
+      }
     })
     return () => { alive = false }
   }, [sampleKey.kind === 'enum' ? sampleKey.value.enum_name : '', lookups])

@@ -1,0 +1,6 @@
+# Feature: data that satisfies a check expression.
+
+default_range: RangeRule {
+  minimum: 1,
+  maximum: 10,
+}

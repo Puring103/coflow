@@ -1,0 +1,410 @@
+use crate::api::{
+    byte_range, Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceLoadResult,
+    DimensionSourceRequest, DimensionSourceResult, Label, RewriteDimensionRecordRequest,
+    SourceLocation, WriteDimensionValueRequest,
+};
+use crate::data_model::{DimensionValueDraft, RecordOrigin, TextSpan};
+use coflow_language::cfd::parse_cfd;
+use coflow_language::cft::{CftValueType, RecordKey};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
+use std::path::Path;
+
+use super::render::serialize_value;
+use super::CFD_INDENT;
+use super::{diag, raw_span, CfdWriter};
+
+impl CfdWriter {
+    pub(crate) fn load_dimension_source(
+        &self,
+        request: &DimensionSourceLoadRequest<'_>,
+    ) -> Result<DimensionSourceLoadResult, DiagnosticSet> {
+        let path = request.source.location.path();
+        let text = self.read_source(path)?;
+        let (ast, syntax) = parse_cfd(&text);
+        if !syntax.is_empty() {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                syntax
+                    .into_iter()
+                    .map(|item| item.message)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )));
+        }
+        let optional_type =
+            CftValueType::Option(Box::new(request.schema.source_field.value_type.clone()));
+        let mut values = Vec::new();
+        let mut diagnostics = DiagnosticSet::empty();
+        for record in ast.records {
+            if request.schema.source_type.is_singleton
+                && record.key != request.schema.source_field.name.as_str()
+            {
+                if request.validate_singleton_shape
+                    && !request
+                        .singleton_source_fields
+                        .iter()
+                        .any(|field| field.as_str() == record.key)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "CFD-DIMENSION-FIELD",
+                            "CFD",
+                            format!(
+                                "dimension record `{}` does not map to a field on singleton `{}`",
+                                record.key, request.schema.source_type.name
+                            ),
+                        )
+                        .with_primary(file_span_label(
+                            path,
+                            &text,
+                            record.key_span.start,
+                            record.key_span.end,
+                            "unknown singleton dimension field",
+                        )),
+                    );
+                }
+                continue;
+            }
+            if !request
+                .schema
+                .schema
+                .is_assignable(&record.type_name, &request.schema.source_type.name)
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "CFD-DIMENSION-TYPE",
+                        "CFD",
+                        format!(
+                            "dimension record type `{}` is not assignable to `{}`",
+                            record.type_name, request.schema.source_type.name
+                        ),
+                    )
+                    .with_primary(file_span_label(
+                        path,
+                        &text,
+                        record.type_span.start,
+                        record.type_span.end,
+                        "incompatible dimension record type",
+                    )),
+                );
+                continue;
+            }
+            let source_key = match RecordKey::new(record.key.clone()) {
+                Ok(key) => key,
+                Err(err) => {
+                    diagnostics.push(Diagnostic::error("CFD-DIMENSION", "CFD", err.to_string()));
+                    continue;
+                }
+            };
+            for field in record.fields {
+                let Some(variant) = request.schema.dimension.variant(&field.name) else {
+                    if field.name != "default" {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "CFD-DIMENSION-VARIANT",
+                                "CFD",
+                                format!(
+                                    "unknown variant `{}` for dimension `{}`",
+                                    field.name, request.schema.dimension.name
+                                ),
+                            )
+                            .with_primary(file_span_label(
+                                path,
+                                &text,
+                                field.name_span.start,
+                                field.name_span.end,
+                                "unknown dimension variant",
+                            )),
+                        );
+                    }
+                    continue;
+                };
+                let value = match super::super::lower::lower_value(
+                    request.schema.schema,
+                    &field.value,
+                    &optional_type,
+                ) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        diagnostics.push(Diagnostic::error(
+                            "CFD-DIMENSION-VALUE",
+                            "CFD",
+                            err.diagnostics
+                                .into_iter()
+                                .map(|item| item.message)
+                                .collect::<Vec<_>>()
+                                .join("; "),
+                        ));
+                        continue;
+                    }
+                };
+                let span = field.value.span();
+                let range = byte_range(&text, span.start, span.end);
+                values.push(DimensionValueDraft {
+                    source_type: request.schema.source_type.name.clone(),
+                    source_key: source_key.clone(),
+                    field: request.schema.source_field.name.clone(),
+                    dimension: request.schema.dimension.name.clone(),
+                    variant: variant.clone(),
+                    value,
+                    origin: RecordOrigin::File {
+                        path: path.clone(),
+                        span: Some(TextSpan {
+                            start_line: range.start.line,
+                            start_character: range.start.character,
+                            end_line: range.end.line,
+                            end_character: range.end.character,
+                        }),
+                    },
+                });
+            }
+        }
+        if diagnostics.is_empty() {
+            Ok(DimensionSourceLoadResult { values })
+        } else {
+            Err(diagnostics)
+        }
+    }
+
+    pub(crate) fn write_dimension_value(
+        &self,
+        request: &WriteDimensionValueRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let path = request.source.location.path();
+        let variants = request
+            .schema
+            .dimension
+            .variants
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let mut rows = self.read_existing_dimension_cfd(path, &variants, None)?;
+        let physical_key = if request.schema.source_type.is_singleton {
+            request.schema.source_field.name.as_str()
+        } else {
+            request.source_key.as_str()
+        };
+        let row = rows.get_mut(physical_key).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-DIMENSION-WRITE",
+                format!("dimension source has no record `{physical_key}`"),
+            ))
+        })?;
+        match request.new_value {
+            Some(value) => {
+                row.variants
+                    .insert(request.variant.to_string(), serialize_value(value, 2));
+            }
+            None => {
+                row.variants.remove(request.variant.as_str());
+            }
+        }
+        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
+        self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
+    }
+
+    pub(crate) fn rewrite_dimension_record(
+        &self,
+        request: &RewriteDimensionRecordRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        if request.schema.source_type.is_singleton {
+            return Ok(DimensionSourceResult::default());
+        }
+        let path = request.source.location.path();
+        let variants = request
+            .schema
+            .dimension
+            .variants
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let mut rows = self.read_existing_dimension_cfd(path, &variants, None)?;
+        let row = rows.remove(request.old_key.as_str()).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-DIMENSION-WRITE",
+                format!("dimension source has no record `{}`", request.old_key),
+            ))
+        })?;
+        if let Some(new_key) = request.new_key {
+            if rows.insert(new_key.to_string(), row).is_some() {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-DIMENSION-WRITE",
+                    format!("dimension source already has record `{new_key}`"),
+                )));
+            }
+        }
+        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
+        self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
+    }
+
+    pub(crate) fn sync_dimension_source(
+        &self,
+        request: &DimensionSourceRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        let path = request.source.location.path();
+        let expected_keys = request
+            .entries
+            .iter()
+            .map(|entry| entry.key.as_str())
+            .collect::<BTreeSet<_>>();
+        let existing = self.read_existing_dimension_cfd(path, request.variants, Some(&expected_keys))?;
+        let mut out = String::new();
+        for entry in request.entries {
+            let row = existing.get(&entry.key);
+            let actual_type = entry.actual_type.as_str();
+            let _ = writeln!(out, "{}: {actual_type} {{", entry.key);
+            let _ = writeln!(
+                out,
+                "{CFD_INDENT}default: {},",
+                serialize_value(&entry.default, 2)
+            );
+            for variant in request.variants {
+                if let Some(value) = row.and_then(|row| row.variants.get(variant)) {
+                    let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));
+                } else if row.is_none() {
+                    let _ = writeln!(out, "{CFD_INDENT}{variant}: None,");
+                }
+            }
+            out.push_str("}\n\n");
+        }
+        self.write_if_changed(path, &out, "CFD-DIMENSION")
+    }
+}
+
+fn render_cfd_cell(value: &str) -> String {
+    if value.is_empty() {
+        "None".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn file_span_label(path: &Path, text: &str, start: usize, end: usize, message: &str) -> Label {
+    let range = byte_range(text, start, end);
+    Label {
+        location: SourceLocation::FileSpan {
+            path: path.to_path_buf(),
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
+        },
+        message: Some(message.to_string()),
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct DimensionCfdRow {
+    default: String,
+    variants: BTreeMap<String, String>,
+}
+
+fn render_dimension_cfd(
+    rows: &BTreeMap<String, DimensionCfdRow>,
+    actual_type: &str,
+    variants: &[String],
+) -> String {
+    let mut out = String::new();
+    for (key, row) in rows {
+        let _ = writeln!(out, "{key}: {actual_type} {{");
+        let _ = writeln!(
+            out,
+            "{CFD_INDENT}default: {},",
+            render_cfd_cell(&row.default)
+        );
+        for variant in variants {
+            if let Some(value) = row.variants.get(variant) {
+                let _ = writeln!(out, "{CFD_INDENT}{variant}: {},", render_cfd_cell(value));
+            }
+        }
+        out.push_str("}\n\n");
+    }
+    out
+}
+
+impl CfdWriter {
+fn read_existing_dimension_cfd(
+    &self,
+    path: &Path,
+    variants: &[String],
+    expected_keys: Option<&BTreeSet<&str>>,
+) -> Result<BTreeMap<String, DimensionCfdRow>, DiagnosticSet> {
+    let text = match self.read_source(path) {
+        Ok(text) => text,
+        Err(_) if !path.exists() => return Ok(BTreeMap::new()),
+        Err(diagnostics) => return Err(diagnostics),
+    };
+    let (ast, diagnostics) = parse_cfd(&text);
+    if let Some(diagnostic) = diagnostics.first() {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-DIMENSION",
+            format!(
+                "failed to parse dimension source `{}`: {}",
+                path.display(),
+                diagnostic.message
+            ),
+        )));
+    }
+    let mut out = BTreeMap::new();
+    for record in ast.records {
+        if expected_keys.is_some_and(|keys| !keys.contains(record.key.as_str())) {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!(
+                    "dimension source `{}` contains unmanaged id `{}`; variant records can only edit existing records",
+                    path.display(),
+                    record.key
+                ),
+            )));
+        }
+        if out.contains_key(&record.key) {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!(
+                    "dimension source `{}` contains duplicate id `{}`; variant records can only edit existing records",
+                    path.display(),
+                    record.key
+                ),
+            )));
+        }
+        let mut row = DimensionCfdRow::default();
+        for field in record.fields {
+            if field.name == "default" {
+                row.default = raw_span(&text, field.value.span());
+            } else if variants.iter().any(|variant| variant == &field.name) {
+                row.variants
+                    .insert(field.name, raw_span(&text, field.value.span()));
+            }
+        }
+        out.insert(record.key, row);
+    }
+    Ok(out)
+}
+
+fn write_if_changed(
+    &self,
+    path: &Path,
+    body: &str,
+    code: &'static str,
+) -> Result<DimensionSourceResult, DiagnosticSet> {
+    match self.read_source(path) {
+        Ok(existing) if existing == body => {
+            return Ok(DimensionSourceResult { changed: false });
+        }
+        Ok(_) => {}
+        Err(_) if !path.exists() => {}
+        Err(diagnostics) => return Err(diagnostics),
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            DiagnosticSet::one(diag(
+                code,
+                format!("failed to create `{}`: {err}", parent.display()),
+            ))
+        })?;
+    }
+    self.write_source(path, body)?;
+    Ok(DimensionSourceResult { changed: true })
+}
+}

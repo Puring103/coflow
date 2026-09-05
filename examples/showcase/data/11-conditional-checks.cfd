@@ -1,0 +1,6 @@
+# Feature: a when block only applies while its condition is true.
+
+enabled_rule: ConditionalRule {
+  enabled: true,
+  threshold: 5,
+}

@@ -1,0 +1,10 @@
+type RuleSet {
+  owner: &Entity;
+  samples: [int];
+  transform: IntegerTransform = fn(input: int) -> int {
+    if input >= 0 { input } else { -input }
+  };
+  classify: fn(value: int) -> string;
+  buildStats: fn(value: int) -> Stats;
+  pipeline: fn(values: [int], operation: fn(item: int) -> int) -> [int];
+}

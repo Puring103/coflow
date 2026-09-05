@@ -6,6 +6,7 @@ import { fieldValuesEqual, projectBatchCells, projectBatchRecordFields } from '.
 const cell = (name: string, value: FieldCell['value'], declaredType = 'string'): FieldCell => ({
   name,
   value,
+  missing: false,
   annotation: {
     enum_int_value: null,
     declared_type: declaredType,

@@ -8,81 +8,130 @@ import { fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
 import type { CellAnchor } from './editorSelection'
 import { fieldValuesEqual } from './batchRecordProjection'
 
-export async function serializeCellMatrix(
+export async function serializeCfdCellMatrix(
   rows: readonly (readonly CellAnchor[])[],
   render: (coordinate: RecordCoordinate, path: FieldPathSegment[]) => Promise<string>,
 ): Promise<string> {
-  const rendered: string[] = []
+  const rendered: string[][] = []
   for (const row of rows) {
     const cells: string[] = []
-    for (const cell of row) cells.push(escapeTsv(await render(cell.coordinate, cell.fieldPath)))
-    rendered.push(cells.join('\t'))
+    for (const cell of row) cells.push(await render(cell.coordinate, cell.fieldPath))
+    rendered.push(cells)
   }
-  return rendered.join('\n')
+  return serializeCfdMatrix(rendered)
 }
 
-export function serializeRecordsToRefColumn(records: readonly RecordCoordinate[]): string {
-  return records.map(record => escapeTsv(`&${record.key}`)).join('\n')
+export function serializeRecordRefsAsCfd(records: readonly RecordCoordinate[]): string {
+  return serializeCfdMatrix(records.map(record => [`&${record.key}`]))
 }
 
-function escapeTsv(text: string): string {
-  return /[\t\r\n"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+export function serializeCfdMatrix(rows: readonly (readonly string[])[]): string {
+  const renderedRows = rows.map(row => `  [${row.map(normalizeCfdCell).join(', ')}]`)
+  return renderedRows.length === 0 ? '[]' : `[\n${renderedRows.join(',\n')}\n]`
 }
 
-export function parseTsv(text: string): string[][] {
-  if (text.length === 0) return [['']]
-  const rows: string[][] = []
-  let row: string[] = []
-  let cell = ''
-  let quoted = false
-  let quoteClosed = false
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    if (quoted) {
-      if (char === '"' && text[i + 1] === '"') {
-        cell += '"'
-        i++
-      } else if (char === '"') {
-        quoted = false
-        quoteClosed = true
-      } else {
-        cell += char
-      }
-      continue
-    }
-    if (quoteClosed && char !== '\t' && char !== '\r' && char !== '\n') {
-      throw new Error('TSV quoted field has trailing characters')
-    }
-    if (char === '"') {
-      if (cell.length > 0 || quoteClosed) throw new Error('TSV quote must start a field')
-      quoted = true
-      continue
-    }
-    if (char === '\t') {
-      row.push(cell)
-      cell = ''
-      quoteClosed = false
-      continue
-    }
-    if (char === '\r' || char === '\n') {
-      if (char === '\r' && text[i + 1] === '\n') i++
-      row.push(cell)
-      rows.push(row)
-      row = []
-      cell = ''
-      quoteClosed = false
-      continue
-    }
-    cell += char
+export function parseCfdClipboard(text: string): string[][] {
+  const value = text.trim()
+  if (value.length === 0) throw new Error('CFD 剪贴板内容为空')
+  const outer = unwrapCfdArray(value)
+  if (outer === null) return [[value]]
+  const rowValues = splitCfdValues(outer)
+  if (rowValues.length === 0) return [[value]]
+  const rowContents = rowValues.map(unwrapCfdArray)
+  if (rowContents.some(row => row === null)) return [[value]]
+  const rows = rowContents.map(row => splitCfdValues(row!))
+  const width = rows[0]?.length ?? 0
+  if (width === 0) return [[value]]
+  if (rows.some(row => row.length !== width)) {
+    throw new Error('CFD 剪贴板矩阵的每一行必须具有相同列数')
   }
-  if (quoted) throw new Error('TSV quoted field is not closed')
-  if (row.length > 0 || cell.length > 0 || text.endsWith('\t')) {
-    row.push(cell)
-    rows.push(row)
-  }
-  const width = Math.max(0, ...rows.map(item => item.length))
-  for (const item of rows) while (item.length < width) item.push('')
   return rows
+}
+
+function normalizeCfdCell(text: string): string {
+  const value = text.trim()
+  return value.length === 0 ? 'CfdClipboardMissing {}' : value
+}
+
+function unwrapCfdArray(text: string): string | null {
+  const value = text.trim()
+  if (!value.startsWith('[')) return null
+  const end = matchingCfdDelimiter(value, 0)
+  return end === value.length - 1 ? value.slice(1, end) : null
+}
+
+function splitCfdValues(text: string): string[] {
+  if (text.trim().length === 0) return []
+  const values: string[] = []
+  let start = 0
+  let index = 0
+  while (index < text.length) {
+    const char = text[index]
+    if (char === '"') {
+      index = skipCfdString(text, index)
+      continue
+    }
+    if (char === '#') {
+      while (index < text.length && text[index] !== '\n') index++
+      continue
+    }
+    if (char === '[' || char === '{' || char === '(') {
+      index = matchingCfdDelimiter(text, index) + 1
+      continue
+    }
+    if (char === ',') {
+      const value = text.slice(start, index).trim()
+      if (value.length === 0) throw new Error('CFD 剪贴板包含空值')
+      values.push(value)
+      start = index + 1
+    }
+    index++
+  }
+  const tail = text.slice(start).trim()
+  if (tail.length > 0) values.push(tail)
+  else if (values.length > 0) throw new Error('CFD 剪贴板不接受尾随逗号')
+  return values
+}
+
+function matchingCfdDelimiter(text: string, start: number): number {
+  const pairs: Record<string, string> = { '[': ']', '{': '}', '(': ')' }
+  const stack: string[] = [pairs[text[start]]]
+  if (!stack[0]) throw new Error('CFD 剪贴板值没有有效的起始分隔符')
+  for (let index = start + 1; index < text.length; index++) {
+    const char = text[index]
+    if (char === '"') {
+      index = skipCfdString(text, index) - 1
+      continue
+    }
+    if (char === '#') {
+      while (index < text.length && text[index] !== '\n') index++
+      continue
+    }
+    if (pairs[char]) {
+      stack.push(pairs[char])
+      continue
+    }
+    if (char === stack[stack.length - 1]) {
+      stack.pop()
+      if (stack.length === 0) return index
+      continue
+    }
+    if (char === ']' || char === '}' || char === ')') {
+      throw new Error('CFD 剪贴板分隔符不匹配')
+    }
+  }
+  throw new Error('CFD 剪贴板值未闭合')
+}
+
+function skipCfdString(text: string, start: number): number {
+  for (let index = start + 1; index < text.length; index++) {
+    if (text[index] === '\\') {
+      index++
+      continue
+    }
+    if (text[index] === '"') return index + 1
+  }
+  throw new Error('CFD 剪贴板字符串未闭合')
 }
 
 export interface PasteCell {
@@ -225,8 +274,8 @@ async function parseForCell(
     }
     const incoming = await parseArray([[text]], cell, { ...context, mode: 'replace' }, errors)
     if (!incoming || incoming.kind !== 'array') return undefined
-    if (cell.value.kind !== 'array' && cell.value.kind !== 'null') {
-      errors.push({ cell, message: '当前目标值不是 array 或 null' })
+    if (cell.value.kind !== 'array' && cell.value.kind !== 'option_none') {
+      errors.push({ cell, message: '当前目标值不是 array 或 None' })
       return undefined
     }
     const current = cell.value.kind === 'array' ? cell.value.value : []
@@ -276,8 +325,8 @@ async function parseArray(
     return undefined
   }
   if (context.mode !== 'append') return incoming
-  if (cell.value.kind !== 'array' && cell.value.kind !== 'null') {
-    errors.push({ cell, message: '当前目标值不是 array 或 null' })
+  if (cell.value.kind !== 'array' && cell.value.kind !== 'option_none') {
+    errors.push({ cell, message: '当前目标值不是 array 或 None' })
     return undefined
   }
   const current = cell.value.kind === 'array' ? cell.value.value : []

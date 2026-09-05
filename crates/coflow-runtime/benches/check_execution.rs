@@ -1,8 +1,8 @@
 mod common;
 
-use coflow_cft::CftSchema;
-use coflow_checker::{execute_checks, CheckLimits};
-use coflow_data_model::CfdDataModel;
+use coflow_language::cft::CftSchema;
+use coflow_runtime::CfdDataModel;
+use coflow_runtime::{execute_checks, CheckLimits};
 use common::{
     diagnostic_fixture, dimension_fixture, fixture, full_tasks, incremental_tasks,
     inheritance_fixture, nested_fixture, sample_pair, worst_fixture, Scenario,

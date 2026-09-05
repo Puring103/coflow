@@ -1,29 +1,25 @@
-//! Source-write staging behind the runtime mutation transaction.
+//! Source-write staging behind the mutation publication flow.
 //!
 //! Hosts write through [`crate::WriteProjectSession`]. This module resolves
-//! stable record coordinates, performs provider I/O, and leaves transaction
-//! compensation plus the single post-write rebuild to `mutation::apply`.
+//! stable record coordinates, stages CFD writer I/O, and leaves candidate
+//! validation plus publication to `mutation::apply`.
 
 mod plan;
 mod refs;
 mod stage;
 mod target;
-mod transaction;
 mod writer;
 
-use coflow_api::{DiagnosticSet, ProviderRegistry, WriteFieldPathSegment};
-use coflow_cft::{FieldName, TypeName};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
+use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
+use crate::data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
+use coflow_language::cft::{FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
-pub(crate) use stage::{
-    preflight_mutation_op, stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure,
-};
-pub(crate) use transaction::MutationTransaction;
+pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure};
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationImpact {
@@ -78,7 +74,7 @@ impl MutationImpact {
         self.record_changes.keys().cloned().collect()
     }
 
-    pub(crate) fn check_impact(&self, schema: &coflow_cft::CftSchema) -> CheckImpact {
+    pub(crate) fn check_impact(&self, schema: &coflow_language::cft::CftSchema) -> CheckImpact {
         let mut memberships = BTreeSet::new();
         for actual_type in &self.membership_types {
             memberships.insert(actual_type.clone());
@@ -96,6 +92,14 @@ impl MutationImpact {
         use crate::mutation::PreparedMutationOp;
         match operation {
             PreparedMutationOp::SetField {
+                write_record, path, ..
+            } => self.add_path(
+                write_record.clone(),
+                &CfdPath {
+                    segments: path.clone(),
+                },
+            ),
+            PreparedMutationOp::UnsetField {
                 write_record, path, ..
             } => self.add_path(
                 write_record.clone(),
@@ -210,17 +214,23 @@ pub(crate) fn effective_write_target_for_path(
     session: &ProjectSession,
     host_ref: &RecordRef,
     path: &[WriteFieldPathSegment],
-) -> (RecordCoordinate, String, Vec<WriteFieldPathSegment>) {
-    let target = target::write_target_for_path(session, host_ref, path);
-    (target.coordinate, target.display_path, target.field_path)
+) -> Result<(RecordCoordinate, String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
+    let target = target::write_target_for_path(session, host_ref, path)?;
+    Ok((target.coordinate, target.display_path, target.field_path))
 }
 
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
+    source_overrides: &[crate::DataSourceTextOverride],
 ) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(session, registry, impact)
+    crate::session_build::rebuild_project_session_from_generation(
+        session,
+        catalog,
+        impact,
+        source_overrides,
+    )
 }
 
 #[cfg(test)]
@@ -228,9 +238,9 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use crate::data_model::CfdPathSegment;
     use crate::mutation::PreparedMutationOp;
-    use coflow_cft::RecordKey;
-    use coflow_data_model::CfdPathSegment;
+    use coflow_language::cft::RecordKey;
 
     fn coordinate(key: &str) -> RecordCoordinate {
         RecordCoordinate::new(
@@ -248,6 +258,7 @@ mod tests {
             write_file: "items.cfd".to_string(),
             path: vec![CfdPathSegment::Field("price".to_string())],
             value: CfdValue::Int(10),
+            materialized_top_level: None,
         };
         let name = PreparedMutationOp::SetField {
             record: record.clone(),
@@ -255,6 +266,7 @@ mod tests {
             write_file: "items.cfd".to_string(),
             path: vec![CfdPathSegment::Field("name".to_string())],
             value: CfdValue::String("Sword".to_string()),
+            materialized_top_level: None,
         };
         let touched = crate::WriteOutcome::touch(record.clone());
         let operations = [(&price, &touched), (&name, &touched)];

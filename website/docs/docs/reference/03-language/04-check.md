@@ -19,11 +19,11 @@ type Monster {
 ## 执行时机与产物边界
 
 `check` 在字段值和默认值构建完成、记录引用解析完成后执行。`coflow check`、`coflow build`、
-`coflow export` 以及加载完整项目数据的 `coflow data` 查询和修改命令都会运行相关规则；
+`coflow check` 和 `coflow build` 加载完整 CFD 数据并运行相关规则；
 只编译 schema 的 `coflow cft check`、`coflow schema` 和 `coflow codegen` 不执行数据规则。
 
-校验失败会作为诊断返回，并阻止 `build` 或 `export` 发布新产物。`check` 块本身不会写入导出数据，
-也不会生成游戏运行时代码；运行时消费者读取的是已经通过 Coflow 校验的产物。
+校验失败会作为诊断返回，并阻止 `build` 或 `codegen` 发布新的代码文件。`check` 块本身不会写入 CFD，
+也不会生成运行时代码；目标语言 runtime 读取的是已经通过 Coflow 校验的 CFD 和生成代码。
 
 ## 可用值
 
@@ -62,11 +62,11 @@ check {
 check {
   level > 0: "等级必须大于 0";
   damage >= 0:
-    f"怪物 {id} 的伤害不能为负数，当前为 {damage}";
+    "怪物 {id} 的伤害不能为负数，当前为 {damage}";
 }
 ```
 
-格式化字符串使用 `f"...{expression}..."`，可以作为普通字符串表达式或诊断消息。插值支持 `null`、bool、int、float、string 和 enum；集合、object 和 record ref 不能直接插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
+普通字符串包含 `{expression}` 时会自动识别为格式化字符串，可以作为字符串表达式或诊断消息；不存在 `f"..."` 语法。插值支持 `null`、bool、int、float、string 和 enum；集合、object 和 record ref 不能直接插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
 
 ## 运算符
 
@@ -191,11 +191,11 @@ all entry in resistances {
 
 ```cft
 all reward, index in rewards {
-  reward.count > 0: f"第 {index} 个奖励数量无效";
+  reward.count > 0: "第 {index} 个奖励数量无效";
 }
 
 all damage_type, weight in weights {
-  weight >= 0: f"{damage_type} 的权重不能为负数";
+  weight >= 0: "{damage_type} 的权重不能为负数";
 }
 ```
 
@@ -211,7 +211,7 @@ check ItemIntegrity {
 
   all item in records(Item) {
     item.price > 0:
-      f"物品 {item.id} 的价格必须大于 0";
+      "物品 {item.id} 的价格必须大于 0";
   }
 }
 ```
@@ -258,7 +258,7 @@ check {
 
 `matches` 的 pattern 必须是字符串字面量，使用 Rust `regex` 语法。默认执行子串匹配；完整匹配请使用 `^...$`。
 
-本版本不支持 `matches(f"...")` 动态正则模板。需要匹配由字段组成的精确 ID 时，优先使用普通格式化字符串比较，例如 `id == f"{category}_{level}"`。
+`matches` 不支持动态正则模板。需要匹配由字段组成的精确 ID 时，优先使用格式化字符串比较，例如 `id == "{category}_{level}"`。
 
 `min()` 和 `max()` 应在确认数组非空后调用：
 

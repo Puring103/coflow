@@ -1,0 +1,33 @@
+Quest {
+  introduction {
+    displayId: "quest_intro",
+    title: "First steps",
+    steps: [
+      QuestStep {
+        title: "Meet the party",
+        targets: [&warrior, &mage],
+        rewards: [RewardEntry { reward: &chest, count: 1 }],
+      },
+    ],
+    rewardGroups: {
+      "completion": [RewardEntry { reward: &chest, count: 1 }],
+      "optional": [],
+    },
+  }
+
+  advanced {
+    displayId: "quest_advanced",
+    title: "Nested collections",
+    prerequisite: &introduction,
+    steps: [
+      QuestStep {
+        title: "Defeat targets",
+        targets: [&root, &mage],
+        rewards: [
+          RewardEntry { reward: &chest, count: 2 },
+          RewardEntry { reward: &warrior, count: 1 },
+        ],
+      },
+    ],
+  }
+}

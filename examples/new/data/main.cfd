@@ -1,0 +1,16 @@
+name: NPC {
+  gender: Female,
+  name: "asda",
+}
+
+adasdasd: game {
+  gender: Female,
+  name: "",
+}
+
+builginf: Building {
+  npc: NPC {
+    gender: Male,
+    name: "",
+  },
+}

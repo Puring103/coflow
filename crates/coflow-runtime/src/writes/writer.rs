@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use coflow_api::{
-    Diagnostic, DiagnosticSet, ProviderRegistry, ResolvedSource, Severity, SourceWriter,
-};
+use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet};
+use crate::cfd_loader::CfdWriter;
 
 use crate::indexes::SourceId;
 use crate::ProjectSession;
@@ -10,10 +9,11 @@ use crate::ProjectSession;
 pub(super) fn source_for_id(
     session: &ProjectSession,
     source_id: SourceId,
-) -> Result<ResolvedSource, DiagnosticSet> {
+) -> Result<CfdSource, DiagnosticSet> {
     session
-        .sources
-        .get(source_id)
+        .sources()
+        .entries()
+        .get(source_id.index())
         .map(|entry| entry.source.clone())
         .ok_or_else(|| {
             DiagnosticSet::one(Diagnostic::error(
@@ -30,7 +30,7 @@ pub(super) fn source_for_id(
 pub(super) fn source_for_file(
     session: &ProjectSession,
     file: &str,
-) -> Result<ResolvedSource, DiagnosticSet> {
+) -> Result<CfdSource, DiagnosticSet> {
     match session.files.sources_for_display(file) {
         [source_id] => source_for_id(session, *source_id),
         [] => Err(DiagnosticSet::one(Diagnostic::error(
@@ -49,19 +49,6 @@ pub(super) fn source_for_file(
     }
 }
 
-pub(super) fn lookup_source_writer(
-    registry: &ProviderRegistry,
-    source: &ResolvedSource,
-) -> Result<Arc<dyn SourceWriter>, DiagnosticSet> {
-    registry.source_writer(&source.provider_id).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic {
-            code: "WRITE-NO-WRITER".to_string(),
-            stage: "WRITE".to_string(),
-            severity: Severity::Error,
-            message: format!("no writer registered for provider `{}`", source.provider_id),
-            primary: None,
-            related: Vec::new(),
-            contexts: Vec::new(),
-        })
-    })
+pub(super) fn lookup_source_writer(catalog: &CfdSourceCatalog) -> Arc<CfdWriter> {
+    catalog.writer()
 }

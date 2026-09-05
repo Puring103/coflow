@@ -1,7 +1,7 @@
-use coflow_cft::Span;
+use coflow_language::source::Span;
 use serde_json::Value;
 
-use crate::diagnostics::lsp_range;
+use super::diagnostics::lsp_range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LspPosition {
@@ -16,11 +16,6 @@ impl LspPosition {
             character: usize::try_from(value.get("character")?.as_u64()?).ok()?,
         })
     }
-}
-
-pub(crate) fn full_document_range(source: &str) -> Value {
-    let end = position_from_byte(source, source.len());
-    lsp_range(0, 0, end.line, end.character)
 }
 
 pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> Value {

@@ -1,0 +1,18 @@
+schema: schema/
+data:
+  - data/
+
+dimensions:
+  language:
+    display_name: 语言
+    variants: [en, zh]
+    out_dir: data/dimensions/language
+  platform:
+    display_name: 平台
+    variants: [desktop, mobile]
+    out_dir: data/dimensions/platform
+
+codegen:
+  - language: csharp
+    dir: generated/csharp
+    namespace: EditorFixture.Config

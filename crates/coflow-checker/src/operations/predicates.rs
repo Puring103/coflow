@@ -1,7 +1,7 @@
-use coflow_cft::{CftSchema, CftSchemaTypePredicate};
-use coflow_data_model::CfdDataModel;
+use coflow_model::CfdDataModel;
+use coflow_language::cft::{CftSchema, CftSchemaTypePredicate};
 
-use super::value::{EvalValue, ScalarValue};
+use super::value::EvalValue;
 
 pub(crate) fn value_matches_predicate(
     schema: &CftSchema,
@@ -10,7 +10,6 @@ pub(crate) fn value_matches_predicate(
     predicate: &CftSchemaTypePredicate,
 ) -> bool {
     match predicate {
-        CftSchemaTypePredicate::Null => matches!(value.scalar(), Some(ScalarValue::Null)),
         CftSchemaTypePredicate::Type(type_name) => value
             .actual_type(model)
             .is_some_and(|actual| schema.is_assignable(actual, type_name)),

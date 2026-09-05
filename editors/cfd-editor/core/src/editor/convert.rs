@@ -1,0 +1,354 @@
+//! Build editor-facing `RecordRow` / `FieldCell` views over engine records.
+//!
+//! After spec 17, `FieldCell.value` is a `CfdValue` straight from the
+//! core model — no wire-only re-encoding. Editor-derived metadata
+//! (schema shape and enum integer value) is collected into
+//! `FieldAnnotation` on the side.
+
+use coflow_runtime::{
+    dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
+};
+use coflow_runtime::{CfdRecord, CfdValue};
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::editor::session::Diagnostics;
+use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow};
+
+/// Lookup context the converter consults when annotating cells.
+pub struct WireContext<'a> {
+    pub queries: ProjectQueries<'a>,
+    pub diagnostics: &'a Diagnostics,
+}
+
+impl<'a> WireContext<'a> {
+    #[must_use]
+    pub const fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
+        Self {
+            queries,
+            diagnostics,
+        }
+    }
+}
+
+/// Translate a [`RecordView`] into a wire [`RecordRow`].
+#[must_use]
+pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
+    let fields = record_fields(view.record, ctx);
+    let (field_index, field_summaries) = field_indexes(&fields);
+    let (field_diagnostics, diagnostic_severity) =
+        diagnostics_for_record(ctx.diagnostics, view.display_path, &view.coordinate);
+    RecordRow {
+        coordinate: view.coordinate.clone(),
+        display_path: view.display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
+        fields,
+        field_index,
+        field_summaries,
+        field_diagnostics,
+        diagnostic_severity,
+    }
+}
+
+/// Convenience: pull the [`RecordView`] from the session, then render it.
+#[must_use]
+pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
+    let fields = record_fields(record, ctx);
+    let (field_index, field_summaries) = field_indexes(&fields);
+    let coordinate = record.coordinate();
+    let (field_diagnostics, diagnostic_severity) =
+        diagnostics_for_record(ctx.diagnostics, display_path, &coordinate);
+    RecordRow {
+        coordinate,
+        display_path: display_path.to_string(),
+        container_index: 0,
+        container_size: 1,
+        fields,
+        field_index,
+        field_summaries,
+        field_diagnostics,
+        diagnostic_severity,
+    }
+}
+
+fn diagnostics_for_record(
+    diagnostics: &Diagnostics,
+    file_path: &str,
+    coordinate: &RecordCoordinate,
+) -> (Vec<FieldDiagnostic>, Option<String>) {
+    let mut fields = Vec::new();
+    let mut best = None;
+    for diagnostic in diagnostics.for_record(file_path, coordinate) {
+        if let coflow_runtime::DiagnosticTarget::TableField { field_path, .. } =
+            &diagnostic.target
+        {
+            fields.push(FieldDiagnostic {
+                severity: normalized_severity(&diagnostic.severity).to_string(),
+                field_path: field_path.clone(),
+                message: diagnostic.display_message(),
+            });
+        }
+        match diagnostic.severity.as_str() {
+            "error" => best = Some("error"),
+            "warning" if best.is_none() => best = Some("warning"),
+            _ => {}
+        }
+    }
+    (fields, best.map(str::to_string))
+}
+
+fn normalized_severity(severity: &str) -> &'static str {
+    match severity {
+        "error" => "error",
+        "warning" => "warning",
+        _ => "info",
+    }
+}
+
+fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
+    // `CfdRecord` stores fields in a BTreeMap for deterministic lookup, not
+    // presentation. The schema retains the declared (including inherited)
+    // field order, which is what users expect in the editor.
+    let declared_names = ctx
+        .queries
+        .schema_type_fields(record.actual_type())
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    let declared_name_set = declared_names.iter().cloned().collect::<BTreeSet<_>>();
+    let remaining_names = record
+        .fields()
+        .keys()
+        .map(ToString::to_string)
+        .filter(|name| !declared_name_set.contains(name));
+
+    declared_names
+        .into_iter()
+        .chain(remaining_names)
+        .map(|name| {
+            let present = record.fields().get(name.as_str());
+            let missing = present.is_none();
+            let value = present.cloned().unwrap_or_else(|| {
+                ctx.queries
+                    .editable_field_seed(record.actual_type(), &name)
+                    .unwrap_or(CfdValue::OptionNone)
+            });
+            FieldCell {
+                name: name.clone(),
+                annotation: build_annotation(record, &name, &value, ctx),
+                value,
+                missing,
+            }
+        })
+        .collect()
+}
+
+fn field_indexes(fields: &[FieldCell]) -> (BTreeMap<String, usize>, BTreeMap<String, String>) {
+    let mut index = BTreeMap::new();
+    let mut summaries = BTreeMap::new();
+    for (idx, field) in fields.iter().enumerate() {
+        index.insert(field.name.clone(), idx);
+        summaries.insert(
+            field.name.clone(),
+            if field.missing {
+                String::new()
+            } else {
+                value_summary(&field.value)
+            },
+        );
+    }
+    (index, summaries)
+}
+
+fn build_annotation(
+    host: &CfdRecord,
+    field_name: &str,
+    value: &CfdValue,
+    ctx: &WireContext<'_>,
+) -> Option<FieldAnnotation> {
+    let declared_shape = ctx.queries.field_shape(host.actual_type(), field_name);
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
+    // Synthesized dimension records expose a `default` slot that mirrors the
+    // source record's value. Writing into it isn't blocked at the engine
+    // layer, but the editor renders it as read-only to steer users to the
+    // source record instead.
+    if annotation.is_empty() {
+        None
+    } else {
+        Some(annotation)
+    }
+}
+
+#[must_use]
+pub fn annotation_for_draft_field(
+    actual_type: &str,
+    field_name: &str,
+    value: &CfdValue,
+    ctx: &WireContext<'_>,
+) -> Option<FieldAnnotation> {
+    let declared_shape = ctx.queries.field_shape(actual_type, field_name);
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
+    if annotation.is_empty() {
+        None
+    } else {
+        Some(annotation)
+    }
+}
+
+fn annotation_for_value(
+    value: &CfdValue,
+    ctx: &WireContext<'_>,
+    declared_shape: Option<&FieldShapeInfo>,
+) -> FieldAnnotation {
+    let wrapped = match value {
+        CfdValue::OptionSome(inner) => declared_shape
+            .and_then(|shape| shape.option_inner.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        CfdValue::ResultOk(inner) => declared_shape
+            .and_then(|shape| shape.result_ok.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        CfdValue::ResultErr(inner) => declared_shape
+            .and_then(|shape| shape.result_err.as_deref())
+            .map(|shape| (inner.as_ref(), shape)),
+        _ => None,
+    };
+    if let Some((inner, inner_shape)) = wrapped {
+        let mut annotation = annotation_for_value(inner, ctx, Some(inner_shape));
+        if let Some(outer) = declared_shape {
+            annotation.declared_type = Some(outer.display_label.clone());
+            annotation.label.clone_from(&outer.label);
+            annotation.description.clone_from(&outer.description);
+            annotation.nullable = outer.nullable;
+        }
+        return annotation;
+    }
+    let mut annotation = FieldAnnotation::default();
+    if let Some(shape) = declared_shape {
+        annotation.declared_type = Some(shape.display_label.clone());
+        annotation.label.clone_from(&shape.label);
+        annotation.description.clone_from(&shape.description);
+        annotation
+            .ref_target_type
+            .clone_from(&shape.ref_target_type);
+        annotation.enum_type.clone_from(&shape.enum_type);
+        annotation.enum_is_flag = shape.enum_is_flag;
+        annotation.nullable = shape.nullable;
+        annotation
+            .polymorphic_types
+            .clone_from(&shape.polymorphic_types);
+        annotation.object_type.clone_from(&shape.object_type);
+        annotation.field_order.clone_from(&shape.field_order);
+        // Preload the element template when the declared type is a
+        // collection. Filled here (not only in the Array/Dict arms below) so
+        // a nullable / empty collection still carries the template the
+        // editor needs to add its first element.
+        if let Some(item_shape) = shape.collection_item.as_deref() {
+            annotation.item_annotation = Some(Box::new(annotation_template(item_shape)));
+        }
+        if let Some(key_shape) = shape.collection_key.as_deref() {
+            annotation.key_annotation = Some(Box::new(annotation_template(key_shape)));
+        }
+    }
+    match value {
+        CfdValue::Enum(enum_value) => {
+            annotation.enum_int_value = Some(enum_value.value);
+        }
+        CfdValue::Object(object) => {
+            annotation.object_type = Some(object.actual_type().to_string());
+            annotation.field_order = ctx.queries.type_field_names(object.actual_type());
+            for (name, child) in object.fields() {
+                let child_shape = ctx.queries.field_shape(object.actual_type(), name.as_str());
+                let child_annotation = annotation_for_value(child, ctx, child_shape.as_ref());
+                if !child_annotation.is_empty() {
+                    annotation
+                        .children
+                        .insert(name.to_string(), child_annotation);
+                }
+            }
+            // Editable object 草稿会省略需要用户选择的字段；仍发送其 schema 注解，
+            // 使前端可以合成缺失行并提供引用或具体类型选择器。
+            for name in &annotation.field_order {
+                if object.field(name).is_some() || annotation.children.contains_key(name) {
+                    continue;
+                }
+                if let Some(shape) = ctx.queries.field_shape(object.actual_type(), name) {
+                    annotation
+                        .children
+                        .insert(name.clone(), annotation_template(&shape));
+                }
+            }
+        }
+        CfdValue::Array(items) => {
+            let item_shape = declared_shape.and_then(|shape| shape.collection_item.as_deref());
+            for (idx, child) in items.iter().enumerate() {
+                let child_annotation = annotation_for_value(child, ctx, item_shape);
+                if !child_annotation.is_empty() {
+                    annotation
+                        .children
+                        .insert(idx.to_string(), child_annotation);
+                }
+            }
+        }
+        CfdValue::Dict(entries) => {
+            let item_shape = declared_shape.and_then(|shape| shape.collection_item.as_deref());
+            for (key, child) in entries {
+                let key_text = dict_key_path_text(key);
+                let child_annotation = annotation_for_value(child, ctx, item_shape);
+                if !child_annotation.is_empty() {
+                    annotation.children.insert(key_text, child_annotation);
+                }
+            }
+        }
+        _ => {}
+    }
+    annotation
+}
+
+/// Produce a minimal template `FieldAnnotation` describing the elements of
+/// a collection (array item / dict value). The editor consumes this when it
+/// needs the element's declared type / ref target / enum type to add a new
+/// entry into an empty or nullable collection.
+fn annotation_template(item_shape: &FieldShapeInfo) -> FieldAnnotation {
+    let mut ann = FieldAnnotation {
+        declared_type: Some(item_shape.display_label.clone()),
+        ref_target_type: item_shape.ref_target_type.clone(),
+        enum_type: item_shape.enum_type.clone(),
+        enum_is_flag: item_shape.enum_is_flag,
+        nullable: item_shape.nullable,
+        polymorphic_types: item_shape.polymorphic_types.clone(),
+        object_type: item_shape.object_type.clone(),
+        field_order: item_shape.field_order.clone(),
+        ..FieldAnnotation::default()
+    };
+    if let Some(inner) = item_shape.collection_item.as_deref() {
+        ann.item_annotation = Some(Box::new(annotation_template(inner)));
+    }
+    if let Some(key) = item_shape.collection_key.as_deref() {
+        ann.key_annotation = Some(Box::new(annotation_template(key)));
+    }
+    ann
+}
+
+#[cfg(test)]
+mod tests {
+    use coflow_runtime::value_summary;
+    use coflow_runtime::CfdValue;
+
+    #[test]
+    fn string_summary_preserves_ascii_truncation_behavior() {
+        let value = "abcdefghijklmnopqrstuvwxyz0123456789ABCDE";
+
+        assert_eq!(
+            value_summary(&CfdValue::String(value.to_string())),
+            "abcdefghijklmnopqrstuvwxyz0123456789AB..."
+        );
+    }
+
+    #[test]
+    fn string_summary_truncates_at_utf8_boundary() {
+        let value = "婆".repeat(20);
+        let expected = format!("{}...", "婆".repeat(12));
+
+        assert_eq!(value_summary(&CfdValue::String(value)), expected);
+    }
+}

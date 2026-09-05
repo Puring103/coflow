@@ -1,285 +1,55 @@
 # C# 代码生成
 
-C# codegen 根据编译后的 CFT schema 生成只读运行时 API。生成代码不包含 CFT parser，不重新校验配置数据，只读取 Coflow 导出的 JSON 或 MessagePack 产物。
+C# generator 根据 CFT 生成配置类型和加载代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。
 
-## 启用方式
-
-在 `coflow.yaml` 中配置代码输出：
+C# target 目前支持 `namespace` 选项：
 
 ```yaml
-outputs:
-  - data:
-      type: json
-      dir: generated/data
-    code:
-      type: csharp
-      dir: generated/csharp
-      namespace: Game.Config
-      int_32: false
-      float_32: false
-    loader:
-      type: csharp-json
+codegen:
+  - language: csharp
+    dir: Generated
+    namespace: Game.Config
 ```
 
-运行：
-
-```powershell
-coflow codegen
-```
-
-或在完整构建中生成：
-
-```powershell
-coflow build
-```
-
-输出目录、命名空间和其他 codegen 选项均从 `coflow.yaml` 读取。
-
-## 输出目录
-
-生成目录示例：
-
-```text
-generated/csharp/
-  CoflowTables.cs
-  CoflowTables.Loader.cs
-  Item.cs
-  Item.Loader.cs
-  Reward.cs
-  Rarity.cs
-  Coflow.Runtime/
-    Localization.cs
-```
-
-`CoflowTables.cs` 是默认入口。每个 CFT type / enum 会生成对应 C# 文件。本地化字段存在时，会额外生成运行时 helper。`outputs` 使用 target 列表时，loader 成员位于配套的 `*.Loader.cs` partial 文件；使用单个对象时，loader 成员写入对应类型的 `*.cs` 文件。
-
-`outputs.code.dir` 指定生成后的 C# 目录。每次成功生成都会完整更新该目录，不要在其中放置手写代码。
-
-## 入口类
-
-默认入口类是 `CoflowTables`：
+运行 `coflow codegen` 后，将生成目录和 `Coflow.Cfd.Runtime` 引入 C# 项目即可加载 CFD：
 
 ```csharp
-var tables = CoflowTables.Load(fileName => jsonAssets.GetValueOrDefault(fileName));
+var module = Game.Config.CoflowData.LoadAndCompile(new[] { itemsCfd, rulesCfd });
 
-var item = tables.TbItem.Get("sword_fire");
-var maybeItem = tables.TbItem.Find("missing");
+var items = module.Table(Item.Table);
+var item = items.Get(ItemId.Sword);
 
-if (tables.TbItem.TryGet("sword_fire", out var found))
-{
-    Console.WriteLine(found.Name);
-}
+var settings = module.Singleton<Settings>();
 ```
 
-JSON loader 的参数类型是 `Func<string, string?>`。它按生成的文件名请求 JSON 文本；没有记录而未生成文件的空表可以返回 `null`。调用方可以从磁盘读取，也可以直接接入 Unity `TextAsset`、Addressables、AssetBundle 或自定义资源系统：
+每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应
+enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
+
+同一次 `Load` 或 `LoadAndCompile` 调用中的 CFD 可以互相引用。不同 Module 之间不能建立记录引用。
+
+需要统一查询多个独立 Module 时，可以创建 `CoflowModuleSet`：
 
 ```csharp
-var tables = CoflowTables.Load(fileName =>
-{
-    var asset = Resources.Load<TextAsset>($"Config/{Path.GetFileNameWithoutExtension(fileName)}");
-    return asset == null ? null : asset.text;
-});
+var view = Coflow.Modules(baseModule, featureModule);
+var next = view.Replace(featureModule, replacement);
 ```
 
-MessagePack loader 处理二进制数据，继续使用 `CoflowTables.Load(dataDir)` 从目录加载 `.msgpack` 文件。
+同一个 ModuleSet 中不能出现重复记录键、重复 singleton 或重复函数。`Replace` 返回新的
+ModuleSet，不会修改原值。
 
-每张 concrete table 生成一个 `Tb{TypeName}` 访问器。
+`CoflowModule` 不提供原地 reload。需要更新数据时，重新加载一个新 Module，再用 `Replace` 发布
+新的 ModuleSet；旧 Module 和旧查询结果保持有效。
 
-访问器类型实现只读列表能力，并提供：
+Runtime 的应用 API 位于 `CoflowRuntime`。`CoflowRuntime.Generated` 是生成代码跨程序集调用的 ABI，
+不属于应用 API，并从 IntelliSense 隐藏。
 
-| API | 说明 |
-| --- | --- |
-| `Get(id)` | 找不到时抛 `KeyNotFoundException` |
-| `Find(id)` | 找不到时返回 `default` |
-| `TryGet(id, out value)` | 尝试读取 |
-| `Count` | record 数量 |
-| 索引器 | 按导出顺序读取 |
-| 枚举器 | 遍历所有 record |
-
-## 命名规则
-
-公开 C# API 使用 C# 风格命名：
-
-| CFT | C# |
-| --- | --- |
-| type 名 | PascalCase class / struct |
-| enum 名 | PascalCase enum |
-| enum variant | PascalCase member |
-| 字段名 | PascalCase property |
-| record key | `Id` |
-| table accessor | `Tb{TypeName}` |
-
-示例：
-
-```cft
-type item_config {
-  display_name: string;
-}
-```
-
-生成：
+`@Host` 类型通过 singleton 获取并配置：
 
 ```csharp
-public sealed partial class ItemConfig
-{
-    public string Id { get; }
-    public string DisplayName { get; }
-}
+var host = module.Singleton<HostServices>();
+if (host.HasValue)
+    host.Value.Configure(environment, log);
 ```
 
-导出数据仍使用原始字段名，例如 JSON 中读取 `display_name`。
-
-## 类型映射
-
-| CFT | C# |
-| --- | --- |
-| `int` | `long` |
-| `float` | `double` |
-| `bool` | `bool` |
-| `string` | `string` |
-| `T?` | `T?` |
-| enum | C# enum |
-| `[T]` | `IReadOnlyList<T>` |
-| `{K: V}` | `IReadOnlyDictionary<K, V>` |
-| object type | 对应 C# 类型 |
-
-集合属性只读，loader 内部使用 `List<T>` 和 `Dictionary<K, V>` 构造。
-
-`outputs.code.int_32: true` 时，`int` 会生成 `int`；`outputs.code.float_32: true` 时，`float` 会生成 `float`。省略时分别使用 `long` 和 `double`。
-
-## 类型与字段
-
-每个 CFT type 生成一个 partial C# 类型。非 abstract 类型会实现 `IEquatable<T>`，并基于 `Id` 生成 `ToString()`、`Equals` 和 `GetHashCode()`。
-
-生成属性只有 getter：
-
-```csharp
-public sealed partial class Item : IEquatable<Item>
-{
-    public string Id { get; }
-    public string Name { get; }
-    public Reward Reward { get; }
-
-    private Item(string id, string name, Reward reward)
-    {
-        Id = id;
-        Name = name;
-        Reward = reward;
-    }
-}
-```
-
-object 字段会在加载时直接解析为最终对象，不生成 `xxxKey` 或引用占位对象。
-
-## 注解影响
-
-| CFT 注解 | C# 输出 |
-| --- | --- |
-| `@flag` | `[Flags]` enum |
-| `@struct` | value-like struct |
-| `@idAsEnum(EnumName)` | record key 使用强类型 enum |
-| `@singleton` | 入口类直接暴露 singleton 属性 |
-| `@localized` | 字段包装为 `Localized<T>` |
-| `@label` / `@description` | 生成 XML `<summary>` 文档注释；两者同时存在时格式为 `label: description` |
-
-显示元数据只生成文档注释，不生成 `DescriptionAttribute` 或引入 `System.ComponentModel`。
-
-## `@idAsEnum`
-
-`@idAsEnum` 会把指定 type 的 record key 转成 enum：
-
-```cft
-@idAsEnum(ItemId)
-type Item {
-  name: string;
-}
-
-enum ItemId {}
-```
-
-生成后，`TbItem` 的 key 类型会从 `string` 变为 `ItemId`，引用该 type 的字段也会使用对应 enum。
-
-`coflow.yaml` 同级的 `coflow.enum.lock.json` 用于保持 enum variant 的整数值稳定，应提交到版本库。`coflow build` 会根据数据补全新增 variant；单独运行 `codegen` 只使用已有编号。
-
-## `@singleton`
-
-`@singleton` type 不生成 `Tb*` table 访问器，而是在入口类上直接生成属性：
-
-```cft
-@singleton
-type GameConfig {
-  max_level: int;
-}
-```
-
-如果数据源中的 record key 是 `main_config`，生成：
-
-```csharp
-public sealed partial class CoflowTables
-{
-    public GameConfig main_config { get; }
-}
-```
-
-singleton 属性名使用 record key 原文。
-
-## `@localized`
-
-`@localized` 字段生成 `Localized<T>`：
-
-```cft
-type Item {
-  @localized
-  name: string;
-}
-```
-
-生成：
-
-```csharp
-public Localized<string> Name { get; }
-```
-
-`Localized<T>` 保存 key 和默认值，运行时可以按当前语言取值：
-
-```csharp
-var displayName = item.Name.Value;
-var englishName = item.Name.For("en");
-```
-
-每个维度字段还会生成一个 `{声明类型}{字段名}Variants` C# 类型，并在
-`CoflowTables` 中公开对应的 `Table<string, ...>`。例如 `Item.name` 生成
-`ItemNameVariants.cs` 和 `TbItemNameVariants`，loader 读取数据输出中的
-`Item_nameVariants.json` 或 `Item_nameVariants.msgpack`。
-
-详见 [本地化与维度](../10-localization.md)。
-
-## Loader 选择
-
-同一个 output target 的 `data.type` 决定生成哪种 loader；也可以通过兼容的 `loader.type` 显式选择：
-
-| `data.type` | `loader.type` | 生成 loader |
-| --- | --- | --- |
-| `json` | `csharp-json` | Newtonsoft.Json loader |
-| `messagepack` | `csharp-messagepack` | MessagePack-CSharp loader |
-
-生成代码按 object 字段引用关系排序加载 table，确保被引用 table 先建立索引。存在 table 级循环引用时，C# codegen 会报错。
-
-## 生成前检查
-
-codegen 会在写文件前检查：
-
-- namespace 是否合法。
-- C# 类型名、enum 名、字段属性名是否合法。
-- 生成文件名是否冲突。
-- 成员名是否冲突。
-- `@idAsEnum` variant 是否能生成合法 C# enum member。
-- 输出目录是否可安全接管。
-
-存在诊断时，不会替换现有代码产物或更新 `@idAsEnum` 编号。
-
-## 运行时定位
-
-生成的 C# loader 是 trusted artifact loader：它面向 Coflow 官方 exporter 输出，不重新提供完整 validator。schema 校验、数据模型构建、引用检查和业务 check 应在 `coflow check` / `coflow build` 阶段完成。
-
-如果导出文件被手动破坏，loader 可能抛出底层 JSON、MessagePack 或 BCL 异常。公开 API 中，`Table.Get` 找不到 key 固定抛 `KeyNotFoundException`。
+CFT `int` 生成 C# `long`，`float` 生成 C# `double`。CFT `@struct` 生成支持字段值相等比较的
+C# 类。布尔值在 CFD 中写作小写 `true` 或 `false`。

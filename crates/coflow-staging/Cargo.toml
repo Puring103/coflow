@@ -1,0 +1,15 @@
+[package]
+name = "coflow-staging"
+version = "0.9.1"
+edition = "2021"
+description = "Internal all-or-nothing filesystem staging primitives for Coflow."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"

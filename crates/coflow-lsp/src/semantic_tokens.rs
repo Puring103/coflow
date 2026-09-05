@@ -1,16 +1,17 @@
-use coflow_cft::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
+use coflow_language::cft::syntax::ast::{
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use coflow_cft::syntax::lexer::{lex, TokenKind};
-use coflow_cft::syntax::CheckVisitor;
-use coflow_cft::{ModuleId, Span};
+use coflow_language::cft::syntax::lexer::{lex, TokenKind};
+use coflow_language::cft::syntax::CheckVisitor;
+use coflow_language::cft::ModuleId;
+use coflow_language::source::Span;
 
-use crate::position::position_from_byte;
-use crate::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
+use super::position::position_from_byte;
+use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
-    "namespace",
+    "recordKey",
     "type",
     "enum",
     "enumMember",
@@ -28,8 +29,7 @@ pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
 pub(crate) const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
     &["declaration", "reference", "path", "record", "schema"];
 
-#[cfg(test)]
-pub(crate) const SEM_NAMESPACE: u32 = 0;
+pub(crate) const SEM_RECORD_KEY: u32 = 0;
 pub(crate) const SEM_TYPE: u32 = 1;
 pub(crate) const SEM_ENUM: u32 = 2;
 pub(crate) const SEM_ENUM_MEMBER: u32 = 3;
@@ -47,7 +47,6 @@ pub(crate) const SEM_PARAMETER: u32 = 13;
 pub(crate) const MOD_DECLARATION: u32 = 1 << 0;
 pub(crate) const MOD_REFERENCE: u32 = 1 << 1;
 pub(crate) const MOD_PATH: u32 = 1 << 2;
-#[cfg(test)]
 pub(crate) const MOD_RECORD: u32 = 1 << 3;
 pub(crate) const MOD_SCHEMA: u32 = 1 << 4;
 
@@ -91,6 +90,29 @@ pub(crate) fn push_semantic_span_plain(
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     push_semantic_span(source, span, token_type, 0, tokens);
+}
+
+pub(crate) fn push_multiline_semantic_span(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    token_modifiers: u32,
+    tokens: &mut Vec<RawSemanticToken>,
+) {
+    let mut start = span.start;
+    for line in source[span.start..span.end.min(source.len())].split_inclusive('\n') {
+        let content_len = line.trim_end_matches(['\r', '\n']).len();
+        if content_len != 0 {
+            push_semantic_span(
+                source,
+                Span::new(start, start + content_len),
+                token_type,
+                token_modifiers,
+                tokens,
+            );
+        }
+        start += line.len();
+    }
 }
 
 pub(crate) fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
@@ -206,8 +228,12 @@ fn add_lex_semantic_token(
         | TokenKind::In
         | TokenKind::Is
         | TokenKind::True
-        | TokenKind::False
-        | TokenKind::Null => SEM_KEYWORD,
+        | TokenKind::False => SEM_KEYWORD,
+        TokenKind::Ident(text)
+            if matches!(
+                text.as_str(),
+                "fn" | "Option" | "Result" | "None" | "Some" | "Ok" | "Err"
+            ) => SEM_KEYWORD,
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
         TokenKind::String(_)
         | TokenKind::FormattedStringStart
@@ -235,7 +261,9 @@ fn add_lex_semantic_token(
         | TokenKind::GreaterGreater
         | TokenKind::EqEq
         | TokenKind::BangEq
-        | TokenKind::Equal => SEM_OPERATOR,
+        | TokenKind::Equal
+        | TokenKind::Arrow
+        | TokenKind::DoubleColon => SEM_OPERATOR,
         _ => return,
     };
     push_semantic_span_plain(source, span, token_type, tokens);
@@ -245,7 +273,7 @@ fn add_lex_semantic_token(
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
-    ast: &coflow_cft::syntax::ast::ModuleAst,
+    ast: &coflow_language::cft::syntax::ast::ModuleAst,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     for annotation in &ast.dangling_annotations {
@@ -267,7 +295,7 @@ fn add_ast_semantic_tokens(
                 if let Some(ty) = &constant.ty {
                     add_value_type_semantic(build, document, ty, tokens);
                 }
-                add_const_literal_semantic(document, &constant.value, tokens);
+                add_default_expr_semantic(document, &constant.value, tokens);
             }
             Item::Enum(enum_def) => {
                 for annotation in &enum_def.annotations {
@@ -344,6 +372,16 @@ fn add_ast_semantic_tokens(
                     }
                 }
             }
+            Item::TypeAlias(alias) => {
+                push_semantic_span(
+                    &document.source,
+                    alias.name_span,
+                    SEM_TYPE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_value_type_semantic(build, document, &alias.target, tokens);
+            }
             Item::Check(check) => {
                 for annotation in &check.annotations {
                     add_annotation_semantic(document, annotation, tokens);
@@ -385,7 +423,7 @@ fn add_annotation_semantic(
             AnnotationArg::Int(_, span) | AnnotationArg::Float(_, span) => {
                 push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
             }
-            AnnotationArg::Bool(_, span) | AnnotationArg::Null(span) => {
+            AnnotationArg::Bool(_, span) => {
                 push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         }
@@ -422,7 +460,8 @@ fn add_value_type_semantic(
                 tokens,
             );
         }
-        TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
+        TypeRefKind::Array(inner)
+        | TypeRefKind::Option(inner) => {
             add_value_type_semantic(build, document, inner, tokens);
         }
         TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
@@ -430,24 +469,26 @@ fn add_value_type_semantic(
             add_value_type_semantic(build, document, key, tokens);
             add_value_type_semantic(build, document, value, tokens);
         }
-    }
-}
-
-fn add_const_literal_semantic(
-    document: &LspDocument,
-    literal: &ConstLiteral,
-    tokens: &mut Vec<RawSemanticToken>,
-) {
-    match literal {
-        ConstLiteral::Int(_, span) | ConstLiteral::Float(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
+        TypeRefKind::Result(value, error) => {
+            add_value_type_semantic(build, document, value, tokens);
+            add_value_type_semantic(build, document, error, tokens);
         }
-        ConstLiteral::Bool(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
+        TypeRefKind::Function(parameters, result) => {
+            for parameter in parameters {
+                if let Some(name) = &parameter.name {
+                    push_semantic_span(
+                        &document.source,
+                        name.span,
+                        SEM_PARAMETER,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
+                }
+                add_value_type_semantic(build, document, &parameter.value_type, tokens);
+            }
+            add_value_type_semantic(build, document, result, tokens);
         }
-        ConstLiteral::String(_, span) => {
-            push_semantic_span_plain(&document.source, *span, SEM_STRING, tokens);
-        }
+        TypeRefKind::Unit => {}
     }
 }
 
@@ -460,36 +501,80 @@ fn add_default_expr_semantic(
         DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
-        DefaultExprKind::Bool(_) | DefaultExprKind::Null => {
+        DefaultExprKind::Bool(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
-        DefaultExprKind::String(_) => {
+        DefaultExprKind::OptionNone => {
+            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
+        }
+        DefaultExprKind::OptionSome(value)
+        | DefaultExprKind::ResultOk(value)
+        | DefaultExprKind::ResultErr(value) => {
+            let keyword_len = match &expr.kind {
+                DefaultExprKind::OptionSome(_) => 4,
+                _ => 3,
+            };
+            push_semantic_span_plain(
+                &document.source,
+                Span::new(expr.span.start, expr.span.start + keyword_len),
+                SEM_KEYWORD,
+                tokens,
+            );
+            add_default_expr_semantic(document, value, tokens);
+        }
+        DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
-        DefaultExprKind::Name(name) => {
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_VARIABLE,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
+        DefaultExprKind::Function { source, .. } => {
+            super::cfd::visit_function_semantic_tokens(
+                source,
+                expr.span.start,
+                |span, token_type, modifiers, multiline| {
+                    if multiline {
+                        push_multiline_semantic_span(
+                            &document.source,
+                            span,
+                            token_type,
+                            modifiers,
+                            tokens,
+                        );
+                    } else {
+                        push_semantic_span(
+                            &document.source,
+                            span,
+                            token_type,
+                            modifiers,
+                            tokens,
+                        );
+                    }
+                },
             );
         }
-        DefaultExprKind::EnumVariant { enum_name, variant } => {
-            push_semantic_span(
-                &document.source,
-                enum_name.span,
-                SEM_ENUM,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
-            push_semantic_span(
-                &document.source,
-                variant.span,
-                SEM_ENUM_MEMBER,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
+        DefaultExprKind::BitExpr { lhs, rhs, .. } => {
+            add_default_expr_semantic(document, lhs, tokens);
+            add_default_expr_semantic(document, rhs, tokens);
+        }
+        DefaultExprKind::StaticPath(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
+        }
+        DefaultExprKind::RecordReference(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
         }
         DefaultExprKind::Array(items) => {
             for item in items {
@@ -505,6 +590,33 @@ fn add_default_expr_semantic(
                     MOD_DECLARATION | MOD_SCHEMA,
                     tokens,
                 );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::TypedObject { type_name, fields } => {
+            for segment in &type_name.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_TYPE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
+            for (name, value) in fields {
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_PROPERTY,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::Dictionary(entries) => {
+            for (key, value) in entries {
+                add_default_expr_semantic(document, key, tokens);
                 add_default_expr_semantic(document, value, tokens);
             }
         }
@@ -569,7 +681,7 @@ fn classify_check_expr(
         CheckExprKind::Int(_) | CheckExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
-        CheckExprKind::Bool(_) | CheckExprKind::Null => {
+        CheckExprKind::Bool(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
         CheckExprKind::String(_) => {
@@ -577,9 +689,7 @@ fn classify_check_expr(
         }
         CheckExprKind::FormattedString(_)
         | CheckExprKind::Index { .. }
-        | CheckExprKind::SafeIndex { .. }
         | CheckExprKind::BinOp { .. }
-        | CheckExprKind::Coalesce { .. }
         | CheckExprKind::Unary { .. }
         | CheckExprKind::CmpChain { .. } => {}
         CheckExprKind::Name(_) => {
@@ -590,6 +700,17 @@ fn classify_check_expr(
                 MOD_REFERENCE,
                 tokens,
             );
+        }
+        CheckExprKind::StaticPath(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+                    tokens,
+                );
+            }
         }
         CheckExprKind::Records { type_name } => {
             push_semantic_span(
@@ -628,17 +749,8 @@ fn classify_check_expr(
                 tokens,
             );
         }
-        CheckExprKind::SafeField { name, .. } => {
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_PROPERTY,
-                MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
-                tokens,
-            );
-        }
         CheckExprKind::Is { predicate, .. } => match predicate {
-            coflow_cft::syntax::ast::TypePredicate::Type(name) => {
+            coflow_language::cft::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(
                     &document.source,
                     name.span,
@@ -646,9 +758,6 @@ fn classify_check_expr(
                     MOD_REFERENCE | MOD_SCHEMA,
                     tokens,
                 );
-            }
-            coflow_cft::syntax::ast::TypePredicate::Null(span) => {
-                push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         },
         CheckExprKind::Call { name, .. } => {

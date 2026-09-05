@@ -1,0 +1,6 @@
+# optional commas between grouped records
+Item {
+  sword { name: "Sword", tags: ["weapon", "melee"] }
+  shield { name: "Shield" },
+  bow: RangedItem { name: "Bow" }
+}

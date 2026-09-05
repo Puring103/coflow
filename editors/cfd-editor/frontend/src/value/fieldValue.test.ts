@@ -17,6 +17,17 @@ describe('FieldValue authoring', () => {
     expect(parseFieldValueText({ kind: 'float', value: 0 }, 'Infinity')).toBeNull()
   })
 
+  it('edits wrapped scalar payloads without dropping their variant', () => {
+    expect(parseFieldValueText({
+      kind: 'option_some',
+      value: { kind: 'int', value: 1n },
+    }, '2')).toEqual({ kind: 'option_some', value: { kind: 'int', value: 2n } })
+    expect(parseFieldValueText({
+      kind: 'result_err',
+      value: { kind: 'string', value: 'old' },
+    }, 'new')).toEqual({ kind: 'result_err', value: { kind: 'string', value: 'new' } })
+  })
+
   it('provides one summary for table filtering and editor cards', () => {
     expect(summaryOf({
       kind: 'array',
@@ -31,7 +42,7 @@ describe('FieldValue authoring', () => {
     const value = {
       kind: 'formatted_string' as const,
       value: {
-        source: 'f"<b>{&Item::sword.name}</b>"',
+        source: '"<b>{&Item::sword.name}</b>"',
         rendered: '<b>Iron Sword</b>',
       },
     }

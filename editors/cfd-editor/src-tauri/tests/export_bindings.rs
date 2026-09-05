@@ -9,12 +9,12 @@
 fn export_bindings() {
     use cfd_editor_lib::editor::types as t;
     // Core types
-    export_with_retry::<coflow_data_model::CfdValue>("CfdValue tree");
-    export_with_retry::<coflow_data_model::CfdRecord>("CfdRecord tree");
-    export_with_retry::<coflow_data_model::CfdDictKey>("CfdDictKey tree");
-    export_with_retry::<coflow_data_model::CfdPathSegment>("CfdPathSegment tree");
-    export_with_retry::<coflow_api::FlatDiagnostic>("FlatDiagnostic");
-    export_with_retry::<coflow_api::WriterCapabilities>("WriterCapabilities");
+    export_with_retry::<coflow_runtime::CfdValue>("CfdValue tree");
+    export_with_retry::<coflow_runtime::CfdRecord>("CfdRecord tree");
+    export_with_retry::<coflow_runtime::CfdDictKey>("CfdDictKey tree");
+    export_with_retry::<coflow_runtime::CfdPathSegment>("CfdPathSegment tree");
+    export_with_retry::<coflow_runtime::FlatDiagnostic>("FlatDiagnostic");
+    export_with_retry::<coflow_runtime::WriterCapabilities>("WriterCapabilities");
     export_with_retry::<coflow_runtime::FileTreeNode>("FileTreeNode");
     export_with_retry::<coflow_runtime::DimensionValueCoordinate>("DimensionValueCoordinate");
     export_with_retry::<coflow_runtime::DimensionValueView>("DimensionValueView");
@@ -22,7 +22,7 @@ fn export_bindings() {
     export_with_retry::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
     // Editor composition views
     export_with_retry::<t::EditorError>("EditorError");
-    export_with_retry::<t::ProjectSnapshot>("ProjectSnapshot");
+    export_with_retry::<t::ProjectBootstrap>("ProjectBootstrap");
     export_with_retry::<t::PluginSchemaType>("PluginSchemaType");
     export_with_retry::<t::PluginSchemaField>("PluginSchemaField");
     export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");

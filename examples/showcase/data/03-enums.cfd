@@ -1,0 +1,5 @@
+# Feature: enum variants can omit the enum prefix when the field type is known.
+
+featured_rarity: EnumExample {
+  rarity: Rare,
+}

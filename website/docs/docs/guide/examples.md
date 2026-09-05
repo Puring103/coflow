@@ -1,29 +1,34 @@
-# 示例
+# Showcase 示例
 
-仓库中的示例分别覆盖完整项目、语法、本地化和纯 CFD 数据。第一次使用建议从 `examples/rpg` 开始。
-
-## 运行 RPG 示例
+仓库只保留一个用户示例项目。每个编号 CFT 文件介绍一种 schema 特性，
+同编号 CFD 文件展示对应的数据写法。
 
 ```powershell
-coflow cft check examples/rpg
-coflow check examples/rpg
-coflow build examples/rpg
+coflow cft check examples/showcase
+coflow check examples/showcase
+coflow build examples/showcase
 ```
 
 - `cft check` 只检查 CFT schema。
-- `check` 加载全部 source，构建 data model 并执行业务规则。
-- `build` 在同样的检查之后发布 JSON 和 C# 产物。
+- `check` 加载 `.cfd`，构建数据模型并执行业务规则。
+- `build` 在检查成功后发布 C# 等目标语言源文件。
 
-该示例的输出目录是 `examples/rpg/generated/data` 和 `examples/rpg/generated/csharp`。这些目录由 Coflow 整体接管，不要放入手写文件。
+输出目录是 `examples/showcase/generated/csharp`。该目录由 Coflow 整体接管，不要放入手写文件。
 
-## 其他示例
+## 文件划分
 
-| 目录 | 用途 |
+| 编号 | 特性 |
 | --- | --- |
-| `examples/cft` | CFT 常用语法和 check 表达式 |
-| `examples/cfd` | CFD 记录、多态对象、路径和 spread |
-| `examples/localization` | language dimension、变体文件和 C# runtime |
-| `examples/card_game` | 小型纯文本项目 |
-| `examples/workflow` | Excel、CFD、维度和稳定 enum lock 的综合流程 |
-
-更完整的数据结构说明见 [RPG 示例](../../examples/rpg.md)。
+| `01-records` | 记录和标量字段 |
+| `02-defaults` | 字段默认值 |
+| `03-enums` | 普通枚举 |
+| `04-flags` | flag 枚举 |
+| `05-arrays` | 数组 |
+| `06-dictionaries` | 字典 |
+| `07-inheritance` | 继承、抽象类型和多态对象 |
+| `08-references` | 记录引用 |
+| `09-options` | 可选值 |
+| `10-checks` | 校验表达式 |
+| `11-conditional-checks` | 条件校验 |
+| `12-quantifiers` | 集合量词 |
+| `13-functions` | 函数值和函数体 |

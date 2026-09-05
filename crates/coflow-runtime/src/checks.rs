@@ -5,10 +5,10 @@ mod store;
 
 use std::collections::BTreeMap;
 
-use coflow_api::DiagnosticSet;
-use coflow_cft::CftSchema;
+use crate::api::DiagnosticSet;
 use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
-use coflow_data_model::{CfdDataModel, RecordOrigin};
+use crate::data_model::{CfdDataModel, RecordOrigin};
+use coflow_language::cft::CftSchema;
 
 use crate::indexes::DiagnosticLogicalLocation;
 use impact::CheckImpact;
@@ -42,7 +42,10 @@ pub(crate) fn run_full_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> ProjectCheckOutput {
-    let limits = CheckLimits::default();
+    let limits = CheckLimits {
+        evaluation: crate::limits::RuntimeLimits::default().evaluation,
+        ..CheckLimits::default()
+    };
     let output = execute_plan(
         plan_full_checks_with_limit(schema, model, limits.max_tasks),
         schema,
@@ -62,7 +65,10 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckDiagnosticStore,
     impact: &CheckImpact,
 ) -> ProjectCheckOutput {
-    let limits = CheckLimits::default();
+    let limits = CheckLimits {
+        evaluation: crate::limits::RuntimeLimits::default().evaluation,
+        ..CheckLimits::default()
+    };
     let output = execute_plan(
         plan_incremental_checks_with_limit(schema, model, impact, limits.max_tasks),
         schema,
@@ -86,8 +92,8 @@ fn execute_plan(
         Ok(tasks) => execute_checks(schema, model, tasks, limits),
         Err(error) => CheckOutput {
             results: Vec::new(),
-            request_diagnostics: vec![coflow_data_model::CfdDiagnostic::error(
-                coflow_data_model::CfdErrorCode::CheckBudgetExceeded,
+            request_diagnostics: vec![crate::data_model::CfdDiagnostic::error(
+                crate::data_model::CfdErrorCode::CheckBudgetExceeded,
                 format!("check task planning limit {} exceeded", error.max_tasks),
             )
             .into()],
@@ -104,16 +110,16 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use coflow_checker::{CheckProjection, CheckTarget};
     use crate::checks::impact::{
         ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
     };
+    use crate::data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use crate::RecordCoordinate;
-    use coflow_cft::{
+    use coflow_language::cft::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CheckOwner, DimensionName,
         FieldName, ModuleId, RecordKey, TypeName, VariantName,
     };
-    use coflow_checker::{CheckProjection, CheckTarget};
-    use coflow_data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use std::collections::BTreeSet;
 
     fn schema(source: &str) -> CftSchema {
@@ -206,55 +212,6 @@ mod tests {
             BTreeSet::from([
                 CheckTarget::Record(model.record_by_type_key("Item", "a").unwrap()),
                 CheckTarget::Record(model.record_by_type_key("Item", "b").unwrap()),
-            ])
-        );
-    }
-
-    #[test]
-    fn same_type_record_reference_change_fans_out_to_every_owner_record() {
-        let schema = schema(
-            r"
-                type Item {
-                    value: int;
-                    target: &Item? = null;
-                    check { target == null || target.value > 0; }
-                }
-            ",
-        );
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "one",
-            "Item",
-            [("value", 1_i64.into()), ("target", LoadedValueDraft::Null)],
-        );
-        builder.add_record(
-            "two",
-            "Item",
-            [
-                ("value", 2_i64.into()),
-                ("target", LoadedValueDraft::record_ref("one")),
-            ],
-        );
-        let model = builder.build().expect("model");
-        let impact = CheckImpact {
-            records: BTreeMap::from([(
-                coordinate("Item", "one"),
-                field("value", ChangedProjection::Base),
-            )]),
-            record_sets: BTreeSet::new(),
-        };
-
-        let tasks = plan_incremental_checks(&schema, &model, &impact);
-
-        assert_eq!(tasks.len(), 2);
-        assert_eq!(
-            tasks
-                .iter()
-                .map(|task| task.target)
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from([
-                CheckTarget::Record(model.record_by_type_key("Item", "one").unwrap()),
-                CheckTarget::Record(model.record_by_type_key("Item", "two").unwrap()),
             ])
         );
     }
@@ -641,7 +598,7 @@ mod tests {
                 field: FieldName::new("name").unwrap(),
                 dimension: DimensionName::new("language").unwrap(),
                 variant: VariantName::new("zh").unwrap(),
-                value: zh.into(),
+                value: LoadedValueDraft::OptionSome(Box::new(zh.into())),
                 origin: RecordOrigin::None,
             });
             builder.build().expect("model")

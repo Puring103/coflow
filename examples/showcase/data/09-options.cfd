@@ -1,0 +1,9 @@
+# Feature: None and Some values.
+
+without_subtitle: OptionExample {
+  subtitle: "",
+}
+
+with_subtitle: OptionExample {
+  subtitle: "{&OptionExample::without_subtitle.subtitle}",
+}

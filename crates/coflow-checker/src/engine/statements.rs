@@ -5,12 +5,11 @@ use super::evaluator::{CheckEvaluator, EvalAbort, EvalFlow};
 use super::explanations;
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
-use coflow_cft::{
+use coflow_diagnostics::CfdErrorCode;
+use coflow_language::cft::{
     CftSchemaCheckExpr, CftSchemaCheckMessage, CftSchemaCheckMessageKind, CftSchemaCheckStmt,
     CftSchemaQuantifierBindings, CftSchemaQuantifierKind,
 };
-use coflow_data_model::CfdErrorCode;
-use coflow_structure::StructureKind;
 use std::collections::BTreeMap;
 
 pub(super) fn eval_root_statement(
@@ -218,10 +217,7 @@ fn eval_quantifier<'model>(
         if first_item_location.is_none() {
             first_item_location.clone_from(&item.location);
         }
-        if evaluator
-            .charge_work_at(StructureKind::QuantifierIteration, 1, item.location.clone())
-            .is_err()
-        {
+        if evaluator.charge_iteration_at(item.location.clone()).is_err() {
             return EvalFlow::HardStop;
         }
         let diagnostic_start = evaluator.diagnostics.len();
@@ -383,7 +379,6 @@ fn rewrite_all_failures(
             && diagnostic.diagnostic.code != CfdErrorCode::CheckAndFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckOrFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckTypePredicateFailed
-            && diagnostic.diagnostic.code != CfdErrorCode::CheckNullPredicateFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckContainsFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckUniqueFailed
             && diagnostic.diagnostic.code != CfdErrorCode::CheckMatchesFailed

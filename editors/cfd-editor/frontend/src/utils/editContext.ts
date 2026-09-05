@@ -6,6 +6,9 @@ import type { LookupResult } from '../state/editorLookups'
 import type { EnumVariantOption } from '../bindings/EnumVariantOption'
 
 export interface EditorLookupAccess {
+  sessionId: number
+  cachedEnumVariants: (enumName: string) => EnumVariantOption[] | undefined
+  cachedRefTargets: (targetType: string) => RefTarget[] | undefined
   loadEnumVariants: (enumName: string) => Promise<LookupResult<EnumVariantOption[]>>
   loadRefTargets: (targetType: string) => Promise<LookupResult<RefTarget[]>>
   makeDefaultObject: (typeName: string) => Promise<LookupResult<FieldValue>>

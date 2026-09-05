@@ -1,13 +1,13 @@
-use super::{is_cfd_path, OpenDocument};
-use crate::definition::CfdDefinitionIndex;
-use crate::diagnostics::{
+use super::super::definition::CfdDefinitionIndex;
+use super::super::diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
-use crate::state::LspBuild;
-use crate::uri::path_to_file_uri;
-use coflow_api::DiagnosticSet;
-use coflow_cfd::parse_cfd;
-use coflow_project::{discover_directory_files, normalize_path, Project};
+use super::super::state::LspBuild;
+use super::super::uri::path_to_file_uri;
+use super::{is_cfd_path, OpenDocument};
+use coflow_language::cfd::parse_cfd;
+use coflow_runtime::DiagnosticSet;
+use coflow_runtime::{discover_directory_files, normalize_path, Project};
 use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -70,7 +70,8 @@ pub(crate) struct ValidationSnapshot {
 
 pub(super) struct CfdDocumentSnapshot {
     pub(super) source: String,
-    pub(super) ast: coflow_cfd::CfdAst,
+    pub(super) ast: coflow_language::cfd::CfdAst,
+    pub(super) syntax_valid: bool,
 }
 
 impl ValidationSnapshot {
@@ -156,7 +157,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     let Some(raw_build) = raw_build else {
         add_diagnostic_set(
             &mut snapshot,
-            &DiagnosticSet::one(coflow_api::Diagnostic::error(
+            &DiagnosticSet::one(coflow_runtime::Diagnostic::error(
                 "CFT-LSP",
                 "LSP",
                 "schema runtime did not produce a schema attempt",
@@ -201,7 +202,7 @@ fn add_cfd_documents(
         if let Some(document) = input.open_documents.get(&source.path) {
             snapshot.diagnostics.insert(
                 document.uri.clone(),
-                crate::cfd::syntax_diagnostics(&source.text, &errors),
+                super::super::cfd::syntax_diagnostics(&source.text, &errors),
             );
         }
         snapshot.cfd_documents.insert(
@@ -209,6 +210,7 @@ fn add_cfd_documents(
             CfdDocumentSnapshot {
                 source: source.text.clone(),
                 ast,
+                syntax_valid: errors.is_empty(),
             },
         );
     }
@@ -289,7 +291,7 @@ fn collect_cfd_sources(
 ) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
     let mut sources = Vec::new();
     let mut failures = Vec::new();
-    for source in &project.config().sources {
+    for source in &project.config().data {
         let path = source.location();
         let resolved = project.resolve_path(path);
         if resolved.is_dir() {

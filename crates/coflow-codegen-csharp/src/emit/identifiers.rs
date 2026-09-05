@@ -1,39 +1,14 @@
 use std::collections::HashSet;
 
-use crate::names::{camel_case, csharp_ident_error, pascal_case};
+use crate::names::{camel_case, csharp_ident_error, csharp_type_name, pascal_case};
 use crate::CsharpCodegenError;
-use coflow_cft::CftField;
 
 pub(super) fn csharp_public_type_name(name: &str) -> String {
-    pascal_case(name)
+    csharp_type_name(name)
 }
 
 pub(super) fn csharp_public_member_name(name: &str) -> String {
     pascal_case(name)
-}
-
-pub(super) fn plural_records_var(table_name: &str) -> String {
-    let base = camel_case(&pascal_case(table_name));
-    if base.ends_with('s') {
-        format!("{base}Rows")
-    } else {
-        format!("{base}s")
-    }
-}
-
-pub(super) fn context_index_field_name(type_name: &str) -> String {
-    format!("{type_name}Index")
-}
-
-pub(super) fn loader_reserved_local_names<'a>(
-    fields: impl Iterator<Item = &'a CftField>,
-) -> HashSet<String> {
-    let mut out = fields
-        .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
-        .collect::<HashSet<_>>();
-    out.insert("isTable".to_string());
-    out.insert("context".to_string());
-    out
 }
 
 pub(super) fn field_local_name(
@@ -43,7 +18,7 @@ pub(super) fn field_local_name(
     let candidate = camel_case(&pascal_case(field_name));
     let base_name = if csharp_ident_error(&candidate)
         .is_some_and(|reason| reason == "identifier is a C# keyword")
-        || is_reserved_loader_local_name(&candidate)
+        || is_reserved_local_name(&candidate)
     {
         format!("{candidate}Value")
     } else {
@@ -66,7 +41,40 @@ pub(super) fn field_local_name(
     Ok(local_name)
 }
 
-fn is_reserved_loader_local_name(value: &str) -> bool {
+pub(super) fn function_parameter_name(
+    source_name: Option<&str>,
+    index: usize,
+    used_names: &mut HashSet<String>,
+) -> Result<String, CsharpCodegenError> {
+    let candidate = source_name.map_or_else(
+        || format!("arg{index}"),
+        |name| camel_case(&pascal_case(name)),
+    );
+    let keyword = csharp_ident_error(&candidate)
+        .is_some_and(|reason| reason == "identifier is a C# keyword");
+    if !keyword {
+        if let Some(reason) = csharp_ident_error(&candidate) {
+            return Err(CsharpCodegenError::new(format!(
+                "invalid C# function parameter name `{candidate}`: {reason}"
+            )));
+        }
+    }
+    let base_name = if keyword {
+        format!("@{candidate}")
+    } else {
+        candidate
+    };
+    let mut name = base_name.clone();
+    let mut suffix = 2;
+    while used_names.contains(&name) {
+        name = format!("{base_name}{suffix}");
+        suffix += 1;
+    }
+    used_names.insert(name.clone());
+    Ok(name)
+}
+
+fn is_reserved_local_name(value: &str) -> bool {
     matches!(
         value,
         "count"

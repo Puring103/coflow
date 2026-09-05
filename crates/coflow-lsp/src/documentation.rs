@@ -1,4 +1,4 @@
-use coflow_cft::syntax::ast::Annotation;
+use coflow_language::cft::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),
@@ -12,7 +12,7 @@ pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("any", "Require at least one collection item to pass."),
     ("none", "Require no collection item to pass."),
     ("in", "Bind a quantifier variable to a collection."),
-    ("is", "Check the runtime type or null value."),
+    ("is", "Check the runtime object type."),
 ];
 
 pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
@@ -20,12 +20,21 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
     ("float", "64-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
+    ("Option", "Optional value written as `None` or `Some(value)`."),
+    ("Result", "Success or error value written as `Ok(value)` or `Err(error)`."),
+    ("fn", "Function type written as `fn(parameters) -> result`."),
 ];
 
 pub(crate) const LITERALS: &[(&str, &str)] = &[
     ("true", "Boolean true."),
     ("false", "Boolean false."),
-    ("null", "Nullable value."),
+];
+
+pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
+    ("None", "Option without a value."),
+    ("Some", "Construct an Option containing a value."),
+    ("Ok", "Construct a successful Result value."),
+    ("Err", "Construct a failed Result value."),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
@@ -34,7 +43,7 @@ pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
 )];
 
 pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
-    coflow_cft::CftCheckBuiltin::ALL
+    coflow_language::cft::CftCheckBuiltin::ALL
         .into_iter()
         .map(|builtin| (builtin.name(), builtin.documentation()))
 }
@@ -57,6 +66,48 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
         documentation: "Fill an empty enum placeholder from this type's record keys.",
+    },
+    AnnotationCompletion {
+        label: "@singleton",
+        insert_text: "@singleton",
+        detail: "type annotation",
+        documentation: "Declare a type with one singleton record.",
+    },
+    AnnotationCompletion {
+        label: "@Host",
+        insert_text: "@Host",
+        detail: "type annotation",
+        documentation: "Mark a singleton type as a host-provided function interface.",
+    },
+    AnnotationCompletion {
+        label: "@label",
+        insert_text: "@label(\"${1:text}\")",
+        detail: "schema annotation",
+        documentation: "Attach an editor-facing label.",
+    },
+    AnnotationCompletion {
+        label: "@description",
+        insert_text: "@description(\"${1:text}\")",
+        detail: "schema annotation",
+        documentation: "Attach schema documentation.",
+    },
+    AnnotationCompletion {
+        label: "@expand",
+        insert_text: "@expand",
+        detail: "field annotation",
+        documentation: "Expand a concrete inline object's fields in table-oriented editors.",
+    },
+    AnnotationCompletion {
+        label: "@localized",
+        insert_text: "@localized",
+        detail: "field annotation",
+        documentation: "Bind a top-level field to the localization dimension.",
+    },
+    AnnotationCompletion {
+        label: "@dimension",
+        insert_text: "@dimension(\"${1:name}\")",
+        detail: "field annotation",
+        documentation: "Bind a top-level field to a configured dimension.",
     },
 ];
 
@@ -82,6 +133,7 @@ pub(crate) fn static_documentation(text: &str) -> Option<&'static str> {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
+        .chain(VALUE_CONSTRUCTORS)
         .chain(CHECK_SPECIAL_FORMS)
         .copied()
         .chain(builtin_functions())
@@ -99,6 +151,7 @@ pub(crate) fn is_builtin_name(name: &str) -> bool {
         .iter()
         .chain(PRIMITIVE_TYPES)
         .chain(LITERALS)
+        .chain(VALUE_CONSTRUCTORS)
         .chain(CHECK_SPECIAL_FORMS)
         .copied()
         .chain(builtin_functions())

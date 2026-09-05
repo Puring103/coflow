@@ -1,7 +1,6 @@
 use super::{project_diagnostic, ConfiguredSource, ResolvedDimensionSource, SourceResolver};
+use crate::api::{CfdSourcePath, Diagnostic, DiagnosticSet};
 use crate::dimensions::{DimensionField, DimensionRuntimePlan};
-use coflow_api::{Diagnostic, DiagnosticSet, SourceLocationSpec};
-use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -108,7 +107,7 @@ fn configured_dimension_source(
         return Ok(None);
     };
     let extension = extension.to_string();
-    if !matches!(extension.as_str(), "csv" | "cfd") {
+    if extension != "cfd" {
         return Ok(None);
     }
     let matched_fields = fields_for_source_path(fields, &path);
@@ -131,19 +130,16 @@ fn configured_dimension_source(
     }
     let display_name = path.strip_prefix(resolver.project.root_dir()).map_or_else(
         |_| path.display().to_string(),
-        coflow_project::path_to_slash,
+        crate::project::path_to_slash,
     );
     Ok(Some((
         ConfiguredSource {
-            provider_id: String::new(),
-            location: SourceLocationSpec::new(path),
-            options: source_options(matched_fields[0], &extension),
+            location: CfdSourcePath::new(path),
             display_name: if display_name.is_empty() {
                 directory.display().to_string()
             } else {
                 display_name
             },
-            source_index: None,
         },
         matched_fields.into_iter().cloned().collect(),
     )))
@@ -158,17 +154,4 @@ fn fields_for_source_path<'a>(
         .copied()
         .filter(|field| field.matches_source_path(path))
         .collect()
-}
-
-fn source_options(field: &DimensionField, extension: &str) -> Value {
-    if extension == "csv" {
-        json!({
-            "sheets": [{
-                "sheet": format!("{}_{}", field.bucket, field.source_field),
-                "type": field.source_type.as_str(),
-            }]
-        })
-    } else {
-        Value::Object(serde_json::Map::new())
-    }
 }

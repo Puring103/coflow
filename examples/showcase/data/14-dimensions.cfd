@@ -1,0 +1,9 @@
+# Feature: the base value is used when a dimension variant is unavailable.
+
+welcome: UiText {
+  text: "Welcome",
+}
+
+goodbye: UiText {
+  text: "Goodbye",
+}

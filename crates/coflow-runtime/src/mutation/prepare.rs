@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_api::DiagnosticSet;
-use coflow_api::WriteFieldPathSegment;
-use coflow_cft::{CftValueType, RecordKey};
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
+use crate::api::DiagnosticSet;
+use crate::api::WriteFieldPathSegment;
+use crate::data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
+use coflow_language::cft::{CftValueType, RecordKey};
 
 use crate::write_rules;
 use crate::writes;
@@ -67,7 +67,35 @@ impl ProjectSession {
             "MUTATION-PATH",
             "MUTATION",
         )?;
-        let item_ty = match ty.non_nullable() {
+        self.default_collection_item_for_type(&ty)
+    }
+
+    /// Build a default collection item using concrete object types found in an
+    /// existing record value while traversing the path.
+    pub fn default_collection_item_value_for_record(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        let record = self
+            .record_view(&coordinate.actual_type, &coordinate.key)
+            .map(|view| view.record)
+            .ok_or_else(|| one_path_error("record was not found"))?;
+        let ty = write_rules::expected_type_for_record_path(
+            self.schema(),
+            record,
+            path,
+            "MUTATION-PATH",
+            "MUTATION",
+        )?;
+        self.default_collection_item_for_type(&ty)
+    }
+
+    fn default_collection_item_for_type(
+        &self,
+        collection_type: &CftValueType,
+    ) -> Result<CfdValue, DiagnosticSet> {
+        let item_ty = match collection_type {
             CftValueType::Array(item) | CftValueType::Dict(_, item) => item.as_ref(),
             _ => {
                 return Err(one_path_error(
@@ -75,26 +103,11 @@ impl ProjectSession {
                 ));
             }
         };
-        match item_ty.non_nullable() {
-            CftValueType::RecordRef(target_type) => self
-                .ref_targets(target_type)
-                .into_iter()
-                .next()
-                .map(|target| CfdValue::Ref(target.coordinate.key))
-                .ok_or_else(|| {
-                    one_mutation_error(
-                        "MUTATION-DEFAULT",
-                        format!(
-                            "collection item type `&{target_type}` has no available target record"
-                        ),
-                    )
-                }),
-            _ => default_value_for_value_type(
-                self.schema(),
-                item_ty,
-                DefaultMaterialization::EditableShape,
-            ),
-        }
+        default_value_for_value_type(
+            self.schema(),
+            item_ty,
+            DefaultMaterialization::EditableShape,
+        )
     }
 }
 
@@ -107,7 +120,6 @@ pub(super) fn prepare_one(
     match op {
         MutationOp::InsertRecord {
             file,
-            sheet,
             actual_type,
             key,
             fields,
@@ -134,7 +146,6 @@ pub(super) fn prepare_one(
             let coordinate = validated_record_coordinate(actual_type, key)?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
-                sheet,
                 actual_type: coordinate.actual_type,
                 key: coordinate.key,
                 fields,
@@ -152,12 +163,38 @@ pub(super) fn prepare_one(
                 effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let value = coerce_mutation_value(session, &expected.ty, value, pending_records)?;
+            let materialized_top_level = materialized_top_level_value(
+                session,
+                &write_record,
+                &path,
+                &value,
+            )?;
             Ok(PreparedMutationOp::SetField {
                 record,
                 write_record,
                 write_file,
                 path,
                 value,
+                materialized_top_level,
+            })
+        }
+        MutationOp::UnsetField { record, file, path } => {
+            write_rules::expected_type_for_cfd_path(
+                session.schema(),
+                &record.actual_type,
+                &path,
+                "MUTATION-PATH",
+                "MUTATION",
+            )?;
+            let path = validated_write_path(&path)?;
+            let (write_record, write_file, path) =
+                effective_write_target_for_set_field(session, &record, &path)?;
+            ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
+            Ok(PreparedMutationOp::UnsetField {
+                record,
+                write_record,
+                write_file,
+                path,
             })
         }
         MutationOp::SetDimensionValue {
@@ -261,7 +298,6 @@ pub(super) fn prepare_one(
         MutationOp::TransferRecord {
             record,
             destination_file,
-            destination_sheet,
             target_index,
             source_file,
         } => {
@@ -276,11 +312,34 @@ pub(super) fn prepare_one(
             Ok(PreparedMutationOp::TransferRecord {
                 record,
                 destination_file,
-                destination_sheet,
                 target_index,
             })
         }
     }
+}
+
+fn materialized_top_level_value(
+    session: &ProjectSession,
+    coordinate: &RecordCoordinate,
+    path: &[CfdPathSegment],
+    value: &CfdValue,
+) -> Result<Option<CfdValue>, DiagnosticSet> {
+    if path.len() <= 1 {
+        return Ok(None);
+    }
+    let root_path = CfdPath {
+        segments: path[..1].to_vec(),
+    };
+    let record = session
+        .record_view(&coordinate.actual_type, &coordinate.key)
+        .map(|view| view.record)
+        .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
+    let mut root = record
+        .value_at_path(&root_path)
+        .cloned()
+        .ok_or_else(|| one_path_error("top-level field was not found while materializing a field"))?;
+    set_nested_value(&mut root, &path[1..], value.clone())?;
+    Ok(Some(root))
 }
 
 pub(super) struct PendingInsertSetRequest<'a> {
@@ -421,7 +480,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_cft::CftSchema,
+    schema: &coflow_language::cft::CftSchema,
     target_actual_type: &str,
     expected: &CftValueType,
     value: &mut CfdValue,
@@ -429,14 +488,21 @@ fn rename_pending_value_references(
     new_key: &RecordKey,
 ) {
     match (expected, value) {
-        (CftValueType::Nullable(inner), value) => rename_pending_value_references(
-            schema,
-            target_actual_type,
-            inner,
-            value,
-            old_key,
-            new_key,
-        ),
+        (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, inner, value, old_key, new_key,
+            );
+        }
+        (CftValueType::Result(ok, _), CfdValue::ResultOk(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, ok, value, old_key, new_key,
+            );
+        }
+        (CftValueType::Result(_, error), CfdValue::ResultErr(value)) => {
+            rename_pending_value_references(
+                schema, target_actual_type, error, value, old_key, new_key,
+            );
+        }
         (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
             if key.as_str() == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {
@@ -517,6 +583,17 @@ pub(super) fn set_nested_value(
         *current = value;
         return Ok(());
     };
+    match current {
+        CfdValue::OptionSome(inner)
+        | CfdValue::ResultOk(inner)
+        | CfdValue::ResultErr(inner) => return set_nested_value(inner, path, value),
+        CfdValue::OptionNone => {
+            return Err(one_path_error(
+                "cannot write a nested path through an empty option",
+            ));
+        }
+        _ => {}
+    }
     let next = match (current, segment) {
         (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
             object.fields.get_mut(field.as_str())
@@ -555,10 +632,10 @@ fn prepare_insert_fields(
         write_rules::validate_value_semantics(
             session,
             schema,
-            coflow_data_model::ValueValidationRequest::new(
+            crate::data_model::ValueValidationRequest::new(
                 &field.value_type,
                 value,
-                coflow_data_model::ValueValidationMode::Mutation,
+                crate::data_model::ValueValidationMode::Mutation,
             )
             .with_pending_insert(PendingInsertRef { actual_type, key }),
             Some(pending_records),
@@ -608,9 +685,13 @@ fn expected_value_for_path(
     coordinate: &RecordCoordinate,
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
-    let current = write_rules::expected_type_for_cfd_path(
+    let record = session
+        .record_view(&coordinate.actual_type, &coordinate.key)
+        .map(|view| view.record)
+        .ok_or_else(|| one_path_error("record was not found"))?;
+    let current = write_rules::expected_type_for_record_path(
         session.schema(),
-        &coordinate.actual_type,
+        record,
         path,
         "MUTATION-PATH",
         "MUTATION",
@@ -647,9 +728,7 @@ fn effective_write_target_for_set_field(
             coordinate.actual_type, coordinate.key
         ))
     })?;
-    Ok(writes::effective_write_target_for_path(
-        session, record_ref, path,
-    ))
+    writes::effective_write_target_for_path(session, record_ref, path)
 }
 
 fn ensure_source_file(session: &ProjectSession, file: &str) -> Result<(), DiagnosticSet> {
@@ -741,7 +820,7 @@ fn ensure_record_key_available(
     session: &ProjectSession,
     actual_type: &str,
     key: &str,
-    current_record: Option<coflow_data_model::CfdRecordId>,
+    current_record: Option<crate::data_model::CfdRecordId>,
     code: &'static str,
     conflict_code: &'static str,
 ) -> Result<(), DiagnosticSet> {

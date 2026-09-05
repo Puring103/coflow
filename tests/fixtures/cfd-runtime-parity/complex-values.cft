@@ -1,0 +1,10 @@
+type Payload {
+  enabled: bool;
+  score: int;
+}
+
+type ComplexValues {
+  samples: [int];
+  lookup: {string: int};
+  optional: Option<Payload>;
+}

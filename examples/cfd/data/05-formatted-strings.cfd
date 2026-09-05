@@ -1,6 +1,0 @@
-# Ordinary string fields automatically resolve cross-record field references.
-# The editor renders the HTML <b> tag and Unity <color> tag when not editing.
-
-featured_item_notice: Announcement {
-  text: "推荐 <b>{&Item::sword_fire.name}</b>，售价 <color=#ffb347>{&Item::sword_fire.price}</color> 金币。<i>ssds</i>",
-}

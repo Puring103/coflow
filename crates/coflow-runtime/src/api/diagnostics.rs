@@ -1,0 +1,605 @@
+use crate::data_model::{CfdDiagnostics, LoadedRecordDraft, RecordOrigin};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::path::{Component, Path, PathBuf};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticSet {
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl DiagnosticSet {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn one(diagnostic: Diagnostic) -> Self {
+        Self {
+            diagnostics: vec![diagnostic],
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.diagnostics.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Diagnostic> {
+        self.diagnostics.iter()
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.diagnostics.extend(other.diagnostics);
+    }
+
+    pub fn push(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+
+    /// Flatten diagnostics that do not have additional record-level context.
+    #[must_use]
+    pub fn flat_diagnostics(&self) -> Vec<FlatDiagnostic> {
+        self.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.flat_view(None, None, None))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn contains(&self, needle: &str) -> bool {
+        self.to_string().contains(needle)
+    }
+}
+
+impl fmt::Display for DiagnosticSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, diagnostic) in self.diagnostics.iter().enumerate() {
+            if index > 0 {
+                writeln!(f)?;
+            }
+            write!(
+                f,
+                "[{}] [{}] {}",
+                diagnostic.code, diagnostic.stage, diagnostic.message
+            )?;
+            for context in &diagnostic.contexts {
+                write!(f, "\n上下文: {}", context.human_message())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl From<Vec<Diagnostic>> for DiagnosticSet {
+    fn from(diagnostics: Vec<Diagnostic>) -> Self {
+        Self { diagnostics }
+    }
+}
+
+impl<'a> IntoIterator for &'a DiagnosticSet {
+    type Item = &'a Diagnostic;
+    type IntoIter = std::slice::Iter<'a, Diagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Diagnostic {
+    pub code: String,
+    pub stage: String,
+    pub severity: Severity,
+    pub message: String,
+    pub primary: Option<Label>,
+    #[serde(default)]
+    pub related: Vec<Label>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct DiagnosticContext {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimension: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+impl DiagnosticContext {
+    #[must_use]
+    pub fn human_message(&self) -> String {
+        match self.kind.as_str() {
+            "check" => self
+                .name
+                .as_ref()
+                .map_or_else(|| "check".to_string(), |name| format!("check {name}")),
+            "when" => self.expression.as_ref().map_or_else(
+                || "when".to_string(),
+                |expression| format!("在 when {expression} 内"),
+            ),
+            "quantifier" => match (&self.binding, &self.item) {
+                (Some(binding), Some(item)) => format!("绑定 {binding} 位于 {item}"),
+                _ => "量词遍历".to_string(),
+            },
+            "dimension" => match (&self.dimension, &self.variant) {
+                (Some(dimension), Some(variant)) => format!("{dimension}={variant}"),
+                _ => "dimension".to_string(),
+            },
+            unknown => unknown.to_string(),
+        }
+    }
+}
+
+impl Diagnostic {
+    #[must_use]
+    pub fn error(
+        code: impl Into<String>,
+        stage: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            stage: stage.into(),
+            severity: Severity::Error,
+            message: message.into(),
+            primary: None,
+            related: Vec::new(),
+            contexts: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_primary(mut self, label: Label) -> Self {
+        self.primary = Some(label);
+        self
+    }
+
+    /// Flatten a diagnostic into the wire shape consumed by editor hosts.
+    /// Logical coordinates are supplied by the diagnostics store. The editor
+    /// core may narrow a structured target to a source target when the record
+    /// was rejected from the partial model.
+    #[must_use]
+    pub fn flat_view(
+        &self,
+        actual_type: Option<String>,
+        record_key: Option<String>,
+        field_path: Option<String>,
+    ) -> FlatDiagnostic {
+        let file_path = self
+            .primary
+            .as_ref()
+            .map(|label| source_location_display_path(&label.location));
+        let range = self.primary.as_ref().and_then(|label| match &label.location {
+            SourceLocation::FileSpan { .. } => Some(label.location.text_range()),
+            SourceLocation::ProjectConfig { .. } | SourceLocation::Artifact { .. } => None,
+        });
+        FlatDiagnostic {
+            id: diagnostic_id(
+                self,
+                file_path.as_deref(),
+                actual_type.as_deref(),
+                record_key.as_deref(),
+                field_path.as_deref(),
+            ),
+            severity: severity_str(self.severity).to_string(),
+            code: self.code.clone(),
+            stage: self.stage.clone(),
+            message: self.message.clone(),
+            target: diagnostic_target(
+                file_path,
+                range,
+                actual_type,
+                record_key,
+                field_path,
+                self.primary.as_ref().map(|label| &label.location),
+            ),
+            contexts: self.contexts.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Label {
+    pub location: SourceLocation,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct TextPosition {
+    pub line: usize,
+    pub character: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct TextRange {
+    pub start: TextPosition,
+    pub end: TextPosition,
+}
+
+impl TextRange {
+    #[must_use]
+    pub fn from_byte_offsets(source: &str, start: usize, end: usize) -> Self {
+        Self {
+            start: byte_position(source, start),
+            end: byte_position(source, end.max(start.saturating_add(1))),
+        }
+    }
+
+    #[must_use]
+    pub const fn from_parts(
+        start_line: usize,
+        start_character: usize,
+        end_line: usize,
+        end_character: usize,
+    ) -> Self {
+        Self {
+            start: TextPosition {
+                line: start_line,
+                character: start_character,
+            },
+            end: TextPosition {
+                line: end_line,
+                character: end_character,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SourceLocation {
+    FileSpan {
+        path: PathBuf,
+        start_line: usize,
+        start_character: usize,
+        end_line: usize,
+        end_character: usize,
+    },
+    ProjectConfig {
+        path: PathBuf,
+        key_path: Vec<String>,
+    },
+    Artifact {
+        path: PathBuf,
+    },
+}
+
+impl SourceLocation {
+    #[must_use]
+    pub fn display_path(&self) -> String {
+        source_location_display_path(self)
+    }
+
+    #[must_use]
+    pub fn text_range(&self) -> TextRange {
+        match self {
+            Self::FileSpan {
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+                ..
+            } => TextRange::from_parts(*start_line, *start_character, *end_line, *end_character),
+            Self::ProjectConfig { .. } | Self::Artifact { .. } => TextRange::from_parts(0, 0, 0, 1),
+        }
+    }
+}
+
+impl From<crate::data_model::SourceLocation> for SourceLocation {
+    fn from(loc: crate::data_model::SourceLocation) -> Self {
+        match loc {
+            crate::data_model::SourceLocation::FileSpan {
+                path,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            } => Self::FileSpan {
+                path,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            },
+        }
+    }
+}
+
+/// Map [`CfdDiagnostics`] to [`DiagnosticSet`] using a record-to-origin lookup.
+///
+/// Each [`LoadedRecordDraft`] carries its own origin. Callers that need to
+/// produce wire diagnostics from compiler/check failures pass either a slice
+/// of records (or their extracted origins) and let this helper resolve labels.
+#[must_use]
+pub fn map_diagnostics_with_origins(
+    diagnostics: CfdDiagnostics,
+    origins: &[RecordOrigin],
+) -> DiagnosticSet {
+    let mapped =
+        crate::data_model::map_diagnostics(diagnostics, |id| origins.get(id.index()).cloned());
+    DiagnosticSet {
+        diagnostics: mapped
+            .into_iter()
+            .map(|d| Diagnostic {
+                code: d.code,
+                stage: d.stage,
+                severity: Severity::Error,
+                message: d.message,
+                primary: d.primary.map(|l| Label {
+                    location: l.location.into(),
+                    message: l.message,
+                }),
+                related: d
+                    .related
+                    .into_iter()
+                    .map(|l| Label {
+                        location: l.location.into(),
+                        message: l.message,
+                    })
+                    .collect(),
+                contexts: Vec::new(),
+            })
+            .collect(),
+    }
+}
+
+/// Convenience helper: extract origins from a slice of input records.
+#[must_use]
+pub fn origins_of(records: &[LoadedRecordDraft]) -> Vec<RecordOrigin> {
+    records.iter().map(|r| r.origin.clone()).collect()
+}
+
+/// Wire-friendly flat view of a [`Diagnostic`].
+///
+/// The target is authoritative: editor hosts execute it directly and never
+/// infer navigation behavior from diagnostic codes or optional coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct FlatDiagnostic {
+    pub id: String,
+    pub severity: String,
+    pub code: String,
+    pub stage: String,
+    pub message: String,
+    pub target: DiagnosticTarget,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<DiagnosticContext>,
+}
+
+fn diagnostic_id(
+    diagnostic: &Diagnostic,
+    file_path: Option<&str>,
+    actual_type: Option<&str>,
+    record_key: Option<&str>,
+    field_path: Option<&str>,
+) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let source_location = diagnostic
+        .primary
+        .as_ref()
+        .map(|label| format!("{:?}", label.location));
+    for part in [
+        Some(diagnostic.code.as_str()),
+        Some(diagnostic.stage.as_str()),
+        Some(diagnostic.message.as_str()),
+        file_path,
+        actual_type,
+        record_key,
+        field_path,
+        source_location.as_deref(),
+    ] {
+        for byte in part.unwrap_or("").bytes().chain(std::iter::once(0xff)) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("diag-{hash:016x}")
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DiagnosticTarget {
+    TableField {
+        file_path: String,
+        coordinate: crate::RecordCoordinate,
+        field_path: String,
+    },
+    Record {
+        file_path: String,
+        coordinate: crate::RecordCoordinate,
+    },
+    Source {
+        file_path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<TextRange>,
+    },
+    ProjectSource {
+        file_path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<TextRange>,
+    },
+    #[default]
+    None,
+}
+
+fn diagnostic_target(
+    file_path: Option<String>,
+    range: Option<TextRange>,
+    actual_type: Option<String>,
+    record_key: Option<String>,
+    field_path: Option<String>,
+    location: Option<&SourceLocation>,
+) -> DiagnosticTarget {
+    let Some(file_path) = file_path else {
+        return DiagnosticTarget::None;
+    };
+    let coordinate = actual_type
+        .zip(record_key)
+        .and_then(|(actual_type, key)| crate::RecordCoordinate::try_new(actual_type, key).ok());
+    if let Some(coordinate) = coordinate {
+        return match field_path {
+            Some(field_path) => DiagnosticTarget::TableField {
+                file_path,
+                coordinate,
+                field_path,
+            },
+            None => DiagnosticTarget::Record {
+                file_path,
+                coordinate,
+            },
+        };
+    }
+    if matches!(location, Some(SourceLocation::ProjectConfig { .. })) {
+        DiagnosticTarget::ProjectSource { file_path, range }
+    } else {
+        DiagnosticTarget::Source { file_path, range }
+    }
+}
+
+impl FlatDiagnostic {
+    #[must_use]
+    pub fn display_message(&self) -> String {
+        let mut message = self.message.clone();
+        for context in &self.contexts {
+            message.push_str("\n上下文: ");
+            message.push_str(&context.human_message());
+        }
+        message
+    }
+}
+
+fn severity_str(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Error => "error",
+        Severity::Warning => "warning",
+        Severity::Info => "info",
+    }
+}
+
+#[must_use]
+pub fn byte_position(source: &str, byte_offset: usize) -> TextPosition {
+    let target = byte_offset.min(source.len());
+    let mut line = 0;
+    let mut character = 0;
+    for (byte_index, ch) in source.char_indices() {
+        if byte_index >= target {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += ch.len_utf16();
+        }
+    }
+    TextPosition { line, character }
+}
+
+#[must_use]
+pub fn byte_range(source: &str, start: usize, end: usize) -> TextRange {
+    TextRange::from_byte_offsets(source, start, end)
+}
+
+#[must_use]
+pub fn source_location_display_path(location: &SourceLocation) -> String {
+    match location {
+        SourceLocation::FileSpan { path, .. }
+        | SourceLocation::ProjectConfig { path, .. }
+        | SourceLocation::Artifact { path } => path_to_slash(path),
+    }
+}
+
+#[must_use]
+pub fn path_to_slash(path: &Path) -> String {
+    let raw = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
+            Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
+            Component::RootDir | Component::CurDir => None,
+            Component::ParentDir => Some("..".to_string()),
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    raw.strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix("//?/"))
+        .map_or_else(|| raw.clone(), str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use super::{Diagnostic, DiagnosticContext};
+
+    #[test]
+    fn diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds() {
+        let legacy = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[]}"#;
+        let diagnostic: Diagnostic = serde_json::from_str(legacy).expect("legacy diagnostic");
+        assert!(diagnostic.contexts.is_empty());
+        assert_eq!(
+            serde_json::to_value(&diagnostic).expect("serialize")["contexts"],
+            serde_json::Value::Null
+        );
+
+        let with_unknown = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[],"contexts":[{"kind":"future","name":"kept"}]}"#;
+        let diagnostic: Diagnostic =
+            serde_json::from_str(with_unknown).expect("unknown context kind remains data");
+        assert_eq!(
+            diagnostic.contexts,
+            vec![DiagnosticContext {
+                kind: "future".to_string(),
+                name: Some("kept".to_string()),
+                ..DiagnosticContext::default()
+            }]
+        );
+    }
+}

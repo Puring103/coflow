@@ -1,5 +1,5 @@
 use crate::diagnostics::{cli_error, cli_file_error};
-use coflow_api::{DiagnosticSet, FlatDiagnostic};
+use coflow_runtime::{DiagnosticSet, FlatDiagnostic};
 use serde::Serialize;
 use std::io::{self, Read, Write};
 use std::path::Path;

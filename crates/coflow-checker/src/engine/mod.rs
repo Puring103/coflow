@@ -8,10 +8,10 @@ use crate::{
     CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckProjection, CheckTarget,
     CheckTask, CheckTaskResult,
 };
-use coflow_cft::{
+use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
+use coflow_language::cft::{
     CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType, CheckOwner, CheckStatementInfo,
 };
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -95,7 +95,7 @@ pub(crate) fn execute_tasks(
             .max_request_work
             .saturating_sub(statistics.work_used)
             .saturating_sub(1);
-        let mut task_limits = limits.structure;
+        let mut task_limits = limits.evaluation;
         task_limits.max_work = task_limits.max_work.min(remaining_work);
         let (mut diagnostics, work) = execute_task(
             schema,
@@ -149,7 +149,7 @@ fn execute_task(
     model: &CfdDataModel,
     task: &CheckTask,
     prepared: Option<&PreparedStatement<'_>>,
-    structural_limits: coflow_structure::StructuralLimits,
+    evaluation_limits: crate::EvaluationLimits,
     regex_cache: &RefCell<builtins::RegexCache>,
 ) -> (Vec<CheckDiagnostic>, u64) {
     let Some(prepared) = prepared else {
@@ -174,7 +174,7 @@ fn execute_task(
         schema,
         model,
         &task.projection,
-        structural_limits,
+        evaluation_limits,
         regex_cache,
     );
     match (&prepared.owner, task.target) {

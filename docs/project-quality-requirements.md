@@ -22,7 +22,7 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 - 禁止 `unsafe`。
 - 禁止 `unwrap`、裸 `expect`、`panic`、`todo`、`unimplemented`、`dbg`。
 - 错误必须通过显式返回值或诊断模型表达，不能依赖崩溃。
-- 避免无意义的大对象 `clone`、copy 和重复分配，尤其是 schema、data model、diagnostics、导出数据和 LSP 文档状态。
+- 避免无意义的大对象 `clone`、copy 和重复分配，尤其是 schema、data model、diagnostics、代码生成输入和 LSP 文档状态。
 - 文件职责要单一，文件分割要清晰。
 - 减少重复代码，优先复用已有 crate、模块和 helper。
 - 避免超大文件。超过约 800 到 1000 行的生产源码应考虑拆分；超过约 1500 行默认进入拆分计划，除非有明确理由。
@@ -43,23 +43,23 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 重点排查方向：
 
 - 错误处理是否完整，是否存在被吞掉的错误、错误码不准确、错误位置不准确、related location 缺失等问题。
-- 配置校验是否覆盖缺失字段、未知字段、非法组合、重复配置、空路径、错误输出类型等情况。
+- 配置校验是否覆盖缺失字段、未知字段、非法组合、重复配置、空路径、错误 codegen 类型等情况。
 - 路径处理是否兼容 Windows、相对路径、绝对路径、符号链接、大小写差异、URI 编码、非 UTF-8 或 Unicode 文件名。
 - 文件读写是否可能误删、覆盖不该覆盖的文件、写入到错误目录，或在部分失败后留下不一致生成物。
 - parser 和 loader 是否存在错误恢复不完整、合法输入误报、非法输入漏报、多错误只报一个等问题。
-- schema、data model、checker、exporter、codegen 之间的语义是否一致，例如默认值、nullable、多态、引用、dict key、enum/flag enum、路径引用等。
+- schema、CFD loader、data model、checker、codegen 之间的语义是否一致，例如默认值、nullable、多态、引用、dict key、enum/flag enum、路径引用等。
 - 数据模型是否维护内部不变量，例如 record id、table index、polymorphic index、duplicate key、引用目标和 record origin 的对应关系。
-- 诊断从底层模块映射到 Excel/CFD/CLI/LSP 时，文件、sheet、cell、行列、UTF-16 column 是否保持正确。
+- 诊断从底层模块映射到 CFD/CLI/LSP 时，文件、行列、UTF-16 column 是否保持正确。
 - LSP 是否正确处理未保存文档、打开/关闭文档、增量变更、保存后重编译、未知请求、shutdown/exit、超大消息和 malformed URI。
 - VS Code 插件与 Rust LSP 是否存在重复逻辑导致的行为漂移。
-- JSON、MessagePack 和 C# codegen 的输出语义是否一致。
+- C# runtime 直接加载 CFD 与生成代码的语义是否一致。
 - C# 生成代码是否覆盖命名冲突、保留字、非法标识符、nullable、struct、继承、多态引用、嵌套引用解析等边界。
 - 大数据结构是否存在不必要 clone、重复遍历、重复解析、无界缓存或明显的性能退化风险。
 - 测试是否只覆盖 happy path，是否缺少错误码的负向触发和相邻合法输入不误报测试。
 
 发现潜在 bug 后，优先级按影响排序：
 
-1. 会导致错误数据、错误导出、错误代码生成、误删文件或崩溃的问题。
+1. 会导致错误数据、错误代码生成、误删文件或崩溃的问题。
 2. 会导致诊断错误、LSP 行为错误、CLI 退出码错误的问题。
 3. 会造成维护成本上升、重复逻辑、架构边界混乱的问题。
 4. 单纯风格或局部可读性问题。

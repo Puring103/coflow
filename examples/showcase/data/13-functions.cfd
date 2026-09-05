@@ -1,0 +1,17 @@
+# Feature: function bodies. The editor keeps each signature read-only.
+
+default_calculator: Calculator {
+  add: fn(left: int, right: int) -> int {
+    left + right
+  },
+
+  classify: fn(
+    value: int
+  ) -> string {
+    if value >= 10 {
+      "large"
+    } else {
+      "small"
+    }
+  },
+}

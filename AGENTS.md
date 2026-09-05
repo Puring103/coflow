@@ -82,18 +82,34 @@ Keep README focused on user-facing installation, features, configuration, and us
 internal architecture notes, development workflow, repository checks, and specification indexes
 in this file or in `docs/`.
 
+Internal language and C# Runtime design lives under `docs/language-design/` and is split by responsibility:
+
+- `01-language-design.zh-CN.md`: base language semantics.
+- `02-api-runtime-design.zh-CN.md`: generated API, loading, modules, tables, and Host boundaries.
+- `03-vm-design.zh-CN.md`: register VM, calls, closures, validation, limits, and performance.
+- `04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
+
+Keep public C# syntax and API guidance concise in
+`website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or
+implementation constraints there.
+
 ### Internal Crate Boundaries
 
-- `coflow-api` defines provider traits, diagnostics, source locations, artifacts, and write contracts.
-- `coflow-project` handles project configuration, path resolution, configuration diagnostics, schema file discovery, and project initialization.
-- `coflow-runtime` owns the shared project runtime: schema compilation, source resolve/load, data model, check, diagnostics, and source/record/file indexes. Its source resolution module is the only place that selects providers, decodes source options, expands directories, and applies target overrides; its mutation execution plan is shared by preflight, transaction enlistment, and staging.
-- `coflow-data-model` owns source-neutral record/value semantics and the schema-guided table cell value grammar consumed by runtime and table providers.
-- `coflow-structure` owns domain-neutral structural limits and traversal/work accounting shared by parsers, compilers, and evaluators.
-- `coflow-builtins` registers the default provider registry for the CLI, editor, and LSP hosts.
-- The root `coflow` crate owns command orchestration and the artifact release lifecycle from safety validation and in-memory generation through staging and active-manifest publication. Its library exposes only the shared command/application service used by hosts; terminal/JSON commands, LSP startup, and bundled-skill management stay behind the binary's default `cli` feature. Non-CLI dependents such as the editor must use `default-features = false`.
-- `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-runtime` and keeps only editor wire DTOs, graph/table views, and write command bridging.
+- `coflow-model` owns the schema-guided CFD data model, model construction, value validation, references, and model diagnostics.
+- `coflow-checker` owns CFT check execution over compiled schemas and immutable CFD data models, including evaluation work and iteration limits.
+- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
+- `coflow-staging` owns the internal all-or-nothing filesystem staging primitives shared by CFD writes and generated-code publication.
+- `coflow-language` owns source spans, shared lossless lexical scanning, CFT syntax and schema compilation, schema-free CFD syntax, and language structural limits.
+- `coflow-format` owns canonical CFT/CFD source formatting over the lossless token stream; it does not load projects or produce LSP edits.
+- `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
+- The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
+- `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-runtime`.
+- `coflow-lsp` owns the standalone and embedded language server implementation used by the CLI and editor.
+- The root `coflow` package is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-runtime`; non-CLI hosts must not depend on the root package.
+- `editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
+- `editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
 - `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
-- Provider shared algorithms live in `coflow-loader-table-core` and `coflow-exporter-core`; they do not belong in `coflow-api`.
+- Code generation contracts live in `coflow-codegen` and remain re-exported through `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
 
 ### Website Reference Documents
 
@@ -106,10 +122,17 @@ Public reference documentation lives under `website/docs/docs/reference/`:
 - `website/docs/docs/reference/05-data-model.md`: data model.
 - `website/docs/docs/reference/11-schema-api.md`: schema API.
 - `website/docs/docs/reference/02-project-pipeline.md`: project pipeline.
-- `website/docs/docs/reference/04-sources/`: data sources, providers, and cell value syntax.
-- `website/docs/docs/reference/06-export/`: JSON and MessagePack export formats.
 - `website/docs/docs/reference/07-codegen/01-csharp.md`: C# code generation.
 - `website/docs/docs/reference/09-diagnostics/01-diagnostics.md`: diagnostics format and handling.
 - `website/docs/docs/reference/09-diagnostics/02-codes.md`: diagnostics error code index.
 - `website/docs/docs/reference/10-localization.md`: dimensions and localization.
 - `website/docs/docs/reference/12-architecture.md`: project architecture.
+
+
+实现代码时注意以下内容：
+1. 项目为开发期，修改不需要考虑兼容性，不需要加不必要的兜底
+2. 关键代码需要有中文注释
+3. 变更应当彻底，不能留下技术债
+4. 文档内容应当是正向的，只写入讨论结果，讨论过程不能进入文档
+5. 网页是对外展示的内容，不能包含实现细节，实现细节的文档单独放在docs下
+6. 禁止自行做出决策，有问题应当询问我

@@ -1,13 +1,15 @@
-use coflow_api::{ProviderRegistry, WriterCapabilities};
-use coflow_cft::{CftSchema, CftValueType};
-use coflow_data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use crate::api::WriterCapabilities;
+use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use coflow_language::cft::{CftSchema, CftValueType};
 
-use crate::indexes::{FileIndex, RecordIndex, SourceIndex};
+use crate::indexes::{FileIndex, SourceIndex};
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
     ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
+use crate::mutation::defaults::default_value_for_value_type;
+use crate::DefaultMaterialization;
 
 /// Read-only capability over one immutable project generation.
 ///
@@ -42,11 +44,6 @@ impl<'a> ProjectQueries<'a> {
     #[must_use]
     pub(crate) const fn sources(self) -> &'a SourceIndex {
         self.session.sources()
-    }
-
-    #[must_use]
-    pub(crate) const fn records(self) -> &'a RecordIndex {
-        self.session.records()
     }
 
     #[must_use]
@@ -94,6 +91,14 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
+    pub fn type_is_abstract(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_abstract)
+    }
+
+    #[must_use]
     pub fn id_as_enum_name_for_type(self, type_name: &str) -> Option<String> {
         self.session
             .schema()
@@ -121,6 +126,21 @@ impl<'a> ProjectQueries<'a> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Builds a schema-shaped value used only to present an absent field in
+    /// an editor. Failure means the type requires user input (most notably a
+    /// required record reference), so the host should present an empty typed
+    /// control instead of inventing a valid model value.
+    #[must_use]
+    pub fn editable_field_seed(self, actual_type: &str, field_name: &str) -> Option<CfdValue> {
+        let field = self.session.schema().field(actual_type, field_name)?;
+        default_value_for_value_type(
+            self.session.schema(),
+            &field.value_type,
+            DefaultMaterialization::EditableShape,
+        )
+        .ok()
     }
 
     #[must_use]
@@ -243,9 +263,9 @@ impl<'a> ProjectQueries<'a> {
                 ),
                 origin: DimensionValueOrigin::from_record_origin(origin),
             }),
-            DimensionValueLookup::ExplicitNull { origin } => {
+            DimensionValueLookup::ExplicitNone { origin } => {
                 coordinate.path.is_empty().then(|| DimensionValueView {
-                    state: DimensionValueState::Value(CfdValue::Null),
+                    state: DimensionValueState::Value(CfdValue::OptionNone),
                     origin: DimensionValueOrigin::from_record_origin(origin),
                 })
             }
@@ -389,52 +409,16 @@ impl<'a> ProjectQueries<'a> {
         self.session.file_tree()
     }
 
-    pub(crate) fn writer_capabilities_for_file(
-        self,
-        registry: &ProviderRegistry,
-        file: &str,
-    ) -> WriterCapabilities {
+    pub(crate) fn writer_capabilities_for_file(self, file: &str) -> WriterCapabilities {
         let Some(entry) = self
             .files()
             .source_for_display(file)
             .and_then(|source_id| self.sources().entries().get(source_id.index()))
         else {
-            return WriterCapabilities::read_only().with_provider_id("unknown");
+            return WriterCapabilities::read_only();
         };
-        registry.source_writer(&entry.provider_id).map_or_else(
-            || WriterCapabilities::read_only().with_provider_id(entry.provider_id.clone()),
-            |writer| {
-                writer
-                    .capabilities(&entry.source)
-                    .with_provider_id(entry.provider_id.clone())
-            },
-        )
-    }
-
-    /// Return the provider-resolved table/sheet name for a record type in a
-    /// source file. Non-table providers and unmapped types return `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the table source options cannot be
-    /// decoded or resolved.
-    pub fn table_sheet_for_type(
-        self,
-        registry: &ProviderRegistry,
-        file: &str,
-        actual_type: &str,
-    ) -> Result<Option<String>, coflow_api::DiagnosticSet> {
-        let Some(entry) = self
-            .files()
-            .source_for_display(file)
-            .and_then(|source_id| self.sources().entries().get(source_id.index()))
-        else {
-            return Ok(None);
-        };
-        let Some(manager) = registry.table_manager(&entry.provider_id) else {
-            return Ok(None);
-        };
-        manager.sheet_for_type(&entry.source, actual_type)
+        let _ = entry;
+        crate::cfd_loader::CFD_WRITER_CAPABILITIES.clone()
     }
 }
 
@@ -443,6 +427,13 @@ fn dimension_value_at_path<'a>(
     path: &[CfdPathSegment],
 ) -> Option<&'a CfdValue> {
     for segment in path {
+        value = match value {
+            CfdValue::OptionSome(inner)
+            | CfdValue::ResultOk(inner)
+            | CfdValue::ResultErr(inner) => inner,
+            CfdValue::OptionNone => return None,
+            _ => value,
+        };
         value = match (segment, value) {
             (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
                 object.fields().get(field.as_str())?
@@ -450,7 +441,7 @@ fn dimension_value_at_path<'a>(
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
             (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
                 entries.iter().find_map(|(candidate, value)| {
-                    (coflow_data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                    (crate::data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
                 })?
             }
             _ => return None,
@@ -460,12 +451,15 @@ fn dimension_value_at_path<'a>(
 }
 
 fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
-    let non_nullable = ty.non_nullable();
-    let ref_target_type = match non_nullable {
+    let mut semantic_ty = ty;
+    while let CftValueType::Option(inner) = semantic_ty {
+        semantic_ty = inner.as_ref();
+    }
+    let ref_target_type = match semantic_ty {
         CftValueType::RecordRef(name) => Some(name.to_string()),
         _ => None,
     };
-    let enum_type = match non_nullable {
+    let enum_type = match semantic_ty {
         CftValueType::Enum(name) => Some(name.to_string()),
         _ => None,
     };
@@ -473,32 +467,35 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         .as_deref()
         .and_then(|name| schema.resolve_enum(name))
         .is_some_and(|schema_enum| schema_enum.is_flag);
-    let polymorphic_types = match non_nullable {
+    let polymorphic_types = match semantic_ty {
         CftValueType::Object(name) => Some(name.as_str()),
         _ => None,
     }
-    .and_then(|name| schema.resolve_type(name).map(|meta| (name, meta)))
-    .filter(|(_, meta)| meta.is_abstract)
-    .and_then(|(name, _)| schema.concrete_assignable_types(name))
-    .filter(|types| types.len() >= 2)
+    // 具体基类同样可以承载派生对象；只按 abstract 判断会让编辑器缺少类型切换候选。
+    .filter(|name| schema.range_is_polymorphic(name))
+    .and_then(|name| schema.concrete_assignable_types(name))
     .unwrap_or_default()
     .into_iter()
     .map(|name| name.to_string())
     .collect();
-    let collection_item = match non_nullable {
+    let collection_key = match semantic_ty {
+        CftValueType::Dict(key, _) => Some(Box::new(field_shape(schema, key))),
+        _ => None,
+    };
+    let collection_item = match semantic_ty {
         CftValueType::Array(item) | CftValueType::Dict(_, item) => {
             Some(Box::new(field_shape(schema, item)))
         }
         _ => None,
     };
-    let object_type = match non_nullable {
+    let object_type = match semantic_ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .filter(|meta| !meta.is_abstract)
             .map(|meta| meta.name.to_string()),
         _ => None,
     };
-    let field_order = match non_nullable {
+    let field_order = match semantic_ty {
         CftValueType::Object(name) => schema
             .resolve_type(name)
             .map(|meta| {
@@ -509,6 +506,17 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
             .unwrap_or_default(),
         _ => Vec::new(),
     };
+    let option_inner = match ty {
+        CftValueType::Option(inner) => Some(Box::new(field_shape(schema, inner))),
+        _ => None,
+    };
+    let (result_ok, result_err) = match ty {
+        CftValueType::Result(ok, err) => (
+            Some(Box::new(field_shape(schema, ok))),
+            Some(Box::new(field_shape(schema, err))),
+        ),
+        _ => (None, None),
+    };
     FieldShapeInfo {
         display_label: ty.display_label(),
         label: None,
@@ -516,10 +524,83 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         ref_target_type,
         enum_type,
         enum_is_flag,
-        nullable: matches!(ty, CftValueType::Nullable(_)),
+        nullable: matches!(ty, CftValueType::Option(_)),
+        option_inner,
+        result_ok,
+        result_err,
         polymorphic_types,
+        collection_key,
         collection_item,
         object_type,
         field_order,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field_shape;
+    use coflow_language::cft::{
+        build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
+    };
+
+    #[test]
+    fn concrete_base_object_shape_exposes_all_assignable_types() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
+
+        let shape = field_shape(&schema, &npc_type);
+
+        assert_eq!(shape.polymorphic_types, ["NPC", "Game"]);
+    }
+
+    #[test]
+    fn optional_concrete_object_shape_exposes_its_inner_object_type() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type Node {}",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
+            CftValueType::Object(TypeName::new("Node").expect("valid type name")),
+        ))));
+
+        let shape = field_shape(&schema, &node_type);
+
+        assert_eq!(shape.display_label, "Option<Option<Node>>");
+        assert_eq!(shape.object_type.as_deref(), Some("Node"));
+        assert!(shape.nullable);
+    }
+
+    #[test]
+    fn dict_shape_exposes_key_and_value_metadata() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "enum Element { Fire, Ice, }",
+        )]);
+        let schema = build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema should compile");
+        let dict_type = CftValueType::Dict(
+            Box::new(CftValueType::Enum(
+                coflow_language::cft::EnumName::new("Element").expect("valid enum name"),
+            )),
+            Box::new(CftValueType::Int),
+        );
+
+        let shape = field_shape(&schema, &dict_type);
+
+        assert_eq!(
+            shape.collection_key.as_deref().and_then(|key| key.enum_type.as_deref()),
+            Some("Element")
+        );
+        assert_eq!(
+            shape.collection_item.as_deref().map(|item| item.display_label.as_str()),
+            Some("int")
+        );
     }
 }

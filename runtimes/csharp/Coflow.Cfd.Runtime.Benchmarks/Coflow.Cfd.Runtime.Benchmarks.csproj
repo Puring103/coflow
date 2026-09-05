@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs"
+             Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="../../../tests/csharp-runtime-integration/data/*.cfd"
+             Link="Data/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+</Project>

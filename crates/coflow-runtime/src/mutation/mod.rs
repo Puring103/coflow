@@ -1,13 +1,13 @@
-use coflow_api::{Diagnostic, DiagnosticSet, Severity};
-use coflow_cft::{CftField, CftSchema};
-use coflow_data_model::CfdEnumValue;
+use crate::api::{Diagnostic, DiagnosticSet, Severity};
+use crate::data_model::CfdEnumValue;
+use coflow_language::cft::{CftField, CftSchema};
 
 use crate::ProjectSession;
 
 mod apply;
 mod cell_text;
 mod coercion;
-mod defaults;
+pub(crate) mod defaults;
 mod dimension;
 mod plan;
 mod prepare;
@@ -18,6 +18,7 @@ pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
+    ProjectFileUpdate,
 };
 pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
 

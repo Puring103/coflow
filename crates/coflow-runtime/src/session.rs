@@ -2,15 +2,12 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DecodedOutputOptions, DiagnosticSet,
-    LoaderGenerationContext, LoaderGenerator,
-};
-use coflow_cft::{CftModuleSet, CftSchema};
-use coflow_data_model::{
+use crate::api::DiagnosticSet;
+use crate::data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
 };
-use coflow_project::{path_to_slash, Project};
+use crate::project::{path_to_slash, Project};
+use coflow_language::cft::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
@@ -32,7 +29,6 @@ pub(crate) struct ProjectSession {
     pub(crate) sources: SourceIndex,
     pub(crate) records: RecordIndex,
     pub(crate) files: FileIndex,
-    pub(crate) loader_extensions: BTreeSet<String>,
     pub(crate) source_data: SourceDataCache,
     pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) execution_stats: ProjectExecutionStats,
@@ -134,7 +130,6 @@ impl ProjectSession {
             display_path: record_ref.display_path.as_str(),
             record,
             origin: &record_ref.origin,
-            provider_id: record_ref.provider_id.as_str(),
         })
     }
 
@@ -225,23 +220,41 @@ impl ProjectSession {
                 display_path: record_ref.display_path.as_str(),
                 record,
                 origin: &record_ref.origin,
-                provider_id: record_ref.provider_id.as_str(),
             })
         })
     }
 
-    /// File-tree view of the project using default options (every
-    /// loader-registered extension is walked, dimension `out_dirs` become
-    /// virtual subtrees).
+    /// File-tree view of the project. All `.cfd` files are visible, while
+    /// dimension `out_dirs` become virtual subtrees.
     #[must_use]
     pub(crate) fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
-            extra_extensions: self.loader_extensions.iter().cloned().collect(),
             dimension_groups: Vec::new(),
             in_sources: BTreeSet::new(),
+            schema_roots: BTreeSet::new(),
+            data_roots: BTreeSet::new(),
         };
+        for path in self.project.config().schema.paths() {
+            let absolute = self.project.resolve_path(path);
+            if let Ok(relative) = absolute.strip_prefix(self.project.root_dir()) {
+                options.schema_roots.insert(path_to_slash(relative));
+            }
+        }
+        for source in self.project.data_paths() {
+            let absolute = self.project.resolve_path(source.path());
+            if let Ok(relative) = absolute.strip_prefix(self.project.root_dir()) {
+                options.data_roots.insert(path_to_slash(relative));
+            }
+        }
         for source in self.files.source_files() {
             options.in_sources.insert(display_source_path(source));
+        }
+        if let Ok(schema_sources) = self.project.schema_sources() {
+            for source in schema_sources {
+                if let Ok(relative) = source.canonical_path.strip_prefix(self.project.root_dir()) {
+                    options.in_sources.insert(path_to_slash(relative));
+                }
+            }
         }
         for info in self.dimensions() {
             if let Some(out_dir) = info.out_dir.as_ref() {
@@ -255,12 +268,9 @@ impl ProjectSession {
         self.file_tree_with(options)
     }
 
-    /// File-tree view using caller-supplied options. The options carry the
-    /// extension whitelist and any dimension groups that should be lifted to
-    /// the top of the tree.
+    /// File-tree view using caller-supplied dimension groups and source paths.
     #[must_use]
     pub(crate) fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
-        let ext_whitelist: BTreeSet<String> = options.extra_extensions.into_iter().collect();
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
             if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {
@@ -273,7 +283,8 @@ impl ProjectSession {
         let mut tree = files::build_file_tree(
             self.project.root_dir(),
             &options.in_sources,
-            &ext_whitelist,
+            &options.schema_roots,
+            &options.data_roots,
             &skip,
         );
         for group in options.dimension_groups.iter().rev() {
@@ -282,7 +293,6 @@ impl ProjectSession {
                 group.display_name.clone(),
                 &group.dir,
                 &options.in_sources,
-                &ext_whitelist,
             ) {
                 tree.insert(0, node);
             }
@@ -300,11 +310,6 @@ pub struct ProjectSchemaSession {
 }
 
 impl ProjectSchemaSession {
-    #[must_use]
-    pub(crate) const fn project(&self) -> &Project {
-        &self.project
-    }
-
     #[must_use]
     pub fn schema(&self) -> Option<&CftSchema> {
         self.schema.as_deref()
@@ -329,58 +334,6 @@ impl ProjectSchemaSession {
     #[must_use]
     pub fn has_diagnostics(&self) -> bool {
         !self.diagnostics.is_empty()
-    }
-
-    /// Generates schema-only code artifacts from this session.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the generator rejects its options or schema.
-    pub fn codegen_artifacts(
-        &self,
-        codegen: &dyn CodeGenerator,
-        options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        let schema = self
-            .schema()
-            .ok_or_else(|| self.diagnostics.clone().into_set())?;
-        codegen.generate(
-            CodegenContext {
-                schema,
-                model: None,
-                id_as_enum_variants,
-            },
-            options,
-        )
-    }
-
-    /// Generates schema-only loader artifacts without filtering tables by data.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the loader rejects its options or schema.
-    pub fn loader_artifacts(
-        &self,
-        loader: &dyn LoaderGenerator,
-        code_options: &DecodedOutputOptions,
-        data_options: &DecodedOutputOptions,
-        loader_options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        let schema = self
-            .schema()
-            .ok_or_else(|| self.diagnostics.clone().into_set())?;
-        loader.generate(
-            LoaderGenerationContext {
-                schema,
-                model: None,
-                code_options,
-                data_options,
-                id_as_enum_variants,
-            },
-            loader_options,
-        )
     }
 }
 

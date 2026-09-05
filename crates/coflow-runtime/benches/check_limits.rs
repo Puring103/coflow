@@ -1,7 +1,7 @@
 mod common;
 
-use coflow_checker::{execute_checks, CheckLimits};
 use coflow_runtime::check_benchmark_support::plan_full_with_limit;
+use coflow_runtime::{execute_checks, CheckLimits};
 use common::{full_tasks, limit_fixture, sample};
 use std::hint::black_box;
 

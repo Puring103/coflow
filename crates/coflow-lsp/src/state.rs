@@ -1,14 +1,14 @@
-use coflow_cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
-use coflow_cft::syntax::CheckVisitor;
-use coflow_cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
-use coflow_project::normalize_path;
+use coflow_language::cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
+use coflow_language::cft::syntax::CheckVisitor;
+use coflow_language::cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
+use coflow_runtime::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::definition;
-use crate::uri::{path_from_file_uri, path_to_file_uri};
+use super::definition;
+use super::uri::{path_from_file_uri, path_to_file_uri};
 
 pub(crate) struct LspBuild {
     pub(crate) schema: ProjectSchemaSession,
@@ -22,7 +22,7 @@ pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
     pub(crate) source: Arc<str>,
-    pub(crate) ast: Option<Arc<coflow_cft::syntax::ast::ModuleAst>>,
+    pub(crate) ast: Option<Arc<coflow_language::cft::syntax::ast::ModuleAst>>,
 }
 
 impl LspDocument {
@@ -30,7 +30,7 @@ impl LspDocument {
         &self.source
     }
 
-    pub(crate) fn ast(&self) -> Option<&coflow_cft::syntax::ast::ModuleAst> {
+    pub(crate) fn ast(&self) -> Option<&coflow_language::cft::syntax::ast::ModuleAst> {
         self.ast.as_deref()
     }
 }
@@ -75,7 +75,7 @@ impl LspBuild {
         self
     }
 
-    pub(crate) fn schema(&self) -> Option<&coflow_cft::CftSchema> {
+    pub(crate) fn schema(&self) -> Option<&coflow_language::cft::CftSchema> {
         self.schema.schema()
     }
 
@@ -106,7 +106,7 @@ pub(crate) fn current_type_at<'a>(
 pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
-) -> Option<&coflow_cft::syntax::ast::FieldDef> {
+) -> Option<&coflow_language::cft::syntax::ast::FieldDef> {
     let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {
@@ -180,7 +180,6 @@ fn field_receiver_type(field: &CftField) -> CftValueType {
 pub(crate) fn type_name_of_schema_ref(ty: &CftValueType) -> Option<&str> {
     match ty {
         CftValueType::Object(name) => Some(name),
-        CftValueType::Nullable(inner) => type_name_of_schema_ref(inner),
         _ => None,
     }
 }
@@ -202,14 +201,16 @@ pub(crate) fn enum_variant_by_chain<'a>(
     build: &'a LspBuild,
     chain: &[String],
 ) -> Option<(&'a CftEnum, &'a CftEnumVariant)> {
-    if chain.len() != 2 {
+    if chain.len() < 2 {
         return None;
     }
-    let enum_def = build.schema()?.resolve_enum(&chain[0])?;
+    let (variant_name, owner) = chain.split_last()?;
+    let enum_name = owner.join("::");
+    let enum_def = build.schema()?.resolve_enum(&enum_name)?;
     let variant = enum_def
         .variants
         .iter()
-        .find(|variant| variant.name.as_str() == chain[1])?;
+        .find(|variant| variant.name.as_str() == variant_name)?;
     Some((enum_def, variant))
 }
 
@@ -282,7 +283,7 @@ pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> V
                 let result = visitor.visit_block(&check.block);
                 debug_assert!(result.is_ok());
             }
-            Item::Const(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Enum(_) | Item::TypeAlias(_) => {}
         }
     }
     visitor.bindings

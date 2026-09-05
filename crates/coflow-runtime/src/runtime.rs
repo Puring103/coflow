@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use coflow_api::{
-    ArtifactSet, CodeGenerator, CodegenContext, DataExporter, DecodedOutputOptions, Diagnostic,
-    DiagnosticSet, ExportContext, LoaderGenerationContext, LoaderGenerator, ProviderRegistry,
-    Severity, WriterCapabilities,
-};
-use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_project::Project;
+use crate::api::{Diagnostic, DiagnosticSet, Severity, WriterCapabilities};
+use crate::catalog::CfdSourceCatalog;
+use crate::data_model::CfdDataModel;
+use crate::data_model::{CfdPathSegment, CfdValue};
+use crate::project::Project;
+use coflow_language::cft::CftSchema;
 
 use crate::project_schema::{
     open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
@@ -19,13 +18,14 @@ use crate::session_build::{
 };
 use crate::{
     CreateRecordDraft, DataSourceTextOverride, DefaultMaterialization, DimensionValueCoordinate,
-    DimensionValueExpectation, MutationFields, MutationOp, MutationReport, MutationRequest,
-    MutationValue, ProjectQueries, RecordCoordinate, WriteOutcome,
+    DimensionValueExpectation, MutationAppliedOp, MutationFields, MutationOp, MutationReport,
+    MutationRequest, MutationValue, ProjectFileUpdate, ProjectQueries, RecordCoordinate,
+    WriteOutcome,
 };
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
-    registry: ProviderRegistry,
+    catalog: CfdSourceCatalog,
 }
 
 /// Owns the published schema generation for one project.
@@ -122,6 +122,7 @@ impl ProjectRuntime {
             .as_ref()
             .is_some_and(|generation| generation.fingerprint == fingerprint)
         {
+            self.attempted = None;
             return Ok(false);
         }
 
@@ -160,6 +161,145 @@ impl ProjectRuntime {
     }
 }
 
+#[cfg(test)]
+mod project_runtime_tests {
+    #![allow(clippy::expect_used)]
+
+    use std::fs;
+
+    use super::ProjectRuntime;
+    use crate::{project::normalize_path, Project, Runtime, SchemaTextOverride};
+
+    #[test]
+    fn reverting_to_published_schema_discards_failed_attempt() {
+        let root = tempfile::tempdir().expect("temp project");
+        let schema_path = root.path().join("schema.cft");
+        fs::write(&schema_path, "type Item { value: int; }\n").expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+        )
+        .expect("write config");
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let mut runtime = ProjectRuntime::new(project);
+
+        assert_eq!(runtime.refresh(), Ok(true));
+        assert!(runtime
+            .refresh_with_overrides(&[SchemaTextOverride {
+                requested_module: None,
+                normalized_path: normalize_path(&schema_path),
+                source: "type Item { value: Missing; }\n".to_string(),
+            }])
+            .is_err());
+        assert!(runtime
+            .latest_attempt()
+            .is_some_and(|attempt| attempt.has_diagnostics()));
+
+        assert_eq!(runtime.refresh(), Ok(false));
+        assert!(runtime
+            .latest_attempt()
+            .is_some_and(|attempt| !attempt.has_diagnostics()));
+    }
+
+    #[test]
+    fn data_errors_preserve_unrelated_records_and_complete_diagnostics() {
+        let root = tempfile::tempdir().expect("temp project");
+        fs::create_dir_all(root.path().join("data")).expect("create data");
+        fs::write(
+            root.path().join("schema.cft"),
+            "type Item { name: string; value: int; }\n",
+        )
+        .expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            concat!(
+                "schema: schema.cft\n",
+                "data: data/\n",
+                "codegen:\n",
+                "  - language: csharp\n",
+                "    dir: generated/\n",
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            root.path().join("data/items.cfd"),
+            concat!(
+                "Item {\n",
+                "  broken { name: 42, value: 1, extra: true, }\n",
+                "  valid { name: \"Valid\", value: 2, }\n",
+                "}\n",
+            ),
+        )
+        .expect("write data");
+
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let session = Runtime::new()
+            .open_read_only_session(project)
+            .expect("data diagnostics must not prevent a session");
+        let queries = session.queries();
+
+        assert_eq!(queries.record_count(), 1);
+        assert!(queries
+            .record_views_in_file("data/items.cfd")
+            .any(|record| record.coordinate.key.as_str() == "valid"));
+        let codes = queries
+            .diagnostics()
+            .as_set()
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.iter().any(|code| code.contains("TypeMismatch")));
+        assert!(codes.iter().any(|code| code.contains("UnknownField")));
+    }
+
+    #[test]
+    fn duplicate_records_are_all_rejected_without_hiding_other_records() {
+        let root = tempfile::tempdir().expect("temp project");
+        fs::create_dir_all(root.path().join("data")).expect("create data");
+        fs::write(root.path().join("schema.cft"), "type Item { value: int; }\n")
+            .expect("write schema");
+        fs::write(
+            root.path().join("coflow.yaml"),
+            concat!(
+                "schema: schema.cft\n",
+                "data: data/\n",
+                "codegen:\n",
+                "  - language: csharp\n",
+                "    dir: generated/\n",
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            root.path().join("data/items.cfd"),
+            concat!(
+                "Item {\n",
+                "  duplicate { value: 1, }\n",
+                "  duplicate { value: 2, }\n",
+                "  survivor { value: 3, }\n",
+                "}\n",
+            ),
+        )
+        .expect("write data");
+
+        let project = Project::open_schema_only(Some(root.path())).expect("open project");
+        let session = Runtime::new()
+            .open_read_only_session(project)
+            .expect("duplicates must produce a partial session");
+        let queries = session.queries();
+
+        assert_eq!(queries.record_count(), 1);
+        assert_eq!(queries.rejected_records().len(), 2);
+        assert!(queries
+            .record_views_in_file("data/items.cfd")
+            .any(|record| record.coordinate.key.as_str() == "survivor"));
+        assert!(queries
+            .diagnostics()
+            .as_set()
+            .iter()
+            .any(|diagnostic| diagnostic.code == "DATA-011"));
+    }
+}
+
 fn schema_input_fingerprint(
     project: &Project,
     overrides: &[SchemaTextOverride],
@@ -177,7 +317,7 @@ fn schema_input_fingerprint(
                     .requested_module
                     .as_deref()
                     .is_some_and(|requested| requested == module.module_id)
-                    || coflow_project::normalize_path(&module.canonical_path)
+                    || crate::project::normalize_path(&module.canonical_path)
                         == source_override.normalized_path
             })
             .map_or(&module.source, |(_, source_override)| {
@@ -199,8 +339,10 @@ fn schema_input_fingerprint(
 
 impl Runtime {
     #[must_use]
-    pub const fn new(registry: ProviderRegistry) -> Self {
-        Self { registry }
+    pub fn new() -> Self {
+        Self {
+            catalog: fixed_cfd_catalog(),
+        }
     }
 
     /// Builds a schema-only session without loading project data.
@@ -222,7 +364,7 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::read_only())
+        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
             .map(ReadOnlyProjectSession::new)
     }
 
@@ -238,7 +380,7 @@ impl Runtime {
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
         open_project_session_with_source_overrides(
             project,
-            &self.registry,
+            &self.catalog,
             SessionOpenOptions::read_only(),
             source_overrides,
         )
@@ -255,12 +397,12 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<BuildProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::build())
+        open_project_session(project, &self.catalog, SessionOpenOptions::build())
             .map(BuildProjectSession::new)
     }
 
     /// Opens a mutation-capable session without generating dimension files.
-    /// The session owns the registry used by every command and rebuild.
+    /// The session owns the CFD catalog used by every command and rebuild.
     ///
     /// # Errors
     ///
@@ -269,8 +411,8 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.registry, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
@@ -282,9 +424,33 @@ impl Runtime {
         &self,
         schema: ProjectSchemaSession,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_from_schema(schema, &self.registry, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.registry.clone()))
+        open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
+            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
     }
+
+    /// Opens a mutation-capable candidate using host-provided text for
+    /// selected data files. No project file is modified.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the candidate project cannot be loaded.
+    pub fn open_write_session_with_source_overrides(
+        &self,
+        project: Project,
+        source_overrides: &[DataSourceTextOverride],
+    ) -> Result<WriteProjectSession, DiagnosticSet> {
+        open_project_session_with_source_overrides(
+            project,
+            &self.catalog,
+            SessionOpenOptions::read_only(),
+            source_overrides,
+        )
+        .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
+    }
+}
+
+fn fixed_cfd_catalog() -> CfdSourceCatalog {
+    CfdSourceCatalog::default()
 }
 
 /// Read capability for a built project.
@@ -310,6 +476,16 @@ impl ReadOnlyProjectSession {
     #[must_use]
     pub const fn queries(&self) -> ProjectQueries<'_> {
         ProjectQueries::new(&self.session, 0)
+    }
+
+    #[must_use]
+    pub fn schema(&self) -> &CftSchema {
+        self.session.schema()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &CfdDataModel {
+        self.session.model()
     }
 
     #[must_use]
@@ -339,89 +515,33 @@ impl BuildProjectSession {
     }
 
     #[must_use]
+    pub fn schema(&self) -> &CftSchema {
+        self.session.schema()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &CfdDataModel {
+        self.session.model()
+    }
+
+    #[must_use]
     pub fn into_diagnostics(self) -> DiagnosticSet {
         self.session.into_diagnostics()
-    }
-
-    /// Generates export artifacts from this session's immutable project generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the exporter rejects its options or input.
-    pub fn export_artifacts(
-        &self,
-        exporter: &dyn DataExporter,
-        options: &DecodedOutputOptions,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        exporter.export(
-            ExportContext {
-                schema: self.session.schema(),
-                model: self.session.model(),
-            },
-            options,
-        )
-    }
-
-    /// Generates code artifacts from this session's immutable project generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the generator rejects its options or input.
-    pub fn codegen_artifacts(
-        &self,
-        codegen: &dyn CodeGenerator,
-        options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-        include_model: bool,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        codegen.generate(
-            CodegenContext {
-                schema: self.session.schema(),
-                model: include_model.then_some(self.session.model()),
-                id_as_enum_variants,
-            },
-            options,
-        )
-    }
-
-    /// Generates loader artifacts from this session's immutable schema generation.
-    ///
-    /// # Errors
-    ///
-    /// Returns provider diagnostics when the loader rejects its options or input.
-    pub fn loader_artifacts(
-        &self,
-        loader: &dyn LoaderGenerator,
-        code_options: &DecodedOutputOptions,
-        data_options: &DecodedOutputOptions,
-        loader_options: &DecodedOutputOptions,
-        id_as_enum_variants: &serde_json::Value,
-    ) -> Result<ArtifactSet, DiagnosticSet> {
-        loader.generate(
-            LoaderGenerationContext {
-                schema: self.session.schema(),
-                model: Some(self.session.model()),
-                code_options,
-                data_options,
-                id_as_enum_variants,
-            },
-            loader_options,
-        )
     }
 }
 
 #[derive(Debug)]
 pub struct WriteProjectSession {
     session: ProjectSession,
-    registry: ProviderRegistry,
+    catalog: CfdSourceCatalog,
     revision: u64,
 }
 
 impl WriteProjectSession {
-    const fn new(session: ProjectSession, registry: ProviderRegistry) -> Self {
+    const fn new(session: ProjectSession, catalog: CfdSourceCatalog) -> Self {
         Self {
             session,
-            registry,
+            catalog,
             revision: 0,
         }
     }
@@ -436,12 +556,12 @@ impl WriteProjectSession {
         &self.session.project
     }
 
-    /// Render one effective field value using the table cell grammar.
+    /// Render one effective field value using the CFD value grammar.
     ///
     /// # Errors
     ///
     /// Returns diagnostics when the field path does not exist or its value
-    /// cannot be represented by the table cell grammar.
+    /// cannot be represented by the CFD value grammar.
     pub fn render_cell_text(
         &self,
         coordinate: &RecordCoordinate,
@@ -464,7 +584,7 @@ impl WriteProjectSession {
         crate::mutation::render_cell_text_value(value)
     }
 
-    /// Parse table cell text using the schema type at one field path.
+    /// Parse CFD value text using the schema type at one field path.
     ///
     /// # Errors
     ///
@@ -487,8 +607,7 @@ impl WriteProjectSession {
 
     #[must_use]
     pub fn writer_capabilities_for_file(&self, file: &str) -> WriterCapabilities {
-        self.queries()
-            .writer_capabilities_for_file(&self.registry, file)
+        self.queries().writer_capabilities_for_file(file)
     }
 
     /// Build a schema-shaped default record value.
@@ -529,17 +648,45 @@ impl WriteProjectSession {
             .default_collection_item_value(actual_type, path)
     }
 
-    /// Apply a batch of mutation commands using the registry owned by this
+    /// Build a default collection item using the concrete types in a record.
+    pub fn default_collection_item_value_for_record(
+        &self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Result<CfdValue, DiagnosticSet> {
+        self.session
+            .default_collection_item_value_for_record(coordinate, path)
+    }
+
+    /// Apply a batch of mutation commands using the CFD catalog owned by this
     /// capability.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
-        let report = self.session.apply_mutation(&self.registry, request);
+        self.apply_mutation_with_project_files(request, |_, _| Ok(Vec::new()))
+    }
+
+    /// Apply a mutation and publish application-owned project files in the
+    /// same file transaction as the changed CFD sources.
+    pub fn apply_mutation_with_project_files<F>(
+        &mut self,
+        request: MutationRequest,
+        prepare_files: F,
+    ) -> MutationReport
+    where
+        F: FnOnce(ProjectQueries<'_>, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+    {
+        let next_revision = self.revision.saturating_add(1);
+        let report = self.session.apply_mutation(
+            &self.catalog,
+            request,
+            |candidate, applied| prepare_files(ProjectQueries::new(candidate, next_revision), applied),
+        );
         if report.generation_changed {
-            self.revision = self.revision.saturating_add(1);
+            self.revision = next_revision;
         }
         report
     }
 
-    /// Writes one field and returns its provider outcome.
+    /// Writes one field and returns its writer outcome.
     ///
     /// # Errors
     ///
@@ -557,6 +704,25 @@ impl WriteProjectSession {
             file: None,
             path: path.to_vec(),
             value: MutationValue::Cfd(new_value.clone()),
+        })
+    }
+
+    /// Removes one existing field from its CFD source.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the mutation is rejected or produces no
+    /// applied operation.
+    pub fn unset_field(
+        &mut self,
+        actual_type: &str,
+        key: &str,
+        path: &[CfdPathSegment],
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        self.apply_one(MutationOp::UnsetField {
+            record: validated_coordinate(actual_type, key)?,
+            file: None,
+            path: path.to_vec(),
         })
     }
 
@@ -622,14 +788,12 @@ impl WriteProjectSession {
     pub fn insert_record(
         &mut self,
         file: &str,
-        sheet: Option<&str>,
         record_key: &str,
         actual_type: &str,
         fields: &BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::InsertRecord {
             file: file.to_string(),
-            sheet: sheet.map(ToOwned::to_owned),
             actual_type: actual_type.to_string(),
             key: record_key.to_string(),
             fields: MutationFields::Cfd(fields.clone()),
@@ -659,7 +823,7 @@ impl WriteProjectSession {
     /// # Errors
     ///
     /// Returns diagnostics when either record is missing, the records belong
-    /// to different containers, or the provider cannot persist record order.
+    /// to different containers, or the writer cannot persist record order.
     pub fn swap_records(
         &mut self,
         first: &RecordCoordinate,
@@ -677,7 +841,7 @@ impl WriteProjectSession {
     /// # Errors
     ///
     /// Returns diagnostics when the record is missing, the index is outside
-    /// the container, or the provider cannot persist record order.
+    /// the container, or the writer cannot persist record order.
     pub fn move_record(
         &mut self,
         record: &RecordCoordinate,
@@ -701,13 +865,11 @@ impl WriteProjectSession {
         &mut self,
         record: &RecordCoordinate,
         destination_file: &str,
-        destination_sheet: Option<&str>,
         target_index: usize,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::TransferRecord {
             record: record.clone(),
             destination_file: destination_file.to_string(),
-            destination_sheet: destination_sheet.map(ToOwned::to_owned),
             target_index,
             source_file: None,
         })

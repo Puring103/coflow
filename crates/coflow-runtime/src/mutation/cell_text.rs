@@ -1,5 +1,5 @@
-use coflow_data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
-use coflow_data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
+use crate::data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
+use crate::data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
 use serde_json::{Map, Number, Value};
 
 use crate::{write_rules, ProjectSession};
@@ -12,7 +12,7 @@ pub(crate) fn parse_cell_text_value(
     key: &str,
     path: &[CfdPathSegment],
     text: &str,
-) -> Result<CfdValue, coflow_api::DiagnosticSet> {
+) -> Result<CfdValue, crate::api::DiagnosticSet> {
     let expected = write_rules::expected_type_for_cfd_path(
         session.schema(),
         actual_type,
@@ -38,7 +38,7 @@ pub(crate) fn parse_cell_text_value(
     };
     let input = match input {
         LoadedValueDraft::FormattedString(formatted) => {
-            return coflow_data_model::evaluate_formatted_string(
+            return crate::data_model::evaluate_formatted_string(
                 session.schema(),
                 session.model(),
                 actual_type,
@@ -56,16 +56,22 @@ pub(crate) fn parse_cell_text_value(
 
 pub(crate) fn render_cell_text_value(
     value: &CfdValue,
-) -> Result<String, coflow_api::DiagnosticSet> {
-    if matches!(value, CfdValue::Null) {
-        return Ok("null".to_string());
-    }
+) -> Result<String, crate::api::DiagnosticSet> {
     render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
 }
 
-fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::DiagnosticSet> {
+fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::DiagnosticSet> {
     match value {
-        LoadedValueDraft::Null => Ok(Value::Null),
+        LoadedValueDraft::OptionNone => Ok(tagged_json("$none", Value::Bool(true))),
+        LoadedValueDraft::OptionSome(value) => {
+            Ok(tagged_json("$some", input_value_to_json(*value)?))
+        }
+        LoadedValueDraft::ResultOk(value) => {
+            Ok(tagged_json("$ok", input_value_to_json(*value)?))
+        }
+        LoadedValueDraft::ResultErr(value) => {
+            Ok(tagged_json("$err", input_value_to_json(*value)?))
+        }
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
         LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
             Ok(Value::Number(Number::from(value)))
@@ -76,6 +82,9 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
         LoadedValueDraft::FormattedString(_) => Err(one_value_error(
             "formatted strings must be evaluated before JSON coercion",
+        )),
+        LoadedValueDraft::Function(_) => Err(one_value_error(
+            "function values cannot be coerced through JSON mutation input",
         )),
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
         LoadedValueDraft::RecordRef(key) => {
@@ -90,7 +99,7 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
             let mut object = fields
                 .into_iter()
                 .map(|(name, value)| Ok((name, input_value_to_json(value)?)))
-                .collect::<Result<Map<_, _>, coflow_api::DiagnosticSet>>()?;
+                .collect::<Result<Map<_, _>, crate::api::DiagnosticSet>>()?;
             if let Some(actual_type) = actual_type {
                 object.insert("$type".to_string(), Value::String(actual_type));
             }
@@ -110,12 +119,18 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, coflow_api::Dia
                     entry.insert("value".to_string(), input_value_to_json(value)?);
                     Ok(Value::Object(entry))
                 })
-                .collect::<Result<Vec<_>, coflow_api::DiagnosticSet>>()?;
+                .collect::<Result<Vec<_>, crate::api::DiagnosticSet>>()?;
             let mut object = Map::new();
             object.insert("$dict".to_string(), Value::Array(entries));
             Ok(Value::Object(object))
         }
     }
+}
+
+fn tagged_json(tag: &str, value: Value) -> Value {
+    let mut object = Map::new();
+    object.insert(tag.to_string(), value);
+    Value::Object(object)
 }
 
 fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {
@@ -131,7 +146,7 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::input_value_to_json;
-    use coflow_data_model::{LoadedDictKeyDraft, LoadedValueDraft};
+    use crate::data_model::{LoadedDictKeyDraft, LoadedValueDraft};
     use serde_json::json;
 
     #[test]

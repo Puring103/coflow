@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../api'
-import type { ProjectSnapshot } from '../bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import {
   replaceLocalReadPlugins,
   setReadPluginDataApi,
@@ -11,7 +11,7 @@ import {
 import type { ReadPlugin } from '../plugins/types'
 import { errorMessage } from '../wire'
 
-export function useFrontendPlugins(project: ProjectSnapshot | null) {
+export function useFrontendPlugins(project: ProjectBootstrap | null) {
   const settings = useReadPluginSettings()
   const restored = useRef(false)
   const globalBundles = useRef<api.FrontendPluginBundle[]>([])

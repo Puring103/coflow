@@ -1,15 +1,13 @@
 //! File-tree view for the project.
 //!
-//! Surfaces directories and files under the project root that either back a
-//! loaded record (`in_sources`) or carry an extension registered by the
-//! configured providers. Dimension output directories can be grouped under a
-//! display-named virtual folder via [`FileTreeOptions::dimension_groups`].
+//! Surfaces CFD files under the project root and groups managed dimension
+//! directories under a display-named virtual folder.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use coflow_project::path_to_slash;
+use crate::project::path_to_slash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -22,21 +20,23 @@ pub struct FileTreeNode {
     pub path: String,
     pub is_dir: bool,
     pub in_sources: bool,
+    #[serde(default)]
+    pub in_schema: bool,
+    #[serde(default)]
+    pub in_data: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_source_descendant: Option<String>,
     pub children: Vec<Self>,
 }
 
-/// Internal options for building the default project file tree.
-///
-/// The defaults walk every loader-registered extension and pull dimension
-/// output directories into a sibling virtual folder at the top of the tree.
+/// Internal options for building the project file tree.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FileTreeOptions {
-    pub(crate) extra_extensions: Vec<String>,
     pub(crate) dimension_groups: Vec<DimensionGroup>,
-    /// In-source paths reported by loaders (project-relative, `/`-normalised).
+    /// In-source paths (project-relative, `/`-normalised).
     pub(crate) in_sources: BTreeSet<String>,
+    pub(crate) schema_roots: BTreeSet<String>,
+    pub(crate) data_roots: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,26 +51,28 @@ pub(crate) struct DimensionGroup {
 pub fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
-    ext_whitelist: &BTreeSet<String>,
+    schema_roots: &BTreeSet<String>,
+    data_roots: &BTreeSet<String>,
     skip_dirs: &BTreeSet<String>,
 ) -> Vec<FileTreeNode> {
-    let mut files: Vec<Vec<String>> = Vec::new();
+    let mut entries: Vec<(Vec<String>, bool)> = Vec::new();
     for entry in walkdir::WalkDir::new(root)
         .min_depth(1)
         .into_iter()
         .filter_map(Result::ok)
     {
-        if !entry.file_type().is_file() {
-            continue;
-        }
         let path = entry.path();
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         let rel_for_check = path
             .strip_prefix(root)
             .map(path_to_slash)
             .unwrap_or_default();
-        let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
-        if !by_extension && !in_sources.contains(&rel_for_check) {
+        let (in_schema, in_data) = source_membership(&rel_for_check, schema_roots, data_roots);
+        let by_extension = entry.file_type().is_file() && ext == "cfd";
+        if entry.file_type().is_dir() && !in_schema && !in_data {
+            continue;
+        }
+        if entry.file_type().is_file() && !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
         if skip_dirs
@@ -87,13 +89,22 @@ pub fn build_file_tree(
             .map(|c| c.as_os_str().to_string_lossy().to_string())
             .collect();
         if !parts.is_empty() {
-            files.push(parts);
+            entries.push((parts, entry.file_type().is_dir()));
         }
     }
 
     let mut roots: Vec<FileTreeNode> = Vec::new();
-    for parts in files {
-        insert_path(&mut roots, &parts, 0, "", in_sources);
+    for (parts, terminal_is_dir) in entries {
+        insert_path(
+            &mut roots,
+            &parts,
+            0,
+            "",
+            terminal_is_dir,
+            in_sources,
+            schema_roots,
+            data_roots,
+        );
     }
     sort_tree(&mut roots);
     annotate_first_source_descendant(&mut roots);
@@ -105,7 +116,6 @@ pub fn build_dimension_subtree(
     group_name: String,
     dir: &Path,
     in_sources: &BTreeSet<String>,
-    ext_whitelist: &BTreeSet<String>,
 ) -> Option<FileTreeNode> {
     if !dir.is_dir() {
         return None;
@@ -125,7 +135,7 @@ pub fn build_dimension_subtree(
             .strip_prefix(root)
             .map(path_to_slash)
             .unwrap_or_default();
-        let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
+        let by_extension = ext == "cfd";
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
@@ -163,6 +173,8 @@ pub fn build_dimension_subtree(
         path: path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
         is_dir: true,
         in_sources: true,
+        in_schema: false,
+        in_data: false,
         first_source_descendant: first_source_descendant(&children),
         children,
     })
@@ -173,7 +185,10 @@ fn insert_path(
     parts: &[String],
     idx: usize,
     parent_path: &str,
+    terminal_is_dir: bool,
     in_sources: &BTreeSet<String>,
+    schema_roots: &BTreeSet<String>,
+    data_roots: &BTreeSet<String>,
 ) {
     if idx >= parts.len() {
         return;
@@ -184,30 +199,29 @@ fn insert_path(
     } else {
         format!("{parent_path}/{name}")
     };
-    let is_dir = idx + 1 < parts.len();
+    let is_dir = idx + 1 < parts.len() || terminal_is_dir;
 
     let existing = nodes.iter_mut().find(|n| n.name == *name);
     if let Some(node) = existing {
         if is_dir {
-            insert_path(&mut node.children, parts, idx + 1, &path, in_sources);
+            insert_path(&mut node.children, parts, idx + 1, &path, terminal_is_dir, in_sources, schema_roots, data_roots);
         }
         return;
     }
-    let in_src = if is_dir {
-        true
-    } else {
-        in_sources.contains(&path)
-    };
+    let (in_schema, in_data) = source_membership(&path, schema_roots, data_roots);
+    let in_src = is_dir || in_sources.contains(&path);
     let mut node = FileTreeNode {
         name: name.clone(),
         path: path.clone(),
         is_dir,
         in_sources: in_src,
+        in_schema,
+        in_data,
         first_source_descendant: None,
         children: Vec::new(),
     };
     if is_dir {
-        insert_path(&mut node.children, parts, idx + 1, &path, in_sources);
+        insert_path(&mut node.children, parts, idx + 1, &path, terminal_is_dir, in_sources, schema_roots, data_roots);
     }
     nodes.push(node);
 }
@@ -243,6 +257,8 @@ fn insert_dimension_path(
         path: path.clone(),
         is_dir,
         in_sources: is_dir || in_sources.contains(&path),
+        in_schema: false,
+        in_data: false,
         first_source_descendant: None,
         children: Vec::new(),
     };
@@ -250,6 +266,22 @@ fn insert_dimension_path(
         insert_dimension_path(&mut node.children, parts, idx + 1, display_root, in_sources);
     }
     nodes.push(node);
+}
+
+fn source_membership(
+    path: &str,
+    schema_roots: &BTreeSet<String>,
+    data_roots: &BTreeSet<String>,
+) -> (bool, bool) {
+    let belongs = |configured: &str| {
+        path == configured
+            || path.starts_with(&format!("{configured}/"))
+            || configured.starts_with(&format!("{path}/"))
+    };
+    (
+        schema_roots.iter().any(|root| belongs(root)),
+        data_roots.iter().any(|root| belongs(root)),
+    )
 }
 
 fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
@@ -280,4 +312,33 @@ fn first_source_descendant(nodes: &[FileTreeNode]) -> Option<String> {
     nodes
         .iter()
         .find_map(|node| node.first_source_descendant.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_empty_directories_are_preserved_with_their_group() {
+        let root = tempfile::tempdir().expect("temp project");
+        std::fs::create_dir_all(root.path().join("schema/nested/empty")).expect("schema dirs");
+        std::fs::create_dir_all(root.path().join("data/archive/empty")).expect("data dirs");
+        let schema_roots = BTreeSet::from(["schema".to_string()]);
+        let data_roots = BTreeSet::from(["data".to_string()]);
+
+        let tree = build_file_tree(
+            root.path(),
+            &BTreeSet::new(),
+            &schema_roots,
+            &data_roots,
+            &BTreeSet::new(),
+        );
+
+        let schema = tree.iter().find(|node| node.path == "schema").expect("schema root");
+        let data = tree.iter().find(|node| node.path == "data").expect("data root");
+        assert!(schema.in_schema && !schema.in_data);
+        assert_eq!(schema.children[0].children[0].path, "schema/nested/empty");
+        assert!(data.in_data && !data.in_schema);
+        assert_eq!(data.children[0].children[0].path, "data/archive/empty");
+    }
 }

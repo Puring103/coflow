@@ -1,0 +1,3 @@
+#nullable enable
+static CoflowRuntime.Generated.CfdValueReader.IsNone(CoflowRuntime.Generated.CfdValueNode! node) -> bool
+static CoflowRuntime.Generated.CfdValueReader.ObjectDeclaredType(CoflowRuntime.Generated.CfdValueNode! node) -> string?

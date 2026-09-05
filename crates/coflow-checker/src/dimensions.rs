@@ -1,9 +1,9 @@
-use coflow_cft::{CftSchema, CftValueType, DimensionName, VariantName};
-use coflow_data_model::{
+use coflow_model::{
     CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
 };
-use coflow_structure::{StructuralBudget, TraversalCursor};
+use crate::limits::{EvaluationBudget, EvaluationCursor};
+use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 
 use crate::diagnostics::dimension_lookup_error_message;
 use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
@@ -25,7 +25,7 @@ pub(crate) fn attach_dimension_origins(
 fn attach_dimension_origin(
     model: &CfdDataModel,
     projection: &CheckProjection,
-    label: &mut coflow_data_model::CfdLabel,
+    label: &mut coflow_model::CfdLabel,
 ) {
     let Some((dimension, variant)) = projection.dimension() else {
         return;
@@ -38,9 +38,9 @@ fn attach_dimension_origin(
         .segments
         .iter()
         .find_map(|segment| match segment {
-            coflow_data_model::CfdPathSegment::Field(field) => Some(field.as_str()),
-            coflow_data_model::CfdPathSegment::Index(_)
-            | coflow_data_model::CfdPathSegment::DictKey(_) => None,
+            coflow_model::CfdPathSegment::Field(field) => Some(field.as_str()),
+            coflow_model::CfdPathSegment::Index(_)
+            | coflow_model::CfdPathSegment::DictKey(_) => None,
         })
     else {
         return;
@@ -65,7 +65,7 @@ pub(crate) struct CheckProjectionView {
 
 enum ProjectedDimensionField {
     Value(CftValueType),
-    ExplicitNull,
+    ExplicitNone,
     Error {
         message: String,
         traverse_nested: bool,
@@ -115,8 +115,8 @@ impl CheckProjectionView {
                 Ok(DimensionValueLookup::Value { .. }) => {
                     ProjectedDimensionField::Value(field.value_type.clone())
                 }
-                Ok(DimensionValueLookup::ExplicitNull { .. }) => {
-                    ProjectedDimensionField::ExplicitNull
+                Ok(DimensionValueLookup::ExplicitNone { .. }) => {
+                    ProjectedDimensionField::ExplicitNone
                 }
                 Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
                     message: dimension_lookup_error_message(
@@ -153,7 +153,7 @@ impl CheckProjectionView {
         };
         let field_type = match projection {
             ProjectedDimensionField::Value(field_type) => field_type,
-            ProjectedDimensionField::ExplicitNull => {
+            ProjectedDimensionField::ExplicitNone => {
                 return Err(DimensionVariantAbort::Skipped);
             }
             ProjectedDimensionField::Error {
@@ -183,7 +183,7 @@ impl CheckProjectionView {
                 message: "dimension overlay value disappeared during check execution".to_string(),
             });
         };
-        if matches!(value, CfdValue::Null) {
+        if matches!(value, CfdValue::OptionNone) {
             return Err(DimensionVariantAbort::Skipped);
         }
         Ok(Some(MaterializedDimensionValue {
@@ -214,7 +214,7 @@ pub(crate) fn apply_dimension_variant<'model>(
     record: &EvalRecordRef,
     field_name: &str,
     located: &mut LocatedEvalValue<'model>,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> Result<Option<CfdRecordId>, DimensionVariantAbort> {
     let Some(view) = projection else {
         return Ok(None);
@@ -241,7 +241,7 @@ pub(crate) fn apply_dimension_variant<'model>(
         materialized.location.clone(),
         model,
         budget,
-        TraversalCursor::root(),
+        EvaluationCursor::root(),
     )
     .map_err(|exceeded| DimensionVariantAbort::Error {
         code: CfdErrorCode::CheckBudgetExceeded,

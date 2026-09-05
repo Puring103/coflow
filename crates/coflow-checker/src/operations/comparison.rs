@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
-use coflow_cft::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
-use coflow_data_model::CfdErrorCode;
+use coflow_diagnostics::CfdErrorCode;
+use coflow_language::cft::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
 
 use super::builtins;
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
@@ -121,7 +121,7 @@ pub(crate) fn compare_order(
         || matches!(rhs.scalar(), Some(ScalarValue::Null))
     {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             location,
             format!(
                 "不能对 null 做有序比较: {} cmp {}",
@@ -212,7 +212,7 @@ pub(crate) fn eager_bin_op<'model>(
         || matches!(rhs.scalar(), Some(ScalarValue::Null))
     {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             location,
             format!(
                 "不能对 null 执行二元运算: {} {} {}",

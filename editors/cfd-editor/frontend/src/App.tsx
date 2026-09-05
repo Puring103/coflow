@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
+import { CreateRecordDialog } from './components/CreateRecordDialog'
+import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
+import { finishActiveDataEdit } from './state/editSession'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
 import { DimensionTableView } from './components/DimensionTableView'
+import { SourceEditorView } from './components/SourceEditorView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
@@ -25,12 +29,14 @@ import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
+import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
+import type { DiagnosticTarget } from './bindings/DiagnosticTarget'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
-import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
 import type { ProjectSearchHit } from './bindings/ProjectSearchHit'
 import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
 import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
@@ -39,6 +45,7 @@ import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import {
   diagnosticKey,
+  diagnosticFilePath,
   diagnosticMatchesAnchor,
   errorDiagnostics,
   errorMessage,
@@ -92,6 +99,7 @@ import {
 import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
 import {
   DEFAULT_RECORD_VIEW_ID,
+  DEFAULT_SOURCE_VIEW_ID,
   DEFAULT_TABLE_VIEW_ID,
   viewTabsFor,
   resolveView,
@@ -104,6 +112,7 @@ import {
   routeForWorkspaceTab,
   sanitizeProjectWorkspace,
   workspaceTabId,
+  workspaceTabWithView,
   workspaceToWire,
   type WorkspaceTab,
 } from './state/workspaceTabs'
@@ -219,7 +228,7 @@ function projectGraphRows(
 }
 
 export default function App() {
-  const [project, setProject] = useState<ProjectSnapshot | null>(null)
+  const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
     settings: pluginSettings,
     busy: pluginLoadBusy,
@@ -252,9 +261,22 @@ export default function App() {
   const helpBoxRef = useRef<HTMLDivElement>(null)
   const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
+  const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
+  const [fileActionDialog, setFileActionDialog] = useState<
+    | { kind: 'create'; parentPath: string; sourceKind: 'schema' | 'data' }
+    | { kind: 'delete'; path: string }
+    | null
+  >(null)
+  const [fileActionBusy, setFileActionBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [buildPending, setBuildPending] = useState(false)
+
+  useEffect(() => {
+    const showNotice = (event: Event) => setErrorMsg((event as CustomEvent<string>).detail)
+    window.addEventListener('cfd-editor-notice', showNotice)
+    return () => window.removeEventListener('cfd-editor-notice', showNotice)
+  }, [])
   const buildStatusRequestRef = useRef(0)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
@@ -352,6 +374,11 @@ export default function App() {
   // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
   // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
   const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
+  const [sourceDiagnosticFocus, setSourceDiagnosticFocus] = useState<{
+    file: string
+    range: Extract<DiagnosticTarget, { kind: 'source' | 'project_source' }>['range']
+    tick: number
+  } | null>(null)
 
   useEffect(() => {
     const request = ++projectSearchRequest.current
@@ -489,6 +516,7 @@ export default function App() {
     try { localStorage.setItem('cfd-editor-inspector-w', String(inspectorW)) } catch { /* quota */ }
   }, [inspectorW])
   const openInspector = useCallback((file: string, coordinate: RecordCoordinate) => {
+    finishActiveDataEdit()
     setInspectorSelection(prev => {
       if (prev?.kind === 'record' && prev.filePath === file && sameCoordinate(prev.coordinate, coordinate)) return prev
       return recordSelection(file, coordinate)
@@ -499,17 +527,31 @@ export default function App() {
     coordinate: RecordCoordinate,
     fieldPath: FieldPathSegment[],
   ) => {
+    finishActiveDataEdit()
     setInspectorCollapsed(false)
     setInspectorSelection(valueSelection(file, coordinate, fieldPath))
   }, [])
-  const closeInspector = useCallback(() => setInspectorSelection(null), [])
+  const closeInspector = useCallback(() => {
+    finishActiveDataEdit()
+    setInspectorSelection(null)
+  }, [])
 
   const navigateWorkspaceTab = useCallback((
     tab: WorkspaceTab,
     coordinate?: RecordCoordinate,
   ) => {
+    finishActiveDataEdit()
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
+    if (tab.filePath.endsWith('.cft')) {
+      router.push({
+        view: 'source',
+        file: tab.filePath,
+        viewId: DEFAULT_SOURCE_VIEW_ID,
+        typeFilter: '',
+      })
+      return
+    }
     if (!tab.typeName) {
       setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
       router.push({
@@ -527,21 +569,21 @@ export default function App() {
   }, [router])
 
   const installWorkspace = useCallback((
-    snapshot: ProjectSnapshot,
+    bootstrap: ProjectBootstrap,
     settings: EditorProjectSettings,
   ) => {
-    const sourceFiles = collectSourceFiles(snapshot)
+    const sourceFiles = collectSourceFiles(bootstrap)
     const restored = sanitizeProjectWorkspace(
       settings.workspace,
-      snapshot.file_types,
+      bootstrap.file_types,
       new Set(sourceFiles),
     )
     let tabs = restored?.tabs ?? []
     let activeTabId = restored?.activeTabId ?? null
     if (tabs.length === 0) {
-      const firstFile = snapshot.first_source_file ?? sourceFiles[0]
+      const firstFile = bootstrap.first_source_file ?? sourceFiles[0]
       if (firstFile) {
-        const option = snapshot.file_types[firstFile]?.[0]
+        const option = bootstrap.file_types[firstFile]?.[0]
         const tab = defaultWorkspaceTab(firstFile, option?.name ?? '', option?.is_singleton ?? false)
         tabs = [tab]
         activeTabId = tab.id
@@ -556,7 +598,7 @@ export default function App() {
       setActiveType('')
       router.clear()
     }
-    setWorkspaceReadySessionId(snapshot.session_id)
+    setWorkspaceReadySessionId(bootstrap.session_id)
   }, [navigateWorkspaceTab, router])
 
   // Auto-load mock data only when not running in Tauri (browser preview).
@@ -580,17 +622,17 @@ export default function App() {
   // is identical. Also closes the previous backend session so the
   // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
-    (snapshot: ProjectSnapshot) => {
-      generation.adopt(snapshot)
-      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
+    (bootstrap: ProjectBootstrap) => {
+      generation.adopt(bootstrap)
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
         // (not `project` from the closure) so we always close exactly the
         // session we're replacing, even if state was stale at call time.
-        if (prev && api.isTauri && prev.session_id !== snapshot.session_id) {
+        if (prev && api.isTauri && prev.session_id !== bootstrap.session_id) {
           api.closeSession(prev.session_id).catch(() => { /* best-effort */ })
         }
-        return snapshot
+        return bootstrap
       })
       setFileDataCache({})
       setDimensionFileCache({})
@@ -605,27 +647,27 @@ export default function App() {
       history.clear()
       router.clear()
       if (api.isTauri) {
-        api.getProjectSettings(snapshot.session_id).then(settings => {
-          if (generation.currentSession() !== snapshot.session_id) return
+        api.getProjectSettings(bootstrap.session_id).then(settings => {
+          if (generation.currentSession() !== bootstrap.session_id) return
           setProjectSettings(settings)
-          installWorkspace(snapshot, settings)
+          installWorkspace(bootstrap, settings)
         }).catch(err => {
-          if (generation.currentSession() === snapshot.session_id) {
+          if (generation.currentSession() === bootstrap.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
             const settings = emptySettings()
             setProjectSettings(settings)
-            installWorkspace(snapshot, settings)
+            installWorkspace(bootstrap, settings)
           }
         })
-        api.getProjectDimensions(snapshot.session_id).then(dimensions => {
-          if (generation.currentSession() === snapshot.session_id) setProjectDimensions(dimensions)
+        api.getProjectDimensions(bootstrap.session_id).then(dimensions => {
+          if (generation.currentSession() === bootstrap.session_id) setProjectDimensions(dimensions)
         }).catch(err => {
-          if (generation.currentSession() === snapshot.session_id) {
+          if (generation.currentSession() === bootstrap.session_id) {
             setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
       } else {
-        installWorkspace(snapshot, MOCK_EDITOR_SETTINGS)
+        installWorkspace(bootstrap, MOCK_EDITOR_SETTINGS)
       }
     },
     [generation, history, installWorkspace, lookups, router]
@@ -637,9 +679,9 @@ export default function App() {
     const yamlPath = readLastProjectPath()
     if (!yamlPath) return
     const request = generation.beginProjectRequest()
-    api.loadProject(yamlPath).then(snapshot => {
+    api.loadProject(yamlPath).then(bootstrap => {
       if (!generation.isProjectRequestCurrent(request)) return
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     }).catch(err => {
       if (generation.isProjectRequestCurrent(request)) {
         setErrorMsg(`自动打开上次项目失败: ${errorMessage(err)}`)
@@ -651,7 +693,6 @@ export default function App() {
     sessionId: number,
     prefix: string,
     err: unknown,
-    includeDiagnostics = false,
     expectedRevision?: number,
   ) => {
     if (
@@ -659,14 +700,6 @@ export default function App() {
       || (expectedRevision !== undefined && !generation.isCurrent(sessionId, expectedRevision))
     ) return
     setErrorMsg(`${prefix}: ${errorMessage(err)}`)
-    if (!includeDiagnostics) return
-    const diagnostics = errorDiagnostics(err)
-    if (diagnostics.length === 0) return
-    setProject(current => (
-      current?.session_id === sessionId
-        ? { ...current, diagnostics: [...current.diagnostics, ...diagnostics] }
-        : current
-    ))
   }, [generation])
 
   useEffect(() => {
@@ -718,39 +751,35 @@ export default function App() {
     if (!generation.isProjectRequestCurrent(request) || !yamlPath) return
     setErrorMsg(null)
     try {
-      const snapshot = await api.loadProject(yamlPath)
+      const bootstrap = await api.loadProject(yamlPath)
       if (!generation.isProjectRequestCurrent(request)) return
       rememberLastProject(yamlPath)
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
-      const diags = errorDiagnostics(err)
-      if (diags.length > 0) {
-        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-      }
     }
   }, [adoptSnapshot, generation, history, lookups])
 
-  const refreshFromSnapshot = useCallback(
-    async (snapshot: ProjectSnapshot) => {
-      if (!generation.acceptSnapshot(snapshot)) return
-      lookups.adopt({ sessionId: snapshot.session_id, revision: snapshot.revision })
+  const refreshFromBootstrap = useCallback(
+    async (bootstrap: ProjectBootstrap) => {
+      if (!generation.acceptSnapshot(bootstrap)) return
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       const current = router.current
-      const sourceFiles = collectSourceFiles(snapshot)
+      const sourceFiles = collectSourceFiles(bootstrap)
       const keepFile = current && sourceFiles.includes(current.file)
       const nextFile = keepFile ? current.file : sourceFiles[0]
       history.clear()
       setHighlightField(null)
       if (!nextFile) {
-        setProject(snapshot)
+        setProject(bootstrap)
         setFileDataCache({})
         setGraphCache({})
         return
       }
       if (!current || !keepFile) {
-        setProject(snapshot)
-        const option = snapshot.file_types[nextFile]?.[0]
+        setProject(bootstrap)
+        const option = bootstrap.file_types[nextFile]?.[0]
         const tab = defaultWorkspaceTab(nextFile, option?.name ?? '', option?.is_singleton ?? false)
         setWorkspaceTabs(existing => {
           const next = [
@@ -765,13 +794,13 @@ export default function App() {
       }
       try {
         const fileRecords = api.isTauri
-          ? await api.getFileRecords(snapshot.session_id, nextFile)
+          ? await api.getFileRecords(bootstrap.session_id, nextFile)
           : null
         if (
-          !generation.isCurrent(snapshot.session_id, snapshot.revision) ||
-          (fileRecords && fileRecords.revision !== snapshot.revision)
+          !generation.isCurrent(bootstrap.session_id, bootstrap.revision) ||
+          (fileRecords && fileRecords.revision !== bootstrap.revision)
         ) return
-        setProject(snapshot)
+        setProject(bootstrap)
         if (fileRecords) {
           setFileDataCache(cache => ({ ...cache, [nextFile]: fileRecords }))
         }
@@ -789,10 +818,10 @@ export default function App() {
           router.replace(current)
         }
       } catch (err) {
-        if (generation.isCurrent(snapshot.session_id, snapshot.revision)) {
-          setProject(snapshot)
-          reportSessionError(snapshot.session_id, '刷新项目失败', err)
-          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: snapshot.file_types[nextFile]?.[0]?.name ?? '' })
+        if (generation.isCurrent(bootstrap.session_id, bootstrap.revision)) {
+          setProject(bootstrap)
+          reportSessionError(bootstrap.session_id, '刷新项目失败', err)
+          router.push({ view: 'table', file: nextFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: bootstrap.file_types[nextFile]?.[0]?.name ?? '' })
         }
       }
     },
@@ -802,7 +831,7 @@ export default function App() {
   const commitProjectRevision = useCallback((
     sessionId: number,
     revision: number,
-    diagnostics: ProjectSnapshot['diagnostics'],
+    diagnostics: FlatDiagnostic[],
   ) => {
     if (!generation.acceptMutation(sessionId, revision)) return false
     lookups.adopt({ sessionId, revision })
@@ -813,6 +842,11 @@ export default function App() {
     ))
     return true
   }, [generation, lookups])
+
+  const handleSourceSaved = useCallback(
+    async (bootstrap: ProjectBootstrap) => refreshFromBootstrap(bootstrap),
+    [refreshFromBootstrap],
+  )
 
   const publishMutation = useCallback((request: MutationPublicationRequest) => (
     publishMutationGeneration({
@@ -849,9 +883,12 @@ export default function App() {
     let unlistenChanged: (() => void) | null = null
     let unlistenError: (() => void) | null = null
     const isCurrent = () => !disposed && generation.currentSession() === sessionId
-    api.onProjectChanged(event => {
+    api.onProjectReloaded(event => {
       if (!isCurrent() || event.session_id !== sessionId) return
-      refreshFromSnapshot(event.snapshot).catch(err => {
+      api.reloadSession(sessionId).then(bootstrap => {
+        if (!isCurrent()) return
+        return refreshFromBootstrap(bootstrap)
+      }).catch(err => {
         if (isCurrent()) reportSessionError(sessionId, '刷新项目失败', err)
       })
     }).then(unlisten => {
@@ -874,7 +911,7 @@ export default function App() {
       unlistenChanged?.()
       unlistenError?.()
     }
-  }, [generation, project?.session_id, refreshFromSnapshot, reportSessionError])
+  }, [generation, project?.session_id, refreshFromBootstrap, reportSessionError])
 
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
   // project (mirrors `coflow init`), and open it. The same back-end call
@@ -890,17 +927,13 @@ export default function App() {
     if (!generation.isProjectRequestCurrent(request) || !dir) return
     setErrorMsg(null)
     try {
-      const snapshot = await api.initProject(dir)
+      const bootstrap = await api.initProject(dir)
       if (!generation.isProjectRequestCurrent(request)) return
       rememberLastProject(projectYamlPath(dir))
-      adoptSnapshot(snapshot)
+      adoptSnapshot(bootstrap)
     } catch (err) {
       if (!generation.isProjectRequestCurrent(request)) return
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
-      const diags = errorDiagnostics(err)
-      if (diags.length > 0) {
-        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
-      }
     }
   }, [adoptSnapshot, generation])
 
@@ -908,6 +941,7 @@ export default function App() {
   useEffect(() => {
     if (!project || !router.current) return
     const file = router.current.file
+    if (file.endsWith('.cft')) return
     if (dimensionForFile(projectDimensions, file)) return
     if (fileDataCache[file]?.revision === project.revision) return
     if (!api.isTauri) return // mock branch already populated
@@ -1028,6 +1062,7 @@ export default function App() {
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
+      finishActiveDataEdit()
       const id = workspaceTabId(filePath, coordinate.actual_type)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
       const tab: WorkspaceTab = {
@@ -1045,6 +1080,34 @@ export default function App() {
     },
     [navigateWorkspaceTab]
   )
+
+  const jumpToDiagnostic = useCallback((target: DiagnosticTarget) => {
+    if (target.kind === 'none') return
+    if (target.kind === 'table_field' || target.kind === 'record') {
+      setHighlightField(target.kind === 'table_field' ? target.field_path : RECORD_HIGHLIGHT_SENTINEL)
+      openRecord(target.file_path, target.coordinate)
+      return
+    }
+    const typeName = project?.file_types[target.file_path]?.[0]?.name ?? ''
+    const id = workspaceTabId(target.file_path, typeName)
+    const existing = workspaceTabsRef.current.find(tab => tab.id === id)
+    const tab: WorkspaceTab = {
+      ...(existing ?? defaultWorkspaceTab(target.file_path, typeName, false)),
+      viewKind: 'source',
+      viewId: DEFAULT_SOURCE_VIEW_ID,
+    }
+    const next = existing
+      ? workspaceTabsRef.current.map(item => item.id === id ? tab : item)
+      : [...workspaceTabsRef.current, tab]
+    workspaceTabsRef.current = next
+    setWorkspaceTabs(next)
+    setSourceDiagnosticFocus(previous => ({
+      file: target.file_path,
+      range: target.range,
+      tick: (previous?.tick ?? 0) + 1,
+    }))
+    navigateWorkspaceTab(tab)
+  }, [navigateWorkspaceTab, openRecord, project?.file_types])
 
   const openProjectSearchHit = useCallback((hit: ProjectSearchHit) => {
     setHighlightField(hit.field_path ?? RECORD_HIGHLIGHT_SENTINEL)
@@ -1079,42 +1142,6 @@ export default function App() {
       }))
     },
     [project],
-  )
-
-  const openRecordByKey = useCallback(
-    (filePath: string, recordKey: string, actualType?: string | null) => {
-      const cached = fileDataCache[filePath]
-      const cachedRow = cached?.records.find(r =>
-        r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
-      )
-      if (cachedRow) {
-        openRecord(filePath, cachedRow.coordinate)
-        return
-      }
-      if (!project || !api.isTauri) {
-        setErrorMsg(`记录 ${recordKey} 未找到`)
-        return
-      }
-      const sessionId = project.session_id
-      const revision = project.revision
-      const request = generation.captureRequest()
-      api.getFileRecords(sessionId, filePath)
-        .then(records => {
-          if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
-          setFileDataCache(c => ({ ...c, [filePath]: records }))
-          const row = records.records.find(r =>
-            r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
-          )
-          if (row) openRecord(filePath, row.coordinate)
-          else setErrorMsg(`记录 ${recordKey} 未找到`)
-        })
-        .catch(err => {
-          if (generation.isRequestCurrent(request)) {
-            reportSessionError(sessionId, '读取文件失败', err)
-          }
-        })
-    },
-    [fileDataCache, generation, openRecord, project, reportSessionError],
   )
 
   const openReference = useCallback((targetType: string, targetKey: string) => {
@@ -1283,7 +1310,6 @@ export default function App() {
             request.sessionId,
             '后台刷新仍然失败',
             retryError ?? error,
-            true,
             request.revision,
           )
         })
@@ -1291,7 +1317,7 @@ export default function App() {
       return true
     },
     reportError: (sessionId, prefix, error, expectedRevision) => {
-      reportSessionError(sessionId, prefix, error, true, expectedRevision)
+      reportSessionError(sessionId, prefix, error, expectedRevision)
     },
     optimisticWriteField,
   }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
@@ -1501,6 +1527,7 @@ export default function App() {
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
+  const activeSchemaFile = activeFile?.endsWith('.cft') ?? false
   useEffect(() => {
     if (!currentRoute) return
     const routedType = currentRoute.view === 'record'
@@ -1527,8 +1554,9 @@ export default function App() {
       let changed = false
       const next = current.map(tab => {
         if (tab.id !== id) return tab
-        const viewKind = singleton ? 'record' : currentRoute.view
-        const viewId = singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
+        const singletonSource = singleton && currentRoute.view === 'source'
+        const viewKind = singletonSource ? 'source' : singleton ? 'record' : currentRoute.view
+        const viewId = singletonSource ? DEFAULT_SOURCE_VIEW_ID : singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
@@ -1571,7 +1599,9 @@ export default function App() {
     [project?.file_types, activeFile, activeType],
   )
   const isSingletonType = activeTypeOption?.is_singleton ?? false
-  const activeViewKind = currentRoute && isSingletonType ? 'record' : currentRoute?.view
+  const activeViewKind = currentRoute && isSingletonType && currentRoute.view !== 'source'
+    ? 'record'
+    : currentRoute?.view
   const activeRecordCoordinate = currentRoute?.view === 'record'
     ? currentRoute.coordinate
     : activeFileData?.records.find(record => (
@@ -1629,6 +1659,7 @@ export default function App() {
     visibleCoordinates: readonly RecordCoordinate[],
     mode: RecordSelectionMode,
   ) => {
+    finishActiveDataEdit()
     setInspectorCollapsed(false)
     setInspectorSelection(current => updateRecordSelection(
       current,
@@ -1729,7 +1760,7 @@ export default function App() {
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
   const activeGraph = activeGraphKey ? graphCache[activeGraphKey] : null
-  const readOnly = !isEditableFile(activeFileData)
+  const readOnly = activeSchemaFile ? false : !isEditableFile(activeFileData)
   const fileCapabilities = useMemo(() => {
     const map: Record<string, WriterCapabilities> = {}
     for (const [file, records] of Object.entries(fileDataCache)) {
@@ -1745,15 +1776,21 @@ export default function App() {
       for (const record of records.records) {
         counts.set(record.coordinate.actual_type, (counts.get(record.coordinate.actual_type) ?? 0) + 1)
       }
-      next[filePath] = (next[filePath] ?? []).map(option => ({
-        ...option,
-        record_count: counts.get(option.name) ?? 0,
-      }))
+      next[filePath] = (next[filePath] ?? [])
+        .map(option => ({
+          ...option,
+          record_count: counts.get(option.name) ?? 0,
+        }))
+        .filter(option => option.record_count > 0)
+    }
+    for (const [filePath, options] of Object.entries(next)) {
+      if (filePath in fileDataCache) continue
+      next[filePath] = options?.filter(option => option.record_count > 0)
     }
     return next
   }, [fileDataCache, project])
   const fileDiagnostics = useMemo(
-    () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
+    () => activeFile && project ? project.diagnostics.filter(d => diagnosticFilePath(d) === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
   // Prefer schema annotations, but also inspect values because older sessions
@@ -1764,7 +1801,7 @@ export default function App() {
   }, [activeFileData])
   // View tabs (default + custom) for the active (file, type).
   const viewTabs = useMemo(
-    () => activeFile && activeType
+    () => activeFile
       ? viewTabsFor(projectSettings, activeFile, activeType, isSingletonType, graphSupported)
       : [],
     [projectSettings, activeFile, activeType, isSingletonType, graphSupported],
@@ -1853,14 +1890,6 @@ export default function App() {
       router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
     }
   }, [activeFile, activeType, projectSettings, saveViews, currentRoute, router])
-  // Set of file paths that can be opened via the record/table views. Used by
-  // the diagnostics panel to decide whether "跳转" is available for a row —
-  // if the diagnostic's file isn't part of the source set, we hide the button
-  // instead of taking the user somewhere that will just say "记录未找到".
-  const sourceFileSet = useMemo(
-    () => project ? new Set(collectSourceFiles(project)) : new Set<string>(),
-    [project],
-  )
   const projectSearchGroups = useMemo(
     () => groupProjectSearchHits(projectSearchResults?.hits ?? []),
     [projectSearchResults],
@@ -1978,6 +2007,7 @@ export default function App() {
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
       if (currentRoute?.view !== 'table') return
+      finishActiveDataEdit()
       setInspectorCollapsed(false)
       setInspectorSelection(current => updateValueSelection(
         current,
@@ -2109,6 +2139,38 @@ export default function App() {
       setErrorMsg(`打开源文件失败: ${errorMessage(error)}`)
     }
   }, [generation])
+  const addProjectInput = useCallback(async (kind: 'schema' | 'data', directory: boolean) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    const path = await api.pickProjectInput(kind, directory)
+    if (!path || !generation.isCurrent(identity.sessionId, identity.revision)) return
+    try {
+      const bootstrap = await api.addProjectInput(identity.sessionId, kind, path)
+      await refreshFromBootstrap(bootstrap)
+    } catch (error) {
+      setErrorMsg(`添加${kind === 'schema' ? '类型' : '数据'}来源失败: ${errorMessage(error)}`)
+    }
+  }, [generation, refreshFromBootstrap])
+  const createRecordFromTree = useCallback(async (filePath: string, actualType: string) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    try {
+      const data = fileDataCache[filePath]?.revision === identity.revision
+        ? fileDataCache[filePath]
+        : await api.getFileRecords(identity.sessionId, filePath)
+      if (!generation.isCurrent(identity.sessionId, identity.revision)) return
+      openFile(filePath, actualType)
+      setTreeRecordDraft({ filePath, actualType: actualType || data.type_names[0] || '', data })
+    } catch (error) {
+      setErrorMsg(`读取文件失败: ${errorMessage(error)}`)
+    }
+  }, [fileDataCache, generation, openFile])
+  const createFileFromTree = useCallback((parentPath: string, sourceKind: 'schema' | 'data') => {
+    setFileActionDialog({ kind: 'create', parentPath, sourceKind })
+  }, [])
+  const deleteEntryFromTree = useCallback((path: string) => {
+    setFileActionDialog({ kind: 'delete', path })
+  }, [])
   const tableOnEnterInspector = useCallback(() => {
     setInspectorCollapsed(false)
     setInspectorFocusRequest(request => request + 1)
@@ -2278,17 +2340,26 @@ export default function App() {
       setFirstRecordFocusRequest(0)
       closeInspector()
     }
-    if (tab.kind === 'record') {
-      const firstCoordinate =
+    const firstCoordinate = tab.kind === 'record'
+      ? (
         (activeType
           ? activeFileData?.records.find(r => recordActualType(r) === activeType)
           : activeFileData?.records[0])?.coordinate
         ?? activeFileData?.records[0]?.coordinate
-      if (!firstCoordinate) return
-      router.replace({ view: 'record', file: currentRoute.file, viewId: tab.id, coordinate: firstCoordinate })
-    } else {
-      router.replace({ view: tab.kind, file: currentRoute.file, viewId: tab.id, typeFilter: activeType })
-    }
+      )
+      : undefined
+    if (tab.kind === 'record' && !firstCoordinate) return
+
+    const id = workspaceTabId(currentRoute.file, activeType)
+    const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
+      ?? defaultWorkspaceTab(currentRoute.file, activeType, isSingletonType)
+    const nextTab = workspaceTabWithView(existing, tab.kind, tab.id, firstCoordinate)
+    const nextTabs = workspaceTabsRef.current.some(candidate => candidate.id === id)
+      ? workspaceTabsRef.current.map(candidate => candidate.id === id ? nextTab : candidate)
+      : [...workspaceTabsRef.current, nextTab]
+    workspaceTabsRef.current = nextTabs
+    setWorkspaceTabs(nextTabs)
+    router.replace(routeForWorkspaceTab(nextTab, firstCoordinate))
   }
 
   // Record tabs can be restored before their file records have loaded. Once
@@ -2298,7 +2369,7 @@ export default function App() {
     if (!currentRoute) return
     if (activeFileData?.file_path !== currentRoute.file) return
     const activeTab = workspaceTabsRef.current.find(tab => tab.id === activeWorkspaceTabId)
-    const needsRecord = isSingletonType || activeTab?.viewKind === 'record'
+    const needsRecord = (isSingletonType && currentRoute.view !== 'source') || activeTab?.viewKind === 'record'
     if (!needsRecord) return
     const coordinateIsValid = currentRoute.view === 'record'
       && activeFileData.records.some(record => (
@@ -2324,6 +2395,15 @@ export default function App() {
     if (!currentRoute || !activeFileData || viewTabs.length === 0) return
     const valid = viewTabs.some(tab => tab.id === currentRoute.viewId && tab.kind === currentRoute.view)
     if (valid) return
+    if (!activeType) {
+      router.replace({
+        view: 'source',
+        file: currentRoute.file,
+        viewId: DEFAULT_SOURCE_VIEW_ID,
+        typeFilter: '',
+      })
+      return
+    }
     if (isSingletonType) {
       const firstCoord = activeFileData.records.find(
         record => !activeType || recordActualType(record) === activeType,
@@ -2368,6 +2448,7 @@ export default function App() {
     <ObjectDraftHost
       lookups={lookups}
       generationKey={lookupGenerationKey}
+      sessionId={project?.session_id}
       onOpenReference={openReference}
     >
     <div className="app">
@@ -2530,6 +2611,10 @@ export default function App() {
                   onSelectFile={openFile}
                   onExitRight={focusFirstRecord}
                   onOpenSourceFile={openSourceFile}
+                  onAddInput={addProjectInput}
+                  onCreateRecord={createRecordFromTree}
+                  onCreateFile={createFileFromTree}
+                  onDeleteEntry={deleteEntryFromTree}
                 />
               ) : (
                 <div className="sidebar-empty">
@@ -2882,8 +2967,21 @@ export default function App() {
               )}
             </div>
           )}
-          {currentRoute && (activeFileData || activeDimensionData) && (
-            activeDimensionData ? (
+          {currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
+            activeSchemaFile ? (
+              <div className="view-tabs-row">
+                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                  <button
+                    className="tab-btn tab-view active"
+                    role="tab"
+                    aria-selected="true"
+                  >
+                    <Icon name="code" size={13} aria-hidden />
+                    源码
+                  </button>
+                </div>
+              </div>
+            ) : activeDimensionData ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
                   {(['record', 'table'] as const).map(view => (
@@ -2916,12 +3014,12 @@ export default function App() {
                         openViewContextMenu(tab, event.clientX, event.clientY)
                       }}
                     >
-                      <Icon name={tab.kind} size={13} aria-hidden />
+                      <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={13} aria-hidden />
                       {tab.name}
                     </button>
                   ))}
                 </div>
-                {!isSingletonType && (
+                {!!activeType && !isSingletonType && (
                   <button
                     className="btn btn-icon view-tab-add"
                     onClick={() => openViewEditor('create')}
@@ -2934,7 +3032,18 @@ export default function App() {
               </div>
             )
           )}
-          {currentRoute && activeDimensionData ? (
+          {currentRoute && activeSchemaFile && project ? (
+            <div className="view-container" ref={viewContainerRef}>
+              <SourceEditorView
+                sessionId={project.session_id}
+                revision={project.revision}
+                filePath={currentRoute.file}
+                readOnly={false}
+                onSaved={handleSourceSaved}
+                focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
+              />
+            </div>
+          ) : currentRoute && activeDimensionData ? (
             <DimensionTableView
               data={activeDimensionData}
               mode={dimensionView}
@@ -2961,8 +3070,8 @@ export default function App() {
                 </div>
               )}
 
-              {/* Record search bar — shared across all three views */}
-              <div className="global-search-bar">
+              {/* Record search bar — shared by structured views. */}
+              {activeViewKind !== 'source' && <div className="global-search-bar">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={documentSearchRef}
@@ -3002,7 +3111,7 @@ export default function App() {
                 >
                   {documentSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
                 </span>
-              </div>
+              </div>}
 
               <div className="view-container" ref={viewContainerRef}>
                 {activeViewKind === 'table' && (
@@ -3082,6 +3191,7 @@ export default function App() {
                     )}
                     selection={inspectorSelection}
                     onSelectValue={(coordinate, path) => {
+                      finishActiveDataEdit()
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
                     }}
                     onRenderCellText={tableOnRenderCellText}
@@ -3128,6 +3238,16 @@ export default function App() {
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>
                   )
+                )}
+                {activeViewKind === 'source' && project && currentRoute && (
+                  <SourceEditorView
+                    sessionId={project.session_id}
+                    revision={project.revision}
+                    filePath={currentRoute.file}
+                    readOnly={readOnly}
+                    onSaved={handleSourceSaved}
+                    focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
+                  />
                 )}
               </div>
             </>
@@ -3190,15 +3310,7 @@ export default function App() {
             diagnostics={project.diagnostics}
             focus={diagFocus}
             onFocusConsumed={() => setDiagFocus(null)}
-            isJumpable={(file) => sourceFileSet.has(file)}
-            onJumpToRecord={(file, key, actualType) => {
-              setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
-              openRecordByKey(file, key, actualType)
-            }}
-            onJumpToField={(file, key, actualType, fieldPath) => {
-              setHighlightField(fieldPath)
-              openRecordByKey(file, key, actualType)
-            }}
+            onJump={jumpToDiagnostic}
           />
         )}
         </div>
@@ -3259,6 +3371,73 @@ export default function App() {
         />
       )}
 
+      {treeRecordDraft && (
+        <CreateRecordDialog
+          actualType={treeRecordDraft.actualType}
+          typeOptions={treeRecordDraft.data.type_names}
+          existingKeys={treeRecordDraft.data.records.map(record => record.coordinate.key)}
+          onCreateRecordDraft={tableOnCreateRecordDraft}
+          onInsertRecord={async (key, type, fields) => {
+            await insertRecord(treeRecordDraft.filePath, key, type, fields)
+          }}
+          onClose={() => setTreeRecordDraft(null)}
+        />
+      )}
+      {fileActionDialog?.kind === 'create' && (
+        <TextInputDialog
+          title="新建文件"
+          message={`在 ${fileActionDialog.parentPath} 中创建文件`}
+          placeholder="文件名"
+          suffix={fileActionDialog.sourceKind === 'schema' ? '.cft' : '.cfd'}
+          confirmLabel="创建"
+          busy={fileActionBusy}
+          onClose={() => setFileActionDialog(null)}
+          onConfirm={async entered => {
+            const identity = generation.currentIdentity()
+            if (!identity) return
+            const extension = fileActionDialog.sourceKind === 'schema' ? '.cft' : '.cfd'
+            const baseName = entered.toLowerCase().endsWith(extension)
+              ? entered.slice(0, -extension.length)
+              : entered
+            const fileName = `${baseName}${extension}`
+            setFileActionBusy(true)
+            try {
+              const bootstrap = await api.createProjectFile(identity.sessionId, fileActionDialog.sourceKind, fileActionDialog.parentPath, fileName)
+              await refreshFromBootstrap(bootstrap)
+              setFileActionDialog(null)
+            } catch (error) {
+              setErrorMsg(`新建文件失败: ${errorMessage(error)}`)
+            } finally {
+              setFileActionBusy(false)
+            }
+          }}
+        />
+      )}
+      {fileActionDialog?.kind === 'delete' && (
+        <ConfirmDialog
+          title="删除文件"
+          message={`确认递归删除“${fileActionDialog.path}”？此操作不可撤销。`}
+          confirmLabel="删除"
+          danger
+          busy={fileActionBusy}
+          onClose={() => setFileActionDialog(null)}
+          onConfirm={async () => {
+            const identity = generation.currentIdentity()
+            if (!identity) return
+            setFileActionBusy(true)
+            try {
+              const bootstrap = await api.deleteProjectEntry(identity.sessionId, fileActionDialog.path)
+              setTreeRecordDraft(null)
+              await refreshFromBootstrap(bootstrap)
+              setFileActionDialog(null)
+            } catch (error) {
+              setErrorMsg(`删除失败: ${errorMessage(error)}`)
+            } finally {
+              setFileActionBusy(false)
+            }
+          }}
+        />
+      )}
       {showHelp && (
         <div className="help-overlay" onClick={() => setShowHelp(false)}>
           <div
@@ -3293,7 +3472,7 @@ export default function App() {
                 <tr><td>任意可打印字符</td><td>替换输入（直接开始编辑）</td></tr>
                 <tr><td>Delete</td><td>重置为默认值（集合类型清空）</td></tr>
                 <tr><th colSpan={2}>复制 / 粘贴</th></tr>
-                <tr><td>Ctrl+C</td><td>复制选中单元格（TSV）</td></tr>
+                <tr><td>Ctrl+C</td><td>复制选中单元格（CFD）</td></tr>
                 <tr><td>Ctrl+X</td><td>剪切（复制后清空）</td></tr>
                 <tr><td>Ctrl+V</td><td>粘贴</td></tr>
                 <tr><td>Shift+Ctrl+V</td><td>追加粘贴（array 目标）</td></tr>
@@ -3343,13 +3522,13 @@ function definedColumnWidths(
   )
 }
 
-function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
+function collectSourceFiles(bootstrap: ProjectBootstrap): string[] {
   const out: string[] = []
-  function walk(n: ProjectSnapshot['file_tree'][number]) {
+  function walk(n: ProjectBootstrap['file_tree'][number]) {
     if (!n.is_dir && n.in_sources) out.push(n.path)
     for (const c of n.children) walk(c)
   }
-  for (const n of snapshot.file_tree) walk(n)
+  for (const n of bootstrap.file_tree) walk(n)
   return out
 }
 

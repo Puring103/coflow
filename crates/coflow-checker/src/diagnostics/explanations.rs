@@ -1,5 +1,7 @@
-use coflow_cft::{CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp};
-use coflow_data_model::CfdErrorCode;
+use coflow_diagnostics::CfdErrorCode;
+use coflow_language::cft::{
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaUnaryOp,
+};
 
 use super::trace::EvaluationTrace;
 use super::{cmp_op_str, render_expr, CheckExplanation};
@@ -99,10 +101,7 @@ pub(crate) fn explain_false_expr(
             .with_expected("true"),
         ),
         CftSchemaCheckExprKind::Field { .. }
-        | CftSchemaCheckExprKind::SafeField { .. }
         | CftSchemaCheckExprKind::Index { .. }
-        | CftSchemaCheckExprKind::SafeIndex { .. }
-        | CftSchemaCheckExprKind::Coalesce { .. }
         | CftSchemaCheckExprKind::Call { .. }
         | CftSchemaCheckExprKind::MethodCall { .. }
             if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) =>
@@ -171,19 +170,7 @@ pub(crate) fn explain_false_expr(
             expr: inner,
             predicate,
         } => match predicate {
-            coflow_cft::CftSchemaTypePredicate::Null => {
-                let actual = value_expr_actual(trace, inner);
-                Some(
-                    CheckExplanation::new(
-                        CfdErrorCode::CheckNullPredicateFailed,
-                        rendered,
-                        value.location.clone(),
-                    )
-                    .with_actual(actual)
-                    .with_expected("null"),
-                )
-            }
-            coflow_cft::CftSchemaTypePredicate::Type(type_name) => {
+            coflow_language::cft::CftSchemaTypePredicate::Type(type_name) => {
                 let actual = trace
                     .fact(inner)
                     .and_then(|fact| fact.actual_type.clone())
@@ -213,23 +200,13 @@ fn explain_failed_comparison(
 ) -> Option<CheckExplanation> {
     let failure = trace.comparison_failure()?;
     let location = failure.location.clone().or(fallback_location);
-    let null_predicate = failure.lhs.is_null || failure.rhs.is_null;
-    let code = if null_predicate
-        && matches!(
-            failure.op,
-            coflow_cft::CftSchemaCmpOp::Eq | coflow_cft::CftSchemaCmpOp::Ne
-        ) {
-        CfdErrorCode::CheckNullPredicateFailed
-    } else {
-        CfdErrorCode::CheckComparisonFailed
-    };
     let (actual_expr, actual_value) = if failure.lhs.location.is_some() {
         (&failure.lhs_expression, failure.lhs.display.as_deref())
     } else {
         (&failure.rhs_expression, failure.rhs.display.as_deref())
     };
     Some(
-        CheckExplanation::new(code, rendered.to_string(), location)
+        CheckExplanation::new(CfdErrorCode::CheckComparisonFailed, rendered.to_string(), location)
             .with_actual(format!(
                 "{actual_expr} = {}",
                 actual_value.unwrap_or("<unknown>")

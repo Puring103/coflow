@@ -2,12 +2,12 @@ use crate::diagnostics::{cli_error, cli_file_error};
 use crate::write_file::{
     read_source, read_stdin_source, write_json, write_report_human, write_source,
 };
-use coflow_api::{DiagnosticSet, FlatDiagnostic};
-use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
     inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
     SchemaTextOverride, SchemaTypeRefInfo,
 };
+use coflow_runtime::{path_to_slash, Project};
+use coflow_runtime::{DiagnosticSet, FlatDiagnostic};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -218,13 +218,26 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
         SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
-            format!(
-                "dict<{}, {}>",
-                display_value_type(key),
-                display_value_type(value)
-            )
+            format!("{{{}: {}}}", display_value_type(key), display_value_type(value))
         }
-        SchemaTypeRefInfo::Nullable { inner } => format!("{}?", display_value_type(inner)),
+        SchemaTypeRefInfo::Option { inner } => {
+            format!("Option<{}>", display_value_type(inner))
+        }
+        SchemaTypeRefInfo::Result { value, error } => format!(
+            "Result<{}, {}>",
+            display_value_type(value),
+            display_value_type(error)
+        ),
+        SchemaTypeRefInfo::Function { parameters, result } => format!(
+            "fn({}) -> {}",
+            parameters
+                .iter()
+                .map(display_value_type)
+                .collect::<Vec<_>>()
+                .join(", "),
+            display_value_type(result)
+        ),
+        SchemaTypeRefInfo::Unit => "()".to_string(),
     }
 }
 

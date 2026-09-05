@@ -1,6 +1,6 @@
 //! Project-wide record search over one immutable runtime generation.
 
-use coflow_data_model::{format_cfd_dict_key, CfdValue, RecordCoordinate};
+use crate::data_model::{format_cfd_dict_key, CfdValue, RecordCoordinate};
 
 use crate::{value_summary, ProjectQueries};
 
@@ -103,7 +103,7 @@ struct FieldMatch {
 }
 
 fn find_record_field_match(
-    fields: &std::collections::BTreeMap<coflow_cft::FieldName, CfdValue>,
+    fields: &std::collections::BTreeMap<coflow_language::cft::FieldName, CfdValue>,
     query: &str,
 ) -> Option<FieldMatch> {
     fields.iter().find_map(|(name, value)| {
@@ -167,12 +167,15 @@ fn find_value_match(value: &CfdValue, query: &str, path: &str) -> Option<FieldMa
 
 fn scalar_text(value: &CfdValue) -> Option<String> {
     match value {
-        CfdValue::Null => Some("null".to_string()),
+        CfdValue::OptionNone => Some("None".to_string()),
+        CfdValue::OptionSome(value) => scalar_text(value),
+        CfdValue::ResultOk(value) | CfdValue::ResultErr(value) => scalar_text(value),
         CfdValue::Bool(value) => Some(value.to_string()),
         CfdValue::Int(value) => Some(value.to_string()),
         CfdValue::Float(value) => Some(value.to_string()),
         CfdValue::String(value) => Some(value.clone()),
         CfdValue::FormattedString(value) => Some(value.rendered.clone()),
+        CfdValue::Function(value) => Some(value.source.clone()),
         CfdValue::Enum(value) => Some(format!(
             "{} {} {}",
             value.enum_name,

@@ -1,0 +1,47 @@
+Entity {
+  root {
+    name: "Root Entity",
+    level: 10,
+    rarity: Rare,
+    stats: Stats { health: 500, speed: 0.8 },
+    primaryEffect: HealEffect { label: "Recovery", amount: 25 },
+  }
+
+  warrior {
+    name: "Warrior",
+    level: 8,
+    stats: Stats { health: 180, speed: 1.1, resistances: { Element::Fire: 0.2 } },
+    primaryEffect: DamageEffect { label: "Slash", element: Physical, amount: 40 },
+    alternateEffects: [
+      DamageEffect { label: "Flame strike", element: Fire, amount: 25, duration: 2.5 },
+      HealEffect { label: "Second wind", amount: 15 },
+    ],
+    parent: &root,
+    related: [&mage, &chest],
+  }
+
+  mage {
+    name: "Arcane Mage",
+    level: 12,
+    rarity: Epic,
+    tags: ["fixture", "caster", "ranged"],
+    stats: Stats { health: 95, speed: 1.4, resistances: { Element::Arcane: 0.75 } },
+    primaryEffect: CompositeEffect {
+      label: "Arcane sequence",
+      effects: [
+        DamageEffect { label: "Burst", element: Arcane, amount: 60 },
+        HealEffect { label: "Drain", amount: 12 },
+      ],
+    },
+    parent: &root,
+    related: [&root],
+  }
+
+  chest {
+    name: "Reward Chest",
+    level: 3,
+    stats: Stats {},
+    primaryEffect: HealEffect { label: "Open", amount: 1 },
+    related: [&root],
+  }
+}

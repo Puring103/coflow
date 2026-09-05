@@ -1,7 +1,7 @@
-use coflow_cft::{CftSchema, CftValueType};
-use coflow_data_model::CfdDataModel;
-use coflow_data_model::CfdErrorCode;
-use coflow_structure::StructuralBudget;
+use coflow_model::CfdDataModel;
+use coflow_diagnostics::CfdErrorCode;
+use crate::limits::EvaluationBudget;
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
@@ -15,11 +15,11 @@ pub(crate) fn index_value<'model>(
     target: LocatedEvalValue<'model>,
     index: LocatedEvalValue<'model>,
     model: &'model CfdDataModel,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             target.location,
             format!(
                 "不能索引 null: 尝试在 null 上读取 [{}]",
@@ -154,7 +154,7 @@ pub(crate) fn current_field<'model>(
     model: &'model CfdDataModel,
     current: &EvalValue<'model>,
     name: &str,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<Option<LocatedEvalValue<'model>>> {
     let EvalValue::Record(record) = current else {
         return Ok(None);
@@ -177,11 +177,11 @@ pub(crate) fn field_value<'model>(
     model: &'model CfdDataModel,
     target: LocatedEvalValue<'model>,
     name: &str,
-    budget: &mut StructuralBudget,
+    budget: &mut EvaluationBudget,
 ) -> OpsResult<LocatedEvalValue<'model>> {
     if matches!(target.value.scalar(), Some(ScalarValue::Null)) {
         return Err(OpsError::new(
-            CfdErrorCode::CheckNullAccess,
+            CfdErrorCode::CheckEvalTypeError,
             target.location,
             format!("不能访问 null 的字段: 尝试在 null 上读取 `.{name}`"),
         ));

@@ -1,9 +1,10 @@
-use coflow_cft::{
+use coflow_diagnostics::CfdErrorCode;
+use coflow_model::{CfdPath, CfdPathSegment, DimensionFieldLookupError};
+use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
     CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
 };
-use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
 use crate::eval::{EvalValue, ValueLocation};
 
@@ -31,7 +32,7 @@ pub enum CheckDiagnosticContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckDiagnostic {
-    pub diagnostic: coflow_data_model::CfdDiagnostic,
+    pub diagnostic: coflow_model::CfdDiagnostic,
     pub contexts: Vec<CheckDiagnosticContext>,
     pub(crate) is_custom_message: bool,
     pub schema_location: Option<CheckSchemaLocation>,
@@ -39,12 +40,12 @@ pub struct CheckDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckSchemaLocation {
-    pub module: coflow_cft::ModuleId,
-    pub span: coflow_cft::Span,
+    pub module: coflow_language::cft::ModuleId,
+    pub span: coflow_language::source::Span,
 }
 
-impl From<coflow_data_model::CfdDiagnostic> for CheckDiagnostic {
-    fn from(diagnostic: coflow_data_model::CfdDiagnostic) -> Self {
+impl From<coflow_model::CfdDiagnostic> for CheckDiagnostic {
+    fn from(diagnostic: coflow_model::CfdDiagnostic) -> Self {
         Self {
             diagnostic,
             contexts: Vec::new(),
@@ -195,11 +196,11 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
             };
             let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
             let binding = match bindings {
-                coflow_cft::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
-                coflow_cft::CftSchemaQuantifierBindings::Array { item, index } => {
+                coflow_language::cft::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
+                coflow_language::cft::CftSchemaQuantifierBindings::Array { item, index } => {
                     format!("{item}, {index}")
                 }
-                coflow_cft::CftSchemaQuantifierBindings::Dict { key, value } => {
+                coflow_language::cft::CftSchemaQuantifierBindings::Dict { key, value } => {
                     format!("{key}, {value}")
                 }
             };
@@ -222,7 +223,6 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Int(value) => value.to_string(),
         CftSchemaCheckExprKind::Float(value) => value.to_string(),
         CftSchemaCheckExprKind::Bool(value) => value.to_string(),
-        CftSchemaCheckExprKind::Null => "null".to_string(),
         CftSchemaCheckExprKind::String(value) => format!("\"{value}\""),
         CftSchemaCheckExprKind::FormattedString(segments) => render_formatted_string(segments),
         CftSchemaCheckExprKind::Name(name) => name.clone(),
@@ -230,22 +230,12 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         CftSchemaCheckExprKind::Field { expr, name } => {
             format!("{}.{}", render_expr(expr), name)
         }
-        CftSchemaCheckExprKind::SafeField { expr, name } => {
-            format!("{}?.{}", render_expr(expr), name)
-        }
         CftSchemaCheckExprKind::Index { expr, index } => {
             format!("{}[{}]", render_expr(expr), render_expr(index))
-        }
-        CftSchemaCheckExprKind::SafeIndex { expr, index } => {
-            format!("{}?[{}]", render_expr(expr), render_expr(index))
-        }
-        CftSchemaCheckExprKind::Coalesce { lhs, rhs } => {
-            format!("{} ?? {}", render_expr(lhs), render_expr(rhs))
         }
         CftSchemaCheckExprKind::Is { expr, predicate } => {
             let predicate = match predicate {
                 CftSchemaTypePredicate::Type(name) => name.as_str(),
-                CftSchemaTypePredicate::Null => "null",
             };
             format!("{} is {predicate}", render_expr(expr))
         }
@@ -286,7 +276,7 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
 }
 
 fn render_formatted_string(segments: &[CftSchemaCheckFormatSegment]) -> String {
-    let mut out = String::from("f\"");
+    let mut out = String::from("\"");
     for segment in segments {
         match segment {
             CftSchemaCheckFormatSegment::Text(value, _) => {
@@ -347,12 +337,22 @@ pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {
 /// message: strings are quoted, collections summarize, records show their key.
 pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
     if let Some(scalar) = value.scalar() {
-        return crate::eval::format_scalar(scalar, crate::eval::ScalarFormat::Diagnostic);
+        return crate::eval::format_scalar(
+            scalar,
+            crate::eval::ScalarFormat::Diagnostic,
+        );
     }
     match value {
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }
+        EvalValue::Constant(coflow_language::cft::CftConstValue::Array(items)) => {
+            format!("<array constant len={}>", items.len())
+        }
+        EvalValue::Constant(coflow_language::cft::CftConstValue::Dictionary(entries)) => {
+            format!("<dict constant len={}>", entries.len())
+        }
+        EvalValue::Constant(_) => "<constant>".to_string(),
         EvalValue::EnumNamespace(name) => name.to_string(),
         EvalValue::Record(_) => "<record>".to_string(),
         EvalValue::Entry(entry) => {
@@ -366,7 +366,6 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
 pub(crate) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
     match ty {
         Some(CftValueType::Float) => true,
-        Some(CftValueType::Nullable(inner)) => value_type_is_float(Some(inner)),
         _ => false,
     }
 }

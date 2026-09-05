@@ -3,93 +3,181 @@
   "name": "CFD",
   "scopeName": "source.cfd",
   "patterns": [
-    { "include": "#comment-slash" },
-    { "include": "#comment-hash" },
-    { "include": "#string" },
-    { "include": "#ref-direct" },
+    { "include": "#comments" },
+    { "include": "#function" },
+    { "include": "#strings" },
+    { "include": "#references" },
+    { "include": "#constructors" },
     { "include": "#record-colon" },
     { "include": "#group-key" },
     { "include": "#type-before-brace" },
     { "include": "#field-name" },
-    { "include": "#constant-language" },
-    { "include": "#constant-numeric" },
-    { "include": "#user-type" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#user-types" },
+    { "include": "#operators" },
     { "include": "#punctuation" }
   ],
   "repository": {
-    "comment-slash": {
-      "name": "comment.line.double-slash.cfd",
-      "match": "//.*$"
-    },
-    "comment-hash": {
-      "name": "comment.line.number-sign.cfd",
-      "match": "#.*$"
-    },
-    "string": {
-      "name": "string.quoted.double.cfd",
-      "begin": "\"",
-      "end": "\"",
-      "patterns": [
-        { "name": "constant.character.escape.cfd", "match": "\\\\[\"\\\\nrt]" }
-      ]
-    },
-    "ref-direct": {
-      "comment": "&key — direct reference shorthand; & merged into variable capture",
-      "match": "(&[A-Za-z_][A-Za-z0-9_]*)",
-      "captures": {
-        "1": { "name": "variable.other.readwrite.cfd" }
+    "comments": { "patterns": [
+      { "name": "comment.line.number-sign.cfd", "match": "#.*$" }
+    ] },
+    "strings": { "patterns": [
+      {
+        "name": "string.quoted.double.cfd",
+        "begin": "\"",
+        "end": "\"",
+        "patterns": [
+          { "name": "constant.character.escape.cfd", "match": "\\\\[\"\\\\nrt]" },
+          { "name": "invalid.illegal.escape.cfd", "match": "\\\\." }
+        ]
       }
-    },
-    "record-colon": {
-      "comment": "key: TypeName {  — top-level or group-polymorphic record",
-      "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\{)",
-      "captures": {
-        "2": { "name": "entity.name.tag.cfd" },
-        "3": { "name": "punctuation.separator.key-value.cfd" },
-        "4": { "name": "entity.name.type.cfd" }
+    ] },
+    "function": { "patterns": [
+      {
+        "name": "meta.function.anonymous.cfd",
+        "begin": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn)(?=\\s*\\()",
+        "beginCaptures": { "1": { "name": "storage.type.function.cfd" } },
+        "end": "(?<=\\})",
+        "patterns": [
+          { "include": "#comments" },
+          { "include": "#strings" },
+          { "include": "#function" },
+          { "include": "#function-parameters" },
+          { "include": "#function-keywords" },
+          { "include": "#constructors" },
+          { "include": "#builtin-types" },
+          { "include": "#builtin-functions" },
+          { "include": "#references" },
+          { "include": "#metadata" },
+          { "include": "#numbers" },
+          { "include": "#operators" },
+          { "include": "#function-block" },
+          { "include": "#punctuation" },
+          { "include": "#user-types" }
+        ]
       }
-    },
-    "group-key": {
-      "comment": "snake_case_key {  — group member (lowercase-only) inheriting type from header",
-      "match": "^\\s*([a-z_][A-Za-z0-9_]*)\\s*(?=\\{)",
-      "captures": {
-        "1": { "name": "entity.name.tag.cfd" }
+    ] },
+    "function-block": { "patterns": [
+      {
+        "name": "meta.block.cfd",
+        "begin": "\\{",
+        "beginCaptures": { "0": { "name": "punctuation.definition.block.begin.cfd" } },
+        "end": "\\}",
+        "endCaptures": { "0": { "name": "punctuation.definition.block.end.cfd" } },
+        "patterns": [
+          { "include": "#comments" },
+          { "include": "#strings" },
+          { "include": "#function" },
+          { "include": "#function-keywords" },
+          { "include": "#constructors" },
+          { "include": "#builtin-types" },
+          { "include": "#builtin-functions" },
+          { "include": "#references" },
+          { "include": "#metadata" },
+          { "include": "#numbers" },
+          { "include": "#operators" },
+          { "include": "#function-block" },
+          { "include": "#punctuation" },
+          { "include": "#user-types" }
+        ]
       }
-    },
-    "type-before-brace": {
-      "comment": "TypeName {  — inline polymorphic type marker or group header",
-      "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*\\{)",
-      "captures": {
-        "1": { "name": "entity.name.type.cfd" }
+    ] },
+    "function-parameters": { "patterns": [
+      {
+        "name": "variable.parameter.function.cfd",
+        "match": "[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?=\\s*:)"
       }
-    },
-    "field-name": {
-      "comment": "fieldName:  — object field or dict key (lowercase)",
-      "match": "\\b([a-z_][A-Za-z0-9_]*)(?=\\s*:)",
-      "captures": {
-        "1": { "name": "entity.other.attribute-name.cfd" }
+    ] },
+    "function-keywords": { "patterns": [
+      {
+        "name": "keyword.control.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn|var|return|if|else|match|for|while|break|continue|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       }
-    },
-    "constant-language": {
-      "name": "constant.language.cfd",
-      "match": "\\b(null|true|false)\\b"
-    },
-    "constant-numeric": {
-      "name": "constant.numeric.cfd",
-      "match": "-?(?:\\d+\\.\\d*|\\d*\\.\\d+|\\d+)(?:[eE][+-]?\\d+)?"
-    },
-    "user-type": {
-      "comment": "Catch-all: enum variant values, bare type names — any remaining PascalCase identifier",
-      "name": "support.type.user-defined.cfd",
-      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
-    },
-    "punctuation": {
-      "patterns": [
-        { "name": "punctuation.definition.block.cfd", "match": "[{}]" },
-        { "name": "punctuation.definition.array.cfd", "match": "[\\[\\]]" },
-        { "name": "punctuation.separator.cfd", "match": "[,;]" },
-        { "name": "punctuation.separator.key-value.cfd", "match": ":" }
-      ]
-    }
+    ] },
+    "constructors": { "patterns": [
+      {
+        "name": "support.function.constructor.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(Some|Ok|Err)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+      }
+    ] },
+    "builtin-types": { "patterns": [
+      {
+        "name": "storage.type.primitive.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|Option|Result|fn)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+      }
+    ] },
+    "builtin-functions": { "patterns": [
+      {
+        "name": "support.function.builtin.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|len|contains|isUnique|min|max|sum|keys|values|matches|map|filter|fold|find|any|all)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+      }
+    ] },
+    "metadata": { "patterns": [
+      { "name": "variable.language.metadata.cfd", "match": "\\$(type|field|function|id|path)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])" }
+    ] },
+    "references": { "patterns": [
+      {
+        "name": "constant.other.reference.cfd",
+        "match": "&[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*"
+      }
+    ] },
+    "record-colon": { "patterns": [
+      {
+        "name": "meta.record.cfd",
+        "match": "^(\\s*)([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)\\s*(:)\\s*([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)(?=\\s*\\{)",
+        "captures": {
+          "2": { "name": "entity.name.tag.cfd" },
+          "3": { "name": "punctuation.separator.key-value.cfd" },
+          "4": { "name": "entity.name.type.cfd" }
+        }
+      }
+    ] },
+    "group-key": { "patterns": [
+      {
+        "match": "^\\s*([_\\p{Ll}\\p{Lo}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)\\s*(?=\\{)",
+        "captures": { "1": { "name": "entity.name.tag.cfd" } }
+      }
+    ] },
+    "type-before-brace": { "patterns": [
+      {
+        "match": "([_\\p{Lu}\\p{Lt}\\p{Lo}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?:::[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)*)(?=\\s*\\{)",
+        "captures": { "1": { "name": "entity.name.type.cfd" } }
+      }
+    ] },
+    "field-name": { "patterns": [
+      {
+        "match": "([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)(?=\\s*:)",
+        "captures": { "1": { "name": "entity.other.attribute-name.cfd" } }
+      }
+    ] },
+    "constants": { "patterns": [
+      {
+        "name": "constant.language.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(None|true|false)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+      },
+      {
+        "name": "invalid.deprecated.null.cfd",
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])null(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+      }
+    ] },
+    "numbers": { "patterns": [
+      { "name": "constant.numeric.cfd", "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?:[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+|[0-9]+)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])" }
+    ] },
+    "user-types": { "patterns": [
+      {
+        "name": "support.type.user-defined.cfd",
+        "match": "[_\\p{Lu}\\p{Lt}\\p{Lo}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
+      }
+    ] },
+    "operators": { "patterns": [
+      { "name": "keyword.operator.cfd", "match": "\\.\\.=|::|->|=>|\\.\\.|==|!=|<=|>=|<<|>>|&&|\\|\\||//|\\*\\*|\\+=|-=|\\*=|/=|[+\\-*/%<>=!~&|^?.]" }
+    ] },
+    "punctuation": { "patterns": [
+      { "name": "punctuation.definition.block.cfd", "match": "[{}]" },
+      { "name": "punctuation.definition.array.cfd", "match": "[\\[\\]()]" },
+      { "name": "punctuation.separator.cfd", "match": "[,;]" },
+      { "name": "punctuation.separator.key-value.cfd", "match": ":" }
+    ] }
   }
 }

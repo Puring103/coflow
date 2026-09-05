@@ -66,7 +66,10 @@ pub(crate) fn dotted_chain_at(source: &str, word: &WordAt) -> Option<Vec<String>
     let mut start = word.start;
     while start > line_start {
         let previous = previous_char(source, start)?;
-        if previous.1 == '.' || previous.1.is_whitespace() || is_ident_continue(previous.1) {
+        if matches!(previous.1, '.' | ':')
+            || previous.1.is_whitespace()
+            || is_ident_continue(previous.1)
+        {
             start = previous.0;
         } else {
             break;
@@ -77,7 +80,7 @@ pub(crate) fn dotted_chain_at(source: &str, word: &WordAt) -> Option<Vec<String>
         let Some(ch) = source[end..].chars().next() else {
             break;
         };
-        if ch == '.' || ch.is_whitespace() || is_ident_continue(ch) {
+        if matches!(ch, '.' | ':') || ch.is_whitespace() || is_ident_continue(ch) {
             end += ch.len_utf8();
         } else {
             break;
@@ -128,7 +131,11 @@ pub(crate) fn word_at(source: &str, offset: usize) -> Option<WordAt> {
 
 pub(crate) fn parse_dotted_ident_chain(text: &str) -> Option<Vec<String>> {
     let mut parts = Vec::new();
-    for part in text.split('.') {
+    let normalized = text.replace("::", ".");
+    if normalized.contains(':') {
+        return None;
+    }
+    for part in normalized.split('.') {
         let trimmed = part.trim();
         if trimmed.is_empty() || !trimmed.chars().all(is_ident_continue) {
             return None;

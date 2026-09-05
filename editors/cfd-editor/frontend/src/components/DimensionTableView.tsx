@@ -7,6 +7,7 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { FieldPathSegment, FieldValue } from '../wire'
 import { coordinateId, fieldPathField, sameCoordinate } from '../wire'
 import { summaryOf as valueSummary } from '../value/fieldValue'
+import { parseCfdClipboard, serializeCfdMatrix } from '../state/clipboard'
 import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
@@ -360,7 +361,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
           return
         }
 
-        // Ctrl+C: copy selected variant cells as TSV
+        // Ctrl+C: copy selected variant cells as a CFD matrix.
         if (modified && event.key.toLowerCase() === 'c') {
           event.preventDefault()
           if (clipboardBusyRef.current) return
@@ -368,19 +369,18 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
           try {
             const cells = selectedVariantCells()
             if (cells.length === 0) return
-            // Build TSV: rows are grouped by row index, columns by variant order
             const rowIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.row))]
             const colIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.column))].sort((a, b) => a - b)
-            const lines: string[] = []
+            const matrix: string[][] = []
             for (const ri of rowIndices) {
               const row = visibleRows[ri]
               if (!row) continue
               const parts: string[] = []
               for (const ci of colIndices) {
                 const variant = data.variants[ci - 2]
-                if (!variant) { parts.push(''); continue }
+                if (!variant) { parts.push('CfdClipboardMissing {}'); continue }
                 const state = row.values[variant]
-                let text = ''
+                let text = 'CfdClipboardMissing {}'
                 if (state?.kind === 'value') {
                   if (onRenderCellText) {
                     try { text = await onRenderCellText(row.coordinate, fieldPathForVariant(row, variant)) } catch { text = valueSummary(state.value) }
@@ -388,25 +388,25 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                     text = valueSummary(state.value)
                   }
                 }
-                parts.push(escapeTsvCell(text))
+                parts.push(text)
               }
-              lines.push(parts.join('\t'))
+              matrix.push(parts)
             }
-            await navigator.clipboard.writeText(lines.join('\n'))
+            await navigator.clipboard.writeText(serializeCfdMatrix(matrix))
           } finally {
             clipboardBusyRef.current = false
           }
           return
         }
 
-        // Ctrl+V: paste TSV into selected variant cells
+        // Ctrl+V: paste a CFD matrix into selected variant cells.
         if (modified && event.key.toLowerCase() === 'v') {
           event.preventDefault()
           if (!onParseCellText || clipboardBusyRef.current) return
           clipboardBusyRef.current = true
           try {
             const text = await navigator.clipboard.readText()
-            const rows = parseTsvSimple(text)
+            const rows = parseCfdClipboard(text)
             const broadcast = rows.length === 1 && rows[0].length === 1
             // Determine target cells: start from anchor, extend by paste size if single-cell selection
             const targetColStart = Math.max(2, range.colStart)
@@ -619,17 +619,6 @@ function cellProps(
     className: isSelected ? (isAnchor ? 'keyboard-selected' : 'range-selected') : undefined,
     onMouseDown: (e: React.MouseEvent) => onSelect({ row, column }, e.shiftKey),
   }
-}
-
-function escapeTsvCell(text: string): string {
-  return /[\t\r\n"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
-function parseTsvSimple(text: string): string[][] {
-  if (!text) return [['']]
-  const lines = text.split(/\r?\n/)
-  const rows = lines.filter((_, i) => i < lines.length - 1 || lines[i].length > 0)
-  return rows.map(line => line.split('\t'))
 }
 
 function isDirection(key: string): key is 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' {

@@ -28,18 +28,21 @@ import {
   cellRefTargetType,
   diagnosticDisplayMessage,
   diagnosticMatchesCoordinate,
+  diagnosticRecordTarget,
   diagnosticSeverity,
   errorMessage,
   fieldPathField,
   nullValue,
+  presentationValue,
   recordActualType,
   recordKey,
   sameCoordinate,
+  replacePresentationValue,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, EnumDirectSelect, RefDirectSelect, highlightSearchText } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, MissingValueRepair, RefDirectSelect, highlightSearchText } from './DataCard'
 import {
   parseFieldValueText,
   plainFieldValueText,
@@ -48,6 +51,7 @@ import {
   summaryOf as valueSummary,
 } from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
+import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { RichTextInput } from './RichTextInput'
@@ -70,6 +74,11 @@ import {
   type TableDirection,
 } from '../state/tableCellNavigation'
 import { defaultValueForClear, selectionEditIntentForKey } from '../state/selectionKeyboard'
+import {
+  canReleaseResizeScrollFloor,
+  resizedColumnWidth,
+  resizeScrollWidthFloor,
+} from '../state/tableColumnResize'
 import { fieldTypeColor } from '../utils/typeColor'
 import {
   organizeRecordRows,
@@ -78,14 +87,15 @@ import {
 import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { useTableCellRangeDrag } from '../hooks/useTableCellRangeDrag'
 import {
-  parseTsv,
+  parseCfdClipboard,
   planPaste,
-  serializeCellMatrix,
-  serializeRecordsToRefColumn,
+  serializeCfdCellMatrix,
+  serializeRecordRefsAsCfd,
   shouldExpandSinglePasteTarget,
   type PasteCell,
 } from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
+import { FunctionEditorButton } from './FunctionBodyDialog'
 import { fitViewportPosition } from '../utils/floatingPosition'
 
 interface Props {
@@ -174,10 +184,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
+  const [recordAction, setRecordAction] = useState<
+    | { kind: 'rename'; coordinate: RecordCoordinate; key: string }
+    | { kind: 'delete'; records: RecordCoordinate[]; message: string }
+    | null
+  >(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => columnWidths ?? {})
   const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
   const [tableZoom, setTableZoom] = useState(1)
+  const [scrollWidthFloor, setScrollWidthFloor] = useState<number | null>(null)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -194,7 +210,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const updateColumnResize = (pointerId: number, clientX: number) => {
     const resize = columnResizeRef.current
     if (!resize || resize.pointerId !== pointerId) return
-    const width = Math.max(MIN_COLUMN_WIDTH, resize.startWidth + clientX - resize.startX)
+    const width = resizedColumnWidth(
+      resize.startWidth,
+      resize.startX,
+      clientX,
+      tableZoom,
+      MIN_COLUMN_WIDTH,
+    )
     const next = { ...columnSizingRef.current, [resize.columnId]: width }
     columnSizingRef.current = next
     setColumnSizing(next)
@@ -213,6 +235,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const next = columnWidths ?? {}
     columnSizingRef.current = next
     setColumnSizing(next)
+    setScrollWidthFloor(null)
   }, [data.file_path, activeType, columnWidths])
 
   // Sync search from parent global search bar.
@@ -231,16 +254,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const m = new Map<string, 'error' | 'warning' | 'info'>()
     if (!diagnostics) return m
     for (const d of diagnostics) {
-      if (d.file_path !== data.file_path || !d.record_key) continue
+      const target = diagnosticRecordTarget(d)
+      if (!target || target.file_path !== data.file_path) continue
       // Take the first path segment as the column we'll mark.
-      const top = d.field_path
-        ? d.field_path.split(/[.[]/, 1)[0]
+      const top = target.kind === 'table_field'
+        ? target.field_path.split(/[.[]/, 1)[0]
         : null
-      const coordinates = d.actual_type === null
-        ? data.records
-            .filter(r => r.coordinate.key === d.record_key)
-            .map(r => r.coordinate)
-        : [{ actual_type: d.actual_type, key: d.record_key }]
+      const coordinates = [target.coordinate]
       const rank = (s: 'error' | 'warning' | 'info') => s === 'error' ? 3 : s === 'warning' ? 2 : 1
       const severity = diagnosticSeverity(d.severity)
       for (const coordinate of coordinates) {
@@ -537,10 +557,18 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               : sev ? findDiagMessage(diagnosticsRef.current, filePath, row.original.coordinate, name) : undefined
             return (
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
-                <EditableCell
+                {f.missing ? (
+                  <MissingValueRepair
+                    value={f.value}
+                    onRepair={cellEditable && writeFn
+                      ? () => writeFn(row.original.coordinate, [fieldPathField(name)], f.value).then(() => undefined)
+                      : undefined}
+                  />
+                ) : <EditableCell
                   value={f.value}
                   label={name}
                   editable={cellEditable}
+                  annotation={f.annotation}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
                   enumIsFlag={cellEnumIsFlag(f)}
@@ -549,7 +577,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   highlightQuery={highlightQueryRef.current}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
-                />
+                />}
                 {cellBadge}
               </span>
             )
@@ -862,9 +890,21 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <div
           className="table-scroll"
           ref={tableScrollRef}
+          onScroll={event => {
+            if (columnResizeRef.current || scrollWidthFloor === null) return
+            const tableWidth = table.getTotalSize() * tableZoom
+            if (canReleaseResizeScrollFloor(
+              tableWidth,
+              event.currentTarget.scrollLeft,
+              event.currentTarget.clientWidth,
+            )) {
+              setScrollWidthFloor(null)
+            }
+          }}
           onWheel={event => {
             if (!event.ctrlKey) return
             event.preventDefault()
+            setScrollWidthFloor(null)
             setTableZoom(current => Math.max(0.7, Math.min(1.6,
               Math.round((current + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10,
             )))
@@ -974,10 +1014,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (selection.kind === 'record') {
                   if (shortcut === 'x') throw new Error('不支持剪切整条记录')
                   const coordinates = recordSelectionCoordinates(selection)
-                  await navigator.clipboard.writeText(serializeRecordsToRefColumn(coordinates))
+                  await navigator.clipboard.writeText(serializeRecordRefsAsCfd(coordinates))
                 } else {
                   const matrix = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
-                  const text = await serializeCellMatrix(matrix, onRenderCellText)
+                  const text = await serializeCfdCellMatrix(matrix, onRenderCellText)
                   await navigator.clipboard.writeText(text)
                   if (shortcut === 'x') {
                     if (!onWriteFieldBatch) throw new Error('当前来源不支持批量写入')
@@ -989,7 +1029,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     if (targets.some(target => !target.writable || !target.annotation?.nullable)) {
                       throw new Error('剪切区域包含只读或不可清空的单元格')
                     }
-                    const writes = targets.filter(target => target.value.kind !== 'null').map(target => ({
+                    const writes = targets.filter(target => target.value.kind !== 'option_none').map(target => ({
                       coordinate: target.coordinate,
                       field_path: target.fieldPath,
                       new_value: nullValue(),
@@ -1018,7 +1058,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               clipboardBusyRef.current = true
               try {
-                const source = parseTsv(await navigator.clipboard.readText())
+                const source = parseCfdClipboard(await navigator.clipboard.readText())
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                 const selectedTarget = anchors.length === 1 && anchors[0].length === 1
@@ -1184,6 +1224,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                               if (event.button !== 0) return
                               event.preventDefault()
                               event.currentTarget.setPointerCapture(event.pointerId)
+                              const scroller = tableScrollRef.current
+                              if (scroller) {
+                                setScrollWidthFloor(resizeScrollWidthFloor(
+                                  scroller.scrollWidth,
+                                  scroller.scrollLeft,
+                                  scroller.clientWidth,
+                                ))
+                              }
                               columnResizeRef.current = {
                                 pointerId: event.pointerId,
                                 columnId: h.column.id,
@@ -1371,6 +1419,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               )}
             </tbody>
           </table>
+          {scrollWidthFloor !== null && (
+            <div className="table-scroll-width-floor" style={{ width: scrollWidthFloor }} aria-hidden />
+          )}
           {filtered.length === 0 && (
             <div className="empty-hint">暂无 {activeType} 类型的记录</div>
           )}
@@ -1397,6 +1448,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       {showNewRecord && onInsertRecord && onCreateRecordDraft && (
         <CreateRecordDialog
           actualType={activeType || data.type_names[0] || ''}
+          typeOptions={data.type_names}
           existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={async (key, type, fields) => {
@@ -1488,13 +1540,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             )}
           </>)}
           {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_edit_key && onRenameRecord && (
-            <div className="ctx-item" role="menuitem" onClick={async () => {
+            <div className="ctx-item" role="menuitem" onClick={() => {
               const key = recordKey(contextMenu.row)
-              const next = window.prompt('重命名 Key', key)?.trim()
               const coordinate = contextMenu.row.coordinate
               setContextMenu(null)
-              if (!next || next === key) return
-              await onRenameRecord(coordinate, next)
+              setRecordAction({ kind: 'rename', coordinate, key })
             }}>
               <Icon name="edit" size={13} aria-hidden />
               重命名 Key
@@ -1511,14 +1561,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </div>
           )}
           {!readOnly && data.capabilities.can_delete_record && onDeleteRecords && (
-            <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
+            <div className="ctx-item ctx-danger" role="menuitem" onClick={() => {
               const records = contextMenu.records
               const prompt = records.length === 1
                 ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
                 : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
               setContextMenu(null)
-              if (!window.confirm(prompt)) return
-              await onDeleteRecords(records)
+              setRecordAction({ kind: 'delete', records, message: prompt })
             }}>
               <Icon name="close" size={13} aria-hidden />
               {contextMenu.records.length === 1
@@ -1528,6 +1577,32 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           )}
         </div>,
         document.body,
+      )}
+      {recordAction?.kind === 'rename' && onRenameRecord && (
+        <TextInputDialog
+          title="重命名 Key"
+          message="输入新的记录 Key"
+          initialValue={recordAction.key}
+          confirmLabel="重命名"
+          onClose={() => setRecordAction(null)}
+          onConfirm={async next => {
+            if (next !== recordAction.key) await onRenameRecord(recordAction.coordinate, next)
+            setRecordAction(null)
+          }}
+        />
+      )}
+      {recordAction?.kind === 'delete' && onDeleteRecords && (
+        <ConfirmDialog
+          title="删除记录"
+          message={recordAction.message}
+          confirmLabel="删除"
+          danger
+          onClose={() => setRecordAction(null)}
+          onConfirm={async () => {
+            await onDeleteRecords(recordAction.records)
+            setRecordAction(null)
+          }}
+        />
       )}
     </div>
   )
@@ -1653,7 +1728,10 @@ function inferredCellType(cell: RecordRow['fields'][number] | undefined): string
   if (value.kind === 'object') return value.value.actual_type
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'
-  if (value.kind === 'null') return 'null'
+  if (value.kind === 'option_none') return 'None'
+  if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
+    return inferredCellType({ ...cell, value: value.value })
+  }
   return value.kind
 }
 
@@ -1696,7 +1774,8 @@ function severityForCoordinate(
   if (!diagnostics) return null
   let sev: 'error' | 'warning' | null = null
   for (const d of diagnostics) {
-    if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
     if (d.severity === 'error') return 'error'
     if (d.severity === 'warning') sev = 'warning'
   }
@@ -1712,8 +1791,9 @@ function findDiagMessage(
   if (!diags) return undefined
   const msgs: string[] = []
   for (const d of diags) {
-    if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
-    const top = d.field_path ? d.field_path.split(/[.[]/, 1)[0] : null
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    const top = target.kind === 'table_field' ? target.field_path.split(/[.[]/, 1)[0] : null
     if (top !== topField) continue
     msgs.push(diagnosticDisplayMessage(d))
   }
@@ -1771,11 +1851,12 @@ function CellSyntaxEditor({
 }
 
 function EditableCell({
-  value, label, editable, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
 }: {
   value: FieldValue
   label?: string
   editable: boolean
+  annotation?: RecordRow['fields'][number]['annotation']
   refTargetType?: string
   enumType?: string
   enumIsFlag?: boolean
@@ -1786,41 +1867,45 @@ function EditableCell({
   onEditingFinished?: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
-                || value.kind === 'string' || value.kind === 'formatted_string'
-                || value.kind === 'enum' || value.kind === 'ref'
+  const shownValue = presentationValue(value)
+  const commitValue = onCommit
+    ? (next: FieldValue) => onCommit(replacePresentationValue(value, next))
+    : undefined
+  const isScalar = shownValue.kind === 'bool' || shownValue.kind === 'int' || shownValue.kind === 'float'
+                || shownValue.kind === 'string' || shownValue.kind === 'formatted_string'
+                || shownValue.kind === 'enum' || shownValue.kind === 'ref' || shownValue.kind === 'function'
   // null cells become editable when the schema tells us they hold an enum/ref/bool
-  const isNullDropdown = value.kind === 'null' && !!(enumType || refTargetType)
-  const canEdit = editable && (isScalar || isNullDropdown) && !!onCommit
+  const isNullDropdown = shownValue.kind === 'option_none' && !!(enumType || refTargetType)
+  const canEdit = editable && (isScalar || isNullDropdown) && !!commitValue
   const commitAndRestoreFocus = (next: FieldValue) => {
-    onCommit!(next)
+    commitValue!(next)
     requestAnimationFrame(() => onEditingFinished?.())
   }
 
   // Bool: checkbox, always visible
-  if (canEdit && value.kind === 'bool') {
+  if (canEdit && shownValue.kind === 'bool') {
     return (
       <div className="cell-edit-wrap">
         <input
           type="checkbox"
           className="dc-checkbox"
-          checked={value.value}
-          onChange={e => onCommit!({ kind: 'bool', value: e.target.checked })}
+          checked={shownValue.value}
+          onChange={e => commitValue!({ kind: 'bool', value: e.target.checked })}
         />
       </div>
     )
   }
 
   // Enum
-  if (canEdit && (value.kind === 'enum' || (value.kind === 'null' && enumType))) {
+  if (canEdit && (shownValue.kind === 'enum' || (shownValue.kind === 'option_none' && enumType))) {
     return (
       <div className="cell-edit-wrap">
         <EnumDirectSelect
-          value={value as FieldValue & { kind: 'enum' | 'null' }}
+          value={shownValue as FieldValue & { kind: 'enum' | 'option_none' }}
           enumType={enumType}
           isFlag={enumIsFlag}
           nullable={nullable}
-          onCommit={enumIsFlag ? onCommit! : commitAndRestoreFocus}
+          onCommit={enumIsFlag ? commitValue! : commitAndRestoreFocus}
           onExit={onEditingFinished}
         />
       </div>
@@ -1828,11 +1913,11 @@ function EditableCell({
   }
 
   // Ref
-  if (canEdit && (value.kind === 'ref' || (value.kind === 'null' && refTargetType))) {
+  if (canEdit && (shownValue.kind === 'ref' || (shownValue.kind === 'option_none' && refTargetType))) {
     return (
       <div className="cell-edit-wrap">
         <RefDirectSelect
-          value={value as FieldValue & { kind: 'ref' | 'null' }}
+          value={shownValue as FieldValue & { kind: 'ref' | 'option_none' }}
           onCommit={commitAndRestoreFocus}
           targetType={refTargetType}
           nullable={nullable}
@@ -1842,13 +1927,21 @@ function EditableCell({
     )
   }
 
+  if (canEdit && shownValue.kind === 'function') {
+    return (
+      <div className="cell-edit-wrap">
+        <FunctionEditorButton value={shownValue} onCommit={commitAndRestoreFocus} />
+      </div>
+    )
+  }
+
   // String / int / float: click-to-edit
   if (editing && canEdit) {
     return (
       <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CellTextEditor
-          value={value as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
-          onCommit={next => { onCommit!(next); setEditing(false) }}
+          value={shownValue as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
+          onCommit={next => { commitValue!(next); setEditing(false) }}
           onCancel={() => setEditing(false)}
         />
       </div>
@@ -1864,9 +1957,10 @@ function EditableCell({
       title={canEdit ? '双击编辑' : undefined}
     >
       <DataCardCompact
-        value={value}
+        value={shownValue}
         label={label}
         declaredType={declaredType}
+        annotation={annotation}
         refTargetType={refTargetType}
         surface="table-cell"
         highlightQuery={highlightQuery}

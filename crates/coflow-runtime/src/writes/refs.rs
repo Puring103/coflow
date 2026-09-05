@@ -1,49 +1,34 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use coflow_api::{
-    DiagnosticSet, DimensionSourceManager, DimensionSourceSchema, ProviderRegistry, ResolvedSource,
-    SourceWriter, TableContext, WriteCellRequest, WriteDimensionValueRequest,
-    WriteFieldPathSegment,
+use crate::api::{
+    CfdSource, CfdSourceCatalog, DiagnosticSet, DimensionSourceSchema, WriteCellRequest,
+    WriteDimensionValueRequest, WriteFieldPathSegment,
 };
-use coflow_cft::{CftSchema, RecordKey};
-use coflow_data_model::{
+use crate::cfd_loader::CfdWriter;
+use crate::data_model::{
     CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
+use coflow_language::cft::{CftSchema, RecordKey};
 
-use super::writer::{lookup_source_writer, source_for_id};
+use super::writer::lookup_source_writer;
 use crate::indexes::SourceId;
 use crate::ProjectSession;
 
 pub(super) enum ReferenceUpdateAction {
     Source {
-        writer: Arc<dyn SourceWriter>,
-        source: ResolvedSource,
+        writer: Arc<CfdWriter>,
         requests: Vec<OwnedWriteCellRequest>,
         display_path: String,
     },
     Dimension {
-        manager: Arc<dyn DimensionSourceManager>,
+        manager: Arc<CfdWriter>,
         request: OwnedDimensionWriteRequest,
         display_path: String,
     },
 }
 
 impl ReferenceUpdateAction {
-    pub(super) const fn source(&self) -> &ResolvedSource {
-        match self {
-            Self::Source { source, .. } => source,
-            Self::Dimension { request, .. } => &request.source,
-        }
-    }
-
-    pub(super) const fn writer(&self) -> Option<&Arc<dyn SourceWriter>> {
-        match self {
-            Self::Source { writer, .. } => Some(writer),
-            Self::Dimension { .. } => None,
-        }
-    }
-
     pub(super) fn display_path(&self) -> &str {
         match self {
             Self::Source { display_path, .. } | Self::Dimension { display_path, .. } => {
@@ -52,32 +37,19 @@ impl ReferenceUpdateAction {
         }
     }
 
-    pub(super) fn execute(
-        &self,
-        project_root: &std::path::Path,
-        schema: &CftSchema,
-        model: &coflow_data_model::CfdDataModel,
-    ) -> Result<DiagnosticSet, DiagnosticSet> {
+    pub(super) fn execute(&self, schema: &CftSchema) -> Result<DiagnosticSet, DiagnosticSet> {
         match self {
             Self::Source {
                 writer,
-                source,
                 requests,
                 ..
             } => {
                 let requests = requests
                     .iter()
-                    .map(|request| request.as_request(schema, source))
+                    .map(|request| request.as_request(schema))
                     .collect::<Vec<_>>();
                 writer
-                    .write_field_batch(
-                        coflow_api::WriteContext {
-                            project_root,
-                            schema,
-                            model: Some(model),
-                        },
-                        &requests,
-                    )
+                    .write_field_batch(&requests)
                     .map(|outcomes| {
                         let mut diagnostics = DiagnosticSet::empty();
                         for outcome in outcomes {
@@ -90,18 +62,18 @@ impl ReferenceUpdateAction {
             Self::Dimension {
                 manager, request, ..
             } => manager
-                .write_dimension_value(TableContext { project_root }, &request.as_request(schema)?)
+                .write_dimension_value(&request.as_request(schema)?)
                 .map(|_| DiagnosticSet::empty()),
         }
     }
 }
 
 pub(super) struct OwnedDimensionWriteRequest {
-    source: ResolvedSource,
-    source_type: coflow_cft::TypeName,
-    source_field: coflow_cft::FieldName,
-    dimension: coflow_cft::DimensionName,
-    variant: coflow_cft::VariantName,
+    source: CfdSource,
+    source_type: coflow_language::cft::TypeName,
+    source_field: coflow_language::cft::FieldName,
+    dimension: coflow_language::cft::DimensionName,
+    variant: coflow_language::cft::VariantName,
     source_key: RecordKey,
     new_value: CfdValue,
 }
@@ -155,19 +127,15 @@ pub(super) struct OwnedWriteCellRequest {
 }
 
 impl OwnedWriteCellRequest {
-    pub(super) fn as_request<'a>(
-        &'a self,
-        schema: &'a CftSchema,
-        source: &'a ResolvedSource,
-    ) -> WriteCellRequest<'a> {
+    pub(super) fn as_request<'a>(&'a self, schema: &'a CftSchema) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
             record_key: &self.record_key,
             actual_type: &self.actual_type,
             field_path: &self.field_path,
             new_value: &self.new_value,
+            materialized_top_level: None,
             schema,
-            source,
         }
     }
 }
@@ -175,7 +143,7 @@ impl OwnedWriteCellRequest {
 #[allow(clippy::too_many_lines)]
 pub(super) fn reference_update_actions(
     session: &ProjectSession,
-    registry: &ProviderRegistry,
+    catalog: &CfdSourceCatalog,
     target_id: CfdRecordId,
     new_key: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
@@ -248,14 +216,7 @@ pub(super) fn reference_update_actions(
                         field.declaring_type, field.name
                     ))
                 })?;
-            let manager = registry
-                .dimension_source_manager(&source_entry.provider_id)
-                .ok_or_else(|| {
-                    transaction_invariant(format!(
-                        "dimension source provider `{}` disappeared before reference rewrite",
-                        source_entry.provider_id
-                    ))
-                })?;
+            let manager = catalog.dimension_source_manager();
             let action_index = actions.len();
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
@@ -282,7 +243,6 @@ pub(super) fn reference_update_actions(
             ) {
                 continue;
             }
-            let source = source_for_id(session, host_ref.source_id)?;
             let request = OwnedWriteCellRequest {
                 origin: host_ref.origin.clone(),
                 record_key: host_ref.coordinate.key.to_string(),
@@ -298,11 +258,10 @@ pub(super) fn reference_update_actions(
                 };
                 requests.push(request);
             } else {
-                let writer = lookup_source_writer(registry, &source)?;
+                let writer = lookup_source_writer(catalog);
                 let action_index = actions.len();
                 actions.push(ReferenceUpdateAction::Source {
                     writer,
-                    source,
                     display_path: host_ref.display_path.clone(),
                     requests: vec![request],
                 });
@@ -314,7 +273,7 @@ pub(super) fn reference_update_actions(
 }
 
 fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
-    DiagnosticSet::one(coflow_api::Diagnostic::error(
+    DiagnosticSet::one(crate::api::Diagnostic::error(
         "MUTATION-TXN-INVARIANT",
         "MUTATION",
         message,
