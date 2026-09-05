@@ -299,7 +299,8 @@ export function InspectorPanel({
       return
     }
     setKeyboardFieldPath(selection.fieldPath)
-    const paths = recursivelyExpandablePaths(inspectorFields)
+    // 单元格详情只展开当前字段本身，嵌套结构由用户按需展开，避免深层集合一次铺满面板。
+    const paths = topLevelExpandablePaths(inspectorFields)
     setExpandedByRecord(current => {
       let next = current
       for (const path of paths) next = updateExpandedPath(next, expansionOwner, path, true)
@@ -541,26 +542,14 @@ export function InspectorPanel({
   )
 }
 
-function recursivelyExpandablePaths(fields: RecordRow['fields']): Set<string> {
+function topLevelExpandablePaths(fields: RecordRow['fields']): Set<string> {
   const paths = new Set<string>()
-  for (const field of fields) collectExpandablePaths(field.value, field.name, paths)
-  return paths
-}
-
-function collectExpandablePaths(value: FieldValue, path: string, paths: Set<string>) {
-  if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return
-  paths.add(path)
-  if (value.kind === 'object') {
-    for (const [name, child] of Object.entries(value.value.fields)) {
-      if (child) collectExpandablePaths(child, `${path}.${name}`, paths)
-    }
-  } else if (value.kind === 'array') {
-    value.value.forEach((child, index) => collectExpandablePaths(child, `${path}[${index}]`, paths))
-  } else {
-    for (const [key, child] of value.value) {
-      collectExpandablePaths(child, `${path}[${dictKeyText(key)}]`, paths)
+  for (const field of fields) {
+    if (field.value.kind === 'object' || field.value.kind === 'array' || field.value.kind === 'dict') {
+      paths.add(field.name)
     }
   }
+  return paths
 }
 
 function dictKeyText(key: CfdDictKey): string {
