@@ -1,3 +1,11 @@
+# Coflow 0.9.2
+
+## 修复
+
+- 修复生成的 C# singleton loader 固定使用 `LoadContext.Empty`，导致 singleton 字段引用普通 table 时无法解析的问题。
+
+---
+
 # Coflow 0.9.1
 
 ## 重点更新
