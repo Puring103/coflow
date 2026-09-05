@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "cfd-editor-core",
  "coflow-runtime",
@@ -519,7 +519,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "coflow"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "atomicwrites",
  "clap",
@@ -538,7 +538,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-checker"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen-csharp"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "coflow-codegen",
  "coflow-language",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-lsp"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "coflow-format",
  "coflow-language",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-runtime"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "coflow-checker",
  "coflow-codegen",
