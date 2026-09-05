@@ -134,6 +134,7 @@ impl OwnedWriteCellRequest {
             actual_type: &self.actual_type,
             field_path: &self.field_path,
             new_value: &self.new_value,
+            materialized_top_level: None,
             schema,
         }
     }

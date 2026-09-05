@@ -15,6 +15,8 @@ pub struct WriteCellRequest<'a> {
     pub field_path: &'a [WriteFieldPathSegment],
     /// Source-neutral new value, serialized to the source format by the writer.
     pub new_value: &'a CfdValue,
+    /// 完整顶层候选值，仅在嵌套路径的顶层字段尚未写入源文件时使用。
+    pub materialized_top_level: Option<&'a CfdValue>,
     /// Optional pre-resolved schema type for the record. Writers that produce
     /// typed source representations (e.g. CFD) use this for serialization.
     pub schema: &'a CftSchema,

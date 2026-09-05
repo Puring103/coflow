@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use cfd_editor_core::editor::{CollectionEdit, LanguagePosition, SessionStore};
+use cfd_editor_core::editor::{
+    BatchWriteFieldInput, CollectionEdit, LanguagePosition, SessionStore,
+};
 use coflow_runtime::{CfdObject, CfdPathSegment, CfdValue, RecordCoordinate};
 use std::collections::BTreeMap;
 use std::fs;
@@ -67,13 +69,17 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
         root.join("schema.cft"),
         concat!(
             "enum Element { Fire, Ice, }\n",
-            "type Stats { resistances: {Element: float} = {}; }\n",
+            "type Stats { health: int = 100; resistances: {Element: float} = {}; }\n",
             "type Unit { stats: Stats = Stats {}; }\n",
         ),
     )
     .expect("write nested-default schema");
     let data_file = data_dir.join("units.cfd");
-    fs::write(&data_file, "unit: Unit {}\n").expect("write nested-default data");
+    fs::write(
+        &data_file,
+        "scalar: Unit {}\ncollection: Unit {}\n",
+    )
+    .expect("write nested-default data");
     (root, data_file)
 }
 
@@ -433,9 +439,9 @@ fn nested_collection_edit_materializes_a_missing_top_level_default() {
     let snapshot = store
         .load_project(&root.join("coflow.yaml"))
         .expect("load nested-default project");
-    let coordinate = RecordCoordinate::try_new("Unit", "unit").expect("unit coordinate");
+    let coordinate = RecordCoordinate::try_new("Unit", "collection").expect("unit coordinate");
 
-    store
+    let outcome = store
         .edit_collection(
             snapshot.session_id,
             &coordinate,
@@ -450,10 +456,76 @@ fn nested_collection_edit_materializes_a_missing_top_level_default() {
             },
         )
         .expect("insert into collection under omitted default object");
+    assert!(matches!(outcome.old_value, Some(CfdValue::Dict(_))));
+    assert!(matches!(outcome.new_value, Some(CfdValue::Dict(_))));
 
     let source = fs::read_to_string(data_file).expect("read materialized source");
     assert!(source.contains("stats: Stats"), "{source}");
     assert!(source.contains("Fire: 0.5"), "{source}");
+}
+
+#[test]
+fn nested_scalar_edit_materializes_a_missing_top_level_default() {
+    let (root, data_file) = nested_default_collection_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load nested-default project");
+    let coordinate = RecordCoordinate::try_new("Unit", "scalar").expect("unit coordinate");
+
+    let outcome = store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("stats"), field("health")],
+            &CfdValue::Int(125),
+        )
+        .expect("write scalar under omitted default object");
+
+    assert_eq!(outcome.old_value, Some(CfdValue::Int(100)));
+    assert_eq!(outcome.new_value, Some(CfdValue::Int(125)));
+    let source = fs::read_to_string(data_file).expect("read materialized source");
+    assert!(source.contains("health: 125"), "{source}");
+}
+
+#[test]
+fn batch_nested_edits_materialize_missing_top_level_defaults() {
+    let (root, data_file) = nested_default_collection_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load nested-default project");
+    let path = vec![field("stats"), field("health")];
+    let scalar = RecordCoordinate::try_new("Unit", "scalar").expect("scalar coordinate");
+    let collection =
+        RecordCoordinate::try_new("Unit", "collection").expect("collection coordinate");
+
+    let outcome = store
+        .write_fields(
+            snapshot.session_id,
+            &[
+                BatchWriteFieldInput {
+                    coordinate: scalar,
+                    field_path: path.clone(),
+                    new_value: CfdValue::Int(120),
+                },
+                BatchWriteFieldInput {
+                    coordinate: collection,
+                    field_path: path,
+                    new_value: CfdValue::Int(130),
+                },
+            ],
+        )
+        .expect("batch-write scalars under omitted default objects");
+
+    assert_eq!(outcome.edits.len(), 2);
+    assert!(outcome.edits.iter().all(|edit| {
+        edit.old_value == Some(CfdValue::Int(100))
+            && matches!(edit.new_value, Some(CfdValue::Int(120 | 130)))
+    }));
+    let source = fs::read_to_string(data_file).expect("read materialized source");
+    assert!(source.contains("health: 120"), "{source}");
+    assert!(source.contains("health: 130"), "{source}");
 }
 
 #[test]

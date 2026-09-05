@@ -258,6 +258,7 @@ mod tests {
             write_file: "items.cfd".to_string(),
             path: vec![CfdPathSegment::Field("price".to_string())],
             value: CfdValue::Int(10),
+            materialized_top_level: None,
         };
         let name = PreparedMutationOp::SetField {
             record: record.clone(),
@@ -265,6 +266,7 @@ mod tests {
             write_file: "items.cfd".to_string(),
             path: vec![CfdPathSegment::Field("name".to_string())],
             value: CfdValue::String("Sword".to_string()),
+            materialized_top_level: None,
         };
         let touched = crate::WriteOutcome::touch(record.clone());
         let operations = [(&price, &touched), (&name, &touched)];

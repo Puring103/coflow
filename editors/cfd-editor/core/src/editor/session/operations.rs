@@ -879,15 +879,7 @@ impl SessionStore {
             .default_collection_item_value_for_record(coordinate, field_path)
             .ok();
         let next = apply_collection_edit(current, edit, default_item)?;
-        // 顶层对象可能仅由 schema 默认值存在于模型中，源文件里尚未实体化。
-        // 嵌套集合修改提升为完整顶层字段写入，保证首次编辑和后续编辑走同一路径。
-        let (write_path, write_value) = materialize_collection_write(
-            &session,
-            coordinate,
-            field_path,
-            next,
-        )?;
-        let outcome = write_field_in_session(&mut session, coordinate, &write_path, &write_value);
+        let outcome = write_field_in_session(&mut session, coordinate, field_path, &next);
         drop(session);
         outcome
     }
@@ -1178,55 +1170,4 @@ impl SessionStore {
             new_index: Some(target_index),
         })
     }
-}
-
-fn materialize_collection_write(
-    session: &EditorSession,
-    coordinate: &RecordCoordinate,
-    field_path: &[coflow_runtime::CfdPathSegment],
-    next_collection: CfdValue,
-) -> Result<(Vec<coflow_runtime::CfdPathSegment>, CfdValue), EditorError> {
-    if field_path.len() == 1 {
-        return Ok((field_path.to_vec(), next_collection));
-    }
-    let root_path = &field_path[..1];
-    let mut root = session
-        .queries()
-        .field_value(&coordinate.actual_type, &coordinate.key, root_path)
-        .cloned()
-        .ok_or_else(|| EditorError::not_found("top-level collection owner not found"))?;
-    replace_nested_value(&mut root, &field_path[1..], next_collection)?;
-    Ok((root_path.to_vec(), root))
-}
-
-fn replace_nested_value(
-    current: &mut CfdValue,
-    path: &[coflow_runtime::CfdPathSegment],
-    replacement: CfdValue,
-) -> Result<(), EditorError> {
-    let Some((segment, rest)) = path.split_first() else {
-        *current = replacement;
-        return Ok(());
-    };
-    match current {
-        CfdValue::OptionSome(inner)
-        | CfdValue::ResultOk(inner)
-        | CfdValue::ResultErr(inner) => return replace_nested_value(inner, path, replacement),
-        _ => {}
-    }
-    let child = match (current, segment) {
-        (CfdValue::Object(object), coflow_runtime::CfdPathSegment::Field(field)) => {
-            object.fields.get_mut(field.as_str())
-        }
-        (CfdValue::Array(items), coflow_runtime::CfdPathSegment::Index(index)) => {
-            items.get_mut(*index)
-        }
-        (CfdValue::Dict(entries), coflow_runtime::CfdPathSegment::DictKey(key)) => entries
-            .iter_mut()
-            .find(|(entry_key, _)| coflow_runtime::dict_key_path_text(entry_key) == *key)
-            .map(|(_, value)| value),
-        _ => None,
-    }
-    .ok_or_else(|| EditorError::not_found("nested collection owner not found"))?;
-    replace_nested_value(child, rest, replacement)
 }
