@@ -240,6 +240,7 @@ pub(crate) enum PreparedMutationOp {
         write_file: String,
         path: Vec<crate::api::WriteFieldPathSegment>,
         value: CfdValue,
+        materialized_top_level: Option<CfdValue>,
     },
     UnsetField {
         record: RecordCoordinate,

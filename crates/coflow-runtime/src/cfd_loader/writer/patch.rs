@@ -17,7 +17,6 @@ pub(super) fn apply_patch(
     ast: &CfdAst,
     request: &WriteCellRequest<'_>,
 ) -> Result<String, DiagnosticSet> {
-    validate_value(request.new_value)?;
     let record = find_record(ast, request.actual_type, request.record_key).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -33,18 +32,37 @@ pub(super) fn apply_patch(
             "field_path must not be empty",
         )));
     }
-    let WriteFieldPathSegment::Field(top_field) = &request.field_path[0] else {
+    let WriteFieldPathSegment::Field(requested_top_field) = &request.field_path[0] else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "top-level path must start with a field name",
         )));
+    };
+    // 模型中的默认对象可能尚未出现在 CFD。首次嵌套编辑时改为插入修改后的完整顶层值。
+    let top_level_missing = record.fields().all(|field| field.name != *requested_top_field);
+    let root_path;
+    let (field_path, new_value) = if request.field_path.len() > 1 && top_level_missing {
+        let materialized = request.materialized_top_level.ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!("top-level field `{requested_top_field}` requires materialization"),
+            ))
+        })?;
+        root_path = [WriteFieldPathSegment::Field(requested_top_field.clone())];
+        (&root_path[..], materialized)
+    } else {
+        (request.field_path, request.new_value)
+    };
+    validate_value(new_value)?;
+    let WriteFieldPathSegment::Field(top_field) = &field_path[0] else {
+        unreachable!("validated field path must start with a field")
     };
 
     match locate_target(
         request.schema,
         request.actual_type,
         record,
-        request.field_path,
+        field_path,
     )? {
         WriteTarget::Replace { span, ty } => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
@@ -58,9 +76,9 @@ pub(super) fn apply_patch(
                     ),
                 )));
             }
-            let depth = replacement_serialization_depth(source, span.start, request.new_value);
+            let depth = replacement_serialization_depth(source, span.start, new_value);
             let fragment =
-                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), depth);
+                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth);
             Ok(format!(
                 "{}{}{}",
                 &source[..span.start],
@@ -73,7 +91,7 @@ pub(super) fn apply_patch(
             let insert_pos = find_closing_brace(source, block_end)?;
             let fragment = format!(
                 "{CFD_INDENT}{top_field}: {},\n",
-                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), 2)
+                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), 2)
             );
             Ok(format!(
                 "{}{}{}",
@@ -95,7 +113,7 @@ pub(super) fn apply_patch(
             let fragment = format!(
                 "{indent}{field_name}: {},\n{outer}",
                 serialize_value_for_type(
-                    request.new_value,
+                new_value,
                     Some(request.schema),
                     Some(&ty),
                     depth + 2

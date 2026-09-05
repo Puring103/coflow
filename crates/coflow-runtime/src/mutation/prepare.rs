@@ -163,12 +163,19 @@ pub(super) fn prepare_one(
                 effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let value = coerce_mutation_value(session, &expected.ty, value, pending_records)?;
+            let materialized_top_level = materialized_top_level_value(
+                session,
+                &write_record,
+                &path,
+                &value,
+            )?;
             Ok(PreparedMutationOp::SetField {
                 record,
                 write_record,
                 write_file,
                 path,
                 value,
+                materialized_top_level,
             })
         }
         MutationOp::UnsetField { record, file, path } => {
@@ -309,6 +316,30 @@ pub(super) fn prepare_one(
             })
         }
     }
+}
+
+fn materialized_top_level_value(
+    session: &ProjectSession,
+    coordinate: &RecordCoordinate,
+    path: &[CfdPathSegment],
+    value: &CfdValue,
+) -> Result<Option<CfdValue>, DiagnosticSet> {
+    if path.len() <= 1 {
+        return Ok(None);
+    }
+    let root_path = CfdPath {
+        segments: path[..1].to_vec(),
+    };
+    let record = session
+        .record_view(&coordinate.actual_type, &coordinate.key)
+        .map(|view| view.record)
+        .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
+    let mut root = record
+        .value_at_path(&root_path)
+        .cloned()
+        .ok_or_else(|| one_path_error("top-level field was not found while materializing a field"))?;
+    set_nested_value(&mut root, &path[1..], value.clone())?;
+    Ok(Some(root))
 }
 
 pub(super) struct PendingInsertSetRequest<'a> {

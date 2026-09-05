@@ -33,9 +33,20 @@ pub(crate) fn stage_mutation_op(
             MutationExecutionPlan::Insert(plan),
         ) => stage_insert_record(session, plan, file, key, actual_type, fields),
         (
-            PreparedMutationOp::SetField { record, value, .. },
+            PreparedMutationOp::SetField {
+                record,
+                value,
+                materialized_top_level,
+                ..
+            },
             MutationExecutionPlan::WriteField(plan),
-        ) => stage_write_field(session, plan, record, value),
+        ) => stage_write_field(
+            session,
+            plan,
+            record,
+            value,
+            materialized_top_level.as_ref(),
+        ),
         (
             PreparedMutationOp::WriteDimensionValue {
                 record,
@@ -162,8 +173,14 @@ pub(crate) fn stage_field_mutation_batch(
     };
     let mut requests = Vec::with_capacity(batch.len());
     for (index, (op, execution)) in batch.iter().enumerate() {
-        let (PreparedMutationOp::SetField { value, .. }, MutationExecutionPlan::WriteField(plan)) =
-            (op, execution)
+        let (
+            PreparedMutationOp::SetField {
+                value,
+                materialized_top_level,
+                ..
+            },
+            MutationExecutionPlan::WriteField(plan),
+        ) = (op, execution)
         else {
             return Err(MutationBatchFailure {
                 index,
@@ -182,6 +199,7 @@ pub(crate) fn stage_field_mutation_batch(
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value: value,
+            materialized_top_level: materialized_top_level.as_ref(),
             schema: session.schema(),
         });
     }
@@ -225,6 +243,7 @@ fn stage_write_field(
     plan: &WriteFieldPlan,
     host_record: &RecordCoordinate,
     new_value: &CfdValue,
+    materialized_top_level: Option<&CfdValue>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
     let request = WriteCellRequest {
@@ -233,6 +252,7 @@ fn stage_write_field(
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value,
+        materialized_top_level,
         schema,
     };
     let writer_outcome = plan.writer.write_field(&request)?;

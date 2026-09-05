@@ -204,6 +204,7 @@ shield: Item {
         actual_type: "Item",
         field_path: &segments,
         new_value: &request_value,
+        materialized_top_level: None,
         schema: schema,
     };
     writer.write_field(&request).expect("write succeeds");
@@ -242,6 +243,7 @@ fn inserts_missing_field_with_two_space_indentation() {
             actual_type: "Item",
             field_path: &segments,
             new_value: &value,
+            materialized_top_level: None,
             schema: &schema,
         })
         .expect("insert missing field");
@@ -297,6 +299,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
         actual_type: "Stage",
         field_path: &segments,
         new_value: &request_value,
+        materialized_top_level: None,
         schema: schema,
     };
     writer.write_field(&request).expect("write succeeds");
@@ -346,6 +349,7 @@ shared: Skill {
             actual_type: "Skill",
             field_path: &segments,
             new_value: &request_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect("write skill");
@@ -413,6 +417,7 @@ picker: Holder {
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect("write succeeds");
@@ -476,6 +481,7 @@ picker: Holder {
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect("write succeeds");
@@ -777,6 +783,7 @@ fn writes_enum_dict_key_path_using_member_display_text() {
             actual_type: "Loot",
             field_path: &segments,
             new_value: &new_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect("write succeeds");
@@ -839,6 +846,7 @@ fn writes_group_record_without_required_commas() {
             actual_type: "DamageEffect",
             field_path: &segments,
             new_value: &new_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect("write succeeds");
@@ -889,6 +897,7 @@ sword: Item {
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
+            materialized_top_level: None,
             schema: schema,
         })
         .expect_err("invalid CFD syntax should fail before patching");
@@ -944,6 +953,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
             actual_type: "EffectBundle",
             field_path: &primary_path,
             new_value: &primary,
+            materialized_top_level: None,
             schema: &schema,
         })
         .expect("rewrite primary effect object");
@@ -956,6 +966,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
             actual_type: "EffectBundle",
             field_path: &additional_path,
             new_value: &CfdValue::Array(appended_effects),
+            materialized_top_level: None,
             schema: &schema,
         })
         .expect("rewrite additional effects");
