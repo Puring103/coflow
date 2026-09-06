@@ -3,6 +3,7 @@ use crate::CfdSource;
 use coflow_language::cft::{
     CftDimension, CftField, CftSchema, CftType, FieldName, RecordKey, VariantName,
 };
+use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct DimensionSourceRequest<'a> {
     pub source: &'a CfdSource,
@@ -29,6 +30,7 @@ pub struct DimensionSourceLoadRequest<'a> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DimensionSourceLoadResult {
     pub values: Vec<DimensionValueDraft>,
+    pub source: Arc<str>,
 }
 
 #[derive(Debug, Clone)]

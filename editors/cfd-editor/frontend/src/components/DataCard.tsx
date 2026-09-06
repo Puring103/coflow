@@ -299,6 +299,7 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 const HighlightQueryCtx = createContext<string | undefined>(undefined)
+const DiffPathCtx = createContext<ReadonlySet<string> | null>(null)
 const PluginRecordCtx = createContext<{
   identity: PluginIdentity
   filePath: string
@@ -403,6 +404,7 @@ export interface ExpandedProps {
   onSelectAction?: (pathWire: string) => void
   onEditingFinished?: () => void
   flattenSingleComplexField?: boolean
+  diffChangedPaths?: ReadonlySet<string>
 }
 
 export function DataCardExpanded({
@@ -427,6 +429,7 @@ export function DataCardExpanded({
   onSelectAction,
   onEditingFinished,
   flattenSingleComplexField = false,
+  diffChangedPaths,
 }: ExpandedProps) {
   const ctx = useMemo(
     () => buildDiagCtx(diagnostics, onDiagnosticBadgeClick),
@@ -543,11 +546,13 @@ export function DataCardExpanded({
     </div>
   )
   const wrapped = (
-    <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
-      <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
-        <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
-      </ControlledExpansionCtx.Provider>
-    </ValueRowSelectionCtx.Provider>
+    <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
+      <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
+        <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+          <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+        </ControlledExpansionCtx.Provider>
+      </ValueRowSelectionCtx.Provider>
+    </DiffPathCtx.Provider>
   )
   const identity = currentPluginIdentity()
   const pluginRecord = identity && filePath && coordinate && actualType
@@ -616,6 +621,18 @@ function rowDiagSeverity(pathKey: string | undefined): {
     messages: exact ? exact.map(d => d.message) : [],
     exact: !!exact?.some(d => normalizedDiagnosticSeverity(d.severity) !== 'info'),
   }
+}
+
+function useDiffRowClass(pathKey: string | undefined): string {
+  const paths = useContext(DiffPathCtx)
+  if (!paths || !pathKey) return ''
+  if (paths.has(pathKey)) return ' dc-row-diff-modified'
+  for (const changed of paths) {
+    if (changed.startsWith(`${pathKey}.`) || changed.startsWith(`${pathKey}[`)) {
+      return ' dc-row-diff-modified'
+    }
+  }
+  return ''
 }
 
 function FieldRow({
@@ -1091,6 +1108,7 @@ function ScalarFieldRow({
   const canEdit = (!missing || !!resolvedRefTarget)
     && editorEnabled && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
+  const diffClass = useDiffRowClass(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
@@ -1154,7 +1172,7 @@ function ScalarFieldRow({
   const displayedValue = scrubPreview ?? value
 
   return (
-    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div
         className={`dc-row-label${numericScrubEnabled ? ' dc-numeric-scrub-label' : ''}`}
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
@@ -1856,6 +1874,7 @@ function ExpandableRow({
   }, [shouldAutoExpand])
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
+  const diffClass = useDiffRowClass(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
@@ -1905,7 +1924,7 @@ function ExpandableRow({
       className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
       style={inspectorDepthStyle(depth)}
     >
-      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
           <span className="dc-fold-arrow">

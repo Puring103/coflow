@@ -26,6 +26,7 @@ mod checks;
 pub mod commands;
 pub use coflow_codegen as codegen;
 mod dimensions;
+mod diff;
 mod files;
 mod indexes;
 mod load;
@@ -71,6 +72,10 @@ pub use coflow_model::{
     ValueValidationMode, ValueValidationRequest,
 };
 pub use dimensions::{DimensionFieldInfo, DimensionInfo};
+pub use diff::{
+    ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,
+    ProjectFileDiff, ProjectRecordDiff, ProjectRecordSnapshot,
+};
 pub use files::FileTreeNode;
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 pub use project::*;
