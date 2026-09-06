@@ -12,7 +12,7 @@ use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
-use coflow_runtime::{CfdErrorCode, SourceLocation};
+use coflow_runtime::SourceLocation;
 use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -670,26 +670,22 @@ fn cfd_rejects_reserved_id_fields() {
 }
 
 #[test]
-fn cfd_rejects_cyclic_record_references() {
+fn cfd_allows_cyclic_record_references() -> TestResult {
     let schema = compile_schema(&runtime_parity_fixture("record-references.cft"));
 
-    let error = load_cfd_model(
+    let model = load_cfd_model(
         &schema,
-        &runtime_parity_fixture("record-reference-cycle.invalid.cfd"),
-    )
-    .expect_err("record reference cycles must be rejected consistently across runtimes");
+        r#"
+Node {
+  a { next: Some(&b) }
+  b { next: Some(&a) }
+}
+"#,
+    )?;
 
-    let CfdTextLoadError::DataModel { diagnostics, .. } = error else {
-        panic!("expected a data-model reference diagnostic");
-    };
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == CfdErrorCode::RefCycle));
-    assert!(diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("Node:a -> Node:b -> Node:a")));
+    assert_eq!(model.record_count(), 2);
+    assert_eq!(model.ref_edges().count(), 2);
+    Ok(())
 }
 
 #[test]

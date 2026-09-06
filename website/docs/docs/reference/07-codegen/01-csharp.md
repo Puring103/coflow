@@ -25,7 +25,8 @@ var settings = module.Singleton<Settings>();
 每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应
 enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
 
-同一次 `Load` 或 `LoadAndCompile` 调用中的 CFD 可以互相引用。不同 Module 之间不能建立记录引用。
+同一次 `Load` 或 `LoadAndCompile` 调用中的 CFD 可以互相引用。不同 Module 之间不能建立记录引用。当前
+C# Runtime 要求同一 Module 内的记录引用无环。
 
 需要统一查询多个独立 Module 时，可以创建 `CoflowModuleSet`：
 
