@@ -1,12 +1,11 @@
-//! Manifest metadata used while installing a frontend editor plugin.
+//! 编辑器前端插件的清单元数据。
 //!
-//! This is intentionally an editor-internal DTO. It is not a versioned Rust
-//! ABI and does not belong in a standalone workspace crate.
+//! 该类型只用于编辑器宿主内部读写插件包，不是独立的 Rust ABI。
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ExtensionManifest {
+pub struct PluginManifest {
     pub id: String,
     pub name: String,
     #[serde(default)]

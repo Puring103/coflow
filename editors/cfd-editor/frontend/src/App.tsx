@@ -17,6 +17,27 @@ import { SourceEditorView } from './components/SourceEditorView'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
+import { searchMockRecords } from './built-in-plugins'
+import {
+  PluginContributionMount,
+  dispatchPluginKeybinding,
+  openPluginPage,
+  pluginRegistrySnapshot,
+  preferredPluginView,
+  publishPluginEvent,
+  setPluginDataBridge,
+  setPluginUiBridge,
+  usePluginRegistry,
+  usePluginViews,
+} from './plugins'
+import type {
+  PluginActiveContext,
+  PluginMutationRequest,
+  PluginPageContext,
+  PluginRecordData,
+  PluginSidebarContext,
+  PluginViewContext,
+} from './plugins/types'
 import {
   MOCK_PROJECT,
   MOCK_FILE_RECORDS,
@@ -37,9 +58,6 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
-import type { ProjectSearchHit } from './bindings/ProjectSearchHit'
-import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
-import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
@@ -72,7 +90,6 @@ import {
 } from './state/editorMutations'
 import { historyShortcutFor } from './state/editorShortcuts'
 import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
-import { groupProjectSearchHits, searchMockRecords } from './state/projectSearch'
 import {
   recordSelection,
   rebindSelection,
@@ -122,6 +139,13 @@ import './style.css'
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
+
+type ActivePane = 'files' | 'plugins' | 'ai' | `plugin:${string}`
+
+interface PluginPageTab {
+  key: string
+  title: string
+}
 
 function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
   return left.length === right.length && left.every((cell, index) => {
@@ -231,12 +255,14 @@ export default function App() {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
     settings: pluginSettings,
+    ready: pluginsReady,
     busy: pluginLoadBusy,
     error: pluginLoadError,
     install: loadPluginFromSettings,
     uninstall: uninstallPluginFromSettings,
     toggle: togglePluginFromSettings,
   } = useFrontendPlugins(project)
+  const pluginRegistry = usePluginRegistry()
   useEffect(() => {
     const suppressBrowserMenu = (event: MouseEvent) => event.preventDefault()
     window.addEventListener('contextmenu', suppressBrowserMenu)
@@ -288,16 +314,98 @@ export default function App() {
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
   const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
+  const [pluginPageTabs, setPluginPageTabs] = useState<PluginPageTab[]>([])
+  const [activePluginPageKey, setActivePluginPageKey] = useState<string | null>(null)
   const workspaceTabsRef = useRef(workspaceTabs)
+  const pluginDefaultPendingTabsRef = useRef(new Set<string>())
   const workspaceSaveChainRef = useRef<Promise<void>>(Promise.resolve())
   const [workspaceReadySessionId, setWorkspaceReadySessionId] = useState<number | null>(null)
   workspaceTabsRef.current = workspaceTabs
-  const [activePane, setActivePane] = useState<'files' | 'search' | 'extensions' | 'ai'>(() => {
+  const closePluginPageTab = useCallback((key: string) => {
+    setPluginPageTabs(current => current.filter(tab => tab.key !== key))
+    setActivePluginPageKey(current => current === key ? null : current)
+  }, [])
+  const openPluginPageTab = useCallback((pluginId: string, pageId: string) => {
+    const page = pluginRegistrySnapshot().pages.find(item => item.pluginId === pluginId && item.id === pageId)
+    if (!page) {
+      setErrorMsg(`插件页面 ${pluginId}/${pageId} 不可用`)
+      return
+    }
+    finishActiveDataEdit()
+    setPluginPageTabs(current => current.some(tab => tab.key === page.key)
+      ? current
+      : [...current, { key: page.key, title: page.title }])
+    setActivePluginPageKey(page.key)
+  }, [])
+  const [activePane, setActivePane] = useState<ActivePane>(() => {
     try {
       const v = localStorage.getItem('cfd-editor-active-pane')
-      return v === 'search' || v === 'extensions' || v === 'ai' ? v : 'files'
+      return v === 'plugins' || v === 'ai' || v?.startsWith('plugin:') ? v as ActivePane : 'files'
     } catch { return 'files' }
   })
+  const pluginOpenRecordRef = useRef((
+    _filePath: string,
+    _coordinate: RecordCoordinate,
+    _fieldPath?: string | null,
+  ) => {})
+  const openPluginSidebar = useCallback((pluginId: string, sidebarId: string) => {
+    const sidebar = pluginRegistrySnapshot().sidebars.find(
+      item => item.pluginId === pluginId && item.id === sidebarId,
+    )
+    if (!sidebar) {
+      setErrorMsg(`插件侧栏 ${pluginId}/${sidebarId} 不可用`)
+      return
+    }
+    setActivePane(`plugin:${sidebar.key}`)
+  }, [])
+  useEffect(() => {
+    setPluginUiBridge({
+      openPage: openPluginPageTab,
+      closePage: (pluginId, pageId) => {
+        const prefix = `${pluginId}/`
+        if (pageId) closePluginPageTab(`${prefix}${pageId}`)
+        else {
+          setPluginPageTabs(current => current.filter(tab => !tab.key.startsWith(prefix)))
+          setActivePluginPageKey(current => current?.startsWith(prefix) ? null : current)
+        }
+      },
+      openSidebar: openPluginSidebar,
+      closeSidebar: (pluginId, sidebarId) => {
+        const pane = `plugin:${pluginId}/${sidebarId}`
+        setActivePane(current => current === pane ? 'files' : current)
+      },
+      openRecord: (filePath, coordinate, fieldPath) => {
+        pluginOpenRecordRef.current(filePath, coordinate, fieldPath)
+      },
+      reportError: setErrorMsg,
+    })
+    return () => setPluginUiBridge(null)
+  }, [closePluginPageTab, openPluginPageTab, openPluginSidebar])
+  useEffect(() => {
+    if (!pluginsReady) return
+    const available = new Set(pluginRegistry.pages.map(page => page.key))
+    setPluginPageTabs(current => current.filter(tab => available.has(tab.key)))
+    setActivePluginPageKey(current => current && available.has(current) ? current : null)
+    if (activePane.startsWith('plugin:') && !pluginRegistry.sidebars.some(sidebar => `plugin:${sidebar.key}` === activePane)) {
+      setActivePane('files')
+    }
+  }, [activePane, pluginRegistry.pages, pluginRegistry.sidebars, pluginsReady])
+  const activePluginSidebar = activePane.startsWith('plugin:')
+    ? pluginRegistry.sidebars.find(sidebar => `plugin:${sidebar.key}` === activePane)
+    : undefined
+  const pluginSidebarContext = useMemo<PluginSidebarContext | null>(() => (
+    activePluginSidebar
+      ? {
+          identity: project ? { sessionId: project.session_id, revision: project.revision } : null,
+          sidebarId: activePluginSidebar.id,
+          openPage: pageId => openPluginPageTab(activePluginSidebar.pluginId, pageId),
+          openRecord: (filePath, coordinate, fieldPath) => {
+            pluginOpenRecordRef.current(filePath, coordinate, fieldPath)
+          },
+          closeSidebar: () => setActivePane('files'),
+        }
+      : null
+  ), [activePluginSidebar, openPluginPageTab, project])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const settingsMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -325,10 +433,11 @@ export default function App() {
   }, [tabOverflowOpen])
   // Scroll the active tab into view when it changes.
   useEffect(() => {
-    if (!activeWorkspaceTabId) return
-    const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeWorkspaceTabId)}"]`)
+    const activeTabId = activePluginPageKey ?? activeWorkspaceTabId
+    if (!activeTabId) return
+    const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`)
     el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-  }, [activeWorkspaceTabId])
+  }, [activePluginPageKey, activeWorkspaceTabId])
   // Track whether tabs actually overflow their container so we only surface the
   // dropdown when needed. ResizeObserver reacts to sidebar / inspector resizes;
   // scrollWidth changes when tabs open/close are handled by the workspaceTabs dep.
@@ -341,23 +450,14 @@ export default function App() {
     ro.observe(el)
     for (const child of Array.from(el.children)) ro.observe(child)
     return () => ro.disconnect()
-  }, [workspaceTabs])
+  }, [workspaceTabs, pluginPageTabs])
   const [documentSearch, setDocumentSearch] = useState('')
   const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
-  const [projectSearch, setProjectSearch] = useState('')
-  const [projectSearchMode, setProjectSearchMode] = useState<ProjectSearchMode>('key')
-  const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResults | null>(null)
-  const [projectSearchBusy, setProjectSearchBusy] = useState(false)
-  const [projectSearchError, setProjectSearchError] = useState<string | null>(null)
-  const [selectedProjectSearchIndex, setSelectedProjectSearchIndex] = useState(-1)
-  const [collapsedSearchGroups, setCollapsedSearchGroups] = useState<Set<string>>(() => new Set())
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const recordGroupSaveSequence = useRef(0)
   const viewsSaveSequence = useRef(0)
   const documentSearchRef = useRef<HTMLInputElement>(null)
-  const projectSearchRef = useRef<HTMLInputElement>(null)
-  const projectSearchRequest = useRef(0)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
@@ -379,44 +479,6 @@ export default function App() {
     range: Extract<DiagnosticTarget, { kind: 'source' | 'project_source' }>['range']
     tick: number
   } | null>(null)
-
-  useEffect(() => {
-    const request = ++projectSearchRequest.current
-    const query = projectSearch.trim()
-    setSelectedProjectSearchIndex(-1)
-    setProjectSearchError(null)
-    if (activePane !== 'search' || !project || !query) {
-      setProjectSearchResults(null)
-      setProjectSearchBusy(false)
-      return
-    }
-    setProjectSearchBusy(true)
-    const timeout = window.setTimeout(() => {
-      const operation = api.isTauri
-        ? api.searchRecords(project.session_id, query, projectSearchMode)
-        : Promise.resolve(searchMockRecords(
-            MOCK_FILE_RECORDS,
-            project.revision,
-            query,
-            projectSearchMode,
-            200,
-          ))
-      operation
-        .then(results => {
-          if (projectSearchRequest.current !== request || results.revision !== project.revision) return
-          setProjectSearchResults(results)
-        })
-        .catch(error => {
-          if (projectSearchRequest.current !== request) return
-          setProjectSearchError(errorMessage(error))
-          setProjectSearchResults(null)
-        })
-        .finally(() => {
-          if (projectSearchRequest.current === request) setProjectSearchBusy(false)
-        })
-    }, 150)
-    return () => window.clearTimeout(timeout)
-  }, [activePane, project, projectSearch, projectSearchMode])
 
   const saveRecordGroups = useCallback((
     filePath: string,
@@ -473,6 +535,16 @@ export default function App() {
   const [viewMenu, setViewMenu] = useState<
     { tab: ViewTab; x: number; y: number } | null
   >(null)
+  const [viewAddMenuOpen, setViewAddMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!viewAddMenuOpen) return
+    const close = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('.view-tab-add-wrap')) return
+      setViewAddMenuOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [viewAddMenuOpen])
   const openViewEditor = useCallback((mode: 'create') => {
     setViewMenu(null)
     setViewEditor({ mode })
@@ -541,6 +613,7 @@ export default function App() {
     coordinate?: RecordCoordinate,
   ) => {
     finishActiveDataEdit()
+    setActivePluginPageKey(null)
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
     if (tab.filePath.endsWith('.cft')) {
@@ -587,6 +660,7 @@ export default function App() {
         const tab = defaultWorkspaceTab(firstFile, option?.name ?? '', option?.is_singleton ?? false)
         tabs = [tab]
         activeTabId = tab.id
+        pluginDefaultPendingTabsRef.current.add(tab.id)
       }
     }
     workspaceTabsRef.current = tabs
@@ -641,7 +715,10 @@ export default function App() {
       setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
       setWorkspaceTabs([])
       workspaceTabsRef.current = []
+      pluginDefaultPendingTabsRef.current.clear()
       setActiveWorkspaceTabId(null)
+      setPluginPageTabs([])
+      setActivePluginPageKey(null)
       setWorkspaceReadySessionId(null)
       setActiveType('')
       history.clear()
@@ -1049,7 +1126,14 @@ export default function App() {
       const id = workspaceTabId(filePath, typeName)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
       const option = options.find(candidate => candidate.name === typeName)
-      const tab = existing ?? defaultWorkspaceTab(filePath, typeName, option?.is_singleton ?? false)
+      const baseTab = existing ?? defaultWorkspaceTab(filePath, typeName, option?.is_singleton ?? false)
+      const defaultPluginView = !existing && typeName ? preferredPluginView(typeName) : undefined
+      const tab = defaultPluginView
+        ? { ...baseTab, viewKind: 'table' as const, viewId: defaultPluginView.key }
+        : baseTab
+      if (!existing && !defaultPluginView && !pluginsReady) {
+        pluginDefaultPendingTabsRef.current.add(tab.id)
+      }
       if (!existing) {
         const next = [...workspaceTabsRef.current, tab]
         workspaceTabsRef.current = next
@@ -1057,13 +1141,36 @@ export default function App() {
       }
       navigateWorkspaceTab(tab)
     },
-    [navigateWorkspaceTab, project?.file_types]
+    [navigateWorkspaceTab, pluginsReady, project?.file_types]
   )
+
+  useEffect(() => {
+    if (!pluginsReady || pluginDefaultPendingTabsRef.current.size === 0) return
+    const pending = pluginDefaultPendingTabsRef.current
+    let activeChanged = false
+    let changed = false
+    const next = workspaceTabsRef.current.map(tab => {
+      if (!pending.delete(tab.id) || !tab.typeName) return tab
+      const pluginView = preferredPluginView(tab.typeName)
+      if (!pluginView) return tab
+      changed = true
+      if (tab.id === activeWorkspaceTabId) activeChanged = true
+      return { ...tab, viewKind: 'table' as const, viewId: pluginView.key }
+    })
+    if (!changed) return
+    workspaceTabsRef.current = next
+    setWorkspaceTabs(next)
+    if (activeChanged && !activePluginPageKey) {
+      const active = next.find(tab => tab.id === activeWorkspaceTabId)
+      if (active) navigateWorkspaceTab(active)
+    }
+  }, [activePluginPageKey, activeWorkspaceTabId, navigateWorkspaceTab, pluginRegistry.revision, pluginsReady, workspaceReadySessionId])
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
       finishActiveDataEdit()
       const id = workspaceTabId(filePath, coordinate.actual_type)
+      pluginDefaultPendingTabsRef.current.delete(id)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
       const tab: WorkspaceTab = {
         ...(existing ?? defaultWorkspaceTab(filePath, coordinate.actual_type, false)),
@@ -1109,10 +1216,10 @@ export default function App() {
     navigateWorkspaceTab(tab)
   }, [navigateWorkspaceTab, openRecord, project?.file_types])
 
-  const openProjectSearchHit = useCallback((hit: ProjectSearchHit) => {
-    setHighlightField(hit.field_path ?? RECORD_HIGHLIGHT_SENTINEL)
-    openRecord(hit.file_path, hit.coordinate)
-  }, [openRecord])
+  pluginOpenRecordRef.current = (filePath, coordinate, fieldPath) => {
+    setHighlightField(fieldPath ?? RECORD_HIGHLIGHT_SENTINEL)
+    openRecord(filePath, coordinate)
+  }
 
   // Click on a corner badge (on a record or field): reveal the first
   // matching diagnostic in the bottom panel. Falls back to record-level
@@ -1485,6 +1592,87 @@ export default function App() {
     [mutations],
   )
 
+  useEffect(() => {
+    setPluginDataBridge({
+      currentIdentity: () => generation.currentIdentity(),
+      getSchema: api.getPluginSchema,
+      getRecordsByType: api.getPluginRecordsByType,
+      getFileRecords: async (sessionId, filePath) => {
+        if (api.isTauri) return api.getFileRecords(sessionId, filePath)
+        const records = fileDataCacheRef.current[filePath]
+        if (!records) throw new Error(`找不到文件 ${filePath}`)
+        return records
+      },
+      searchRecords: async (sessionId, query, mode, limit) => {
+        if (!api.isTauri) {
+          const identity = generation.currentIdentity()
+          if (!identity || identity.sessionId !== sessionId) throw new Error('当前项目会话已变更')
+          return searchMockRecords(
+            fileDataCacheRef.current,
+            sessionId,
+            identity.revision,
+            query,
+            mode,
+            limit,
+          )
+        }
+        const result = await api.searchRecords(sessionId, query, mode, limit)
+        return {
+          sessionId,
+          revision: result.revision,
+          data: {
+            hits: result.hits.map(hit => ({
+              filePath: hit.file_path,
+              coordinate: hit.coordinate,
+              fieldPath: hit.field_path,
+              preview: hit.preview,
+            })),
+            truncated: result.truncated,
+          },
+        }
+      },
+      mutate: async (request: PluginMutationRequest) => {
+        switch (request.kind) {
+          case 'write_field':
+            await mutations.writeFieldBatch(request.filePath, [{
+              coordinate: request.coordinate,
+              field_path: request.fieldPath,
+              new_value: request.value,
+            }])
+            break
+          case 'write_fields':
+            await mutations.writeFields(request.filePath, request.coordinates, request.fieldPath, request.value)
+            break
+          case 'write_field_batch':
+            await mutations.writeFieldBatch(request.filePath, request.writes)
+            break
+          case 'edit_collection':
+            await editCollection(request.filePath, request.coordinate, request.fieldPath, request.edit)
+            break
+          case 'rename_record':
+            await renameRecord(request.filePath, request.coordinate, request.newKey)
+            break
+          case 'insert_record':
+            await insertRecord(request.filePath, request.recordKey, request.actualType, request.fields)
+            break
+          case 'delete_record':
+            await deleteRecords(request.filePath, [request.coordinate])
+            break
+          case 'swap_records':
+            await swapRecords(request.filePath, request.first, request.second)
+            break
+          case 'move_record':
+            await moveRecord(request.filePath, request.coordinate, request.targetIndex)
+            break
+          case 'transfer_record':
+            await transferRecord(request.sourceFile, request.destinationFile, request.coordinate, request.targetIndex)
+            break
+        }
+      },
+    })
+    return () => setPluginDataBridge(null)
+  }, [deleteRecords, editCollection, generation, insertRecord, moveRecord, mutations, renameRecord, swapRecords, transferRecord])
+
   const undo = useCallback(async () => {
     await mutations.undo()
   }, [mutations])
@@ -1506,15 +1694,10 @@ export default function App() {
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()
-      // Ctrl+F filters the current document; Ctrl+Shift+F opens project search.
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      // Ctrl+F 只负责当前文档筛选；项目搜索快捷键由内置插件注册。
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'f') {
         e.preventDefault()
-        if (e.shiftKey) {
-          setActivePane('search')
-          requestAnimationFrame(() => projectSearchRef.current?.focus())
-        } else {
-          documentSearchRef.current?.focus()
-        }
+        documentSearchRef.current?.focus()
       }
       // `?` only toggles help when not focused inside a text-editing control,
       // otherwise typing `?` into inputs/search boxes would steal focus.
@@ -1526,6 +1709,19 @@ export default function App() {
   }, [router, undo, redo])
 
   const currentRoute = router.current
+  const activePluginPage = activePluginPageKey
+    ? pluginRegistry.pages.find(page => page.key === activePluginPageKey)
+    : undefined
+  const pluginPageContext = useMemo<PluginPageContext | null>(() => (
+    activePluginPage
+      ? {
+          identity: project ? { sessionId: project.session_id, revision: project.revision } : null,
+          pageId: activePluginPage.id,
+          openPage: pageId => openPluginPageTab(activePluginPage.pluginId, pageId),
+          closePage: pageId => closePluginPageTab(`${activePluginPage.pluginId}/${pageId ?? activePluginPage.id}`),
+        }
+      : null
+  ), [activePluginPage, closePluginPageTab, openPluginPageTab, project])
   const activeFile = currentRoute?.file ?? null
   const activeSchemaFile = activeFile?.endsWith('.cft') ?? false
   useEffect(() => {
@@ -1540,6 +1736,7 @@ export default function App() {
   }, [currentRoute])
   useEffect(() => {
     if (!currentRoute) return
+    if (!pluginsReady && currentRoute.viewId.includes('/')) return
     const typeName = currentRoute.view === 'record'
       ? currentRoute.coordinate.actual_type
       : currentRoute.typeFilter ?? ''
@@ -1554,9 +1751,10 @@ export default function App() {
       let changed = false
       const next = current.map(tab => {
         if (tab.id !== id) return tab
+        const pluginView = pluginRegistry.views.some(view => view.key === currentRoute.viewId)
         const singletonSource = singleton && currentRoute.view === 'source'
-        const viewKind = singletonSource ? 'source' : singleton ? 'record' : currentRoute.view
-        const viewId = singletonSource ? DEFAULT_SOURCE_VIEW_ID : singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
+        const viewKind = pluginView ? 'table' : singletonSource ? 'source' : singleton ? 'record' : currentRoute.view
+        const viewId = pluginView ? currentRoute.viewId : singletonSource ? DEFAULT_SOURCE_VIEW_ID : singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
@@ -1574,7 +1772,7 @@ export default function App() {
       workspaceTabsRef.current = next
       return next
     })
-  }, [currentRoute, project?.file_types, workspaceTabs])
+  }, [currentRoute, pluginRegistry.views, pluginsReady, project?.file_types, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
   useEffect(() => {
@@ -1599,7 +1797,13 @@ export default function App() {
     [project?.file_types, activeFile, activeType],
   )
   const isSingletonType = activeTypeOption?.is_singleton ?? false
-  const activeViewKind = currentRoute && isSingletonType && currentRoute.view !== 'source'
+  const pluginViews = usePluginViews(activeType)
+  const activePluginView = currentRoute
+    ? pluginViews.find(view => view.key === currentRoute.viewId)
+    : undefined
+  const activeViewKind = activePluginView
+    ? 'plugin'
+    : currentRoute && isSingletonType && currentRoute.view !== 'source'
     ? 'record'
     : currentRoute?.view
   const activeRecordCoordinate = currentRoute?.view === 'record'
@@ -1607,6 +1811,63 @@ export default function App() {
     : activeFileData?.records.find(record => (
       !activeType || recordActualType(record) === activeType
     ))?.coordinate ?? null
+  const pluginSelection = useMemo(() => {
+    if (!inspectorSelection) return null
+    if (inspectorSelection.kind === 'record') {
+      return {
+        kind: 'record' as const,
+        filePath: inspectorSelection.filePath,
+        coordinates: inspectorSelection.coordinates.map(coordinate => ({ ...coordinate })),
+      }
+    }
+    return {
+      kind: 'field' as const,
+      filePath: inspectorSelection.filePath,
+      coordinate: { ...inspectorSelection.coordinate },
+      fieldPath: inspectorSelection.fieldPath.map(segment => ({ ...segment })),
+    }
+  }, [inspectorSelection])
+  const pluginActiveContext = useMemo<PluginActiveContext>(() => ({
+    identity: project ? { sessionId: project.session_id, revision: project.revision } : null,
+    filePath: activeFile,
+    typeName: activeType || null,
+    selection: pluginSelection,
+    surface: activePluginPage ? 'page' : activePluginSidebar ? 'sidebar' : 'editor',
+  }), [activeFile, activePluginPage, activePluginSidebar, activeType, pluginSelection, project])
+
+  useEffect(() => {
+    publishPluginEvent('project', {
+      identity: project ? { sessionId: project.session_id, revision: project.revision } : null,
+    })
+  }, [project?.session_id])
+  useEffect(() => {
+    if (project) publishPluginEvent('data', { sessionId: project.session_id, revision: project.revision })
+  }, [project?.session_id, project?.revision])
+  useEffect(() => {
+    publishPluginEvent('selection', { selection: pluginSelection })
+  }, [pluginSelection])
+  useEffect(() => {
+    publishPluginEvent('surface', activePluginPage
+      ? { kind: 'document', id: activePluginPage.key }
+      : activePluginSidebar
+        ? { kind: 'sidebar', id: activePluginSidebar.key }
+        : {
+            kind: 'view',
+            id: activePluginView?.key ?? currentRoute?.viewId ?? null,
+            ...(activeFile ? { filePath: activeFile } : {}),
+            ...(activeType ? { typeName: activeType } : {}),
+          })
+  }, [activeFile, activePluginPage, activePluginSidebar, activePluginView, activeType, currentRoute?.viewId])
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      // 输入控件保留普通编辑按键，但允许带主修饰键的插件快捷键。
+      if (isTextTarget(event.target) && !event.ctrlKey && !event.metaKey && !event.altKey) return
+      dispatchPluginKeybinding(event, pluginActiveContext)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [pluginActiveContext])
 
   useEffect(() => {
     setInspectorSelection(current => {
@@ -1808,10 +2069,10 @@ export default function App() {
   )
   // The view the current route resolves to (default reserved id or custom uuid).
   const resolvedView = useMemo(
-    () => activeFile && activeType && currentRoute
+    () => activeFile && activeType && currentRoute && !activePluginView
       ? resolveView(projectSettings, activeFile, activeType, currentRoute.viewId, isSingletonType)
       : null,
-    [projectSettings, activeFile, activeType, currentRoute, isSingletonType],
+    [projectSettings, activeFile, activeType, currentRoute, isSingletonType, activePluginView],
   )
   // Fields the custom view restricts to (undefined = show all).
   const visibleFields = useMemo(
@@ -1826,6 +2087,26 @@ export default function App() {
     const predicate = groupFilterPredicate(resolvedView, recordGroups)
     return { ...activeFileData, records: activeFileData.records.filter(row => predicate(row.coordinate)) }
   }, [activeFileData, resolvedView, recordGroups])
+  const pluginViewContext = useMemo<PluginViewContext | null>(() => {
+    if (!project || !activeFileData || !activeFile || !activeType || !activePluginView) return null
+    const records: PluginRecordData[] = activeFileData.records
+      .filter(row => recordActualType(row) === activeType)
+      .map(row => ({
+        filePath: activeFile,
+        coordinate: { ...row.coordinate },
+        ...(activePluginView.includeFieldValues === false
+          ? {}
+          : { fields: structuredClone(row.fields) }),
+      }))
+    return {
+      identity: { sessionId: project.session_id, revision: project.revision },
+      filePath: activeFile,
+      typeName: activeType,
+      records,
+      readOnly: readOnly || activePluginView.readOnly === true,
+      openPage: pageId => openPluginPageTab(activePluginView.pluginId, pageId),
+    }
+  }, [activeFile, activeFileData, activePluginView, activeType, openPluginPageTab, project, readOnly])
   // Graph root filter: keep group-member roots plus everything reachable from
   // them via edges (only the roots are constrained, per design §4.2).
   const viewFilteredGraph = useMemo(() => {
@@ -1890,35 +2171,6 @@ export default function App() {
       router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
     }
   }, [activeFile, activeType, projectSettings, saveViews, currentRoute, router])
-  const projectSearchGroups = useMemo(
-    () => groupProjectSearchHits(projectSearchResults?.hits ?? []),
-    [projectSearchResults],
-  )
-  const toggleSearchGroup = useCallback((key: string) => {
-    setCollapsedSearchGroups(current => {
-      const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
-  const focusProjectSearchResult = useCallback((index: number, direction = 1) => {
-    const count = projectSearchResults?.hits.length ?? 0
-    if (count === 0) return
-    requestAnimationFrame(() => {
-      let next = Math.max(0, Math.min(index, count - 1))
-      while (next >= 0 && next < count) {
-        const target = document.querySelector<HTMLElement>(`[data-project-search-index="${next}"]`)
-        if (target) {
-          setSelectedProjectSearchIndex(next)
-          target.focus({ preventScroll: true })
-          return
-        }
-        next += direction
-      }
-    })
-  }, [projectSearchResults])
-
   // Record counts shown next to the search bar across all views. `typeCount`
   // is the number of records of the active type in the current file;
   // `matchedCount` additionally applies the global search filter (matches
@@ -2035,11 +2287,30 @@ export default function App() {
   const closeWorkspaceTab = useCallback((id: string) => {
     const index = workspaceTabs.findIndex(tab => tab.id === id)
     if (index < 0) return
+    pluginDefaultPendingTabsRef.current.delete(id)
     const remaining = workspaceTabs.filter(tab => tab.id !== id)
     workspaceTabsRef.current = remaining
     setWorkspaceTabs(remaining)
     if (id !== activeWorkspaceTabId) return
     const next = remaining[Math.min(index, remaining.length - 1)]
+    if (activePluginPageKey) {
+      // 插件页保持在前台，同时把被遮挡的工作区路由切到下一个有效标签。
+      if (!next) {
+        setActiveWorkspaceTabId(null)
+        setActiveType('')
+        closeInspector()
+        router.clear()
+        return
+      }
+      setActiveWorkspaceTabId(next.id)
+      setActiveType(next.typeName)
+      if (!next.typeName) setDimensionView(next.viewKind === 'record' ? 'record' : 'table')
+      const fallbackCoordinate = fileDataCacheRef.current[next.filePath]?.records.find(
+        row => recordActualType(row) === next.typeName,
+      )?.coordinate
+      router.replace(routeForWorkspaceTab(next, fallbackCoordinate))
+      return
+    }
     if (!next) {
       setActiveWorkspaceTabId(null)
       setActiveType('')
@@ -2048,7 +2319,7 @@ export default function App() {
       return
     }
     navigateWorkspaceTab(next)
-  }, [activeWorkspaceTabId, closeInspector, navigateWorkspaceTab, router, workspaceTabs])
+  }, [activePluginPageKey, activeWorkspaceTabId, closeInspector, navigateWorkspaceTab, router, workspaceTabs])
 
   const focusFileTree = useCallback(() => {
     const tree = sidebarRef.current?.querySelector<HTMLElement>('.file-tree')
@@ -2351,6 +2622,7 @@ export default function App() {
     if (tab.kind === 'record' && !firstCoordinate) return
 
     const id = workspaceTabId(currentRoute.file, activeType)
+    pluginDefaultPendingTabsRef.current.delete(id)
     const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
       ?? defaultWorkspaceTab(currentRoute.file, activeType, isSingletonType)
     const nextTab = workspaceTabWithView(existing, tab.kind, tab.id, firstCoordinate)
@@ -2362,11 +2634,29 @@ export default function App() {
     router.replace(routeForWorkspaceTab(nextTab, firstCoordinate))
   }
 
+  function switchPluginView(key: string) {
+    if (!currentRoute || !activeFile || !activeType) return
+    const view = pluginViews.find(candidate => candidate.key === key)
+    if (!view) return
+    closeInspector()
+    const id = workspaceTabId(activeFile, activeType)
+    pluginDefaultPendingTabsRef.current.delete(id)
+    const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
+      ?? defaultWorkspaceTab(activeFile, activeType, isSingletonType)
+    const nextTab: WorkspaceTab = { ...existing, viewKind: 'table', viewId: view.key }
+    const nextTabs = workspaceTabsRef.current.some(candidate => candidate.id === id)
+      ? workspaceTabsRef.current.map(candidate => candidate.id === id ? nextTab : candidate)
+      : [...workspaceTabsRef.current, nextTab]
+    workspaceTabsRef.current = nextTabs
+    setWorkspaceTabs(nextTabs)
+    router.replace({ view: 'table', file: activeFile, viewId: view.key, typeFilter: activeType })
+  }
+
   // Record tabs can be restored before their file records have loaded. Once
   // data arrives, replace the placeholder coordinate with a real record.
   // Singleton types are always normalized to this record route.
   useEffect(() => {
-    if (!currentRoute) return
+    if (!pluginsReady || !currentRoute || activePluginView) return
     if (activeFileData?.file_path !== currentRoute.file) return
     const activeTab = workspaceTabsRef.current.find(tab => tab.id === activeWorkspaceTabId)
     const needsRecord = (isSingletonType && currentRoute.view !== 'source') || activeTab?.viewKind === 'record'
@@ -2388,12 +2678,13 @@ export default function App() {
         coordinate: firstCoord,
       })
     }
-  }, [activeFileData, activeType, activeWorkspaceTabId, currentRoute, isSingletonType, router])
+  }, [activeFileData, activePluginView, activeType, activeWorkspaceTabId, currentRoute, isSingletonType, pluginsReady, router])
 
   // Deleted custom views and stale routes fall back locally for this tab.
   useEffect(() => {
-    if (!currentRoute || !activeFileData || viewTabs.length === 0) return
-    const valid = viewTabs.some(tab => tab.id === currentRoute.viewId && tab.kind === currentRoute.view)
+    if (!pluginsReady || !currentRoute || !activeFileData || viewTabs.length === 0) return
+    const valid = !!activePluginView
+      || viewTabs.some(tab => tab.id === currentRoute.viewId && tab.kind === currentRoute.view)
     if (valid) return
     if (!activeType) {
       router.replace({
@@ -2424,7 +2715,7 @@ export default function App() {
       viewId: DEFAULT_TABLE_VIEW_ID,
       typeFilter: activeType,
     })
-  }, [activeFileData, activeType, currentRoute, isSingletonType, router, viewTabs])
+  }, [activeFileData, activePluginView, activeType, currentRoute, isSingletonType, pluginsReady, router, viewTabs])
 
   // If the current file doesn't support graph view but a stale route asks for
   // it, drop back to the type's valid default view.
@@ -2538,21 +2829,31 @@ export default function App() {
           >
             <Icon name="folder" size={20} />
           </button>
+          {pluginRegistry.sidebars
+            .filter(sidebar => pluginRegistry.plugins.some(
+              plugin => plugin.id === sidebar.pluginId && plugin.origin === 'built-in',
+            ))
+            .map(sidebar => {
+              const pane = `plugin:${sidebar.key}` as const
+              return (
+                <button
+                  key={sidebar.key}
+                  className={`activity-btn activity-brand${activePane === pane ? ' active' : ''}`}
+                  title={sidebar.title}
+                  aria-label={sidebar.title}
+                  aria-pressed={activePane === pane}
+                  onClick={() => setActivePane(pane)}
+                >
+                  <Icon name={sidebar.icon ?? 'extensions'} size={20} />
+                </button>
+              )
+            })}
           <button
-            className={`activity-btn activity-brand${activePane === 'search' ? ' active' : ''}`}
-            title="全局搜索 (Ctrl+Shift+F)"
-            aria-label="搜索"
-            aria-pressed={activePane === 'search'}
-            onClick={() => { setActivePane('search'); requestAnimationFrame(() => projectSearchRef.current?.focus()) }}
-          >
-            <Icon name="search" size={20} />
-          </button>
-          <button
-            className={`activity-btn activity-engineer${activePane === 'extensions' ? ' active' : ''}`}
-            title="扩展"
-            aria-label="扩展"
-            aria-pressed={activePane === 'extensions'}
-            onClick={() => setActivePane('extensions')}
+            className={`activity-btn activity-engineer${activePane === 'plugins' ? ' active' : ''}`}
+            title="插件"
+            aria-label="插件"
+            aria-pressed={activePane === 'plugins'}
+            onClick={() => setActivePane('plugins')}
           >
             <Icon name="extensions" size={20} />
           </button>
@@ -2565,6 +2866,23 @@ export default function App() {
           >
             <Icon name="sparkles" size={20} />
           </button>
+          {pluginRegistry.sidebars.filter(sidebar => pluginRegistry.plugins.some(
+            plugin => plugin.id === sidebar.pluginId && plugin.origin !== 'built-in',
+          )).map(sidebar => {
+            const pane = `plugin:${sidebar.key}` as const
+            return (
+              <button
+                key={sidebar.key}
+                className={`activity-btn${activePane === pane ? ' active' : ''}`}
+                title={sidebar.title}
+                aria-label={sidebar.title}
+                aria-pressed={activePane === pane}
+                onClick={() => setActivePane(pane)}
+              >
+                <Icon name={sidebar.icon ?? 'extensions'} size={20} />
+              </button>
+            )
+          })}
           <div className="activity-bar-bottom" ref={settingsMenuRef}>
             <button
               className="activity-btn"
@@ -2623,171 +2941,39 @@ export default function App() {
               )}
             </>
           )}
-          {activePane === 'search' && (
-            <div className="project-search-pane">
-              <div className="sidebar-header">
-                <span>全局搜索</span>
-                {!!projectSearchResults && (
-                  <span className="project-search-total">{projectSearchResults.hits.length} 条</span>
-                )}
-              </div>
-              <div className="pane-search-wrap">
-                <label className="pane-search">
-                  <Icon name="search" size={13} />
-                  <input
-                    ref={projectSearchRef}
-                    placeholder="输入 Key 或字段值…"
-                    value={projectSearch}
-                    onChange={e => setProjectSearch(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault()
-                        focusProjectSearchResult(selectedProjectSearchIndex < 0 ? 0 : selectedProjectSearchIndex)
-                      } else if (e.key === 'Enter' && projectSearchResults?.hits[0]) {
-                        e.preventDefault()
-                        openProjectSearchHit(projectSearchResults.hits[0])
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault()
-                        if (projectSearch) setProjectSearch('')
-                        else setActivePane('files')
-                      }
-                    }}
-                    aria-label="跨文件搜索"
-                  />
-                  {projectSearch && (
-                    <button
-                      className="pane-search-clear"
-                      onClick={() => { setProjectSearch(''); projectSearchRef.current?.focus() }}
-                      aria-label="清除全局搜索"
-                    >
-                      <Icon name="close" size={12} />
-                    </button>
-                  )}
-                </label>
-                <div className="project-search-modes" role="group" aria-label="搜索范围">
-                  <button
-                    className={projectSearchMode === 'key' ? 'active' : ''}
-                    aria-pressed={projectSearchMode === 'key'}
-                    onClick={() => setProjectSearchMode('key')}
-                  >
-                    Key
-                  </button>
-                  <button
-                    className={projectSearchMode === 'full_text' ? 'active' : ''}
-                    aria-pressed={projectSearchMode === 'full_text'}
-                    onClick={() => setProjectSearchMode('full_text')}
-                  >
-                    全文
-                  </button>
-                </div>
-              </div>
-              <div className="project-search-results" role="tree" aria-label="全局搜索结果">
-                {!project ? (
-                  <div className="project-search-state">请先打开项目</div>
-                ) : projectSearchError ? (
-                  <div className="project-search-state error" role="alert">搜索失败：{projectSearchError}</div>
-                ) : projectSearchBusy && !projectSearchResults ? (
-                  <div className="project-search-state">正在搜索…</div>
-                ) : projectSearch && projectSearchResults?.hits.length === 0 ? (
-                  <div className="project-search-state">没有找到“{projectSearch}”</div>
-                ) : projectSearchResults ? (
-                  <>
-                    {projectSearchGroups.map(fileGroup => {
-                      const fileKey = `file:${fileGroup.filePath}`
-                      const fileCollapsed = collapsedSearchGroups.has(fileKey)
-                      return (
-                        <div className="project-search-file" key={fileGroup.filePath}>
-                          <button
-                            className="project-search-group file"
-                            onClick={() => toggleSearchGroup(fileKey)}
-                            aria-expanded={!fileCollapsed}
-                          >
-                            <Icon name={fileCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
-                            <Icon name="file" size={13} />
-                            <span title={fileGroup.filePath}>{fileGroup.filePath}</span>
-                            <b>{fileGroup.hits.length}</b>
-                          </button>
-                          {!fileCollapsed && fileGroup.types.map(typeGroup => {
-                            const typeKey = `type:${fileGroup.filePath}:${typeGroup.actualType}`
-                            const typeCollapsed = collapsedSearchGroups.has(typeKey)
-                            return (
-                              <div className="project-search-type" key={typeKey}>
-                                <button
-                                  className="project-search-group type"
-                                  onClick={() => toggleSearchGroup(typeKey)}
-                                  aria-expanded={!typeCollapsed}
-                                >
-                                  <Icon name={typeCollapsed ? 'chevron-right' : 'chevron-down'} size={11} />
-                                  <span>{typeGroup.actualType}</span>
-                                  <b>{typeGroup.hits.length}</b>
-                                </button>
-                                {!typeCollapsed && typeGroup.hits.map(hit => {
-                                  const index = projectSearchResults.hits.indexOf(hit)
-                                  return (
-                                    <button
-                                      className={`project-search-hit${selectedProjectSearchIndex === index ? ' selected' : ''}`}
-                                      key={`${hit.coordinate.actual_type}:${hit.coordinate.key}:${hit.field_path ?? ''}`}
-                                      data-project-search-index={index}
-                                      role="treeitem"
-                                      onFocus={() => setSelectedProjectSearchIndex(index)}
-                                      onClick={() => openProjectSearchHit(hit)}
-                                      onKeyDown={e => {
-                                        if (e.key === 'ArrowDown') {
-                                          e.preventDefault()
-                                          focusProjectSearchResult(index + 1)
-                                        } else if (e.key === 'ArrowUp') {
-                                          e.preventDefault()
-                                          if (index === 0) projectSearchRef.current?.focus()
-                                          else focusProjectSearchResult(index - 1, -1)
-                                        } else if (e.key === 'Escape') {
-                                          e.preventDefault()
-                                          projectSearchRef.current?.focus()
-                                        }
-                                      }}
-                                    >
-                                      <span className="project-search-hit-key">{hit.coordinate.key}</span>
-                                      {hit.preview && <span className="project-search-hit-preview">{hit.preview}</span>}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
-                    {projectSearchResults.truncated && (
-                      <div className="project-search-limit">已显示前 200 条，请缩小搜索范围</div>
-                    )}
-                    {projectSearchBusy && <div className="project-search-updating">正在更新…</div>}
-                  </>
-                ) : null}
-              </div>
-            </div>
-          )}
-          {activePane === 'extensions' && (
-            <div className="extensions-pane">
-              <div className="sidebar-header extensions-header">
-                <span>扩展</span>
+          {activePane === 'plugins' && (
+            <div className="plugins-pane">
+              <div className="sidebar-header plugins-header">
+                <span>插件</span>
                 {api.isTauri && (
                   <button className="btn btn-icon" onClick={() => void loadPluginFromSettings()} disabled={pluginLoadBusy || !project} title="添加项目插件" aria-label="添加项目插件">
                     <Icon name="plus" size={15} />
                   </button>
                 )}
               </div>
-              <div className="extensions-list">
+              {pluginRegistry.pages.length > 0 && (
+                <div className="plugin-pages-list" aria-label="插件页面">
+                  {pluginRegistry.pages.map(page => (
+                    <button key={page.key} type="button" onClick={() => openPluginPage(page.key)}>
+                      <Icon name="extensions" size={14} aria-hidden />
+                      <span>{page.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="plugins-list">
                 {pluginSettings.map(plugin => (
-                  <article className="extension-item" key={plugin.id}>
-                    <div className="extension-item-main">
-                      <div className="extension-item-icon"><Icon name="extensions" size={16} /></div>
+                  <article className="plugin-item" key={plugin.id}>
+                    <div className="plugin-item-main">
+                      <div className="plugin-item-icon"><Icon name="extensions" size={16} /></div>
                       <div>
                         <strong>{plugin.name}</strong>
                         <small>{plugin.description || plugin.id}</small>
                         <em>{plugin.origin === 'project' ? '项目插件' : '全局已安装'}</em>
                       </div>
                     </div>
-                    <div className="extension-item-actions">
-                      <label className="extension-toggle">
+                    <div className="plugin-item-actions">
+                      <label className="plugin-toggle">
                         <input type="checkbox" checked={plugin.enabled} onChange={event => void togglePluginFromSettings(plugin, event.target.checked)} />
                         <span>{plugin.enabled ? '已启用' : '已禁用'}</span>
                       </label>
@@ -2799,7 +2985,7 @@ export default function App() {
                     </div>
                   </article>
                 ))}
-                {pluginLoadError && <div className="extensions-error">{pluginLoadError}</div>}
+                {pluginLoadError && <div className="plugins-error">{pluginLoadError}</div>}
               </div>
             </div>
           )}
@@ -2834,6 +3020,13 @@ export default function App() {
               </div>
             </>
           )}
+          {activePluginSidebar && pluginSidebarContext && (
+            <PluginContributionMount
+              contribution={activePluginSidebar}
+              context={pluginSidebarContext}
+              className="plugin-sidebar-host"
+            />
+          )}
           {activePane === 'files' && api.isTauri && <UpdateControl />}
         </div>
 
@@ -2853,7 +3046,7 @@ export default function App() {
         <div className="editor-column">
         <div className="content-area-wrap">
         <div className="content-area">
-          {workspaceTabs.length > 0 && (
+          {(workspaceTabs.length > 0 || pluginPageTabs.length > 0) && (
             <div className="document-tabs" role="tablist" aria-label="已打开内容">
               <div
                 className="tab-scroll"
@@ -2876,10 +3069,10 @@ export default function App() {
                   return (
                     <div
                       key={tab.id}
-                      className={`document-tab${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                      className={`document-tab${!activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
                       role="tab"
-                      aria-selected={tab.id === activeWorkspaceTabId}
-                      tabIndex={tab.id === activeWorkspaceTabId ? 0 : -1}
+                      aria-selected={!activePluginPageKey && tab.id === activeWorkspaceTabId}
+                      tabIndex={!activePluginPageKey && tab.id === activeWorkspaceTabId ? 0 : -1}
                       data-tab-id={tab.id}
                       onClick={() => openFile(tab.filePath, tab.typeName)}
                       onKeyDown={event => {
@@ -2919,6 +3112,33 @@ export default function App() {
                     </div>
                   )
                 })}
+                {pluginPageTabs.map(tab => (
+                  <div
+                    key={tab.key}
+                    className={`document-tab${tab.key === activePluginPageKey ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={tab.key === activePluginPageKey}
+                    tabIndex={tab.key === activePluginPageKey ? 0 : -1}
+                    data-tab-id={tab.key}
+                    onClick={() => { finishActiveDataEdit(); setActivePluginPageKey(tab.key) }}
+                    title={tab.title}
+                  >
+                    <Icon name="extensions" size={12} className="document-tab-icon" aria-hidden />
+                    <span className="document-tab-label">{tab.title}</span>
+                    <button
+                      type="button"
+                      className="document-tab-close"
+                      onClick={event => {
+                        event.stopPropagation()
+                        closePluginPageTab(tab.key)
+                      }}
+                      aria-label={`关闭 ${tab.title}`}
+                      title="关闭标签"
+                    >
+                      <Icon name="close" size={11} aria-hidden />
+                    </button>
+                  </div>
+                ))}
               </div>
               {tabsOverflow && (
                 <div className="tab-overflow" ref={tabOverflowRef}>
@@ -2946,7 +3166,7 @@ export default function App() {
                             key={tab.id}
                             type="button"
                             role="menuitem"
-                            className={`tab-overflow-item${tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                            className={`tab-overflow-item${!activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
                             onClick={() => {
                               openFile(tab.filePath, tab.typeName)
                               setTabOverflowOpen(false)
@@ -2961,13 +3181,28 @@ export default function App() {
                           </button>
                         )
                       })}
+                      {pluginPageTabs.map(tab => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          role="menuitem"
+                          className={`tab-overflow-item${tab.key === activePluginPageKey ? ' active' : ''}`}
+                          onClick={() => {
+                            setActivePluginPageKey(tab.key)
+                            setTabOverflowOpen(false)
+                          }}
+                        >
+                          <Icon name="extensions" size={12} aria-hidden />
+                          <span className="name">{tab.title}</span>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
               )}
             </div>
           )}
-          {currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
+          {!activePluginPage && currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
             activeSchemaFile ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
@@ -3018,21 +3253,77 @@ export default function App() {
                       {tab.name}
                     </button>
                   ))}
+                  {activePluginView && (
+                    <button
+                      className="tab-btn tab-view active"
+                      role="tab"
+                      aria-selected="true"
+                      data-tab-id={activePluginView.key}
+                    >
+                      <Icon name="extensions" size={13} aria-hidden />
+                      {activePluginView.title}
+                    </button>
+                  )}
                 </div>
-                {!!activeType && !isSingletonType && (
-                  <button
-                    className="btn btn-icon view-tab-add"
-                    onClick={() => openViewEditor('create')}
-                    title="新建视图"
-                    aria-label="新建视图"
-                  >
-                    <Icon name="plus" size={13} aria-hidden />
-                  </button>
+                {!!activeType && (pluginViews.length > 0 || !isSingletonType) && (
+                  <div className="view-tab-add-wrap">
+                    <button
+                      className="btn btn-icon view-tab-add"
+                      onClick={() => setViewAddMenuOpen(open => !open)}
+                      title="添加视图"
+                      aria-label="添加视图"
+                      aria-expanded={viewAddMenuOpen}
+                    >
+                      <Icon name="plus" size={13} aria-hidden />
+                    </button>
+                    {viewAddMenuOpen && (
+                      <div className="view-add-menu" role="menu">
+                        {pluginViews.map(view => (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={view.key}
+                            className={activePluginView?.key === view.key ? 'active' : undefined}
+                            onClick={() => {
+                              switchPluginView(view.key)
+                              setViewAddMenuOpen(false)
+                            }}
+                          >
+                            <Icon name="extensions" size={13} aria-hidden />
+                            <span>{view.title}</span>
+                          </button>
+                        ))}
+                        {!isSingletonType && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              openViewEditor('create')
+                              setViewAddMenuOpen(false)
+                            }}
+                          >
+                            <Icon name="plus" size={13} aria-hidden />
+                            <span>新建自定义视图</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )
           )}
-          {currentRoute && activeSchemaFile && project ? (
+          {activePluginPage && pluginPageContext ? (
+            <div className="view-container plugin-page-container">
+              <PluginContributionMount
+                contribution={activePluginPage}
+                context={pluginPageContext}
+                className="plugin-page-host"
+                retainOnError
+                fallback={<div className="content-empty"><div className="content-empty-title">插件页面加载失败</div></div>}
+              />
+            </div>
+          ) : currentRoute && activeSchemaFile && project ? (
             <div className="view-container" ref={viewContainerRef}>
               <SourceEditorView
                 sessionId={project.session_id}
@@ -3061,7 +3352,7 @@ export default function App() {
             />
           ) : currentRoute && activeFileData ? (
             <>
-              {readOnly && (
+              {(readOnly || activePluginView?.readOnly) && (
                 <div className="document-toolbar readonly-only">
                   <span className="document-readonly" title="该来源未提供可写能力">
                     <Icon name="lock" size={11} aria-hidden />
@@ -3071,7 +3362,7 @@ export default function App() {
               )}
 
               {/* Record search bar — shared by structured views. */}
-              {activeViewKind !== 'source' && <div className="global-search-bar">
+              {activeViewKind !== 'source' && activeViewKind !== 'plugin' && <div className="global-search-bar">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={documentSearchRef}
@@ -3114,6 +3405,13 @@ export default function App() {
               </div>}
 
               <div className="view-container" ref={viewContainerRef}>
+                {activeViewKind === 'plugin' && activePluginView && pluginViewContext && (
+                  <PluginContributionMount
+                    contribution={activePluginView}
+                    context={pluginViewContext}
+                    className="plugin-view-host"
+                  />
+                )}
                 {activeViewKind === 'table' && (
                   <TableView
                     data={viewFilteredFileData ?? activeFileData}
@@ -3277,7 +3575,7 @@ export default function App() {
           )}
         </div>
         <InspectorPanel
-          open={activeViewKind !== 'record'
+          open={!activePluginPage && activeViewKind !== 'record'
             && (inspectorOpen || ((activeViewKind === 'table' || activeViewKind === 'graph') && !!activeFileData))}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
