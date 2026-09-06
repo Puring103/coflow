@@ -10,6 +10,7 @@ use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultVa
 use crate::CsharpCodegenError;
 use coflow_language::cft::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
+use std::fmt::Write as _;
 
 use identifiers::{
     csharp_public_member_name, csharp_public_type_name, field_local_name,
@@ -62,6 +63,7 @@ fn function_parameters(
         .collect()
 }
 
+#[allow(clippy::too_many_lines)] // 类型 IR 必须在一次遍历中保持构造参数、字段槽和加载布局完全同步。
 pub fn build_csharp_type(
     schema_type: &CftType,
     view: &CsharpLoweringPlan<'_>,
@@ -74,10 +76,10 @@ pub fn build_csharp_type(
     let mut functions = Vec::new();
 
     let is_struct = schema_type.is_struct;
-    let (layout_integer_count, layout_float_count, layout_reference_count) = if !schema_type.is_abstract {
-        generated_value_layout_widths(schema_type, view)?
-    } else {
+    let (layout_integer_count, layout_float_count, layout_reference_count) = if schema_type.is_abstract {
         (0, 0, 0)
+    } else {
+        generated_value_layout_widths(schema_type, view)?
     };
     let is_table = !schema_type.is_abstract && !is_struct && type_is_table(&schema_type.name, view);
     if is_table {
@@ -102,7 +104,7 @@ pub fn build_csharp_type(
         let inherited = !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name);
         if let CftValueType::Function(parameters, result) = &field.value_type {
             let method_name = csharp_public_member_name(&field.name);
-            let entry_name = format!("_coflow{}", method_name);
+            let entry_name = format!("_coflow{method_name}");
             functions.push(CsharpFunction {
                 source_name: field.name.to_string(),
                 method_name: method_name.clone(),
@@ -211,7 +213,7 @@ pub fn build_csharp_type(
                 .type_is_singleton(field.declaring_type.as_str())?
                 .then(|| format!("\"{}\"", escape_csharp_literal(field.name.as_str())));
             let variants_reader = |base: String, context: &str, key: &str| {
-                dimension.as_ref().map_or(base.clone(), |(dimension_type, generated_type, variants)| {
+                dimension.as_ref().map_or_else(|| base.clone(), |(dimension_type, generated_type, variants)| {
                     let variants = variants
                         .iter()
                         .map(|variant| format!("\"{}\"", escape_csharp_literal(variant)))
@@ -385,12 +387,14 @@ fn function_loader_reader(
     let CftValueType::Function(parameters, result) = &field.value_type else {
         return None;
     };
-    let parameter_types = parameters
-        .iter()
-        .map(|parameter| {
-            format!(", typeof({})", csharp_type(&parameter.value_type, view))
-        })
-        .collect::<String>();
+    let mut parameter_types = String::new();
+    for parameter in parameters {
+        let _ = write!(
+            parameter_types,
+            ", typeof({})",
+            csharp_type(&parameter.value_type, view)
+        );
+    }
     let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
         "{context}.{method}({node}, \"{}\", typeof({}){parameter_types})",
@@ -424,18 +428,6 @@ fn value_layout_widths(
     visiting: &mut BTreeSet<String>,
 ) -> Result<(usize, usize, usize), CsharpCodegenError> {
     match value_type {
-        CftValueType::Int | CftValueType::Bool | CftValueType::Enum(_) => Ok((1, 0, 0)),
-        CftValueType::Float => Ok((0, 1, 0)),
-        CftValueType::Unit => Ok((0, 0, 0)),
-        CftValueType::Option(inner) => {
-            let (integer, floating, reference) = value_layout_widths(inner, view, visiting)?;
-            Ok((integer + 1, floating, reference))
-        }
-        CftValueType::Result(ok, error) => {
-            let first = value_layout_widths(ok, view, visiting)?;
-            let second = value_layout_widths(error, view, visiting)?;
-            Ok((first.0 + second.0 + 1, first.1 + second.1, first.2 + second.2))
-        }
         CftValueType::Object(name) if view.resolve_type(name)?.is_struct => {
             if !visiting.insert(name.to_string()) {
                 return Err(CsharpCodegenError::new(format!(
@@ -456,10 +448,26 @@ fn value_layout_widths(
             Ok(width)
         }
         // 集合在 Runtime 中使用稳定 CollectionId，不占用 CLR reference lane。
-        CftValueType::Array(_) | CftValueType::Dict(_, _) => Ok((1, 0, 0)),
+        CftValueType::Array(_)
+        | CftValueType::Dict(_, _)
+        | CftValueType::Object(_)
+        | CftValueType::Int
+        | CftValueType::Bool
+        | CftValueType::Enum(_)
+        | CftValueType::RecordRef(_) => Ok((1, 0, 0)),
+        CftValueType::Float => Ok((0, 1, 0)),
+        CftValueType::Unit => Ok((0, 0, 0)),
+        CftValueType::Option(inner) => {
+            let (integer, floating, reference) = value_layout_widths(inner, view, visiting)?;
+            Ok((integer + 1, floating, reference))
+        }
+        CftValueType::Result(ok, error) => {
+            let first = value_layout_widths(ok, view, visiting)?;
+            let second = value_layout_widths(error, view, visiting)?;
+            Ok((first.0 + second.0 + 1, first.1 + second.1, first.2 + second.2))
+        }
         CftValueType::String => Ok((0, 0, 1)),
         CftValueType::Function(_, _) => Ok((2, 0, 0)),
-        CftValueType::Object(_) | CftValueType::RecordRef(_) => Ok((1, 0, 0)),
     }
 }
 
@@ -470,10 +478,14 @@ fn function_default_loader(
     result: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
-    let parameter_types = parameters
-        .iter()
-        .map(|parameter| format!(", typeof({})", csharp_type(&parameter.value_type, view)))
-        .collect::<String>();
+    let mut parameter_types = String::new();
+    for parameter in parameters {
+        let _ = write!(
+            parameter_types,
+            ", typeof({})",
+            csharp_type(&parameter.value_type, view)
+        );
+    }
     format!(
         "context.DefaultFunction(\"{}\", \"{}\", typeof({}){parameter_types})",
         escape_csharp_literal(source),
@@ -490,6 +502,7 @@ fn loader_default(
     loader_default_inner(value, ty, view, &mut Vec::new())
 }
 
+#[allow(clippy::too_many_lines)] // 默认值语法与 CFT 枚举一一对应，集中匹配可保持穷尽性检查。
 fn loader_default_inner(
     value: &CftSchemaDefaultValue,
     ty: &CftValueType,
@@ -710,11 +723,14 @@ fn loader_object_default(
             arguments.push("null".to_string());
         }
         if view.is_ref_target_loadable(type_name) {
-            arguments.push(match view.key_field_type(type_name) {
+            let key = match view.key_field_type(type_name) {
                 CftValueType::String => "string.Empty".to_string(),
                 CftValueType::Enum(name) => format!("default({})", view.csharp_enum_ref(&name)),
-                _ => unreachable!("record keys are string or enum"),
-            });
+                other => return Err(CsharpCodegenError::new(format!(
+                    "record key `{type_name}` has unsupported type `{other:?}`"
+                ))),
+            };
+            arguments.push(key);
         }
         arguments.extend(view
             .fields(type_name.as_str())?

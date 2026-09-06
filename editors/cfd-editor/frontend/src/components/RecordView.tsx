@@ -20,7 +20,7 @@ import { CreateRecordDialog } from './CreateRecordDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
-import { RECORD_HIGHLIGHT_SENTINEL } from '../App'
+import { RECORD_HIGHLIGHT_SENTINEL } from '../state/editorSelection'
 import { recordMatchesSearch } from '../value/fieldValue'
 import {
   expandedPathsFor,
@@ -48,6 +48,7 @@ import {
   usePluginPresentation,
 } from '../plugins'
 import type { PluginPresentationContext } from '../plugins/types'
+import { cssEscape, isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Props {
   data: FileRecords
@@ -638,11 +639,6 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   )
 }
 
-function cssEscape(s: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
-  return s.replace(/["\\]/g, '\\$&')
-}
-
 function selectRecordItem(
   element: HTMLElement,
   coordinate: RecordCoordinate,
@@ -658,25 +654,6 @@ function selectRecordItem(
   if (!path) return
   setSelectedActionPathWire(null)
   onSelectValue?.(coordinate, path)
-}
-
-function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {
-  if (!raw) return null
-  try {
-    const value = JSON.parse(raw)
-    return Array.isArray(value) ? value as FieldPathSegment[] : null
-  } catch {
-    return null
-  }
-}
-
-function isNativeEditorTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return target.isContentEditable
-    || target.tagName === 'INPUT'
-    || target.tagName === 'TEXTAREA'
-    || target.tagName === 'SELECT'
-    || target.tagName === 'BUTTON'
 }
 
 /** First scalar field's summary — used as the sidebar row subtitle so the

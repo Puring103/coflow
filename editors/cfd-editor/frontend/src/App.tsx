@@ -80,6 +80,7 @@ import {
 } from './wire'
 import { recordMatchesFullTextSearch, recordMatchesSearch } from './value/fieldValue'
 import { isEditableFile } from './utils/editable'
+import { isNativeEditorTarget } from './utils/dom'
 import { EditorLookupController } from './state/editorLookups'
 import {
   MutationHistoryController,
@@ -100,6 +101,7 @@ import {
   updateRecordSelection,
   updateValueSelection,
   valueSelection,
+  RECORD_HIGHLIGHT_SENTINEL,
   type CellAnchor,
   type EditorSelection,
   type RecordSelectionMode,
@@ -137,69 +139,22 @@ import {
   type WorkspaceTab,
 } from './state/workspaceTabs'
 import coflowLogo from '../../../../assets/coflow-logo.svg'
+import {
+  collectSourceFiles,
+  definedColumnWidths,
+  dimensionForFile,
+  graphCacheKey,
+  onToolbarKeyDown,
+  projectGraphRows,
+  projectYamlPath,
+  readLastProjectPath,
+  rememberLastProject,
+  sameValueCells,
+} from './state/appSupport'
 import './style.css'
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
-const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
-
-function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
-  return left.length === right.length && left.every((cell, index) => {
-    const other = right[index]
-    return !!other
-      && coordinateId(cell.coordinate) === coordinateId(other.coordinate)
-      && JSON.stringify(cell.fieldPath) === JSON.stringify(other.fieldPath)
-  })
-}
-
-/** Passed as `highlightField` when a record-level (no field path) jump lands
- *  on a record view — RecordView flashes the CardHeader instead of a row. */
-export const RECORD_HIGHLIGHT_SENTINEL = '__record__'
-
-function graphCacheKey(
-  filePath: string,
-  depth: number,
-  limit: number,
-): string {
-  return `${filePath}::${depth}::${limit}`
-}
-
-function projectGraphRows(
-  cache: Record<string, GraphData>,
-  revision: number,
-  rows: RecordRow[],
-): Record<string, GraphData> {
-  const rowByCoordinate = new Map(
-    rows.map(row => [`${row.coordinate.actual_type}\u001f${row.coordinate.key}`, row]),
-  )
-  let changed = false
-  const next: Record<string, GraphData> = {}
-  for (const [key, graph] of Object.entries(cache)) {
-    if (graph.revision !== revision - 1 && graph.revision !== revision) {
-      next[key] = graph
-      continue
-    }
-    const nodes = graph.nodes.map(node => {
-      const row = rowByCoordinate.get(
-        `${node.coordinate.actual_type}\u001f${node.coordinate.key}`,
-      )
-      if (!row) return node
-      return {
-        ...node,
-        fields: row.fields,
-        field_diagnostics: row.field_diagnostics,
-        diagnostic_severity: row.diagnostic_severity,
-      }
-    })
-    const projected = graph.revision === revision && nodes.every((node, index) => node === graph.nodes[index])
-      ? graph
-      : { ...graph, revision, nodes }
-    if (projected !== graph) changed = true
-    next[key] = projected
-  }
-  return changed ? next : cache
-}
-
 export default function App() {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
@@ -1574,7 +1529,7 @@ export default function App() {
       }
       // `?` only toggles help when not focused inside a text-editing control,
       // otherwise typing `?` into inputs/search boxes would steal focus.
-      if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
+      if (e.key === '?' && !isNativeEditorTarget(e.target, false)) setShowHelp(v => !v)
       if (e.key === 'Escape') setShowHelp(false)
     }
     window.addEventListener('keydown', handler)
@@ -1735,7 +1690,7 @@ export default function App() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       // 输入控件保留普通编辑按键，但允许带主修饰键的插件快捷键。
-      if (isTextTarget(event.target) && !event.ctrlKey && !event.metaKey && !event.altKey) return
+      if (isNativeEditorTarget(event.target, false) && !event.ctrlKey && !event.metaKey && !event.altKey) return
       dispatchPluginKeybinding(event, pluginActiveContext)
     }
     window.addEventListener('keydown', handler)
@@ -3366,93 +3321,4 @@ export default function App() {
     </div>
     </ObjectDraftHost>
   )
-}
-
-function readLastProjectPath(): string | null {
-  try {
-    return localStorage.getItem(LAST_PROJECT_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function rememberLastProject(yamlPath: string) {
-  try {
-    localStorage.setItem(LAST_PROJECT_STORAGE_KEY, yamlPath)
-  } catch {
-    // The project still opens when WebView storage is unavailable.
-  }
-}
-
-function projectYamlPath(directory: string): string {
-  const trimmed = directory.replace(/[\\/]+$/, '')
-  const separator = trimmed.includes('\\') ? '\\' : '/'
-  return `${trimmed}${separator}coflow.yaml`
-}
-
-function definedColumnWidths(
-  widths: { [column: string]: number | undefined } | undefined,
-): Record<string, number> | undefined {
-  if (!widths) return undefined
-  return Object.fromEntries(
-    Object.entries(widths).filter((entry): entry is [string, number] => entry[1] !== undefined),
-  )
-}
-
-function collectSourceFiles(bootstrap: ProjectBootstrap): string[] {
-  const out: string[] = []
-  function walk(n: ProjectBootstrap['file_tree'][number]) {
-    if (!n.is_dir && n.in_sources) out.push(n.path)
-    for (const c of n.children) walk(c)
-  }
-  for (const n of bootstrap.file_tree) walk(n)
-  return out
-}
-
-function dimensionForFile(dimensions: DimensionInfo[], filePath: string): DimensionInfo | undefined {
-  const normalizedFile = filePath.replace(/\\/g, '/')
-  return dimensions.find(dimension => {
-    if (!dimension.out_dir) return false
-    const directory = dimension.out_dir.replace(/\\/g, '/').replace(/\/+$/, '')
-    return normalizedFile.startsWith(`${directory}/`)
-  })
-}
-
-/** True when the user is currently focused inside a text-editing control.
- *  Used to gate global shortcuts (`?`, etc.) so they don't fire while typing. */
-function isTextTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
-}
-
-function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {
-  if (!(event.target instanceof HTMLButtonElement)) return
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    onExitDown()
-    return
-  }
-  if (
-    event.key !== 'ArrowLeft'
-    && event.key !== 'ArrowRight'
-    && event.key !== 'Home'
-    && event.key !== 'End'
-  ) return
-  // The center view switch (记录/表格/图谱) is intentionally excluded from the
-  // toolbar's arrow-key roving nav — it's a mouse/click affordance, not part of
-  // the left-to-right keyboard chain.
-  const buttons = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not(.tab-view)'),
-  )
-  const index = buttons.indexOf(event.target)
-  if (index < 0) return
-  event.preventDefault()
-  if (event.key === 'Home') buttons[0]?.focus()
-  else if (event.key === 'End') buttons[buttons.length - 1]?.focus()
-  else {
-    const next = index + (event.key === 'ArrowRight' ? 1 : -1)
-    if (next >= 0 && next < buttons.length) buttons[next].focus()
-    else if (next < 0) onExitDown()
-  }
 }

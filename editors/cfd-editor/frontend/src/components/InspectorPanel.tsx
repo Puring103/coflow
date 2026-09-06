@@ -42,6 +42,7 @@ import { BatchRecordEditor } from './BatchRecordEditor'
 import { BatchCellEditor } from './BatchCellEditor'
 import { projectBatchCells } from '../state/batchRecordProjection'
 import { parseCfdClipboard, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
+import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Props {
   open: boolean
@@ -592,21 +593,3 @@ function topLevelExpandablePaths(fields: RecordRow['fields']): Set<string> {
 }
 
 const EMPTY_EXPANDED_PATHS = new Set<string>()
-
-function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {
-  if (!raw) return null
-  try {
-    const value = JSON.parse(raw)
-    return Array.isArray(value) ? value as FieldPathSegment[] : null
-  } catch {
-    return null
-  }
-}
-
-function isNativeEditorTarget(target: HTMLElement): boolean {
-  return target.isContentEditable
-    || target.tagName === 'INPUT'
-    || target.tagName === 'TEXTAREA'
-    || target.tagName === 'SELECT'
-    || target.tagName === 'BUTTON'
-}

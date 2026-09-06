@@ -49,6 +49,7 @@ struct MetadataEnumVariant {
 }
 
 #[derive(Serialize)]
+#[allow(clippy::struct_excessive_bools)] // 字段直接对应稳定的 Tera metadata 协议，不是互斥状态机。
 struct MetadataType {
     type_id: usize,
     metadata_name: String,
@@ -192,7 +193,7 @@ pub fn render_common_project(
 pub fn render_cfd_metadata_template(
     project: &CsharpProject,
 ) -> Result<String, CsharpCodegenError> {
-    let view = metadata_project(project);
+    let view = metadata_project(project)?;
     let mut context = Context::new();
     context.insert("metadata", &view);
     context.insert("enums", &view.enums);
@@ -207,8 +208,8 @@ pub fn render_cfd_metadata_template(
     render(&templates()?, "metadata.cs.tera", &context)
 }
 
-fn metadata_project(project: &CsharpProject) -> MetadataProject {
-    MetadataProject {
+fn metadata_project(project: &CsharpProject) -> Result<MetadataProject, CsharpCodegenError> {
+    Ok(MetadataProject {
         enums: project.enums.iter().map(metadata_enum).collect(),
         abstract_types: project.types.iter()
             .filter(|ty| ty.is_abstract && !ty.is_host)
@@ -217,7 +218,7 @@ fn metadata_project(project: &CsharpProject) -> MetadataProject {
                 qualified_name: ty.qualified_name.clone(),
             }).collect(),
         types: project.types.iter().filter(|ty| ty.loader_enabled)
-            .map(|ty| metadata_type(project, ty)).collect(),
+            .map(|ty| metadata_type(project, ty)).collect::<Result<Vec<_>, _>>()?,
         constants: project.constants.iter().map(|constant| MetadataConstant {
             source_name: escape_csharp_string(&constant.source_name),
             runtime_type: constant.runtime_type.clone(),
@@ -240,7 +241,7 @@ fn metadata_project(project: &CsharpProject) -> MetadataProject {
             }).collect(),
         dimensions: project.dimensions.clone(),
         layout_registrations: project.layout_registrations.clone(),
-    }
+    })
 }
 
 fn metadata_enum(schema_enum: &crate::model::CsharpEnum) -> MetadataEnum {
@@ -259,7 +260,10 @@ fn metadata_enum(schema_enum: &crate::model::CsharpEnum) -> MetadataEnum {
     }
 }
 
-fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
+fn metadata_type(
+    project: &CsharpProject,
+    ty: &CsharpType,
+) -> Result<MetadataType, CsharpCodegenError> {
     let singleton = project.singletons.iter().any(|item| item.source_name == ty.source_name);
     let key_type = ty.loader_id_type.as_deref().unwrap_or("string");
     let parse_key = if key_type == "string" {
@@ -306,7 +310,7 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
         .chain(fields.iter().filter(|field| !field.is_function)
             .map(|field| format!("context.Import(value.{})", field.access)))
         .collect();
-    MetadataType {
+    Ok(MetadataType {
         type_id: ty.type_id,
         metadata_name: ty.metadata_name.clone(),
         source_name: escape_csharp_string(&ty.source_name),
@@ -329,9 +333,11 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
         assignable_type_ids: ty.loader_assignable_to.iter()
             .map(|name| project.types.iter()
                 .find(|candidate| candidate.source_name == *name)
-                .expect("assignable type belongs to generated project")
-                .type_id)
-            .collect(),
+                .map(|candidate| candidate.type_id)
+                .ok_or_else(|| CsharpCodegenError::new(format!(
+                    "assignable type `{name}` is missing from the generated project"
+                ))))
+            .collect::<Result<Vec<_>, _>>()?,
         data_fields: fields.iter().filter(|field| !field.is_function).cloned().collect(),
         import_arguments,
         fields,
@@ -342,7 +348,7 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
                     .replace("CONTEXT", "context").replace("RECORD_KEY", "string.Empty"),
                 access: format!("_coflow{}", field.property_name),
             }).collect(),
-    }
+    })
 }
 
 fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {

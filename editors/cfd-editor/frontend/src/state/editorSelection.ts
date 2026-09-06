@@ -27,6 +27,8 @@ export interface CellAnchor {
   fieldPath: FieldPathSegment[]
 }
 
+export const RECORD_HIGHLIGHT_SENTINEL = '__record__'
+
 function fieldPathIdentity(fieldPath: readonly FieldPathSegment[]): string {
   return JSON.stringify(fieldPath)
 }
@@ -271,7 +273,7 @@ function topLevelField(path: FieldPathSegment[]): string | null {
   return path.length === 1 && path[0].kind === 'field' ? path[0].value : null
 }
 
-function sameFieldPath(left: FieldPathSegment[], right: FieldPathSegment[]): boolean {
+export function sameFieldPath(left: readonly FieldPathSegment[], right: readonly FieldPathSegment[]): boolean {
   return left.length === right.length && left.every((segment, index) => {
     const other = right[index]
     return segment.kind === other.kind && segment.value === other.value

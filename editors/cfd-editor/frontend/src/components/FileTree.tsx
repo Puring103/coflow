@@ -4,6 +4,7 @@ import type { FileTypeOption } from '../bindings/FileTypeOption'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
+import { cssEscape } from '../utils/dom'
 
 interface Props {
   nodes: FileTreeNode[]
@@ -463,11 +464,6 @@ function focusByPath(root: HTMLElement | null, path: string) {
   if (!root) return
   const el = root.querySelector<HTMLElement>(`[data-path="${cssEscape(path)}"]`)
   el?.focus()
-}
-
-function cssEscape(s: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
-  return s.replace(/["\\]/g, '\\$&')
 }
 
 function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, depth, collapsed, onToggle, onContextMenu }: {
