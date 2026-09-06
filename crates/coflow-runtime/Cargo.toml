@@ -24,12 +24,10 @@ coflow-checker = { path = "../coflow-checker" }
 coflow-codegen = { path = "../coflow-codegen" }
 coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
 coflow-staging = { path = "../coflow-staging" }
-regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 ts-rs = { version = "10", optional = true }
-unicode-ident = "1"
 walkdir = "2"
 tempfile = "3"
 

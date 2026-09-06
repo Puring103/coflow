@@ -193,7 +193,7 @@ mod project_runtime_tests {
             .is_err());
         assert!(runtime
             .latest_attempt()
-            .is_some_and(|attempt| attempt.has_diagnostics()));
+            .is_some_and(super::super::session::ProjectSchemaSession::has_diagnostics));
 
         assert_eq!(runtime.refresh(), Ok(false));
         assert!(runtime
@@ -412,7 +412,7 @@ impl Runtime {
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
         open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
+            .map(WriteProjectSession::new)
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
@@ -425,7 +425,7 @@ impl Runtime {
         schema: ProjectSchemaSession,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
         open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
-            .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
+            .map(WriteProjectSession::new)
     }
 
     /// Opens a mutation-capable candidate using host-provided text for
@@ -445,7 +445,7 @@ impl Runtime {
             SessionOpenOptions::read_only(),
             source_overrides,
         )
-        .map(|session| WriteProjectSession::new(session, self.catalog.clone()))
+        .map(WriteProjectSession::new)
     }
 }
 
@@ -468,6 +468,12 @@ pub struct ReadOnlyProjectSession {
     pub(crate) session: ProjectSession,
 }
 
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReadOnlyProjectSession {
     const fn new(session: ProjectSession) -> Self {
         Self { session }
@@ -484,7 +490,7 @@ impl ReadOnlyProjectSession {
     }
 
     #[must_use]
-    pub fn model(&self) -> &CfdDataModel {
+    pub const fn model(&self) -> &CfdDataModel {
         self.session.model()
     }
 
@@ -520,7 +526,7 @@ impl BuildProjectSession {
     }
 
     #[must_use]
-    pub fn model(&self) -> &CfdDataModel {
+    pub const fn model(&self) -> &CfdDataModel {
         self.session.model()
     }
 
@@ -533,15 +539,13 @@ impl BuildProjectSession {
 #[derive(Debug)]
 pub struct WriteProjectSession {
     session: ProjectSession,
-    catalog: CfdSourceCatalog,
     revision: u64,
 }
 
 impl WriteProjectSession {
-    const fn new(session: ProjectSession, catalog: CfdSourceCatalog) -> Self {
+    const fn new(session: ProjectSession) -> Self {
         Self {
             session,
-            catalog,
             revision: 0,
         }
     }
@@ -649,6 +653,11 @@ impl WriteProjectSession {
     }
 
     /// Build a default collection item using the concrete types in a record.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the record/path is invalid or no valid
+    /// reference target exists.
     pub fn default_collection_item_value_for_record(
         &self,
         coordinate: &RecordCoordinate,
@@ -676,7 +685,6 @@ impl WriteProjectSession {
     {
         let next_revision = self.revision.saturating_add(1);
         let report = self.session.apply_mutation(
-            &self.catalog,
             request,
             |candidate, applied| prepare_files(ProjectQueries::new(candidate, next_revision), applied),
         );

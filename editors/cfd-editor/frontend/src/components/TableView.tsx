@@ -599,7 +599,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   coordinate={row.original.coordinate}
                   fieldPath={[fieldPathField(name)]}
                   value={f.value}
-                  label={name}
                   editable={cellEditable}
                   annotation={f.annotation}
                   refTargetType={cellRefTargetType(f)}
@@ -1891,7 +1890,6 @@ interface EditableCellProps {
   coordinate: RecordCoordinate
   fieldPath: FieldPathSegment[]
   value: FieldValue
-  label?: string
   editable: boolean
   annotation?: RecordRow['fields'][number]['annotation']
   refTargetType?: string
@@ -1935,7 +1933,7 @@ function EditableCell(props: EditableCellProps) {
 }
 
 function EditableCellBuiltIn({
-  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+  value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const shownValue = presentationValue(value)
@@ -2029,8 +2027,6 @@ function EditableCellBuiltIn({
     >
       <DataCardCompact
         value={shownValue}
-        label={label}
-        declaredType={declaredType}
         annotation={annotation}
         refTargetType={refTargetType}
         highlightQuery={highlightQuery}

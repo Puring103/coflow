@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::panic)]
+
 use coflow_language::cfd::{parse_cfd, CfdValue};
 use std::fs;
 use std::path::PathBuf;

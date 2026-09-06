@@ -40,6 +40,11 @@ pub struct BuildTargetReport {
     pub code: CodegenReport,
 }
 
+/// Applies a validated mutation and stages related project-file updates.
+///
+/// # Errors
+///
+/// Returns diagnostics when related project files cannot be prepared.
 pub fn apply_project_mutation(
     session: &mut crate::WriteProjectSession,
     request: crate::MutationRequest,
@@ -60,6 +65,11 @@ struct PendingCodegen {
     files: Vec<crate::codegen::CodeArtifactFile>,
 }
 
+/// Checks the project's schema, data, and declared checks.
+///
+/// # Errors
+///
+/// Returns diagnostics when the project cannot be opened for checking.
 pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
@@ -74,6 +84,11 @@ pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, D
     }
 }
 
+/// Builds all configured generated-code targets.
+///
+/// # Errors
+///
+/// Returns diagnostics when code generation or artifact publication fails.
 pub fn build_project(project: &Project) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
     match generate_project_code(project)? {
         CommandOutcome::Success(report) => Ok(CommandOutcome::Success(BuildReport {
@@ -88,10 +103,20 @@ pub fn build_project(project: &Project) -> Result<CommandOutcome<BuildReport>, D
     }
 }
 
+/// Reports whether a build would change generated artifacts.
+///
+/// # Errors
+///
+/// Returns diagnostics when inputs or existing artifacts cannot be read.
 pub fn build_project_status(project: &Project) -> Result<CommandOutcome<bool>, DiagnosticSet> {
     prepare_project_code(project, |prepared, _| prepared.has_changes())
 }
 
+/// Generates and publishes all configured code targets.
+///
+/// # Errors
+///
+/// Returns diagnostics when generation, staging, or publication fails.
 pub fn generate_project_code(
     project: &Project,
 ) -> Result<CommandOutcome<CodegenProjectReport>, DiagnosticSet> {

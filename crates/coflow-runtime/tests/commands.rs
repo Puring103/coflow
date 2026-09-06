@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::panic)]
+
 use coflow_runtime::{
     MutationOp, MutationRequest, Project, RecordCoordinate, Runtime,
 };
@@ -148,7 +150,12 @@ fn runtime_is_cfd_only_and_loads_the_project() {
     assert!(session
         .queries()
         .source_files()
-        .all(|path| path.ends_with(".cfd")));
+        .all(|path| {
+            Path::new(path)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("cfd"))
+        }));
 }
 
 #[test]

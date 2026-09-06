@@ -387,7 +387,7 @@ describe('editor plugin registry', () => {
 
   it('normalizes a search query and returns the captured revision', async () => {
     let host: EditorPluginHost | undefined
-    const searchRecords = vi.fn(async (sessionId: number, query: string) => ({
+    const searchRecords = vi.fn(async (sessionId: number, _query: string) => ({
       sessionId,
       revision: 9,
       data: {

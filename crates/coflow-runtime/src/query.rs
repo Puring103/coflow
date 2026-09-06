@@ -547,6 +547,8 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::field_shape;
     use coflow_language::cft::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,

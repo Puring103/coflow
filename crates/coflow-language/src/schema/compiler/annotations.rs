@@ -8,17 +8,19 @@ use crate::source::Span;
 use std::collections::BTreeMap;
 
 impl ResolvedTypes<'_> {
+    // 注解校验需要在一次遍历中维护跨类型的 @idAsEnum 唯一性状态。
+    #[allow(clippy::too_many_lines)]
     pub(super) fn validate_annotations(&mut self) {
         let mut diagnostics = Vec::new();
         for info in self.enums.values() {
-            self.validate_annotation_list(
+            Self::validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Enum,
                 &info.def.annotations,
                 &mut diagnostics,
             );
             for variant in &info.def.variants {
-                self.validate_annotation_list(
+                Self::validate_annotation_list(
                     &info.module,
                     AnnotationTarget::EnumVariant,
                     &variant.annotations,
@@ -29,7 +31,7 @@ impl ResolvedTypes<'_> {
 
         let mut id_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
         for info in self.types.values() {
-            self.validate_annotation_list(
+            Self::validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Type,
                 &info.def.annotations,
@@ -99,7 +101,7 @@ impl ResolvedTypes<'_> {
 
         for info in self.types.values() {
             for field in &info.def.fields {
-                self.validate_annotation_list(
+                Self::validate_annotation_list(
                     &info.module,
                     AnnotationTarget::Field,
                     &field.annotations,
@@ -143,7 +145,6 @@ impl ResolvedTypes<'_> {
     }
 
     fn validate_annotation_list(
-        &self,
         module: &ModuleId,
         target: AnnotationTarget,
         annotations: &[Annotation],
@@ -269,7 +270,7 @@ impl ResolvedTypes<'_> {
             // singleton objects don't make sense because the loader needs one
             // known inline set of inner field names to consume from adjacent
             // header columns.
-            let resolved = self.resolve_field_type(module, &field.ty);
+            let resolved = self.resolve_field_type(&field.ty);
             if !self.expand_target_is_concrete_inline_object(&resolved) {
                 push_diag(
                     diagnostics,

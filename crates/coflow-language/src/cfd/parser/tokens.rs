@@ -150,17 +150,18 @@ impl Parser<'_> {
         let mut offset = start + 1;
         let content_end = scan.end - 1;
         while offset < content_end {
-            let ch = self.source[offset..]
-                .chars()
-                .next()
-                .expect("validated string boundary");
+            let Some(ch) = self.source[offset..].chars().next() else {
+                break;
+            };
             if ch == '\\' {
                 offset += 1;
-                let escaped = self.source[offset..]
-                    .chars()
-                    .next()
-                    .expect("validated escape");
-                out.push(decode_simple_escape(escaped).expect("validated escape"));
+                let Some(escaped) = self.source[offset..].chars().next() else {
+                    break;
+                };
+                let Some(decoded) = decode_simple_escape(escaped) else {
+                    break;
+                };
+                out.push(decoded);
                 offset += escaped.len_utf8();
             } else {
                 out.push(ch);

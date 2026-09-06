@@ -167,9 +167,8 @@ fn dependency_target<'a>(
             &field.value_type
         }
         ValueDependencyMode::EditableShape => match field.default {
-            Some(CftSchemaDefaultValue::EmptyObject) => &field.value_type,
+            Some(CftSchemaDefaultValue::EmptyObject) | None => &field.value_type,
             Some(_) => return None,
-            None => &field.value_type,
         },
     };
     let CftValueType::Object(target_type) = ty else {

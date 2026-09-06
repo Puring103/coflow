@@ -45,22 +45,23 @@ impl Parser<'_> {
                     span: Span::new(call_name.span.start, end),
                     kind: if call_name.name == "records" && args.len() == 1 {
                         let argument = &args[0].value;
-                        if let Some(name) = match &argument.kind {
-                            CheckExprKind::Name(name) => Some(name.clone()),
-                            CheckExprKind::StaticPath(path) => Some(path.canonical()),
-                            _ => None,
-                        } {
-                            CheckExprKind::Records {
+                        match &argument.kind {
+                            CheckExprKind::Name(name) => CheckExprKind::Records {
                                 type_name: NameRef {
-                                    name,
+                                    name: name.clone(),
                                     span: argument.span,
                                 },
-                            }
-                        } else {
-                            CheckExprKind::Call {
+                            },
+                            CheckExprKind::StaticPath(path) => CheckExprKind::Records {
+                                type_name: NameRef {
+                                    name: path.canonical(),
+                                    span: argument.span,
+                                },
+                            },
+                            _ => CheckExprKind::Call {
                                 name: call_name,
                                 args: args.into_iter().map(|arg| arg.value).collect(),
-                            }
+                            },
                         }
                     } else {
                         CheckExprKind::Call {

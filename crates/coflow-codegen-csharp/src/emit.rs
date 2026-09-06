@@ -10,6 +10,7 @@ use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultVa
 use crate::CsharpCodegenError;
 use coflow_language::cft::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
+use std::fmt::Write as _;
 
 use identifiers::{
     csharp_public_member_name, csharp_public_type_name, field_local_name,
@@ -65,6 +66,8 @@ fn function_parameters(
         .collect()
 }
 
+// 一个输出类型的构造器、字段、函数和加载器必须从同一字段序列派生。
+#[allow(clippy::too_many_lines)]
 pub fn build_csharp_type(
     schema_type: &CftType,
     view: &CsharpLoweringPlan<'_>,
@@ -120,7 +123,7 @@ pub fn build_csharp_type(
                 name: local_name.clone(),
             });
             let method_name = csharp_public_member_name(&field.name);
-            let entry_name = format!("_coflow{}", method_name);
+            let entry_name = format!("_coflow{method_name}");
             functions.push(CsharpFunction {
                 source_name: field.name.to_string(),
                 method_name: method_name.clone(),
@@ -250,7 +253,7 @@ pub fn build_csharp_type(
                 .type_is_singleton(field.declaring_type.as_str())?
                 .then(|| format!("\"{}\"", escape_csharp_literal(field.name.as_str())));
             let variants_reader = |base: String, context: &str, key: &str| {
-                dimension.as_ref().map_or(base.clone(), |(dimension_type, generated_type, variants)| {
+                dimension.as_ref().map_or_else(|| base.clone(), |(dimension_type, generated_type, variants)| {
                     let variants = variants
                         .iter()
                         .map(|variant| format!("\"{}\"", escape_csharp_literal(variant)))
@@ -422,12 +425,10 @@ fn function_loader_reader(
     let CftValueType::Function(parameters, result) = &field.value_type else {
         return None;
     };
-    let parameter_types = parameters
-        .iter()
-        .map(|parameter| {
-            format!(", typeof({})", csharp_type(&parameter.value_type, view))
-        })
-        .collect::<String>();
+    let mut parameter_types = String::new();
+    for parameter in parameters {
+        let _ = write!(parameter_types, ", typeof({})", csharp_type(&parameter.value_type, view));
+    }
     let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
         "CoflowFunctionEntry<{}>.CreateAot({context}.{method}({node}, \"{}\", typeof({}){parameter_types}), {})",
@@ -446,10 +447,10 @@ fn function_default_loader(
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
     let delegate_type = csharp_type(&field.value_type, view);
-    let parameter_types = parameters
-        .iter()
-        .map(|parameter| format!(", typeof({})", csharp_type(&parameter.value_type, view)))
-        .collect::<String>();
+    let mut parameter_types = String::new();
+    for parameter in parameters {
+        let _ = write!(parameter_types, ", typeof({})", csharp_type(&parameter.value_type, view));
+    }
     format!(
         "CoflowFunctionEntry<{delegate_type}>.CreateAot(context.DefaultFunction(\"{}\", \"{}\", typeof({}){parameter_types}), {})",
         escape_csharp_literal(source),
@@ -504,6 +505,8 @@ fn loader_default(
     loader_default_inner(value, ty, view, &mut Vec::new())
 }
 
+// 默认值 lowering 集中覆盖每种 CFT 值，确保递归对象栈在所有分支一致生效。
+#[allow(clippy::too_many_lines)]
 fn loader_default_inner(
     value: &CftSchemaDefaultValue,
     ty: &CftValueType,
@@ -727,7 +730,11 @@ fn loader_object_default(
             arguments.push(match view.key_field_type(type_name) {
                 CftValueType::String => "string.Empty".to_string(),
                 CftValueType::Enum(name) => format!("default({})", view.csharp_enum_ref(&name)),
-                _ => unreachable!("record keys are string or enum"),
+                other => {
+                    return Err(CsharpCodegenError::new(format!(
+                        "record key type `{other:?}` is not supported"
+                    )));
+                }
             });
         }
         arguments.extend(view
@@ -925,9 +932,10 @@ pub(super) fn backing_field_name(
 fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
-    } else if schema_type.is_struct {
-        "public sealed partial class"
-    } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
+    } else if schema_type.is_struct
+        || schema_type.is_sealed
+        || !view.type_has_descendants(&schema_type.name)
+    {
         "public sealed partial class"
     } else {
         "public partial class"

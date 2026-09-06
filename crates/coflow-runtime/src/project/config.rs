@@ -132,7 +132,7 @@ pub struct OutputConfig {
 
 impl SourceConfig {
     #[must_use]
-    pub fn from_path(path: PathBuf) -> Self {
+    pub const fn from_path(path: PathBuf) -> Self {
         Self { location: path }
     }
 

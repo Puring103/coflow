@@ -125,13 +125,16 @@ fn coerce_json_value(
         CftValueType::Object(name) => coerce_json_named_value(session, name, value),
         CftValueType::Result(ok, error) => {
             let object = single_tag_object(value, "Result", &["$ok", "$err"])?;
-            if let Some(value) = object.get("$ok") {
-                coerce_json_value(session, ok, value)
-                    .map(|value| CfdValue::ResultOk(Box::new(value)))
-            } else {
-                coerce_json_value(session, error, &object["$err"])
-                    .map(|value| CfdValue::ResultErr(Box::new(value)))
-            }
+            object.get("$ok").map_or_else(
+                || {
+                    coerce_json_value(session, error, &object["$err"])
+                        .map(|value| CfdValue::ResultErr(Box::new(value)))
+                },
+                |value| {
+                    coerce_json_value(session, ok, value)
+                        .map(|value| CfdValue::ResultOk(Box::new(value)))
+                },
+            )
         }
         CftValueType::Function(_, _) | CftValueType::Unit => {
             Err(one_value_error(format!("JSON coercion for `{expected}` is not supported")))

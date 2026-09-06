@@ -65,7 +65,7 @@ impl PreparedCodeRelease {
         let mut staged = Vec::with_capacity(self.outputs.len());
         for output in &self.outputs {
             let directory = StagedDirectory::create(&output.directory)
-                .map_err(map_staging_error)?;
+                .map_err(|error| map_staging_error(&error))?;
             write_artifacts(directory.staging(), &output.files)
                 .and_then(|()| preserve_unity_meta(&output.directory, directory.staging()))?;
             staged.push(directory);
@@ -82,7 +82,7 @@ impl PreparedCodeRelease {
                         )
                     })?,
                 )
-                .map_err(map_staging_error)?,
+                .map_err(|error| map_staging_error(&error))?,
             )
         } else {
             None
@@ -91,7 +91,7 @@ impl PreparedCodeRelease {
         for output in &mut staged {
             if let Err(error) = output.publish() {
                 rollback_requested(&mut staged, published_count);
-                return Err(map_staging_error(error));
+                return Err(map_staging_error(&error));
             }
             published_count += 1;
         }
@@ -99,7 +99,7 @@ impl PreparedCodeRelease {
         if let Some(lock) = &mut staged_lock {
             if let Err(error) = lock.publish() {
                 rollback_requested(&mut staged, published_count);
-                return Err(map_staging_error(error));
+                return Err(map_staging_error(&error));
             }
         }
         for output in &mut staged {
@@ -118,7 +118,7 @@ fn rollback_requested(outputs: &mut [StagedDirectory], published_count: usize) {
     }
 }
 
-fn map_staging_error(error: coflow_staging::StagingError) -> DiagnosticSet {
+fn map_staging_error(error: &coflow_staging::StagingError) -> DiagnosticSet {
     artifact_error(error.path(), error.to_string())
 }
 
@@ -337,10 +337,10 @@ fn artifact_files_match(
     Ok(compare_tree(directory, directory, &mut expected)? && expected.is_empty())
 }
 
-fn compare_tree<'a>(
+fn compare_tree(
     root: &Path,
     directory: &Path,
-    expected: &mut BTreeMap<PathBuf, &'a [u8]>,
+    expected: &mut BTreeMap<PathBuf, &[u8]>,
 ) -> Result<bool, DiagnosticSet> {
     let entries = fs::read_dir(directory)
         .map_err(|error| artifact_error(directory, format!("failed to inspect output: {error}")))?;

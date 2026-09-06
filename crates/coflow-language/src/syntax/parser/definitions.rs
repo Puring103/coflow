@@ -224,6 +224,8 @@ impl Parser<'_> {
         self.parse_value_type_primary()
     }
 
+    // 类型语法的所有首 token 分支集中处理，便于核对递归深度预算。
+    #[allow(clippy::too_many_lines)]
     fn parse_value_type_primary(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
         if let Some(start) = self.eat(&TokenKind::LParen) {
             let end = self

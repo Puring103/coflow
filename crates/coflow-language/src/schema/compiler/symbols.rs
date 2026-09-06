@@ -80,6 +80,8 @@ impl SymbolTable<'_> {
         }
     }
 
+    // 顶层定义在同一遍历中注册，统一保证“首个定义获胜”的顺序语义。
+    #[allow(clippy::too_many_lines)]
     pub(super) fn collect_symbols(&mut self) {
         for (module_id, module) in &self.modules.modules {
             let Some(ast) = module.ast.as_ref() else {

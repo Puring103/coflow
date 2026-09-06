@@ -284,7 +284,6 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
         let receiver_ty = receiver_ty.clone();
         if let Some(elem) = receiver_ty.array_element() {
-            let elem = elem;
             if let Some(CftValueType::Int | CftValueType::Float) = elem.value_type() {
                 elem
             } else {

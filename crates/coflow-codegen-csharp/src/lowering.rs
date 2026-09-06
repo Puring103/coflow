@@ -178,10 +178,12 @@ impl<'a> CsharpLoweringPlan<'a> {
         csharp_declaration_namespace(&self.root_namespace, name)
     }
 
+    #[allow(clippy::unused_self)] // 保持所有目标语言命名操作都经由 lowering plan 暴露。
     pub fn csharp_relative_path(&self, name: &str) -> String {
         csharp_relative_type_path(name)
     }
 
+    #[allow(clippy::unused_self)] // 与其他依赖 plan 的命名方法保持统一调用边界。
     pub fn metadata_name(&self, name: &str) -> String {
         metadata_identifier(name)
     }

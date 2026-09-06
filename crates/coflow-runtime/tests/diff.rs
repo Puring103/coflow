@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::similar_names)]
+
 use std::fs;
 use std::path::Path;
 use std::process::Command;

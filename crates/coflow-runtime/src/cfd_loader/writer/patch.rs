@@ -12,6 +12,8 @@ use super::render::serialize_value_for_type;
 use super::schema_nav::type_after_field_segment;
 use super::target::{WriteTarget, locate_target};
 
+// 补丁生成按路径形态完整分派，拆散会重复记录定位与类型校验上下文。
+#[allow(clippy::too_many_lines)]
 pub(super) fn apply_patch(
     source: &str,
     ast: &CfdAst,

@@ -58,7 +58,7 @@ fn lower_record(
     let type_name = record.type_name.clone();
     if let Some((group_type, span)) = &record.group_type {
         validate_group_type(schema, group_type, *span)?;
-        validate_actual_type(schema, &group_type, &type_name, record.type_span)?;
+        validate_actual_type(schema, group_type, &type_name, record.type_span)?;
     } else {
         validate_record_type(schema, &type_name, record.type_span)?;
     }

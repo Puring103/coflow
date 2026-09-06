@@ -274,6 +274,21 @@ async function main() {
   assert.strictEqual(stderrTail.length, extension.__test.maxLspStderrLength);
   assert(!stderrTail.includes("prefix"));
 
+  const releasedSessions = [];
+  const diagnostics = Object.create(extension.__test.CftDiagnostics.prototype);
+  Object.assign(diagnostics, {
+    documentSessions: new Map([["file:///open.cft", "active"]]),
+    sessions: new Map([
+      ["active", { dispose: () => releasedSessions.push("active") }],
+      ["idle", { dispose: () => releasedSessions.push("idle") }]
+    ])
+  });
+  diagnostics.releaseSessionIfUnused("active");
+  diagnostics.releaseSessionIfUnused("idle");
+  assert.deepStrictEqual(releasedSessions, ["idle"]);
+  assert(diagnostics.sessions.has("active"));
+  assert(!diagnostics.sessions.has("idle"));
+
   const watchedNotifications = [];
   const watchedSession = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(watchedSession, {

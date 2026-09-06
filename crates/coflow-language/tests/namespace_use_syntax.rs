@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use coflow_language::cft::syntax::parser::parse_module;
 use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, CheckName, ConstName,

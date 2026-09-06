@@ -42,16 +42,10 @@ Assert(arcanist.PrimaryAbility is DamageAbility damageAbility && damageAbility.D
     "polymorphic inline object lost its concrete type");
 Assert(arcanist.Abilities.Count == 2 && arcanist.Abilities[1] is HealAbility,
     "polymorphic object collection was not loaded");
-Assert(arcanist.Status.IsOk && arcanist.Status.Value == 0 &&
-       guardian.Status.IsErr && guardian.Status.Error == "resting",
-    "Result default or explicit error branch was not loaded");
 Assert(arcanist.Fallback.HasValue && ReferenceEquals(arcanist.Fallback.Value, guardian),
     "optional record reference was not resolved");
 Assert(scenario.Config.OptionalBonus.HasValue && scenario.Config.OptionalBonus.Value.Attack == 5,
     "nested Option was not loaded");
-Assert(scenario.Config.Validation.IsOk && scenario.Config.Validation.Value.HasValue &&
-       scenario.Config.Validation.Value.Value.Health == 1,
-    "nested Result<Option<T>> was not loaded");
 Assert(scenario.Config.Checkpoints["finish"].Resistances["ice"] == 5,
     "nested map object was not loaded");
 

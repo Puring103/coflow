@@ -939,6 +939,8 @@ fn mutation_report_to_editor_error(
 
 #[cfg(test)]
 mod collection_edit_tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
 
     #[test]

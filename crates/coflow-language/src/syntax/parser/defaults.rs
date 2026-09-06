@@ -310,14 +310,16 @@ impl Parser<'_> {
                 .end;
             let span = Span::new(first.span.start, end);
             let depth = inner.depth;
+            let kind = if first.name == "Some" {
+                DefaultExprKind::OptionSome(Box::new(inner.value))
+            } else if first.name == "Ok" {
+                DefaultExprKind::ResultOk(Box::new(inner.value))
+            } else {
+                DefaultExprKind::ResultErr(Box::new(inner.value))
+            };
             return self.node(StructureKind::DefaultValue, first.span, [depth], || DefaultExpr {
+                kind,
                 span,
-                kind: match first.name.as_str() {
-                    "Some" => DefaultExprKind::OptionSome(Box::new(inner.value)),
-                    "Ok" => DefaultExprKind::ResultOk(Box::new(inner.value)),
-                    "Err" => DefaultExprKind::ResultErr(Box::new(inner.value)),
-                    _ => unreachable!(),
-                },
             });
         }
         let start = first.span.start;

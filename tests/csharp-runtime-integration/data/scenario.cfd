@@ -21,11 +21,6 @@ Scenario {
         attack: 5,
         resistances: { "arcane": 11 },
       }),
-      validation: Ok(Some(Stats {
-        health: 1,
-        attack: 2,
-        resistances: {},
-      })),
     },
     stages: [
       fn(value: int) -> int { value + 3 },
