@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   collectionObjectDraftForAnnotation,
@@ -14,6 +14,14 @@ import { ObjectDraftHost } from './ObjectDraftHost'
 import type { FieldValue } from '../wire'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import { EditorLookupController, type EditorLookupBackend } from '../state/editorLookups'
+import {
+  activateFrontendPlugin,
+  resetPluginRegistryForTests,
+  setPluginDataBridge,
+} from '../plugins'
+import type { FrontendPluginBundle } from '../api'
+
+afterEach(() => resetPluginRegistryForTests())
 
 describe('DataCardCompact complex previews', () => {
   const polymorphicObjectAnnotation: FieldAnnotation = {
@@ -133,6 +141,107 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('>类型<')
     expect(html).toContain('aria-label="选择具体类型"')
     expect(html).toContain('value="ItemReward"')
+  })
+
+  it('matches an inspector presentation before flattening one object field', async () => {
+    const plugin: FrontendPluginBundle = {
+      id: 'inspector',
+      name: 'Inspector',
+      description: '',
+      version: '1',
+      manifest_path: '/plugins/inspector/plugin.json',
+      source: '',
+      scope: 'project',
+      enabled: true,
+    }
+    setPluginDataBridge({
+      currentIdentity: () => ({ sessionId: 1, revision: 2 }),
+      getSchema: async () => [],
+      getRecordsByType: async () => [],
+      getFileRecords: async () => { throw new Error('not used') },
+      searchRecords: async () => { throw new Error('not used') },
+      mutate: async () => {},
+    })
+    await activateFrontendPlugin(plugin, host => {
+      host.register.presentation({
+        id: 'reward',
+        slot: 'inspector',
+        types: ['Reward'],
+        mount() {},
+      })
+    })
+
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields: [{
+        name: 'reward',
+        missing: false,
+        annotation: polymorphicObjectAnnotation,
+        value: {
+          kind: 'object' as const,
+          value: { actual_type: 'ItemReward', fields: {} },
+        },
+      }],
+      actualType: 'Quest',
+      filePath: 'data/quests.cfd',
+      coordinate: { actual_type: 'Quest', key: 'main' },
+      flattenSingleComplexField: true,
+    }))
+
+    expect(html).toContain('data-plugin-contribution="inspector/reward"')
+    expect(html).toContain('plugin-inspector-presentation')
+  })
+
+  it('uses summary presentations only while a container is collapsed', async () => {
+    const plugin: FrontendPluginBundle = {
+      id: 'summary',
+      name: 'Summary',
+      description: '',
+      version: '1',
+      manifest_path: '/plugins/summary/plugin.json',
+      source: '',
+      scope: 'project',
+      enabled: true,
+    }
+    setPluginDataBridge({
+      currentIdentity: () => ({ sessionId: 1, revision: 2 }),
+      getSchema: async () => [],
+      getRecordsByType: async () => [],
+      getFileRecords: async () => { throw new Error('not used') },
+      searchRecords: async () => { throw new Error('not used') },
+      mutate: async () => {},
+    })
+    await activateFrontendPlugin(plugin, host => {
+      host.register.presentation({
+        id: 'items',
+        slot: 'summary',
+        types: ['[int]'],
+        render: () => 'three values',
+      })
+    })
+    const props = {
+      fields: [{
+        name: 'items',
+        missing: false,
+        annotation: { ...polymorphicObjectAnnotation, declared_type: '[int]' },
+        value: { kind: 'array' as const, value: [
+          { kind: 'int' as const, value: 1n },
+          { kind: 'int' as const, value: 2n },
+          { kind: 'int' as const, value: 3n },
+        ] },
+      }],
+      actualType: 'Quest',
+      filePath: 'data/quests.cfd',
+      coordinate: { actual_type: 'Quest', key: 'main' },
+    }
+
+    const collapsed = renderToStaticMarkup(createElement(DataCardExpanded, props))
+    const expanded = renderToStaticMarkup(createElement(DataCardExpanded, {
+      ...props,
+      expandedPaths: new Set(['items']),
+    }))
+
+    expect(collapsed).toContain('three values')
+    expect(expanded).not.toContain('three values')
   })
 
   it('renders cached dropdown options immediately after a revision change', async () => {
