@@ -2,6 +2,7 @@ use crate::{data_model::LoadedRecordDraft, DiagnosticSet};
 use coflow_language::cft::CftSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -37,4 +38,5 @@ pub struct CfdLoadContext<'a> {
 pub struct LoadedCfdSource {
     pub records: Vec<LoadedRecordDraft>,
     pub diagnostics: DiagnosticSet,
+    pub source: Arc<str>,
 }

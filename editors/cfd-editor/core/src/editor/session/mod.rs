@@ -349,6 +349,18 @@ impl SessionStore {
         }
     }
 
+    pub fn project_diff(&self, id: u32) -> Result<coflow_runtime::ProjectDiff, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry
+            .state
+            .read()
+            .map_err(|_| EditorError::session("session poisoned during project diff"))?;
+        session
+            .queries()
+            .diff_against_head()
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))
+    }
+
     pub fn source_file_path(&self, id: u32, file_path: &str) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let session = entry

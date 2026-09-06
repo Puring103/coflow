@@ -20,6 +20,7 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
+import type { ProjectDiff } from './bindings/ProjectDiff'
 import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
 import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RefTarget } from './bindings/RefTarget'
@@ -272,6 +273,10 @@ export interface FrontendPluginBundle {
   source: string
   scope: 'global' | 'project'
   enabled: boolean
+}
+
+export async function getProjectDiff(sessionId: number): Promise<ProjectDiff> {
+  return invokeCommand<ProjectDiff>('get_project_diff', { sessionId })
 }
 
 export interface FrontendPluginState {

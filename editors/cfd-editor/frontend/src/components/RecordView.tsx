@@ -94,9 +94,10 @@ interface Props {
   onExitUp?: () => void
   firstRecordFocusRequest?: number
   onFirstRecordFocusConsumed?: (request: number) => void
+  diffChangedPaths?: ReadonlySet<string>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -562,6 +563,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           onDiagnosticBadgeClick={onDiagnosticBadgeClick
             ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
             : undefined}
+          diffChangedPaths={diffChangedPaths}
         />
         </Fragment>
         {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}

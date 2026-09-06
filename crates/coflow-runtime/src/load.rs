@@ -51,12 +51,19 @@ pub(crate) struct SourceDataCache {
 #[derive(Debug, Clone)]
 struct CachedSourceBatch {
     entry: CfdSourceEntry,
+    source: Arc<str>,
     records: Arc<[LoadedRecordDraft]>,
     dimension_values: Arc<[DimensionValueDraft]>,
     dimension_field: Option<dimensions::DimensionField>,
 }
 
 impl SourceDataCache {
+    pub(crate) fn sources(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.batches
+            .iter()
+            .map(|batch| (batch.entry.display_path.as_str(), batch.source.as_ref()))
+    }
+
     pub(crate) fn dimension_sources(
         &self,
     ) -> impl Iterator<Item = (&CfdSourceEntry, &dimensions::DimensionField)> {
@@ -341,7 +348,10 @@ pub(crate) fn reload_project_data_from_cache(
                 validate_singleton_shape,
                 &ordinary_records,
             ) {
-                Ok(values) => batch.dimension_values = values.into(),
+                Ok(loaded) => {
+                    batch.source = loaded.source;
+                    batch.dimension_values = loaded.values.into();
+                }
                 Err(err) => diagnostics.extend(err),
             }
             continue;
@@ -355,6 +365,7 @@ pub(crate) fn reload_project_data_from_cache(
         ) {
             Ok(loaded) => {
                 diagnostics.extend(loaded.diagnostics);
+                batch.source = loaded.source;
                 batch.records = loaded.records.into();
             }
             Err(err) => {
@@ -419,6 +430,7 @@ fn load_resolved_sources(
                 );
                 state.source_data.batches.push(CachedSourceBatch {
                     entry,
+                    source: batch.source,
                     records: cached_records,
                     dimension_values: Arc::default(),
                     dimension_field: None,
@@ -482,10 +494,11 @@ fn load_resolved_dimension_source(
             index == 0,
             &state.records,
         ) {
-            Ok(values) => state.source_data.batches.push(CachedSourceBatch {
+            Ok(loaded) => state.source_data.batches.push(CachedSourceBatch {
                 entry: entry.clone(),
+                source: loaded.source,
                 records: Arc::default(),
-                dimension_values: values.into(),
+                dimension_values: loaded.values.into(),
                 dimension_field: Some(field.clone()),
             }),
             Err(err) => diagnostics.extend(err),
@@ -502,7 +515,7 @@ fn load_dimension_batch(
     source_fields: &[dimensions::DimensionField],
     validate_singleton_shape: bool,
     records: &[LoadedRecordDraft],
-) -> Result<Vec<DimensionValueDraft>, DiagnosticSet> {
+) -> Result<crate::api::DimensionSourceLoadResult, DiagnosticSet> {
     let manager = catalog.dimension_source_manager();
     let source_type = schema.resolve_type(&field.source_type).ok_or_else(|| {
         runtime_invariant(format!(
@@ -529,7 +542,7 @@ fn load_dimension_batch(
         .filter(|field| field.is_singleton)
         .map(|field| field.source_field.clone())
         .collect::<Vec<_>>();
-    let mut values = manager
+    let mut loaded = manager
         .load_dimension_source(&DimensionSourceLoadRequest {
             source,
             schema: DimensionSourceSchema {
@@ -540,8 +553,7 @@ fn load_dimension_batch(
             },
             singleton_source_fields: &singleton_source_fields,
             validate_singleton_shape,
-        })?
-        .values;
+        })?;
     if field.is_singleton {
         let key = records
             .iter()
@@ -557,11 +569,11 @@ fn load_dimension_batch(
                     ),
                 ))
             })?;
-        for value in &mut values {
+        for value in &mut loaded.values {
             value.source_key = key.clone();
         }
     }
-    Ok(values)
+    Ok(loaded)
 }
 
 fn push_loaded_records(
@@ -630,6 +642,11 @@ fn refresh_dimension_source_plans(
                         .map_or_else(Arc::default, |batch| Arc::clone(&batch.dimension_values));
                     source_data.batches.push(CachedSourceBatch {
                         entry: entry.clone(),
+                        source: previous
+                            .batches
+                            .iter()
+                            .find(|batch| batch.entry.source.location == entry.source.location)
+                            .map_or_else(Arc::default, |batch| Arc::clone(&batch.source)),
                         records: Arc::default(),
                         dimension_values,
                         dimension_field: Some(field),

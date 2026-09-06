@@ -31,6 +31,15 @@ impl<'a> ProjectQueries<'a> {
         self.revision
     }
 
+    /// 比较当前已发布的 Runtime 数据与 Git HEAD。
+    ///
+    /// # Errors
+    ///
+    /// 当前项目不在 Git 工作区、HEAD 不存在或 Git 查询失败时返回诊断。
+    pub fn diff_against_head(self) -> Result<crate::ProjectDiff, crate::DiagnosticSet> {
+        crate::diff::diff_against_head(self.session, self.revision)
+    }
+
     #[must_use]
     pub const fn diagnostics(self) -> &'a DiagnosticsStore {
         self.session.diagnostics()

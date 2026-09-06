@@ -19,11 +19,20 @@ pub(crate) enum Command {
     Cft(CftArgs),
     Lsp(LspArgs),
     Check(ProjectCheckArgs),
+    Diff(DiffArgs),
     Build(BuildArgs),
     Codegen(CodegenArgs),
     Schema(SchemaArgs),
     Skill(SkillArgs),
     SelfUpdate(SelfUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DiffArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    pub(crate) config_or_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -163,4 +172,25 @@ pub(crate) struct SchemaWriteFileArgs {
     pub(crate) check: bool,
     #[arg(long)]
     pub(crate) json: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{Cli, Command};
+
+    #[test]
+    fn parses_diff_project_and_json_output() {
+        let cli = Cli::try_parse_from(["coflow", "diff", "examples/showcase", "--json"])
+            .expect("parse diff command");
+        let Command::Diff(args) = cli.command else {
+            panic!("expected diff command");
+        };
+        assert_eq!(
+            args.config_or_dir.as_deref(),
+            Some(std::path::Path::new("examples/showcase"))
+        );
+        assert!(args.json);
+    }
 }

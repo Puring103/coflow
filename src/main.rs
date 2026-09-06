@@ -18,7 +18,7 @@ use cli_output::{display_path, project_path, write_json_diagnostics, write_proje
 use coflow_runtime::commands::{build_project, check_project, generate_project_code, CommandOutcome};
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{normalize_path, path_to_slash, Project};
-use coflow_runtime::{ProjectRuntime, SchemaTextOverride};
+use coflow_runtime::{ProjectDiffChange, ProjectRuntime, SchemaTextOverride};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -35,9 +35,9 @@ mod write_file;
 use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, FormatArgs,
-    InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs, SkillArgs,
-    SkillCommand, SkillScopeArgs,
+    BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, DiffArgs,
+    FormatArgs, InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs,
+    SkillArgs, SkillCommand, SkillScopeArgs,
 };
 
 fn main() -> ExitCode {
@@ -58,11 +58,86 @@ fn run() -> Result<bool, DiagnosticSet> {
         Command::Cft(command) => run_cft(&command),
         Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
+        Command::Diff(args) => project_diff(&args),
         Command::Build(args) => project_build(&args),
         Command::Codegen(args) => generate_code(&args),
         Command::Schema(command) => run_schema(&command),
         Command::Skill(command) => run_skill(&command),
         Command::SelfUpdate(args) => run_self_update(&args),
+    }
+}
+
+fn project_diff(args: &DiffArgs) -> Result<bool, DiagnosticSet> {
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let session = coflow_runtime::Runtime::new().open_read_only_session(project)?;
+    let diff = session.queries().diff_against_head()?;
+    if args.json {
+        let output = serde_json::to_string_pretty(&diff)
+            .map_err(|error| output_error(format!("failed to serialize project diff: {error}")))?;
+        println!("{output}");
+        return Ok(true);
+    }
+
+    println!("HEAD {}", &diff.head_oid[..diff.head_oid.len().min(12)]);
+    if diff.files.is_empty() {
+        println!("No source changes.");
+    } else {
+        println!("\nSource changes:");
+        for file in &diff.files {
+            println!("{} {}", change_mark(file.change), file.path);
+            if !file.patch.is_empty() {
+                println!("{}", file.patch);
+            }
+        }
+    }
+    if diff.semantic_available {
+        if diff.records.is_empty() {
+            println!("\nNo record changes.");
+        } else {
+            println!("\nRecord changes:");
+            for record in &diff.records {
+                println!(
+                    "{} {}.{}",
+                    change_mark(record.change),
+                    record.coordinate.actual_type(),
+                    record.coordinate.key()
+                );
+                for field in &record.fields {
+                    let before = field
+                        .before
+                        .as_ref()
+                        .map_or_else(|| "<missing>".to_string(), coflow_runtime::value_summary);
+                    let after = field
+                        .after
+                        .as_ref()
+                        .map_or_else(|| "<missing>".to_string(), coflow_runtime::value_summary);
+                    println!(
+                        "  {} {}: {} -> {}",
+                        change_mark(field.change),
+                        field.path,
+                        before,
+                        after
+                    );
+                }
+            }
+        }
+    } else {
+        println!("\nSemantic diff unavailable:");
+        for diagnostic in &diff.diagnostics {
+            println!(
+                "  [{}:{}] {}",
+                diagnostic.endpoint, diagnostic.code, diagnostic.message
+            );
+        }
+    }
+    Ok(true)
+}
+
+const fn change_mark(change: ProjectDiffChange) -> &'static str {
+    match change {
+        ProjectDiffChange::Added => "+",
+        ProjectDiffChange::Deleted => "-",
+        ProjectDiffChange::Modified => "M",
     }
 }
 

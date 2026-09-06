@@ -161,7 +161,10 @@ impl CfdWriter {
             }
         }
         if diagnostics.is_empty() {
-            Ok(DimensionSourceLoadResult { values })
+            Ok(DimensionSourceLoadResult {
+                values,
+                source: text.into(),
+            })
         } else {
             Err(diagnostics)
         }
