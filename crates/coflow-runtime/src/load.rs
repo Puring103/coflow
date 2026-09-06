@@ -6,6 +6,7 @@ use crate::data_model::{
     CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
     LoadedRecordDraft, RecordOrigin,
 };
+use crate::cfd_loader::CfdLoader;
 use crate::project::{path_to_slash, Project};
 use coflow_language::cft::{CftSchema, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
@@ -173,7 +174,7 @@ pub(crate) fn load_project_data(
         source_data: SourceDataCache::default(),
     };
     let mut diagnostics = DiagnosticSet::empty();
-    let resolver = SourceResolver::new(project, catalog);
+    let resolver = SourceResolver::new(project);
     for source in &project.config().data {
         let configured = resolver.configured(source);
         let resolved_sources = match resolver.resolve_for_load(source, &configured) {
@@ -190,7 +191,6 @@ pub(crate) fn load_project_data(
         diagnostics.extend(load_resolved_sources(
             project,
             schema,
-            catalog,
             &mut state,
             resolved_sources,
             source_overrides,
@@ -264,7 +264,8 @@ pub(crate) fn load_project_data(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+// 缓存重载需要统一维护来源批次、诊断与统计，保持单一事务流程便于验证状态一致性。
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn reload_project_data_from_cache(
     project: &Project,
     schema: &CftSchema,
@@ -295,7 +296,6 @@ pub(crate) fn reload_project_data_from_cache(
         statistics.sources_resolved = refresh_dimension_source_plans(
             project,
             dimension_plan,
-            catalog,
             previous,
             &mut source_data,
         )?;
@@ -356,7 +356,7 @@ pub(crate) fn reload_project_data_from_cache(
             }
             continue;
         }
-        match catalog.loader().load_partial(
+        match CfdLoader::load_partial(
             CfdLoadContext {
                 schema,
                 source_text: source_override_text(&batch.entry.source, options.source_overrides),
@@ -388,13 +388,11 @@ pub(crate) fn reload_project_data_from_cache(
 fn load_resolved_sources(
     project: &Project,
     schema: &CftSchema,
-    catalog: &CfdSourceCatalog,
     state: &mut LoadState<'_>,
     resolved_sources: Vec<ResolvedLoaderSource>,
     source_overrides: &[DataSourceTextOverride],
 ) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
-    let loader = catalog.loader();
     for resolved in resolved_sources {
         let spec = resolved.source;
         if is_deleted_override(spec.location.path(), source_overrides) {
@@ -411,7 +409,7 @@ fn load_resolved_sources(
             display_path: display_path.clone(),
         };
         state.indexes.sources.push(entry.clone());
-        match loader.load_partial(
+        match CfdLoader::load_partial(
             CfdLoadContext {
                 schema,
                 source_text: source_override_text(&spec, source_overrides),
@@ -611,14 +609,13 @@ impl SourceDataCache {
 fn refresh_dimension_source_plans(
     project: &Project,
     dimension_plan: &dimensions::DimensionRuntimePlan,
-    catalog: &CfdSourceCatalog,
     previous: &SourceDataCache,
     source_data: &mut SourceDataCache,
 ) -> Result<usize, LoadDiagnostics> {
     source_data
         .batches
         .retain(|batch| batch.dimension_field.is_none());
-    let resolver = SourceResolver::new(project, catalog);
+    let resolver = SourceResolver::new(project);
     let mut diagnostics = DiagnosticSet::empty();
     let mut resolved_count = 0;
     match resolver.resolve_dimension_sources(dimension_plan) {

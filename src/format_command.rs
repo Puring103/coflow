@@ -155,12 +155,12 @@ fn write_report(check: bool, total: usize, changed: &[String]) -> Result<(), Dia
     if changed.is_empty() {
         let action = if check { "Checked" } else { "Formatted" };
         writeln!(stdout, "{action} {total} file(s); no changes needed.")
-            .map_err(output_error)?;
+            .map_err(|error| output_error(&error))?;
         return Ok(());
     }
     let action = if check { "Would reformat" } else { "Formatted" };
     for path in changed {
-        writeln!(stdout, "{action} {path}").map_err(output_error)?;
+        writeln!(stdout, "{action} {path}").map_err(|error| output_error(&error))?;
     }
     writeln!(
         stdout,
@@ -168,15 +168,17 @@ fn write_report(check: bool, total: usize, changed: &[String]) -> Result<(), Dia
         if check { "Found" } else { "Updated" },
         changed.len()
     )
-    .map_err(output_error)
+    .map_err(|error| output_error(&error))
 }
 
-fn output_error(error: io::Error) -> DiagnosticSet {
+fn output_error(error: &io::Error) -> DiagnosticSet {
     crate::diagnostics::cli_error("CLI-OUTPUT", format!("failed to write output: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use std::fs;
     use tempfile::tempdir;

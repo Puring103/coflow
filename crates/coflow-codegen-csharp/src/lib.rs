@@ -115,6 +115,10 @@ pub fn generate_csharp(
 
 /// Generates C# declarations plus a direct CFD source loader. The loader
 /// consumes the logical paths in `sources` through `Coflow.Cfd.Runtime`.
+///
+/// # Errors
+///
+/// Returns an error when schema lowering, identifier mapping, or template rendering fails.
 pub fn generate_csharp_cfd(
     schema: &CftSchema,
     options: &CsharpCodegenOptions,

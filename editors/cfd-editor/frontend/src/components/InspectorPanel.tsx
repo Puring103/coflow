@@ -4,7 +4,6 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
-import type { CfdDictKey } from '../bindings/CfdDictKey'
 import {
   recordActualType,
   recordKey,
@@ -590,12 +589,6 @@ function topLevelExpandablePaths(fields: RecordRow['fields']): Set<string> {
     }
   }
   return paths
-}
-
-function dictKeyText(key: CfdDictKey): string {
-  if (key.kind === 'string') return `"${key.value}"`
-  if (key.kind === 'int') return String(key.value)
-  return key.value.variant ?? String(key.value.value)
 }
 
 const EMPTY_EXPANDED_PATHS = new Set<string>()

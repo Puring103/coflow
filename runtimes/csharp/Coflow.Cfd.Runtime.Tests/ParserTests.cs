@@ -333,7 +333,7 @@ public sealed class ParserTests
         var fields = Assert.Single(document.Records).Fields;
         var context = new CfdLoadContext(new[] { document });
 
-        CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional", "outcome");
+        CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional");
         Assert.Equal(new long[] { 1, 2, 3, 5, 8 },
             CfdValueReader.Array(CfdValueReader.Field(fields, "samples"), context,
                 static (value, _) => CfdValueReader.Int64(value)));
@@ -345,13 +345,6 @@ public sealed class ParserTests
         Assert.True(optional.HasValue);
         Assert.True(optional.Value.Enabled);
         Assert.Equal(13, optional.Value.Score);
-        var outcome = CfdValueReader.Result(CfdValueReader.Field(fields, "outcome"), context,
-            static (value, load) => CfdValueReader.Option(value, load, ReadPayload),
-            static (value, load) => CfdValueReader.String(value, load));
-        Assert.True(outcome.IsOk);
-        Assert.True(outcome.Value.HasValue);
-        Assert.False(outcome.Value.Value.Enabled);
-        Assert.Equal(21, outcome.Value.Value.Score);
     }
 
     [Fact]
@@ -362,7 +355,7 @@ public sealed class ParserTests
         var fields = Assert.Single(document.Records).Fields;
 
         var error = Assert.Throws<CfdLoadException>(() =>
-            CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional", "outcome"));
+            CfdValueReader.ValidateFields(fields, "samples", "lookup", "optional"));
         Assert.Equal("CFD-FIELD-UNKNOWN", error.Diagnostics[0].Code);
     }
 
@@ -415,7 +408,7 @@ public sealed class ParserTests
     {
         var document = CfdParser.Parse(new CfdSource(
             "data/values.cfd",
-            "Item { item { name: \"Sword\", text: f\"value={name}\", nested: f\"<{text}>\", flags: (Fire | Ice) ^ Ice } }"));
+            "Item { item { name: \"Sword\", text: \"value={name}\", nested: \"<{text}>\", flags: (Fire | Ice) ^ Ice } }"));
         var fields = document.Records[0].Fields;
         var formatted = Assert.IsType<CfdFormattedStringValue>(fields[1].Value);
         Assert.Contains("name", formatted.Source);
@@ -431,7 +424,7 @@ public sealed class ParserTests
     [Fact]
     public void RejectsFormattedStringReferenceCycles()
     {
-        var document = CfdParser.Parse(new CfdSource("data/cycle.cfd", "Item { item { text: f\"{text}\" } }"));
+        var document = CfdParser.Parse(new CfdSource("data/cycle.cfd", "Item { item { text: \"{text}\" } }"));
         var context = new CfdLoadContext(new[] { document });
         using (context.EnterRecord("Item", "item"))
         {
@@ -439,6 +432,15 @@ public sealed class ParserTests
                 document.Records[0].Fields[0].Value, context));
             Assert.Equal("CFD-VALUE-FORMAT", error.Diagnostics[0].Code);
         }
+    }
+
+    [Fact]
+    public void RejectsRemovedFormattedStringPrefixWithoutStalling()
+    {
+        var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(new CfdSource(
+            "data/legacy-format.cfd", "Item { item { text: f\"{text}\" } }")));
+
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-STRING");
     }
 
     [Fact]

@@ -524,7 +524,6 @@ dependencies = [
  "atomicwrites",
  "clap",
  "coflow-format",
- "coflow-language",
  "coflow-lsp",
  "coflow-runtime",
  "dirs",
@@ -532,7 +531,6 @@ dependencies = [
  "self_update",
  "serde",
  "serde_json",
- "similar",
  "tempfile",
 ]
 
@@ -563,7 +561,6 @@ dependencies = [
  "coflow-language",
  "coflow-model",
  "serde",
- "serde_json",
  "tera",
  "unicode-ident",
 ]
@@ -622,13 +619,11 @@ dependencies = [
  "coflow-language",
  "coflow-model",
  "coflow-staging",
- "regex",
  "serde",
  "serde_json",
  "serde_yaml",
  "tempfile",
  "ts-rs",
- "unicode-ident",
  "walkdir",
 ]
 

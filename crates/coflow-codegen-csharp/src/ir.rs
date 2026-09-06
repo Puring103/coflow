@@ -145,6 +145,8 @@ fn build_delegate_adapters(
         .collect()
 }
 
+// 常量 IR 与 CFT 常量变体一一对应，集中分派保证生成覆盖完整。
+#[allow(clippy::too_many_lines)]
 fn render_constant_value(
     value: &CftConstValue,
     ty: &CftValueType,
@@ -230,7 +232,11 @@ fn render_constant_value(
                     CftValueType::Enum(name) => {
                         format!("default({})", view.csharp_enum_ref(&name))
                     }
-                    _ => unreachable!("record keys are string or enum"),
+                    other => {
+                        return Err(CsharpCodegenError::new(format!(
+                            "record key type `{other:?}` is not supported"
+                        )));
+                    }
                 });
             }
             arguments.extend(view

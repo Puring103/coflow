@@ -21,19 +21,18 @@ impl ProjectSession {
     /// Prepare, stage, and atomically publish a mutation request.
     pub fn apply_mutation<F>(
         &mut self,
-        catalog: &CfdSourceCatalog,
         request: MutationRequest,
         prepare_additional_files: F,
     ) -> MutationReport
     where
-        F: FnOnce(&ProjectSession, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+        F: FnOnce(&Self, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
     {
         let (planned, mut failed, write_ok, stopped) = plan_mutations(self, request);
         if stopped || planned.is_empty() {
             return report_without_publish(self, write_ok, failed);
         }
 
-        let staged_catalog = catalog.staged_writes();
+        let staged_catalog = CfdSourceCatalog::staged_writes();
         let executable = match prepare_execution_plans(self, &staged_catalog, planned) {
             Ok(executable) => executable,
             Err(failure) => {

@@ -56,6 +56,7 @@ impl EditorHost {
         self.sessions.reload_session(session_id)
     }
 
+    #[must_use]
     pub fn sessions(&self) -> &SessionStore {
         &self.sessions
     }

@@ -11,6 +11,8 @@
         clippy::unwrap_used
     )
 )]
+// LSP 的传递依赖同时兼容不同 rand_core 主版本，服务实现不直接使用这些版本。
+#![allow(clippy::multiple_crate_versions)]
 
 mod cfd;
 mod completion;
@@ -343,7 +345,7 @@ impl EmbeddedLsp {
     ///
     /// # Errors
     /// Returns an error when the LSP handler or embedded transport fails.
-    pub fn notify(&mut self, method: &str, params: Value) -> Result<Vec<Value>, String> {
+    pub fn notify(&mut self, method: &str, params: &Value) -> Result<Vec<Value>, String> {
         self.server.handle_message(&json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -359,7 +361,7 @@ impl EmbeddedLsp {
     pub fn request(
         &mut self,
         method: &str,
-        params: Value,
+        params: &Value,
     ) -> Result<(Value, Vec<Value>), String> {
         self.next_request_id = self.next_request_id.saturating_add(1);
         let id = self.next_request_id;

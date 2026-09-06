@@ -1,0 +1,65 @@
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.help-box {
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 22px 28px;
+  min-width: 320px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.help-box h3 {
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-box table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.help-box td {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-box td:first-child {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.help-box td:last-child { color: var(--text-dim); }
+
+.help-box th[colspan] {
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.help-box .help-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}

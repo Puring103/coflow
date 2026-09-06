@@ -185,17 +185,9 @@ class CftDiagnostics {
 
   restartSessionsForProject(configUri) {
     const projectDir = path.dirname(configUri.fsPath);
-    // Find all session keys whose args include the affected project directory.
-    const affectedKeys = [...this.sessions.keys()].filter((key) => {
-      try {
-        const parsed = JSON.parse(key);
-        return parsed.args && parsed.args.some(
-          (arg) => normalizePath(arg) === normalizePath(projectDir)
-        );
-      } catch {
-        return false;
-      }
-    });
+    const affectedKeys = [...this.sessions.entries()]
+      .filter(([, session]) => normalizePath(session.projectDir) === normalizePath(projectDir))
+      .map(([key]) => key);
     if (affectedKeys.length === 0) {
       return;
     }
@@ -310,7 +302,20 @@ class CftDiagnostics {
       session.closeDocument(document);
     }
     this.documentSessions.delete(uriString);
+    this.releaseSessionIfUnused(sessionKey);
     this.collection.delete(document.uri);
+  }
+
+  releaseSessionIfUnused(sessionKey) {
+    if (!sessionKey || [...this.documentSessions.values()].includes(sessionKey)) {
+      return;
+    }
+    const session = this.sessions.get(sessionKey);
+    if (session) {
+      // 最后一个文档关闭后及时释放子进程，避免多项目工作区长期积累空闲 LSP。
+      session.dispose();
+      this.sessions.delete(sessionKey);
+    }
   }
 
   canValidate(document) {
@@ -358,9 +363,16 @@ class CftDiagnostics {
         previous.closeDocument(document);
       }
       this.documentSessions.delete(document.uri.toString());
+      this.releaseSessionIfUnused(previousKey);
     }
 
     let session = this.sessions.get(key);
+    if (session?.failed || session?.disposed) {
+      // 失败会话不可恢复；下一次语言请求直接创建全新进程。
+      session.dispose();
+      this.sessions.delete(key);
+      session = undefined;
+    }
     if (!session) {
       session = new CftLspSession(
         command,
@@ -1119,6 +1131,7 @@ module.exports = {
   deactivate,
   __test: {
     CftCompletionProvider,
+    CftDiagnostics,
     CftDefinitionProvider,
     CftDocumentSymbolProvider,
     CftHoverProvider,

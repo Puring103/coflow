@@ -15,7 +15,6 @@ Character {
     tags: ["tank", "starter"],
     attributes: { "level": 5, "rarity": 2 },
     primaryAbility: HealAbility { label: "Fortify", healing: 12 },
-    status: Err("resting"),
   }
 
   arcanist {

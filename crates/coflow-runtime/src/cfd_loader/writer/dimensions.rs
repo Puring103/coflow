@@ -15,6 +15,8 @@ use super::CFD_INDENT;
 use super::{diag, raw_span, CfdWriter};
 
 impl CfdWriter {
+    // 维度源加载需要在一次遍历中同时校验形状、键和值，保持完整流程更便于核对诊断位置。
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn load_dimension_source(
         &self,
         request: &DimensionSourceLoadRequest<'_>,

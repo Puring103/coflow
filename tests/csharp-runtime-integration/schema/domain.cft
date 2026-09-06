@@ -26,7 +26,6 @@ sealed type ScenarioConfig {
   samples: [int];
   checkpoints: {string: Stats};
   optionalBonus: Option<Stats>;
-  validation: Result<Option<Stats>, string>;
 }
 
 abstract type Ability {
@@ -52,7 +51,6 @@ type Character {
   attributes: {string: int};
   primaryAbility: Ability;
   abilities: [Ability] = [];
-  status: Result<int, string> = Ok(0);
   fallback: Option<&Character> = None;
 }
 

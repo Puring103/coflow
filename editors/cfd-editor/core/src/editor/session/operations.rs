@@ -24,6 +24,13 @@ use coflow_runtime::{
 use serde_json::{Value, json};
 use std::io::Write;
 
+fn has_extension(path: &str, expected: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
 fn synchronize_language_document(
     session: &mut EditorSession,
     uri: &str,
@@ -54,7 +61,7 @@ fn synchronize_language_document(
     };
     session
         .language_server
-        .notify(method, params)
+        .notify(method, &params)
         .map_err(|error| EditorError::other(format!("LSP sync failed for {file_path}: {error}")))
 }
 
@@ -209,7 +216,7 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
             line = line.saturating_add(1);
             character = 0;
         } else {
-            character = character.saturating_add(ch.len_utf16() as u32);
+            character = character.saturating_add(1 + u32::from(ch.len_utf16() == 2));
         }
     }
     source.len()
@@ -243,7 +250,7 @@ impl SessionStore {
             .language_server
             .request(
                 "textDocument/semanticTokens/full",
-                json!({ "textDocument": { "uri": uri } }),
+                &json!({ "textDocument": { "uri": uri } }),
             )
             .map_err(EditorError::other)?;
         notifications.extend(emitted);
@@ -294,13 +301,15 @@ impl SessionStore {
             .language_server
             .request(
                 "textDocument/completion",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri },
                     "position": { "line": position.line, "character": position.character },
                 }),
             )
             .map_err(EditorError::other)?;
-        Ok(completion_items(&result))
+        let completions = completion_items(&result);
+        drop(session);
+        Ok(completions)
     }
 
     pub fn format_language_document(
@@ -322,17 +331,19 @@ impl SessionStore {
             .language_server
             .request(
                 "textDocument/formatting",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri },
                     "options": { "tabSize": 2, "insertSpaces": true },
                 }),
             )
             .map_err(EditorError::other)?;
         let edits = formatting_edits(&result);
-        Ok(LanguageFormattingResult {
+        let formatted = LanguageFormattingResult {
             text: formatting_text(source, &edits),
             edits,
-        })
+        };
+        drop(session);
+        Ok(formatted)
     }
 
     pub fn close_language_document(&self, id: u32, file_path: &str) -> Result<(), EditorError> {
@@ -349,10 +360,11 @@ impl SessionStore {
                 .language_server
                 .notify(
                     "textDocument/didClose",
-                    json!({ "textDocument": { "uri": uri } }),
+                    &json!({ "textDocument": { "uri": uri } }),
                 )
                 .map_err(EditorError::other)?;
         }
+        drop(session);
         Ok(())
     }
 
@@ -371,7 +383,7 @@ impl SessionStore {
             .language_server
             .request(
                 "coflow/functionDocument",
-                json!({ "source": source, "body": body }),
+                &json!({ "source": source, "body": body }),
             )
             .map_err(EditorError::other)?;
         let diagnostics = result
@@ -381,8 +393,8 @@ impl SessionStore {
             .flatten()
             .filter_map(language_diagnostic)
             .collect();
-        let completions = completion_items(result.get("completions").unwrap_or(&Value::Null));
-        Ok(FunctionDocumentState {
+        let completions = completion_items(result.get("completions").unwrap_or_else(|| &Value::Null));
+        let document = FunctionDocumentState {
             source: result
                 .get("source")
                 .and_then(Value::as_str)
@@ -401,14 +413,16 @@ impl SessionStore {
             body_range: result
                 .get("bodyRange")
                 .and_then(language_range)
-                .unwrap_or(LanguageRange {
+                .unwrap_or_else(|| LanguageRange {
                     start: LanguagePosition {
                         line: 0,
                         character: 0,
                     },
                     end: LanguagePosition {
                         line: 0,
-                        character: source.chars().count() as u32,
+                        character: source
+                            .encode_utf16()
+                            .fold(0u32, |length, _| length.saturating_add(1)),
                     },
                 }),
             diagnostics,
@@ -422,7 +436,9 @@ impl SessionStore {
                 .collect(),
             semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
             completions,
-        })
+        };
+        drop(session);
+        Ok(document)
     }
 
     pub fn validate_source_text(
@@ -434,8 +450,8 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let yaml_path = self.project_action_context(id)?;
         let project = Project::open_schema_only(Some(&yaml_path))
-            .map_err(|diagnostics| api_diagnostics_to_editor_error(diagnostics))?;
-        if file_path.ends_with(".cft") {
+            .map_err(api_diagnostics_to_editor_error)?;
+        if has_extension(file_path, "cft") {
             let mut schema_runtime = ProjectRuntime::new(project);
             let source_override = SchemaTextOverride {
                 requested_module: None,
@@ -470,11 +486,11 @@ impl SessionStore {
     ) -> Result<ProjectBootstrap, EditorError> {
         let path = self.source_file_path(id, file_path)?;
         let normalized_path = coflow_runtime::normalize_path(&path);
-        if file_path.ends_with(".cft") {
+        if has_extension(file_path, "cft") {
             let yaml_path = self.project_action_context(id)?;
             let project = Project::open_schema_only(Some(&yaml_path))
                 .map_err(api_diagnostics_to_editor_error)?;
-            let mut schema_runtime = ProjectRuntime::new(project.clone());
+            let mut schema_runtime = ProjectRuntime::new(project);
             let schema_override = SchemaTextOverride {
                 requested_module: None,
                 normalized_path,

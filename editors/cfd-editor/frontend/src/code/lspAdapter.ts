@@ -11,7 +11,9 @@ import type {
 import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
 import type { CodeSemanticToken } from '../components/CfdCodeEditor'
 
-export function decodeSemanticTokens(source: string, state: LanguageDocumentState): CodeSemanticToken[] {
+type SemanticTokenState = Pick<LanguageDocumentState, 'semantic_token_data' | 'semantic_token_types'>
+
+export function decodeSemanticTokens<T extends SemanticTokenState>(source: string, state: T): CodeSemanticToken[] {
   const doc = Text.of(source.split('\n'))
   const tokens: CodeSemanticToken[] = []
   let line = 0

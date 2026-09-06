@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use crate::api::{
-    CfdSource, CfdSourceCatalog, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity,
+    CfdSource, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity,
     SourceLocation,
 };
+use crate::cfd_loader::CfdLoader;
 use crate::project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
 
 mod dimensions;
@@ -25,12 +26,11 @@ pub(crate) struct ConfiguredSource {
 
 pub(crate) struct SourceResolver<'a> {
     project: &'a Project,
-    catalog: &'a CfdSourceCatalog,
 }
 
 impl<'a> SourceResolver<'a> {
-    pub(crate) const fn new(project: &'a Project, catalog: &'a CfdSourceCatalog) -> Self {
-        Self { project, catalog }
+    pub(crate) const fn new(project: &'a Project) -> Self {
+        Self { project }
     }
 
     pub(crate) fn configured(&self, source: &SourceConfig) -> ConfiguredSource {
@@ -45,7 +45,7 @@ impl<'a> SourceResolver<'a> {
         if configured.location.path().is_dir() {
             return self.resolve_directory(configured);
         }
-        self.resolve_file(configured)
+        Self::resolve_file(configured)
     }
 
     pub(crate) fn resolve_implicit(
@@ -55,7 +55,7 @@ impl<'a> SourceResolver<'a> {
         if configured.location.path().is_dir() {
             return self.resolve_directory(configured);
         }
-        self.resolve_file(configured)
+        Self::resolve_file(configured)
     }
 
     pub(crate) fn resolve_dimension_sources(
@@ -97,22 +97,17 @@ impl<'a> SourceResolver<'a> {
                 display_name: path.display().to_string(),
                 location: CfdSourcePath::new(path.clone()),
             };
-            resolved.extend(self.resolve_file(&file_source)?);
+            resolved.extend(Self::resolve_file(&file_source)?);
         }
         Ok(resolved)
     }
 
-    fn resolve_file(
-        &self,
-        configured: &ConfiguredSource,
-    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
+    fn resolve_file(configured: &ConfiguredSource) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let source = CfdSource {
             location: configured.location.clone(),
             display_name: configured.display_name.clone(),
         };
-        self.catalog
-            .loader()
-            .resolve(&source)
+        CfdLoader::resolve(&source)
             .map(|source| vec![ResolvedLoaderSource { source }])
     }
 }
@@ -147,6 +142,8 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     #[test]
     fn configured_source_keeps_project_relative_display_name() {
         use super::configured_source;

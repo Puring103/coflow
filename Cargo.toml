@@ -10,19 +10,9 @@ publish = false
 [lints]
 workspace = true
 
-[features]
-default = ["cli"]
-cli = [
-    "dep:clap",
-    "dep:dirs",
-    "dep:include_dir",
-    "dep:self_update",
-]
-
 [[bin]]
 name = "coflow"
 path = "src/main.rs"
-required-features = ["cli"]
 
 [workspace]
 members = [
@@ -65,17 +55,15 @@ redundant_pub_crate = "allow"
 
 [dependencies]
 atomicwrites = "0.4.4"
-clap = { version = "4", features = ["derive"], optional = true }
-coflow-language = { path = "crates/coflow-language" }
+clap = { version = "4", features = ["derive"] }
 coflow-format = { path = "crates/coflow-format" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-runtime = { path = "crates/coflow-runtime" }
-dirs = { version = "6", optional = true }
-include_dir = { version = "0.7", optional = true }
-self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"], optional = true }
+dirs = "6"
+include_dir = "0.7"
+self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-similar = "2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,4 +1,5 @@
 target/
+BenchmarkDotNet.Artifacts/
 editors/cfd-editor/src-tauri/binaries/
 dist/
 examples/*/generated/**
@@ -9,6 +10,10 @@ examples/*/app/obj/
 node_modules/
 runtimes/csharp/**/bin/
 runtimes/csharp/**/obj/
+tests/csharp-runtime-integration/generated/
+tests/csharp-runtime-integration/app/bin/
+tests/csharp-runtime-integration/app/obj/
+tests/csharp-runtime-integration/coflow.enum.lock.json
 website/vitepress-dev*.log
 website/docs/.vitepress/dist/
 website/docs/.vitepress/cache/

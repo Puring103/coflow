@@ -544,7 +544,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
                   {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
                 </th>
-                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} label="default" /></td>
+                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} /></td>
                 {data.variants.map((variant, variantIndex) => {
                   const colIndex = variantIndex + 2
                   const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
@@ -591,7 +591,7 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
       <header><strong>{row.coordinate.key}</strong></header>
       <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
         <span>default</span>
-        <DataCardCompact value={row.default_value} label="default" />
+        <DataCardCompact value={row.default_value} />
       </div>
       {variants.map((variant, index) => (
         <div className={`dimension-record-row${selectedField === index + 1 ? ' keyboard-selected' : ''}`} key={variant} data-dimension-record-field={index + 1} onMouseDown={() => onSelectField(index + 1)}>

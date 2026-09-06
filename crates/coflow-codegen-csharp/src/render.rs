@@ -49,6 +49,7 @@ struct MetadataEnumVariant {
 }
 
 #[derive(Serialize)]
+#[allow(clippy::struct_excessive_bools)] // 元数据协议显式发布互不等价的类型能力。
 struct MetadataType {
     metadata_name: String,
     source_name: String,
@@ -332,7 +333,7 @@ fn metadata_reader(ty: &CsharpType) -> MetadataReader {
     let mut arguments = ty.loader_id_type.as_ref().map(|_| {
         ty.loader_id_reader.as_ref().map_or_else(|| "key".to_string(),
             |reader| format!("ReadEnum{reader}Text(key)"))
-    }).into_iter().chain(ty.loader_fields.iter().map(|field| reader_argument(field))).collect::<Vec<_>>();
+    }).into_iter().chain(ty.loader_fields.iter().map(reader_argument)).collect::<Vec<_>>();
     if ty.uses_host_slot { arguments.insert(0, "null".to_string()); }
     let host_arguments = std::iter::once("context.Host()".to_string()).chain(
         ty.loader_fields.iter().filter(|field| field.is_function).map(|field| {

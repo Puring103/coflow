@@ -48,6 +48,8 @@ impl ResolvedTypes<'_> {
         resolved
     }
 
+    // 类型变体集中递归解析，避免 alias 与字段类型走出不同规则。
+    #[allow(clippy::too_many_lines)]
     fn resolve_alias_target(
         &mut self,
         module: &ModuleId,
@@ -60,7 +62,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let resolved_name = name.to_string();
+                let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name).map(|symbol| symbol.kind) {
                     Some(SymbolKind::Type) => {
                         if self.type_is_singleton(&resolved_name) {
@@ -271,7 +273,7 @@ impl ResolvedTypes<'_> {
                 let mut map = BTreeMap::new();
                 for info in self.ancestry_chain(name) {
                     for field in &info.def.fields {
-                        let declared_ty = self.resolve_field_type(&info.module, &field.ty);
+                        let declared_ty = self.resolve_field_type(&field.ty);
                         map.insert(
                             field.name.clone(),
                             FieldInfo {
@@ -386,14 +388,14 @@ impl ResolvedTypes<'_> {
     /// (unknown names, invalid dict keys) are reported once by
     /// [`Self::validate_field_type`] during `validate_field_shapes`; later
     /// passes that need the resolved type just consume the result here.
-    pub(super) fn resolve_field_type(&self, module: &ModuleId, ty: &TypeRef) -> InferredType {
+    pub(super) fn resolve_field_type(&self, ty: &TypeRef) -> InferredType {
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let name = name.to_string();
+                let name = name.clone();
                 match self.symbols.get(&name) {
                 Some(symbol) if symbol.kind == SymbolKind::Type => {
                     InferredType::object(crate::TypeName::from_validated(name))
@@ -410,23 +412,23 @@ impl ResolvedTypes<'_> {
                 }
             }
             TypeRefKind::Ref(inner) => {
-                InferredType::record_ref(self.resolve_field_type(module, inner))
+                InferredType::record_ref(self.resolve_field_type(inner))
             }
             TypeRefKind::Array(inner) => {
-                InferredType::array(self.resolve_field_type(module, inner))
+                InferredType::array(self.resolve_field_type(inner))
             }
             TypeRefKind::Dict(key, value) => {
                 InferredType::dict(
-                    self.resolve_field_type(module, key),
-                    self.resolve_field_type(module, value),
+                    self.resolve_field_type(key),
+                    self.resolve_field_type(value),
                 )
             }
             TypeRefKind::Option(inner) => {
-                InferredType::option(self.resolve_field_type(module, inner))
+                InferredType::option(self.resolve_field_type(inner))
             }
             TypeRefKind::Result(value, error) => InferredType::result(
-                self.resolve_field_type(module, value),
-                self.resolve_field_type(module, error),
+                self.resolve_field_type(value),
+                self.resolve_field_type(error),
             ),
             TypeRefKind::Function(parameters, result) => InferredType::function(
                 parameters
@@ -434,17 +436,19 @@ impl ResolvedTypes<'_> {
                     .map(|parameter| {
                         (
                             parameter.name.as_ref().map(|name| name.name.clone()),
-                            self.resolve_field_type(module, &parameter.value_type),
+                            self.resolve_field_type(&parameter.value_type),
                         )
                     })
                     .collect(),
-                self.resolve_field_type(module, result),
+                self.resolve_field_type(result),
             ),
             TypeRefKind::Unit => InferredType::unit(),
         }
     }
 
     /// 单次遍历字段类型，只读取已解析阶段，并把诊断写入本次校验的局部结果。
+    // 字段类型诊断与解析分支逐项对应，集中保留完整错误上下文。
+    #[allow(clippy::too_many_lines)]
     fn validate_field_type(
         &self,
         module: &ModuleId,
@@ -460,7 +464,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
             TypeRefKind::Named(name) => {
-                let resolved_name = name.to_string();
+                let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {
                         if self.type_is_singleton(&resolved_name) {
@@ -580,8 +584,10 @@ fn value_type_contains_data_result(ty: &InferredType) -> bool {
             value_type_contains_result(key) || value_type_contains_result(value)
         }
         // 函数字段中的 Result 是函数协议的一部分，不是 object 数据字段。
-        InferredType::Value(crate::CftValueType::Function(_, _)) | InferredType::Unknown => false,
-        InferredType::Value(_) | InferredType::EnumNamespace(_) | InferredType::Entry(_, _) => false,
+        InferredType::Value(_)
+        | InferredType::Unknown
+        | InferredType::EnumNamespace(_)
+        | InferredType::Entry(_, _) => false,
     }
 }
 
@@ -594,7 +600,6 @@ fn value_type_contains_result(ty: &crate::CftValueType) -> bool {
         crate::CftValueType::Dict(key, value) => {
             value_type_contains_result(key) || value_type_contains_result(value)
         }
-        crate::CftValueType::Function(_, _) => false,
         _ => false,
     }
 }

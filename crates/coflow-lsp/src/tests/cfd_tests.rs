@@ -1,17 +1,13 @@
+// 测试文本中的 `${1:name}` 用于验证 LSP snippet 协议。
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
-use super::super::semantic_tokens::{
-    MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE,
-};
+use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
-
-
-
-
-
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
@@ -165,7 +161,8 @@ type Holder { key: string; item: Item; }\n";
     assert_eq!(messages[0]["result"]["range"]["end"]["character"], 5);
 
     server.writer.clear();
-    let completion_position = position_from_byte(source, source.find("&sword").expect("reference") + 1);
+    let completion_position =
+        position_from_byte(source, source.find("&sword").expect("reference") + 1);
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",
@@ -403,6 +400,25 @@ fn cfd_semantic_tokens_cover_project_global_types_and_function_language() {
 }
 
 #[test]
+fn cfd_function_semantic_tokens_follow_unicode_xid_boundaries() {
+    let source = "runner: Runner {\n  execute: fn() -> int { var 变量\u{301} = 1; return 变量\u{301}; },\n}\n";
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let result = cfd::semantic_tokens(source, &ast, None);
+    let tokens = decode_semantic_tokens(source, &result["data"]);
+
+    assert!(
+        tokens.contains(&DecodedSemanticToken {
+            text: "变量\u{301}".to_string(),
+            token_type: SEM_VARIABLE,
+            modifiers: MOD_DECLARATION,
+        }),
+        "{tokens:?}"
+    );
+}
+
+#[test]
 fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
     let schema_source = "type Product { name: string; }\n";
     let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
@@ -436,11 +452,14 @@ fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
     let semantic_result = written_messages(&server.writer)[0]["result"].clone();
     assert_eq!(semantic_result["x-coflow-syntax-valid"], true);
     let tokens = decode_semantic_tokens(source, &semantic_result["data"]);
-    assert!(tokens.contains(&DecodedSemanticToken {
-        text: "asd".to_string(),
-        token_type: SEM_RECORD_KEY,
-        modifiers: MOD_DECLARATION | MOD_RECORD,
-    }), "{tokens:?}");
+    assert!(
+        tokens.contains(&DecodedSemanticToken {
+            text: "asd".to_string(),
+            token_type: SEM_RECORD_KEY,
+            modifiers: MOD_DECLARATION | MOD_RECORD,
+        }),
+        "{tokens:?}"
+    );
 
     server.writer.clear();
     let position = position_from_byte(source, source.find("asd").expect("asd") + 3);
@@ -551,7 +570,8 @@ type Settings {\n\
         "settings: Settings { compute: fn(value: int) -> int { ret } }",
         "ret",
     );
-    let body_labels = completion_labels(body_items.as_array().expect("function body items").clone());
+    let body_labels =
+        completion_labels(body_items.as_array().expect("function body items").clone());
     assert!(body_labels.contains(&"return".to_string()));
     assert!(body_labels.contains(&"value".to_string()));
 }
@@ -567,11 +587,14 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
 
     let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
-    assert!(tokens.contains(&DecodedSemanticToken {
-        text: "{amount}".to_string(),
-        token_type: SEM_VARIABLE,
-        modifiers: 0,
-    }), "{tokens:?}");
+    assert!(
+        tokens.contains(&DecodedSemanticToken {
+            text: "{amount}".to_string(),
+            token_type: SEM_VARIABLE,
+            modifiers: 0,
+        }),
+        "{tokens:?}"
+    );
 
     let offset = source.find("{amount}").expect("formatted reference") + 3;
     let completions = cfd::completion(source, &ast, Some(schema), offset);
@@ -646,7 +669,9 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
     let incomplete_source = r#"standard: DefaultSettings { visible: true, title: "{&standard.}" }"#;
     let (incomplete_ast, incomplete_diagnostics) = parse_cfd(incomplete_source);
     assert!(!incomplete_diagnostics.is_empty());
-    let incomplete_offset = incomplete_source.find("&standard.").expect("incomplete reference")
+    let incomplete_offset = incomplete_source
+        .find("&standard.")
+        .expect("incomplete reference")
         + "&standard.".len();
     let incomplete_items = cfd::completion(
         incomplete_source,
@@ -662,11 +687,14 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
 
     let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
-    assert!(tokens.contains(&DecodedSemanticToken {
-        text: "{&standard.visible}".to_string(),
-        token_type: SEM_VARIABLE,
-        modifiers: 0,
-    }), "{tokens:?}");
+    assert!(
+        tokens.contains(&DecodedSemanticToken {
+            text: "{&standard.visible}".to_string(),
+            token_type: SEM_VARIABLE,
+            modifiers: 0,
+        }),
+        "{tokens:?}"
+    );
 }
 
 #[test]
@@ -837,7 +865,8 @@ fn cfd_goto_def_continues_past_unparseable_document() {
 
 #[test]
 fn function_document_uses_cfd_parser_and_lsp_tokens() {
-    let source = "fn(left: int, operation: fn(int, int) -> int, right: int) -> int {\nleft + right\n}";
+    let source =
+        "fn(left: int, operation: fn(int, int) -> int, right: int) -> int {\nleft + right\n}";
     let result = cfd::function_document(&json!({ "source": source }));
 
     assert_eq!(
@@ -884,9 +913,9 @@ fn function_document_completion_includes_local_variables_and_snippets() {
     let source = "fn(value: int) -> int { var total = value; return total; }";
     let result = cfd::function_document(&json!({ "source": source }));
     let completions = result["completions"].as_array().expect("completions");
-    assert!(completions.iter().any(|item| {
-        item["label"] == "total" && item["detail"] == "local variable"
-    }));
+    assert!(completions
+        .iter()
+        .any(|item| { item["label"] == "total" && item["detail"] == "local variable" }));
     let len = completions
         .iter()
         .find(|item| item["label"] == "len")

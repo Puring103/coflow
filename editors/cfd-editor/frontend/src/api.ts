@@ -32,7 +32,26 @@ import type { WriteDimensionValueOutcome } from './bindings/WriteDimensionValueO
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { PluginSchemaType } from './bindings/PluginSchemaType'
+import type { FunctionDocumentState } from './bindings/FunctionDocumentState'
+import type { LanguageCompletion } from './bindings/LanguageCompletion'
+import type { LanguageDiagnostic } from './bindings/LanguageDiagnostic'
+import type { LanguageDocumentState } from './bindings/LanguageDocumentState'
+import type { LanguageFormattingResult } from './bindings/LanguageFormattingResult'
+import type { LanguagePosition } from './bindings/LanguagePosition'
+import type { LanguageRange } from './bindings/LanguageRange'
+import type { LanguageTextEdit } from './bindings/LanguageTextEdit'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
+
+export type {
+  FunctionDocumentState,
+  LanguageCompletion,
+  LanguageDiagnostic,
+  LanguageDocumentState,
+  LanguageFormattingResult,
+  LanguagePosition,
+  LanguageRange,
+  LanguageTextEdit,
+}
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
@@ -46,61 +65,6 @@ export interface ProjectReloadedEvent {
 export interface ProjectWatchErrorEvent {
   session_id: number
   message: string
-}
-
-export interface LanguagePosition {
-  line: number
-  character: number
-}
-
-export interface LanguageRange {
-  start: LanguagePosition
-  end: LanguagePosition
-}
-
-export interface LanguageTextEdit {
-  range: LanguageRange
-  new_text: string
-}
-
-export interface LanguageFormattingResult {
-  text: string
-  edits: LanguageTextEdit[]
-}
-
-export interface LanguageDiagnostic {
-  range: LanguageRange
-  severity: number
-  message: string
-  code?: string
-  source?: string
-}
-
-export interface LanguageDocumentState {
-  diagnostics: LanguageDiagnostic[]
-  semantic_token_data: number[]
-  semantic_token_types: string[]
-  syntax_valid: boolean
-}
-
-export interface LanguageCompletion {
-  label: string
-  detail?: string
-  kind?: number
-  insert_text?: string
-  insert_text_format?: number
-  documentation?: string
-  sort_text?: string
-  filter_text?: string
-  text_edit?: LanguageTextEdit
-}
-
-export interface FunctionDocumentState extends LanguageDocumentState {
-  source: string
-  signature: string
-  body: string
-  body_range: LanguageRange
-  completions: LanguageCompletion[]
 }
 
 export async function pickProjectYaml(): Promise<string | null> {

@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use crate::project::path_to_slash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// 这些布尔值是前端文件树协议中的独立状态，不是可互斥的模式枚举。
+#[allow(clippy::struct_excessive_bools)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -55,6 +57,11 @@ pub fn build_file_tree(
     data_roots: &BTreeSet<String>,
     skip_dirs: &BTreeSet<String>,
 ) -> Vec<FileTreeNode> {
+    let source_sets = SourceSets {
+        in_sources,
+        schema_roots,
+        data_roots,
+    };
     let mut entries: Vec<(Vec<String>, bool)> = Vec::new();
     for entry in walkdir::WalkDir::new(root)
         .min_depth(1)
@@ -101,9 +108,7 @@ pub fn build_file_tree(
             0,
             "",
             terminal_is_dir,
-            in_sources,
-            schema_roots,
-            data_roots,
+            &source_sets,
         );
     }
     sort_tree(&mut roots);
@@ -180,15 +185,19 @@ pub fn build_dimension_subtree(
     })
 }
 
+struct SourceSets<'a> {
+    in_sources: &'a BTreeSet<String>,
+    schema_roots: &'a BTreeSet<String>,
+    data_roots: &'a BTreeSet<String>,
+}
+
 fn insert_path(
     nodes: &mut Vec<FileTreeNode>,
     parts: &[String],
     idx: usize,
     parent_path: &str,
     terminal_is_dir: bool,
-    in_sources: &BTreeSet<String>,
-    schema_roots: &BTreeSet<String>,
-    data_roots: &BTreeSet<String>,
+    source_sets: &SourceSets<'_>,
 ) {
     if idx >= parts.len() {
         return;
@@ -204,12 +213,23 @@ fn insert_path(
     let existing = nodes.iter_mut().find(|n| n.name == *name);
     if let Some(node) = existing {
         if is_dir {
-            insert_path(&mut node.children, parts, idx + 1, &path, terminal_is_dir, in_sources, schema_roots, data_roots);
+            insert_path(
+                &mut node.children,
+                parts,
+                idx + 1,
+                &path,
+                terminal_is_dir,
+                source_sets,
+            );
         }
         return;
     }
-    let (in_schema, in_data) = source_membership(&path, schema_roots, data_roots);
-    let in_src = is_dir || in_sources.contains(&path);
+    let (in_schema, in_data) = source_membership(
+        &path,
+        source_sets.schema_roots,
+        source_sets.data_roots,
+    );
+    let in_src = is_dir || source_sets.in_sources.contains(&path);
     let mut node = FileTreeNode {
         name: name.clone(),
         path: path.clone(),
@@ -221,7 +241,14 @@ fn insert_path(
         children: Vec::new(),
     };
     if is_dir {
-        insert_path(&mut node.children, parts, idx + 1, &path, terminal_is_dir, in_sources, schema_roots, data_roots);
+        insert_path(
+            &mut node.children,
+            parts,
+            idx + 1,
+            &path,
+            terminal_is_dir,
+            source_sets,
+        );
     }
     nodes.push(node);
 }
@@ -316,6 +343,8 @@ fn first_source_descendant(nodes: &[FileTreeNode]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
 
     #[test]

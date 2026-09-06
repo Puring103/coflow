@@ -176,6 +176,8 @@ pub(crate) struct SchemaWriteFileArgs {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::panic)]
+
     use clap::Parser;
 
     use super::{Cli, Command};
