@@ -33,6 +33,12 @@ import {
   type EditorSelection,
 } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
+import {
+  PluginContributionMount,
+  currentPluginIdentity,
+  usePluginPresentation,
+} from '../plugins'
+import type { PluginPresentationContext } from '../plugins/types'
 import { BatchRecordEditor } from './BatchRecordEditor'
 import { BatchCellEditor } from './BatchCellEditor'
 import { projectBatchCells } from '../state/batchRecordProjection'
@@ -176,6 +182,20 @@ export function InspectorPanel({
   const record = data && coordinate
     ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
     : null
+  const rootPresentation = usePluginPresentation('inspector', record?.coordinate.actual_type ?? '')
+  const pluginIdentity = currentPluginIdentity()
+  const rootPresentationContext = useMemo<PluginPresentationContext | null>(() => (
+    data && record && pluginIdentity && pluginIdentity.revision === data.revision
+      ? {
+          identity: pluginIdentity,
+          filePath: data.file_path,
+          coordinate: { ...record.coordinate },
+          actualType: record.coordinate.actual_type,
+          fieldPath: null,
+          declaredType: record.coordinate.actual_type,
+        }
+      : null
+  ), [data, pluginIdentity?.sessionId, pluginIdentity?.revision, record])
   const selectedRecords = data && selection?.kind === 'record'
     ? selection.coordinates.flatMap(selected => {
         const row = data.records.find(item => sameCoordinate(item.coordinate, selected))
@@ -437,6 +457,12 @@ export function InspectorPanel({
               readOnly={readOnly}
               onWriteBatch={onWriteFieldBatch}
             />
+          ) : record && data && !inspectingValue && rootPresentation?.slot === 'inspector' && rootPresentationContext ? (
+            <PluginContributionMount
+              contribution={rootPresentation}
+              context={rootPresentationContext}
+              className="plugin-record-presentation"
+            />
           ) : record && data ? (
             <>
               {!inspectingValue && (
@@ -458,6 +484,8 @@ export function InspectorPanel({
               {!inspectingValue || inspectorFields.length > 0 ? (
                 <DataCardExpanded
                   fields={inspectorFields}
+                  filePath={data.file_path}
+                  coordinate={record.coordinate}
                   expandedPaths={expandedPaths}
                   onRowToggle={expansionOwner
                     ? (path, expanded) => {

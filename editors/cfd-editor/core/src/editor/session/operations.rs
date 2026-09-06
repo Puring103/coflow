@@ -567,7 +567,7 @@ impl SessionStore {
         })
     }
 
-    /// Returns the schema projection available to read-only editor extensions.
+    /// 返回编辑器插件可读取的 Schema 投影。
     #[allow(clippy::significant_drop_tightening)]
     pub fn get_plugin_schema(&self, id: u32) -> Result<Vec<PluginSchemaType>, EditorError> {
         let entry = self.session(id)?;
