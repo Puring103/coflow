@@ -20,6 +20,7 @@ import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import {
   coordinateId,
+  cloneValue,
   cellDeclaredType,
   cellEnumType,
   cellEnumIsFlag,
@@ -57,6 +58,12 @@ import { Icon } from './Icon'
 import { RichTextInput } from './RichTextInput'
 import { visibilityScrollDelta, type AxisRange } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
+import {
+  PluginContributionMount,
+  currentPluginIdentity,
+  usePluginPresentation,
+} from '../plugins'
+import type { PluginPresentationContext } from '../plugins/types'
 import {
   recordSelection,
   recordSelectionCoordinates,
@@ -157,6 +164,14 @@ interface Props {
   firstRecordFocusRequest?: number
   onFirstRecordFocusConsumed?: (request: number) => void
   onNavigationBoundary?: (direction: TableDirection) => void
+  rowPresentation?: (row: RecordRow, index: number) => TableRowPresentation | undefined
+}
+
+export interface TableRowPresentation {
+  id: string
+  version: 'HEAD' | '当前'
+  change: 'added' | 'deleted' | 'modified'
+  changedFields: ReadonlySet<string>
 }
 
 const ROW_H = 30
@@ -178,7 +193,7 @@ interface TableContextMenu {
   showGroupTargets: boolean
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
@@ -295,6 +310,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // memo on every edit and cascade into a react-table column-defs replay.
   const dataForCellsRef = useRef(data)
   dataForCellsRef.current = data
+  const rowPresentationRef = useRef(rowPresentation)
+  rowPresentationRef.current = rowPresentation
 
   // Which columns render as pill cells (ref/enum). Freezing this once per
   // column set means the `pill-cell` class on the td stays stable across
@@ -479,7 +496,20 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         },
         size: columnWidths?.key ?? columnSizeHints.key ?? 140,
         sortDescFirst: false,
+        enableSorting: !rowPresentation,
       }),
+      ...(rowPresentation ? [helper.display({
+        id: '__comparison_version',
+        header: () => <span className="th-label-name">版本</span>,
+        cell: info => {
+          const presentation = rowPresentationRef.current?.(info.row.original, info.row.index)
+          return presentation
+            ? <span className={`table-comparison-version ${presentation.change}`}>{presentation.version}</span>
+            : null
+        },
+        size: 72,
+        enableSorting: false,
+      })] : []),
       ...allFieldNames.map(name => {
         const declared = columnDeclaredTypes[name]
         const display = columnDisplay[name]
@@ -565,6 +595,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       : undefined}
                   />
                 ) : <EditableCell
+                  filePath={filePath}
+                  coordinate={row.original.coordinate}
+                  fieldPath={[fieldPathField(name)]}
                   value={f.value}
                   label={name}
                   editable={cellEditable}
@@ -588,7 +621,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     // Only structural changes (column set, active type, computed widths,
     // permission flags) rebuild the column defs. Edit-time state
     // (diagnostics, records, callbacks) is read via refs above.
-  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnDisplay, columnWidths, canEdit, canRename])
+  }, [allFieldNames, columnSizeHints, columnDeclaredTypes, columnDisplay, columnWidths, canEdit, canRename, rowPresentation])
 
   // Global filter optionally traverses nested collections and object fields.
   const globalFilterFn = useMemo(
@@ -618,7 +651,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getRowId: row => coordinateId(row.coordinate),
+    getRowId: (row, index) => rowPresentation?.(row, index)?.id ?? coordinateId(row.coordinate),
     globalFilterFn,
     enableSortingRemoval: true,
     enableMultiSort: false,
@@ -872,7 +905,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   return (
     <div
-      className="table-view"
+      className={`table-view${rowPresentation ? ' table-view-comparison' : ''}`}
       onClick={e => {
         setContextMenu(null)
         // Clicks that didn't land on a row deselect the current row, which
@@ -1317,6 +1350,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 }
                 const row = item.row
                 const rowSev = recordSeverity(row.original.coordinate)
+                const comparison = rowPresentationRef.current?.(row.original, row.index)
                 return (
                   <tr
                     key={row.id}
@@ -1324,10 +1358,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     data-coordinate-id={coordinateId(row.original.coordinate)}
                     data-record-drop-kind="record"
                     ref={rowVirtualizer.measureElement}
-                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}${comparison ? ` table-diff-row table-diff-${comparison.change}` : ''}`}
                     data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
                     style={recordGroupColorStyle(item.group?.color)}
                     onContextMenu={e => {
+                      if (readOnly) return
                       e.preventDefault()
                       const clickedIsSelected = selection?.kind === 'record'
                         && selection.filePath === data.file_path
@@ -1376,6 +1411,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                         selected && selectedValueRange?.rowEnd === selectedRowIndex ? 'range-bottom' : '',
                         selected && selectedValueRange?.columnStart === selectedColumnIndex ? 'range-left' : '',
                         selected && selectedValueRange?.columnEnd === selectedColumnIndex ? 'range-right' : '',
+                        comparison?.changedFields.has(cell.column.id) ? 'table-diff-cell-modified' : '',
                       ].filter(Boolean).join(' ')
                       return (
                         <td
@@ -1850,9 +1886,10 @@ function CellSyntaxEditor({
   )
 }
 
-function EditableCell({
-  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
-}: {
+interface EditableCellProps {
+  filePath: string
+  coordinate: RecordCoordinate
+  fieldPath: FieldPathSegment[]
   value: FieldValue
   label?: string
   editable: boolean
@@ -1865,7 +1902,41 @@ function EditableCell({
   highlightQuery?: string
   onCommit?: (next: FieldValue) => void
   onEditingFinished?: () => void
-}) {
+}
+
+function EditableCell(props: EditableCellProps) {
+  const { filePath, coordinate, fieldPath, value, declaredType } = props
+  const identity = currentPluginIdentity()
+  const presentation = usePluginPresentation('cell', declaredType ?? '')
+  const context = useMemo<PluginPresentationContext | null>(() => (
+    identity
+      ? {
+          identity,
+          filePath,
+          coordinate: { ...coordinate },
+          actualType: coordinate.actual_type,
+          fieldPath: fieldPath.map(segment => ({ ...segment })),
+          declaredType: declaredType ?? '',
+          value: cloneValue(value),
+        }
+      : null
+  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.key, declaredType, value])
+  if (presentation?.slot === 'cell' && context) {
+    return (
+      <PluginContributionMount
+        contribution={presentation}
+        context={context}
+        inline
+        className="plugin-cell-presentation"
+      />
+    )
+  }
+  return <EditableCellBuiltIn {...props} />
+}
+
+function EditableCellBuiltIn({
+  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const shownValue = presentationValue(value)
   const commitValue = onCommit
@@ -1962,7 +2033,6 @@ function EditableCell({
         declaredType={declaredType}
         annotation={annotation}
         refTargetType={refTargetType}
-        surface="table-cell"
         highlightQuery={highlightQuery}
       />
     </div>

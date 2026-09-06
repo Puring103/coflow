@@ -47,9 +47,15 @@ fn cyclic_record_refs_build_and_remain_resolvable() {
     );
 
     let model = builder.build().expect("record reference cycles are valid");
-    let alice = model.lookup_assignable(&schema, "Person", "alice").expect("alice");
-    let bob = model.lookup_assignable(&schema, "Person", "bob").expect("bob");
-    let self_record = model.lookup_assignable(&schema, "Person", "self").expect("self");
+    let alice = model
+        .lookup_assignable(&schema, "Person", "alice")
+        .expect("alice");
+    let bob = model
+        .lookup_assignable(&schema, "Person", "bob")
+        .expect("bob");
+    let self_record = model
+        .lookup_assignable(&schema, "Person", "self")
+        .expect("self");
 
     assert_eq!(
         model.resolve_ref(&RefSite::new(alice, CfdPath::root().field("parent"))),
@@ -60,7 +66,10 @@ fn cyclic_record_refs_build_and_remain_resolvable() {
         Some(alice)
     );
     assert_eq!(
-        model.resolve_ref(&RefSite::new(self_record, CfdPath::root().field("parent"))),
+        model.resolve_ref(&RefSite::new(
+            self_record,
+            CfdPath::root().field("parent")
+        )),
         Some(self_record)
     );
 }

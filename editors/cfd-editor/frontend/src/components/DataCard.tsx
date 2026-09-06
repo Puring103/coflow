@@ -15,6 +15,7 @@ import {
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { FieldDiagnostic as WireFieldDiagnostic } from '../bindings/FieldDiagnostic'
+import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
@@ -36,6 +37,7 @@ import {
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
+  cloneValue,
   enumValue,
   fieldPathDictKey,
   fieldPathField,
@@ -67,8 +69,13 @@ import {
 } from '../value/fieldValue'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
-import { PluginRendererMount, useFieldRenderer } from '../plugins'
-import type { FieldRenderSurface, FieldRenderer } from '../plugins/types'
+import {
+  PluginContributionMount,
+  PluginSummaryText,
+  currentPluginIdentity,
+  usePluginPresentation,
+} from '../plugins'
+import type { PluginIdentity, PluginPresentationContext } from '../plugins/types'
 import { FunctionEditorButton } from './FunctionBodyDialog'
 import { FunctionSourcePreview } from './FunctionSourcePreview'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
@@ -182,7 +189,7 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, refTargetType, annotation, surface = 'table-cell', highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; annotation?: FieldAnnotation | null; surface?: FieldRenderSurface; highlightQuery?: string }) {
+export function DataCardCompact({ value, label, declaredType, refTargetType, annotation, highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
     ? (
       <HighlightQueryCtx.Provider value={highlightQuery}>
@@ -192,11 +199,7 @@ export function DataCardCompact({ value, label, declaredType, refTargetType, ann
       </HighlightQueryCtx.Provider>
     )
     : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
-  const nullable = declaredType?.startsWith('Option<') || declaredType?.endsWith('?') || false
-  const renderer = useFieldRenderer({ value, type: declaredType ?? '', nullable, surface })
-  return (
-    <PluginRendererMount renderer={renderer} context={{ value, type: declaredType ?? '', nullable, surface }} fallback={fallback} />
-  )
+  return fallback
 }
 
 function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
@@ -296,6 +299,13 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 const HighlightQueryCtx = createContext<string | undefined>(undefined)
+const DiffPathCtx = createContext<ReadonlySet<string> | null>(null)
+const PluginRecordCtx = createContext<{
+  identity: PluginIdentity
+  filePath: string
+  coordinate: RecordCoordinate
+  actualType: string
+} | null>(null)
 const ValueRowSelectionCtx = createContext<{
   selectedFieldPath?: FieldPathSegment[] | null
   selectedActionPathWire?: string | null
@@ -369,6 +379,8 @@ function buildDiagCtx(
 export interface ExpandedProps {
   fields: FieldCell[]
   actualType?: string
+  filePath?: string
+  coordinate?: RecordCoordinate
   depth?: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
@@ -392,11 +404,14 @@ export interface ExpandedProps {
   onSelectAction?: (pathWire: string) => void
   onEditingFinished?: () => void
   flattenSingleComplexField?: boolean
+  diffChangedPaths?: ReadonlySet<string>
 }
 
 export function DataCardExpanded({
   fields,
   actualType,
+  filePath,
+  coordinate,
   depth = 0,
   onEdit,
   onCollectionEdit,
@@ -414,6 +429,7 @@ export function DataCardExpanded({
   onSelectAction,
   onEditingFinished,
   flattenSingleComplexField = false,
+  diffChangedPaths,
 }: ExpandedProps) {
   const ctx = useMemo(
     () => buildDiagCtx(diagnostics, onDiagnosticBadgeClick),
@@ -500,41 +516,6 @@ export function DataCardExpanded({
           ? collectionShapeForDeclaredType(declaredType)
           : null
         const displayedValue = nullCollectionShape ?? shownValue
-        if (
-          flattenSingleComplexField
-          && !fc.missing
-          && fields.length === 1
-          && displayedValue.kind === 'object'
-        ) {
-          const polymorphicTypes = annotationPolymorphicTypes(fc.annotation)
-          return (
-            <Fragment key={fc.name}>
-              {polymorphicTypes.length >= 2 && (
-                <PolymorphicTypeRow
-                  value={displayedValue}
-                  polymorphicTypes={polymorphicTypes}
-                  depth={depth}
-                  onCommit={fieldEdit
-                    ? next => fieldEdit(
-                        [fieldPathField(fc.name)],
-                        replacePresentationValue(fc.value, next),
-                      )
-                    : undefined}
-                />
-              )}
-              <ComplexValueChildren
-                value={displayedValue}
-                depth={depth}
-                fieldPath={[fieldPathField(fc.name)]}
-                pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
-                onEdit={fieldEdit}
-                onCollectionEdit={fieldEdit ? onCollectionEdit : undefined}
-                onRowToggle={onRowToggle}
-                valueAnnotation={fc.annotation}
-              />
-            </Fragment>
-          )
-        }
         return (
           <FieldRow
             key={fc.name}
@@ -555,19 +536,32 @@ export function DataCardExpanded({
             fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
             onRowToggle={onRowToggle}
+            flattenObjectChildren={flattenSingleComplexField
+              && !fc.missing
+              && fields.length === 1
+              && displayedValue.kind === 'object'}
           />
         )
       })}
     </div>
   )
   const wrapped = (
-    <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
-      <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
-        <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
-      </ControlledExpansionCtx.Provider>
-    </ValueRowSelectionCtx.Provider>
+    <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
+      <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
+        <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+          <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+        </ControlledExpansionCtx.Provider>
+      </ValueRowSelectionCtx.Provider>
+    </DiffPathCtx.Provider>
   )
-  return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
+  const identity = currentPluginIdentity()
+  const pluginRecord = identity && filePath && coordinate && actualType
+    ? { identity, filePath, coordinate, actualType }
+    : null
+  const withPluginContext = pluginRecord
+    ? <PluginRecordCtx.Provider value={pluginRecord}>{wrapped}</PluginRecordCtx.Provider>
+    : wrapped
+  return ctx ? <DiagCtx.Provider value={ctx}>{withPluginContext}</DiagCtx.Provider> : withPluginContext
 }
 
 function PolymorphicTypeRow({ value, polymorphicTypes, depth, onCommit }: {
@@ -629,6 +623,18 @@ function rowDiagSeverity(pathKey: string | undefined): {
   }
 }
 
+function useDiffRowClass(pathKey: string | undefined): string {
+  const paths = useContext(DiffPathCtx)
+  if (!paths || !pathKey) return ''
+  if (paths.has(pathKey)) return ' dc-row-diff-modified'
+  for (const changed of paths) {
+    if (changed.startsWith(`${pathKey}.`) || changed.startsWith(`${pathKey}[`)) {
+      return ' dc-row-diff-modified'
+    }
+  }
+  return ''
+}
+
 function FieldRow({
   label,
   fieldName,
@@ -651,6 +657,7 @@ function FieldRow({
   trailing,
   dragProps,
   collectionItem,
+  flattenObjectChildren = false,
 }: {
   label: string
   fieldName?: string
@@ -673,15 +680,27 @@ function FieldRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
+  flattenObjectChildren?: boolean
 }) {
   const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
   const shownValue = presentationValue(value)
-  const pluginRenderer = useFieldRenderer({
-    value: shownValue,
-    type: declaredType ?? '',
-    nullable: !!nullable,
-    surface: 'record-foldout-header',
-  })
+  const pluginRecord = useContext(PluginRecordCtx)
+  const presentationType = declaredType
+    ?? (shownValue.kind === 'object' ? shownValue.value.actual_type : '')
+  const pluginPresentation = usePluginPresentation('inspector', presentationType)
+  const pluginPresentationContext = useMemo<PluginPresentationContext | null>(() => (
+    pluginRecord
+      ? {
+          identity: pluginRecord.identity,
+          filePath: pluginRecord.filePath,
+          coordinate: { ...pluginRecord.coordinate },
+          actualType: pluginRecord.actualType,
+          fieldPath: fieldPath.map(segment => ({ ...segment })),
+          declaredType: presentationType,
+          value: cloneValue(shownValue),
+        }
+      : null
+  ), [pluginRecord, pathKey, presentationType, shownValue])
   const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
   const optionDepth = optionDepthForDeclaredType(declaredType)
   const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
@@ -722,6 +741,44 @@ function FieldRow({
     ? <>{trailing}{nullControls}</>
     : trailing
 
+  if (pluginPresentation?.slot === 'inspector' && pluginPresentationContext) {
+    return (
+      <PluginContributionMount
+        contribution={pluginPresentation}
+        context={pluginPresentationContext}
+        className="plugin-inspector-presentation"
+      />
+    )
+  }
+
+  if (flattenObjectChildren && shownValue.kind === 'object') {
+    const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
+    return (
+      <>
+        {polymorphicTypes.length >= 2 && (
+          <PolymorphicTypeRow
+            value={shownValue}
+            polymorphicTypes={polymorphicTypes}
+            depth={depth}
+            onCommit={onEdit
+              ? next => onEdit(fieldPath, replacePresentationValue(value, next))
+              : undefined}
+          />
+        )}
+        <ComplexValueChildren
+          value={shownValue}
+          depth={depth}
+          fieldPath={fieldPath}
+          pathKey={pathKey}
+          onEdit={onEdit}
+          onCollectionEdit={onCollectionEdit}
+          onRowToggle={onRowToggle}
+          valueAnnotation={valueAnnotation}
+        />
+      </>
+    )
+  }
+
   if (canExpand) {
     return (
       <ExpandableRow
@@ -742,8 +799,6 @@ function FieldRow({
         trailing={mergedTrailing}
         dragProps={dragProps}
         collectionItem={collectionItem}
-        pluginRenderer={pluginRenderer}
-        pluginContext={pluginRenderer ? { value: shownValue, type: declaredType ?? '', nullable: !!nullable, surface: 'record-foldout-header' } : undefined}
       />
     )
   }
@@ -1021,8 +1076,6 @@ function ScalarFieldRow({
   trailing,
   dragProps,
   collectionItem,
-  pluginRenderer,
-  pluginContext,
   editorEnabled = true,
 }: {
   label: string
@@ -1043,8 +1096,6 @@ function ScalarFieldRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
-  pluginRenderer?: FieldRenderer
-  pluginContext?: Parameters<typeof useFieldRenderer>[0]
   editorEnabled?: boolean
 }) {
   const highlightQuery = useContext(HighlightQueryCtx)
@@ -1055,8 +1106,9 @@ function ScalarFieldRow({
   const isNullDropdown = value.kind === 'option_none' && !!(enumType || resolvedRefTarget)
   const dropdownNullable = !!nullable && optionDepthForDeclaredType(declaredType) === 0
   const canEdit = (!missing || !!resolvedRefTarget)
-    && editorEnabled && !pluginRenderer && (isScalar || isNullDropdown) && !!onCommit
+    && editorEnabled && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
+  const diffClass = useDiffRowClass(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
@@ -1120,7 +1172,7 @@ function ScalarFieldRow({
   const displayedValue = scrubPreview ?? value
 
   return (
-    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div
         className={`dc-row-label${numericScrubEnabled ? ' dc-numeric-scrub-label' : ''}`}
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
@@ -1134,8 +1186,6 @@ function ScalarFieldRow({
             <DirectEditor value={displayedValue} onCommit={onCommit} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : missing ? (
             <MissingValueRepair value={value} onRepair={onCommit ? () => onCommit(value) : undefined} />
-          ) : pluginRenderer && pluginContext ? (
-            <PluginRendererMount renderer={pluginRenderer} context={pluginContext} fallback={<ValueChip value={displayedValue} refTargetType={resolvedRefTarget} />} />
           ) : canEdit ? (
             <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
@@ -1806,8 +1856,6 @@ function ExpandableRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
-  pluginRenderer?: FieldRenderer
-  pluginContext?: Parameters<typeof useFieldRenderer>[0]
 }) {
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
@@ -1826,6 +1874,7 @@ function ExpandableRow({
   }, [shouldAutoExpand])
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
+  const diffClass = useDiffRowClass(pathKey)
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
@@ -1838,6 +1887,22 @@ function ExpandableRow({
   const concreteType = value.kind === 'object' ? value.value.actual_type : null
   const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
   const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
+  const pluginRecord = useContext(PluginRecordCtx)
+  const summaryType = declaredType ?? concreteType ?? ''
+  const summaryPresentation = usePluginPresentation('summary', summaryType)
+  const summaryContext = useMemo<PluginPresentationContext | null>(() => (
+    pluginRecord
+      ? {
+          identity: pluginRecord.identity,
+          filePath: pluginRecord.filePath,
+          coordinate: { ...pluginRecord.coordinate },
+          actualType: pluginRecord.actualType,
+          fieldPath: fieldPath.map(segment => ({ ...segment })),
+          declaredType: summaryType,
+          value: cloneValue(value),
+        }
+      : null
+  ), [pluginRecord, pathKey, summaryType, value])
 
   function toggle() {
     const next = !expanded
@@ -1859,7 +1924,7 @@ function ExpandableRow({
       className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
       style={inspectorDepthStyle(depth)}
     >
-      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
           <span className="dc-fold-arrow">
@@ -1876,7 +1941,15 @@ function ExpandableRow({
                 onCommit={next => onEdit(fieldPath, next)}
               />
             ) : concreteType && <span className="dc-structure-type">{concreteType}</span>}
-            {count !== null && <span className="vc-count">{count}</span>}
+            {!expanded && summaryPresentation?.slot === 'summary' && summaryContext ? (
+              <span className="vc-summary">
+                <PluginSummaryText
+                  presentation={summaryPresentation}
+                  context={summaryContext}
+                  fallback={count !== null ? count : ''}
+                />
+              </span>
+            ) : count !== null && <span className="vc-count">{count}</span>}
           </div>
         </div>
         <div className="dc-row-actions" onClick={event => event.stopPropagation()}>

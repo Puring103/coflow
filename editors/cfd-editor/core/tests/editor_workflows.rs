@@ -219,8 +219,76 @@ fn repairable_invalid_project() -> PathBuf {
     root
 }
 
+fn cyclic_reference_project() -> PathBuf {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-cyclic-reference-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old cyclic-reference project");
+    }
+    fs::create_dir_all(root.join("data")).expect("create cyclic-reference data directory");
+    fs::write(
+        root.join("coflow.yaml"),
+        concat!(
+            "schema: schema.cft\n",
+            "data: data/\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+            "    namespace: Test.Config\n",
+        ),
+    )
+    .expect("write cyclic-reference project config");
+    fs::write(
+        root.join("schema.cft"),
+        "type Quest { prerequisite: Option<&Quest> = None; }\n",
+    )
+    .expect("write cyclic-reference schema");
+    fs::write(
+        root.join("data/quests.cfd"),
+        "advanced: Quest {}\n",
+    )
+    .expect("write cyclic-reference data");
+    root
+}
+
 fn field(name: &str) -> CfdPathSegment {
     CfdPathSegment::Field(name.to_string())
+}
+
+#[test]
+fn editor_field_write_preserves_a_self_referencing_record() {
+    let root = cyclic_reference_project();
+    let store = SessionStore::new().expect("create editor session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load cyclic-reference project");
+    let coordinate = RecordCoordinate::try_new("Quest", "advanced").expect("coordinate");
+
+    // 记录引用是图边；自引用写入后，当前记录及其引用索引都必须继续可用。
+    let outcome = store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("prerequisite")],
+            &CfdValue::OptionSome(Box::new(
+                CfdValue::record_ref("advanced").expect("reference"),
+            )),
+        )
+        .expect("write self reference");
+    assert!(outcome.diagnostics.is_empty());
+    assert_eq!(outcome.row.coordinate, coordinate);
+
+    let records = store
+        .get_file_records(snapshot.session_id, "data/quests.cfd")
+        .expect("read records after self reference");
+    assert_eq!(records.records.len(), 1);
+    assert_eq!(records.records[0].coordinate, coordinate);
+
+    let targets = store
+        .get_ref_targets(snapshot.session_id, "Quest")
+        .expect("read reference targets after self reference");
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].coordinate, coordinate);
 }
 
 #[test]
