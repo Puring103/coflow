@@ -14,7 +14,7 @@ pub mod editor {
 use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
 use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
 use coflow_runtime::{
-    DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
+    DimensionInfo, DimensionValueCoordinate, DimensionValueView, ProjectDiff, RecordCoordinate,
 };
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
@@ -740,6 +740,16 @@ async fn build_project_status(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn get_project_diff(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectDiff, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().project_diff(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn open_source_file(
     session_id: u32,
     file_path: String,
@@ -1245,6 +1255,7 @@ pub fn run() -> tauri::Result<()> {
             check_project,
             build_project,
             build_project_status,
+            get_project_diff,
             open_source_file,
             read_source_text,
             sync_language_document,

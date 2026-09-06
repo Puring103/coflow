@@ -31,10 +31,10 @@ serde_yaml = "0.9"
 ts-rs = { version = "10", optional = true }
 unicode-ident = "1"
 walkdir = "2"
+tempfile = "3"
 
 [dev-dependencies]
 coflow-format = { path = "../coflow-format" }
-tempfile = "3"
 
 [[bench]]
 name = "check_planning"

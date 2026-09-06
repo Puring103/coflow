@@ -41,12 +41,14 @@ use validation::{
 use crate::api::DiagnosticSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Project {
     config_path: PathBuf,
     root_dir: PathBuf,
     pub(crate) config: ProjectConfig,
+    pub(crate) config_source: Arc<str>,
 }
 
 impl Project {
@@ -138,6 +140,7 @@ impl Project {
             config_path,
             root_dir,
             config,
+            config_source: source.into(),
         })
     }
 

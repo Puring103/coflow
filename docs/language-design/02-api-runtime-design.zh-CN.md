@@ -114,7 +114,8 @@ GeneratedObject
 ```
 
 加载采用先分配、后连接的阶段：先创建全部记录对象和 key 索引，再填充普通字段和 inline object，最后
-连接记录引用。这样允许前向引用；循环引用是否允许由当前数据模型规则决定，并在发布前统一验证。
+连接记录引用。语言数据模型允许前向引用、自引用和跨记录循环；Schema 默认值与必填 object 的物化依赖环
+仍在 Schema 编译阶段拒绝。当前 C# Runtime 在对象构造期间仍拒绝记录引用环。
 
 发布后的对象不可变。加载期构造入口和 setter 属于生成 ABI，不是应用修改接口。Runtime 不同时保留
 record slot、data heap、record-id layout 或另一份 encode/decode 数据。
