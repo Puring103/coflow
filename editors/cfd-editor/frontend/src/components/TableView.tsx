@@ -20,6 +20,7 @@ import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import {
   coordinateId,
+  cloneValue,
   cellDeclaredType,
   cellEnumType,
   cellEnumIsFlag,
@@ -57,6 +58,12 @@ import { Icon } from './Icon'
 import { RichTextInput } from './RichTextInput'
 import { visibilityScrollDelta, type AxisRange } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
+import {
+  PluginContributionMount,
+  currentPluginIdentity,
+  usePluginPresentation,
+} from '../plugins'
+import type { PluginPresentationContext } from '../plugins/types'
 import {
   recordSelection,
   recordSelectionCoordinates,
@@ -565,6 +572,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       : undefined}
                   />
                 ) : <EditableCell
+                  filePath={filePath}
+                  coordinate={row.original.coordinate}
+                  fieldPath={[fieldPathField(name)]}
                   value={f.value}
                   label={name}
                   editable={cellEditable}
@@ -1850,9 +1860,10 @@ function CellSyntaxEditor({
   )
 }
 
-function EditableCell({
-  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
-}: {
+interface EditableCellProps {
+  filePath: string
+  coordinate: RecordCoordinate
+  fieldPath: FieldPathSegment[]
   value: FieldValue
   label?: string
   editable: boolean
@@ -1865,7 +1876,41 @@ function EditableCell({
   highlightQuery?: string
   onCommit?: (next: FieldValue) => void
   onEditingFinished?: () => void
-}) {
+}
+
+function EditableCell(props: EditableCellProps) {
+  const { filePath, coordinate, fieldPath, value, declaredType } = props
+  const identity = currentPluginIdentity()
+  const presentation = usePluginPresentation('cell', declaredType ?? '')
+  const context = useMemo<PluginPresentationContext | null>(() => (
+    identity
+      ? {
+          identity,
+          filePath,
+          coordinate: { ...coordinate },
+          actualType: coordinate.actual_type,
+          fieldPath: fieldPath.map(segment => ({ ...segment })),
+          declaredType: declaredType ?? '',
+          value: cloneValue(value),
+        }
+      : null
+  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.key, declaredType, value])
+  if (presentation?.slot === 'cell' && context) {
+    return (
+      <PluginContributionMount
+        contribution={presentation}
+        context={context}
+        inline
+        className="plugin-cell-presentation"
+      />
+    )
+  }
+  return <EditableCellBuiltIn {...props} />
+}
+
+function EditableCellBuiltIn({
+  value, label, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, declaredType, highlightQuery, onCommit, onEditingFinished,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const shownValue = presentationValue(value)
   const commitValue = onCommit
@@ -1962,7 +2007,6 @@ function EditableCell({
         declaredType={declaredType}
         annotation={annotation}
         refTargetType={refTargetType}
-        surface="table-cell"
         highlightQuery={highlightQuery}
       />
     </div>
