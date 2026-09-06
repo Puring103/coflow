@@ -248,16 +248,7 @@ impl ResolvedTypes<'_> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                let value_type =
-                    self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
-                if value_type_contains_data_result(&value_type) {
-                    diagnostics.push(CftDiagnostic::error(
-                        CftErrorCode::ResultDataField,
-                        info.module.clone(),
-                        field.ty.span,
-                        "Result cannot be used as an object data field type",
-                    ));
-                }
+                self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
             }
         }
         self.diagnostics.extend(diagnostics);
@@ -567,34 +558,5 @@ impl ResolvedTypes<'_> {
         self.types
             .get(name)
             .is_some_and(|info| has_annotation(&info.def.annotations, "singleton"))
-    }
-}
-
-fn value_type_contains_data_result(ty: &InferredType) -> bool {
-    match ty {
-        InferredType::Value(crate::CftValueType::Result(_, _)) => true,
-        InferredType::Value(
-            crate::CftValueType::Array(inner) | crate::CftValueType::Option(inner),
-        ) => value_type_contains_result(inner),
-        InferredType::Value(crate::CftValueType::Dict(key, value)) => {
-            value_type_contains_result(key) || value_type_contains_result(value)
-        }
-        // 函数字段中的 Result 是函数协议的一部分，不是 object 数据字段。
-        InferredType::Value(crate::CftValueType::Function(_, _)) | InferredType::Unknown => false,
-        InferredType::Value(_) | InferredType::EnumNamespace(_) | InferredType::Entry(_, _) => false,
-    }
-}
-
-fn value_type_contains_result(ty: &crate::CftValueType) -> bool {
-    match ty {
-        crate::CftValueType::Result(_, _) => true,
-        crate::CftValueType::Array(inner) | crate::CftValueType::Option(inner) => {
-            value_type_contains_result(inner)
-        }
-        crate::CftValueType::Dict(key, value) => {
-            value_type_contains_result(key) || value_type_contains_result(value)
-        }
-        crate::CftValueType::Function(_, _) => false,
-        _ => false,
     }
 }

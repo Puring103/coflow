@@ -8,6 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../generated/**/*.cs" />
-    <ProjectReference Include="../../../runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj" />
+    <ProjectReference Include="../../../runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj" />
   </ItemGroup>
 </Project>

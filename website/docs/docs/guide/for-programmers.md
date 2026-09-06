@@ -24,23 +24,23 @@ pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
 
 ## C# 进程内加载
 
-`coflow-codegen-csharp` 生成业务类型、metadata contract 和强类型 `CoflowData` 入口。游戏或
-服务进程引用 `Coflow.Cfd.Runtime`，读取 CFD 文本后直接加载：
+`coflow-codegen-csharp` 生成业务类型、Schema 绑定和强类型 `Schema` 入口。游戏或
+服务进程引用 `Coflow.Runtime`，读取 CFD 文本后按 Module 加载并编译：
 
 ```csharp
-var module = Game.Config.CoflowData.LoadAndCompile(new[] {
-    File.ReadAllText("data/items.cfd"),
-    File.ReadAllText("data/rules.cfd"),
-});
+var coflow = Schema.Create();
+coflow.LoadModule(new CoflowSource("items.cfd", File.ReadAllText("data/items.cfd")));
+coflow.LoadModule(new CoflowSource("rules.cfd", File.ReadAllText("data/rules.cfd")));
+var result = coflow.Compile();
 
-var items = module.Table<Game.Config.Item>();
+var items = coflow.Table(Item.Table);
 ```
 
-`Load` 构造只读数据 module；`LoadAndCompile` 还会链接并编译 CFD 函数。runtime 解析同次
-加载中的全部 CFD、建立 record identity、解析跨文件引用并构造生成类型。未知字段、非法值、
+`Compile` 解析全部 Module 中的 CFD、建立 record identity、解析跨 Module 引用并构造生成类型，同时
+链接和编译函数。未知字段、非法值、
 缺失引用、函数签名/函数体错误和资源限制都通过 `CfdLoadException.Diagnostics` 返回。
 
-本地化字段生成为 `Localized<T>`。`value.For("zh")` 读取指定 variant，`value.Value` 使用 `Localization.CurrentLanguage`；缺失、`null` 和未知语言自动回退到基础值，不需要注册 localization provider。
+维度字段生成为对应的强类型维度值，使用 `value.For("zh")` 读取指定 variant；未提供该 variant 时返回基础值。
 
 ## 约束
 

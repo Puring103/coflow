@@ -14,7 +14,6 @@ dimensions:
 codegen:
   - language: csharp
     dir: generated/csharp
-    namespace: Game.Config
 ```
 
 ## 字段
@@ -25,6 +24,6 @@ codegen:
 
 `dimensions` 描述变体名称和生成目录。维度文件仍然是 CFD；它们在同一数据模型中参与检查和代码生成。
 
-`codegen` 是唯一产物列表。每项必须有 `language` 和 `dir`，其余键作为目标语言 options 传给 generator。目标目录必须互不重叠并位于项目根目录内。
+`codegen` 是唯一产物列表。每项必须有 `language` 和 `dir`。C# 目标不接受额外选项，生成类型位于全局命名空间。目标目录必须互不重叠并位于项目根目录内。
 
 配置解析拒绝未知字段，输入和产物合同不会隐式转换。

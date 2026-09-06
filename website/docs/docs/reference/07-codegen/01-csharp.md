@@ -1,55 +1,55 @@
 # C# 代码生成
 
-C# generator 根据 CFT 生成配置类型和加载代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。
-
-C# target 目前支持 `namespace` 选项：
+C# generator 根据 CFT 生成全局命名空间中的强类型 API 和 Schema 绑定代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。C# target 不接受额外选项：
 
 ```yaml
 codegen:
   - language: csharp
     dir: Generated
-    namespace: Game.Config
 ```
 
-运行 `coflow codegen` 后，将生成目录和 `Coflow.Cfd.Runtime` 引入 C# 项目即可加载 CFD：
+将生成目录和 `Coflow.Runtime` 引入 C# 项目后，先创建运行时实例，再按 Module 加载 CFD，最后编译并发布：
 
 ```csharp
-var module = Game.Config.CoflowData.LoadAndCompile(new[] { itemsCfd, rulesCfd });
+var coflow = Schema.Create(new CoflowOptions(
+    maxInstructions: 10_000_000,
+    maxFrameDepth: 1_024));
+var baseModule = coflow.LoadModule(
+    new CoflowSource("items.cfd", itemsCfd));
+var rulesModule = coflow.LoadModule(
+    new CoflowSource("rules.cfd", rulesCfd));
 
-var items = module.Table(Item.Table);
-var item = items.Get(ItemId.Sword);
+coflow.Bind(new HostServices(environment, log));
 
-var settings = module.Singleton<Settings>();
+var result = coflow.Compile();
+if (!result.Success)
+    throw new CoflowLoadException(result.Diagnostics);
+
+var item = coflow.Table(Item.Table).Get(ItemId.Sword);
+var settings = coflow.Singleton<Settings>();
 ```
 
-每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应
-enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
+同一 `Coflow` 中的 Module 可以互相引用。`ReplaceModule` 和 `RemoveModule` 修改待编译状态；再次成功调用 `Compile` 后，新状态才会生效。编译失败时继续保留上一次成功发布的状态。
 
-同一次 `Load` 或 `LoadAndCompile` 调用中的 CFD 可以互相引用。不同 Module 之间不能建立记录引用。
+`CoflowOptions` 为每个实例设置执行限制。不传参数时使用默认限制。每次顶层函数调用使用一份新预算；同步 Host 回调再次调用同一实例时与外层调用共享预算。
 
-需要统一查询多个独立 Module 时，可以创建 `CoflowModuleSet`：
+每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应 enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
+
+`@Host` 生成可直接构造的类型。一个 `Coflow` 可以绑定多个不同 Host 类型，同一类型再次 `Bind` 表示换绑，并在下一次成功编译后生效。
+
+生成实例函数显式接收要执行的 `Coflow`：
 
 ```csharp
-var view = Coflow.Modules(baseModule, featureModule);
-var next = view.Replace(featureModule, replacement);
+var damage = item.Value.Calculate(coflow, input);
 ```
 
-同一个 ModuleSet 中不能出现重复记录键、重复 singleton 或重复函数。`Replace` 返回新的
-ModuleSet，不会修改原值。
+CFT `int` 生成 C# `long`，`float` 生成 C# `double`。CFT `@struct` 生成真正的 `readonly struct`，并支持普通字段、集合、引用、`Result` 和函数字段。
 
-`CoflowModule` 不提供原地 reload。需要更新数据时，重新加载一个新 Module，再用 `Replace` 发布
-新的 ModuleSet；旧 Module 和旧查询结果保持有效。
-
-Runtime 的应用 API 位于 `CoflowRuntime`。`CoflowRuntime.Generated` 是生成代码跨程序集调用的 ABI，
-不属于应用 API，并从 IntelliSense 隐藏。
-
-`@Host` 类型通过 singleton 获取并配置：
+CFT 函数值生成 `CoflowFunction<T1, ..., TResult>`。调用函数值时同样显式传入运行时实例：
 
 ```csharp
-var host = module.Singleton<HostServices>();
-if (host.HasValue)
-    host.Value.Configure(environment, log);
+var operation = scenario.MakeOperation(coflow, options);
+var output = operation.Invoke(coflow, input);
 ```
 
-CFT `int` 生成 C# `long`，`float` 生成 C# `double`。CFT `@struct` 生成支持字段值相等比较的
-C# 类。布尔值在 CFD 中写作小写 `true` 或 `false`。
+函数值可以出现在 class、struct、`Option`、`Result` 和集合中。默认函数值可以被构造和传递，但实际调用会报告函数未绑定。普通 C# delegate 不能作为 Coflow 数据传入；外部函数由 `@Host` 构造参数提供。

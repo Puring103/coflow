@@ -34,7 +34,7 @@ use coflow_codegen::{
     IdAsEnumValues,
 };
 
-pub use ir::{CsharpCodegenOptions, CsharpIdAsEnumVariant};
+pub use ir::CsharpIdAsEnumVariant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -72,7 +72,6 @@ impl std::error::Error for CsharpCodegenError {}
 
 fn build_csharp_project(
     schema: &CftSchema,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<model::CsharpProject, CsharpCodegenError> {
@@ -97,7 +96,7 @@ fn build_csharp_project(
     if let Some(message) = unsupported {
         return Err(CsharpCodegenError::new(message));
     }
-    ir::build_project(schema, options, id_as_enum_variants, non_empty_tables)
+    ir::build_project(schema, id_as_enum_variants, non_empty_tables)
 }
 
 /// Generates format-independent C# declarations.
@@ -106,31 +105,26 @@ fn build_csharp_project(
 ///
 /// Returns an error when the schema cannot be mapped to C# runtime code or a
 /// template fails to render.
-pub fn generate_csharp(
-    schema: &CftSchema,
-    options: &CsharpCodegenOptions,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_common_with_id_as_enum_variants(schema, options, BTreeMap::new(), None)
+pub fn generate_csharp(schema: &CftSchema) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_common_with_id_as_enum_variants(schema, BTreeMap::new(), None)
 }
 
 /// Generates C# declarations plus a direct CFD source loader. The loader
-/// consumes the logical paths in `sources` through `Coflow.Cfd.Runtime`.
+/// consumes the logical paths in `sources` through `Coflow.Runtime`.
 pub fn generate_csharp_cfd(
     schema: &CftSchema,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_cfd_with_variants(schema, options, id_as_enum_variants, non_empty_tables)
+    generate_csharp_cfd_with_variants(schema, id_as_enum_variants, non_empty_tables)
 }
 
 fn generate_csharp_cfd_with_variants(
     schema: &CftSchema,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
+    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables)?;
     let mut files = render::render_common_project(&project)?;
     files.push(GeneratedFile {
         relative_path: PathBuf::from("Coflow.Metadata.cs"),
@@ -143,7 +137,7 @@ pub const CSHARP_CFD_CODEGEN_DESCRIPTOR: CfdCodegenDescriptor = CfdCodegenDescri
     id: "csharp",
     language: "csharp",
     file_extensions: &["cs"],
-    runtime_package: "Coflow.Cfd.Runtime",
+    runtime_package: "Coflow.Runtime",
     runtime_version: "0.9.1",
     needs_model: true,
 };
@@ -158,11 +152,9 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
 
     fn generate(&self, input: CfdCodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError> {
         let raw = input.target.options.clone();
-        let options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
+        let _options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
             CodegenError::Message(format!("invalid C# output options: {error}"))
         })?;
-        let codegen =
-            CsharpCodegenOptions::new(options.namespace.as_deref().unwrap_or("CoflowGenerated"));
         let model = input.model.ok_or_else(|| {
             CodegenError::Message(
                 "C# code generation requires a validated CFD data model".to_string(),
@@ -171,7 +163,7 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
         let id_as_enum_variants = id_as_enum_variants(input.schema, model, input.id_as_enum_values)
             .map_err(CodegenError::Message)?;
         let files =
-            generate_csharp_cfd_with_variants(input.schema, &codegen, id_as_enum_variants, None)
+            generate_csharp_cfd_with_variants(input.schema, id_as_enum_variants, None)
                 .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
@@ -228,19 +220,16 @@ fn id_as_enum_variants(
 
 fn generate_common_with_id_as_enum_variants(
     schema: &CftSchema,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, options, id_as_enum_variants, non_empty_tables)?;
+    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables)?;
     render::render_common_project(&project)
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct CsharpOutputOptionsConfig {
-    namespace: Option<String>,
-}
+struct CsharpOutputOptionsConfig {}
 
 #[cfg(test)]
 mod tests;

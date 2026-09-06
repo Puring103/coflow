@@ -157,9 +157,7 @@ calculator: Calculator {
 
 函数体是受静态类型约束的表达式语言。函数签名必须与 CFT 字段类型一致；函数字段也可以在 CFT 中
 声明默认实现，CFD 中的显式值会覆盖它。`@Host` 服务函数由宿主配置，不能在 CFT 中声明默认实现，也
-不能在 CFD 中实现。C# Runtime 的 `Load` 只保留函数值，`LoadAndCompile` 才类型检查并编译函数体。
-Rust runtime 当前不执行函数。当前 C# Runtime 的 VM 尚未提供执行预算，函数只应来自受信任、可控的
-配置源。
+不能在 CFD 中实现。C# Runtime 在 `Compile` 时类型检查、链接并编译函数体。Rust runtime 当前不执行函数。
 
 ## 文件发现与检查
 

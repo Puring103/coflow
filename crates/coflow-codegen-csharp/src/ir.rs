@@ -1,20 +1,14 @@
-use crate::emit::{build_csharp_enum, build_csharp_type, function_adapter_expression};
+use crate::emit::{build_csharp_enum, build_csharp_type};
 use crate::emit::types::csharp_type;
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpConstant, CsharpDimension, CsharpEnum, CsharpEnumVariant, CsharpProject,
 };
-use crate::names::{csharp_ident_error, csharp_namespace_error, csharp_type_name};
+use crate::names::{csharp_ident_error, csharp_type_name};
 use crate::CsharpCodegenError;
 use coflow_language::cft::{CftConstValue, CftSchema, CftValueType};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct CsharpCodegenOptions {
-    pub namespace: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CsharpIdAsEnumVariant {
@@ -28,28 +22,13 @@ struct CsharpCodegenDiagnostic {
     message: String,
 }
 
-impl CsharpCodegenOptions {
-    #[must_use]
-    pub fn new(namespace: impl Into<String>) -> Self {
-        Self {
-            namespace: namespace.into(),
-        }
-    }
-}
-
 pub fn build_project(
     schema: &CftSchema,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let view =
-        CsharpLoweringPlan::lower(
-            schema,
-            &options.namespace,
-            non_empty_tables,
-        )?;
-    let diagnostics = validate_csharp_codegen(&view, options, &id_as_enum_variants);
+    let view = CsharpLoweringPlan::lower(schema, non_empty_tables)?;
+    let diagnostics = validate_csharp_codegen(&view, &id_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::from_messages(
             diagnostics.into_iter().map(|diagnostic| diagnostic.message),
@@ -71,6 +50,9 @@ pub fn build_project(
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
     types.sort_by(|left, right| left.name.cmp(&right.name));
+    for (index, generated_type) in types.iter_mut().enumerate() {
+        generated_type.type_id = index + 1;
+    }
 
     let singletons = build_csharp_singletons(&view);
     let dimensions = view
@@ -80,7 +62,6 @@ pub fn build_project(
             source_name: dimension.name.to_string(),
         })
         .collect();
-    let delegate_adapters = build_delegate_adapters(schema, &view);
     let constants = schema
         .all_consts()
         .map(|constant| Ok(CsharpConstant {
@@ -95,54 +76,90 @@ pub fn build_project(
         }))
         .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
 
+    let mut layout_registrations = Vec::new();
+    let mut registered_layouts = BTreeSet::new();
+    for schema_type in schema.all_types() {
+        for field in schema_type.all_fields() {
+            collect_layout_registrations(
+                &field.value_type,
+                &view,
+                &mut registered_layouts,
+                &mut layout_registrations,
+            );
+        }
+    }
+    for constant in schema.all_consts() {
+        collect_layout_registrations(
+            &constant.value_type,
+            &view,
+            &mut registered_layouts,
+            &mut layout_registrations,
+        );
+    }
+
     Ok(CsharpProject {
-        namespace: options.namespace.clone(),
         dimensions,
-        delegate_adapters,
         enums,
         types,
         singletons,
         constants,
+        layout_registrations,
     })
 }
 
-fn build_delegate_adapters(
-    schema: &CftSchema,
+fn collect_layout_registrations(
+    ty: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
-) -> Vec<String> {
-    fn collect(
-        ty: &CftValueType,
-        view: &CsharpLoweringPlan<'_>,
-        adapters: &mut BTreeMap<String, String>,
-    ) {
-        match ty {
-            CftValueType::Function(parameters, result) => {
-                let delegate_type = csharp_type(ty, view);
-                adapters.entry(delegate_type).or_insert_with(||
-                    function_adapter_expression(parameters, result, view));
-                for parameter in parameters {
-                    collect(&parameter.value_type, view, adapters);
-                }
-                collect(result, view, adapters);
+    seen: &mut BTreeSet<String>,
+    output: &mut Vec<String>,
+) {
+    match ty {
+        CftValueType::Option(inner) => {
+            collect_layout_registrations(inner, view, seen, output);
+            let key = csharp_type(ty, view);
+            if seen.insert(key) {
+                output.push(format!("CoflowValueLayout.RegisterOption<{}>();", csharp_type(inner, view)));
             }
-            CftValueType::Array(item) | CftValueType::Option(item) => collect(item, view, adapters),
-            CftValueType::Dict(key, value) | CftValueType::Result(key, value) => {
-                collect(key, view, adapters);
-                collect(value, view, adapters);
+        }
+        CftValueType::Result(ok, error) => {
+            collect_layout_registrations(ok, view, seen, output);
+            collect_layout_registrations(error, view, seen, output);
+            let key = csharp_type(ty, view);
+            if seen.insert(key) {
+                output.push(format!("CoflowValueLayout.RegisterResult<{}, {}>();",
+                    csharp_type(ok, view), csharp_type(error, view)));
             }
-            _ => { }
         }
-    }
-
-    let mut adapters = BTreeMap::new();
-    for schema_type in schema.all_types() {
-        for field in schema_type.own_fields() {
-            collect(&field.value_type, view, &mut adapters);
+        CftValueType::Array(inner) => {
+            collect_layout_registrations(inner, view, seen, output);
+            let key = csharp_type(ty, view);
+            if seen.insert(key) {
+                output.push(format!("CoflowValueLayout.RegisterArray<{}>();", csharp_type(inner, view)));
+            }
         }
+        CftValueType::Dict(key_type, value_type) => {
+            collect_layout_registrations(key_type, view, seen, output);
+            collect_layout_registrations(value_type, view, seen, output);
+            let key = csharp_type(ty, view);
+            if seen.insert(key) {
+                output.push(format!("CoflowValueLayout.RegisterDictionary<{}, {}>();",
+                    csharp_type(key_type, view), csharp_type(value_type, view)));
+            }
+        }
+        CftValueType::Function(parameters, result) => {
+            for parameter in parameters {
+                collect_layout_registrations(&parameter.value_type, view, seen, output);
+            }
+            collect_layout_registrations(result, view, seen, output);
+            let key = csharp_type(ty, view);
+            if seen.insert(key.clone()) {
+                output.push(format!("CoflowValueLayout.RegisterFunction<{key}>();"));
+            }
+        }
+        CftValueType::Int | CftValueType::Float | CftValueType::Bool |
+        CftValueType::String | CftValueType::Object(_) | CftValueType::Enum(_) |
+        CftValueType::RecordRef(_) | CftValueType::Unit => {}
     }
-    adapters.into_iter().map(|(delegate_type, adapter)|
-        format!("CoflowDelegateAdapter.Register<{delegate_type}>({adapter});"))
-        .collect()
 }
 
 fn render_constant_value(
@@ -305,11 +322,9 @@ fn build_csharp_singletons(view: &CsharpLoweringPlan<'_>) -> Vec<crate::model::C
 
 fn validate_csharp_codegen(
     view: &CsharpLoweringPlan<'_>,
-    options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
     let mut diagnostics = Vec::new();
-    validate_options(options, &mut diagnostics);
     validate_schema_names(view, &mut diagnostics);
     validate_id_as_enum_variants(
         view,
@@ -332,18 +347,6 @@ fn push_codegen_diagnostic(
     message: impl Into<String>,
 ) {
     diagnostics.push(codegen_diagnostic(message));
-}
-
-fn validate_options(
-    options: &CsharpCodegenOptions,
-    diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
-) {
-    if let Some(reason) = csharp_namespace_error(&options.namespace) {
-        push_codegen_diagnostic(
-            diagnostics,
-            format!("invalid C# namespace `{}`: {reason}", options.namespace),
-        );
-    }
 }
 
 fn validate_schema_names(
@@ -397,7 +400,7 @@ fn validate_generated_names(
         .map(|name| (csharp_type_name(name), name.to_string()))
         .collect::<BTreeMap<_, _>>();
     for (generated, source) in &root_names {
-        if matches!(generated.as_str(), "CoflowData" | "CoflowGeneratedContract") {
+        if generated == "CoflowSchema" {
             push_codegen_diagnostic(
                 diagnostics,
                 format!("generated C# type name `{generated}` from `{source}` is reserved by runtime metadata"),
@@ -408,7 +411,7 @@ fn validate_generated_names(
     for dimension in view.dimensions() {
         let generated = csharp_type_name(dimension.name.as_str());
         let source_name = dimension.name.to_string();
-        if matches!(generated.as_str(), "CoflowData" | "CoflowGeneratedContract") {
+        if generated == "CoflowSchema" {
             push_codegen_diagnostic(
                 diagnostics,
                 format!("generated C# type name `{generated}` from `{source_name}` is reserved by runtime metadata"),
@@ -533,7 +536,6 @@ fn build_id_as_enums(
                 value: 0,
                 annotations: Vec::new(),
                 summary: None,
-                obsolete: false,
             });
         }
         for variant in variants.remove(name).unwrap_or_default() {
@@ -543,14 +545,12 @@ fn build_id_as_enums(
                 value: variant.value,
                 annotations: Vec::new(),
                 summary: None,
-                obsolete: false,
             });
         }
         out.insert(
             name.clone(),
             CsharpEnum {
                 name: view.csharp_enum_name(name),
-                namespace: view.csharp_namespace(name),
                 qualified_name: view.csharp_enum_ref(name),
                 relative_path: view.csharp_relative_path(name),
                 metadata_name: view.metadata_name(name),
@@ -562,7 +562,6 @@ fn build_id_as_enums(
                     }),
                 is_flags,
                 summary: None,
-                obsolete: false,
                 variants: enum_variants,
             },
         );

@@ -4,27 +4,18 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using CoflowRuntime;
-using CoflowRuntime.Generated;
+using Coflow.Runtime;
+using Coflow.Runtime.CompilerServices;
 
-namespace {{ namespace }}
+public static class Schema
 {
-
-public static class CoflowData
-{
-    public static CoflowModule Load(string cfd) =>
-        global::Coflow.LoadData(cfd, CoflowGeneratedContract.Instance);
-    public static CoflowModule Load(string[] cfdSources) =>
-        global::Coflow.LoadData(cfdSources, CoflowGeneratedContract.Instance);
-    public static CoflowModule LoadAndCompile(string cfd) =>
-        global::Coflow.LoadAndCompile(cfd, CoflowGeneratedContract.Instance);
-    public static CoflowModule LoadAndCompile(string[] cfdSources) =>
-        global::Coflow.LoadAndCompile(cfdSources, CoflowGeneratedContract.Instance);
+    public static global::Coflow.Runtime.Coflow Create(global::Coflow.Runtime.CoflowOptions? options = null) =>
+        global::Coflow.Runtime.Coflow.Create(CoflowSchema.Instance, options);
 }
 
-internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
+internal sealed class CoflowSchema : ICoflowSchema
 {
-    internal static readonly CoflowGeneratedContract Instance = new();
+    internal static readonly CoflowSchema Instance = new();
 
     public IReadOnlyList<ICoflowTypeMetadata> Types { get; } = new ICoflowTypeMetadata[]
     {
@@ -44,7 +35,41 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
     [ModuleInitializer]
     internal static void Register()
     {
-{% for adapter in metadata.delegate_adapters %}        {{ adapter }}
+{% for enum in enums %}        CoflowValueLayout.RegisterEnum<{{ enum.qualified_name }}>();
+{% endfor %}
+{% for type in types %}{% if type.is_struct %}        CoflowStructCodec.Register<{{ type.qualified_name }}>(
+            {{ type.layout_integer_count }}, {{ type.layout_float_count }}, {{ type.layout_reference_count }},
+            static (ref CoflowValueWriter writer, {{ type.qualified_name }} value) =>
+            {
+{% for field in type.data_fields %}                writer.Write(value.{{ field.access }});
+{% endfor %}                writer.WriteValueId(value._coflowId);
+            },
+            static (ref CoflowValueReader reader) => {{ type.qualified_name }}.WithCoflowValueId(
+                new {{ type.qualified_name }}(
+{% for field in type.data_fields %}                    reader.Read<{{ field.runtime_type }}>(){% if not loop.last %},{% endif %}
+{% endfor %}                ),
+                reader.ReadValueId()));
+{% endif %}{% endfor %}
+{% for type in abstract_types %}        CoflowType.Register<{{ type.qualified_name }}>(new CoflowTypeId({{ type.type_id }}));
+{% endfor %}
+{% for type in types %}{% if type.is_host %}        CoflowType.Register<{{ type.qualified_name }}>(new CoflowTypeId({{ type.type_id }}));
+{% endif %}{% endfor %}
+{% for type in types %}{% if not type.is_abstract and not type.is_host %}        CoflowTypeCodec.Register<{{ type.qualified_name }}>(
+            new CoflowTypeId({{ type.type_id }}),
+            {{ type.layout_integer_count }}, {{ type.layout_float_count }}, {{ type.layout_reference_count }},
+            static value => value._coflowId,
+            static value => {% if type.is_struct %}value._coflowInitialized{% else %}true{% endif %},
+            static (value, id) => {{ type.qualified_name }}.WithCoflowValueId(value, id),
+            static (context, value) => new {{ type.qualified_name }}(
+{% for argument in type.import_arguments %}                {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}            ),
+            static (ref CoflowValueWriter writer, {{ type.qualified_name }} value) =>
+            {
+{% for field in type.data_fields %}                writer.Write(value.{{ field.access }});
+{% endfor %}                writer.WriteValueId(value._coflowId);
+            });
+{% endif %}{% endfor %}
+{% for registration in layout_registrations %}        {{ registration }}
 {% endfor %}
     }
 
@@ -68,16 +93,19 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
 
 {% endfor %}{% for type in types %}    private sealed class {{ type.metadata_name }}CoflowMetadata : {% if type.is_record %}ICoflowRecordMetadata{% elif type.is_host %}ICoflowHostMetadata{% else %}ICoflowTypeMetadata{% endif %}
     {
-{% for field in type.fields %}        private static readonly CoflowFieldBinding Field{{ loop.index0 }} =
-            CoflowFieldBinding.{% if field.is_enum %}CreateEnum{% else %}Create{% endif %}<{{ type.qualified_name }}, {{ field.runtime_type }}>(
-                "{{ field.source_name }}", static record => record.{{ field.access }}{% if field.is_enum %}, static value => (long)value{% endif %});
-{% endfor %}{% if type.fields | length > 0 %}
-{% endif %}        public CoflowFieldBinding GetFieldBinding(string fieldName) => fieldName switch
+        public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
-{% for field in type.fields %}            "{{ field.source_name }}" => Field{{ loop.index0 }},
-{% endfor %}            _ => throw new ArgumentException($"unknown field `{fieldName}`", nameof(fieldName)),
+{% for field in type.fields %}            new(
+{% if field.is_function %}                CoflowFieldBinding.Function<{{ type.qualified_name }}, {{ field.runtime_type }}>(
+                    "{{ field.source_name }}", new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ field.function_slot }}), static value => value._coflowId, {{ type.is_struct }}),
+{% else %}                CoflowFieldBinding.{% if field.is_enum %}CreateEnum{% else %}Create{% endif %}<{{ type.qualified_name }}, {{ field.runtime_type }}>(
+                    "{{ field.source_name }}", static record => record.{{ field.access }}{% if field.is_enum %}, static value => (long)value{% endif %},
+                    {{ type.is_struct }}, {{ field.integer_offset }}, {{ field.float_offset }}, {{ field.reference_offset }}),
+{% endif %}                {{ field.annotations }}, {{ field.has_default }}{% if field.object_type %}, "{{ field.object_type }}"{% elif field.reference_type %}, null{% endif %}{% if field.reference_type %}, "{{ field.reference_type }}"{% endif %}),
+{% endfor %}
         };
 
+        public CoflowTypeId TypeId => new({{ type.type_id }});
         public Type RuntimeType => typeof({{ type.qualified_name }});
 {% if type.is_record %}        public Type KeyType => typeof({{ type.key_type }});
 {% endif %}
@@ -87,37 +115,20 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
         public string DeclaredType => "{{ type.source_name }}";
         public IReadOnlyList<CoflowAnnotation> Annotations { get; } = {{ type.annotations }};
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { {% for name in type.assignable_types %}"{{ name }}"{% if not loop.last %}, {% endif %}{% endfor %} };
-        public IReadOnlyList<string> FieldNames { get; } = new string[] { {% for field in type.fields %}"{{ field.source_name }}"{% if not loop.last %}, {% endif %}{% endfor %} };
-        public IReadOnlyList<CoflowAnnotation> FieldAnnotations(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}            "{{ field.source_name }}" => {{ field.annotations }},
-{% endfor %}            _ => Array.Empty<CoflowAnnotation>(),
-        };
-        public bool HasFieldDefault(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}{% if field.has_default %}            "{{ field.source_name }}" => true,
-{% endif %}{% endfor %}            _ => false,
-        };
+        public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { {% for id in type.assignable_type_ids %}new({{ id }}){% if not loop.last %}, {% endif %}{% endfor %} };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObject{{ type.metadata_name }}(context, fields);
         public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObject{{ type.metadata_name }}(context);
         public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefault{{ type.metadata_name }}(fieldName, context);
-        public string? ObjectFieldType(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}{% if field.object_type %}            "{{ field.source_name }}" => "{{ field.object_type }}",
-{% endif %}{% endfor %}            _ => null,
-        };
-        public string? ReferenceFieldType(string fieldName) => fieldName switch
-        {
-{% for field in type.fields %}{% if field.reference_type %}            "{{ field.source_name }}" => "{{ field.reference_type }}",
-{% endif %}{% endfor %}            _ => null,
-        };
+        public CoflowValueId GetValueId(object value) => (({{ type.qualified_name }})value)._coflowId;
+        public object WithValueId(object value, CoflowValueId id) =>
+            {{ type.qualified_name }}.WithCoflowValueId(({{ type.qualified_name }})value, id);
 {% if type.is_record %}        public object ParseKey(string key) => {{ type.parse_key }};
 {% if type.is_singleton %}        public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, string>(static _ => string.Empty);
 {% else %}        public Delegate GetKeyReader() => new Func<{{ type.qualified_name }}, {{ type.key_type }}>(static record => record.Id);
 {% endif %}
 {% endif %}
-        public object Read(CfdRecordNode record, CfdLoadContext context) => Read{{ type.metadata_name }}(record, context);
-{% if type.is_host %}        public object CreateHost(CfdLoadContext context) => {{ type.create_host }};
+{% if type.is_host %}        public object? BindHost(object? value, CfdLoadContext context) =>
+            BindHost{{ type.metadata_name }}(value, context);
 {% endif %}{% if type.is_record %}        public object CreateRecord(string key, CfdLoadContext context) => {% if type.can_create_record %}new {{ type.qualified_name }}(){% else %}throw new InvalidOperationException("CFT type `{{ type.source_name }}` cannot be a record."){% endif %};
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
@@ -128,5 +139,4 @@ internal sealed class CoflowGeneratedContract : ICoflowGeneratedContract
     }
 
 {% endfor %}{% include "metadata-helpers.cs.tera" %}
-}
 }

@@ -7,7 +7,7 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 - CFT 类型、默认值、枚举、引用、多态、维度和 check。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
-- C# 生成代码通过 `Coflow.Cfd.Runtime` 从内存中的 CFD 文本构造强类型 Module。
+- C# 生成代码通过 `Coflow.Runtime` 从内存中的 CFD 文本构造并编译运行时实例。
 - 代码生成接口支持继续增加其他目标语言；数据格式不再扩展。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
 
@@ -34,27 +34,28 @@ data:
 codegen:
   - language: csharp
     dir: generated/csharp
-    namespace: Example.Config
 ```
 
-`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。`codegen` 是唯一产物配置；每个目标包含 `language`、`dir` 和目标语言选项。
+`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。`codegen` 是唯一产物配置；C# 目标不接受额外选项，生成类型位于全局命名空间。
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Cfd.Runtime` 引入生成代码所在项目，并使用生成的 `CoflowData` 入口：
+将 `runtimes/csharp/Coflow.Runtime` 引入生成代码所在项目，并使用生成的 `Schema` 入口：
 
 ```csharp
-var module = Example.Config.CoflowData.LoadAndCompile(new[]
-{
-    File.ReadAllText("data/items.cfd"),
-    File.ReadAllText("data/rules.cfd"),
-});
+var coflow = Schema.Create();
+coflow.LoadModule(new CoflowSource("items.cfd", File.ReadAllText("data/items.cfd")));
+coflow.LoadModule(new CoflowSource("rules.cfd", File.ReadAllText("data/rules.cfd")));
+var result = coflow.Compile();
 
-var item = module.Table(Item.Table).Get(ItemId.Sword);
+if (!result.Success)
+    throw new CoflowLoadException(result.Diagnostics);
+
+var item = coflow.Table(Item.Table).Get(ItemId.Sword);
 ```
 
-Runtime 接受 CFD 文本，不扫描目录、不读取 CFT，也不保存文件加载策略。多个独立 Module 可以通过
-不可变的 `CoflowModuleSet` 组合查询和替换。
+Runtime 接受带逻辑路径的 CFD 文本，不扫描目录、不读取 CFT，也不保存文件加载策略。一个 `Coflow`
+可以加载多个互相引用的 Module；替换或移除 Module 后，再次调用 `Compile` 发布新的完整快照。
 
 ## 开发
 
