@@ -42,6 +42,12 @@ import { useRecordPointerDrag } from '../hooks/useRecordPointerDrag'
 import { organizeRecordRows } from '../state/manualRecordGroups'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { BatchRecordEditor } from './BatchRecordEditor'
+import {
+  PluginContributionMount,
+  currentPluginIdentity,
+  usePluginPresentation,
+} from '../plugins'
+import type { PluginPresentationContext } from '../plugins/types'
 
 interface Props {
   data: FileRecords
@@ -88,9 +94,10 @@ interface Props {
   onExitUp?: () => void
   firstRecordFocusRequest?: number
   onFirstRecordFocusConsumed?: (request: number) => void
+  diffChangedPaths?: ReadonlySet<string>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -172,6 +179,20 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       })
     : []
   const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
+  const rootPresentation = usePluginPresentation('inspector', record?.coordinate.actual_type ?? '')
+  const pluginIdentity = currentPluginIdentity()
+  const rootPresentationContext = useMemo<PluginPresentationContext | null>(() => (
+    record && pluginIdentity && pluginIdentity.revision === data.revision
+      ? {
+          identity: pluginIdentity,
+          filePath: data.file_path,
+          coordinate: { ...record.coordinate },
+          actualType: record.coordinate.actual_type,
+          fieldPath: null,
+          declaredType: record.coordinate.actual_type,
+        }
+      : null
+  ), [data.file_path, data.revision, pluginIdentity?.sessionId, pluginIdentity?.revision, record])
   const recordPointerDrag = useRecordPointerDrag({
     rootRef: sidebarRef,
     records: data.records,
@@ -463,6 +484,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
                   value,
                 )}
           />
+        ) : rootPresentation?.slot === 'inspector' && rootPresentationContext ? (
+          <PluginContributionMount
+            contribution={rootPresentation}
+            context={rootPresentationContext}
+            className="plugin-record-presentation"
+          />
         ) : <>
         <Fragment key={expansionOwner}>
         <CardHeader
@@ -512,6 +539,8 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         </div>
         <DataCardExpanded
           fields={fields}
+          filePath={data.file_path}
+          coordinate={record.coordinate}
           expandedPaths={expandedPaths}
           onRowToggle={(path, expanded) => {
             setExpandedByRecord(current => updateExpandedPath(current, expansionOwner, path, expanded))
@@ -534,6 +563,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           onDiagnosticBadgeClick={onDiagnosticBadgeClick
             ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
             : undefined}
+          diffChangedPaths={diffChangedPaths}
         />
         </Fragment>
         {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}

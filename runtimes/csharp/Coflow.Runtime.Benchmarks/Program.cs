@@ -23,7 +23,8 @@ internal static class BenchmarkData
     internal static void BindHost(global::Coflow.Runtime.Coflow coflow) => coflow.Bind(new HostServices(
             "benchmark",
             static _ => { },
-            static (value, operation) => operation(value + 1),
+            (value, operation) => operation.Invoke(coflow, value + 1),
+            static value => value,
             static value => value,
             static value => value.HasValue
                 ? Result<long, string>.Ok(value.Value)
@@ -44,7 +45,7 @@ public class VmExecutionBenchmarks
 {
     private global::Coflow.Runtime.Coflow _coflow = null!;
     private Scenario _scenario = null!;
-    private Func<long, long> _vmClosure = null!;
+    private CoflowFunction<long, long> _vmClosure;
 
     [GlobalSetup]
     public void Setup()
@@ -84,7 +85,7 @@ public class VmExecutionBenchmarks
     public long VmHostVmClosure() => _scenario.CallHost(_coflow, 4);
 
     [Benchmark]
-    public long ReturnedVmClosure() => _vmClosure(4);
+    public long ReturnedVmClosure() => _vmClosure.Invoke(_coflow, 4);
 
     [Benchmark]
     public long PrimeTrialDivision() => _scenario.PrimeSum(_coflow, 250);

@@ -31,6 +31,7 @@ use lower::{lower_records, lower_records_partial, syntax_diagnostics, ParsedLoad
 use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
 
 /// Parses `.cfd` text into source-neutral input records.
@@ -178,6 +179,7 @@ impl CfdLoader {
         Ok(LoadedCfdSource {
             records,
             diagnostics,
+            source: Arc::from(contents.as_ref()),
         })
     }
 }

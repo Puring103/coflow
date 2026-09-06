@@ -146,7 +146,7 @@ pub struct FileTypeOption {
     pub is_singleton: bool,
 }
 
-/// Read-only schema information exposed to editor extensions.
+/// 提供给编辑器插件的只读 Schema 投影。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -160,7 +160,7 @@ pub struct PluginSchemaType {
     pub record_count: usize,
 }
 
-/// One schema field in the extension-facing schema view.
+/// 插件 Schema 投影中的字段信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

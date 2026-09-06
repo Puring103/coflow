@@ -76,6 +76,28 @@ describe('project workspace tabs', () => {
     expect(routeForWorkspaceTab(tab!)).toMatchObject({ view: 'source', viewId: '__default_source' })
   })
 
+  it('preserves a plugin view for a singleton type until plugins load', () => {
+    const restored = sanitizeProjectWorkspace({
+      active_tab_id: workspaceTabId('data/settings.cfd', 'Settings'),
+      tabs: [{
+        file_path: 'data/settings.cfd',
+        type_name: 'Settings',
+        view_kind: 'table',
+        view_id: 'analysis/summary',
+      }],
+    }, fileTypes)
+
+    expect(restored?.tabs[0]).toMatchObject({
+      viewKind: 'table',
+      viewId: 'analysis/summary',
+    })
+    expect(routeForWorkspaceTab(restored!.tabs[0])).toMatchObject({
+      view: 'table',
+      viewId: 'analysis/summary',
+      typeFilter: 'Settings',
+    })
+  })
+
   it('switches a record workspace tab back to source before routing', () => {
     const record = {
       ...defaultWorkspaceTab('data/item.cfd', 'Item', false),

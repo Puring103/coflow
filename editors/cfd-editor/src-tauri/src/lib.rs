@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-mod extension_manifest;
+mod plugin_manifest;
 
 /// Compatibility re-export for generated TypeScript binding tests and host consumers.
 pub mod editor {
@@ -14,7 +14,7 @@ pub mod editor {
 use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
 use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
 use coflow_runtime::{
-    DimensionInfo, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
+    DimensionInfo, DimensionValueCoordinate, DimensionValueView, ProjectDiff, RecordCoordinate,
 };
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
@@ -26,7 +26,7 @@ use editor::{
     FunctionDocumentState, LanguageCompletion, LanguageDocumentState, LanguageFormattingResult,
     LanguagePosition,
 };
-use extension_manifest::ExtensionManifest;
+use plugin_manifest::PluginManifest;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -66,6 +66,12 @@ struct FrontendPluginBundle {
     enabled: bool,
 }
 
+#[derive(Debug, Default, Serialize)]
+struct FrontendPlugins {
+    plugins: Vec<FrontendPluginBundle>,
+    errors: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum PluginScope {
@@ -79,6 +85,23 @@ struct ProjectPluginsFile {
     version: u32,
     #[serde(default)]
     plugins: Vec<ProjectPluginEntry>,
+    #[serde(default)]
+    defaults: ProjectPluginDefaults,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct ProjectPluginDefaults {
+    #[serde(default)]
+    views: BTreeMap<String, String>,
+    #[serde(default)]
+    presentations: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectFrontendPlugins {
+    plugins: Vec<FrontendPluginBundle>,
+    defaults: ProjectPluginDefaults,
+    errors: Vec<String>,
 }
 
 const fn project_plugin_file_version() -> u32 {
@@ -111,7 +134,7 @@ async fn install_frontend_plugin(
 }
 
 #[tauri::command]
-async fn list_frontend_plugins(app: AppHandle) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+async fn list_frontend_plugins(app: AppHandle) -> Result<FrontendPlugins, EditorError> {
     run_blocking(move || list_frontend_plugin_bundles(&app)).await
 }
 
@@ -140,11 +163,12 @@ async fn install_project_frontend_plugin(
 async fn list_project_frontend_plugins(
     session_id: u32,
     host: State<'_, EditorHost>,
-) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+) -> Result<ProjectFrontendPlugins, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
         let project_root = host.sessions().project_root_for(session_id)?;
-        list_project_frontend_plugin_bundles(&project_root)
+        let config = read_project_plugins(&project_root)?;
+        Ok(project_frontend_plugins(&project_root, config))
     })
     .await
 }
@@ -191,14 +215,16 @@ fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBun
         .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
     let manifest_text = std::fs::read_to_string(&manifest_path)
         .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
-    let manifest: ExtensionManifest = serde_json::from_str(&manifest_text)
+    let manifest: PluginManifest = serde_json::from_str(&manifest_text)
         .map_err(|error| EditorError::other(format!("invalid plugin manifest: {error}")))?;
-    if manifest.id.trim().is_empty()
-        || manifest.name.trim().is_empty()
-        || manifest.entry.trim().is_empty()
-    {
+    if !valid_plugin_id(&manifest.id) {
         return Err(EditorError::other(
-            "plugin manifest requires non-empty id, name, and entry",
+            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
+        ));
+    }
+    if manifest.name.trim().is_empty() || manifest.entry.trim().is_empty() {
+        return Err(EditorError::other(
+            "plugin manifest requires non-empty name and entry",
         ));
     }
     let entry = PathBuf::from(&manifest.entry);
@@ -345,11 +371,6 @@ fn install_project_frontend_plugin_bundle(
     manifest: &Path,
 ) -> Result<FrontendPluginBundle, EditorError> {
     let mut bundle = load_frontend_plugin_bundle(manifest)?;
-    if !valid_plugin_id(&bundle.id) {
-        return Err(EditorError::other(
-            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
-        ));
-    }
     let relative = relative_project_path(project_root, manifest)?;
     let mut config = read_project_plugins(project_root)?;
     config.version = project_plugin_file_version();
@@ -359,24 +380,30 @@ fn install_project_frontend_plugin_bundle(
         manifest: relative.to_string_lossy().replace('\\', "/"),
         enabled: true,
     });
-    config.plugins.sort_by(|left, right| left.id.cmp(&right.id));
     write_project_plugins(project_root, &config)?;
     bundle.scope = PluginScope::Project;
     bundle.enabled = true;
     Ok(bundle)
 }
 
-fn list_project_frontend_plugin_bundles(
+fn project_frontend_plugins(
     project_root: &Path,
-) -> Result<Vec<FrontendPluginBundle>, EditorError> {
-    let config = read_project_plugins(project_root)?;
-    let mut bundles = config
-        .plugins
-        .iter()
-        .map(|entry| project_bundle(project_root, entry))
-        .collect::<Result<Vec<_>, _>>()?;
-    bundles.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(bundles)
+    config: ProjectPluginsFile,
+) -> ProjectFrontendPlugins {
+    let mut plugins = Vec::new();
+    let mut errors = Vec::new();
+    // 单个插件清单失效不得阻断同一项目中的其他插件。
+    for entry in &config.plugins {
+        match project_bundle(project_root, entry) {
+            Ok(bundle) => plugins.push(bundle),
+            Err(error) => errors.push(format!("{}: {}", entry.id, error.message)),
+        }
+    }
+    ProjectFrontendPlugins {
+        plugins,
+        defaults: config.defaults,
+        errors,
+    }
 }
 
 fn remove_project_frontend_plugin(project_root: &Path, id: &str) -> Result<(), EditorError> {
@@ -427,16 +454,11 @@ fn install_frontend_plugin_bundle(
     app: &AppHandle,
 ) -> Result<FrontendPluginBundle, EditorError> {
     let bundle = load_frontend_plugin_bundle(manifest_path)?;
-    if !valid_plugin_id(&bundle.id) {
-        return Err(EditorError::other(
-            "plugin id may only contain ASCII letters, digits, hyphens, and underscores",
-        ));
-    }
     let plugin_dir = plugin_data_dir(app)?.join(&bundle.id);
     std::fs::create_dir_all(&plugin_dir).map_err(|error| {
         EditorError::other(format!("failed to create plugin data directory: {error}"))
     })?;
-    let manifest = ExtensionManifest {
+    let manifest = PluginManifest {
         id: bundle.id,
         name: bundle.name,
         description: bundle.description,
@@ -456,22 +478,30 @@ fn install_frontend_plugin_bundle(
     load_frontend_plugin_bundle(&plugin_dir.join("plugin.json"))
 }
 
-fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<Vec<FrontendPluginBundle>, EditorError> {
+fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<FrontendPlugins, EditorError> {
     let root = plugin_data_dir(app)?;
     if !root.exists() {
-        return Ok(Vec::new());
+        return Ok(FrontendPlugins::default());
     }
     let entries = std::fs::read_dir(root).map_err(|error| {
         EditorError::other(format!("failed to list installed plugins: {error}"))
     })?;
-    let mut bundles = entries
+    let mut manifests = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path().join("plugin.json"))
         .filter(|manifest| manifest.is_file())
-        .map(|manifest| load_frontend_plugin_bundle(&manifest))
-        .collect::<Result<Vec<_>, _>>()?;
-    bundles.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(bundles)
+        .collect::<Vec<_>>();
+    manifests.sort();
+    let mut plugins = Vec::new();
+    let mut errors = Vec::new();
+    for manifest in manifests {
+        match load_frontend_plugin_bundle(&manifest) {
+            Ok(bundle) => plugins.push(bundle),
+            Err(error) => errors.push(format!("{}: {}", manifest.display(), error.message)),
+        }
+    }
+    plugins.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(FrontendPlugins { plugins, errors })
 }
 
 fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), EditorError> {
@@ -706,6 +736,16 @@ async fn build_project_status(
 ) -> Result<bool, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().build_project_status(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn get_project_diff(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectDiff, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().project_diff(session_id)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1215,6 +1255,7 @@ pub fn run() -> tauri::Result<()> {
             check_project,
             build_project,
             build_project_status,
+            get_project_diff,
             open_source_file,
             read_source_text,
             sync_language_document,
@@ -1287,8 +1328,8 @@ mod frontend_plugin_tests {
     use std::fs;
 
     use super::{
-        install_project_frontend_plugin_bundle, list_project_frontend_plugin_bundles,
-        load_frontend_plugin_bundle, resolve_project_manifest,
+        install_project_frontend_plugin_bundle, load_frontend_plugin_bundle,
+        project_frontend_plugins, read_project_plugins, resolve_project_manifest,
     };
 
     fn temp_plugin_dir(name: &str) -> std::path::PathBuf {
@@ -1313,13 +1354,32 @@ mod frontend_plugin_tests {
         .expect("write manifest");
         fs::write(
             dir.join("dist/plugin.js"),
-            "window.CfdEditorPlugins.register({ id: 'sample' })",
+            "export default function activate(host) { host.register.openPage('sample') }",
         )
         .expect("write bundle");
 
         let bundle = load_frontend_plugin_bundle(&manifest).expect("load plugin");
         assert_eq!(bundle.id, "sample");
-        assert!(bundle.source.contains("register"));
+        assert!(bundle.source.contains("activate"));
+        fs::remove_dir_all(dir).expect("remove plugin directory");
+    }
+
+    #[test]
+    fn rejects_invalid_plugin_ids_when_loading_manifests() {
+        let dir = temp_plugin_dir("invalid-id");
+        fs::create_dir_all(&dir).expect("create plugin directory");
+        let manifest = dir.join("plugin.json");
+        fs::write(
+            &manifest,
+            r#"{"id":"invalid/id","name":"Invalid","entry":"plugin.js"}"#,
+        )
+        .expect("write manifest");
+        fs::write(dir.join("plugin.js"), "export default () => {}")
+            .expect("write bundle");
+
+        let error = load_frontend_plugin_bundle(&manifest).expect_err("reject invalid id");
+
+        assert!(error.message.contains("plugin id"));
         fs::remove_dir_all(dir).expect("remove plugin directory");
     }
 
@@ -1365,14 +1425,50 @@ mod frontend_plugin_tests {
             .expect("read project config");
         assert!(config.contains("../shared-plugin/plugin.json"));
         assert!(!config.contains(plugin_dir.to_string_lossy().as_ref()));
-        assert_eq!(
-            list_project_frontend_plugin_bundles(&root)
-                .expect("list project plugins")
-                .len(),
-            1
+        let state = project_frontend_plugins(
+            &root,
+            read_project_plugins(&root).expect("read project plugins"),
         );
+        assert_eq!(state.plugins.len(), 1);
+        assert!(state.errors.is_empty());
         fs::remove_dir_all(root).expect("remove project root");
         fs::remove_dir_all(plugin_dir).expect("remove plugin directory");
+    }
+
+    #[test]
+    fn project_plugin_loading_isolates_invalid_entries() {
+        let root = temp_plugin_dir("isolated-load");
+        fs::create_dir_all(root.join("editor-setting")).expect("create project settings");
+        fs::create_dir_all(root.join("valid")).expect("create valid plugin");
+        fs::write(
+            root.join("valid/plugin.json"),
+            r#"{"id":"valid","name":"Valid","entry":"plugin.js"}"#,
+        )
+        .expect("write valid manifest");
+        fs::write(root.join("valid/plugin.js"), "export default () => {}")
+            .expect("write valid bundle");
+        fs::write(
+            root.join("editor-setting/plugins.json"),
+            r#"{
+                "version": 1,
+                "plugins": [
+                    { "id": "missing", "manifest": "missing/plugin.json" },
+                    { "id": "valid", "manifest": "valid/plugin.json" }
+                ]
+            }"#,
+        )
+        .expect("write project plugins");
+
+        let state = project_frontend_plugins(
+            &root,
+            read_project_plugins(&root).expect("read project plugins"),
+        );
+
+        assert_eq!(state.plugins.len(), 1);
+        assert_eq!(state.plugins[0].id, "valid");
+        assert_eq!(state.errors.len(), 1);
+        assert!(state.errors[0].contains("missing"));
+        fs::remove_dir_all(root).expect("remove project root");
     }
 
     #[test]
@@ -1383,6 +1479,40 @@ mod frontend_plugin_tests {
         let error = resolve_project_manifest(&root, absolute.to_string_lossy().as_ref())
             .expect_err("reject absolute manifest path");
         assert!(error.message.contains("relative path"));
+        fs::remove_dir_all(root).expect("remove project root");
+    }
+
+    #[test]
+    fn project_plugin_config_reads_default_contributions() {
+        let root = temp_plugin_dir("defaults");
+        fs::create_dir_all(root.join("editor-setting")).expect("create project settings");
+        fs::write(
+            root.join("editor-setting/plugins.json"),
+            r#"{
+                "version": 1,
+                "plugins": [],
+                "defaults": {
+                    "views": { "Foo": "analysis/table" },
+                    "presentations": { "Bar": { "cell": "format/cell" } }
+                }
+            }"#,
+        )
+        .expect("write plugin defaults");
+
+        let config = read_project_plugins(&root).expect("read project plugin config");
+        assert_eq!(
+            config.defaults.views.get("Foo").map(String::as_str),
+            Some("analysis/table")
+        );
+        assert_eq!(
+            config
+                .defaults
+                .presentations
+                .get("Bar")
+                .and_then(|slots| slots.get("cell"))
+                .map(String::as_str),
+            Some("format/cell")
+        );
         fs::remove_dir_all(root).expect("remove project root");
     }
 }

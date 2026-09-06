@@ -20,6 +20,7 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
+import type { ProjectDiff } from './bindings/ProjectDiff'
 import type { ProjectSearchMode } from './bindings/ProjectSearchMode'
 import type { ProjectSearchResults } from './bindings/ProjectSearchResults'
 import type { RefTarget } from './bindings/RefTarget'
@@ -274,6 +275,24 @@ export interface FrontendPluginBundle {
   enabled: boolean
 }
 
+export async function getProjectDiff(sessionId: number): Promise<ProjectDiff> {
+  return invokeCommand<ProjectDiff>('get_project_diff', { sessionId })
+}
+
+export interface FrontendPluginState {
+  plugins: FrontendPluginBundle[]
+  errors: string[]
+}
+
+export interface FrontendPluginProjectState {
+  plugins: FrontendPluginBundle[]
+  errors: string[]
+  defaults: {
+    views: Record<string, string | undefined>
+    presentations: Record<string, Partial<Record<'cell' | 'inspector' | 'summary', string>> | undefined>
+  }
+}
+
 export async function pickFrontendPluginManifest(): Promise<string | null> {
   if (!isTauri) return null
   const path = await openDialog({
@@ -287,8 +306,8 @@ export async function installFrontendPlugin(manifestPath: string): Promise<Front
   return invokeCommand<FrontendPluginBundle>('install_frontend_plugin', { manifestPath })
 }
 
-export async function listFrontendPlugins(): Promise<FrontendPluginBundle[]> {
-  return invokeCommand<FrontendPluginBundle[]>('list_frontend_plugins')
+export async function listFrontendPlugins(): Promise<FrontendPluginState> {
+  return invokeCommand<FrontendPluginState>('list_frontend_plugins')
 }
 
 export async function uninstallFrontendPlugin(id: string): Promise<void> {
@@ -299,8 +318,8 @@ export async function installProjectFrontendPlugin(sessionId: number, manifestPa
   return invokeCommand<FrontendPluginBundle>('install_project_frontend_plugin', { sessionId, manifestPath })
 }
 
-export async function listProjectFrontendPlugins(sessionId: number): Promise<FrontendPluginBundle[]> {
-  return invokeCommand<FrontendPluginBundle[]>('list_project_frontend_plugins', { sessionId })
+export async function listProjectFrontendPlugins(sessionId: number): Promise<FrontendPluginProjectState> {
+  return invokeCommand<FrontendPluginProjectState>('list_project_frontend_plugins', { sessionId })
 }
 
 export async function uninstallProjectFrontendPlugin(sessionId: number, id: string): Promise<void> {

@@ -33,6 +33,8 @@ var settings = coflow.Singleton<Settings>();
 
 `CoflowOptions` 为每个实例设置执行限制。不传参数时使用默认限制。每次顶层函数调用使用一份新预算；同步 Host 回调再次调用同一实例时与外层调用共享预算。
 
+同一 `Coflow` 中的记录可以跨 Module 引用，并支持前向引用、自引用和引用环。
+
 每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应 enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
 
 `@Host` 生成可直接构造的类型。一个 `Coflow` 可以绑定多个不同 Host 类型，同一类型再次 `Bind` 表示换绑，并在下一次成功编译后生效。

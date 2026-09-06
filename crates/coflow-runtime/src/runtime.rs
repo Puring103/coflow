@@ -465,7 +465,7 @@ fn fixed_cfd_catalog() -> CfdSourceCatalog {
 /// ```
 #[derive(Debug)]
 pub struct ReadOnlyProjectSession {
-    session: ProjectSession,
+    pub(crate) session: ProjectSession,
 }
 
 impl ReadOnlyProjectSession {
