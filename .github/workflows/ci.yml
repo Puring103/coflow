@@ -39,15 +39,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build all C# runtime targets
-        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime/Coflow.Cfd.Runtime.csproj --configuration Release
+        run: dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
 
       - name: Consume the netstandard2.1 C# runtime
-        run: dotnet run --project runtimes/csharp/Coflow.Cfd.Runtime.NetStandardSmoke/Coflow.Cfd.Runtime.NetStandardSmoke.csproj --configuration Release
+        run: dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
 
       - name: Test C# runtime with coverage
         shell: pwsh
         run: >-
-          dotnet test runtimes/csharp/Coflow.Cfd.Runtime.Tests/Coflow.Cfd.Runtime.Tests.csproj
+          dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj
           --configuration Release
           /p:CollectCoverage=true
           /p:CoverletOutput="$env:RUNNER_TEMP/csharp-runtime-coverage/"
@@ -71,4 +71,4 @@ jobs:
         run: dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
 
       - name: Build C# benchmarks
-        run: dotnet build runtimes/csharp/Coflow.Cfd.Runtime.Benchmarks/Coflow.Cfd.Runtime.Benchmarks.csproj --configuration Release
+        run: dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release

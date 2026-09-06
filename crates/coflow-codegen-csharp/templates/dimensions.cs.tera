@@ -2,8 +2,6 @@
 #nullable enable
 using System.Collections.Generic;
 
-namespace {{ project.namespace }}
-{
 {% for dimension in project.dimensions %}    /// <summary>Values selected explicitly from the {{ dimension.source_name }} dimension.</summary>
     public readonly struct {{ dimension.name }}<T>
     {
@@ -27,4 +25,4 @@ namespace {{ project.namespace }}
                 : Default;
     }
 {% if not loop.last %}
-{% endif %}{% endfor %}}
+{% endif %}{% endfor %}

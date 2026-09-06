@@ -1,0 +1,7 @@
+Item {
+    second {
+        stats: Stats { value: 4 },
+        next: &first,
+        calculate: fn(input: int) -> int { &Services.adjust(input) + stats.value },
+    }
+}

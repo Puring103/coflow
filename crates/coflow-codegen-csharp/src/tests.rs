@@ -21,7 +21,6 @@ fn all(files: &[GeneratedFile]) -> String {
 fn emits_declarations_and_runtime_metadata() {
     let files = generate_csharp_cfd(
         &schema("type Item { name: string; }"),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -30,13 +29,18 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(!output.contains("SourceFiles"));
     assert!(output.contains("ICoflowTypeMetadata"));
     assert!(output.contains("[ModuleInitializer]"));
-    assert!(output.contains("public static class CoflowData"));
+    assert!(output.contains("public static class Schema"));
+    assert!(output.contains("public static global::Coflow.Runtime.Coflow Create(global::Coflow.Runtime.CoflowOptions? options = null)"));
     assert!(!output.contains("CoflowGeneratedRegistry"));
-    assert!(output.contains("CoflowGeneratedContract : ICoflowGeneratedContract"));
+    assert!(output.contains("CoflowSchema : ICoflowSchema"));
     assert!(output.contains("CoflowMetadata : ICoflowRecordMetadata"));
-    assert!(output.contains("CoflowFieldBinding.Create<global::Game.Config.Item, string>"));
+    assert!(output.contains("CoflowFieldBinding.Create<global::Item, string>"));
+    assert!(output.contains("CoflowTypeCodec.Register<global::Item>(\n            new CoflowTypeId("));
+    assert!(output.contains("static (ref CoflowValueWriter writer, global::Item value)"));
+    assert!(output.contains("writer.Write(value.Name);"));
+    assert!(output.contains("writer.WriteValueId(value._coflowId);"));
     assert!(
-        output.contains("PopulateCft_4974656D((global::Game.Config.Item)target, record, context)")
+        output.contains("PopulateCft_4974656D((global::Item)target, record, context)")
     );
     assert!(output.contains("target._coflowName = CfdValueReader.String"));
     assert!(!output.contains("var loaded = ReadCft_4974656D"));
@@ -50,8 +54,8 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(!output.contains("CfdMaterializer"));
     assert!(!output.contains("Load(ICfdTextLoader loader"));
     assert!(!output.contains("public sealed partial class CoflowTables"));
-    assert!(output.contains("using CoflowRuntime;"));
-    assert!(output.contains("using CoflowRuntime.Generated;"));
+    assert!(output.contains("using Coflow.Runtime;"));
+    assert!(output.contains("using Coflow.Runtime.CompilerServices;"));
     assert!(!output.contains("Newtonsoft.Json"));
     assert!(!output.contains("MessagePack"));
     assert!(!output.contains(".json"));
@@ -59,20 +63,40 @@ fn emits_declarations_and_runtime_metadata() {
 }
 
 #[test]
-fn emits_cft_structs_as_reference_types_with_value_equality() {
+fn registers_abstract_generated_types_for_value_id_vm_layouts() {
+    let files = generate_csharp_cfd(
+        &schema("abstract type Ability { value: int; } type Damage : Ability { extra: int; }"),
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate abstract layout");
+    let output = all(&files);
+    assert!(output.contains("CoflowType.Register<global::Ability>(new CoflowTypeId("));
+    assert!(output.contains("CoflowTypeCodec.Register<global::Damage>("));
+}
+
+#[test]
+fn emits_cft_structs_as_readonly_value_types() {
     let files = generate_csharp_cfd(
         &schema("@struct sealed type Point { x: int; y: int; }"),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
     .expect("generate struct");
     let output = all(&files);
-    assert!(output.contains("public sealed partial class Point : IEquatable<Point>"));
-    assert!(output.contains("public bool Equals(Point? other)"));
+    assert!(output.contains("public readonly partial struct Point : IEquatable<Point>"));
+    assert!(output.contains("public bool Equals(Point other)"));
     assert!(output.contains("EqualityComparer<long>.Default.Equals(X, other.X)"));
     assert!(!output.contains("EqualityComparer<object>.Default"));
-    assert!(!output.contains("partial struct Point"));
+    assert!(output.contains("internal readonly CoflowValueId _coflowId"));
+    assert!(output.contains("internal readonly bool _coflowInitialized"));
+    assert!(output.contains("_coflowInitialized = true;"));
+    assert!(output.contains("static value => value._coflowInitialized"));
+    assert!(output.contains("CoflowStructCodec.Register<global::Point>("));
+    assert!(output.contains("3, 0, 0,"));
+    assert!(output.contains("writer.Write(value.X);"));
+    assert!(output.contains("reader.Read<long>()"));
+    assert!(output.contains("true, 1, 0, 0"));
     assert!(!output.contains("CoflowStringTableToken<Point>"));
     assert!(output.contains("Cft_506F696E74CoflowMetadata : ICoflowTypeMetadata"));
     assert!(!output.contains("Cft_506F696E74CoflowMetadata : ICoflowRecordMetadata"));
@@ -94,7 +118,6 @@ type Rule {
 }
 "#,
         ),
-        &CsharpCodegenOptions::new("App.Config"),
         BTreeMap::new(),
         None,
     )
@@ -110,7 +133,7 @@ type Rule {
             "Predicate.cs" | "OptionalName.cs"
         )
     }));
-    assert!(output.contains("public bool Predicate(long input)"));
+    assert!(output.contains("public bool Predicate(global::Coflow.Runtime.Coflow coflow, long input)"));
     assert!(!output.contains("BindPredicate"));
     assert!(output.contains("Option<string> Name"));
     assert!(!output.contains("class Predicate"));
@@ -123,7 +146,6 @@ fn emits_scalar_constants_in_internal_runtime_metadata() {
         &schema(
             "const LEVEL: int = 42; const RATIO: float = 0.5; const ENABLED: bool = true; const LABEL: string = \"line\\ntext\"; type Item { value: int; }",
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -154,7 +176,6 @@ const STATS: Stats = { hp: 100 };
 const ITEM: Option<&Item> = Some(&Item::sword);
 "#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -164,10 +185,10 @@ const ITEM: Option<&Item> = Some(&Item::sword);
     assert!(output.contains("typeof(IReadOnlyList<long>)"));
     assert!(output.contains("CoflowConstantValues.List<long>(1L, 2L)"));
     assert!(output.contains("CoflowConstantValues.Dictionary<string, long>"));
-    assert!(output.contains("new global::Game.Config.Stats(null, string.Empty, 100L"));
-    assert!(output.contains("typeof(Option<global::Game.Config.Item>)"));
-    assert!(output.contains("static context => Option<global::Game.Config.Item>.Some("));
-    assert!(output.contains("context.Resolve<global::Game.Config.Item>(\"Item\", \"sword\")"));
+    assert!(output.contains("new global::Stats(null, string.Empty, 100L"));
+    assert!(output.contains("typeof(Option<global::Item>)"));
+    assert!(output.contains("static context => Option<global::Item>.Some("));
+    assert!(output.contains("context.Resolve<global::Item>(\"Item\", \"sword\")"));
 }
 
 #[test]
@@ -176,7 +197,6 @@ fn preserves_display_metadata_as_xml_docs() {
         &schema(
             r#"@label("Item") @description("Description") type Item { @label("Name") name: string; }"#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
     )
     .expect("generate");
     let item = files
@@ -200,7 +220,6 @@ sealed type Stats { hp: int; }
 @idAsEnum(ItemId) @label("Items") type Item { @expand stats: Stats; mode: Mode; }
 "#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -212,7 +231,8 @@ sealed type Stats { hp: int; }
     assert!(output.contains("new CoflowAnnotation(\"expand\""));
     assert!(output.contains("new CoflowAnnotation(\"idAsEnum\""));
     assert!(output.contains("CoflowAnnotationArgumentKind.Name, \"ItemId\""));
-    assert!(output.contains("FieldAnnotations(string fieldName)"));
+    assert!(output.contains("IReadOnlyList<CoflowFieldMetadata> Fields"));
+    assert!(!output.contains("FieldAnnotations(string fieldName)"));
     assert!(output.contains("VariantAnnotations(string variantName)"));
 }
 
@@ -227,7 +247,6 @@ type Item {
 }
 "#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -249,7 +268,7 @@ fn descriptor_declares_cfd_runtime_contract() {
     assert_eq!(CSHARP_CFD_CODEGEN_DESCRIPTOR.id, "csharp");
     assert_eq!(
         CSHARP_CFD_CODEGEN_DESCRIPTOR.runtime_package,
-        "Coflow.Cfd.Runtime"
+        "Coflow.Runtime"
     );
     assert!(CSHARP_CFD_CODEGEN_DESCRIPTOR.needs_model);
 }
@@ -258,7 +277,6 @@ fn descriptor_declares_cfd_runtime_contract() {
 fn emits_empty_type_reader_without_invalid_argument_list() {
     let files = generate_csharp_cfd(
         &schema("type Empty { }"),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -272,17 +290,16 @@ fn emits_empty_type_reader_without_invalid_argument_list() {
 fn emits_singleton_metadata_without_a_generated_database() {
     let files = generate_csharp_cfd(
         &schema("@singleton type Settings { value: int; }"),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
     .expect("generate");
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
-    assert!(output.contains("public Type RuntimeType => typeof(global::Game.Config.Settings);"));
+    assert!(output.contains("public Type RuntimeType => typeof(global::Settings);"));
     assert!(output.contains("Cft_53657474696E6773CoflowMetadata : ICoflowRecordMetadata"));
-    assert!(output.contains("new Func<global::Game.Config.Settings, string>(static _ => string.Empty)"));
-    assert!(output.contains("new global::Game.Config.Settings()"));
+    assert!(output.contains("new Func<global::Settings, string>(static _ => string.Empty)"));
+    assert!(output.contains("new global::Settings()"));
     assert!(!output.contains("public sealed partial class CoflowTables"));
 }
 
@@ -290,7 +307,6 @@ fn emits_singleton_metadata_without_a_generated_database() {
 fn preserves_host_singleton_in_generated_metadata() {
     let files = generate_csharp_cfd(
         &schema("@Host @singleton type Api { environment: string; log: fn(string) -> (); }"),
-        &CsharpCodegenOptions::new("CoflowConfig"),
         BTreeMap::new(),
         None,
     )
@@ -298,10 +314,14 @@ fn preserves_host_singleton_in_generated_metadata() {
     let output = all(&files);
     assert!(output.contains("public bool IsSingleton => true;"));
     assert!(output.contains("Cft_417069CoflowMetadata : ICoflowHostMetadata"));
-    assert!(output.contains("public void Configure("));
-    assert!(output.contains("string environment,\n        Action<string> log"));
-    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowLog.RuntimeEntry, log)"));
-    assert!(output.contains("CreateHostCft_417069(context)"));
+    assert!(!output.contains("public void Configure("));
+    assert!(output.contains("public Api(\n        string environment,\n        Action<string> log"));
+    assert!(output.contains("internal Action<string> _coflowLog { get; }"));
+    assert!(output.contains("BindHostCft_417069(value, context)"));
+    assert!(output.contains("context.BindHostFunction(CoflowHostFunctionBinding.Create("));
+    assert!(output.contains("var snapshotValue = (Api)value.MemberwiseClone();"));
+    assert!(output.contains("snapshotValue._coflowId = coflowId;"));
+    assert!(!output.contains("value._coflowId = coflowId;"));
     assert!(!output.contains("BindLog(Action<string> implementation)"));
 }
 
@@ -311,7 +331,6 @@ fn host_binding_includes_inherited_fields_and_functions() {
         &schema(
             "abstract type ServicesBase { region: string; report: fn(string) -> (); } @Host @singleton type Services : ServicesBase { environment: string; log: fn(string) -> (); }",
         ),
-        &CsharpCodegenOptions::new("CoflowConfig"),
         BTreeMap::new(),
         None,
     )
@@ -319,9 +338,9 @@ fn host_binding_includes_inherited_fields_and_functions() {
     let output = all(&files);
     assert!(output.contains("string region,"));
     assert!(output.contains("Action<string> report,"));
-    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowReport.RuntimeEntry, report)"));
-    assert!(output.contains("CoflowHostFunctionBinding.Create(_coflowLog.RuntimeEntry, log)"));
-    assert!(output.contains(": base(hostSlot, default!, report)"));
+    assert!(output.contains("internal Action<string> _coflowReport { get; }"));
+    assert!(output.contains("internal Action<string> _coflowLog { get; }"));
+    assert!(output.contains(": base(region)"));
 }
 
 #[test]
@@ -330,16 +349,15 @@ fn maps_option_result_unit_and_function_types() {
         &schema(
             "type Failure { code: int; } type Api { optional: Option<int>; run: fn(input: string) -> Result<(), Failure>; }",
         ),
-        &CsharpCodegenOptions::new("CoflowConfig"),
     )
     .expect("generate");
     let output = all(&files);
     assert!(output.contains("Option<long> Optional"));
-    assert!(output.contains("internal CoflowFunctionEntry<Func<string, Result<Unit, global::CoflowConfig.Failure>>> _coflowRun"));
-    assert!(output.contains("public Result<Unit, global::CoflowConfig.Failure> Run(string input)"));
+    assert!(!output.contains("internal CoflowFunctionEntry"));
+    assert!(output.contains("public Result<Unit, global::Failure> Run(global::Coflow.Runtime.Coflow coflow, string input)"));
     assert!(!output.contains("BindRun"));
-    assert!(output.contains("_coflowRun.Function(input)"));
-    assert!(output.contains("internal Api("));
+    assert!(output.contains("CoflowInvoker.Invoke<global::Api, string, Result<Unit, global::Failure>>"));
+    assert!(output.contains("public Api("));
     assert!(!output.contains("Func<string, Result<Unit, Failure>> Run { get;"));
 }
 
@@ -349,19 +367,18 @@ fn loads_function_values_nested_in_collections_and_option() {
         &schema(
             "type Pipeline { handlers: [fn(int) -> int]; named: {string: fn(string) -> bool}; optional: Option<fn(int) -> int> = None; }",
         ),
-        &CsharpCodegenOptions::new("CoflowConfig"),
         BTreeMap::new(),
         None,
     )
     .expect("generate nested function values");
     let output = all(&files);
 
-    assert!(output.contains("IReadOnlyList<Func<long, long>> Handlers"));
-    assert!(output.contains("IReadOnlyDictionary<string, Func<string, bool>> Named"));
-    assert!(output.contains("Option<Func<long, long>> Optional"));
-    assert!(output.contains("context.FunctionValueAot<Func<long, long>>(item, typeof(long)"));
-    assert!(output.contains("context.FunctionValueAot<Func<string, bool>>(item, typeof(bool)"));
-    assert!(output.contains("CoflowDelegateAdapter.Register<Func<long, long>>"));
+    assert!(output.contains("IReadOnlyList<CoflowFunction<long, long>> Handlers"));
+    assert!(output.contains("IReadOnlyDictionary<string, CoflowFunction<string, bool>> Named"));
+    assert!(output.contains("Option<CoflowFunction<long, long>> Optional"));
+    assert!(output.contains("context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long)"));
+    assert!(output.contains("context.FunctionValue<CoflowFunction<string, bool>>(item, typeof(bool)"));
+    assert!(!output.contains("CoflowDelegateAdapter"));
 }
 
 #[test]
@@ -370,7 +387,6 @@ fn ordinary_function_loader_marks_the_cfd_body_as_required() {
         &schema(
             "type Rule { evaluate: fn(value: int) -> int; notify: fn(message: string) -> (); }",
         ),
-        &CsharpCodegenOptions::new("CoflowConfig"),
         BTreeMap::new(),
         None,
     )
@@ -379,8 +395,8 @@ fn ordinary_function_loader_marks_the_cfd_body_as_required() {
     assert!(output.contains(
         "context.RequiredFunction(CfdValueReader.FindField(fields, \"evaluate\"), \"evaluate\", typeof(long), typeof(long))"
     ));
-    assert!(output.contains("public long Evaluate(long value)"));
-    assert!(output.contains("public void Notify(string message)"));
+    assert!(output.contains("public long Evaluate(global::Coflow.Runtime.Coflow coflow, long value)"));
+    assert!(output.contains("public void Notify(global::Coflow.Runtime.Coflow coflow, string message)"));
     assert!(!output.contains("public void Configure("));
     assert!(!output.contains("BindEvaluate"));
     assert!(!output.contains("BindNotify"));
@@ -392,7 +408,6 @@ fn function_defaults_use_the_runtime_function_entry_path() {
         &schema(
             "type Rule { evaluate: fn(value: int) -> int = fn(value: int) -> int { value + 1 }; }",
         ),
-        &CsharpCodegenOptions::new("CoflowConfig"),
         BTreeMap::new(),
         None,
     )
@@ -408,7 +423,6 @@ fn generated_metadata_has_no_physical_source_paths() {
     let schema = schema("type Item { value: int; }");
     let files = generate_csharp_cfd(
         &schema,
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -424,7 +438,6 @@ fn emits_source_enum_mappings_and_flag_masks() {
         &schema(
             "enum item_rarity { common_value, rare_value }\n@flag enum item_flags { fire = 1, ice = 2 }\ntype Item { rarity: item_rarity; flags: item_flags; }",
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -435,7 +448,7 @@ fn emits_source_enum_mappings_and_flag_masks() {
     assert!(output.contains("ReadEnumCft_6974656D5F666C616773"));
     assert!(output.contains(" 3L"));
     assert!(output.contains(
-        "CoflowFieldBinding.CreateEnum<global::Game.Config.Item, global::Game.Config.ItemRarity>"
+        "CoflowFieldBinding.CreateEnum<global::Item, global::ItemRarity>"
     ));
     assert!(output.contains("static value => (long)value"));
     assert!(!output.contains("public object GetKey(object record)"));
@@ -461,7 +474,6 @@ type Item {
 }
 "#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -473,9 +485,9 @@ type Item {
     assert!(output.contains("\"line\\ntext\""));
     assert!(output.contains("CoflowConstantValues.List<string>()"));
     assert!(output.contains("CoflowConstantValues.Dictionary<string, long>()"));
-    assert!(output.contains("new global::Game.Config.Stats(null, string.Empty, 10L)"));
+    assert!(output.contains("new global::Stats(null, string.Empty, 10L)"));
     assert!(
-        output.contains("valueTarget") && output.contains("Option<global::Game.Config.Item>.None")
+        output.contains("valueTarget") && output.contains("Option<global::Item>.None")
     );
     assert!(output.contains("Option<long>.Some(4L)"));
 }
@@ -492,7 +504,6 @@ sealed type concrete_child : concrete_base { amount: int; }
 type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base; }
 "#,
         ),
-        &CsharpCodegenOptions::new("Game.Config"),
         BTreeMap::new(),
         None,
     )
@@ -508,13 +519,14 @@ type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base
     assert!(!output.contains("CfdNoneValue"));
     assert!(!output.contains("Readfixed_reward"));
     assert!(output.contains(
-        "CfdValueReader.Reference<global::Game.Config.RewardBase>(CfdValueReader.Field(fields, \"target\"), context, \"reward_base\")"
+        "CfdValueReader.Reference<global::RewardBase>(CfdValueReader.Field(fields, \"target\"), context, \"reward_base\")"
     ));
     assert!(!output.contains("expected a polymorphic object or reference"));
-    assert!(output.contains("\"reward\" => \"reward_base\""));
-    assert!(output.contains("\"target\" => \"reward_base\""));
-    assert!(output.contains("ObjectFieldType(string fieldName)"));
-    assert!(output.contains("ReferenceFieldType(string fieldName)"));
+    assert!(output.contains("false, \"reward_base\""));
+    assert!(output.contains("false, null, \"reward_base\""));
+    assert!(!output.contains("ObjectFieldType(string fieldName)"));
+    assert!(!output.contains("ReferenceFieldType(string fieldName)"));
+    assert!(output.contains("IReadOnlyList<CoflowFieldMetadata> Fields"));
     assert!(output
         .contains("\"concrete_child\" => ReadCft_636F6E63726574655F6368696C64(node, context)"));
     assert!(output.contains("null or \"concrete_base\" =>"));
@@ -524,7 +536,7 @@ type Holder { reward: reward_base; target: &reward_base; concrete: concrete_base
 }
 
 #[test]
-fn emits_global_cft_names_in_the_configured_csharp_namespace() {
+fn emits_cft_types_in_the_global_namespace() {
     let files = generate_csharp_cfd(
         &schema(
             r#"
@@ -532,7 +544,6 @@ enum Rarity { Common }
 type Item { rarity: Rarity = Rarity::Common; }
 "#,
         ),
-        &CsharpCodegenOptions::new("Project.Config"),
         BTreeMap::new(),
         None,
     )
@@ -542,14 +553,12 @@ type Item { rarity: Rarity = Rarity::Common; }
         .iter()
         .find(|file| file.relative_path.as_os_str() == "Item.cs")
         .expect("Item file");
-    assert!(item
-        .contents
-        .contains("namespace Project.Config"));
+    assert!(!item.contents.contains("namespace "));
 
     let output = all(&files);
     assert!(output.contains("DeclaredType => \"Item\""));
-    assert!(output.contains("typeof(global::Project.Config.Item)"));
-    assert!(output.contains("global::Project.Config.Rarity.Common"));
+    assert!(output.contains("typeof(global::Item)"));
+    assert!(output.contains("global::Rarity.Common"));
     assert!(output.contains("ReadEnumCft_526172697479"));
 }
 

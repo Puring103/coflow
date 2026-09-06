@@ -25,7 +25,7 @@ fn project_with_config(config: &str) -> TempDir {
 #[test]
 fn parses_only_data_and_codegen_contract() {
     let project = project_with_config(
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n",
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
     );
     let opened =
         Project::open_schema_only(Some(&project.path().join("coflow.yaml"))).expect("open project");
@@ -34,8 +34,8 @@ fn parses_only_data_and_codegen_contract() {
     assert_eq!(opened.config().codegen.len(), 1);
     assert_eq!(opened.config().codegen[0].language, "csharp");
     assert_eq!(
-        opened.config().codegen[0].options()["namespace"],
-        "Game.Config"
+        opened.config().codegen[0].options(),
+        &serde_json::json!({})
     );
 }
 

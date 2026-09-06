@@ -71,6 +71,18 @@ Scenario {
       }
     },
 
+    hostFunction: fn(value: int) -> fn(int) -> int {
+      &HostServices.select(fn(input: int) -> int { input + value })
+    },
+
+    optionalFunction: fn(operation: Option<fn(int) -> int>) -> Option<fn(int) -> int> {
+      operation
+    },
+
+    resultFunction: fn(operation: Result<fn(int) -> int, string>) -> Result<fn(int) -> int, string> {
+      operation
+    },
+
     integerLoop: fn(iterations: int) -> int {
       var current = 0;
       var total = 0;
@@ -197,6 +209,30 @@ Scenario {
 
     makeDefaultStats: fn(value: int) -> Stats {
       Stats { health: value, attack: value + 1 }
+    },
+
+    readExternalStats: fn(value: Stats) -> int {
+      match value.resistances["bonus"] {
+        Some(bonus) => value.score(bonus),
+        None => 0,
+      }
+    },
+
+    hostStats: fn(value: Stats) -> int {
+      var returned = &HostServices.echoStats(value);
+      returned.score(4)
+    },
+
+    copyExternalCharacter: fn(value: Character) -> Character {
+      value
+    },
+
+    readExternalCharacterCollections: fn(value: Character) -> int {
+      value.tags.len() + value.attributes.len() + value.abilities.len()
+    },
+
+    copyOptionalStats: fn(value: Option<Stats>) -> Option<Stats> {
+      value
     },
 
     formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string {

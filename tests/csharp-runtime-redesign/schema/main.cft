@@ -1,0 +1,16 @@
+@struct sealed type Stats {
+    value: int;
+    transform: fn(int) -> int = fn(input: int) -> int { input + value };
+}
+
+type Item {
+    stats: Stats;
+    next: Option<&Item> = None;
+    calculate: fn(int) -> int;
+}
+
+@Host @singleton type Services {
+    environment: string;
+    adjust: fn(int) -> int;
+    notify: fn(int) -> ();
+}
