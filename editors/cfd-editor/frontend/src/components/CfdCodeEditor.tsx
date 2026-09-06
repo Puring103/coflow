@@ -24,12 +24,36 @@ export interface CodeSemanticToken {
   type: string
 }
 
+export interface CodeLineDecoration {
+  line: number
+  className: string
+}
+
 interface SemanticTokenUpdate {
   tokens: readonly CodeSemanticToken[]
   replace: boolean
 }
 
 const setSemanticTokens = StateEffect.define<SemanticTokenUpdate>()
+const setLineDecorations = StateEffect.define<readonly CodeLineDecoration[]>()
+
+const lineDecorationField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (!effect.is(setLineDecorations)) continue
+      const ranges = effect.value.flatMap(item => {
+        if (item.line < 1 || item.line > transaction.state.doc.lines) return []
+        return [Decoration.line({ class: item.className }).range(
+          transaction.state.doc.line(item.line).from,
+        )]
+      })
+      return Decoration.set(ranges, true)
+    }
+    return value.map(transaction.changes)
+  },
+  provide: field => EditorView.decorations.from(field),
+})
 
 export interface EditableRange {
   from: number
@@ -131,6 +155,7 @@ interface Props {
   documentUpdate?: ExternalDocumentUpdate | null
   focusRange?: { from: number; to: number; tick: number } | null
   className?: string
+  lineDecorations?: readonly CodeLineDecoration[]
 }
 
 export function CfdCodeEditor({
@@ -147,6 +172,7 @@ export function CfdCodeEditor({
   documentUpdate = null,
   focusRange = null,
   className,
+  lineDecorations = [],
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -201,6 +227,7 @@ export function CfdCodeEditor({
           crosshairCursor(),
           highlightActiveLine(),
           semanticTokenField,
+          lineDecorationField,
           editableRangeField,
           EditorState.transactionFilter.of(transaction => {
             const range = transaction.startState.field(editableRangeField)
@@ -324,6 +351,10 @@ export function CfdCodeEditor({
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setSemanticTokens.of({ tokens: semanticTokens, replace: replaceSemanticTokens }) })
   }, [replaceSemanticTokens, semanticTokens])
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setLineDecorations.of(lineDecorations) })
+  }, [lineDecorations])
 
   return <div ref={hostRef} className={`cfd-code-editor${className ? ` ${className}` : ''}`} />
 }

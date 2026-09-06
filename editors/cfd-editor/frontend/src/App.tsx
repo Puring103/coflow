@@ -14,6 +14,7 @@ import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
 import { DimensionTableView } from './components/DimensionTableView'
 import { SourceEditorView } from './components/SourceEditorView'
+import { GitDiffMode, GitDiffSidebar, type GitDiffSelection } from './components/GitDiffMode'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
@@ -58,6 +59,7 @@ import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
+import type { ProjectDiff } from './bindings/ProjectDiff'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
@@ -140,7 +142,9 @@ const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
 
-type ActivePane = 'files' | 'plugins' | 'ai' | `plugin:${string}`
+type ActivePane = 'files' | 'changes' | 'plugins' | 'ai' | `plugin:${string}`
+
+const GIT_DIFF_TAB_ID = '__git_diff__'
 
 interface PluginPageTab {
   key: string
@@ -314,6 +318,13 @@ export default function App() {
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
   const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
+  const [gitDiffOpen, setGitDiffOpen] = useState(false)
+  const [gitDiffActive, setGitDiffActive] = useState(false)
+  const [projectDiff, setProjectDiff] = useState<ProjectDiff | null>(null)
+  const [projectDiffLoading, setProjectDiffLoading] = useState(false)
+  const [projectDiffError, setProjectDiffError] = useState<string | null>(null)
+  const [gitDiffSelection, setGitDiffSelection] = useState<GitDiffSelection>({ filePath: null, coordinate: null })
+  const projectDiffRequest = useRef(0)
   const [pluginPageTabs, setPluginPageTabs] = useState<PluginPageTab[]>([])
   const [activePluginPageKey, setActivePluginPageKey] = useState<string | null>(null)
   const workspaceTabsRef = useRef(workspaceTabs)
@@ -332,6 +343,7 @@ export default function App() {
       return
     }
     finishActiveDataEdit()
+    setGitDiffActive(false)
     setPluginPageTabs(current => current.some(tab => tab.key === page.key)
       ? current
       : [...current, { key: page.key, title: page.title }])
@@ -340,9 +352,57 @@ export default function App() {
   const [activePane, setActivePane] = useState<ActivePane>(() => {
     try {
       const v = localStorage.getItem('cfd-editor-active-pane')
-      return v === 'plugins' || v === 'ai' || v?.startsWith('plugin:') ? v as ActivePane : 'files'
+      return v === 'changes' || v === 'plugins' || v === 'ai' || v?.startsWith('plugin:') ? v as ActivePane : 'files'
     } catch { return 'files' }
   })
+  const loadProjectDiff = useCallback(async () => {
+    const request = ++projectDiffRequest.current
+    if (!project || !api.isTauri) {
+      setProjectDiff(null)
+      setProjectDiffLoading(false)
+      setProjectDiffError(project ? 'Git Diff 仅在桌面编辑器中可用' : '请先打开项目')
+      if (!project) setGitDiffSelection({ filePath: null, coordinate: null })
+      return
+    }
+    const sessionId = project.session_id
+    const revision = project.revision
+    setProjectDiffLoading(true)
+    setProjectDiffError(null)
+    try {
+      const next = await api.getProjectDiff(sessionId)
+      // 编辑器 generation 与 Runtime 发布修订属于不同计数域，不能直接比较数值。
+      if (projectDiffRequest.current !== request || !generation.isCurrent(sessionId, revision)) return
+      setProjectDiff(next)
+      setGitDiffSelection(current => {
+        const paths = new Set([
+          ...next.files.map(file => file.path),
+          ...next.records.map(record => record.after?.file_path ?? record.before?.file_path ?? ''),
+        ])
+        const coordinateStillExists = !current.coordinate || next.records.some(record => (
+          record.coordinate.actual_type === current.coordinate?.actual_type
+          && record.coordinate.key === current.coordinate.key
+        ))
+        if (current.filePath && paths.has(current.filePath) && coordinateStillExists) return current
+        const record = next.records[0]
+        return record
+          ? { filePath: record.after?.file_path ?? record.before?.file_path ?? null, coordinate: record.coordinate }
+          : { filePath: next.files[0]?.path ?? null, coordinate: null }
+      })
+    } catch (cause) {
+      if (projectDiffRequest.current !== request) return
+      setProjectDiff(null)
+      setProjectDiffError(errorMessage(cause))
+    } finally {
+      if (projectDiffRequest.current === request) setProjectDiffLoading(false)
+    }
+  }, [generation, project])
+  const gitDiffVisible = activePane === 'changes' || gitDiffActive
+  useEffect(() => {
+    setProjectDiff(null)
+    setProjectDiffError(null)
+    if (gitDiffVisible) void loadProjectDiff()
+    else projectDiffRequest.current += 1
+  }, [gitDiffVisible, loadProjectDiff, project?.session_id, project?.revision])
   const pluginOpenRecordRef = useRef((
     _filePath: string,
     _coordinate: RecordCoordinate,
@@ -433,11 +493,11 @@ export default function App() {
   }, [tabOverflowOpen])
   // Scroll the active tab into view when it changes.
   useEffect(() => {
-    const activeTabId = activePluginPageKey ?? activeWorkspaceTabId
+    const activeTabId = gitDiffActive ? GIT_DIFF_TAB_ID : activePluginPageKey ?? activeWorkspaceTabId
     if (!activeTabId) return
     const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`)
     el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-  }, [activePluginPageKey, activeWorkspaceTabId])
+  }, [activePluginPageKey, activeWorkspaceTabId, gitDiffActive])
   // Track whether tabs actually overflow their container so we only surface the
   // dropdown when needed. ResizeObserver reacts to sidebar / inspector resizes;
   // scrollWidth changes when tabs open/close are handled by the workspaceTabs dep.
@@ -450,7 +510,7 @@ export default function App() {
     ro.observe(el)
     for (const child of Array.from(el.children)) ro.observe(child)
     return () => ro.disconnect()
-  }, [workspaceTabs, pluginPageTabs])
+  }, [workspaceTabs, pluginPageTabs, gitDiffOpen])
   const [documentSearch, setDocumentSearch] = useState('')
   const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
@@ -613,6 +673,7 @@ export default function App() {
     coordinate?: RecordCoordinate,
   ) => {
     finishActiveDataEdit()
+    setGitDiffActive(false)
     setActivePluginPageKey(null)
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
@@ -1694,6 +1755,14 @@ export default function App() {
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        finishActiveDataEdit()
+        setGitDiffOpen(true)
+        setGitDiffActive(true)
+        setActivePluginPageKey(null)
+        setActivePane('changes')
+      }
       // Ctrl+F 只负责当前文档筛选；项目搜索快捷键由内置插件注册。
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'f') {
         e.preventDefault()
@@ -2735,6 +2804,25 @@ export default function App() {
     }
   }, [currentRoute, activeFileData, graphSupported, activeType, isSingletonType, router])
 
+  function activateDocumentTab(id: string) {
+    if (id === GIT_DIFF_TAB_ID) {
+      finishActiveDataEdit()
+      setGitDiffActive(true)
+      setActivePluginPageKey(null)
+      setActivePane('changes')
+      return
+    }
+    const pluginTab = pluginPageTabs.find(tab => tab.key === id)
+    if (pluginTab) {
+      finishActiveDataEdit()
+      setGitDiffActive(false)
+      setActivePluginPageKey(pluginTab.key)
+      return
+    }
+    const workspaceTab = workspaceTabs.find(tab => tab.id === id)
+    if (workspaceTab) openFile(workspaceTab.filePath, workspaceTab.typeName)
+  }
+
   return (
     <ObjectDraftHost
       lookups={lookups}
@@ -2828,6 +2916,21 @@ export default function App() {
             onClick={() => { setActivePane('files'); focusFileTree() }}
           >
             <Icon name="folder" size={20} />
+          </button>
+          <button
+            className={`activity-btn${activePane === 'changes' ? ' active' : ''}`}
+            title="Git 变更"
+            aria-label="Git 变更"
+            aria-pressed={activePane === 'changes'}
+            onClick={() => {
+              finishActiveDataEdit()
+              setActivePane('changes')
+              setGitDiffOpen(true)
+              setGitDiffActive(true)
+              setActivePluginPageKey(null)
+            }}
+          >
+            <Icon name="git-branch" size={20} />
           </button>
           {pluginRegistry.sidebars
             .filter(sidebar => pluginRegistry.plugins.some(
@@ -3020,6 +3123,21 @@ export default function App() {
               </div>
             </>
           )}
+          {activePane === 'changes' && (
+            <GitDiffSidebar
+              diff={projectDiff}
+              loading={projectDiffLoading}
+              error={projectDiffError}
+              selection={gitDiffSelection}
+              onSelectionChange={selection => {
+                setGitDiffSelection(selection)
+                setGitDiffOpen(true)
+                setGitDiffActive(true)
+                setActivePluginPageKey(null)
+              }}
+              onRefresh={() => void loadProjectDiff()}
+            />
+          )}
           {activePluginSidebar && pluginSidebarContext && (
             <PluginContributionMount
               contribution={activePluginSidebar}
@@ -3046,7 +3164,7 @@ export default function App() {
         <div className="editor-column">
         <div className="content-area-wrap">
         <div className="content-area">
-          {(workspaceTabs.length > 0 || pluginPageTabs.length > 0) && (
+          {(workspaceTabs.length > 0 || pluginPageTabs.length > 0 || gitDiffOpen) && (
             <div className="document-tabs" role="tablist" aria-label="已打开内容">
               <div
                 className="tab-scroll"
@@ -3059,6 +3177,43 @@ export default function App() {
                   el.scrollLeft += event.deltaY
                 }}
               >
+                {gitDiffOpen && (
+                  <div
+                    className={`document-tab${gitDiffActive ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={gitDiffActive}
+                    tabIndex={gitDiffActive ? 0 : -1}
+                    data-tab-id={GIT_DIFF_TAB_ID}
+                    onClick={() => activateDocumentTab(GIT_DIFF_TAB_ID)}
+                    onKeyDown={event => {
+                      if (event.key === 'Delete') {
+                        event.preventDefault()
+                        setGitDiffOpen(false)
+                        setGitDiffActive(false)
+                        return
+                      }
+                      onTabListKeyDown(event, activateDocumentTab)
+                    }}
+                    title="Git Diff"
+                  >
+                    <Icon name="git-branch" size={12} className="document-tab-icon" aria-hidden />
+                    <span className="document-tab-label">Git Diff</span>
+                    <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />
+                    <button
+                      type="button"
+                      className="document-tab-close"
+                      onClick={event => {
+                        event.stopPropagation()
+                        setGitDiffOpen(false)
+                        setGitDiffActive(false)
+                      }}
+                      aria-label="关闭 Git Diff"
+                      title="关闭标签"
+                    >
+                      <Icon name="close" size={11} aria-hidden />
+                    </button>
+                  </div>
+                )}
                 {workspaceTabs.map(tab => {
                   const fileName = tab.filePath.split('/').pop() ?? tab.filePath
                   const types = project?.file_types[tab.filePath] ?? []
@@ -3069,10 +3224,10 @@ export default function App() {
                   return (
                     <div
                       key={tab.id}
-                      className={`document-tab${!activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                      className={`document-tab${!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
                       role="tab"
-                      aria-selected={!activePluginPageKey && tab.id === activeWorkspaceTabId}
-                      tabIndex={!activePluginPageKey && tab.id === activeWorkspaceTabId ? 0 : -1}
+                      aria-selected={!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId}
+                      tabIndex={!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? 0 : -1}
                       data-tab-id={tab.id}
                       onClick={() => openFile(tab.filePath, tab.typeName)}
                       onKeyDown={event => {
@@ -3081,14 +3236,7 @@ export default function App() {
                           closeWorkspaceTab(tab.id)
                           return
                         }
-                        onTabListKeyDown(
-                          event,
-                          workspaceTabs.map(item => item.id),
-                          id => {
-                            const target = workspaceTabs.find(item => item.id === id)
-                            if (target) openFile(target.filePath, target.typeName)
-                          },
-                        )
+                        onTabListKeyDown(event, activateDocumentTab)
                       }}
                       title={type && type.display_name !== type.name
                         ? `${tab.filePath} / ${type.display_name} (${type.name})`
@@ -3115,12 +3263,20 @@ export default function App() {
                 {pluginPageTabs.map(tab => (
                   <div
                     key={tab.key}
-                    className={`document-tab${tab.key === activePluginPageKey ? ' active' : ''}`}
+                    className={`document-tab${!gitDiffActive && tab.key === activePluginPageKey ? ' active' : ''}`}
                     role="tab"
-                    aria-selected={tab.key === activePluginPageKey}
-                    tabIndex={tab.key === activePluginPageKey ? 0 : -1}
+                    aria-selected={!gitDiffActive && tab.key === activePluginPageKey}
+                    tabIndex={!gitDiffActive && tab.key === activePluginPageKey ? 0 : -1}
                     data-tab-id={tab.key}
-                    onClick={() => { finishActiveDataEdit(); setActivePluginPageKey(tab.key) }}
+                    onClick={() => activateDocumentTab(tab.key)}
+                    onKeyDown={event => {
+                      if (event.key === 'Delete') {
+                        event.preventDefault()
+                        closePluginPageTab(tab.key)
+                        return
+                      }
+                      onTabListKeyDown(event, activateDocumentTab)
+                    }}
                     title={tab.title}
                   >
                     <Icon name="extensions" size={12} className="document-tab-icon" aria-hidden />
@@ -3154,6 +3310,22 @@ export default function App() {
                   </button>
                   {tabOverflowOpen && (
                     <div className="tab-overflow-menu" role="menu">
+                      {gitDiffOpen && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={`tab-overflow-item${gitDiffActive ? ' active' : ''}`}
+                          onClick={() => {
+                            setGitDiffActive(true)
+                            setActivePluginPageKey(null)
+                            setActivePane('changes')
+                            setTabOverflowOpen(false)
+                          }}
+                        >
+                          <Icon name="git-branch" size={12} aria-hidden />
+                          <span className="name">Git Diff</span>
+                        </button>
+                      )}
                       {workspaceTabs.map(tab => {
                         const fileName = tab.filePath.split('/').pop() ?? tab.filePath
                         const types = project?.file_types[tab.filePath] ?? []
@@ -3166,7 +3338,7 @@ export default function App() {
                             key={tab.id}
                             type="button"
                             role="menuitem"
-                            className={`tab-overflow-item${!activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
+                            className={`tab-overflow-item${!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
                             onClick={() => {
                               openFile(tab.filePath, tab.typeName)
                               setTabOverflowOpen(false)
@@ -3186,8 +3358,9 @@ export default function App() {
                           key={tab.key}
                           type="button"
                           role="menuitem"
-                          className={`tab-overflow-item${tab.key === activePluginPageKey ? ' active' : ''}`}
+                          className={`tab-overflow-item${!gitDiffActive && tab.key === activePluginPageKey ? ' active' : ''}`}
                           onClick={() => {
+                            setGitDiffActive(false)
                             setActivePluginPageKey(tab.key)
                             setTabOverflowOpen(false)
                           }}
@@ -3202,7 +3375,7 @@ export default function App() {
               )}
             </div>
           )}
-          {!activePluginPage && currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
+          {!gitDiffActive && !activePluginPage && currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
             activeSchemaFile ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
@@ -3313,7 +3486,18 @@ export default function App() {
               </div>
             )
           )}
-          {activePluginPage && pluginPageContext ? (
+          {gitDiffActive ? (
+            <div className="view-container">
+              <GitDiffMode
+                diff={projectDiff}
+                loading={projectDiffLoading}
+                error={projectDiffError}
+                selection={gitDiffSelection}
+                onSelectionChange={setGitDiffSelection}
+                onRefresh={() => void loadProjectDiff()}
+              />
+            </div>
+          ) : activePluginPage && pluginPageContext ? (
             <div className="view-container plugin-page-container">
               <PluginContributionMount
                 contribution={activePluginPage}
@@ -3575,7 +3759,7 @@ export default function App() {
           )}
         </div>
         <InspectorPanel
-          open={!activePluginPage && activeViewKind !== 'record'
+          open={!gitDiffActive && !activePluginPage && activeViewKind !== 'record'
             && (inspectorOpen || ((activeViewKind === 'table' || activeViewKind === 'graph') && !!activeFileData))}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
@@ -3850,7 +4034,6 @@ function isTextTarget(target: EventTarget | null): boolean {
 /** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
 function onTabListKeyDown(
   e: React.KeyboardEvent,
-  tabs: string[],
   onSelect: (id: string) => void,
   boundaries: {
     onLeftBoundary?: () => void

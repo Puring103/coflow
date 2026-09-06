@@ -20,6 +20,7 @@ fn export_bindings() {
     export_with_retry::<coflow_runtime::DimensionValueView>("DimensionValueView");
     export_with_retry::<coflow_runtime::CreateFieldSource>("CreateFieldSource");
     export_with_retry::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
+    export_with_retry::<coflow_runtime::ProjectDiff>("ProjectDiff tree");
     // Editor composition views
     export_with_retry::<t::EditorError>("EditorError");
     export_with_retry::<t::ProjectBootstrap>("ProjectBootstrap");

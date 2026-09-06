@@ -11,7 +11,7 @@ mod common;
 use common::*;
 
 #[test]
-fn cyclic_record_refs_report_the_closing_reference() {
+fn cyclic_record_refs_build_and_remain_resolvable() {
     let schema = compile_schema(
         r#"
             type Person {
@@ -37,13 +37,41 @@ fn cyclic_record_refs_report_the_closing_reference() {
             LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("alice"))),
         )],
     );
+    builder.add_record(
+        "self",
+        "Person",
+        [(
+            "parent",
+            LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("self"))),
+        )],
+    );
 
-    let err = builder.build().expect_err("record reference cycle should fail");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::RefCycle);
-    assert_eq!(diag.stage, CfdStage::Reference);
-    let primary = diag.primary.as_ref().expect("closing reference label");
-    assert!(primary.record.is_some());
-    assert_eq!(primary.path, CfdPath::root().field("parent"));
+    let model = builder.build().expect("record reference cycles are valid");
+    let alice = model
+        .lookup_assignable(&schema, "Person", "alice")
+        .expect("alice");
+    let bob = model
+        .lookup_assignable(&schema, "Person", "bob")
+        .expect("bob");
+    let self_record = model
+        .lookup_assignable(&schema, "Person", "self")
+        .expect("self");
+
+    assert_eq!(
+        model.resolve_ref(&RefSite::new(alice, CfdPath::root().field("parent"))),
+        Some(bob)
+    );
+    assert_eq!(
+        model.resolve_ref(&RefSite::new(bob, CfdPath::root().field("parent"))),
+        Some(alice)
+    );
+    assert_eq!(
+        model.resolve_ref(&RefSite::new(
+            self_record,
+            CfdPath::root().field("parent")
+        )),
+        Some(self_record)
+    );
 }
 
 #[test]
