@@ -9,6 +9,25 @@ use crate::lexical::{
     LosslessTokenKind,
 };
 
+/// CFD 内嵌函数语法的保留字、类型名和内建函数名由语言层统一发布，供 LSP 等源码工具复用。
+pub const CFD_FUNCTION_KEYWORDS: &[&str] = &[
+    "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue", "in", "is",
+    "true", "false", "None", "Some", "Ok", "Err",
+];
+pub const CFD_FUNCTION_TYPES: &[&str] = &["int", "float", "bool", "string", "Option", "Result"];
+pub const CFD_FUNCTION_BUILTINS: &[&str] = &[
+    "len",
+    "map",
+    "filter",
+    "fold",
+    "find",
+    "any",
+    "all",
+    "contains",
+    "starts_with",
+    "ends_with",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Kind {
     Word,
@@ -99,7 +118,7 @@ impl Parser {
         while !end.is_some_and(|end| self.at(end)) && self.peek().kind != Kind::End {
             if self.word("var") {
                 self.bump();
-                self.expect_kind(Kind::Word, "variable name")?;
+                self.expect_kind(&Kind::Word, "variable name")?;
                 if self.eat(":") {
                     self.ty()?;
                 }
@@ -122,9 +141,9 @@ impl Parser {
                 let _ = self.eat(";");
             } else if self.word("for") {
                 self.bump();
-                self.expect_kind(Kind::Word, "loop binding")?;
+                self.expect_kind(&Kind::Word, "loop binding")?;
                 if self.eat(",") {
-                    self.expect_kind(Kind::Word, "second loop binding")?;
+                    self.expect_kind(&Kind::Word, "second loop binding")?;
                 }
                 self.expect_word("in")?;
                 self.expr(0, true)?;
@@ -164,7 +183,7 @@ impl Parser {
                 self.expr(0, false)?;
                 self.expect("]")?;
             } else if self.eat(".") || self.eat("::") {
-                self.expect_kind(Kind::Word, "member name")?;
+                self.expect_kind(&Kind::Word, "member name")?;
             } else if self.eat("?") {
             } else if let Some(precedence) = self.precedence() {
                 if precedence < minimum {
@@ -280,7 +299,7 @@ impl Parser {
         self.expect("(")?;
         if !self.eat(")") {
             loop {
-                self.expect_kind(Kind::Word, "lambda parameter")?;
+                self.expect_kind(&Kind::Word, "lambda parameter")?;
                 self.expect(":")?;
                 self.ty()?;
                 if self.eat(")") {
@@ -310,7 +329,7 @@ impl Parser {
             return self.expect("}");
         }
         let is_function = self.word("fn");
-        self.expect_kind(Kind::Word, "type name")?;
+        self.expect_kind(&Kind::Word, "type name")?;
         if is_function {
             self.expect("(")?;
             if !self.eat(")") {
@@ -319,12 +338,10 @@ impl Parser {
                     if self.peek().kind == Kind::Word {
                         self.bump();
                     }
-                    if self.eat(":") {
-                        self.ty()?;
-                    } else {
+                    if !self.eat(":") {
                         self.pos = saved;
-                        self.ty()?;
                     }
+                    self.ty()?;
                     if self.eat(")") {
                         break;
                     }
@@ -394,7 +411,7 @@ impl Parser {
             return Ok(());
         }
         loop {
-            self.expect_kind(Kind::Word, "object field")?;
+            self.expect_kind(&Kind::Word, "object field")?;
             self.expect(":")?;
             self.expr(0, false)?;
             if self.eat("}") {
@@ -453,8 +470,8 @@ impl Parser {
             Err(self.fail(format!("expected `{value}`")))
         }
     }
-    fn expect_kind(&mut self, kind: Kind, expected: &str) -> Result<(), FunctionSyntaxError> {
-        if self.peek().kind == kind {
+    fn expect_kind(&mut self, kind: &Kind, expected: &str) -> Result<(), FunctionSyntaxError> {
+        if &self.peek().kind == kind {
             self.bump();
             Ok(())
         } else {

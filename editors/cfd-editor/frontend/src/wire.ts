@@ -1,7 +1,6 @@
 import type { CfdDictKey } from './bindings/CfdDictKey'
 import type { CfdObject } from './bindings/CfdObject'
 import type { CfdPathSegment } from './bindings/CfdPathSegment'
-import type { CfdRecord } from './bindings/CfdRecord'
 import type { CfdValue } from './bindings/CfdValue'
 import type { DeletedRecordSnapshot } from './bindings/DeletedRecordSnapshot'
 import type { EditorError } from './bindings/EditorError'

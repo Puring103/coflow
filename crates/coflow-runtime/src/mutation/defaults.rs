@@ -241,6 +241,8 @@ impl<'a> DefaultValueMaterializer<'a> {
         }
     }
 
+    // 默认值物化与类型枚举逐项对应，集中处理可避免递归规则分散后产生语义偏差。
+    #[allow(clippy::too_many_lines)]
     fn materialize_schema_default(
         &mut self,
         ty: &CftValueType,
@@ -514,6 +516,8 @@ fn ensure_type_can_materialize(schema: &CftSchema, type_name: &str) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 

@@ -21,6 +21,8 @@ pub fn format_cfd(source: &str) -> String {
     format_source(source, FormatLanguage::Cfd)
 }
 
+// 主格式化循环集中维护跨行缩进和注解状态，拆分会破坏状态转移的可见性。
+#[allow(clippy::too_many_lines)]
 fn format_source(source: &str, language: FormatLanguage) -> String {
     let collapsed = collapse_logical_lines(source);
     let expanded = expand_structural_lines(&collapsed, language);
@@ -359,6 +361,8 @@ enum BraceKind {
     Inline,
 }
 
+// 结构展开按 token 顺序维护括号栈，保持单循环便于审计嵌套状态。
+#[allow(clippy::too_many_lines)]
 fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
     let tokens = tokenize_lossless(source);
     let mut output = String::with_capacity(source.len() + source.len() / 4);
@@ -620,6 +624,8 @@ fn is_grouped_record_start(line: &str) -> bool {
         && is_identifier(header)
 }
 
+// 行内空白规则集中穷举 token，避免同一符号在多个阶段重复改写。
+#[allow(clippy::too_many_lines)]
 fn normalize_inline_spacing(line: &str) -> String {
     let tokens = tokenize_lossless(line);
     let type_header = is_type_header(line);
@@ -653,12 +659,6 @@ fn normalize_inline_spacing(line: &str) -> String {
                 output.push_str(text);
                 pending_space = false;
                 tight_right = true;
-            }
-            "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||"
-            | "+=" | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" => {
-                push_spaced_operator(&mut output, text);
-                pending_space = true;
-                tight_right = false;
             }
             ":" => {
                 trim_end_spaces(&mut output);
@@ -727,11 +727,6 @@ fn normalize_inline_spacing(line: &str) -> String {
                 pending_space = false;
                 tight_right = false;
             }
-            "=" => {
-                push_spaced_operator(&mut output, text);
-                pending_space = true;
-                tight_right = false;
-            }
             "<" if is_generic_open(&output) => {
                 trim_end_spaces(&mut output);
                 output.push('<');
@@ -746,7 +741,8 @@ fn normalize_inline_spacing(line: &str) -> String {
                 pending_space = false;
                 tight_right = true;
             }
-            "<" | ">" => {
+            "=" | "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||"
+            | "+=" | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" | "<" | ">" => {
                 push_spaced_operator(&mut output, text);
                 pending_space = true;
                 tight_right = false;
@@ -802,7 +798,7 @@ fn is_binary_operator_token(tokens: &[LosslessToken], source: &str, index: usize
     }) && next.is_some_and(|token| !matches!(token, ")" | "]" | "}" | "," | ";"))
 }
 
-fn is_separator(ch: char) -> bool {
+const fn is_separator(ch: char) -> bool {
     matches!(
         ch,
         ':' | ',' | '=' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '<' | '>'
@@ -854,7 +850,7 @@ struct DelimiterIndent {
 }
 
 impl DelimiterIndent {
-    fn depth(&self) -> usize {
+    const fn depth(&self) -> usize {
         self.groups.len()
     }
 

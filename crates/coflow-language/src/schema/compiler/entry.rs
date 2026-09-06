@@ -45,7 +45,7 @@ pub fn build_schema_with_limits(
     let types = resolve_types(symbols, &mut analysis_budget)?;
     let values = resolve_values(types);
     let validated = validate_checks(values)?;
-    lower_schema(validated, dimensions, &mut analysis_budget)
+    lower_schema(&validated, dimensions, &mut analysis_budget)
 }
 
 fn collect_symbols<'a>(
@@ -125,7 +125,7 @@ fn validate_checks(
 }
 
 fn lower_schema(
-    validated: StageOutput<ValidatedSchema<'_>>,
+    validated: &StageOutput<ValidatedSchema<'_>>,
     dimensions: &CftDimensionInputs,
     analysis_budget: &mut AnalysisBudget,
 ) -> Result<CftSchema, CftDiagnostics> {
@@ -136,6 +136,8 @@ fn lower_schema(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::panic)]
+
     use super::*;
     use crate::diagnostics::CftErrorCode;
     use crate::module::{parse_modules, CftFile, ModuleId};
@@ -262,8 +264,8 @@ mod tests {
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         assert_eq!(types.product.full_fields["Child"].len(), 2);
         let values = resolve_values(types);
-        assert_eq!(values.product.resolved_constants.len(), 1);
-        assert_eq!(values.product.resolved_defaults.len(), 1);
+        assert_eq!(values.product.constants.len(), 1);
+        assert_eq!(values.product.defaults.len(), 1);
     }
 
     #[test]
@@ -277,7 +279,7 @@ mod tests {
         let values = resolve_values(types);
         assert_eq!(values.diagnostics.len(), 1);
         assert_eq!(values.diagnostics[0].code, CftErrorCode::UnknownConst);
-        assert!(values.product.resolved_constants.is_empty());
+        assert!(values.product.constants.is_empty());
     }
 
     #[test]
@@ -316,7 +318,7 @@ mod tests {
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         let validated = validate_checks(resolve_values(types)).expect("check stage");
-        let schema = lower_schema(validated, &CftDimensionInputs::default(), &mut analysis)
+        let schema = lower_schema(&validated, &CftDimensionInputs::default(), &mut analysis)
             .expect("lower stage");
         assert!(schema.resolve_type("Item").is_some());
     }

@@ -1,3 +1,6 @@
+// 测试文本中的 `${1:name}` 用于验证 LSP snippet 协议。
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use super::super::completion::{function_completion_items_for_type, receiver_chain_before_dot};
 use super::super::semantic_tokens::{
     semantic_raw_tokens, MOD_DECLARATION, SEM_PARAMETER, SEM_VARIABLE,

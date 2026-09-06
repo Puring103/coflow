@@ -52,6 +52,7 @@ pub struct CsharpEnumVariant {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)] // 模板视图需要独立序列化这些正交类型特征。
 pub struct CsharpType {
     pub type_id: usize,
     pub name: String,

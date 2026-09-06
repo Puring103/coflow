@@ -2,6 +2,6 @@
 import type { PluginSchemaField } from "./PluginSchemaField";
 
 /**
- * Read-only schema information exposed to editor extensions.
+ * 提供给编辑器插件的只读 Schema 投影。
  */
 export type PluginSchemaType = { name: string, fields: Array<PluginSchemaField>, is_singleton: boolean, record_count: number, };

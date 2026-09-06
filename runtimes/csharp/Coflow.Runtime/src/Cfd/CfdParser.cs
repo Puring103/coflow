@@ -176,6 +176,8 @@ internal static class CfdParser
             if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdInvalidValue(CurrentSpan()); }
             if (Match("f\""))
             {
+                // 报错后仍需消费完整字符串，保证外层字段解析继续向前推进。
+                ParseString();
                 Error("CFD-SYNTAX-STRING", "formatted strings use ordinary quotes; remove the `f` prefix", SpanFrom(start));
                 return new CfdInvalidValue(SpanFrom(start));
             }

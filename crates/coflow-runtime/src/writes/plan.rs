@@ -228,7 +228,7 @@ fn prepare_unset_field(
     let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
     };
-    let target = write_target_for_path(session, record_ref, path)?;
+    let target = write_target_for_path(session, record_ref, path);
     let source = source_for_id(session, target.source_id)?;
     let writer = lookup_source_writer(catalog);
     Ok(WriteFieldPlan {
@@ -401,7 +401,7 @@ enum RecordContainer {
     None(SourceId),
 }
 
-fn record_container(record: &RecordRef) -> RecordContainer {
+const fn record_container(record: &RecordRef) -> RecordContainer {
     match &record.origin {
         RecordOrigin::File { .. } => RecordContainer::File(record.source_id),
         RecordOrigin::None => RecordContainer::None(record.source_id),
@@ -468,7 +468,7 @@ fn prepare_write_field(
     let Some(_record) = session.model.record(record_ref.id) else {
         return Err(DiagnosticSet::one(not_found(actual_type, key)));
     };
-    let target = write_target_for_path(session, record_ref, path)?;
+    let target = write_target_for_path(session, record_ref, path);
     let target_record = session
         .model
         .record(record_ref.id)
@@ -528,7 +528,7 @@ fn prepare_rename(
     }
     let writer = lookup_source_writer(catalog);
     let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
-    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
+    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type);
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
@@ -560,7 +560,7 @@ fn prepare_delete(
         )));
     };
     let writer = lookup_source_writer(catalog);
-    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type)?;
+    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type);
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
@@ -574,7 +574,7 @@ fn dimension_record_actions(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     actual_type: &str,
-) -> Result<Vec<DimensionRecordAction>, DiagnosticSet> {
+) -> Vec<DimensionRecordAction> {
     let schema = session.schema();
     let mut actions = Vec::new();
     for (entry, field) in session.source_data.dimension_sources() {
@@ -600,5 +600,5 @@ fn dimension_record_actions(
             field: field.clone(),
         });
     }
-    Ok(actions)
+    actions
 }

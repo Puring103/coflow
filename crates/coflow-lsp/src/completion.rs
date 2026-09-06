@@ -1,3 +1,6 @@
+// `${1:name}` 是 LSP snippet 占位符，不是 Rust 格式化参数。
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use coflow_language::cft::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
 use coflow_language::cft::syntax::lexer::{lex, TokenKind};
 use coflow_language::cft::{CftCheckBuiltin, CftConstValue, ModuleId};
@@ -400,7 +403,7 @@ fn field_default_completion_items(
 fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
     match &ty.kind {
         TypeRefKind::Bool => items.extend(literal_completion_items()),
-        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String => {}
+        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String | TypeRefKind::Unit => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -490,7 +493,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Define the default implementation for this function field.",
             ));
         }
-        TypeRefKind::Unit => {}
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
@@ -709,7 +711,7 @@ fn type_ref_source(ty: &TypeRef) -> String {
 fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
     let current_name = line_prefix
         .split_once("type")
-        .and_then(|(_, suffix)| suffix.trim_start().split_whitespace().next());
+        .and_then(|(_, suffix)| suffix.split_whitespace().next());
     let Some(schema) = build.schema() else {
         return named_type_completion_items(build);
     };
@@ -840,7 +842,11 @@ fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value>
 
 fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
     match (&ty.kind, value) {
-        (TypeRefKind::Option(_), CftConstValue::OptionNone) => true,
+        (TypeRefKind::Option(_), CftConstValue::OptionNone)
+        | (TypeRefKind::Int, CftConstValue::Int(_))
+        | (TypeRefKind::Float, CftConstValue::Float(_))
+        | (TypeRefKind::Bool, CftConstValue::Bool(_))
+        | (TypeRefKind::String, CftConstValue::String(_)) => true,
         (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
             const_value_assignable_to_type(value, inner)
         }
@@ -850,10 +856,6 @@ fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
         (TypeRefKind::Result(_, error), CftConstValue::ResultErr(value)) => {
             const_value_assignable_to_type(value, error)
         }
-        (TypeRefKind::Int, CftConstValue::Int(_))
-        | (TypeRefKind::Float, CftConstValue::Float(_))
-        | (TypeRefKind::Bool, CftConstValue::Bool(_))
-        | (TypeRefKind::String, CftConstValue::String(_)) => true,
         _ => false,
     }
 }
@@ -1028,7 +1030,6 @@ fn inferred_completion_scope(
                 pending = None;
             }
             TokenKind::Equal | TokenKind::Semicolon => pending = None,
-            TokenKind::Eof => {}
             _ => {}
         }
     }

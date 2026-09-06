@@ -157,7 +157,7 @@ fn finish_project_session(
         modules,
         schema,
         catalog: if options == SessionOpenOptions::Build {
-            catalog.staged_writes()
+            CfdSourceCatalog::staged_writes()
         } else {
             catalog.clone()
         },
@@ -588,7 +588,7 @@ fn build_read_only_data(
 }
 
 fn commit_dimensions_if_needed(
-    ctx: &mut SessionBuildContext,
+    ctx: &SessionBuildContext,
     output: &ProjectLoadOutput,
     changed_records: Option<&BTreeSet<crate::RecordCoordinate>>,
     diagnostics: &mut DiagnosticsStore,

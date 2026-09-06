@@ -78,12 +78,15 @@ impl CfdWriter {
         })?;
         if let Some(file) = workspace.files.get(path) {
             if file.deleted {
+                drop(workspace);
                 return Err(DiagnosticSet::one(diag(
                     "CFD-READ",
                     format!("source `{}` is staged for deletion", path.display()),
                 )));
             }
-            return Ok(file.current.clone());
+            let current = file.current.clone();
+            drop(workspace);
+            return Ok(current);
         }
         let original = std::fs::read(path).map_err(|err| {
             DiagnosticSet::one(diag(
@@ -105,6 +108,7 @@ impl CfdWriter {
                 deleted: false,
             },
         );
+        drop(workspace);
         Ok(text)
     }
 
@@ -148,6 +152,7 @@ impl CfdWriter {
                 },
             );
         }
+        drop(workspace);
         Ok(())
     }
 
@@ -155,7 +160,7 @@ impl CfdWriter {
         let workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
-        Ok(workspace
+        let overrides = workspace
             .files
             .iter()
             .map(|(path, file)| DataSourceTextOverride {
@@ -163,15 +168,18 @@ impl CfdWriter {
                 source: file.current.clone(),
                 deleted: file.deleted,
             })
-            .collect())
+            .collect();
+        drop(workspace);
+        Ok(overrides)
     }
 
     pub(crate) fn publish(&self) -> Result<(), DiagnosticSet> {
-        let workspace = self.workspace.lock().map_err(|_| {
+        let mut workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
-        let mut workspace = workspace;
-        publish_workspace(&mut workspace)
+        let result = publish_workspace(&mut workspace);
+        drop(workspace);
+        result
     }
 
     pub(crate) fn add_project_file_updates(
@@ -203,6 +211,7 @@ impl CfdWriter {
                 },
             );
         }
+        drop(workspace);
         Ok(())
     }
 
@@ -214,6 +223,7 @@ impl CfdWriter {
         if let Some(file) = workspace.files.get_mut(path) {
             let changed = !file.deleted;
             file.deleted = true;
+            drop(workspace);
             return Ok(changed);
         }
         workspace.files.insert(
@@ -224,6 +234,7 @@ impl CfdWriter {
                 deleted: true,
             },
         );
+        drop(workspace);
         Ok(true)
     }
 
@@ -268,12 +279,12 @@ fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<(), DiagnosticSet
         } else {
             WorkspaceStagedChange::Write(
                 StagedFile::create(path, file.original.clone(), file.current.as_bytes())
-                    .map_err(writer_staging_error)?,
+                    .map_err(|error| writer_staging_error(&error))?,
             )
         });
     }
     for change in &staged {
-        StagedChange::verify(change).map_err(writer_staging_error)?;
+        StagedChange::verify(change).map_err(|error| writer_staging_error(&error))?;
     }
     for index in 0..staged.len() {
         let result = match &mut staged[index] {
@@ -284,7 +295,7 @@ fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<(), DiagnosticSet
             for committed in staged[..=index].iter_mut().rev() {
                 StagedChange::restore(committed);
             }
-            return Err(writer_staging_error(error));
+            return Err(writer_staging_error(&error));
         }
     }
     for source in &mut staged {
@@ -329,7 +340,7 @@ impl StagedChange for WorkspaceStagedChange {
     }
 }
 
-fn writer_staging_error(error: coflow_staging::StagingError) -> DiagnosticSet {
+fn writer_staging_error(error: &coflow_staging::StagingError) -> DiagnosticSet {
     if error.is_conflict() {
         DiagnosticSet::one(diag(
             "WRITE-CONFLICT",
@@ -654,7 +665,7 @@ fn ensure_cfd_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), 
                 expected.display()
             ),
         ))),
-        _ => Err(DiagnosticSet::one(diag(
+        RecordOrigin::None => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "cfd reorder requires File origins",
         ))),

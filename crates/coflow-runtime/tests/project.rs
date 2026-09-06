@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use coflow_runtime::{
     add_project_input, create_project_file, delete_project_entry, init_project, Project,
     ProjectInputKind, DEFAULT_PROJECT_YAML,

@@ -23,7 +23,7 @@ pub struct StagingError {
 
 impl StagingError {
     #[must_use]
-    pub fn is_conflict(&self) -> bool {
+    pub const fn is_conflict(&self) -> bool {
         matches!(self.kind, StagingErrorKind::Conflict)
     }
 
@@ -80,9 +80,17 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, StagingError> {
 
 pub trait StagedChange {
     /// Verifies the destination but does not modify it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StagingError`] when the destination changed after preparation.
     fn verify(&self) -> Result<(), StagingError>;
 
     /// Publishes the staged change and stores enough state to restore it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StagingError`] when verification or a filesystem operation fails.
     fn publish(&mut self) -> Result<(), StagingError>;
 
     /// Restores the previous destination. Safe to call repeatedly.
@@ -103,6 +111,11 @@ pub struct StagedFile {
 }
 
 impl StagedFile {
+    /// Creates a sibling staging file containing `contents`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StagingError`] when the staging file cannot be created, written, or synchronized.
     pub fn create(path: &Path, expected: Option<Vec<u8>>, contents: &[u8]) -> Result<Self, StagingError> {
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent)
@@ -183,6 +196,10 @@ pub struct StagedDirectory {
 impl StagedDirectory {
     /// Creates an empty sibling directory and returns a change that will
     /// replace `path` after the caller has populated the staging directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StagingError`] when the staging directory cannot be created.
     pub fn create(path: &Path) -> Result<Self, StagingError> {
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent)
@@ -260,6 +277,7 @@ pub struct StagedRemoval {
 }
 
 impl StagedRemoval {
+    #[must_use]
     pub fn create(path: &Path) -> Self {
         Self {
             path: path.to_path_buf(),

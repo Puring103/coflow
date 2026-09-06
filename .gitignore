@@ -1,4 +1,5 @@
 target/
+BenchmarkDotNet.Artifacts/
 editors/cfd-editor/src-tauri/binaries/
 dist/
 examples/*/generated/**

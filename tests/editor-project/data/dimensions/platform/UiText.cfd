@@ -1,4 +1,5 @@
 hint: UiText {
+  default: "Press Enter",
   desktop: "Press Enter",
   mobile: "Tap to continue",
 }

@@ -37,6 +37,8 @@ impl Validator<'_, '_> {
         self.default_value(&field.value_type, value, record, path, cursor)
     }
 
+    // Schema 默认值的所有复合变体在此统一递归，保证预算和路径诊断一致。
+    #[allow(clippy::too_many_lines)]
     fn default_value(
         &mut self,
         ty: &CftValueType,
@@ -108,12 +110,10 @@ impl Validator<'_, '_> {
             CftSchemaDefaultValue::FormattedString(source)
                 if type_accepts_default(ty, &CftValueType::String) =>
             {
-                let parsed = match crate::cell_value::parse_automatic_formatted_string(source) {
-                    Ok(Some(value)) => value,
-                    _ => {
-                        self.push_default_type_mismatch(record, path);
-                        return None;
-                    }
+                let Ok(Some(parsed)) = crate::cell_value::parse_automatic_formatted_string(source)
+                else {
+                    self.push_default_type_mismatch(record, path);
+                    return None;
                 };
                 return Some(ValueDraft::FormattedString(parsed));
             }
@@ -267,7 +267,7 @@ impl Validator<'_, '_> {
             .map(|(name, value)| (name, value))
             .collect::<BTreeMap<_, _>>();
         let mut fields = BTreeMap::new();
-        for field in schema.full_fields(type_name).collect::<Vec<_>>() {
+        for field in schema.full_fields(type_name) {
             let field_path = path.clone().field(field.name.as_str());
             let value = if let Some(value) = supplied.get(&field.name) {
                 self.default_value(

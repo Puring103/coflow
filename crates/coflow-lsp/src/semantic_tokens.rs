@@ -492,6 +492,8 @@ fn add_value_type_semantic(
     }
 }
 
+// 默认表达式语义着色与语法树枚举逐项对应，递归过程保持在一个分派中更易核对覆盖面。
+#[allow(clippy::too_many_lines)]
 fn add_default_expr_semantic(
     document: &LspDocument,
     expr: &DefaultExpr,
@@ -501,10 +503,7 @@ fn add_default_expr_semantic(
         DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
-        DefaultExprKind::Bool(_) => {
-            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
-        }
-        DefaultExprKind::OptionNone => {
+        DefaultExprKind::Bool(_) | DefaultExprKind::OptionNone => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
         DefaultExprKind::OptionSome(value)
@@ -554,18 +553,7 @@ fn add_default_expr_semantic(
             add_default_expr_semantic(document, lhs, tokens);
             add_default_expr_semantic(document, rhs, tokens);
         }
-        DefaultExprKind::StaticPath(path) => {
-            for segment in &path.segments {
-                push_semantic_span(
-                    &document.source,
-                    segment.span,
-                    SEM_VARIABLE,
-                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
-                    tokens,
-                );
-            }
-        }
-        DefaultExprKind::RecordReference(path) => {
+        DefaultExprKind::StaticPath(path) | DefaultExprKind::RecordReference(path) => {
             for segment in &path.segments {
                 push_semantic_span(
                     &document.source,

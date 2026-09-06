@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use coflow_format::{format_cfd, format_cft};
 use coflow_language::lexical::{tokenize_lossless, LosslessTokenKind};
 use coflow_language::cfd::parse_cfd;

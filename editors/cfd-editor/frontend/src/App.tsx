@@ -12,12 +12,17 @@ import { finishActiveDataEdit } from './state/editSession'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { UpdateControl } from './components/UpdateControl'
+import { HelpDialog } from './components/HelpDialog'
+import { DocumentTabs, GIT_DIFF_TAB_ID, type PluginPageTab } from './components/DocumentTabs'
+import { ActivityBar, type ActivePane } from './components/ActivityBar'
 import { DimensionTableView } from './components/DimensionTableView'
 import { SourceEditorView } from './components/SourceEditorView'
-import { GitDiffMode, GitDiffSidebar, type GitDiffSelection } from './components/GitDiffMode'
+import { GitDiffMode, GitDiffSidebar } from './components/GitDiffMode'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
+import { useProjectDiff } from './hooks/useProjectDiff'
+import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
 import { searchMockRecords } from './built-in-plugins'
 import {
   PluginContributionMount,
@@ -54,12 +59,10 @@ import type { FileRecords } from './bindings/FileRecords'
 import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
 import type { DiagnosticTarget } from './bindings/DiagnosticTarget'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
-import type { EditorRecordGroup } from './bindings/EditorRecordGroup'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
-import type { ProjectDiff } from './bindings/ProjectDiff'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
@@ -67,11 +70,9 @@ import {
   diagnosticKey,
   diagnosticFilePath,
   diagnosticMatchesAnchor,
-  errorDiagnostics,
   errorMessage,
   cloneValue,
   recordActualType,
-  recordKey,
     coordinateId,
     sameCoordinate,
   type FieldPathSegment,
@@ -142,15 +143,6 @@ const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
 
-type ActivePane = 'files' | 'changes' | 'plugins' | 'ai' | `plugin:${string}`
-
-const GIT_DIFF_TAB_ID = '__git_diff__'
-
-interface PluginPageTab {
-  key: string
-  title: string
-}
-
 function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
   return left.length === right.length && left.every((cell, index) => {
     const other = right[index]
@@ -158,53 +150,6 @@ function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[
       && coordinateId(cell.coordinate) === coordinateId(other.coordinate)
       && JSON.stringify(cell.fieldPath) === JSON.stringify(other.fieldPath)
   })
-}
-
-function emptySettings(): EditorProjectSettings {
-  return {
-    views: {},
-    default_table_column_widths: {},
-    record_groups: {},
-    workspace: { tabs: [], active_tab_id: null },
-  }
-}
-
-function settingsWithRecordGroups(
-  settings: EditorProjectSettings | null,
-  filePath: string,
-  actualType: string,
-  groups: EditorRecordGroup[],
-): EditorProjectSettings {
-  const base = settings ?? emptySettings()
-  return {
-    ...base,
-    record_groups: {
-      ...base.record_groups,
-      [filePath]: {
-        ...(base.record_groups?.[filePath] ?? {}),
-        [actualType]: groups,
-      },
-    },
-  }
-}
-
-function settingsWithViews(
-  settings: EditorProjectSettings | null,
-  filePath: string,
-  actualType: string,
-  views: ViewConfig[],
-): EditorProjectSettings {
-  const base = settings ?? emptySettings()
-  return {
-    ...base,
-    views: {
-      ...base.views,
-      [filePath]: {
-        ...(base.views?.[filePath] ?? {}),
-        [actualType]: views,
-      },
-    },
-  }
 }
 
 /** Passed as `highlightField` when a record-level (no field path) jump lands
@@ -282,14 +227,11 @@ export default function App() {
   const [projectDimensions, setProjectDimensions] = useState<DimensionInfo[]>([])
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
-  const [projectSettings, setProjectSettings] = useState<EditorProjectSettings | null>(null)
   const fileDataCacheRef = useRef(fileDataCache)
   const graphCacheRef = useRef(graphCache)
   fileDataCacheRef.current = fileDataCache
   graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
-  const helpBoxRef = useRef<HTMLDivElement>(null)
-  const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
   const [fileActionDialog, setFileActionDialog] = useState<
@@ -299,6 +241,12 @@ export default function App() {
   >(null)
   const [fileActionBusy, setFileActionBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const {
+    settings: projectSettings,
+    setSettings: setProjectSettings,
+    saveRecordGroups,
+    saveViews,
+  } = useProjectSettings(generation, setErrorMsg)
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [buildPending, setBuildPending] = useState(false)
 
@@ -318,13 +266,6 @@ export default function App() {
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
   const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
-  const [gitDiffOpen, setGitDiffOpen] = useState(false)
-  const [gitDiffActive, setGitDiffActive] = useState(false)
-  const [projectDiff, setProjectDiff] = useState<ProjectDiff | null>(null)
-  const [projectDiffLoading, setProjectDiffLoading] = useState(false)
-  const [projectDiffError, setProjectDiffError] = useState<string | null>(null)
-  const [gitDiffSelection, setGitDiffSelection] = useState<GitDiffSelection>({ filePath: null, coordinate: null })
-  const projectDiffRequest = useRef(0)
   const [pluginPageTabs, setPluginPageTabs] = useState<PluginPageTab[]>([])
   const [activePluginPageKey, setActivePluginPageKey] = useState<string | null>(null)
   const workspaceTabsRef = useRef(workspaceTabs)
@@ -352,57 +293,21 @@ export default function App() {
   const [activePane, setActivePane] = useState<ActivePane>(() => {
     try {
       const v = localStorage.getItem('cfd-editor-active-pane')
-      return v === 'changes' || v === 'plugins' || v === 'ai' || v?.startsWith('plugin:') ? v as ActivePane : 'files'
+      return v === 'changes' || v === 'plugins' || v?.startsWith('plugin:') ? v as ActivePane : 'files'
     } catch { return 'files' }
   })
-  const loadProjectDiff = useCallback(async () => {
-    const request = ++projectDiffRequest.current
-    if (!project || !api.isTauri) {
-      setProjectDiff(null)
-      setProjectDiffLoading(false)
-      setProjectDiffError(project ? 'Git Diff 仅在桌面编辑器中可用' : '请先打开项目')
-      if (!project) setGitDiffSelection({ filePath: null, coordinate: null })
-      return
-    }
-    const sessionId = project.session_id
-    const revision = project.revision
-    setProjectDiffLoading(true)
-    setProjectDiffError(null)
-    try {
-      const next = await api.getProjectDiff(sessionId)
-      // 编辑器 generation 与 Runtime 发布修订属于不同计数域，不能直接比较数值。
-      if (projectDiffRequest.current !== request || !generation.isCurrent(sessionId, revision)) return
-      setProjectDiff(next)
-      setGitDiffSelection(current => {
-        const paths = new Set([
-          ...next.files.map(file => file.path),
-          ...next.records.map(record => record.after?.file_path ?? record.before?.file_path ?? ''),
-        ])
-        const coordinateStillExists = !current.coordinate || next.records.some(record => (
-          record.coordinate.actual_type === current.coordinate?.actual_type
-          && record.coordinate.key === current.coordinate.key
-        ))
-        if (current.filePath && paths.has(current.filePath) && coordinateStillExists) return current
-        const record = next.records[0]
-        return record
-          ? { filePath: record.after?.file_path ?? record.before?.file_path ?? null, coordinate: record.coordinate }
-          : { filePath: next.files[0]?.path ?? null, coordinate: null }
-      })
-    } catch (cause) {
-      if (projectDiffRequest.current !== request) return
-      setProjectDiff(null)
-      setProjectDiffError(errorMessage(cause))
-    } finally {
-      if (projectDiffRequest.current === request) setProjectDiffLoading(false)
-    }
-  }, [generation, project])
-  const gitDiffVisible = activePane === 'changes' || gitDiffActive
-  useEffect(() => {
-    setProjectDiff(null)
-    setProjectDiffError(null)
-    if (gitDiffVisible) void loadProjectDiff()
-    else projectDiffRequest.current += 1
-  }, [gitDiffVisible, loadProjectDiff, project?.session_id, project?.revision])
+  const {
+    open: gitDiffOpen,
+    setOpen: setGitDiffOpen,
+    active: gitDiffActive,
+    setActive: setGitDiffActive,
+    diff: projectDiff,
+    loading: projectDiffLoading,
+    error: projectDiffError,
+    selection: gitDiffSelection,
+    setSelection: setGitDiffSelection,
+    load: loadProjectDiff,
+  } = useProjectDiff(project, generation, activePane === 'changes')
   const pluginOpenRecordRef = useRef((
     _filePath: string,
     _coordinate: RecordCoordinate,
@@ -466,57 +371,13 @@ export default function App() {
         }
       : null
   ), [activePluginSidebar, openPluginPageTab, project])
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const settingsMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     try { localStorage.setItem('cfd-editor-active-pane', activePane) } catch { /* quota */ }
   }, [activePane])
-  useEffect(() => {
-    if (!settingsOpen) return
-    const onClick = (e: MouseEvent) => {
-      if (!settingsMenuRef.current?.contains(e.target as Node)) setSettingsOpen(false)
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [settingsOpen])
-  const [tabOverflowOpen, setTabOverflowOpen] = useState(false)
-  const [tabsOverflow, setTabsOverflow] = useState(false)
-  const tabScrollRef = useRef<HTMLDivElement>(null)
-  const tabOverflowRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!tabOverflowOpen) return
-    const onClick = (e: MouseEvent) => {
-      if (!tabOverflowRef.current?.contains(e.target as Node)) setTabOverflowOpen(false)
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [tabOverflowOpen])
-  // Scroll the active tab into view when it changes.
-  useEffect(() => {
-    const activeTabId = gitDiffActive ? GIT_DIFF_TAB_ID : activePluginPageKey ?? activeWorkspaceTabId
-    if (!activeTabId) return
-    const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`)
-    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-  }, [activePluginPageKey, activeWorkspaceTabId, gitDiffActive])
-  // Track whether tabs actually overflow their container so we only surface the
-  // dropdown when needed. ResizeObserver reacts to sidebar / inspector resizes;
-  // scrollWidth changes when tabs open/close are handled by the workspaceTabs dep.
-  useEffect(() => {
-    const el = tabScrollRef.current
-    if (!el) { setTabsOverflow(false); return }
-    const check = () => setTabsOverflow(el.scrollWidth > el.clientWidth + 1)
-    check()
-    const ro = new ResizeObserver(check)
-    ro.observe(el)
-    for (const child of Array.from(el.children)) ro.observe(child)
-    return () => ro.disconnect()
-  }, [workspaceTabs, pluginPageTabs, gitDiffOpen])
   const [documentSearch, setDocumentSearch] = useState('')
   const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
-  const recordGroupSaveSequence = useRef(0)
-  const viewsSaveSequence = useRef(0)
   const documentSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
@@ -539,54 +400,6 @@ export default function App() {
     range: Extract<DiagnosticTarget, { kind: 'source' | 'project_source' }>['range']
     tick: number
   } | null>(null)
-
-  const saveRecordGroups = useCallback((
-    filePath: string,
-    actualType: string,
-    groups: EditorRecordGroup[],
-  ) => {
-    const sequence = ++recordGroupSaveSequence.current
-    setProjectSettings(current => settingsWithRecordGroups(current, filePath, actualType, groups))
-    if (!api.isTauri) return
-    const identity = generation.currentIdentity()
-    if (!identity) return
-    api.setRecordGroups(identity.sessionId, filePath, actualType, groups)
-      .then(settings => {
-        if (generation.currentSession() === identity.sessionId
-          && recordGroupSaveSequence.current === sequence) {
-          setProjectSettings(settings)
-        }
-      })
-      .catch(error => {
-        if (generation.currentSession() === identity.sessionId) {
-          setErrorMsg(`保存记录分组失败: ${errorMessage(error)}`)
-        }
-      })
-  }, [generation])
-
-  const saveViews = useCallback((
-    filePath: string,
-    actualType: string,
-    views: ViewConfig[],
-  ) => {
-    const sequence = ++viewsSaveSequence.current
-    setProjectSettings(current => settingsWithViews(current, filePath, actualType, views))
-    if (!api.isTauri) return
-    const identity = generation.currentIdentity()
-    if (!identity) return
-    api.setViews(identity.sessionId, filePath, actualType, views)
-      .then(settings => {
-        if (generation.currentSession() === identity.sessionId
-          && viewsSaveSequence.current === sequence) {
-          setProjectSettings(settings)
-        }
-      })
-      .catch(error => {
-        if (generation.currentSession() === identity.sessionId) {
-          setErrorMsg(`保存视图失败: ${errorMessage(error)}`)
-        }
-      })
-  }, [generation])
 
   // View editor dialog + view-tab context menu (create/edit/delete custom views).
   const [viewEditor, setViewEditor] = useState<
@@ -653,15 +466,6 @@ export default function App() {
       if (prev?.kind === 'record' && prev.filePath === file && sameCoordinate(prev.coordinate, coordinate)) return prev
       return recordSelection(file, coordinate)
     })
-  }, [])
-  const openValueInspector = useCallback((
-    file: string,
-    coordinate: RecordCoordinate,
-    fieldPath: FieldPathSegment[],
-  ) => {
-    finishActiveDataEdit()
-    setInspectorCollapsed(false)
-    setInspectorSelection(valueSelection(file, coordinate, fieldPath))
   }, [])
   const closeInspector = useCallback(() => {
     finishActiveDataEdit()
@@ -792,7 +596,7 @@ export default function App() {
         }).catch(err => {
           if (generation.currentSession() === bootstrap.session_id) {
             setErrorMsg(`读取编辑器设置失败: ${errorMessage(err)}`)
-            const settings = emptySettings()
+            const settings = emptyProjectSettings()
             setProjectSettings(settings)
             installWorkspace(bootstrap, settings)
           }
@@ -2617,50 +2421,6 @@ export default function App() {
     [currentRoute?.view, currentRoute?.file, focusDiagnosticForAnchor],
   )
 
-  // Help overlay: focus trap + autofocus + restore focus on close.
-  useEffect(() => {
-    if (!showHelp) return
-    helpReturnRef.current = document.activeElement as HTMLElement | null
-    const box = helpBoxRef.current
-    if (box) {
-      const focusable = box.querySelector<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      )
-      focusable?.focus()
-    }
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return
-      if (!box) return
-      const nodes = Array.from(
-        box.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter(el => !el.hasAttribute('disabled'))
-      if (nodes.length === 0) return
-      const first = nodes[0]
-      const last = nodes[nodes.length - 1]
-      const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey) {
-        if (active === first || !box.contains(active)) {
-          e.preventDefault()
-          last.focus()
-        }
-      } else {
-        if (active === last || !box.contains(active)) {
-          e.preventDefault()
-          first.focus()
-        }
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => {
-      window.removeEventListener('keydown', handler)
-      const ret = helpReturnRef.current
-      if (ret && typeof ret.focus === 'function') ret.focus()
-      helpReturnRef.current = null
-    }
-  }, [showHelp])
-
   // Sync the active type from the document target, falling back to the
   // first type reported for the file when an older route has no filter.
   useEffect(() => {
@@ -2907,118 +2667,25 @@ export default function App() {
       )}
 
       <div className="main-layout">
-        <nav className="activity-bar" role="toolbar" aria-label="活动栏">
-          <button
-            className={`activity-btn activity-planner${activePane === 'files' ? ' active' : ''}`}
-            title="文件"
-            aria-label="文件"
-            aria-pressed={activePane === 'files'}
-            onClick={() => { setActivePane('files'); focusFileTree() }}
-          >
-            <Icon name="folder" size={20} />
-          </button>
-          <button
-            className={`activity-btn${activePane === 'changes' ? ' active' : ''}`}
-            title="Git 变更"
-            aria-label="Git 变更"
-            aria-pressed={activePane === 'changes'}
-            onClick={() => {
-              finishActiveDataEdit()
-              setActivePane('changes')
-              setGitDiffOpen(true)
-              setGitDiffActive(true)
-              setActivePluginPageKey(null)
-            }}
-          >
-            <Icon name="git-branch" size={20} />
-          </button>
-          {pluginRegistry.sidebars
-            .filter(sidebar => pluginRegistry.plugins.some(
-              plugin => plugin.id === sidebar.pluginId && plugin.origin === 'built-in',
-            ))
-            .map(sidebar => {
-              const pane = `plugin:${sidebar.key}` as const
-              return (
-                <button
-                  key={sidebar.key}
-                  className={`activity-btn activity-brand${activePane === pane ? ' active' : ''}`}
-                  title={sidebar.title}
-                  aria-label={sidebar.title}
-                  aria-pressed={activePane === pane}
-                  onClick={() => setActivePane(pane)}
-                >
-                  <Icon name={sidebar.icon ?? 'extensions'} size={20} />
-                </button>
-              )
-            })}
-          <button
-            className={`activity-btn activity-engineer${activePane === 'plugins' ? ' active' : ''}`}
-            title="插件"
-            aria-label="插件"
-            aria-pressed={activePane === 'plugins'}
-            onClick={() => setActivePane('plugins')}
-          >
-            <Icon name="extensions" size={20} />
-          </button>
-          <button
-            className={`activity-btn activity-agent${activePane === 'ai' ? ' active' : ''}`}
-            title="AI 助手"
-            aria-label="AI 助手"
-            aria-pressed={activePane === 'ai'}
-            onClick={() => setActivePane('ai')}
-          >
-            <Icon name="sparkles" size={20} />
-          </button>
-          {pluginRegistry.sidebars.filter(sidebar => pluginRegistry.plugins.some(
-            plugin => plugin.id === sidebar.pluginId && plugin.origin !== 'built-in',
-          )).map(sidebar => {
-            const pane = `plugin:${sidebar.key}` as const
-            return (
-              <button
-                key={sidebar.key}
-                className={`activity-btn${activePane === pane ? ' active' : ''}`}
-                title={sidebar.title}
-                aria-label={sidebar.title}
-                aria-pressed={activePane === pane}
-                onClick={() => setActivePane(pane)}
-              >
-                <Icon name={sidebar.icon ?? 'extensions'} size={20} />
-              </button>
-            )
-          })}
-          <div className="activity-bar-bottom" ref={settingsMenuRef}>
-            <button
-              className="activity-btn"
-              title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-              aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-              onClick={toggleTheme}
-            >
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
-            </button>
-            <button
-              className={`activity-btn${settingsOpen ? ' active' : ''}`}
-              title="设置"
-              aria-label="设置"
-              aria-haspopup="true"
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen(v => !v)}
-            >
-              <Icon name="settings" size={20} />
-            </button>
-            {settingsOpen && (
-              <div className="settings-dropdown" role="menu">
-                <button
-                  className="settings-item"
-                  role="menuitem"
-                  onClick={() => { setShowHelp(true); setSettingsOpen(false) }}
-                >
-                  <Icon name="help" size={14} />
-                  <span>键盘快捷键 / 帮助</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </nav>
+        <ActivityBar
+          activePane={activePane}
+          registry={pluginRegistry}
+          theme={theme}
+          onSelectPane={setActivePane}
+          onSelectFiles={() => {
+            setActivePane('files')
+            focusFileTree()
+          }}
+          onSelectChanges={() => {
+            finishActiveDataEdit()
+            setActivePane('changes')
+            setGitDiffOpen(true)
+            setGitDiffActive(true)
+            setActivePluginPageKey(null)
+          }}
+          onToggleTheme={toggleTheme}
+          onShowHelp={() => setShowHelp(true)}
+        />
         <div className="sidebar" ref={sidebarRef}>
           {activePane === 'files' && (
             <>
@@ -3092,37 +2759,6 @@ export default function App() {
               </div>
             </div>
           )}
-          {activePane === 'ai' && (
-            <>
-              <div className="sidebar-header ai-header">
-                <span>
-                  <Icon name="sparkles" size={12} className="ai-header-icon" />
-                  AI 助手
-                </span>
-              </div>
-              <div className="ai-pane">
-                <div className="ai-pane-placeholder">
-                  <Icon name="sparkles" size={22} />
-                  <div className="title">让 AI 帮你编辑配置</div>
-                  <div className="hint">选中记录后描述你想做的修改，或让它检查配置一致性。</div>
-                </div>
-                <div className="ai-pane-suggest">
-                  <button type="button" disabled>为选中的记录补齐缺失字段</button>
-                  <button type="button" disabled>找出所有存在诊断的记录</button>
-                  <button type="button" disabled>解释当前字段的类型定义</button>
-                </div>
-                <div className="ai-pane-input">
-                  <textarea
-                    placeholder="AI 助手尚未接入。当前仅为界面占位。"
-                    disabled
-                  />
-                  <button type="button" className="ai-send" disabled aria-label="发送">
-                    <Icon name="arrow-right" size={13} />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
           {activePane === 'changes' && (
             <GitDiffSidebar
               diff={projectDiff}
@@ -3164,217 +2800,23 @@ export default function App() {
         <div className="editor-column">
         <div className="content-area-wrap">
         <div className="content-area">
-          {(workspaceTabs.length > 0 || pluginPageTabs.length > 0 || gitDiffOpen) && (
-            <div className="document-tabs" role="tablist" aria-label="已打开内容">
-              <div
-                className="tab-scroll"
-                ref={tabScrollRef}
-                onWheel={event => {
-                  if (event.deltaX !== 0) return
-                  const el = tabScrollRef.current
-                  if (!el || Math.abs(event.deltaY) < 1) return
-                  event.preventDefault()
-                  el.scrollLeft += event.deltaY
-                }}
-              >
-                {gitDiffOpen && (
-                  <div
-                    className={`document-tab${gitDiffActive ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={gitDiffActive}
-                    tabIndex={gitDiffActive ? 0 : -1}
-                    data-tab-id={GIT_DIFF_TAB_ID}
-                    onClick={() => activateDocumentTab(GIT_DIFF_TAB_ID)}
-                    onKeyDown={event => {
-                      if (event.key === 'Delete') {
-                        event.preventDefault()
-                        setGitDiffOpen(false)
-                        setGitDiffActive(false)
-                        return
-                      }
-                      onTabListKeyDown(event, activateDocumentTab)
-                    }}
-                    title="Git Diff"
-                  >
-                    <Icon name="git-branch" size={12} className="document-tab-icon" aria-hidden />
-                    <span className="document-tab-label">Git Diff</span>
-                    <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />
-                    <button
-                      type="button"
-                      className="document-tab-close"
-                      onClick={event => {
-                        event.stopPropagation()
-                        setGitDiffOpen(false)
-                        setGitDiffActive(false)
-                      }}
-                      aria-label="关闭 Git Diff"
-                      title="关闭标签"
-                    >
-                      <Icon name="close" size={11} aria-hidden />
-                    </button>
-                  </div>
-                )}
-                {workspaceTabs.map(tab => {
-                  const fileName = tab.filePath.split('/').pop() ?? tab.filePath
-                  const types = project?.file_types[tab.filePath] ?? []
-                  const type = types.find(option => option.name === tab.typeName)
-                  const label = type
-                    ? `${fileName} / ${type.display_name}`
-                    : fileName
-                  return (
-                    <div
-                      key={tab.id}
-                      className={`document-tab${!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId}
-                      tabIndex={!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? 0 : -1}
-                      data-tab-id={tab.id}
-                      onClick={() => openFile(tab.filePath, tab.typeName)}
-                      onKeyDown={event => {
-                        if (event.key === 'Delete') {
-                          event.preventDefault()
-                          closeWorkspaceTab(tab.id)
-                          return
-                        }
-                        onTabListKeyDown(event, activateDocumentTab)
-                      }}
-                      title={type && type.display_name !== type.name
-                        ? `${tab.filePath} / ${type.display_name} (${type.name})`
-                        : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`}
-                    >
-                      <Icon name="file" size={12} className="document-tab-icon" aria-hidden />
-                      <span className="document-tab-label">{label}</span>
-                      {readOnly && tab.id === activeWorkspaceTabId && <Icon name="lock" size={10} className="document-tab-lock" aria-hidden />}
-                      <button
-                        type="button"
-                        className="document-tab-close"
-                        onClick={event => {
-                          event.stopPropagation()
-                          closeWorkspaceTab(tab.id)
-                        }}
-                        aria-label={`关闭 ${label}`}
-                        title="关闭标签"
-                      >
-                        <Icon name="close" size={11} aria-hidden />
-                      </button>
-                    </div>
-                  )
-                })}
-                {pluginPageTabs.map(tab => (
-                  <div
-                    key={tab.key}
-                    className={`document-tab${!gitDiffActive && tab.key === activePluginPageKey ? ' active' : ''}`}
-                    role="tab"
-                    aria-selected={!gitDiffActive && tab.key === activePluginPageKey}
-                    tabIndex={!gitDiffActive && tab.key === activePluginPageKey ? 0 : -1}
-                    data-tab-id={tab.key}
-                    onClick={() => activateDocumentTab(tab.key)}
-                    onKeyDown={event => {
-                      if (event.key === 'Delete') {
-                        event.preventDefault()
-                        closePluginPageTab(tab.key)
-                        return
-                      }
-                      onTabListKeyDown(event, activateDocumentTab)
-                    }}
-                    title={tab.title}
-                  >
-                    <Icon name="extensions" size={12} className="document-tab-icon" aria-hidden />
-                    <span className="document-tab-label">{tab.title}</span>
-                    <button
-                      type="button"
-                      className="document-tab-close"
-                      onClick={event => {
-                        event.stopPropagation()
-                        closePluginPageTab(tab.key)
-                      }}
-                      aria-label={`关闭 ${tab.title}`}
-                      title="关闭标签"
-                    >
-                      <Icon name="close" size={11} aria-hidden />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {tabsOverflow && (
-                <div className="tab-overflow" ref={tabOverflowRef}>
-                  <button
-                    type="button"
-                    className="tab-overflow-btn"
-                    onClick={() => setTabOverflowOpen(v => !v)}
-                    aria-label="所有已打开标签"
-                    title="所有已打开标签"
-                    aria-expanded={tabOverflowOpen}
-                  >
-                    <Icon name="chevron-down" size={13} />
-                  </button>
-                  {tabOverflowOpen && (
-                    <div className="tab-overflow-menu" role="menu">
-                      {gitDiffOpen && (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={`tab-overflow-item${gitDiffActive ? ' active' : ''}`}
-                          onClick={() => {
-                            setGitDiffActive(true)
-                            setActivePluginPageKey(null)
-                            setActivePane('changes')
-                            setTabOverflowOpen(false)
-                          }}
-                        >
-                          <Icon name="git-branch" size={12} aria-hidden />
-                          <span className="name">Git Diff</span>
-                        </button>
-                      )}
-                      {workspaceTabs.map(tab => {
-                        const fileName = tab.filePath.split('/').pop() ?? tab.filePath
-                        const types = project?.file_types[tab.filePath] ?? []
-                        const type = types.find(option => option.name === tab.typeName)
-                        const label = type
-                          ? `${fileName} / ${type.display_name}`
-                          : fileName
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            role="menuitem"
-                            className={`tab-overflow-item${!gitDiffActive && !activePluginPageKey && tab.id === activeWorkspaceTabId ? ' active' : ''}`}
-                            onClick={() => {
-                              openFile(tab.filePath, tab.typeName)
-                              setTabOverflowOpen(false)
-                              requestAnimationFrame(() => {
-                                const el = tabScrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(tab.id)}"]`)
-                                el?.scrollIntoView({ inline: 'center', block: 'nearest' })
-                              })
-                            }}
-                          >
-                            <Icon name="file" size={12} aria-hidden />
-                            <span className="name">{label}</span>
-                          </button>
-                        )
-                      })}
-                      {pluginPageTabs.map(tab => (
-                        <button
-                          key={tab.key}
-                          type="button"
-                          role="menuitem"
-                          className={`tab-overflow-item${!gitDiffActive && tab.key === activePluginPageKey ? ' active' : ''}`}
-                          onClick={() => {
-                            setGitDiffActive(false)
-                            setActivePluginPageKey(tab.key)
-                            setTabOverflowOpen(false)
-                          }}
-                        >
-                          <Icon name="extensions" size={12} aria-hidden />
-                          <span className="name">{tab.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <DocumentTabs
+            fileTypes={project?.file_types}
+            workspaceTabs={workspaceTabs}
+            activeWorkspaceTabId={activeWorkspaceTabId}
+            pluginTabs={pluginPageTabs}
+            activePluginTabKey={activePluginPageKey}
+            gitDiffOpen={gitDiffOpen}
+            gitDiffActive={gitDiffActive}
+            activeWorkspaceReadOnly={readOnly}
+            onActivate={activateDocumentTab}
+            onCloseWorkspace={closeWorkspaceTab}
+            onClosePlugin={closePluginPageTab}
+            onCloseGitDiff={() => {
+              setGitDiffOpen(false)
+              setGitDiffActive(false)
+            }}
+          />
           {!gitDiffActive && !activePluginPage && currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
             activeSchemaFile ? (
               <div className="view-tabs-row">
@@ -3920,54 +3362,7 @@ export default function App() {
           }}
         />
       )}
-      {showHelp && (
-        <div className="help-overlay" onClick={() => setShowHelp(false)}>
-          <div
-            className="help-box"
-            ref={helpBoxRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="键盘快捷键"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3>
-              <Icon name="help" size={16} />
-              键盘快捷键
-            </h3>
-            <table>
-              <tbody>
-                <tr><th colSpan={2}>全局</th></tr>
-                <tr><td>Alt+←</td><td>后退</td></tr>
-                <tr><td>Alt+→</td><td>前进</td></tr>
-                <tr><td>Ctrl+Z</td><td>撤销编辑</td></tr>
-                <tr><td>Ctrl+Y / Ctrl+Shift+Z</td><td>重做编辑</td></tr>
-                <tr><td>?</td><td>显示/隐藏帮助</td></tr>
-                <tr><td>Esc</td><td>关闭弹窗</td></tr>
-                <tr><th colSpan={2}>表格 / 记录导航</th></tr>
-                <tr><td>↑ ↓ ← →</td><td>移动选中单元格</td></tr>
-                <tr><td>Shift+↑ / Shift+↓</td><td>扩展多行记录选择</td></tr>
-                <tr><td>Shift+↑↓←→（值模式）</td><td>扩展选中单元格范围</td></tr>
-                <tr><td>Ctrl+A</td><td>全选记录 / 全选单元格范围</td></tr>
-                <tr><td>Enter</td><td>打开检视器 / 切换布尔值</td></tr>
-                <tr><th colSpan={2}>单元格编辑</th></tr>
-                <tr><td>F2</td><td>编辑当前单元格</td></tr>
-                <tr><td>任意可打印字符</td><td>替换输入（直接开始编辑）</td></tr>
-                <tr><td>Delete</td><td>重置为默认值（集合类型清空）</td></tr>
-                <tr><th colSpan={2}>复制 / 粘贴</th></tr>
-                <tr><td>Ctrl+C</td><td>复制选中单元格（CFD）</td></tr>
-                <tr><td>Ctrl+X</td><td>剪切（复制后清空）</td></tr>
-                <tr><td>Ctrl+V</td><td>粘贴</td></tr>
-                <tr><td>Shift+Ctrl+V</td><td>追加粘贴（array 目标）</td></tr>
-                <tr><th colSpan={2}>Ctrl+鼠标滚轮</th></tr>
-                <tr><td>Ctrl+滚轮</td><td>缩放表格</td></tr>
-              </tbody>
-            </table>
-            <div className="help-actions">
-              <button className="btn btn-outlined" onClick={() => setShowHelp(false)}>关闭</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
     </ObjectDraftHost>
   )
@@ -4029,64 +3424,6 @@ function isTextTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
-}
-
-/** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
-function onTabListKeyDown(
-  e: React.KeyboardEvent,
-  onSelect: (id: string) => void,
-  boundaries: {
-    onLeftBoundary?: () => void
-    onUp?: () => void
-    onDown?: () => void
-  } = {},
-) {
-  if (e.key === 'ArrowUp' && boundaries.onUp) {
-    e.preventDefault()
-    boundaries.onUp()
-    return
-  }
-  if (e.key === 'ArrowDown' && boundaries.onDown) {
-    e.preventDefault()
-    boundaries.onDown()
-    return
-  }
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    const id = (e.currentTarget as HTMLElement).dataset.tabId
-    if (id) onSelect(id)
-    return
-  }
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
-  const nodes = Array.from(
-    e.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [],
-  )
-  const i = nodes.indexOf(e.currentTarget as HTMLElement)
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    e.preventDefault()
-    const dir = e.key === 'ArrowRight' ? 1 : -1
-    const nextIndex = i + dir
-    if (nextIndex < 0) {
-      boundaries.onLeftBoundary?.()
-      return
-    }
-    if (nextIndex >= nodes.length) return
-    const next = nodes[nextIndex]
-    next.focus()
-    const id = next.dataset.tabId
-    if (id) onSelect(id)
-  } else if (e.key === 'Home') {
-    e.preventDefault()
-    nodes[0]?.focus()
-    const id = nodes[0]?.dataset.tabId
-    if (id) onSelect(id)
-  } else if (e.key === 'End') {
-    e.preventDefault()
-    const last = nodes[nodes.length - 1]
-    last?.focus()
-    const id = last?.dataset.tabId
-    if (id) onSelect(id)
-  }
 }
 
 function onToolbarKeyDown(event: React.KeyboardEvent, onExitDown: () => void) {

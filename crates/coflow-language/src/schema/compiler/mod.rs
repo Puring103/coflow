@@ -56,10 +56,10 @@ pub(super) struct ResolvedTypes<'a> {
 }
 
 pub(super) struct ResolvedValues<'a> {
-    resolved_types: ResolvedTypes<'a>,
-    resolved_constants:
+    type_state: ResolvedTypes<'a>,
+    constants:
         BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
-    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
+    defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
 }
 
 struct ValueResolver<'s, 'a> {
@@ -170,9 +170,9 @@ impl<'a> ResolvedValues<'a> {
         };
         (
             Self {
-                resolved_types: types,
-                resolved_constants,
-                resolved_defaults,
+                type_state: types,
+                constants: resolved_constants,
+                defaults: resolved_defaults,
             },
             diagnostics,
         )
@@ -183,11 +183,11 @@ impl<'a> Deref for ResolvedValues<'a> {
     type Target = ResolvedTypes<'a>;
 
     fn deref(&self) -> &Self::Target {
-        &self.resolved_types
+        &self.type_state
     }
 }
 
-impl<'s, 'a> Deref for ValueResolver<'s, 'a> {
+impl<'a> Deref for ValueResolver<'_, 'a> {
     type Target = ResolvedTypes<'a>;
 
     fn deref(&self) -> &Self::Target {

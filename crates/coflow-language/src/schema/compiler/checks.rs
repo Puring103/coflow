@@ -409,7 +409,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             }
         }
         let resolved_name = name.to_string();
-        if let Some((value_type, _)) = self.schema.resolved_constants.get(&resolved_name) {
+        if let Some((value_type, _)) = self.schema.constants.get(&resolved_name) {
             return InferredType::from_const(Some(value_type));
         }
         if self.schema.enums.contains_key(&resolved_name) {
@@ -425,7 +425,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn resolve_static_path(&mut self, path: &NamePath) -> InferredType {
         let raw_name = path.canonical();
-        if let Some((value_type, _)) = self.schema.resolved_constants.get(&raw_name) {
+        if let Some((value_type, _)) = self.schema.constants.get(&raw_name) {
             return InferredType::from_const(Some(value_type));
         }
         if self.schema.enums.contains_key(&raw_name) {

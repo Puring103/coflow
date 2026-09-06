@@ -1,14 +1,13 @@
 //! Concrete CFD source services owned by the runtime.
 //!
 //! This is deliberately a value object, not a registration point. Every
-//! project has exactly one text loader and one CFD writer.
+//! project has exactly one text format and one staged CFD writer.
 
-use crate::cfd_loader::{CfdLoader, CfdWriter};
+use crate::cfd_loader::CfdWriter;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct CfdSourceCatalog {
-    loader: Arc<CfdLoader>,
     writer: Arc<CfdWriter>,
 }
 
@@ -24,22 +23,16 @@ impl std::fmt::Debug for CfdSourceCatalog {
 impl Default for CfdSourceCatalog {
     fn default() -> Self {
         Self {
-            loader: Arc::new(CfdLoader),
             writer: Arc::new(CfdWriter::new()),
         }
     }
 }
 
 impl CfdSourceCatalog {
-    pub(crate) fn staged_writes(&self) -> Self {
+    pub(crate) fn staged_writes() -> Self {
         Self {
-            loader: Arc::clone(&self.loader),
             writer: Arc::new(CfdWriter::new()),
         }
-    }
-
-    pub(crate) fn loader(&self) -> Arc<CfdLoader> {
-        Arc::clone(&self.loader)
     }
 
     pub(crate) fn writer(&self) -> Arc<CfdWriter> {

@@ -1,4 +1,5 @@
 text: UiText {
+  default: "Welcome",
   en: "Welcome",
   zh: "欢迎",
 }

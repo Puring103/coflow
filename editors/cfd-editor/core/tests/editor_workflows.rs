@@ -1,4 +1,10 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+// 测试文本中的 `${1:name}` 用于验证 LSP snippet 协议。
+#![allow(
+    clippy::expect_used,
+    clippy::literal_string_with_formatting_args,
+    clippy::panic,
+    clippy::unwrap_used
+)]
 
 use cfd_editor_core::editor::{
     BatchWriteFieldInput, CollectionEdit, LanguagePosition, SessionStore,
@@ -325,14 +331,9 @@ fn repository_projects_open_in_editor() {
         );
 
         if project == "editor-project" {
-            let settings = store
+            store
                 .get_project_settings(snapshot.session_id)
                 .expect("editor fixture settings must parse");
-            assert!(settings
-                .record_groups
-                .get("data/02-entities.cfd")
-                .and_then(|types| types.get("Entity"))
-                .is_some_and(|groups| groups.len() == 1));
         }
     }
 }

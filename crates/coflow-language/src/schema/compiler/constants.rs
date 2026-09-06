@@ -51,7 +51,7 @@ impl ValueResolver<'_, '_> {
         }
         visiting.push(name.to_string());
         let expected = declared_type.as_ref().and_then(|ty| {
-            self.resolve_field_type(&module, ty).value_type().cloned()
+            self.resolve_field_type(ty).value_type().cloned()
         });
         if matches!(
             expected,
@@ -75,6 +75,8 @@ impl ValueResolver<'_, '_> {
         resolved
     }
 
+    // 常量变体在此集中穷举，确保新增语法必须显式补充解析分支。
+    #[allow(clippy::too_many_lines)]
     pub(super) fn resolve_static_value(
         &mut self,
         module: &ModuleId,
@@ -106,13 +108,10 @@ impl ValueResolver<'_, '_> {
                 CftConstValue::FormattedString(source.clone()),
             ),
             DefaultExprKind::Function { signature, source } => {
-                let Some(value_type) = self
-                    .resolve_field_type(module, signature)
+                let value_type = self
+                    .resolve_field_type(signature)
                     .value_type()
-                    .cloned()
-                else {
-                    return None;
-                };
+                    .cloned()?;
                 (
                     value_type,
                     CftConstValue::Function(source.clone()),
@@ -163,8 +162,7 @@ impl ValueResolver<'_, '_> {
             DefaultExprKind::OptionSome(value) => {
                 let inner_expected = match expected {
                     Some(CftValueType::Option(inner)) => Some(inner.as_ref()),
-                    Some(_) => None,
-                    None => None,
+                    Some(_) | None => None,
                 };
                 let (inner_type, inner_value) =
                     self.resolve_static_value(module, value, inner_expected, visiting)?;
@@ -228,7 +226,7 @@ impl ValueResolver<'_, '_> {
                     values.push(value);
                 }
                 (
-                    CftValueType::Array(Box::new(item_type.expect("empty array handled above"))),
+                    CftValueType::Array(Box::new(item_type?)),
                     CftConstValue::Array(values),
                 )
             }
@@ -439,8 +437,7 @@ impl ValueResolver<'_, '_> {
     ) -> Option<(CftValueType, CftConstValue)> {
         let (mut key_type, mut value_type) = match expected {
             Some(CftValueType::Dict(key, value)) => (Some((**key).clone()), Some((**value).clone())),
-            Some(_) => (None, None),
-            None => (None, None),
+            Some(_) | None => (None, None),
         };
         if entries.is_empty() && key_type.is_none() {
             return self.cannot_infer_const(module, expression, "empty dictionary");
@@ -489,8 +486,8 @@ impl ValueResolver<'_, '_> {
         }
         Some((
             CftValueType::Dict(
-                Box::new(key_type.expect("empty dictionary handled above")),
-                Box::new(value_type.expect("empty dictionary handled above")),
+                Box::new(key_type?),
+                Box::new(value_type?),
             ),
             CftConstValue::Dictionary(values),
         ))
