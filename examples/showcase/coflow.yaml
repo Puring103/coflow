@@ -10,4 +10,3 @@ dimensions:
 codegen:
   - language: csharp
     dir: generated/csharp
-    namespace: Showcase.Config

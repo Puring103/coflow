@@ -10,4 +10,4 @@ coflow check examples/showcase
 coflow codegen examples/showcase
 ```
 
-项目至少包含一个 `.cft` schema、一个 `.cfd` 数据路径和一个 `codegen` target。生成 C# 后，将 `runtimes/csharp/Coflow.Cfd.Runtime` 引入目标项目，并调用生成数据库的 `Load` overload。
+项目至少包含一个 `.cft` schema、一个 `.cfd` 数据路径和一个 `codegen` target。生成 C# 后，将 `runtimes/csharp/Coflow.Runtime` 引入目标项目，通过 `Schema.Create()` 创建实例、加载 Module 并调用 `Compile()`。

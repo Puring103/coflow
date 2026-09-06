@@ -74,35 +74,19 @@
 {% endfor %}        );
     }
 
-{% endif %}{% endfor %}{% for reader in readers %}{% if reader.is_host %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
-        CfdRecordNode record,
-        CfdLoadContext context) =>
-        throw new CfdLoadException(new[]
-        {
-            new CfdDiagnostic(
-                "CFD-HOST-RECORD",
-                "CFD cannot declare @Host type `{{ reader.source_name }}`",
-                string.Empty,
-                record.Span),
-        });
-
-    private static object CreateHost{{ reader.metadata_name }}(CfdLoadContext context)
+{% endif %}{% endfor %}{% for reader in readers %}{% if reader.is_host %}    private static object? BindHost{{ reader.metadata_name }}(object? value, CfdLoadContext context)
     {
         using var scope = context.EnterRecord("{{ reader.source_name }}", string.Empty);
-        return new {{ reader.qualified_name }}(
-{% for argument in reader.host_constructor_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
-{% endfor %}        );
+        var host = value as {{ reader.qualified_name }};
+{% for type in types %}{% if type.metadata_name == reader.metadata_name %}{% for function in type.host_functions %}        var function{{ loop.index0 }} = {{ function.entry_expression }};
+        if (host is not null)
+            context.BindHostFunction(CoflowHostFunctionBinding.Create(
+                function{{ loop.index0 }},
+                host.{{ function.access }}));
+{% endfor %}{% endif %}{% endfor %}        return host;
     }
 
-{% else %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
-        CfdRecordNode record,
-        CfdLoadContext context)
-    {
-        using var scope = context.EnterRecord(record.DeclaredType, record.Key);
-        return Read{{ reader.metadata_name }}Fields(record.Fields, record.Key, context);
-    }
-
-    private static void Populate{{ reader.metadata_name }}(
+{% else %}{% if reader.is_record %}    private static void Populate{{ reader.metadata_name }}(
         {{ reader.qualified_name }} target,
         CfdRecordNode record,
         CfdLoadContext context)
@@ -115,10 +99,13 @@
 {% endif %}{% for assignment in reader.populate_assignments %}        {{ assignment }}
 {% endfor %}    }
 
+{% endif %}
+
 {% if reader.variants | length == 0 %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
         CfdValueNode node,
         CfdLoadContext context) =>
-        CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields);
+        context.ReadValue("{{ reader.source_name }}", node, () =>
+            CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields));
 
 {% else %}    private static {{ reader.qualified_name }} Read{{ reader.metadata_name }}(
         CfdValueNode node,
@@ -127,8 +114,8 @@
         var objectType = CfdValueReader.ObjectDeclaredType(node);
         return objectType switch
         {
-            null or "{{ reader.source_name }}" =>
-                CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields),
+            null or "{{ reader.source_name }}" => context.ReadValue("{{ reader.source_name }}", node, () =>
+                CfdValueReader.Object(node, context, "{{ reader.source_name }}", Read{{ reader.metadata_name }}Fields)),
 {% for variant in reader.variants %}            "{{ variant.source_name }}" => Read{{ variant.reader_name }}(node, context),
 {% endfor %}            _ => throw new CfdLoadException(new[]
             {
@@ -147,7 +134,8 @@
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields{% for field in reader.expected_fields %}, "{{ field }}"{% endfor %});
-        return new {{ reader.qualified_name }}(
+{% for function in reader.function_loads %}            _ = {{ function }};
+{% endfor %}        return new {{ reader.qualified_name }}(
 {% for argument in reader.constructor_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }

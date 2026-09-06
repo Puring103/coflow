@@ -18,6 +18,9 @@ sealed type Stats {
   health: int;
   attack: int;
   resistances: {string: int} = {};
+  score: fn(bonus: int) -> int = fn(bonus: int) -> int {
+    health + attack + bonus
+  };
 }
 
 @struct
@@ -54,6 +57,9 @@ type Character {
   abilities: [Ability] = [];
   status: Result<int, string> = Ok(0);
   fallback: Option<&Character> = None;
+  power: fn(bonus: int) -> int = fn(bonus: int) -> int {
+    stats.health + bonus
+  };
 }
 
 @singleton

@@ -23,21 +23,6 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
     None
 }
 
-pub fn csharp_namespace_error(value: &str) -> Option<String> {
-    if value.is_empty() {
-        return Some("namespace is empty".to_string());
-    }
-    if value.split('.').next() == Some("Coflow") {
-        return Some("namespace root `Coflow` is reserved by the Runtime entry type".to_string());
-    }
-    for part in value.split('.') {
-        if let Some(reason) = csharp_ident_error(part) {
-            return Some(format!("namespace segment `{part}` {reason}"));
-        }
-    }
-    None
-}
-
 pub fn pascal_case(name: &str) -> String {
     let mut out = String::new();
     let mut upper = true;
@@ -60,16 +45,8 @@ pub fn csharp_type_name(name: &str) -> String {
     pascal_case(name)
 }
 
-pub fn csharp_declaration_namespace(root: &str, _name: &str) -> String {
-    root.to_string()
-}
-
-pub fn csharp_qualified_type_name(root: &str, name: &str) -> String {
-    format!(
-        "global::{}.{}",
-        csharp_declaration_namespace(root, name),
-        csharp_type_name(name)
-    )
+pub fn csharp_qualified_type_name(name: &str) -> String {
+    format!("global::{}", csharp_type_name(name))
 }
 
 pub fn csharp_relative_type_path(name: &str) -> String {

@@ -15,7 +15,6 @@ data: data/
 codegen:
   - language: csharp
     dir: generated/csharp
-    namespace: Game.Config
 ";
 
 /// Outcome of [`init_project`]: where the new `coflow.yaml` lives.

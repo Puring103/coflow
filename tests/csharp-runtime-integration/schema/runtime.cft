@@ -4,8 +4,10 @@ type HostServices {
   environment: string;
   trace: fn(message: string) -> ();
   adjust: fn(value: int, operation: fn(input: int) -> int) -> int;
+  select: fn(operation: fn(input: int) -> int) -> fn(input: int) -> int;
   decorate: fn(value: string) -> string;
   normalize: fn(value: Option<int>) -> Result<int, string>;
+  echoStats: fn(value: Stats) -> Stats;
 }
 
 type Scenario {
@@ -18,6 +20,9 @@ type Scenario {
   makeScaler: fn(scale: int) -> fn(value: int) -> int;
   apply: fn(value: int, operation: fn(input: int) -> int) -> int;
   compose: fn(first: fn(value: int) -> int, second: fn(value: int) -> int) -> fn(value: int) -> int;
+  hostFunction: fn(value: int) -> fn(input: int) -> int;
+  optionalFunction: fn(operation: Option<fn(input: int) -> int>) -> Option<fn(input: int) -> int>;
+  resultFunction: fn(operation: Result<fn(input: int) -> int, string>) -> Result<fn(input: int) -> int, string>;
 
   integerLoop: fn(iterations: int) -> int;
   floatLoop: fn(iterations: int) -> float;
@@ -39,6 +44,11 @@ type Scenario {
   emptyCollectionQueries: fn() -> int;
   makeStats: fn(value: int) -> Stats;
   makeDefaultStats: fn(value: int) -> Stats;
+  readExternalStats: fn(value: Stats) -> int;
+  hostStats: fn(value: Stats) -> int;
+  copyExternalCharacter: fn(value: Character) -> Character;
+  readExternalCharacterCollections: fn(value: Character) -> int;
+  copyOptionalStats: fn(value: Option<Stats>) -> Option<Stats>;
   formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string;
   syntaxControlFlow: fn(input: int) -> int;
   syntaxOperators: fn(left: int, right: int, text: string) -> bool;

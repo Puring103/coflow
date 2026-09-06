@@ -9,6 +9,8 @@ examples/*/app/obj/
 node_modules/
 runtimes/csharp/**/bin/
 runtimes/csharp/**/obj/
+tests/csharp-runtime-*/app/bin/
+tests/csharp-runtime-*/app/obj/
 website/vitepress-dev*.log
 website/docs/.vitepress/dist/
 website/docs/.vitepress/cache/

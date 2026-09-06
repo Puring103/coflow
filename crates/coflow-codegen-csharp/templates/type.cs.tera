@@ -2,25 +2,22 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using CoflowRuntime;
-using CoflowRuntime.Generated;
-
-namespace {{ type.namespace }}
-{
+using Coflow.Runtime;
+using Coflow.Runtime.CompilerServices;
 
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
-{% endif %}{% if type.obsolete %}[Obsolete]
 {% endif %}{{ type.declaration }}
 {
 {% if type.table_token_type %}    public static {{ type.table_token_type }} Table { get; } = new();
 
 {% endif %}
-{% if type.declares_host_slot %}    internal readonly CoflowHostState? _coflowHost;
+{% if type.declares_host_slot or type.is_struct %}    internal {% if type.is_struct %}readonly {% endif %}CoflowValueId _coflowId;
+{% if type.is_struct %}    internal readonly bool _coflowInitialized;
+{% endif %}
 
 {% endif %}{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
 
 {% endif %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
-{% endif %}{% if property.obsolete %}    [Obsolete]
 {% endif %}{% if property.backing_field %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }}
     {
         get
@@ -29,43 +26,58 @@ namespace {{ type.namespace }}
 {% endif %}            return {{ property.backing_field }};
         }
     }
-{% else %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; internal set; } = default!;
+{% else %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get;{% if not type.is_struct %} internal set;{% endif %} }{% if not type.is_struct %} = default!;{% endif %}
 {% endif %}
 {% if not loop.last %}
 {% endif %}{% endfor %}{% if type.properties | length > 0 %}
 
-{% endif %}{% for function in type.functions %}{% if function.declared_here %}    internal CoflowFunctionEntry<{{ function.delegate_type }}> {{ function.entry_name }} = default!;
+{% endif %}{% for function in type.functions %}{% if type.is_host %}    internal {{ function.delegate_type }} {{ function.entry_name }} { get; } = default!;
 
+{% endif %}{% if function.declared_here %}
 {% if function.summary %}    /// <summary>{{ function.summary }}</summary>
-{% endif %}{% if function.returns_void %}    public void {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endif %}{% if function.returns_void %}    public void {{ function.method_name }}(global::Coflow.Runtime.Coflow coflow{% for parameter in function.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %})
     {
-{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
-{% endif %}        {{ function.entry_name }}.Function({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+        CoflowInvoker.InvokeVoid<{{ type.qualified_name }}{% for parameter in function.parameters %}, {{ parameter.ty }}{% endfor %}>(
+            coflow, this, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
     }
-{% else %}    public {{ function.result_type }} {{ function.method_name }}({% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% else %}    public {{ function.result_type }} {{ function.method_name }}(global::Coflow.Runtime.Coflow coflow{% for parameter in function.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %})
     {
-{% if type.uses_host_slot %}        _coflowHost?.EnsureBound();
-{% endif %}        return {{ function.entry_name }}.Function({% for parameter in function.parameters %}{{ parameter.name }}{% if not loop.last %}, {% endif %}{% endfor %});
+        return CoflowInvoker.Invoke<{{ type.qualified_name }}{% for parameter in function.parameters %}, {{ parameter.ty }}{% endfor %}, {{ function.result_type }}>(
+            coflow, this, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
     }
 {% endif %}
-{% endif %}{% endfor %}{% if type.is_host %}    public void Configure(
-{% for field in type.host_fields %}        {{ field.parameter.ty }} {{ field.parameter.name }},
-{% endfor %}{% for function in type.functions %}        {{ function.delegate_type }} {{ function.bind_parameter_name }}{% if not loop.last %},{% endif %}
-{% endfor %}    ) => _coflowHost!.Configure(
-        () =>
-        {
-{% for field in type.host_fields %}            {{ field.target }} = {{ field.parameter.name }};
-{% endfor %}        }{% for function in type.functions %},
-        CoflowHostFunctionBinding.Create({{ function.entry_name }}.RuntimeEntry, {{ function.bind_parameter_name }}){% endfor %});
+{% endif %}{% endfor %}{% if not type.is_struct %}    internal {{ type.name }}() { }
 
-{% endif %}    internal {{ type.name }}() { }
-
+{% endif %}
     {{ type.constructor_visibility }} {{ type.name }}(
 {% for parameter in type.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    ){{ type.base_constructor_call | default(value="") }}
     {
 {% for assignment in type.assignments %}        {{ assignment.target }} = {{ assignment.parameter }};
-{% endfor %}    }
+{% endfor %}{% if type.is_struct %}        _coflowInitialized = true;
+{% endif %}    }
+{% if type.is_struct %}
+    private {{ type.name }}({{ type.name }} value, CoflowValueId coflowId)
+    {
+        this = value;
+        _coflowId = coflowId;
+    }
+
+    internal static {{ type.name }} WithCoflowValueId({{ type.name }} value, CoflowValueId coflowId) =>
+        new(value, coflowId);
+{% else %}
+    internal static {{ type.name }} WithCoflowValueId({{ type.name }} value, CoflowValueId coflowId)
+    {
+{% if type.is_host %}        // Host 绑定对象属于应用；候选快照必须拥有独立外壳，不能把运行时身份写回应用对象。
+        var snapshotValue = ({{ type.name }})value.MemberwiseClone();
+        snapshotValue._coflowId = coflowId;
+        return snapshotValue;
+{% else %}
+        value._coflowId = coflowId;
+        return value;
+{% endif %}
+    }
+{% endif %}
 {% if type.equality %}
 
 {% if type.equality.by_fields %}    public override string ToString() => "{{ type.name }}";
@@ -99,5 +111,4 @@ namespace {{ type.namespace }}
     public override int GetHashCode() =>
         {{ type.equality.key_property }}.GetHashCode();
 {% endif %}{% endif %}
-}
 }

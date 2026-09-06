@@ -33,18 +33,28 @@ pub(crate) fn csharp_type(ty: &CftValueType, view: &CsharpLoweringPlan<'_>) -> S
                 .iter()
                 .map(|parameter| csharp_type(&parameter.value_type, view))
                 .collect::<Vec<_>>();
-            if matches!(result.as_ref(), CftValueType::Unit) {
-                if arguments.is_empty() {
-                    "Action".to_string()
-                } else {
-                    format!("Action<{}>", arguments.join(", "))
-                }
-            } else {
-                arguments.push(csharp_type(result, view));
-                format!("Func<{}>", arguments.join(", "))
-            }
+            arguments.push(csharp_type(result, view));
+            format!("CoflowFunction<{}>", arguments.join(", "))
         }
         CftValueType::Unit => "Unit".to_string(),
+    }
+}
+
+pub(crate) fn csharp_native_delegate_type(
+    parameters: &[coflow_language::cft::CftFunctionParameter],
+    result: &CftValueType,
+    view: &CsharpLoweringPlan<'_>,
+) -> String {
+    let mut arguments = parameters
+        .iter()
+        .map(|parameter| csharp_type(&parameter.value_type, view))
+        .collect::<Vec<_>>();
+    if matches!(result, CftValueType::Unit) {
+        if arguments.is_empty() { "Action".to_string() }
+        else { format!("Action<{}>", arguments.join(", ")) }
+    } else {
+        arguments.push(csharp_type(result, view));
+        format!("Func<{}>", arguments.join(", "))
     }
 }
 

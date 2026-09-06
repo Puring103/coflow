@@ -120,7 +120,7 @@ check ItemIntegrity {
 | 函数 | `fn(name: T) -> R` | `fn(name: T) -> R { ... }` |
 | unit | `()` | 仅用于函数签名 |
 
-nullable 使用 `Option<T>`，没有 `T?` 类型简写。`Result<T, E>` 不作为 object 数据字段类型，可用于函数
+nullable 使用 `Option<T>`，没有 `T?` 类型简写。`Result<T, E>` 可用于字段、集合元素、函数
 参数、函数返回、常量和表达式。primitive、集合和 `Option` / `Result` 类型参数不做隐式转换；enum 也
 不会隐式转换为 int。
 
@@ -157,7 +157,7 @@ type Stats {
 函数字段的默认实现必须与字段签名一致，参数名不参与签名相等性。CFD 显式提供同字段函数时覆盖 CFT
 默认实现；`@Host` type 的函数字段不能声明默认实现。函数默认值仅支持直接用于函数字段，不能嵌套在
 集合、Option、Result 或 object 默认值中。Rust 数据模型保留函数源码；C# Runtime 的 `Load` 保留函数，
-`LoadAndCompile` 才类型检查并编译函数体。默认值展开必须有限；`Some(object)`、非空集合或省略的 object
+`Compile` 时类型检查并编译函数体。默认值展开必须有限；`Some(object)`、非空集合或省略的 object
 字段形成默认物化环时，schema 检查会报告错误。
 
 ## 注解
