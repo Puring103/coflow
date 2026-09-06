@@ -313,7 +313,7 @@ describe('DataCardCompact complex previews', () => {
       },
     }
 
-    const html = renderToStaticMarkup(createElement(DataCardCompact, { value, label: 'config' }))
+    const html = renderToStaticMarkup(createElement(DataCardCompact, { value }))
 
     expect(html).toContain('dc-inspector-compact')
     expect(html).toContain('rewards')
@@ -373,7 +373,7 @@ describe('DataCardCompact complex previews', () => {
       }],
     }
 
-    const html = renderToStaticMarkup(createElement(DataCardCompact, { value, label: 'drops' }))
+    const html = renderToStaticMarkup(createElement(DataCardCompact, { value }))
 
     expect(html).not.toContain('drops')
     expect(html).toContain('>1<')

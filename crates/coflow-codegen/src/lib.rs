@@ -64,6 +64,10 @@ pub struct CodeArtifactSet {
 impl CodeArtifactSet {
     /// Creates an artifact set and rejects traversal, absolute paths and
     /// duplicate files before the application can stage it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodegenError`] for unsafe, non-portable, or duplicate paths.
     pub fn new(mut files: Vec<CodeArtifactFile>) -> Result<Self, CodegenError> {
         files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         let mut portable_paths = Vec::with_capacity(files.len());
@@ -189,6 +193,12 @@ impl std::error::Error for CodegenError {}
 
 pub trait CodeGenerator: Send + Sync + fmt::Debug {
     fn descriptor(&self) -> &'static CodegenDescriptor;
+
+    /// Generates the complete artifact set for one configured target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodegenError`] when the input cannot be lowered or emitted.
     fn generate(&self, input: CodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError>;
 }
 
@@ -198,6 +208,11 @@ pub struct CodegenRegistry {
 }
 
 impl CodegenRegistry {
+    /// Registers one generator by its stable descriptor id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodegenError`] when the id is already registered.
     pub fn register<G>(&mut self, generator: G) -> Result<(), CodegenError>
     where
         G: CodeGenerator + 'static,

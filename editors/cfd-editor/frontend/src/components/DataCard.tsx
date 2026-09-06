@@ -4,7 +4,6 @@ import {
   useRef,
   useContext,
   createContext,
-  Fragment,
   useMemo,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -33,7 +32,6 @@ import {
   cellDeclaredType,
   cellEnumType,
   cellEnumIsFlag,
-  cellItemAnnotation,
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
@@ -44,7 +42,6 @@ import {
   fieldPathIndex,
   nullValue,
   objectFieldCells,
-  objectFields,
   optionLayerStates,
   presentationValue,
   refValue,
@@ -189,7 +186,7 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, label, declaredType, refTargetType, annotation, highlightQuery }: { value: FieldValue; label?: string; declaredType?: string; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string }) {
+export function DataCardCompact({ value, refTargetType, annotation, highlightQuery }: { value: FieldValue; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string }) {
   const fallback = isComplexValue(value)
     ? (
       <HighlightQueryCtx.Provider value={highlightQuery}>
@@ -790,7 +787,6 @@ function FieldRow({
         onEdit={onEdit}
         onCollectionEdit={onCollectionEdit}
         declaredType={declaredType}
-        refTargetType={refTargetType}
         valueAnnotation={valueAnnotation}
         fieldPath={fieldPath}
         pathKey={pathKey}
@@ -1189,7 +1185,7 @@ function ScalarFieldRow({
           ) : canEdit ? (
             <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
-            <DataCardCompact value={displayedValue} label={label} declaredType={declaredType} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
+            <DataCardCompact value={displayedValue} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
           )}
         </div>
       </div>
@@ -1829,7 +1825,6 @@ function ExpandableRow({
   onEdit,
   onCollectionEdit,
   declaredType,
-  refTargetType,
   valueAnnotation,
   fieldPath,
   pathKey,
@@ -1847,7 +1842,6 @@ function ExpandableRow({
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   declaredType?: string
-  refTargetType?: string
   valueAnnotation?: FieldAnnotation | null
   fieldPath: FieldPathSegment[]
   pathKey?: string

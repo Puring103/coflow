@@ -93,13 +93,8 @@ impl MutationImpact {
         match operation {
             PreparedMutationOp::SetField {
                 write_record, path, ..
-            } => self.add_path(
-                write_record.clone(),
-                &CfdPath {
-                    segments: path.clone(),
-                },
-            ),
-            PreparedMutationOp::UnsetField {
+            }
+            | PreparedMutationOp::UnsetField {
                 write_record, path, ..
             } => self.add_path(
                 write_record.clone(),

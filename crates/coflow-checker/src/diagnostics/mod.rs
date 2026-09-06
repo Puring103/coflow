@@ -364,8 +364,5 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
 }
 
 pub(crate) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
-    match ty {
-        Some(CftValueType::Float) => true,
-        _ => false,
-    }
+    matches!(ty, Some(CftValueType::Float))
 }

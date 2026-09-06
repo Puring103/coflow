@@ -265,12 +265,12 @@ impl ProjectSession {
                 });
             }
         }
-        self.file_tree_with(options)
+        self.file_tree_with(&options)
     }
 
     /// File-tree view using caller-supplied dimension groups and source paths.
     #[must_use]
-    pub(crate) fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
+    pub(crate) fn file_tree_with(&self, options: &FileTreeOptions) -> Vec<FileTreeNode> {
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
             if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {

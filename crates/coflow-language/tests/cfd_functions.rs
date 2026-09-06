@@ -1,3 +1,5 @@
+#![allow(clippy::panic)]
+
 use coflow_language::cfd::{parse_cfd, CfdFormatSegment, CfdValue};
 
 fn parse_function(source: &str) -> String {

@@ -102,7 +102,7 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
 pub(crate) struct CfdLoader;
 
 impl CfdLoader {
-    pub fn resolve(&self, source: &CfdSource) -> Result<CfdSource, DiagnosticSet> {
+    pub fn resolve(source: &CfdSource) -> Result<CfdSource, DiagnosticSet> {
         let path = source.location.path();
         if is_cfd_path(path) {
             return Ok(source.clone());
@@ -119,11 +119,10 @@ impl CfdLoader {
 
     #[cfg(test)]
     pub fn load(
-        &self,
         ctx: CfdLoadContext<'_>,
         source: &CfdSource,
     ) -> Result<LoadedCfdSource, DiagnosticSet> {
-        let loaded = self.load_partial(ctx, source)?;
+        let loaded = Self::load_partial(ctx, source)?;
         if loaded.diagnostics.is_empty() {
             Ok(loaded)
         } else {
@@ -132,7 +131,6 @@ impl CfdLoader {
     }
 
     pub(crate) fn load_partial(
-        &self,
         ctx: CfdLoadContext<'_>,
         source: &CfdSource,
     ) -> Result<LoadedCfdSource, DiagnosticSet> {
@@ -184,6 +182,10 @@ impl CfdLoader {
     }
 }
 
+fn is_cfd_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
@@ -210,8 +212,7 @@ mod tests {
             location: CfdSourcePath::new("data/items.json"),
             display_name: "data/items.json".to_string(),
         };
-        let diagnostics = CfdLoader
-            .resolve(&source)
+        let diagnostics = CfdLoader::resolve(&source)
             .expect_err("only CFD is supported");
         assert!(diagnostics.contains("unsupported extension"));
     }
@@ -226,8 +227,7 @@ mod tests {
         )
         .expect("write source");
         let schema = schema();
-        let loaded = CfdLoader
-            .load(
+        let loaded = CfdLoader::load(
                 CfdLoadContext {
                     schema: &schema,
                     source_text: None,
@@ -256,8 +256,4 @@ mod tests {
             }) if path == &source_path
         ));
     }
-}
-
-fn is_cfd_path(path: &Path) -> bool {
-    path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
 }

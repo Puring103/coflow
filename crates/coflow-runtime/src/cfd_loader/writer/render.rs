@@ -14,6 +14,8 @@ pub(super) fn serialize_value(v: &CfdValue, depth: usize) -> String {
     serialize_value_for_type(v, None, None, depth)
 }
 
+// 值序列化与 CFT 类型枚举逐项对应，集中分派能保证所有复合值使用相同缩进上下文。
+#[allow(clippy::too_many_lines)]
 pub(super) fn serialize_value_for_type(
     v: &CfdValue,
     schema: Option<&CftSchema>,

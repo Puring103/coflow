@@ -1,12 +1,19 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::unwrap_used
+)]
 
 use super::*;
-use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
+use coflow_language::cft::{
+    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
+};
 use std::collections::BTreeMap;
 
 fn schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &Default::default()).expect("schema compiles")
+    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compiles")
 }
 
 fn all(files: &[GeneratedFile]) -> String {
@@ -270,7 +277,6 @@ fn descriptor_declares_cfd_runtime_contract() {
         CSHARP_CFD_CODEGEN_DESCRIPTOR.runtime_package,
         "Coflow.Runtime"
     );
-    assert!(CSHARP_CFD_CODEGEN_DESCRIPTOR.needs_model);
 }
 
 #[test]

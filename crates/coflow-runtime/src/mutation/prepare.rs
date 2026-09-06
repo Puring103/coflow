@@ -729,7 +729,9 @@ fn effective_write_target_for_set_field(
         ))
     })?;
     Ok(writes::effective_write_target_for_path(
-        session, record_ref, path,
+        session,
+        record_ref,
+        path,
     ))
 }
 

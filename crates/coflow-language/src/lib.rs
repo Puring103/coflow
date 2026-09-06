@@ -51,8 +51,13 @@ pub mod cft {
 }
 
 // crate 内部仍使用短名称；对外 API 只通过职责命名空间发布。
+#[allow(clippy::wildcard_imports)]
 pub(crate) use diagnostics::*;
+#[allow(clippy::wildcard_imports)]
 pub(crate) use lexical::*;
+#[allow(clippy::wildcard_imports)]
 pub(crate) use module::*;
+#[allow(clippy::wildcard_imports)]
 pub(crate) use schema::*;
+#[allow(clippy::wildcard_imports)]
 pub(crate) use source::*;

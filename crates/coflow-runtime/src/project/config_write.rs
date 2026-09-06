@@ -11,6 +11,11 @@ pub enum ProjectInputKind {
 }
 
 /// Adds an existing file or directory to a project's configured inputs.
+///
+/// # Errors
+///
+/// Returns diagnostics when the selected path is invalid, overlaps another
+/// input, or the updated project configuration cannot be published.
 pub fn add_project_input(
     config_path: &Path,
     kind: ProjectInputKind,
@@ -32,8 +37,8 @@ pub fn add_project_input(
     }
     if configured_roots.iter().any(|root| {
         super::normalized_path_identity(root) == super::normalized_path_identity(&selected)
-            || (super::path_is_same_or_descendant(&selected, root)
-                || super::path_is_same_or_descendant(root, &selected))
+            || super::path_is_same_or_descendant(&selected, root)
+            || super::path_is_same_or_descendant(root, &selected)
     }) {
         return Err(file_error(
             selected_path,
@@ -46,20 +51,20 @@ pub fn add_project_input(
     // 配置层负责去重，避免前端状态或重复点击产生语义相同的输入项。
     let changed = match kind {
         ProjectInputKind::Schema => {
-            if !project.config.schema.paths().contains(&configured) {
+            if project.config.schema.paths().contains(&configured) {
+                false
+            } else {
                 project.config.schema.paths.push(configured);
                 project.config.schema.list_shape = true;
                 true
-            } else {
-                false
             }
         }
         ProjectInputKind::Data => {
-            if !project.config.data.iter().any(|source| source.path() == &configured) {
+            if project.config.data.iter().any(|source| source.path() == &configured) {
+                false
+            } else {
                 project.config.data.push(SourceConfig::from_path(configured));
                 true
-            } else {
-                false
             }
         }
     };
@@ -77,6 +82,12 @@ pub fn add_project_input(
     publish_config(config_path, &project)
 }
 
+/// Creates an empty CFT or CFD file under a configured input root.
+///
+/// # Errors
+///
+/// Returns diagnostics when the parent or file name is invalid, or staging
+/// and publishing the file fails.
 pub fn create_project_file(
     config_path: &Path,
     kind: ProjectInputKind,
@@ -108,6 +119,12 @@ pub fn create_project_file(
     Ok(())
 }
 
+/// Deletes a project file or configured input and updates the configuration.
+///
+/// # Errors
+///
+/// Returns diagnostics when the entry is outside the project inputs or the
+/// staged deletion/configuration update cannot be published.
 pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(), DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
     let target = project.resolve_path(entry_path);

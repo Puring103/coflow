@@ -411,6 +411,15 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void RejectsRemovedFormattedStringPrefixWithoutStalling()
+    {
+        var error = Assert.Throws<CfdParseException>(() => CfdParser.Parse(new CfdSource(
+            "data/legacy-format.cfd", "Item { item { text: f\"{text}\" } }")));
+
+        Assert.Contains(error.Diagnostics, diagnostic => diagnostic.Code == "CFD-SYNTAX-STRING");
+    }
+
+    [Fact]
     public void RejectsUnknownOrOutOfMaskFlagsAndAcceptsEnumMemberPaths()
     {
         var enumMember = CfdParser.Parse(new CfdSource("data/flags.cfd", "Item { item { value: TestFlags::Fire } }"));

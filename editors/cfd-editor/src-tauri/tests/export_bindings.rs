@@ -26,6 +26,14 @@ fn export_bindings() {
     export_with_retry::<t::ProjectBootstrap>("ProjectBootstrap");
     export_with_retry::<t::PluginSchemaType>("PluginSchemaType");
     export_with_retry::<t::PluginSchemaField>("PluginSchemaField");
+    export_with_retry::<t::LanguagePosition>("LanguagePosition");
+    export_with_retry::<t::LanguageRange>("LanguageRange");
+    export_with_retry::<t::LanguageTextEdit>("LanguageTextEdit");
+    export_with_retry::<t::LanguageFormattingResult>("LanguageFormattingResult");
+    export_with_retry::<t::LanguageDiagnostic>("LanguageDiagnostic");
+    export_with_retry::<t::LanguageDocumentState>("LanguageDocumentState");
+    export_with_retry::<t::LanguageCompletion>("LanguageCompletion");
+    export_with_retry::<t::FunctionDocumentState>("FunctionDocumentState");
     export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");
     export_with_retry::<t::EditorRecordGroup>("EditorRecordGroup");
     export_with_retry::<t::ViewConfig>("ViewConfig");

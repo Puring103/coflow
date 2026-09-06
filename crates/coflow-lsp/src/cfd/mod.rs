@@ -3,30 +3,25 @@
 //! Each function takes the parsed [`CfdAst`] (plus optional compiled schema)
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
+// `${1:name}` 是 LSP snippet 占位符，不是 Rust 格式化参数。
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use coflow_language::cfd::{
-    parse_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdFormatSegment, CfdFunction,
-    CfdRecord, CfdSyntaxDiagnostic, CfdValue,
+    parse_cfd, tokenize_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdField, CfdFormatSegment,
+    CfdFunction, CfdRecord, CfdSyntaxDiagnostic, CfdValue, CFD_FUNCTION_BUILTINS,
+    CFD_FUNCTION_KEYWORDS, CFD_FUNCTION_TYPES,
 };
 use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_language::lexical::{is_identifier_continue, LosslessTokenKind};
 use coflow_language::source::Span;
 use serde_json::{json, Value};
 
 use super::semantic_tokens::{
     MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_ENUM_MEMBER,
-    SEM_FUNCTION, SEM_KEYWORD, SEM_RECORD_KEY, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
-    SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    SEM_FUNCTION, SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER, SEM_PROPERTY,
+    SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::LspBuild;
-
-const FUNCTION_KEYWORDS: &[&str] = &[
-    "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
-    "in", "is", "true", "false", "None", "Some", "Ok", "Err",
-];
-const FUNCTION_TYPES: &[&str] = &["int", "float", "bool", "string", "Option", "Result"];
-const FUNCTION_BUILTINS: &[&str] = &[
-    "len", "map", "filter", "fold", "find", "any", "all", "contains", "starts_with",
-    "ends_with",
-];
 
 // ── Public helpers used by LspServer ─────────────────────────────────────────
 
@@ -93,7 +88,11 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
 
     // Walk the AST for structured tokens.
     for record in &ast.records {
-        collector.add(record.key_span, SEM_RECORD_KEY, MOD_DECLARATION | MOD_RECORD);
+        collector.add(
+            record.key_span,
+            SEM_RECORD_KEY,
+            MOD_DECLARATION | MOD_RECORD,
+        );
         collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
         for field in &record.fields {
             collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
@@ -198,11 +197,7 @@ fn function_parts(source: &str) -> Option<FunctionParts<'_>> {
     })
 }
 
-fn function_body_diagnostics(
-    function_source: &str,
-    body_start: usize,
-    body: &str,
-) -> Vec<Value> {
+fn function_body_diagnostics(function_source: &str, body_start: usize, body: &str) -> Vec<Value> {
     const PREFIX: &str = "__function: __EditorFunction { value: ";
     let document = format!("{PREFIX}{function_source}\n}}");
     let (_, diagnostics) = parse_cfd(&document);
@@ -212,8 +207,13 @@ fn function_body_diagnostics(
         .map(|diagnostic| {
             let relative = diagnostic.span.start.saturating_sub(body_document_start);
             let start = relative.min(body.len().saturating_sub(1));
-            let end = (start + diagnostic.span.end.saturating_sub(diagnostic.span.start).max(1))
-                .min(body.len());
+            let end = (start
+                + diagnostic
+                    .span
+                    .end
+                    .saturating_sub(diagnostic.span.start)
+                    .max(1))
+            .min(body.len());
             json!({
                 "range": byte_range(body, start, end),
                 "severity": 1,
@@ -225,12 +225,16 @@ fn function_body_diagnostics(
 }
 
 fn function_completion_items(signature: &str) -> Vec<Value> {
-    let mut items = FUNCTION_KEYWORDS
+    let mut items = CFD_FUNCTION_KEYWORDS
         .iter()
         .map(|label| json!({ "label": label, "kind": 14 }))
-        .chain(FUNCTION_TYPES.iter().map(|label| json!({ "label": label, "kind": 7 })))
+        .chain(
+            CFD_FUNCTION_TYPES
+                .iter()
+                .map(|label| json!({ "label": label, "kind": 7 })),
+        )
         .collect::<Vec<_>>();
-    items.extend(FUNCTION_BUILTINS.iter().map(|label| {
+    items.extend(CFD_FUNCTION_BUILTINS.iter().map(|label| {
         json!({
             "label": label,
             "kind": 2,
@@ -238,17 +242,21 @@ fn function_completion_items(signature: &str) -> Vec<Value> {
             "insertTextFormat": 2,
         })
     }));
-    items.extend(function_parameter_names(signature).into_iter().map(|label| {
-        json!({ "label": label, "kind": 6, "detail": "function parameter" })
-    }));
+    items.extend(
+        function_parameter_names(signature)
+            .into_iter()
+            .map(|label| json!({ "label": label, "kind": 6, "detail": "function parameter" })),
+    );
     items
 }
 
 fn function_completion_items_with_locals(signature: &str, source: &str) -> Vec<Value> {
     let mut items = function_completion_items(signature);
-    items.extend(function_local_names(source).into_iter().map(|label| {
-        json!({ "label": label, "kind": 6, "detail": "local variable" })
-    }));
+    items.extend(
+        function_local_names(source)
+            .into_iter()
+            .map(|label| json!({ "label": label, "kind": 6, "detail": "local variable" })),
+    );
     items
 }
 
@@ -257,9 +265,8 @@ pub(crate) fn function_source_completion_items_at(
     relative_offset: usize,
 ) -> Option<Vec<Value>> {
     let parts = function_parts(source)?;
-    (relative_offset > parts.prefix.len()).then(|| {
-        function_completion_items_with_locals(parts.signature, source)
-    })
+    (relative_offset > parts.prefix.len())
+        .then(|| function_completion_items_with_locals(parts.signature, source))
 }
 
 fn function_local_names(source: &str) -> Vec<String> {
@@ -382,7 +389,10 @@ fn collect_formatted_string_tokens(
         CfdFormatSegment::Reference(reference)
             if reference.span.start >= value.span.start
                 && reference.span.end <= value.span.end
-                && reference.span.start < reference.span.end => Some(reference),
+                && reference.span.start < reference.span.end =>
+        {
+            Some(reference)
+        }
         _ => None,
     }) {
         if reference.span.start > cursor {
@@ -422,13 +432,17 @@ fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
 
 #[allow(clippy::too_many_lines)]
 fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenCollector<'_>) {
-    visit_function_semantic_tokens(function_source, span.start, |span, token_type, modifiers, multiline| {
-        if multiline {
-            c.add_multiline(span, token_type, modifiers);
-        } else {
-            c.add(span, token_type, modifiers);
-        }
-    });
+    visit_function_semantic_tokens(
+        function_source,
+        span.start,
+        |span, token_type, modifiers, multiline| {
+            if multiline {
+                c.add_multiline(span, token_type, modifiers);
+            } else {
+                c.add(span, token_type, modifiers);
+            }
+        },
+    );
 }
 
 pub(crate) fn visit_function_semantic_tokens(
@@ -436,155 +450,125 @@ pub(crate) fn visit_function_semantic_tokens(
     base: usize,
     mut visit: impl FnMut(Span, u32, u32, bool),
 ) {
-    let mut pos = 0;
-    while pos < function_source.len() {
-        let Some(ch) = function_source[pos..].chars().next() else {
-            break;
-        };
-        if ch.is_whitespace() {
-            pos += ch.len_utf8();
-            continue;
-        }
-        if ch == '#' {
-            let start = pos;
-            while pos < function_source.len() && function_source.as_bytes()[pos] != b'\n' {
-                pos += 1;
-            }
-            visit(offset_span(base, start, pos), SEM_COMMENT, 0, false);
-            continue;
-        }
-        if ch == '"' {
-            let start = pos;
-            pos += 1;
-            while pos < function_source.len() {
-                let Some(current) = function_source[pos..].chars().next() else {
-                    break;
-                };
-                pos += current.len_utf8();
-                if current == '\\' {
-                    if let Some(escaped) = function_source[pos..].chars().next() {
-                        pos += escaped.len_utf8();
+    for token in tokenize_cfd(function_source) {
+        let text = token.text(function_source);
+        let span = offset_span(base, token.span.start, token.span.end);
+        match token.kind {
+            LosslessTokenKind::Comment => visit(span, SEM_COMMENT, 0, false),
+            LosslessTokenKind::String => visit(span, SEM_STRING, 0, true),
+            LosslessTokenKind::Number => visit(span, SEM_NUMBER, 0, false),
+            LosslessTokenKind::Identifier => {
+                // `$field` 在共享 token 流中是一个整体；语义高亮只标记字段名部分。
+                if let Some(field) = text.strip_prefix('$') {
+                    let field_start = token.span.end - field.len();
+                    visit(
+                        offset_span(base, field_start, token.span.end),
+                        SEM_PROPERTY,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        false,
+                    );
+                    continue;
+                }
+                let previous = previous_non_whitespace(function_source, token.span.start);
+                let following = next_non_whitespace(function_source, token.span.end);
+                let (token_type, modifiers) = if CFD_FUNCTION_KEYWORDS.contains(&text) {
+                    (SEM_KEYWORD, 0)
+                } else if CFD_FUNCTION_TYPES.contains(&text) {
+                    (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
+                } else if previous == Some('&') {
+                    if function_source[token.span.end..].starts_with("::") {
+                        (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
+                    } else {
+                        (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
                     }
-                } else if current == '"' {
-                    break;
-                }
-            }
-            visit(offset_span(base, start, pos), SEM_STRING, 0, true);
-            continue;
-        }
-        if is_function_ident_start(ch) {
-            let start = pos;
-            pos += ch.len_utf8();
-            while let Some(current) = function_source[pos..].chars().next() {
-                if !is_function_ident_continue(current) {
-                    break;
-                }
-                pos += current.len_utf8();
-            }
-            let text = &function_source[start..pos];
-            let previous = previous_non_whitespace(function_source, start);
-            let following = next_non_whitespace(function_source, pos);
-            let (token_type, modifiers) = if FUNCTION_KEYWORDS.contains(&text) {
-                (SEM_KEYWORD, 0)
-            } else if FUNCTION_TYPES.contains(&text) {
-                (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
-            } else if previous == Some('$') {
-                (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
-            } else if previous == Some('&') {
-                if function_source[pos..].starts_with("::") {
+                } else if previous == Some('.') {
+                    if following == Some('(') {
+                        (SEM_FUNCTION, MOD_REFERENCE)
+                    } else {
+                        (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
+                    }
+                } else if previous_ends_double_colon(function_source, token.span.start) {
+                    if type_key_chain_is_reference(function_source, token.span.start) {
+                        (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
+                    } else {
+                        (SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA)
+                    }
+                } else if following == Some(':') {
+                    (SEM_PARAMETER, MOD_DECLARATION)
+                } else if previous_function_ident(function_source, token.span.start) == Some("var")
+                {
+                    (SEM_VARIABLE, MOD_DECLARATION)
+                } else if following == Some('(') {
+                    (SEM_FUNCTION, MOD_REFERENCE)
+                } else if text.chars().next().is_some_and(char::is_uppercase) {
                     (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
                 } else {
-                    (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
-                }
-            } else if previous == Some('.') {
-                if following == Some('(') {
-                    (SEM_FUNCTION, MOD_REFERENCE)
-                } else {
-                    (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
-                }
-            } else if previous_ends_double_colon(function_source, start) {
-                if type_key_chain_is_reference(function_source, start) {
-                    (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
-                } else {
-                    (SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA)
-                }
-            } else if following == Some(':') {
-                (SEM_PARAMETER, MOD_DECLARATION)
-            } else if previous_function_ident(function_source, start) == Some("var") {
-                (SEM_VARIABLE, MOD_DECLARATION)
-            } else if following == Some('(') {
-                (SEM_FUNCTION, MOD_REFERENCE)
-            } else if text.chars().next().is_some_and(char::is_uppercase) {
-                (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
-            } else {
-                (SEM_VARIABLE, MOD_REFERENCE)
-            };
-            visit(offset_span(base, start, pos), token_type, modifiers, false);
-            continue;
-        }
-        if ch.is_ascii_digit() {
-            let start = pos;
-            pos += 1;
-            while pos < function_source.len()
-                && function_source.as_bytes()[pos].is_ascii_digit()
-            {
-                pos += 1;
+                    (SEM_VARIABLE, MOD_REFERENCE)
+                };
+                visit(span, token_type, modifiers, false);
             }
-            if function_source.as_bytes().get(pos) == Some(&b'.')
-                && function_source
-                    .as_bytes()
-                    .get(pos + 1)
-                    .is_some_and(u8::is_ascii_digit)
-            {
-                pos += 1;
-                while pos < function_source.len()
-                    && function_source.as_bytes()[pos].is_ascii_digit()
-                {
-                    pos += 1;
-                }
+            LosslessTokenKind::Symbol if is_function_operator(text) => {
+                visit(span, SEM_OPERATOR, 0, false);
             }
-            if matches!(function_source.as_bytes().get(pos), Some(b'e' | b'E')) {
-                pos += 1;
-                if matches!(function_source.as_bytes().get(pos), Some(b'+' | b'-')) {
-                    pos += 1;
-                }
-                while pos < function_source.len()
-                    && function_source.as_bytes()[pos].is_ascii_digit()
-                {
-                    pos += 1;
-                }
-            }
-            visit(offset_span(base, start, pos), SEM_NUMBER, 0, false);
-            continue;
-        }
-
-        let operator_len = ["..=", "->", "::", "//", "==", "!=", "<=", ">=", "&&", "||", "=>", "**", "<<", ">>", "..", "+=", "-=", "*=", "/="]
-            .iter()
-            .find_map(|operator| function_source[pos..].starts_with(operator).then_some(operator.len()))
-            .or_else(|| "+-*/%<>=!~&|^?.:$".contains(ch).then_some(ch.len_utf8()));
-        if let Some(length) = operator_len {
-            visit(offset_span(base, pos, pos + length), SEM_OPERATOR, 0, false);
-            pos += length;
-        } else {
-            pos += ch.len_utf8();
+            LosslessTokenKind::Whitespace
+            | LosslessTokenKind::Newline
+            | LosslessTokenKind::Symbol
+            | LosslessTokenKind::Unknown => {}
         }
     }
+}
+
+fn is_function_operator(text: &str) -> bool {
+    matches!(
+        text,
+        "..="
+            | "->"
+            | "::"
+            | "//"
+            | "=="
+            | "!="
+            | "<="
+            | ">="
+            | "&&"
+            | "||"
+            | "=>"
+            | "**"
+            | "<<"
+            | ">>"
+            | ".."
+            | "+="
+            | "-="
+            | "*="
+            | "/="
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "<"
+            | ">"
+            | "="
+            | "!"
+            | "~"
+            | "&"
+            | "|"
+            | "^"
+            | "?"
+            | "."
+            | ":"
+            | "$"
+    )
 }
 
 const fn offset_span(base: usize, start: usize, end: usize) -> Span {
     Span::new(base + start, base + end)
 }
 
-fn is_function_ident_start(ch: char) -> bool {
-    ch == '_' || ch.is_alphabetic()
-}
-
-fn is_function_ident_continue(ch: char) -> bool {
-    ch == '_' || ch.is_alphanumeric()
-}
-
 fn previous_non_whitespace(source: &str, offset: usize) -> Option<char> {
-    source[..offset].chars().rev().find(|ch| !ch.is_whitespace())
+    source[..offset]
+        .chars()
+        .rev()
+        .find(|ch| !ch.is_whitespace())
 }
 
 fn previous_function_ident(source: &str, offset: usize) -> Option<&str> {
@@ -592,7 +576,7 @@ fn previous_function_ident(source: &str, offset: usize) -> Option<&str> {
     let start = prefix
         .char_indices()
         .rev()
-        .find_map(|(index, ch)| (!is_function_ident_continue(ch)).then_some(index + ch.len_utf8()))
+        .find_map(|(index, ch)| (!is_identifier_continue(ch)).then_some(index + ch.len_utf8()))
         .unwrap_or(0);
     prefix.get(start..).filter(|ident| !ident.is_empty())
 }
@@ -611,38 +595,16 @@ fn type_key_chain_is_reference(source: &str, offset: usize) -> bool {
         .char_indices()
         .rev()
         .find_map(|(index, ch)| {
-            (!is_function_ident_continue(ch) && ch != ':' && ch != '&')
-                .then_some(index + ch.len_utf8())
+            (!is_identifier_continue(ch) && ch != ':' && ch != '&').then_some(index + ch.len_utf8())
         })
         .unwrap_or(0);
     prefix[chain_start..].starts_with('&')
 }
 
 fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
-    let bytes = source.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'#' {
-            let start = i;
-            while i < bytes.len() && bytes[i] != b'\n' {
-                i += 1;
-            }
-            c.add_plain(Span::new(start, i), SEM_COMMENT);
-        } else if bytes[i] == b'"' {
-            // Skip quoted strings so we don't misidentify `//` inside them.
-            i += 1;
-            while i < bytes.len() {
-                if bytes[i] == b'\\' {
-                    i += 2;
-                } else if bytes[i] == b'"' {
-                    i += 1;
-                    break;
-                } else {
-                    i += 1;
-                }
-            }
-        } else {
-            i += 1;
+    for token in tokenize_cfd(source) {
+        if token.kind == LosslessTokenKind::Comment {
+            c.add_plain(token.span, SEM_COMMENT);
         }
     }
 }
@@ -709,8 +671,14 @@ pub(crate) fn completion_with_build(
     if let Some(function) = function_at(ast, offset) {
         let body_start = function.body_span.start.saturating_sub(function.span.start);
         let signature_end = body_start.saturating_sub(1);
-        let signature = function.source.get(..signature_end).unwrap_or(&function.source);
-        return json!(function_completion_items_with_locals(signature, &function.source));
+        let signature = function
+            .source
+            .get(..signature_end)
+            .unwrap_or(&function.source);
+        return json!(function_completion_items_with_locals(
+            signature,
+            &function.source
+        ));
     }
     let Some(schema) = schema else {
         return json!([]);
@@ -737,19 +705,26 @@ pub(crate) fn completion_with_build(
     if let Some(context) = completion_context(source, ast, schema, offset) {
         return json!(match context {
             CompletionContext::Value(value_type) => {
-                let mut items = selected_flag_values(source, offset, schema, value_type).map_or_else(
-                    || value_completion_items(schema, value_type, build),
-                    |selected| flag_completion_items(schema, value_type, &selected),
-                );
+                let mut items = selected_flag_values(source, offset, schema, value_type)
+                    .map_or_else(
+                        || value_completion_items(schema, value_type, build),
+                        |selected| flag_completion_items(schema, value_type, &selected),
+                    );
                 attach_value_text_edits(source, offset, &mut items);
                 items
             }
-            CompletionContext::Flags { value_type, selected } => {
+            CompletionContext::Flags {
+                value_type,
+                selected,
+            } => {
                 let mut items = flag_completion_items(schema, value_type, &selected);
                 attach_value_text_edits(source, offset, &mut items);
                 items
             }
-            CompletionContext::Fields { type_name, existing } => {
+            CompletionContext::Fields {
+                type_name,
+                existing,
+            } => {
                 field_completion_items(source, schema, type_name, &existing, offset)
             }
         });
@@ -800,6 +775,8 @@ pub(crate) fn completion_with_build(
     json!(types)
 }
 
+// 格式化字符串补全同时处理记录引用、字段链与局部绑定，需共享同一深度限制和去重集合。
+#[allow(clippy::too_many_lines)]
 fn formatted_string_completion(
     source: &str,
     ast: &CfdAst,
@@ -840,7 +817,13 @@ fn formatted_string_completion(
             } else {
                 format!("&{record}.{}", completed.join("."))
             };
-            collect_formatted_field_paths(schema, nested_owner, &base, FORMATTED_PATH_DEPTH, &mut paths);
+            collect_formatted_field_paths(
+                schema,
+                nested_owner,
+                &base,
+                FORMATTED_PATH_DEPTH,
+                &mut paths,
+            );
         } else {
             paths.extend(
                 formatted_record_keys(ast, schema, build, owner_type)
@@ -869,9 +852,17 @@ fn formatted_string_completion(
             }
         } else {
             let path_prefix = parts[..parts.len() - 1].join(".");
-            collect_formatted_field_paths(schema, type_name, &path_prefix, FORMATTED_PATH_DEPTH, &mut paths);
+            collect_formatted_field_paths(
+                schema,
+                type_name,
+                &path_prefix,
+                FORMATTED_PATH_DEPTH,
+                &mut paths,
+            );
         }
-    } else if let Some((owner, path_prefix)) = formatted_path_owner(schema, schema_type.name.as_str(), &parts) {
+    } else if let Some((owner, path_prefix)) =
+        formatted_path_owner(schema, schema_type.name.as_str(), &parts)
+    {
         collect_formatted_field_paths(schema, owner, &path_prefix, 2, &mut paths);
     } else {
         collect_formatted_field_paths(
@@ -881,24 +872,28 @@ fn formatted_string_completion(
             FORMATTED_PATH_DEPTH,
             &mut paths,
         );
-        paths.extend(schema.all_types().map(|ty| {
-            (ty.name.to_string(), "record type".to_string())
-        }));
+        paths.extend(
+            schema
+                .all_types()
+                .map(|ty| (ty.name.to_string(), "record type".to_string())),
+        );
     }
 
     let range = formatted_reference_range(source, offset);
     Some(
         paths
             .into_iter()
-            .map(|(label, detail)| json!({
-                "label": label,
-                "kind": 5,
-                "detail": detail,
-                "textEdit": {
-                    "range": byte_range(source, range.start, range.end),
-                    "newText": label,
-                },
-            }))
+            .map(|(label, detail)| {
+                json!({
+                    "label": label,
+                    "kind": 5,
+                    "detail": detail,
+                    "textEdit": {
+                        "range": byte_range(source, range.start, range.end),
+                        "newText": label,
+                    },
+                })
+            })
             .collect(),
     )
 }
@@ -1131,7 +1126,11 @@ fn completion_context_in_value<'a>(
             }
             Some(CompletionContext::Fields {
                 type_name: actual_type.name.as_str(),
-                existing: block.fields.iter().map(|field| field.name.as_str()).collect(),
+                existing: block
+                    .fields
+                    .iter()
+                    .map(|field| field.name.as_str())
+                    .collect(),
             })
         }
         _ => Some(CompletionContext::Value(expected)),
@@ -1148,21 +1147,26 @@ fn value_completion_items(
             .into_iter()
             .map(|label| json!({ "label": label, "kind": 14, "detail": "bool" }))
             .collect(),
-        CftValueType::Enum(name) => schema.resolve_enum(name.as_str()).map_or_else(Vec::new, |item| {
-            item.variants
-                .iter()
-                .map(|variant| json!({
-                    "label": variant.name.as_str(),
-                    "kind": 20,
-                    "detail": format!("{} enum variant", item.name),
-                    "insertText": variant.name.as_str(),
-                }))
-                .collect()
-        }),
+        CftValueType::Enum(name) => {
+            schema
+                .resolve_enum(name.as_str())
+                .map_or_else(Vec::new, |item| {
+                    item.variants
+                        .iter()
+                        .map(|variant| {
+                            json!({
+                                "label": variant.name.as_str(),
+                                "kind": 20,
+                                "detail": format!("{} enum variant", item.name),
+                                "insertText": variant.name.as_str(),
+                            })
+                        })
+                        .collect()
+                })
+        }
         CftValueType::Option(inner) => {
-            let mut items = vec![
-                json!({ "label": "None", "kind": 14, "detail": value_type.display_label() }),
-            ];
+            let mut items =
+                vec![json!({ "label": "None", "kind": 14, "detail": value_type.display_label() })];
             items.push(json!({
                 "label": "Some",
                 "kind": 3,
@@ -1193,11 +1197,16 @@ fn value_completion_items(
             let parameters = parameters
                 .iter()
                 .enumerate()
-                .map(|(index, parameter)| format!(
-                    "{}: {}",
-                    parameter.name.as_deref().map_or_else(|| format!("arg{index}"), str::to_string),
-                    parameter.value_type.display_label(),
-                ))
+                .map(|(index, parameter)| {
+                    format!(
+                        "{}: {}",
+                        parameter
+                            .name
+                            .as_deref()
+                            .map_or_else(|| format!("arg{index}"), str::to_string),
+                        parameter.value_type.display_label(),
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             vec![json!({
@@ -1216,15 +1225,15 @@ fn value_completion_items(
         }
         CftValueType::Object(name) => {
             let mut items = object_value_completion_items(schema, name);
-            items.extend(record_reference_completion_items(schema, name, build, false));
+            items.extend(record_reference_completion_items(
+                schema, name, build, false,
+            ));
             items
         }
         CftValueType::Unit => {
             vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
         }
-        CftValueType::Int
-        | CftValueType::Float
-        | CftValueType::String => Vec::new(),
+        CftValueType::Int | CftValueType::Float | CftValueType::String => Vec::new(),
         CftValueType::RecordRef(name) => {
             record_reference_completion_items(schema, name, build, true)
         }
@@ -1250,12 +1259,14 @@ fn record_reference_completion_items(
         })];
     }
     keys.into_iter()
-        .map(|key| json!({
-            "label": key,
-            "kind": 18,
-            "detail": format!("{expected_name} record"),
-            "insertText": format!("&{key}"),
-        }))
+        .map(|key| {
+            json!({
+                "label": key,
+                "kind": 18,
+                "detail": format!("{expected_name} record"),
+                "insertText": format!("&{key}"),
+            })
+        })
         .collect()
 }
 
@@ -1267,17 +1278,21 @@ fn flag_completion_items(
     let CftValueType::Enum(name) = value_type else {
         return Vec::new();
     };
-    schema.resolve_enum(name.as_str()).map_or_else(Vec::new, |item| {
-        item.variants
-            .iter()
-            .filter(|variant| !selected.contains(variant.name.as_str()))
-            .map(|variant| json!({
-                "label": variant.name.as_str(),
-                "kind": 20,
-                "detail": format!("{} flag", item.name),
-            }))
-            .collect()
-    })
+    schema
+        .resolve_enum(name.as_str())
+        .map_or_else(Vec::new, |item| {
+            item.variants
+                .iter()
+                .filter(|variant| !selected.contains(variant.name.as_str()))
+                .map(|variant| {
+                    json!({
+                        "label": variant.name.as_str(),
+                        "kind": 20,
+                        "detail": format!("{} flag", item.name),
+                    })
+                })
+                .collect()
+        })
 }
 
 fn collect_bit_expr_values(
@@ -1308,7 +1323,10 @@ fn selected_flag_values(
     if !enum_def.is_flag {
         return None;
     }
-    let line = source.get(..offset.min(source.len()))?.rsplit('\n').next()?;
+    let line = source
+        .get(..offset.min(source.len()))?
+        .rsplit('\n')
+        .next()?;
     let value = line.rsplit_once(':').map_or(line, |(_, value)| value);
     if !value.contains(['|', '^', '&']) {
         return None;
@@ -1340,9 +1358,13 @@ fn object_value_completion_items(schema: &CftSchema, expected_name: &str) -> Vec
             } else {
                 format!("\n  {}\n", fields.join("\n  "))
             };
-            let marker = (actual.name.as_str() != expected_name || schema.range_is_polymorphic(expected_name))
-                .then(|| format!("{} ", actual.name))
-                .unwrap_or_default();
+            let marker = if actual.name.as_str() != expected_name
+                || schema.range_is_polymorphic(expected_name)
+            {
+                format!("{} ", actual.name)
+            } else {
+                String::new()
+            };
             Some(json!({
                 "label": actual.name.as_str(),
                 "kind": 7,
@@ -1392,7 +1414,11 @@ fn field_completion_items(
         .collect()
 }
 
-fn required_field_snippets(schema: &CftSchema, type_name: &str, first_tabstop: usize) -> Vec<String> {
+fn required_field_snippets(
+    schema: &CftSchema,
+    type_name: &str,
+    first_tabstop: usize,
+) -> Vec<String> {
     let Some(schema_type) = schema.resolve_type(type_name) else {
         return Vec::new();
     };
@@ -1455,10 +1481,13 @@ fn attach_value_text_edits(source: &str, offset: usize, items: &mut [Value]) {
             continue;
         };
         if let Value::Object(fields) = item {
-            fields.insert("textEdit".to_string(), json!({
-                "range": byte_range(source, range.start, range.end),
-                "newText": new_text,
-            }));
+            fields.insert(
+                "textEdit".to_string(),
+                json!({
+                    "range": byte_range(source, range.start, range.end),
+                    "newText": new_text,
+                }),
+            );
         }
     }
 }
@@ -1741,9 +1770,9 @@ fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
         CfdValue::Array(values, _) => values
             .iter()
             .find_map(|value| function_in_value(value, offset)),
-        CfdValue::OptionSome(value, _) | CfdValue::ResultOk(value, _) | CfdValue::ResultErr(value, _) => {
-            function_in_value(value, offset)
-        }
+        CfdValue::OptionSome(value, _)
+        | CfdValue::ResultOk(value, _)
+        | CfdValue::ResultErr(value, _) => function_in_value(value, offset),
         _ => None,
     }
 }

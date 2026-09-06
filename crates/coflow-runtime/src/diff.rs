@@ -143,7 +143,7 @@ pub(crate) fn diff_against_head(
         }
         Err(error) => {
             append_diagnostics(&mut diagnostics, "head", &error);
-            (head.sources.clone(), BTreeMap::new(), false)
+            (head.sources, BTreeMap::new(), false)
         }
     };
 

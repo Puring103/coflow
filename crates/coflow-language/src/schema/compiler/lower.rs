@@ -60,10 +60,10 @@ impl ValidatedSchema<'_> {
     fn build_consts(&self) -> BTreeMap<ConstName, CftConst> {
         let mut consts = BTreeMap::new();
         for (name, info) in &self.consts {
-            let (value_type, value) = self
-                .resolved_constants
-                .get(name)
-                .expect("constants are resolved before lowering");
+            let Some((value_type, value)) = self.constants.get(name) else {
+                debug_assert!(false, "constants are resolved before lowering");
+                continue;
+            };
             let name = ConstName::from_validated(name.clone());
             let schema = CftConst {
                 module: info.module.clone(),
@@ -94,7 +94,7 @@ impl ValidatedSchema<'_> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
-                    annotations: self.schema_annotations(&variant.annotations),
+                    annotations: Self::schema_annotations(&variant.annotations),
                     display: display_metadata(&variant.annotations),
                     span: variant.span,
                 })
@@ -117,7 +117,7 @@ impl ValidatedSchema<'_> {
                 variant_by_name,
                 variant_by_value,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
-                annotations: self.schema_annotations(&info.def.annotations),
+                annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 span: info.def.span,
             };
@@ -179,7 +179,7 @@ impl ValidatedSchema<'_> {
                 is_singleton,
                 is_host,
                 id_as_enum,
-                annotations: self.schema_annotations(&info.def.annotations),
+                annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 own_fields: fields,
                 all_fields,
@@ -212,7 +212,7 @@ impl ValidatedSchema<'_> {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
             value_type: self
-                .resolve_field_type(module, &field.ty)
+                .resolve_field_type(&field.ty)
                 .value_type()
                 .cloned()
                 .unwrap_or(CftValueType::Unit),
@@ -222,16 +222,13 @@ impl ValidatedSchema<'_> {
                 .and_then(|default| self.schema_default_value(module, default)),
             is_expand: has_annotation(&field.annotations, "expand"),
             dimension,
-            annotations: self.schema_annotations(&field.annotations),
+            annotations: Self::schema_annotations(&field.annotations),
             display: display_metadata(&field.annotations),
             span: field.span,
         }
     }
 
-    fn schema_annotations(
-        &self,
-        annotations: &[Annotation],
-    ) -> Vec<CftAnnotation> {
+    fn schema_annotations(annotations: &[Annotation]) -> Vec<CftAnnotation> {
         annotations
             .iter()
             .map(|annotation| CftAnnotation {
@@ -277,7 +274,7 @@ impl ValidatedSchema<'_> {
         expr: &DefaultExpr,
     ) -> Option<CftSchemaDefaultValue> {
         let value = self
-            .resolved_defaults
+            .defaults
             .get(&(module.clone(), expr.span.start, expr.span.end))?;
         Some(const_value_as_default(value))
     }
@@ -439,6 +436,8 @@ impl ValidatedSchema<'_> {
 }
 
 impl ValidatedSchema<'_> {
+// Check 表达式在此集中完成一对一 lowering，保持变体覆盖可审计。
+#[allow(clippy::too_many_lines)]
 fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftSchemaCheckExpr {
     CftSchemaCheckExpr {
         kind: match &expr.kind {
@@ -461,10 +460,13 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
                     CftSchemaCheckExprKind::Name(resolved_name)
                 } else {
                     // 语法层保证名称路径至少包含一个段，这里直接拆出末段作为枚举成员。
-                    let (variant, owner) = path
-                        .segments
-                        .split_last()
-                        .expect("name path must contain at least one segment");
+                    let Some((variant, owner)) = path.segments.split_last() else {
+                        debug_assert!(false, "name path must contain at least one segment");
+                        return CftSchemaCheckExpr {
+                            kind: CftSchemaCheckExprKind::Name(resolved_name),
+                            span: expr.span,
+                        };
+                    };
                     let owner = owner
                         .iter()
                         .map(|segment| segment.name.as_str())

@@ -500,7 +500,7 @@ mod tests {
         let source = " \t# { [ ( ignored\r\nnext";
         assert_eq!(
             scan_trivia(source, 0, source.len()),
-            source.find("next").unwrap()
+            source.find("next").unwrap_or(source.len())
         );
 
         let nested = "{ [ (\"}])\" # }])\n) ] }";

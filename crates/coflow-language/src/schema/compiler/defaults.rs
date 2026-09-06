@@ -34,7 +34,7 @@ impl ValueResolver<'_, '_> {
                     continue;
                 }
                 let expected = self
-                    .resolve_field_type(module, &field.ty)
+                    .resolve_field_type(&field.ty)
                     .value_type()
                     .cloned();
                 let Some(expected) = expected else {

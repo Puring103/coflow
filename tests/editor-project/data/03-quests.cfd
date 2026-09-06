@@ -18,7 +18,7 @@ Quest {
   advanced {
     displayId: "quest_advanced",
     title: "Nested collections",
-    prerequisite: &introduction,
+    prerequisite: &advanced,
     steps: [
       QuestStep {
         title: "Defeat targets",

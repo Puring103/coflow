@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
+
 use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchemaDefaultValue, CftValueType,
     ModuleId,
