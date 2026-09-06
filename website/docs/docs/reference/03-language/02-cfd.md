@@ -137,7 +137,7 @@ remote_label: "{&sword.name}",
 typed: "{&Item::sword.name}",
 ```
 
-插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`。`{{` 和 `}}` 表示字面花括号。
+插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`。<code>&#123;&#123;</code> 和 <code>&#125;&#125;</code> 表示字面花括号。
 解析完成后 runtime 根据记录和字段路径求值，同时保留原始 source。
 
 ### 函数值
