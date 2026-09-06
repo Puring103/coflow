@@ -1,7 +1,7 @@
 import { createElement, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { FrontendPluginBundle } from '../api'
 import type { RecordRow } from '../bindings/RecordRow'
-import { cloneValue, sameCoordinate, type DictKey, type FieldPathSegment, type FieldValue } from '../wire'
+import { cloneValue, dictKeyPathText, sameCoordinate, type FieldPathSegment, type FieldValue } from '../wire'
 import type {
   EditorPluginActivate,
   EditorPluginHost,
@@ -375,25 +375,10 @@ function valueAtPath(row: RecordRow, path: readonly FieldPathSegment[]): FieldVa
     if (segment.kind === 'field' && value.kind === 'object') value = value.value.fields[segment.value]
     else if (segment.kind === 'index' && value.kind === 'array') value = value.value[segment.value]
     else if (segment.kind === 'dict_key' && value.kind === 'dict') {
-      value = value.value.find(([key]) => dictKeyText(key) === segment.value)?.[1]
+      value = value.value.find(([key]) => dictKeyPathText(key) === segment.value)?.[1]
     } else return null
   }
   return value ?? null
-}
-
-function dictKeyText(key: DictKey): string {
-  if (key.kind === 'int') return key.value.toString()
-  if (key.kind === 'enum') {
-    return key.value.variant
-      ? `${key.value.enum_name}.${key.value.variant}`
-      : `${key.value.enum_name}(${key.value.value})`
-  }
-  return `"${key.value
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')}"`
 }
 
 function cloneNullableValue(value: FieldValue | null): FieldValue | null {

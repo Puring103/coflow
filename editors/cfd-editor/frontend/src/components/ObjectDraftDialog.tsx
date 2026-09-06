@@ -8,6 +8,7 @@ import { DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { SearchableSelect } from './SearchableSelect'
+import { cssEscape } from '../utils/dom'
 
 interface Props {
   /** Displayed as the dialog title, e.g. "新建记录" or "切换类型". */
@@ -263,10 +264,6 @@ function annotationForDraft(field: CreateRecordFieldDraft): FieldAnnotation | nu
   }
 }
 
-function cssEscape(value: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value)
-  return value.replace(/["\\]/g, '\\$&')
-}
 
 /** Assemble a CfdValue::Object payload from the draft. Fields the user
  *  didn't touch and that only carry a schema default are omitted, so the

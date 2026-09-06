@@ -6,6 +6,7 @@ import {
   type VisibleRecordItem,
 } from '../state/recordItemNavigation'
 import { selectionEditIntentForKey } from '../state/selectionKeyboard'
+import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Options {
   rootRef: RefObject<HTMLElement | null>
@@ -22,7 +23,6 @@ interface Options {
   onNotice?: (notice: string | null) => void
   onBoundary?: (edge: 'before' | 'parent') => void
 }
-
 export function useRecordItemKeyboard(options: Options) {
   const selectElement = useCallback((element: HTMLElement) => {
     const actionPath = element.dataset.addPathWire
@@ -177,16 +177,6 @@ function recordItemId(element: HTMLElement): string {
     : `value:${element.dataset.fieldPathWire ?? ''}`
 }
 
-function parseWireFieldPath(raw: string | undefined): FieldPathSegment[] | null {
-  if (!raw) return null
-  try {
-    const value = JSON.parse(raw)
-    return Array.isArray(value) ? value as FieldPathSegment[] : null
-  } catch {
-    return null
-  }
-}
-
 function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
   const editor = row.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
     '.dc-row-value input:not([type="checkbox"]), .dc-row-value textarea, .dc-row-value select',
@@ -210,13 +200,4 @@ function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
     return
   }
   editor.select()
-}
-
-function isNativeEditorTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return target.isContentEditable
-    || target.tagName === 'INPUT'
-    || target.tagName === 'TEXTAREA'
-    || target.tagName === 'SELECT'
-    || target.tagName === 'BUTTON'
 }

@@ -162,10 +162,12 @@ impl<'a> CsharpLoweringPlan<'a> {
             .unwrap_or_else(|| csharp_type_name(enum_name))
     }
 
+    #[allow(clippy::unused_self)] // 目标语言引用统一通过 lowering plan 暴露，调用方不依赖命名实现。
     pub fn csharp_type_ref(&self, type_name: &str) -> String {
         csharp_qualified_type_name(type_name)
     }
 
+    #[allow(clippy::unused_self)] // 枚举与类型引用保持相同的 lowering 边界。
     pub fn csharp_enum_ref(&self, enum_name: &str) -> String {
         csharp_qualified_type_name(enum_name)
     }

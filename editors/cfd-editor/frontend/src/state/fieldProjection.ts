@@ -4,6 +4,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import { summaryOf } from '../value/fieldValue'
 import {
   cloneValue,
+  dictKeyPathText,
   sameCoordinate,
   type DictKey,
   type FieldPathSegment,
@@ -157,7 +158,7 @@ function replaceAtPath(
     return { kind: 'array', value: values }
   }
   if (segment.kind === 'dict_key' && current.kind === 'dict') {
-    const entryIndex = current.value.findIndex(([key]) => dictKeyText(key) === segment.value)
+    const entryIndex = current.value.findIndex(([key]) => dictKeyPathText(key) === segment.value)
     if (entryIndex < 0) return null
     const next = replaceAtPath(current.value[entryIndex][1], path, index + 1, nextValue)
     if (!next) return null
@@ -184,7 +185,7 @@ function valueAtPath(
     return child ? valueAtPath(child, path, index + 1) : null
   }
   if (segment.kind === 'dict_key' && current.kind === 'dict') {
-    const entry = current.value.find(([key]) => dictKeyText(key) === segment.value)
+    const entry = current.value.find(([key]) => dictKeyPathText(key) === segment.value)
     return entry ? valueAtPath(entry[1], path, index + 1) : null
   }
   return null
@@ -198,21 +199,6 @@ function sameDictKey(left: DictKey, right: DictKey): boolean {
   return left.value.enum_name === value.enum_name
     && left.value.variant === value.variant
     && BigInt(left.value.value) === BigInt(value.value)
-}
-
-function dictKeyText(key: DictKey): string {
-  if (key.kind === 'int') return key.value.toString()
-  if (key.kind === 'enum') {
-    return key.value.variant
-      ? `${key.value.enum_name}.${key.value.variant}`
-      : `${key.value.enum_name}(${key.value.value})`
-  }
-  return `"${key.value
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')}"`
 }
 
 function sameStrings(left: string[], right: string[]): boolean {

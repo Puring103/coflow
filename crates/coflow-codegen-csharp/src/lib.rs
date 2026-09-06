@@ -111,6 +111,11 @@ pub fn generate_csharp(schema: &CftSchema) -> Result<Vec<GeneratedFile>, CsharpC
 
 /// Generates C# declarations plus a direct CFD source loader. The loader
 /// consumes the logical paths in `sources` through `Coflow.Runtime`.
+///
+/// # Errors
+///
+/// Returns an error when the schema cannot be mapped to C# runtime metadata or
+/// a generated template cannot be rendered.
 pub fn generate_csharp_cfd(
     schema: &CftSchema,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,

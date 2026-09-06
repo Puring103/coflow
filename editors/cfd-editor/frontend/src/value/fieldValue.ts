@@ -201,7 +201,7 @@ function stripNullableType(declaredType: string): string {
   return current.endsWith('?') ? current.slice(0, -1) : current
 }
 
-function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
+export function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
   return value.value.variant ?? String(value.value.value)
 }
 

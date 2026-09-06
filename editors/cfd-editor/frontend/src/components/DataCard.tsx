@@ -40,6 +40,7 @@ import {
   fieldPathDictKey,
   fieldPathField,
   fieldPathIndex,
+  isComplexValue,
   nullValue,
   objectFieldCells,
   optionLayerStates,
@@ -57,6 +58,7 @@ import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
   collectionShapeForDeclaredType,
+  enumVariantText,
   optionDepthForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
@@ -77,6 +79,12 @@ import { FunctionEditorButton } from './FunctionBodyDialog'
 import { FunctionSourcePreview } from './FunctionSourcePreview'
 import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
+import {
+  collectionObjectDraftForAnnotation,
+  dictKeyTemplate,
+} from './DataCard.defaults'
+
+export { collectionObjectDraftForAnnotation, dictKeyTemplate } from './DataCard.defaults'
 
 export function CardHeader({
   recordKey,
@@ -150,10 +158,6 @@ function inspectorDepthStyle(depth: number): CSSProperties {
   return { '--dc-indent': `${depth * INDENT_PX}px` } as CSSProperties
 }
 
-function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
-  return value.value.variant ?? String(value.value.value)
-}
-
 export function toggleFlagMask(currentMask: bigint, bit: bigint): bigint {
   if (bit === 0n) return 0n
   return (currentMask & bit) === bit ? currentMask & ~bit : currentMask | bit
@@ -197,10 +201,6 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
     )
     : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
   return fallback
-}
-
-function isComplexValue(value: FieldValue): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
-  return value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
 }
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
@@ -2460,39 +2460,6 @@ function CollectionAddControl({ container, depth, fieldPath, onCollectionEdit, i
       )}
     </span>
   )
-}
-
-export function dictKeyTemplate(annotation?: FieldAnnotation): DictKey | null {
-  const enumType = annotationEnumType(annotation)
-  if (enumType) {
-    return { kind: 'enum', value: { enum_name: enumType, variant: null, value: 0n } }
-  }
-  switch (annotationDeclaredType(annotation)) {
-    case 'int': return { kind: 'int', value: 0n }
-    case 'string': return { kind: 'string', value: '' }
-    default: return null
-  }
-}
-
-export function collectionObjectDraftForAnnotation(
-  annotation: FieldAnnotation | undefined,
-  collectionIsEmpty: boolean,
-): { actualType: string, polymorphicTypes: string[] } | null {
-  const draft = objectDraftForAnnotation(annotation)
-  if (!draft) return null
-  return collectionIsEmpty || draft.polymorphicTypes.length >= 2 ? draft : null
-}
-
-function objectDraftForAnnotation(annotation?: FieldAnnotation): {
-  actualType: string
-  polymorphicTypes: string[]
-} | null {
-  if (!annotation || annotationRefTargetType(annotation) || annotationEnumType(annotation)) return null
-  const polymorphicTypes = annotationPolymorphicTypes(annotation)
-  const declaredType = annotationDeclaredType(annotation)
-  const actualType = polymorphicTypes[0] ?? declaredType?.replace(/\?$/, '')
-  if (!actualType || scalarDefaultForDeclaredType(actualType) !== null) return null
-  return { actualType, polymorphicTypes }
 }
 
 function DictKeyEntry({ sampleKey, onCommit, onCancel }: {

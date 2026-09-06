@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } f
 import { diagnosticDisplayMessage, diagnosticKey, type DiagnosticItem } from '../wire'
 import type { DiagnosticTarget } from '../bindings/DiagnosticTarget'
 import { Icon } from './Icon'
+import { cssEscape } from '../utils/dom'
 
 interface Props {
   diagnostics: DiagnosticItem[]
@@ -12,7 +13,6 @@ interface Props {
   onFocusConsumed?: () => void
   onJump?: (target: DiagnosticTarget) => void
 }
-
 const DEFAULT_HEIGHT = 200
 const MIN_HEIGHT = 112
 const MIN_EDITOR_HEIGHT = 120
@@ -219,9 +219,4 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump }
       )}
     </div>
   )
-}
-
-function cssEscape(s: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
-  return s.replace(/["\\]/g, '\\$&')
 }

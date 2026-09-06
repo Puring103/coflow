@@ -47,6 +47,28 @@ export function sameCoordinate(
   return a.actual_type === b.actual_type && a.key === b.key
 }
 
+export function isComplexValue(
+  value: FieldValue | undefined,
+): value is FieldValue & { kind: 'object' | 'array' | 'dict' } {
+  return value?.kind === 'object' || value?.kind === 'array' || value?.kind === 'dict'
+}
+
+/** 字典路径必须使用唯一的 CFD 文本身份，插件与编辑历史才能定位同一项。 */
+export function dictKeyPathText(key: DictKey): string {
+  if (key.kind === 'int') return key.value.toString()
+  if (key.kind === 'enum') {
+    return key.value.variant
+      ? `${key.value.enum_name}.${key.value.variant}`
+      : `${key.value.enum_name}(${key.value.value})`
+  }
+  return `"${key.value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')}"`
+}
+
 export function recordKey(row: RecordRow): string {
   return row.coordinate.key
 }
