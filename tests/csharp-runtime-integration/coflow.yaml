@@ -5,4 +5,3 @@ data:
 codegen:
   - language: csharp
     dir: generated
-    namespace: Integration.Config

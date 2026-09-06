@@ -1,0 +1,6 @@
+schema: schema/
+data:
+  - data/
+codegen:
+  - language: csharp
+    dir: generated

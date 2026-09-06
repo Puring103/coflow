@@ -27,7 +27,6 @@ fn array_project() -> (PathBuf, PathBuf) {
             "codegen:\n",
             "  - language: csharp\n",
             "    dir: generated/csharp\n",
-            "    namespace: Game.Config\n",
         ),
     )
     .expect("write project config");
@@ -61,7 +60,6 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
             "codegen:\n",
             "  - language: csharp\n",
             "    dir: generated/csharp\n",
-            "    namespace: Test.Config\n",
         ),
     )
     .expect("write nested-default project config");
@@ -106,7 +104,6 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
             "codegen:\n",
             "  - language: csharp\n",
             "    dir: generated/csharp\n",
-            "    namespace: Test.Config\n",
         ),
     )
     .expect("write inheritance project config");
@@ -154,7 +151,6 @@ fn function_defaults_project() -> PathBuf {
             "codegen:\n",
             "  - language: csharp\n",
             "    dir: generated/csharp\n",
-            "    namespace: Test.Config\n",
         ),
     )
     .expect("write function defaults config");
@@ -191,7 +187,6 @@ fn repairable_invalid_project() -> PathBuf {
             "codegen:\n",
             "  - language: csharp\n",
             "    dir: generated/csharp\n",
-            "    namespace: Test.Config\n",
         ),
     )
     .expect("write repairable config");

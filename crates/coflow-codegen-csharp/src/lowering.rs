@@ -1,6 +1,5 @@
 use crate::names::{
-    csharp_declaration_namespace, csharp_qualified_type_name, csharp_relative_type_path,
-    csharp_type_name, metadata_identifier,
+    csharp_qualified_type_name, csharp_relative_type_path, csharp_type_name, metadata_identifier,
 };
 use crate::CsharpCodegenError;
 use coflow_language::cft::{CftEnum, CftField, CftSchema, CftType, CftValueType};
@@ -8,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
-    root_namespace: String,
     schema: &'a CftSchema,
     types: Vec<&'a CftType>,
     enums: Vec<&'a CftEnum>,
@@ -26,7 +24,6 @@ impl<'a> CsharpLoweringPlan<'a> {
     #[allow(clippy::too_many_lines)]
     pub fn lower(
         schema: &'a CftSchema,
-        root_namespace: &str,
         non_empty_tables: Option<&BTreeSet<String>>,
     ) -> Result<Self, CsharpCodegenError> {
         let enums = schema.all_enums().collect::<Vec<_>>();
@@ -77,7 +74,6 @@ impl<'a> CsharpLoweringPlan<'a> {
             .collect::<Vec<_>>();
         let loadable_table_set = loadable_tables.iter().cloned().collect();
         Ok(Self {
-            root_namespace: root_namespace.to_string(),
             schema,
             types,
             enums,
@@ -167,15 +163,11 @@ impl<'a> CsharpLoweringPlan<'a> {
     }
 
     pub fn csharp_type_ref(&self, type_name: &str) -> String {
-        csharp_qualified_type_name(&self.root_namespace, type_name)
+        csharp_qualified_type_name(type_name)
     }
 
     pub fn csharp_enum_ref(&self, enum_name: &str) -> String {
-        csharp_qualified_type_name(&self.root_namespace, enum_name)
-    }
-
-    pub fn csharp_namespace(&self, name: &str) -> String {
-        csharp_declaration_namespace(&self.root_namespace, name)
+        csharp_qualified_type_name(enum_name)
     }
 
     pub fn csharp_relative_path(&self, name: &str) -> String {

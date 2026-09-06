@@ -2,13 +2,12 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct CsharpProject {
-    pub namespace: String,
     pub dimensions: Vec<CsharpDimension>,
-    pub delegate_adapters: Vec<String>,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub singletons: Vec<CsharpSingleton>,
     pub constants: Vec<CsharpConstant>,
+    pub layout_registrations: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -33,7 +32,6 @@ pub struct CsharpSingleton {
 #[derive(Debug, Serialize)]
 pub struct CsharpEnum {
     pub name: String,
-    pub namespace: String,
     pub qualified_name: String,
     pub relative_path: String,
     pub metadata_name: String,
@@ -41,7 +39,6 @@ pub struct CsharpEnum {
     pub annotations: Vec<CsharpAnnotation>,
     pub is_flags: bool,
     pub summary: Option<String>,
-    pub obsolete: bool,
     pub variants: Vec<CsharpEnumVariant>,
 }
 
@@ -52,13 +49,12 @@ pub struct CsharpEnumVariant {
     pub value: i64,
     pub annotations: Vec<CsharpAnnotation>,
     pub summary: Option<String>,
-    pub obsolete: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpType {
+    pub type_id: usize,
     pub name: String,
-    pub namespace: String,
     pub qualified_name: String,
     pub relative_path: String,
     pub metadata_name: String,
@@ -67,11 +63,8 @@ pub struct CsharpType {
     pub declaration: String,
     pub constructor_visibility: String,
     pub summary: Option<String>,
-    pub obsolete: bool,
     pub properties: Vec<CsharpProperty>,
     pub functions: Vec<CsharpFunction>,
-    pub host_fields: Vec<CsharpHostField>,
-    pub uses_host_slot: bool,
     pub declares_host_slot: bool,
     pub constructor_parameters: Vec<CsharpParameter>,
     pub base_constructor_args: Vec<String>,
@@ -87,23 +80,19 @@ pub struct CsharpType {
     pub is_abstract: bool,
     pub is_sealed: bool,
     pub is_struct: bool,
+    pub layout_integer_count: usize,
+    pub layout_float_count: usize,
+    pub layout_reference_count: usize,
     pub loader_assignable_to: Vec<String>,
     pub loader_variants: Vec<CsharpLoaderVariant>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpHostField {
-    pub target: String,
-    pub parameter: CsharpParameter,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpFunction {
     pub source_name: String,
     pub method_name: String,
-    pub bind_method_name: String,
-    pub bind_parameter_name: String,
     pub entry_name: String,
+    pub slot: usize,
     pub declared_here: bool,
     pub result_type: String,
     pub delegate_type: String,
@@ -123,6 +112,9 @@ pub struct CsharpLoaderField {
     pub object_type: Option<String>,
     pub reference_type: Option<String>,
     pub annotations: Vec<CsharpAnnotation>,
+    pub layout_integer_count: usize,
+    pub layout_float_count: usize,
+    pub layout_reference_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -151,7 +143,6 @@ pub struct CsharpProperty {
     pub backing_field: Option<String>,
     pub guard_host: bool,
     pub summary: Option<String>,
-    pub obsolete: bool,
 }
 
 #[derive(Debug, Serialize)]

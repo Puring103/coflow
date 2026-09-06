@@ -1,0 +1,12 @@
+Item {
+    first {
+        stats: Stats { value: 2 },
+        next: &second,
+        calculate: fn(input: int) -> int { &second.calculate(input) + stats.value },
+    }
+    self {
+        stats: Stats { value: 8 },
+        next: &self,
+        calculate: fn(input: int) -> int { input + stats.value },
+    }
+}

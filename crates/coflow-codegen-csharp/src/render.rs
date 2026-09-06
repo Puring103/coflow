@@ -12,15 +12,15 @@ const METADATA_HELPERS_TEMPLATE: &str = include_str!("../templates/metadata-help
 
 #[derive(Serialize)]
 struct MetadataProject {
-    namespace: String,
-    delegate_adapters: Vec<String>,
     enums: Vec<MetadataEnum>,
+    abstract_types: Vec<MetadataAbstractType>,
     types: Vec<MetadataType>,
     constants: Vec<MetadataConstant>,
     object_factories: Vec<MetadataObjectFactory>,
     readers: Vec<MetadataReader>,
     polymorphic_readers: Vec<MetadataPolymorphicReader>,
     dimensions: Vec<crate::model::CsharpDimension>,
+    layout_registrations: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -50,6 +50,7 @@ struct MetadataEnumVariant {
 
 #[derive(Serialize)]
 struct MetadataType {
+    type_id: usize,
     metadata_name: String,
     source_name: String,
     qualified_name: String,
@@ -60,23 +61,50 @@ struct MetadataType {
     is_abstract: bool,
     is_sealed: bool,
     is_record: bool,
+    is_struct: bool,
+    layout_integer_count: usize,
+    layout_float_count: usize,
+    layout_reference_count: usize,
     can_create_record: bool,
     assignable_types: Vec<String>,
+    assignable_type_ids: Vec<usize>,
     fields: Vec<MetadataField>,
+    data_fields: Vec<MetadataField>,
+    import_arguments: Vec<String>,
     parse_key: String,
-    create_host: String,
+    host_functions: Vec<MetadataHostFunction>,
 }
 
 #[derive(Serialize)]
+struct MetadataAbstractType {
+    type_id: usize,
+    qualified_name: String,
+}
+
+#[derive(Serialize)]
+struct MetadataHostFunction {
+    entry_expression: String,
+    access: String,
+}
+
+#[derive(Clone, Serialize)]
 struct MetadataField {
     source_name: String,
     runtime_type: String,
     access: String,
     is_enum: bool,
+    is_function: bool,
     annotations: String,
     has_default: bool,
     object_type: Option<String>,
     reference_type: Option<String>,
+    function_slot: Option<usize>,
+    integer_offset: usize,
+    float_offset: usize,
+    reference_offset: usize,
+    layout_integer_count: usize,
+    layout_float_count: usize,
+    layout_reference_count: usize,
 }
 
 #[derive(Serialize)]
@@ -105,11 +133,12 @@ struct MetadataReader {
     source_name: String,
     qualified_name: String,
     is_host: bool,
+    is_record: bool,
     expected_fields: Vec<String>,
     constructor_arguments: Vec<String>,
     populate_id: Option<String>,
     populate_assignments: Vec<String>,
-    host_constructor_arguments: Vec<String>,
+    function_loads: Vec<String>,
     variants: Vec<MetadataVariant>,
 }
 
@@ -134,7 +163,6 @@ pub fn render_common_project(
     let mut files = Vec::new();
     for schema_enum in &project.enums {
         let mut context = Context::new();
-        context.insert("namespace", &schema_enum.namespace);
         context.insert("enum", schema_enum);
         files.push(GeneratedFile {
             relative_path: PathBuf::from(&schema_enum.relative_path),
@@ -167,22 +195,27 @@ pub fn render_cfd_metadata_template(
     let view = metadata_project(project);
     let mut context = Context::new();
     context.insert("metadata", &view);
-    context.insert("namespace", &view.namespace);
     context.insert("enums", &view.enums);
+    context.insert("abstract_types", &view.abstract_types);
     context.insert("types", &view.types);
     context.insert("constants", &view.constants);
     context.insert("object_factories", &view.object_factories);
     context.insert("readers", &view.readers);
     context.insert("polymorphic_readers", &view.polymorphic_readers);
     context.insert("dimensions", &view.dimensions);
+    context.insert("layout_registrations", &view.layout_registrations);
     render(&templates()?, "metadata.cs.tera", &context)
 }
 
 fn metadata_project(project: &CsharpProject) -> MetadataProject {
     MetadataProject {
-        namespace: project.namespace.clone(),
-        delegate_adapters: project.delegate_adapters.clone(),
         enums: project.enums.iter().map(metadata_enum).collect(),
+        abstract_types: project.types.iter()
+            .filter(|ty| ty.is_abstract && !ty.is_host)
+            .map(|ty| MetadataAbstractType {
+                type_id: ty.type_id,
+                qualified_name: ty.qualified_name.clone(),
+            }).collect(),
         types: project.types.iter().filter(|ty| ty.loader_enabled)
             .map(|ty| metadata_type(project, ty)).collect(),
         constants: project.constants.iter().map(|constant| MetadataConstant {
@@ -206,6 +239,7 @@ fn metadata_project(project: &CsharpProject) -> MetadataProject {
                 variants: metadata_variants(ty),
             }).collect(),
         dimensions: project.dimensions.clone(),
+        layout_registrations: project.layout_registrations.clone(),
     }
 }
 
@@ -236,7 +270,44 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
             .map_or(ty.metadata_name.as_str(), |item| item.metadata_name.as_str());
         format!("ReadEnum{reader}Text(key)")
     };
+    let mut fields = ty.loader_fields.iter().map(|field| {
+        let function = ty.functions.iter().find(|item| item.source_name == field.source_name);
+        MetadataField {
+            source_name: escape_csharp_string(&field.source_name),
+            runtime_type: field.value_type.clone(),
+            access: function.map_or_else(|| field.property_name.clone(),
+                |item| format!("{}.RuntimeEntry", item.entry_name)),
+            is_enum: project.enums.iter().any(|item| item.qualified_name == field.value_type),
+            is_function: field.is_function,
+            annotations: render_annotations(&field.annotations),
+            has_default: field.default_expression.is_some(),
+            object_type: field.object_type.as_deref().map(escape_csharp_string),
+            reference_type: field.reference_type.as_deref().map(escape_csharp_string),
+            function_slot: function.map(|value| value.slot),
+            integer_offset: 0,
+            float_offset: 0,
+            reference_offset: 0,
+            layout_integer_count: field.layout_integer_count,
+            layout_float_count: field.layout_float_count,
+            layout_reference_count: field.layout_reference_count,
+        }
+    }).collect::<Vec<_>>();
+    let (mut integer_offset, mut float_offset, mut reference_offset) = (0, 0, 0);
+    for field in fields.iter_mut().filter(|field| !field.is_function) {
+        field.integer_offset = integer_offset;
+        field.float_offset = float_offset;
+        field.reference_offset = reference_offset;
+        integer_offset += field.layout_integer_count;
+        float_offset += field.layout_float_count;
+        reference_offset += field.layout_reference_count;
+    }
+    let import_arguments = ty.loader_id_type.as_ref().map(|_| "context.Import(value.Id)".to_string())
+        .into_iter()
+        .chain(fields.iter().filter(|field| !field.is_function)
+            .map(|field| format!("context.Import(value.{})", field.access)))
+        .collect();
     MetadataType {
+        type_id: ty.type_id,
         metadata_name: ty.metadata_name.clone(),
         source_name: escape_csharp_string(&ty.source_name),
         qualified_name: ty.qualified_name.clone(),
@@ -248,27 +319,29 @@ fn metadata_type(project: &CsharpProject, ty: &CsharpType) -> MetadataType {
         is_sealed: ty.is_sealed,
         // 普通 singleton 由 CFD 提供，虽然不生成 Table，仍必须拥有记录加载 metadata。
         is_record: ty.loader_id_type.is_some() || (singleton && !ty.is_host),
+        is_struct: ty.is_struct,
+        layout_integer_count: ty.layout_integer_count,
+        layout_float_count: ty.layout_float_count,
+        layout_reference_count: ty.layout_reference_count,
         can_create_record: !ty.is_host && !ty.is_struct && !ty.is_abstract,
         assignable_types: ty.loader_assignable_to.iter()
             .map(|value| escape_csharp_string(value)).collect(),
-        fields: ty.loader_fields.iter().map(|field| {
-            let function = ty.functions.iter().find(|item| item.source_name == field.source_name);
-            MetadataField {
-                source_name: escape_csharp_string(&field.source_name),
-                runtime_type: if field.is_function { "CoflowFunctionEntry".to_string() }
-                    else { field.value_type.clone() },
-                access: function.map_or_else(|| field.property_name.clone(),
-                    |item| format!("{}.RuntimeEntry", item.entry_name)),
-                is_enum: project.enums.iter().any(|item| item.qualified_name == field.value_type),
-                annotations: render_annotations(&field.annotations),
-                has_default: field.default_expression.is_some(),
-                object_type: field.object_type.as_deref().map(escape_csharp_string),
-                reference_type: field.reference_type.as_deref().map(escape_csharp_string),
-            }
-        }).collect(),
+        assignable_type_ids: ty.loader_assignable_to.iter()
+            .map(|name| project.types.iter()
+                .find(|candidate| candidate.source_name == *name)
+                .expect("assignable type belongs to generated project")
+                .type_id)
+            .collect(),
+        data_fields: fields.iter().filter(|field| !field.is_function).cloned().collect(),
+        import_arguments,
+        fields,
         parse_key,
-        create_host: if ty.is_host { format!("CreateHost{}(context)", ty.metadata_name) }
-            else { "throw new InvalidOperationException(\"The generated type is not @Host.\")".to_string() },
+        host_functions: ty.loader_fields.iter().filter(|field| field.is_function)
+            .map(|field| MetadataHostFunction {
+                entry_expression: field.reader_expression.replace("VALUE", "null")
+                    .replace("CONTEXT", "context").replace("RECORD_KEY", "string.Empty"),
+                access: format!("_coflow{}", field.property_name),
+            }).collect(),
     }
 }
 
@@ -276,13 +349,11 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
     let invalid = ty.is_abstract || ty.is_host;
     let mut arguments = Vec::new();
     if !invalid {
-        if ty.uses_host_slot { arguments.push("null".to_string()); }
         if let Some(id_type) = &ty.loader_id_type {
             arguments.push(if id_type == "string" { "string.Empty".to_string() }
                 else { format!("default({id_type})") });
         }
-        arguments.extend(ty.loader_fields.iter().enumerate().map(|(index, field)| {
-            if field.is_function { return "default!".to_string(); }
+        arguments.extend(ty.loader_fields.iter().filter(|field| !field.is_function).enumerate().map(|(index, field)| {
             let supplied = format!(
                 "fields.TryGetValue(\"{}\", out var value{index}) ? ({})value{index}!",
                 escape_csharp_string(&field.source_name), field.value_type);
@@ -304,18 +375,15 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
             .enumerate().map(|(index, field)| format!("{} value{index}", field.value_type)).collect(),
         vm_arguments: {
             let mut values = Vec::new();
-            if ty.uses_host_slot { values.push("null".to_string()); }
             if let Some(id_type) = &ty.loader_id_type {
                 values.push(if id_type == "string" { "string.Empty".to_string() }
                     else { format!("default({id_type})") });
             }
             let mut value_index = 0usize;
-            values.extend(ty.loader_fields.iter().map(|field| {
-                if field.is_function { "default!".to_string() } else {
+            values.extend(ty.loader_fields.iter().filter(|field| !field.is_function).map(|_| {
                     let value = format!("value{value_index}");
                     value_index += 1;
                     value
-                }
             }));
             values
         },
@@ -329,21 +397,17 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
 }
 
 fn metadata_reader(ty: &CsharpType) -> MetadataReader {
-    let mut arguments = ty.loader_id_type.as_ref().map(|_| {
+    let arguments = ty.loader_id_type.as_ref().map(|_| {
         ty.loader_id_reader.as_ref().map_or_else(|| "key".to_string(),
             |reader| format!("ReadEnum{reader}Text(key)"))
-    }).into_iter().chain(ty.loader_fields.iter().map(|field| reader_argument(field))).collect::<Vec<_>>();
-    if ty.uses_host_slot { arguments.insert(0, "null".to_string()); }
-    let host_arguments = std::iter::once("context.Host()".to_string()).chain(
-        ty.loader_fields.iter().filter(|field| field.is_function).map(|field| {
-            field.reader_expression.replace("VALUE", "null")
-                .replace("CONTEXT", "context").replace("RECORD_KEY", "string.Empty")
-        })).collect();
+    }).into_iter().chain(ty.loader_fields.iter().filter(|field| !field.is_function)
+        .map(reader_argument)).collect::<Vec<_>>();
     MetadataReader {
         metadata_name: ty.metadata_name.clone(),
         source_name: escape_csharp_string(&ty.source_name),
         qualified_name: ty.qualified_name.clone(),
         is_host: ty.is_host,
+        is_record: !ty.is_struct && !ty.is_host,
         expected_fields: ty.loader_fields.iter()
             .map(|field| escape_csharp_string(&field.source_name)).collect(),
         constructor_arguments: arguments,
@@ -353,9 +417,14 @@ fn metadata_reader(ty: &CsharpType) -> MetadataReader {
             format!("target.Id = {value};")
         }),
         populate_assignments: ty.loader_fields.iter().map(|field| {
-            format!("target.{} = {};", assignment_target(ty, field), reader_argument(field))
+            if field.is_function {
+                format!("_ = {};", reader_argument(field))
+            } else {
+                format!("target.{} = {};", assignment_target(ty, field), reader_argument(field))
+            }
         }).collect(),
-        host_constructor_arguments: host_arguments,
+        function_loads: ty.loader_fields.iter().filter(|field| field.is_function)
+            .map(reader_argument).collect(),
         variants: metadata_variants(ty),
     }
 }
@@ -432,5 +501,5 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
 
 fn render(tera: &Tera, name: &str, context: &Context) -> Result<String, CsharpCodegenError> {
     tera.render(name, context)
-        .map_err(|error| CsharpCodegenError::new(format!("failed to render `{name}`: {error}")))
+        .map_err(|error| CsharpCodegenError::new(format!("failed to render `{name}`: {error:?}")))
 }

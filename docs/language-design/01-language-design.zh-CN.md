@@ -1,12 +1,10 @@
 # C# Runtime 基础语言设计
 
-> 状态：当前内部设计契约
+> 状态：内部设计契约
 >
 > 范围：C# Runtime 所编译的 CFD 函数语言，以及数据值与函数值共享的基础语义。
 
-当前实现已经覆盖本文描述的类型、控制流、函数、closure、传播和高阶集合语义。第 11 节列出的执行
-限制 fault 仍属于 VM 待实现契约；在此之前，函数语言不能作为不可信脚本 sandbox。源码排版及 CFD
-对语义值的文本表示见 `04-source-formatting.zh-CN.md`。
+源码排版及 CFD 对语义值的文本表示见 `04-source-formatting.zh-CN.md`。
 
 本文档定义语言语义，不提供用户教程或调用示例。公开的 CFT、CFD 语法说明位于
 `website/docs/docs/reference/03-language/`。加载、Module 和 Host 边界见
@@ -19,8 +17,9 @@
 - CFT 在构建期定义类型、字段、默认值、函数签名和注解。
 - CFD 在运行期提供记录值，并可覆盖 CFT 中的普通函数默认实现。
 - 数据值与函数值使用同一套静态类型，不在 VM 中建立第二套语义类型。
-- `Load` 可以只读取数据；`LoadAndCompile` 才检查并编译函数体。
-- 类型错误在 Module 发布前诊断，执行期只处理动态 fault。
+- Module 是源码管理和增量编译单位，Module 之间可以相互引用且加载顺序不影响语义。
+- `Coflow.Compile()` 同时完成数据实体化、函数检查、编译和全局链接。
+- 类型错误在快照发布前诊断，执行期只处理动态 fault。
 - 语言行为不依赖 C# 反射顺序、文化区域、CLR 对象地址或容器具体实现。
 
 编译关系为：
@@ -62,7 +61,7 @@ Runtime 函数语言使用以下静态类型类别：
 | --- | --- |
 | unit | `()` |
 | scalar | `int`、`float`、`bool`、`string` |
-| nominal | enum、生成 object type、记录类型 |
+| nominal | enum、生成 class、生成 struct、记录类型 |
 | collection | `[T]`、`{K: V}` |
 | algebraic | `Option<T>`、`Result<T, E>` |
 | callable | `fn(A...) -> R` |
@@ -72,7 +71,8 @@ Runtime 函数语言使用以下静态类型类别：
 - `int` 是有符号 64 位整数，`float` 是 IEEE 754 binary64。
 - `bool` 只有 `true` 和 `false` 两个规范值。
 - enum 是 nominal type；不同 enum 即使底层整数相同也不兼容。
-- object 继承只允许子类型用于声明的父类型位置，不提供用户定义隐式转换。
+- class 继承只允许子类型用于声明的父类型位置，不提供用户定义隐式转换；struct 不通过继承获得能力。
+- `@struct` 与 class 一样可以声明全部字段类别，包括函数字段；C# 目标生成真正的 `readonly struct`。
 - list 元素类型、dictionary key/value 类型和 Option/Result payload 都是不变的静态类型参数。
 - dictionary key 只允许语言明确支持的可哈希 scalar 或 enum 类型。
 - 函数类型由参数类型序列和返回类型组成，不支持协变、逆变或用户泛型函数。
@@ -101,15 +101,15 @@ ValueShape
 
 ## 4. 数据值与配置边界
 
-普通 CFD 字段只接受 schema-guided 的结构化值。默认值、引用、继承字段和集合在 Module 构建阶段
+普通 CFD 字段只接受 schema-guided 的结构化值。默认值、引用、继承字段和集合在候选快照构建阶段
 解析，不在字段首次读取时延迟求值。
 
 数据值遵循：
 
 - `Option<T>` 的语义值由缺失/存在 tag 和 `T` payload 构成。函数表达式使用 `None` / `Some(T)`；
   schema-guided CFD 对存在值允许直接写 `T`，writer 也规范写回裸值。
-- `Result<T, E>` 只通过 `Ok(T)` 或 `Err(E)` 表达业务结果，不作为 object 数据字段；函数签名、常量和
-  表达式保持完整的 Result 语义。
+- `Result<T, E>` 通过 `Ok(T)` 或 `Err(E)` 表达业务结果，可用于普通字段、struct 字段、集合元素、
+  函数签名、常量和表达式。
 - 记录引用按声明的目标记录域和 key 解析，不能退化为普通 string。
 - inline object 与 record reference 是不同值类别。
 - list 保留源顺序；dictionary key 必须唯一。
@@ -117,13 +117,19 @@ ValueShape
   和默认值物化环在 schema 编译阶段拒绝。
 - 发布后的数据不可变，函数执行不能修改配置记录或集合。
 - 普通配置字段不执行任意算术、控制流或 Host 调用。
+- 应用可以主动构造生成 class 和 struct。此类值进入 VM 时按 Schema 验证并复制；必填字段中的 null
+  或无效 `default(TStruct)` 产生边界 fault。
 
 ## 5. 函数声明与实现
 
 CFT 声明函数签名，普通函数字段可以同时声明默认 body；CFD 提供同字段函数值时覆盖该默认实现。
 函数默认值只允许直接用于函数字段，不嵌套在其他默认值中。`@Host @singleton` 的函数由应用配置，
 CFT 不能声明默认 body，CFD 也不能为其提供实现。Rust 数据模型保存函数源码但不提供执行引擎；C#
-Runtime 的 `Load` 只构建并保留函数值，`LoadAndCompile` 才对所有有效函数体进行类型检查和编译。
+Runtime 在 `Coflow.Compile()` 中对当前工作状态的全部有效函数体进行类型检查、编译和链接。
+
+应用主动构造的普通值没有 CFD 记录身份。导入 VM 时，其函数字段使用 CFT 默认实现；没有默认实现的
+函数保持缺失并只在实际调用时 fault。CFD 记录级覆盖只属于该记录的 Runtime 值。普通值不能携带应用
+delegate，应用函数只能通过 Host 注入。这些规则对 class 和 struct 完全一致。
 
 函数值具有统一语义：
 
@@ -255,9 +261,10 @@ tag，不隐式扁平化不同的 Option/Result 组合。
 
 - 整数溢出、除零和非法转换。
 - 无效索引或不满足语言前置条件的内建操作。
-- 未配置、签名不匹配或抛出未处理异常的 Host function。
+- 缺失的普通函数、未绑定或抛出未处理异常的 Host function。
+- 使用错误 `Coflow` 或旧快照代际执行值的实例函数。
 - 无效间接调用目标或 VM 状态不变量破坏。
-- 指令、frame、寄存器或集合工作量超限（待 VM 执行限制实现）。
+- 指令、frame、寄存器、集合、导入或逸出值预算超限。
 
 fault 必须绑定当前函数、来源路径、产生故障的表达式 span 和精简 Coflow 调用栈。fault 不暴露寄存器
 快照，也不转换为语言 Result。

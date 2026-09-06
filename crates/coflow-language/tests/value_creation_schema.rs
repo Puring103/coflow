@@ -9,23 +9,18 @@ fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_langu
 }
 
 #[test]
-fn result_is_rejected_in_object_data_fields_but_allowed_in_function_signatures() {
+fn result_is_supported_in_all_data_field_shapes_and_function_signatures() {
     for source in [
         "type Item { value: Result<int, string>; }",
+        "@struct sealed type Item { value: Result<int, string>; }",
         "type Item { value: Option<Result<int, string>>; }",
         "type Item { value: [Result<int, string>]; }",
         "type Item { value: {string: Result<int, string>}; }",
         "type Outcome = Result<int, string>; type Item { value: Outcome; }",
+        "type Item { run: fn(int) -> Result<int, string>; }",
     ] {
-        let diagnostics = compile(source).expect_err("Result data field must fail");
-        assert!(diagnostics
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == CftErrorCode::ResultDataField));
+        compile(source).expect("Result is a first-class field and function type");
     }
-
-    compile("type Item { run: fn(int) -> Result<int, string>; }")
-        .expect("Result remains valid in function signatures");
 }
 
 #[test]

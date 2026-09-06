@@ -21,7 +21,7 @@ fn write_project() -> TempDir {
     .expect("data");
     fs::write(
         dir.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n",
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
     )
     .expect("config");
     dir
@@ -161,7 +161,7 @@ fn codegen_rejects_outputs_that_overlap_project_inputs() {
         fs::write(
             project.path().join("coflow.yaml"),
             format!(
-                "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: {output}\n    namespace: Game.Config\n"
+                "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: {output}\n"
             ),
         )
         .expect("config");
@@ -188,7 +188,7 @@ fn codegen_rejects_symlink_aliases_into_input_directories() {
     .expect("data alias");
     fs::write(
         project.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: data-alias/generated\n    namespace: Game.Config\n",
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: data-alias/generated\n",
     )
     .expect("config");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open");
@@ -218,7 +218,7 @@ fn csharp_codegen_rejects_removed_numeric_width_options() {
     let project = write_project();
     fs::write(
         project.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n    int_32: true\n",
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    int_32: true\n",
     )
     .expect("config");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
@@ -231,11 +231,28 @@ fn csharp_codegen_rejects_removed_numeric_width_options() {
 }
 
 #[test]
+fn csharp_codegen_rejects_removed_namespace_option() {
+    let project = write_project();
+    fs::write(
+        project.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n",
+    )
+    .expect("config");
+    let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
+
+    let error = coflow_runtime::commands::generate_project_code(&opened)
+        .expect_err("removed C# namespace option must not be accepted");
+
+    assert!(error.to_string().contains("unknown field `namespace`"));
+    assert!(!project.path().join("generated/csharp").exists());
+}
+
+#[test]
 fn codegen_failure_does_not_publish_an_earlier_target() {
     let project = write_project();
     fs::write(
         project.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/first\n    namespace: Game.Config\n  - language: not-installed\n    dir: generated/second\n",
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/first\n  - language: not-installed\n    dir: generated/second\n",
     )
     .expect("config");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
@@ -330,7 +347,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     .expect("dimension CFD");
     fs::write(
         dir.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n    namespace: Game.Config\n",
+        "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
     )
     .expect("config");
 

@@ -4,7 +4,7 @@ pub(crate) mod types;
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
     CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpFunction,
-    CsharpEqualityField, CsharpHostField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
+    CsharpEqualityField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
 };
 use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use crate::CsharpCodegenError;
@@ -15,12 +15,11 @@ use identifiers::{
     csharp_public_member_name, csharp_public_type_name, field_local_name,
     function_parameter_name,
 };
-use types::{csharp_field_property_type, csharp_type};
+use types::{csharp_field_property_type, csharp_native_delegate_type, csharp_type};
 
 pub fn build_csharp_enum(schema_enum: &CftEnum, view: &CsharpLoweringPlan<'_>) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
-        namespace: view.csharp_namespace(&schema_enum.name),
         qualified_name: view.csharp_enum_ref(&schema_enum.name),
         relative_path: view.csharp_relative_path(&schema_enum.name),
         metadata_name: view.metadata_name(&schema_enum.name),
@@ -28,7 +27,6 @@ pub fn build_csharp_enum(schema_enum: &CftEnum, view: &CsharpLoweringPlan<'_>) -
         annotations: csharp_annotations(&schema_enum.annotations),
         is_flags: schema_enum.is_flag,
         summary: csharp_summary(schema_enum.display.as_ref()),
-        obsolete: false,
         variants: schema_enum
             .variants
             .iter()
@@ -38,7 +36,6 @@ pub fn build_csharp_enum(schema_enum: &CftEnum, view: &CsharpLoweringPlan<'_>) -
                 value: variant.value,
                 annotations: csharp_annotations(&variant.annotations),
                 summary: csharp_summary(variant.display.as_ref()),
-                obsolete: false,
             })
             .collect(),
     }
@@ -75,24 +72,13 @@ pub fn build_csharp_type(
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
     let mut functions = Vec::new();
-    let mut host_fields = Vec::new();
 
     let is_struct = schema_type.is_struct;
-    if !is_struct {
-        constructor_parameters.push(CsharpParameter {
-            ty: "CoflowHostState?".to_string(),
-            name: "hostSlot".to_string(),
-        });
-        if schema_type.parent.is_some() {
-            base_constructor_args.push("hostSlot".to_string());
-        } else {
-            assignments.push(CsharpConstructorAssignment {
-                property: "HostSlot".to_string(),
-                target: "_coflowHost".to_string(),
-                parameter: "hostSlot".to_string(),
-            });
-        }
-    }
+    let (layout_integer_count, layout_float_count, layout_reference_count) = if !schema_type.is_abstract {
+        generated_value_layout_widths(schema_type, view)?
+    } else {
+        (0, 0, 0)
+    };
     let is_table = !schema_type.is_abstract && !is_struct && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
@@ -111,69 +97,39 @@ pub fn build_csharp_type(
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
 
-    for field in &all_fields {
+    for (field_slot, field) in all_fields.iter().enumerate() {
         let local_name = field_local_name(&field.name, &mut HashSet::new())?;
         let inherited = !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name);
         if let CftValueType::Function(parameters, result) = &field.value_type {
-            constructor_parameters.push(CsharpParameter {
-                ty: format!("CoflowFunctionEntry<{}>", csharp_type(&field.value_type, view)),
-                name: local_name.clone(),
-            });
             let method_name = csharp_public_member_name(&field.name);
             let entry_name = format!("_coflow{}", method_name);
             functions.push(CsharpFunction {
                 source_name: field.name.to_string(),
                 method_name: method_name.clone(),
-                bind_method_name: format!("Bind{method_name}"),
-                bind_parameter_name: local_name.clone(),
                 entry_name: entry_name.clone(),
+                slot: field_slot,
                 declared_here: !inherited,
                 result_type: csharp_type(result, view),
-                delegate_type: csharp_type(&field.value_type, view),
+                delegate_type: csharp_native_delegate_type(parameters, result, view),
                 parameters: function_parameters(parameters, view)?,
                 returns_void: matches!(result.as_ref(), CftValueType::Unit),
                 summary: csharp_summary(field.display.as_ref()),
             });
-            if inherited {
-                base_constructor_args.push(local_name);
-                continue;
+            if schema_type.is_host {
+                constructor_parameters.push(CsharpParameter {
+                    ty: csharp_native_delegate_type(parameters, result, view),
+                    name: local_name.clone(),
+                });
+                assignments.push(CsharpConstructorAssignment {
+                    target: entry_name,
+                    property: method_name,
+                    parameter: local_name,
+                });
             }
-            assignments.push(CsharpConstructorAssignment {
-                target: entry_name,
-                property: method_name,
-                parameter: local_name,
-            });
             continue;
         }
 
         let property_type = csharp_field_property_type(field, view);
-        if schema_type.is_host {
-            let property_name = csharp_public_member_name(&field.name);
-            let backing_field = format!("_coflow{property_name}");
-            if !inherited {
-                properties.push(CsharpProperty {
-                    visibility: "public".to_string(),
-                    name: property_name.clone(),
-                    type_name: property_type.clone(),
-                    backing_field: Some(backing_field.clone()),
-                    guard_host: true,
-                    summary: csharp_summary(field.display.as_ref()),
-                    obsolete: false,
-                });
-            }
-            host_fields.push(CsharpHostField {
-                target: backing_field,
-                parameter: CsharpParameter {
-                    ty: property_type,
-                    name: local_name,
-                },
-            });
-            if inherited {
-                base_constructor_args.push("default!".to_string());
-            }
-            continue;
-        }
-
         constructor_parameters.push(CsharpParameter {
             ty: property_type.clone(),
             name: local_name.clone(),
@@ -205,7 +161,7 @@ pub fn build_csharp_type(
     let equality = (!schema_type.is_abstract).then_some({
         CsharpEquality {
             key_property: "Id".to_string(),
-            is_struct: false,
+            is_struct,
             by_fields: !is_table,
             fields: all_field_props,
         }
@@ -214,6 +170,11 @@ pub fn build_csharp_type(
     let loader_fields = all_fields
         .iter()
         .map(|field| {
+            let field_layout = value_layout_widths(
+                &field.value_type,
+                view,
+                &mut BTreeSet::from([schema_type.name.to_string()]),
+            )?;
             let reader = function_loader_reader(field, view, "VALUE", "CONTEXT", !schema_type.is_host)
                 .unwrap_or_else(|| loader_reader(&field.value_type, view, "VALUE", "CONTEXT"));
             let default = match (&field.default, &field.value_type) {
@@ -281,6 +242,9 @@ pub fn build_csharp_type(
                     _ => None,
                 },
                 annotations: csharp_annotations(&field.annotations),
+                layout_integer_count: field_layout.0,
+                layout_float_count: field_layout.1,
+                layout_reference_count: field_layout.2,
             })
         })
         .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
@@ -312,8 +276,8 @@ pub fn build_csharp_type(
         }
     });
     Ok(CsharpType {
+        type_id: 0,
         name: view.csharp_type_name(&schema_type.name),
-        namespace: view.csharp_namespace(&schema_type.name),
         qualified_name: view.csharp_type_ref(&schema_type.name),
         relative_path: view.csharp_relative_path(&schema_type.name),
         metadata_name: view.metadata_name(&schema_type.name),
@@ -323,15 +287,12 @@ pub fn build_csharp_type(
         constructor_visibility: if schema_type.is_abstract {
             "protected internal".to_string()
         } else {
-            "internal".to_string()
+            "public".to_string()
         },
         summary: csharp_summary(schema_type.display.as_ref()),
-        obsolete: false,
         properties,
         functions,
-        host_fields,
-        uses_host_slot: !is_struct,
-        declares_host_slot: !is_struct && schema_type.parent.is_none(),
+        declares_host_slot: schema_type.parent.is_none(),
         constructor_parameters,
         base_constructor_call: (!base_constructor_args.is_empty())
             .then(|| format!(" : base({})", base_constructor_args.join(", "))),
@@ -349,6 +310,9 @@ pub fn build_csharp_type(
         is_abstract: schema_type.is_abstract,
         is_sealed: schema_type.is_sealed,
         is_struct,
+        layout_integer_count,
+        layout_float_count,
+        layout_reference_count,
         loader_assignable_to: if schema_type.is_abstract {
             Vec::new()
         } else {
@@ -403,10 +367,9 @@ fn loader_reader(
                 .map(|parameter| format!("typeof({})", csharp_type(&parameter.value_type, view)))
                 .collect::<Vec<_>>();
             format!(
-                "{context}.FunctionValueAot<{delegate_type}>({node}, typeof({}), new Type[] {{ {} }}, {})",
+                "{context}.FunctionValue<{delegate_type}>({node}, typeof({}), new Type[] {{ {} }})",
                 csharp_type(result, view),
                 parameter_types.join(", "),
-                function_adapter_expression(parameters, result, view),
             )
         }
     }
@@ -430,12 +393,74 @@ fn function_loader_reader(
         .collect::<String>();
     let method = if required { "RequiredFunction" } else { "Function" };
     Some(format!(
-        "CoflowFunctionEntry<{}>.CreateAot({context}.{method}({node}, \"{}\", typeof({}){parameter_types}), {})",
-        csharp_type(&field.value_type, view),
+        "{context}.{method}({node}, \"{}\", typeof({}){parameter_types})",
         escape_csharp_literal(&field.name),
         csharp_type(result, view),
-        function_adapter_expression(parameters, result, view),
     ))
+}
+
+// class 的 Arena 行和 struct 的展开值共享同一套 Schema 物理布局计算。
+fn generated_value_layout_widths(
+    schema_type: &CftType,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<(usize, usize, usize), CsharpCodegenError> {
+    let mut width = (1, 0, 0); // 每个生成 struct 的值 ID 占一个 integer lane。
+    let mut visiting = BTreeSet::from([schema_type.name.to_string()]);
+    for field in view.fields(&schema_type.name)? {
+        if matches!(field.value_type, CftValueType::Function(_, _)) {
+            continue;
+        }
+        let field_width = value_layout_widths(&field.value_type, view, &mut visiting)?;
+        width.0 += field_width.0;
+        width.1 += field_width.1;
+        width.2 += field_width.2;
+    }
+    Ok(width)
+}
+
+fn value_layout_widths(
+    value_type: &CftValueType,
+    view: &CsharpLoweringPlan<'_>,
+    visiting: &mut BTreeSet<String>,
+) -> Result<(usize, usize, usize), CsharpCodegenError> {
+    match value_type {
+        CftValueType::Int | CftValueType::Bool | CftValueType::Enum(_) => Ok((1, 0, 0)),
+        CftValueType::Float => Ok((0, 1, 0)),
+        CftValueType::Unit => Ok((0, 0, 0)),
+        CftValueType::Option(inner) => {
+            let (integer, floating, reference) = value_layout_widths(inner, view, visiting)?;
+            Ok((integer + 1, floating, reference))
+        }
+        CftValueType::Result(ok, error) => {
+            let first = value_layout_widths(ok, view, visiting)?;
+            let second = value_layout_widths(error, view, visiting)?;
+            Ok((first.0 + second.0 + 1, first.1 + second.1, first.2 + second.2))
+        }
+        CftValueType::Object(name) if view.resolve_type(name)?.is_struct => {
+            if !visiting.insert(name.to_string()) {
+                return Err(CsharpCodegenError::new(format!(
+                    "struct `{name}` has a recursive inline layout"
+                )));
+            }
+            let mut width = (1, 0, 0);
+            for field in view.fields(name)? {
+                if matches!(field.value_type, CftValueType::Function(_, _)) {
+                    continue;
+                }
+                let child = value_layout_widths(&field.value_type, view, visiting)?;
+                width.0 += child.0;
+                width.1 += child.1;
+                width.2 += child.2;
+            }
+            visiting.remove(name.as_str());
+            Ok(width)
+        }
+        // 集合在 Runtime 中使用稳定 CollectionId，不占用 CLR reference lane。
+        CftValueType::Array(_) | CftValueType::Dict(_, _) => Ok((1, 0, 0)),
+        CftValueType::String => Ok((0, 0, 1)),
+        CftValueType::Function(_, _) => Ok((2, 0, 0)),
+        CftValueType::Object(_) | CftValueType::RecordRef(_) => Ok((1, 0, 0)),
+    }
 }
 
 fn function_default_loader(
@@ -445,55 +470,16 @@ fn function_default_loader(
     result: &CftValueType,
     view: &CsharpLoweringPlan<'_>,
 ) -> String {
-    let delegate_type = csharp_type(&field.value_type, view);
     let parameter_types = parameters
         .iter()
         .map(|parameter| format!(", typeof({})", csharp_type(&parameter.value_type, view)))
         .collect::<String>();
     format!(
-        "CoflowFunctionEntry<{delegate_type}>.CreateAot(context.DefaultFunction(\"{}\", \"{}\", typeof({}){parameter_types}), {})",
+        "context.DefaultFunction(\"{}\", \"{}\", typeof({}){parameter_types})",
         escape_csharp_literal(source),
         escape_csharp_literal(field.name.as_str()),
         csharp_type(result, view),
-        function_adapter_expression(parameters, result, view),
     )
-}
-
-pub(crate) fn function_adapter_expression(
-    parameters: &[CftFunctionParameter],
-    result: &CftValueType,
-    view: &CsharpLoweringPlan<'_>,
-) -> String {
-    debug_assert!(parameters.len() <= 8, "function arity is validated while building the project");
-    let parameter_types = parameters
-        .iter()
-        .map(|parameter| csharp_type(&parameter.value_type, view))
-        .collect::<Vec<_>>();
-    let arguments = (0..parameters.len())
-        .map(|index| format!("arg{index}"))
-        .collect::<Vec<_>>();
-    let lambda_parameters = if arguments.is_empty() {
-        "()".to_string()
-    } else {
-        format!("({})", arguments.join(", "))
-    };
-    let generic_parameters = parameter_types.join(", ");
-    let call = if matches!(result, CftValueType::Unit) {
-        if arguments.is_empty() {
-            "entry.InvokeVoid()".to_string()
-        } else {
-            format!("entry.InvokeVoid<{generic_parameters}>({})", arguments.join(", "))
-        }
-    } else {
-        let result_type = csharp_type(result, view);
-        let type_arguments = if generic_parameters.is_empty() {
-            result_type
-        } else {
-            format!("{generic_parameters}, {result_type}")
-        };
-        format!("entry.Invoke<{type_arguments}>({})", arguments.join(", "))
-    };
-    format!("static entry => {lambda_parameters} => {call}")
 }
 
 fn loader_default(
@@ -808,7 +794,6 @@ fn add_id_constructor_member(
         backing_field: None,
         guard_host: false,
         summary: None,
-        obsolete: false,
     });
     assignments.push(CsharpConstructorAssignment {
         property: "Id".to_string(),
@@ -833,9 +818,8 @@ fn add_field_constructor_member(
         name: property_name.clone(),
         type_name: property_type,
         backing_field: backing_field.clone(),
-        guard_host: !is_struct,
+        guard_host: false,
         summary: csharp_summary(field.display.as_ref()),
-        obsolete: false,
     });
     assignments.push(CsharpConstructorAssignment {
         target: backing_field.unwrap_or_else(|| property_name.clone()),
@@ -926,7 +910,7 @@ fn type_declaration(schema_type: &CftType, view: &CsharpLoweringPlan<'_>) -> Str
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
     } else if schema_type.is_struct {
-        "public sealed partial class"
+        "public readonly partial struct"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
     } else {

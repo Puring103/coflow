@@ -198,7 +198,6 @@ impl<'a> ModelCompiler<'a> {
         attach_dimension_values(&mut records, dimension_values);
 
         let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, self.schema);
-
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables,

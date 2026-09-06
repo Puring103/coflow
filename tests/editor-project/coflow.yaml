@@ -15,4 +15,3 @@ dimensions:
 codegen:
   - language: csharp
     dir: generated/csharp
-    namespace: EditorFixture.Config
