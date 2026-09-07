@@ -309,7 +309,12 @@ fn metadata_type(
     let import_arguments = ty.loader_id_type.as_ref().map(|_| "context.Import(value.Id)".to_string())
         .into_iter()
         .chain(fields.iter().filter(|field| !field.is_function)
-            .map(|field| format!("context.Import(value.{})", field.access)))
+            .map(|field| {
+                let dimension = ty.loader_fields.iter().any(|source|
+                    source.is_dimension && escape_csharp_string(&source.source_name) == field.source_name);
+                if dimension { format!("value.{}.Import(context)", field.access) }
+                else { format!("context.Import(value.{})", field.access) }
+            }))
         .collect();
     Ok(MetadataType {
         type_id: ty.type_id,

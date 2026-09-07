@@ -86,6 +86,25 @@ pub fn build_project(
                 &mut registered_layouts,
                 &mut layout_registrations,
             );
+            if let Some(binding) = &field.dimension {
+                let record_type = format!("{}_{}Variants", field.declaring_type, field.name);
+                let registration = format!("runtime.RegisterDimension(\"{record_type}\");");
+                if registered_layouts.insert(registration.clone()) {
+                    layout_registrations.push(registration);
+                }
+                let inner = csharp_type(&field.value_type, &view);
+                let wrapper = format!("{}<{inner}>", csharp_type_name(binding.dimension.as_str()));
+                if registered_layouts.insert(wrapper.clone()) {
+                    let dictionary = format!("IReadOnlyDictionary<string, {inner}>");
+                    if registered_layouts.insert(dictionary.clone()) {
+                        layout_registrations.push(format!("runtime.RegisterDictionary<string, {inner}>();"));
+                    }
+                    let width = crate::emit::field_layout_widths(field, &view, &mut BTreeSet::new())?;
+                    layout_registrations.push(format!(
+                        "runtime.RegisterStruct<{wrapper}>({}, {}, {},\n            static (ref CoflowValueWriter writer, {wrapper} value) => {{ writer.Write(value.Default); writer.Write(value.Variants); }},\n            static (ref CoflowValueReader reader) => new {wrapper}(reader.Read<{inner}>(), reader.Read<{dictionary}>()));",
+                        width.0, width.1, width.2));
+                }
+            }
         }
     }
     for constant in schema.all_consts() {

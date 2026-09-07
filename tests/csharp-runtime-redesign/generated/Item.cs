@@ -16,6 +16,17 @@ public sealed partial class Item : IEquatable<Item>
     public string Id { get; internal set; } = default!;
 
 
+    internal Language<string> _coflowTitle = default!;
+
+    public Language<string> Title
+    {
+        get
+        {
+            return _coflowTitle;
+        }
+    }
+
+
     internal global::Stats _coflowStats = default!;
 
     public global::Stats Stats
@@ -43,7 +54,7 @@ public sealed partial class Item : IEquatable<Item>
     public long Calculate(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
-            coflow, _coflowId, new CoflowTypeId(1), new CoflowFieldId(2), arg0);
+            coflow, _coflowId, new CoflowTypeId(1), new CoflowFieldId(3), arg0);
     }
 
     internal Item() { }
@@ -51,11 +62,13 @@ public sealed partial class Item : IEquatable<Item>
 
     public Item(
         string id,
+        Language<string> title,
         global::Stats stats,
         Option<global::Item> next
     )
     {
         Id = id;
+        _coflowTitle = title;
         _coflowStats = stats;
         _coflowNext = next;
     }

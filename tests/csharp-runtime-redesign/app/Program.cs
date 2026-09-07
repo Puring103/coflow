@@ -147,4 +147,27 @@ catch (CoflowFaultException error) when (error.InnerException is InvalidOperatio
 {
 }
 
+var dimensionFlow = Schema.Create();
+dimensionFlow.LoadModule(new CoflowSource("dimensions.cfd", """
+    text: UiText { welcome: "Hello", count: 17 }
+    welcome: UiText_welcomeVariants { zh: "Ni hao" }
+    weights: UiText_weightsVariants { zh: [3, 4, 5] }
+    theme: UiText_themeVariants { zh: ThemeValue { value: 9 } }
+    """));
+var dimensionResult = dimensionFlow.Compile();
+if (!dimensionResult.Success)
+    throw new InvalidOperationException(string.Join(Environment.NewLine, dimensionResult.Diagnostics));
+var text = dimensionFlow.Singleton<UiText>().Value;
+if (text.Welcome.Default != "Hello" || text.Welcome.For("zh") != "Ni hao" ||
+    text.Welcome.For("en") != "Hello" || text.Count != 17 || text.ReadCount(dimensionFlow) != 17 ||
+    !text.Weights.For("zh").SequenceEqual(new long[] { 3, 4, 5 }) ||
+    !text.Weights.For("en").SequenceEqual(new long[] { 1, 2 }) ||
+    text.Theme.For("zh").Value != 9 || text.Theme.For("en").Value != 5)
+    throw new InvalidOperationException("Dimension layout or fallback value is incorrect.");
+if (coflow.Table(Item.Table).Get("first").Value.Title.Default != "Item")
+    throw new InvalidOperationException("The default-only dimension wrapper was not preserved.");
+if (!text.SameTheme(dimensionFlow, text.Theme.Default, new ThemeValue(5)) ||
+    text.SameTheme(dimensionFlow, text.Theme.Default, text.Theme.For("zh")))
+    throw new InvalidOperationException("Struct equality did not compare the field before its identity lane.");
+
 Console.WriteLine("csharp-runtime-redesign-ok");

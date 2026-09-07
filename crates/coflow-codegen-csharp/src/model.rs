@@ -108,6 +108,7 @@ pub struct CsharpLoaderField {
     pub property_name: String,
     pub value_type: String,
     pub is_function: bool,
+    pub is_dimension: bool,
     pub reader_expression: String,
     pub default_expression: Option<String>,
     pub object_type: Option<String>,

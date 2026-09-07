@@ -172,8 +172,8 @@ pub fn build_csharp_type(
     let loader_fields = all_fields
         .iter()
         .map(|field| {
-            let field_layout = value_layout_widths(
-                &field.value_type,
+            let field_layout = field_layout_widths(
+                field,
                 view,
                 &mut BTreeSet::from([schema_type.name.to_string()]),
             )?;
@@ -231,6 +231,7 @@ pub fn build_csharp_type(
                 source_name: field.name.to_string(),
                 property_name: csharp_public_member_name(&field.name),
                 value_type: csharp_field_property_type(field, view),
+                is_dimension: field.dimension.is_some(),
                 is_function: matches!(field.value_type, CftValueType::Function(_, _)),
                 reader_expression: variants_reader(reader, "CONTEXT", "RECORD_KEY"),
                 default_expression: default
@@ -414,11 +415,22 @@ fn generated_value_layout_widths(
         if matches!(field.value_type, CftValueType::Function(_, _)) {
             continue;
         }
-        let field_width = value_layout_widths(&field.value_type, view, &mut visiting)?;
+        let field_width = field_layout_widths(field, view, &mut visiting)?;
         width.0 += field_width.0;
         width.1 += field_width.1;
         width.2 += field_width.2;
     }
+    Ok(width)
+}
+
+pub(crate) fn field_layout_widths(
+    field: &CftField,
+    view: &CsharpLoweringPlan<'_>,
+    visiting: &mut BTreeSet<String>,
+) -> Result<(usize, usize, usize), CsharpCodegenError> {
+    let mut width = value_layout_widths(&field.value_type, view, visiting)?;
+    // 维度包装内联默认值，变体字典占一个集合 ID 列。
+    if field.dimension.is_some() { width.0 += 1; }
     Ok(width)
 }
 
@@ -439,7 +451,7 @@ fn value_layout_widths(
                 if matches!(field.value_type, CftValueType::Function(_, _)) {
                     continue;
                 }
-                let child = value_layout_widths(&field.value_type, view, visiting)?;
+                let child = field_layout_widths(field, view, visiting)?;
                 width.0 += child.0;
                 width.1 += child.1;
                 width.2 += child.2;
@@ -722,7 +734,7 @@ fn loader_object_default(
         if !schema_type.is_struct {
             arguments.push("null".to_string());
         }
-        if view.is_ref_target_loadable(type_name) {
+        if !schema_type.is_struct && view.is_ref_target_loadable(type_name) {
             let key = match view.key_field_type(type_name) {
                 CftValueType::String => "string.Empty".to_string(),
                 CftValueType::Enum(name) => format!("default({})", view.csharp_enum_ref(&name)),

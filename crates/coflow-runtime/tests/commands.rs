@@ -369,6 +369,10 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
     assert!(generated.contains("ReadLanguage("));
     assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
+    assert!(generated.contains("runtime.RegisterDimension(\"UiText_welcomeVariants\");"));
+    assert!(generated.contains("runtime.RegisterStruct<Language<string>>(1, 0, 1,"));
+    assert!(generated.contains("runtime.RegisterDictionary<string, string>();"));
+    assert!(generated.contains("value.Welcome.Import(context)"));
     assert!(!generated.contains("Localization"));
     assert!(!generated.contains("TbUiTextWelcomeVariants"));
 }

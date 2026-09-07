@@ -23,6 +23,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         new Cft_4974656DCoflowMetadata(),
         new Cft_5365727669636573CoflowMetadata(),
         new Cft_5374617473CoflowMetadata(),
+        new Cft_5468656D6556616C7565CoflowMetadata(),
+        new Cft_556954657874CoflowMetadata(),
     };
 
     public IReadOnlyList<ICoflowEnumMetadata> Enums { get; } = new ICoflowEnumMetadata[]
@@ -49,23 +51,37 @@ internal sealed class CoflowSchema : ICoflowSchema
                     reader.Read<long>()
                 ),
                 reader.ReadValueId()));
+        runtime.RegisterStruct<global::ThemeValue>(
+            2, 0, 0,
+            static (ref CoflowValueWriter writer, global::ThemeValue value) =>
+            {
+                writer.Write(value.Value);
+                writer.WriteValueId(value._coflowId);
+            },
+            static (ref CoflowValueReader reader) => global::ThemeValue.WithCoflowValueId(
+                new global::ThemeValue(
+                    reader.Read<long>()
+                ),
+                reader.ReadValueId()));
 
 
         runtime.RegisterType<global::Services>(new CoflowTypeId(2));
 
         runtime.RegisterTypeCodec<global::Item>(
             new CoflowTypeId(1),
-            5, 0, 0,
+            6, 0, 1,
             static value => value._coflowId,
             static value => true,
             static (value, id) => global::Item.WithCoflowValueId(value, id),
             static (context, value) => new global::Item(
                 context.Import(value.Id),
+                value.Title.Import(context),
                 context.Import(value.Stats),
                 context.Import(value.Next)
             ),
             static (ref CoflowValueWriter writer, global::Item value) =>
             {
+                writer.Write(value.Title);
                 writer.Write(value.Stats);
                 writer.Write(value.Next);
                 writer.WriteValueId(value._coflowId);
@@ -84,10 +100,63 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Value);
                 writer.WriteValueId(value._coflowId);
             });
+        runtime.RegisterTypeCodec<global::ThemeValue>(
+            new CoflowTypeId(4),
+            2, 0, 0,
+            static value => value._coflowId,
+            static value => value._coflowInitialized,
+            static (value, id) => global::ThemeValue.WithCoflowValueId(value, id),
+            static (context, value) => new global::ThemeValue(
+                context.Import(value.Value)
+            ),
+            static (ref CoflowValueWriter writer, global::ThemeValue value) =>
+            {
+                writer.Write(value.Value);
+                writer.WriteValueId(value._coflowId);
+            });
+        runtime.RegisterTypeCodec<global::UiText>(
+            new CoflowTypeId(5),
+            8, 0, 1,
+            static value => value._coflowId,
+            static value => true,
+            static (value, id) => global::UiText.WithCoflowValueId(value, id),
+            static (context, value) => new global::UiText(
+                value.Welcome.Import(context),
+                value.Weights.Import(context),
+                value.Theme.Import(context),
+                context.Import(value.Count)
+            ),
+            static (ref CoflowValueWriter writer, global::UiText value) =>
+            {
+                writer.Write(value.Welcome);
+                writer.Write(value.Weights);
+                writer.Write(value.Theme);
+                writer.Write(value.Count);
+                writer.WriteValueId(value._coflowId);
+            });
 
+        runtime.RegisterDimension("Item_titleVariants");
+        runtime.RegisterDictionary<string, string>();
+        runtime.RegisterStruct<Language<string>>(1, 0, 1,
+            static (ref CoflowValueWriter writer, Language<string> value) => { writer.Write(value.Default); writer.Write(value.Variants); },
+            static (ref CoflowValueReader reader) => new Language<string>(reader.Read<string>(), reader.Read<IReadOnlyDictionary<string, string>>()));
         runtime.RegisterOption<global::Item>();
         runtime.RegisterFunction<CoflowFunction<long, long>>();
         runtime.RegisterFunction<CoflowFunction<long, Unit>>();
+        runtime.RegisterDimension("UiText_welcomeVariants");
+        runtime.RegisterArray<long>();
+        runtime.RegisterDimension("UiText_weightsVariants");
+        runtime.RegisterDictionary<string, IReadOnlyList<long>>();
+        runtime.RegisterStruct<Language<IReadOnlyList<long>>>(2, 0, 0,
+            static (ref CoflowValueWriter writer, Language<IReadOnlyList<long>> value) => { writer.Write(value.Default); writer.Write(value.Variants); },
+            static (ref CoflowValueReader reader) => new Language<IReadOnlyList<long>>(reader.Read<IReadOnlyList<long>>(), reader.Read<IReadOnlyDictionary<string, IReadOnlyList<long>>>()));
+        runtime.RegisterDimension("UiText_themeVariants");
+        runtime.RegisterDictionary<string, global::ThemeValue>();
+        runtime.RegisterStruct<Language<global::ThemeValue>>(3, 0, 0,
+            static (ref CoflowValueWriter writer, Language<global::ThemeValue> value) => { writer.Write(value.Default); writer.Write(value.Variants); },
+            static (ref CoflowValueReader reader) => new Language<global::ThemeValue>(reader.Read<global::ThemeValue>(), reader.Read<IReadOnlyDictionary<string, global::ThemeValue>>()));
+        runtime.RegisterFunction<CoflowFunction<long>>();
+        runtime.RegisterFunction<CoflowFunction<global::ThemeValue, global::ThemeValue, bool>>();
 
         return runtime.Build();
     }
@@ -97,18 +166,23 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
+                CoflowFieldBinding.Create<global::Item, Language<string>>(
+                    "title", static record => record.Title,
+                    false, 0, 0, 0),
+                new CoflowAnnotation[] { new CoflowAnnotation("localized", new CoflowAnnotationArgument[] {  }) }, true),
+            new(
                 CoflowFieldBinding.Create<global::Item, global::Stats>(
                     "stats", static record => record.Stats,
-                    false, 0, 0, 0),
+                    false, 1, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false, "Stats"),
             new(
                 CoflowFieldBinding.Create<global::Item, Option<global::Item>>(
                     "next", static record => record.Next,
-                    false, 2, 0, 0),
+                    false, 3, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
                 CoflowFieldBinding.Function<global::Item, CoflowFunction<long, long>>(
-                    "calculate", new CoflowTypeId(1), new CoflowFieldId(2), static value => value._coflowId, false),
+                    "calculate", new CoflowTypeId(1), new CoflowFieldId(3), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
 
         };
@@ -224,19 +298,123 @@ internal sealed class CoflowSchema : ICoflowSchema
 
     }
 
+    private sealed class Cft_5468656D6556616C7565CoflowMetadata : ICoflowTypeMetadata
+    {
+        public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
+        {
+            new(
+                CoflowFieldBinding.Create<global::ThemeValue, long>(
+                    "value", static record => record.Value,
+                    true, 0, 0, 0),
+                Array.Empty<CoflowAnnotation>(), false),
+
+        };
+
+        public CoflowTypeId TypeId => new(4);
+        public Type RuntimeType => typeof(global::ThemeValue);
+
+        public bool IsSingleton => false;
+        public bool IsAbstract => false;
+        public bool IsSealed => true;
+        public string DeclaredType => "ThemeValue";
+        public IReadOnlyList<CoflowAnnotation> Annotations { get; } = new CoflowAnnotation[] { new CoflowAnnotation("struct", new CoflowAnnotationArgument[] {  }) };
+        public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "ThemeValue" };
+        public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(4) };
+        public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5468656D6556616C7565(context, fields);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5468656D6556616C7565(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5468656D6556616C7565(fieldName, context);
+        public CoflowValueId GetValueId(object value) => ((global::ThemeValue)value)._coflowId;
+        public object WithValueId(object value, CoflowValueId id) =>
+            global::ThemeValue.WithCoflowValueId((global::ThemeValue)value, id);
+
+
+    }
+
+    private sealed class Cft_556954657874CoflowMetadata : ICoflowRecordMetadata
+    {
+        public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
+        {
+            new(
+                CoflowFieldBinding.Create<global::UiText, Language<string>>(
+                    "welcome", static record => record.Welcome,
+                    false, 0, 0, 0),
+                new CoflowAnnotation[] { new CoflowAnnotation("localized", new CoflowAnnotationArgument[] {  }) }, false),
+            new(
+                CoflowFieldBinding.Create<global::UiText, Language<IReadOnlyList<long>>>(
+                    "weights", static record => record.Weights,
+                    false, 1, 0, 1),
+                new CoflowAnnotation[] { new CoflowAnnotation("dimension", new CoflowAnnotationArgument[] { new CoflowAnnotationArgument(CoflowAnnotationArgumentKind.String, "language") }) }, true),
+            new(
+                CoflowFieldBinding.Create<global::UiText, Language<global::ThemeValue>>(
+                    "theme", static record => record.Theme,
+                    false, 3, 0, 1),
+                new CoflowAnnotation[] { new CoflowAnnotation("dimension", new CoflowAnnotationArgument[] { new CoflowAnnotationArgument(CoflowAnnotationArgumentKind.String, "language") }) }, true, "ThemeValue"),
+            new(
+                CoflowFieldBinding.Create<global::UiText, long>(
+                    "count", static record => record.Count,
+                    false, 6, 0, 1),
+                Array.Empty<CoflowAnnotation>(), false),
+            new(
+                CoflowFieldBinding.Function<global::UiText, CoflowFunction<long>>(
+                    "readCount", new CoflowTypeId(5), new CoflowFieldId(4), static value => value._coflowId, false),
+                Array.Empty<CoflowAnnotation>(), true),
+            new(
+                CoflowFieldBinding.Function<global::UiText, CoflowFunction<global::ThemeValue, global::ThemeValue, bool>>(
+                    "sameTheme", new CoflowTypeId(5), new CoflowFieldId(5), static value => value._coflowId, false),
+                Array.Empty<CoflowAnnotation>(), true),
+
+        };
+
+        public CoflowTypeId TypeId => new(5);
+        public Type RuntimeType => typeof(global::UiText);
+        public Type KeyType => typeof(string);
+
+        public bool IsSingleton => true;
+        public bool IsAbstract => false;
+        public bool IsSealed => false;
+        public string DeclaredType => "UiText";
+        public IReadOnlyList<CoflowAnnotation> Annotations { get; } = new CoflowAnnotation[] { new CoflowAnnotation("singleton", new CoflowAnnotationArgument[] {  }) };
+        public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "UiText" };
+        public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(5) };
+        public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_556954657874(context, fields);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_556954657874(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_556954657874(fieldName, context);
+        public CoflowValueId GetValueId(object value) => ((global::UiText)value)._coflowId;
+        public object WithValueId(object value, CoflowValueId id) =>
+            global::UiText.WithCoflowValueId((global::UiText)value, id);
+        public object ParseKey(string key) => key;
+        public object GetKey(object value) => string.Empty;
+
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.String<global::UiText>(values, static _ => string.Empty);
+        }
+
+        public object CreateRecord(string key, CfdLoadContext context) => new global::UiText();
+        public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
+        {
+            PopulateCft_556954657874((global::UiText)target, record, context);
+        }
+
+    }
+
     private static CoflowVmFactory CreateVmObjectCft_4974656D(CfdLoadContext context) =>
-        new(new Type[] { typeof(global::Stats), typeof(Option<global::Item>) }, typeof(global::Item),
+        new(new Type[] { typeof(Language<string>), typeof(global::Stats), typeof(Option<global::Item>) }, typeof(global::Item),
             (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Item(
                 string.Empty,
-                frame.Read<global::Stats>(0),
-                frame.Read<Option<global::Item>>(1)
+                frame.Read<Language<string>>(0),
+                frame.Read<global::Stats>(1),
+                frame.Read<Option<global::Item>>(2)
             )));
 
     private static CoflowVmFactory CreateVmDefaultCft_4974656D(string fieldName, CfdLoadContext context)
     {
+        const string key = "";
 
         return fieldName switch
         {
+            "title" => new CoflowVmFactory(Type.EmptyTypes, typeof(Language<string>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(ReadLanguage("Item", context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)))),
             "next" => new CoflowVmFactory(Type.EmptyTypes, typeof(Option<global::Item>),
                 (ref CoflowVmFactoryFrame frame) => frame.Write(Option<global::Item>.None)),
             _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
@@ -270,14 +448,76 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
+    private static CoflowVmFactory CreateVmObjectCft_5468656D6556616C7565(CfdLoadContext context) =>
+        new(new Type[] { typeof(long) }, typeof(global::ThemeValue),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::ThemeValue(
+                frame.Read<long>(0)
+            )));
+
+    private static CoflowVmFactory CreateVmDefaultCft_5468656D6556616C7565(string fieldName, CfdLoadContext context)
+    {
+
+        return fieldName switch
+        {
+            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
+        };
+    }
+
+    private static CoflowVmFactory CreateVmObjectCft_556954657874(CfdLoadContext context) =>
+        new(new Type[] { typeof(Language<string>), typeof(Language<IReadOnlyList<long>>), typeof(Language<global::ThemeValue>), typeof(long) }, typeof(global::UiText),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::UiText(
+                frame.Read<Language<string>>(0),
+                frame.Read<Language<IReadOnlyList<long>>>(1),
+                frame.Read<Language<global::ThemeValue>>(2),
+                frame.Read<long>(3)
+            )));
+
+    private static CoflowVmFactory CreateVmDefaultCft_556954657874(string fieldName, CfdLoadContext context)
+    {
+
+        return fieldName switch
+        {
+            "weights" => new CoflowVmFactory(Type.EmptyTypes, typeof(Language<IReadOnlyList<long>>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(ReadLanguage(CoflowConstantValues.List<long>(1L, 2L), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item))))),
+            "theme" => new CoflowVmFactory(Type.EmptyTypes, typeof(Language<global::ThemeValue>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(ReadLanguage(new global::ThemeValue(5L), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context)))),
+            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
+        };
+    }
+
+    private static Language<T> ReadLanguage<T>(
+        T defaultValue,
+        CfdLoadContext context,
+        string variantsType,
+        string recordKey,
+        IReadOnlyList<string> variants,
+        Func<CfdValueNode, CfdLoadContext, T> read)
+    {
+        var record = context.FindRecord(variantsType, recordKey);
+        if (record is null)
+            return new Language<T>(defaultValue);
+        context.WithRecordPath(record, () =>
+            CfdValueReader.ValidateFields(record.Fields, new[] { "default" }.Concat(variants).ToArray()));
+        var values = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var variant in variants)
+        {
+            var node = CfdValueReader.FindField(record.Fields, variant);
+            if (node is not null && !CfdValueReader.IsNone(node))
+                values.Add(variant, context.WithRecordPath(record, () => read(node, context)));
+        }
+        return new Language<T>(defaultValue, values);
+    }
+
     private static object CreateObjectCft_4974656D(
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
+        const string key = "";
         return new global::Item(
             string.Empty,
-            fields.TryGetValue("stats", out var value0) ? (global::Stats)value0! : throw new ArgumentException("missing object field `stats`", nameof(fields)),
-            fields.TryGetValue("next", out var value1) ? (Option<global::Item>)value1! : Option<global::Item>.None
+            fields.TryGetValue("title", out var value0) ? (Language<string>)value0! : ReadLanguage("Item", context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)),
+            fields.TryGetValue("stats", out var value1) ? (global::Stats)value1! : throw new ArgumentException("missing object field `stats`", nameof(fields)),
+            fields.TryGetValue("next", out var value2) ? (Option<global::Item>)value2! : Option<global::Item>.None
         );
     }
 
@@ -295,6 +535,27 @@ internal sealed class CoflowSchema : ICoflowSchema
         );
     }
 
+    private static object CreateObjectCft_5468656D6556616C7565(
+        CfdLoadContext context,
+        IReadOnlyDictionary<string, object?> fields)
+    {
+        return new global::ThemeValue(
+            fields.TryGetValue("value", out var value0) ? (long)value0! : throw new ArgumentException("missing object field `value`", nameof(fields))
+        );
+    }
+
+    private static object CreateObjectCft_556954657874(
+        CfdLoadContext context,
+        IReadOnlyDictionary<string, object?> fields)
+    {
+        return new global::UiText(
+            fields.TryGetValue("welcome", out var value0) ? (Language<string>)value0! : throw new ArgumentException("missing object field `welcome`", nameof(fields)),
+            fields.TryGetValue("weights", out var value1) ? (Language<IReadOnlyList<long>>)value1! : ReadLanguage(CoflowConstantValues.List<long>(1L, 2L), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item))),
+            fields.TryGetValue("theme", out var value2) ? (Language<global::ThemeValue>)value2! : ReadLanguage(new global::ThemeValue(5L), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context)),
+            fields.TryGetValue("count", out var value3) ? (long)value3! : throw new ArgumentException("missing object field `count`", nameof(fields))
+        );
+    }
+
     private static void PopulateCft_4974656D(
         global::Item target,
         CfdRecordNode record,
@@ -303,8 +564,9 @@ internal sealed class CoflowSchema : ICoflowSchema
         using var scope = context.EnterRecord(record.DeclaredType, record.Key);
         var fields = record.Fields;
         var key = record.Key;
-        CfdValueReader.ValidateFields(fields, "stats", "next", "calculate");
+        CfdValueReader.ValidateFields(fields, "title", "stats", "next", "calculate");
         target.Id = key;
+        target._coflowTitle = CfdValueReader.FindField(fields, "title") is { } valueTitle ? ReadLanguage(CfdValueReader.String(valueTitle, context), context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)) : ReadLanguage("Item", context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context));
         target._coflowStats = ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context);
         target._coflowNext = CfdValueReader.FindField(fields, "next") is { } valueNext ? CfdValueReader.Option(valueNext, context, static (item, context) => CfdValueReader.Reference<global::Item>(item, context, "Item")) : Option<global::Item>.None;
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "calculate"), "calculate", typeof(long), typeof(long));
@@ -323,10 +585,11 @@ internal sealed class CoflowSchema : ICoflowSchema
         string key,
         CfdLoadContext context)
     {
-        CfdValueReader.ValidateFields(fields, "stats", "next", "calculate");
+        CfdValueReader.ValidateFields(fields, "title", "stats", "next", "calculate");
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "calculate"), "calculate", typeof(long), typeof(long));
         return new global::Item(
             key,
+            CfdValueReader.FindField(fields, "title") is { } valueTitle ? ReadLanguage(CfdValueReader.String(valueTitle, context), context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)) : ReadLanguage("Item", context, "Item_titleVariants", key, new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)),
             ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context),
             CfdValueReader.FindField(fields, "next") is { } valueNext ? CfdValueReader.Option(valueNext, context, static (item, context) => CfdValueReader.Reference<global::Item>(item, context, "Item")) : Option<global::Item>.None
         );
@@ -366,6 +629,66 @@ internal sealed class CoflowSchema : ICoflowSchema
             _ = CfdValueReader.FindField(fields, "transform") is { } valueTransform ? context.RequiredFunction(valueTransform, "transform", typeof(long), typeof(long)) : context.DefaultFunction("fn(input: int) -> int { input + value }", "transform", typeof(long), typeof(long));
         return new global::Stats(
             CfdValueReader.Int64(CfdValueReader.Field(fields, "value"))
+        );
+    }
+
+
+
+    private static global::ThemeValue ReadCft_5468656D6556616C7565(
+        CfdValueNode node,
+        CfdLoadContext context) =>
+        context.ReadValue("ThemeValue", node, () =>
+            CfdValueReader.Object(node, context, "ThemeValue", ReadCft_5468656D6556616C7565Fields));
+
+    private static global::ThemeValue ReadCft_5468656D6556616C7565Fields(
+        IReadOnlyList<CfdFieldNode> fields,
+        string key,
+        CfdLoadContext context)
+    {
+        CfdValueReader.ValidateFields(fields, "value");
+        return new global::ThemeValue(
+            CfdValueReader.Int64(CfdValueReader.Field(fields, "value"))
+        );
+    }
+
+    private static void PopulateCft_556954657874(
+        global::UiText target,
+        CfdRecordNode record,
+        CfdLoadContext context)
+    {
+        using var scope = context.EnterRecord(record.DeclaredType, record.Key);
+        var fields = record.Fields;
+        var key = record.Key;
+        CfdValueReader.ValidateFields(fields, "welcome", "weights", "theme", "count", "readCount", "sameTheme");
+        target._coflowWelcome = ReadLanguage(CfdValueReader.String(CfdValueReader.Field(fields, "welcome"), context), context, "UiText_welcomeVariants", "welcome", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context));
+        target._coflowWeights = CfdValueReader.FindField(fields, "weights") is { } valueWeights ? ReadLanguage(CfdValueReader.Array(valueWeights, context, static (item, context) => CfdValueReader.Int64(item)), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item))) : ReadLanguage(CoflowConstantValues.List<long>(1L, 2L), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item)));
+        target._coflowTheme = CfdValueReader.FindField(fields, "theme") is { } valueTheme ? ReadLanguage(ReadCft_5468656D6556616C7565(valueTheme, context), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context)) : ReadLanguage(new global::ThemeValue(5L), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context));
+        target._coflowCount = CfdValueReader.Int64(CfdValueReader.Field(fields, "count"));
+        _ = CfdValueReader.FindField(fields, "readCount") is { } valueReadCount ? context.RequiredFunction(valueReadCount, "readCount", typeof(long)) : context.DefaultFunction("fn() -> int { count }", "readCount", typeof(long));
+        _ = CfdValueReader.FindField(fields, "sameTheme") is { } valueSameTheme ? context.RequiredFunction(valueSameTheme, "sameTheme", typeof(bool), typeof(global::ThemeValue), typeof(global::ThemeValue)) : context.DefaultFunction("fn(left: ThemeValue, right: ThemeValue) -> bool { left == right }", "sameTheme", typeof(bool), typeof(global::ThemeValue), typeof(global::ThemeValue));
+    }
+
+
+
+    private static global::UiText ReadCft_556954657874(
+        CfdValueNode node,
+        CfdLoadContext context) =>
+        context.ReadValue("UiText", node, () =>
+            CfdValueReader.Object(node, context, "UiText", ReadCft_556954657874Fields));
+
+    private static global::UiText ReadCft_556954657874Fields(
+        IReadOnlyList<CfdFieldNode> fields,
+        string key,
+        CfdLoadContext context)
+    {
+        CfdValueReader.ValidateFields(fields, "welcome", "weights", "theme", "count", "readCount", "sameTheme");
+            _ = CfdValueReader.FindField(fields, "readCount") is { } valueReadCount ? context.RequiredFunction(valueReadCount, "readCount", typeof(long)) : context.DefaultFunction("fn() -> int { count }", "readCount", typeof(long));
+            _ = CfdValueReader.FindField(fields, "sameTheme") is { } valueSameTheme ? context.RequiredFunction(valueSameTheme, "sameTheme", typeof(bool), typeof(global::ThemeValue), typeof(global::ThemeValue)) : context.DefaultFunction("fn(left: ThemeValue, right: ThemeValue) -> bool { left == right }", "sameTheme", typeof(bool), typeof(global::ThemeValue), typeof(global::ThemeValue));
+        return new global::UiText(
+            ReadLanguage(CfdValueReader.String(CfdValueReader.Field(fields, "welcome"), context), context, "UiText_welcomeVariants", "welcome", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.String(item, context)),
+            CfdValueReader.FindField(fields, "weights") is { } valueWeights ? ReadLanguage(CfdValueReader.Array(valueWeights, context, static (item, context) => CfdValueReader.Int64(item)), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item))) : ReadLanguage(CoflowConstantValues.List<long>(1L, 2L), context, "UiText_weightsVariants", "weights", new string[] { "zh", "en" }, static (item, context) => CfdValueReader.Array(item, context, static (item, context) => CfdValueReader.Int64(item))),
+            CfdValueReader.FindField(fields, "theme") is { } valueTheme ? ReadLanguage(ReadCft_5468656D6556616C7565(valueTheme, context), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context)) : ReadLanguage(new global::ThemeValue(5L), context, "UiText_themeVariants", "theme", new string[] { "zh", "en" }, static (item, context) => ReadCft_5468656D6556616C7565(item, context)),
+            CfdValueReader.Int64(CfdValueReader.Field(fields, "count"))
         );
     }
 

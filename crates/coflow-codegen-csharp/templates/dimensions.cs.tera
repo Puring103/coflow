@@ -6,6 +6,11 @@ using System.Collections.Generic;
     public readonly struct {{ dimension.name }}<T>
     {
         private readonly IReadOnlyDictionary<string, T>? _variants;
+        private static readonly IReadOnlyDictionary<string, T> EmptyVariants =
+            new System.Collections.ObjectModel.ReadOnlyDictionary<string, T>(new Dictionary<string, T>());
+        internal IReadOnlyDictionary<string, T> Variants => _variants ?? EmptyVariants;
+        internal {{ dimension.name }}<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
+            new(context.Import(Default), context.Import(Variants));
         public T Default { get; }
         public {{ dimension.name }}(T defaultValue)
         {

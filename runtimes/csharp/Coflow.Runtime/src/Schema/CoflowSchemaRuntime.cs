@@ -10,6 +10,7 @@ public sealed class CoflowSchemaRuntime
     private readonly IReadOnlyDictionary<Type, CoflowTypeDescriptor> _typeCodecs;
     private readonly IReadOnlyDictionary<Type, CoflowStructDescriptor> _structCodecs;
     private readonly CoflowLayoutRegistry _layouts;
+    private readonly HashSet<string> _dimensionRecords;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Type Type, bool Relative), Delegate>
         _boundaryWrites = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Type Type, bool Relative), Delegate>
@@ -21,12 +22,13 @@ public sealed class CoflowSchemaRuntime
         Dictionary<Type, CoflowTypeId> types,
         Dictionary<Type, CoflowTypeDescriptor> typeCodecs,
         Dictionary<Type, CoflowStructDescriptor> structCodecs,
-        CoflowLayoutRegistry layouts)
+        CoflowLayoutRegistry layouts, HashSet<string> dimensionRecords)
     {
         _types = new System.Collections.ObjectModel.ReadOnlyDictionary<Type, CoflowTypeId>(types);
         _typeCodecs = new System.Collections.ObjectModel.ReadOnlyDictionary<Type, CoflowTypeDescriptor>(typeCodecs);
         _structCodecs = new System.Collections.ObjectModel.ReadOnlyDictionary<Type, CoflowStructDescriptor>(structCodecs);
         _layouts = layouts;
+        _dimensionRecords = dimensionRecords;
     }
 
     internal bool TryGetType(Type type, out CoflowTypeId typeId) =>
@@ -59,6 +61,8 @@ public sealed class CoflowSchemaRuntime
     internal bool TryGetLayout(Type type, out CoflowValueShape layout) =>
         _layouts.TryGet(type, out layout);
 
+    internal bool IsDimensionRecord(string type) => _dimensionRecords.Contains(type);
+
     internal Action<CoflowExecutionSession, CoflowValueRegister, T> BoundaryWrite<T>(bool relative) =>
         (Action<CoflowExecutionSession, CoflowValueRegister, T>)_boundaryWrites.GetOrAdd(
             (typeof(T), relative), static key => CoflowBoundaryCodec.BuildWrite<T>(key.Relative));
@@ -76,6 +80,13 @@ public sealed class CoflowSchemaRuntime
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowSchemaRuntimeBuilder
 {
+    private readonly HashSet<string> _dimensionRecords = new(StringComparer.Ordinal);
+
+    public void RegisterDimension(string recordType)
+    {
+        EnsureMutable();
+        _dimensionRecords.Add(recordType);
+    }
     private readonly Dictionary<Type, CoflowTypeId> _types = new();
     private readonly Dictionary<Type, CoflowTypeDescriptor> _typeCodecs = new();
     private readonly Dictionary<Type, CoflowStructDescriptor> _structCodecs = new();
@@ -168,7 +179,7 @@ public sealed class CoflowSchemaRuntimeBuilder
             new Dictionary<Type, CoflowTypeId>(_types),
             new Dictionary<Type, CoflowTypeDescriptor>(_typeCodecs),
             new Dictionary<Type, CoflowStructDescriptor>(_structCodecs),
-            _layouts.Clone());
+            _layouts.Clone(), new HashSet<string>(_dimensionRecords, StringComparer.Ordinal));
     }
 
     private void RegisterType(Type type, CoflowTypeId typeId)
