@@ -6,14 +6,22 @@ using Xunit;
 
 namespace Coflow.Runtime.Tests;
 
-public sealed class CoflowCollectionArenaTests
+public sealed class CoflowCollectionArenaTests : IDisposable
 {
-    static CoflowCollectionArenaTests()
+    private static readonly CoflowSchemaRuntime Runtime = BuildRuntime();
+    private readonly CoflowSchemaRuntimeContext.Scope _runtimeScope =
+        CoflowSchemaRuntimeContext.Enter(Runtime);
+
+    private static CoflowSchemaRuntime BuildRuntime()
     {
-        CoflowValueLayout.RegisterOption<long>();
-        CoflowValueLayout.RegisterResult<Option<long>, string>();
-        CoflowValueLayout.RegisterResult<long, string>();
-        CoflowStructCodec.Register<NestedArenaValue>(1, 0, 1,
+        var runtime = new CoflowSchemaRuntimeBuilder();
+        runtime.RegisterOption<long>();
+        runtime.RegisterResult<Option<long>, string>();
+        runtime.RegisterResult<long, string>();
+        runtime.RegisterArray<long>();
+        runtime.RegisterDictionary<string, IReadOnlyList<long>>();
+        runtime.RegisterOption<double>();
+        runtime.RegisterStruct<NestedArenaValue>(1, 0, 1,
             static (ref CoflowValueWriter writer, NestedArenaValue value) =>
             {
                 writer.WriteValueId(default);
@@ -24,6 +32,60 @@ public sealed class CoflowCollectionArenaTests
                 _ = reader.ReadValueId();
                 return new NestedArenaValue(reader.Read<string>());
             });
+        return runtime.Build();
+    }
+
+    public void Dispose() => _runtimeScope.Dispose();
+
+    [Fact]
+    public void NestedCollectionsCompareWithoutMaterializationOrWarmAllocations()
+    {
+        using var context = new CoflowExecutionSession();
+        context.Collections.Reset(7);
+        var type = typeof(IReadOnlyDictionary<string, IReadOnlyList<long>>);
+        var shape = CoflowValueShape.Of(type);
+        var left = new CoflowValueRegister(shape, 0, 0, 0);
+        var right = new CoflowValueRegister(shape, 1, 0, 0);
+        var result = new CoflowValueRegister(CoflowValueShape.Of(typeof(bool)), 2, 0, 0);
+        var first = new Dictionary<string, IReadOnlyList<long>> { ["a"] = new long[] { 1, 2 }, ["b"] = new long[] { 3 } };
+        var second = new Dictionary<string, IReadOnlyList<long>> { ["b"] = new long[] { 3 }, ["a"] = new long[] { 1, 2 } };
+        context.WriteEncodedRelative(CoflowCollectionEncoding.Encode(type, first, context.Collections), left);
+        context.WriteEncodedRelative(CoflowCollectionEncoding.Encode(type, second, context.Collections), right);
+        var call = CoflowEquality.Create(type);
+        var frame = new CoflowNativeFrame(context, new[] { left, right }, result, typeof(bool));
+        for (var index = 0; index < 100; index++) call.Invoke(frame);
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 1000; index++) call.Invoke(frame);
+        allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        Assert.Equal(0, allocated);
+        Assert.Equal(1, context.Registers.ReadInteger(result.Scalar));
+        second["a"] = new long[] { 1, 4 };
+        context.WriteEncodedRelative(CoflowCollectionEncoding.Encode(type, second, context.Collections), right);
+        call.Invoke(frame);
+        Assert.Equal(0, context.Registers.ReadInteger(result.Scalar));
+    }
+
+    [Fact]
+    public void CompoundEqualityIgnoresInactivePayloadAndPreservesNaNSemantics()
+    {
+        using var context = new CoflowExecutionSession();
+        var type = typeof(Option<double>);
+        var shape = CoflowValueShape.Of(type);
+        var left = new CoflowValueRegister(shape, 0, 0, 0);
+        var right = new CoflowValueRegister(shape, 1, 1, 0);
+        var result = new CoflowValueRegister(CoflowValueShape.Of(typeof(bool)), 2, 0, 0);
+        context.WriteEncodedRelative(CoflowEncodedValue.Encode(type, Option<double>.None), left);
+        context.WriteEncodedRelative(CoflowEncodedValue.Encode(type, Option<double>.None), right);
+        context.Registers.WriteFloatRelative(0, double.NaN);
+        var call = CoflowEquality.Create(type);
+        var frame = new CoflowNativeFrame(context, new[] { left, right }, result, typeof(bool));
+        call.Invoke(frame);
+        Assert.Equal(1, context.Registers.ReadInteger(result.Scalar));
+        context.Registers.WriteIntegerRelative(0, 1);
+        context.Registers.WriteIntegerRelative(1, 1);
+        context.Registers.WriteFloatRelative(1, double.NaN);
+        call.Invoke(frame);
+        Assert.Equal(0, context.Registers.ReadInteger(result.Scalar));
     }
 
     [Fact]
@@ -45,6 +107,35 @@ public sealed class CoflowCollectionArenaTests
         Assert.Equal(new object?[] { null }, first.References);
         Assert.Equal(new long[] { 0, 0, 0 }, second.Integers);
         Assert.Equal(new object?[] { "failure" }, second.References);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DictionaryIndexSurvivesFreezeAndSourceClear(bool strings)
+    {
+        using var context = new CoflowExecutionSession();
+        var arena = context.Collections;
+        arena.Reset(7);
+        var type = strings ? typeof(string) : typeof(long);
+        var shape = CoflowValueShape.Of(type);
+        var keys = new CoflowEncodedValue[10001];
+        for (var index = 0; index < 10000; index++)
+            keys[index] = CoflowEncodedValue.Encode(type, strings ? (object)$"key{index}" : (long)index);
+        keys[10000] = keys[0];
+        var id = arena.AddDictionary(shape, shape, keys, keys);
+        var frozen = arena.Freeze();
+        var selected = arena.Freeze(new HashSet<CoflowCollectionId> { id });
+        arena.Clear();
+        var register = new CoflowValueRegister(shape, 0, 0, 0);
+        foreach (var index in new[] { 0, 9999, 10001 })
+        {
+            context.WriteEncodedRelative(CoflowEncodedValue.Encode(type,
+                strings ? (object)$"key{index}" : (long)index), register);
+            var expected = index == 10001 ? -1 : index;
+            Assert.Equal(expected, frozen.FindDictionaryKey(id, context, register));
+            Assert.Equal(expected, selected.FindDictionaryKey(id, context, register));
+        }
     }
 
     [Fact]
@@ -113,7 +204,7 @@ public sealed class CoflowCollectionArenaTests
         var current = arena.AddArray(CoflowValueShape.Of(typeof(long)),
             new[] { CoflowEncodedValue.Encode(typeof(long), 2L) });
 
-        Assert.Equal((uint)8, current.Generation);
+        Assert.Equal((uint)8, current.SnapshotId);
         Assert.Throws<InvalidOperationException>(() => arena.ItemCount(old));
         Assert.Equal(1, arena.ItemCount(current));
     }
@@ -166,7 +257,7 @@ public sealed class CoflowCollectionArenaTests
     [Fact]
     public void ExecutionContextOwnsAndClearsInvocationCollections()
     {
-        var context = new CoflowVm.CoflowExecutionContext();
+        var context = new CoflowExecutionSession();
         context.Collections.Reset(7);
         context.Collections.AddArray(CoflowValueShape.Of(typeof(string)),
             new[] { CoflowEncodedValue.Encode(typeof(string), "value") });
@@ -179,7 +270,7 @@ public sealed class CoflowCollectionArenaTests
     [Fact]
     public void LiteralConstructionCopiesRegisterLanesDirectly()
     {
-        var context = new CoflowVm.CoflowExecutionContext();
+        var context = new CoflowExecutionSession();
         context.Collections.Reset(9);
         var shape = CoflowValueShape.Of(typeof(Result<long, string>));
         var first = new CoflowValueRegister(shape, 0, 0, 0);
@@ -197,7 +288,7 @@ public sealed class CoflowCollectionArenaTests
     }
 
     [Fact]
-    public void StructArenaWriterUsesTheRecursiveValueEncoder()
+    public void StructArenaWriterEncodesScalarFieldsDirectly()
     {
         var encoded = CoflowEncodedValue.EncodeArenaField(
             typeof(NestedArenaValue),
@@ -206,7 +297,7 @@ public sealed class CoflowCollectionArenaTests
                 ? CoflowEncodedValue.Encode(type, $"encoded:{value}")
                 : CoflowEncodedValue.EncodeArenaField(type, value));
 
-        Assert.Equal("encoded:source", encoded.References[0]);
+        Assert.Equal("source", encoded.References[0]);
     }
 
     private readonly record struct NestedArenaValue(string Text);

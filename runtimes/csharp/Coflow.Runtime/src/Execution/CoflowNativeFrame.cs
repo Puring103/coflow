@@ -4,20 +4,20 @@ namespace Coflow.Runtime.CompilerServices;
 
 internal readonly struct CoflowNativeFrame
 {
-    private readonly CoflowVm.CoflowExecutionContext _context;
+    private readonly CoflowExecutionSession _context;
 
-    private readonly CoflowValueRegister[] _arguments;
+    private readonly IReadOnlyList<CoflowValueRegister> _arguments;
 
     private readonly CoflowValueRegister _result;
 
     private readonly Type _resultType;
 
-    internal CoflowNativeFrame(CoflowVm.CoflowExecutionContext context, CoflowNativeCallSite site)
+    internal CoflowNativeFrame(CoflowExecutionSession context, CoflowNativeCallSite site)
         : this(context, site.Arguments, site.Result, site.Call.ResultType)
     {
     }
 
-    internal CoflowNativeFrame(CoflowVm.CoflowExecutionContext context, CoflowValueRegister[] arguments, CoflowValueRegister result, Type resultType)
+    internal CoflowNativeFrame(CoflowExecutionSession context, IReadOnlyList<CoflowValueRegister> arguments, CoflowValueRegister result, Type resultType)
     {
         _context = context;
         _arguments = arguments;
@@ -28,6 +28,18 @@ internal readonly struct CoflowNativeFrame
     public T Read<T>(int index)
     {
         return CoflowBoundaryCodec<T>.ReadRelative(_context, _arguments[index]);
+    }
+
+    internal bool Compare(CoflowEquality.Comparer compare) => compare(_context,
+        _context.Registers.View(_context.Registers.Offset(_arguments[0])),
+        _context.Registers.View(_context.Registers.Offset(_arguments[1])));
+
+    internal object ReadRecord(int index, Type expectedType)
+    {
+        var register = _arguments[index];
+        var id = CoflowValueId.FromPacked(unchecked((ulong)
+            _context.Registers.ReadIntegerRelative(register.IntegerBase)));
+        return _context.ApiValue(id, expectedType);
     }
 
     public void Write<T>(T value)
@@ -50,7 +62,7 @@ internal readonly struct CoflowNativeFrame
 
     internal void WriteFunction(CoflowFunctionId functionId, CoflowValueId environmentId)
     {
-        _context.WriteIntegerRelative(_result.IntegerBase, functionId.Packed);
-        _context.WriteIntegerRelative(_result.IntegerBase + 1, unchecked((long)environmentId.Packed));
+        _context.Registers.WriteIntegerRelative(_result.IntegerBase, functionId.Packed);
+        _context.Registers.WriteIntegerRelative(_result.IntegerBase + 1, unchecked((long)environmentId.Packed));
     }
 }

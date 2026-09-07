@@ -1,6 +1,8 @@
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using Xunit;
 
 namespace Coflow.Runtime.Tests;
@@ -57,6 +59,24 @@ public sealed class CoflowExecutionBudgetTests
         budget.ReleaseRegisters(1, 1, 1);
     }
 
+    [Fact]
+    public void CollectionImportRejectsTheCountBeforeEnumeration()
+    {
+        var runtimeBuilder = new CoflowSchemaRuntimeBuilder();
+        runtimeBuilder.RegisterArray<long>();
+        using var runtimeScope = CoflowSchemaRuntimeContext.Enter(runtimeBuilder.Build());
+        var budget = new CoflowExecutionBudget(new CoflowOptions(maxCollectionElements: 1));
+        var arena = new CoflowCollectionArena();
+        arena.Reset(7, budget: budget);
+        var values = new CountingList(1, 2, 3);
+
+        var error = Assert.Throws<CoflowExecutionLimitException>(() =>
+            CoflowCollectionEncoding.Encode(typeof(IReadOnlyList<long>), values, arena));
+
+        Assert.Equal(nameof(CoflowOptions.MaxCollectionElements), error.Limit);
+        Assert.Equal(0, values.EnumerationCount);
+    }
+
     private static void Exceeds(string name, Action first, Action second)
     {
         first();
@@ -65,4 +85,20 @@ public sealed class CoflowExecutionBudgetTests
 
     private static void Limit(string name, Action action) =>
         Assert.Equal(name, Assert.Throws<CoflowExecutionLimitException>(action).Limit);
+
+    private sealed class CountingList(params long[] values) : IReadOnlyList<long>
+    {
+        public int EnumerationCount { get; private set; }
+        public int Count => values.Length;
+        public long this[int index] => values[index];
+        public IEnumerator<long> GetEnumerator()
+        {
+            foreach (var value in values)
+            {
+                EnumerationCount++;
+                yield return value;
+            }
+        }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 }

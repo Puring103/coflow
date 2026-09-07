@@ -1,5 +1,27 @@
 namespace Coflow.Runtime.CompilerServices;
 
+/// <summary>最终程序持有的只读连续数据；构造时复制，避免验证后的编码被调用方修改。</summary>
+internal sealed class CoflowFrozenArray<T> : IReadOnlyList<T>
+{
+    private readonly T[] _items;
+
+    private CoflowFrozenArray(T[] items, bool takeOwnership) =>
+        _items = takeOwnership ? items : (T[])items.Clone();
+
+    internal static CoflowFrozenArray<T> Empty { get; } = new(Array.Empty<T>(), true);
+    internal static CoflowFrozenArray<T> CopyOf(T[] items) =>
+        items.Length == 0 ? Empty : new(items, false);
+    internal static CoflowFrozenArray<T> Owned(T[] items) =>
+        items.Length == 0 ? Empty : new(items, true);
+    public static implicit operator CoflowFrozenArray<T>(T[] items) => CopyOf(items);
+
+    internal int Length => _items.Length;
+    public int Count => _items.Length;
+    public T this[int index] => _items[index];
+    public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)_items).GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => _items.GetEnumerator();
+}
+
 internal enum CoflowRegisterKind : byte { Integer, Float, Reference }
 
 internal readonly record struct CoflowRegister(CoflowRegisterKind Kind, int Index);
@@ -8,7 +30,7 @@ internal enum CoflowValueShapeKind : byte { Scalar, Unit, Option, Result, Struct
 
 internal sealed class CoflowValueShape
 {
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, CoflowValueShape> BaseLayouts = new(
+    private static readonly IReadOnlyDictionary<Type, CoflowValueShape> BaseLayouts =
         new Dictionary<Type, CoflowValueShape>
         {
             [typeof(Unit)] = new(typeof(Unit), CoflowValueShapeKind.Unit, null, null, null),
@@ -16,7 +38,7 @@ internal sealed class CoflowValueShape
             [typeof(bool)] = new(typeof(bool), CoflowValueShapeKind.Scalar, CoflowRegisterKind.Integer, null, null),
             [typeof(double)] = new(typeof(double), CoflowValueShapeKind.Scalar, CoflowRegisterKind.Float, null, null),
             [typeof(string)] = new(typeof(string), CoflowValueShapeKind.Scalar, CoflowRegisterKind.Reference, null, null),
-        });
+        };
 
     internal CoflowValueShape(
         Type type,
@@ -56,6 +78,7 @@ internal sealed class CoflowValueShape
     {
         if (CoflowLayoutCompilation.TryGet(type, out var layout) ||
             CoflowInvocationContext.TryGetLayout(type, out layout) ||
+            (CoflowSchemaRuntimeContext.TryGet(out var runtime) && runtime.TryGetLayout(type, out layout)) ||
             BaseLayouts.TryGetValue(type, out layout)) return layout;
         if (CoflowLayoutCompilation.IsActive)
         {
@@ -65,35 +88,8 @@ internal sealed class CoflowValueShape
         throw new InvalidOperationException($"Schema does not declare a VM layout for `{type}`.");
     }
 
-    internal static void RegisterScalar(Type type, CoflowRegisterKind kind) =>
-        Register(new(type, CoflowValueShapeKind.Scalar, kind, null, null));
-
-    internal static void RegisterOption(Type type, Type itemType) =>
-        Register(new(type, CoflowValueShapeKind.Option, null, Of(itemType), null));
-
-    internal static void RegisterResult(Type type, Type okType, Type errorType) =>
-        Register(new(type, CoflowValueShapeKind.Result, null, Of(okType), Of(errorType)));
-
-    internal static void RegisterCollection(Type type) =>
-        Register(new(type, CoflowValueShapeKind.Collection, CoflowRegisterKind.Integer, null, null));
-
-    internal static void RegisterFunction(Type type) =>
-        Register(new(type, CoflowValueShapeKind.Function, null, null, null, 2, 0, 0));
-
-    internal static void RegisterRecord(Type type) =>
-        Register(new(type, CoflowValueShapeKind.Record, CoflowRegisterKind.Integer, null, null));
-
-    internal static void RegisterStruct(Type type, int integers, int floats, int references) =>
-        Register(new(type, CoflowValueShapeKind.Struct, null, null, null, integers, floats, references));
-
     internal static CoflowRegisterKind Scalar(Type type) => Of(type).ScalarKind ??
         throw new InvalidOperationException($"`{type}` has no scalar VM layout.");
-
-    private static void Register(CoflowValueShape layout)
-    {
-        var current = BaseLayouts.GetOrAdd(layout.Type, layout);
-        RequireCompatible(current, layout);
-    }
 
     internal static void RequireCompatible(CoflowValueShape current, CoflowValueShape layout)
     {
@@ -180,23 +176,13 @@ internal sealed class CoflowLayoutRegistry
         }
         _layouts.Add(layout.Type, layout);
     }
-}
 
-/// <summary>由生成 Schema 在模块初始化时注册 closed value type 的固定 VM 布局。</summary>
-[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-public static class CoflowValueLayout
-{
-    public static void RegisterEnum<T>() where T : struct, Enum =>
-        CoflowValueShape.RegisterScalar(typeof(T), CoflowRegisterKind.Integer);
-    public static void RegisterOption<T>() =>
-        CoflowValueShape.RegisterOption(typeof(Option<T>), typeof(T));
-    public static void RegisterResult<TOk, TError>() =>
-        CoflowValueShape.RegisterResult(typeof(Result<TOk, TError>), typeof(TOk), typeof(TError));
-    public static void RegisterArray<T>() =>
-        CoflowValueShape.RegisterCollection(typeof(IReadOnlyList<T>));
-    public static void RegisterDictionary<TKey, TValue>() where TKey : notnull =>
-        CoflowValueShape.RegisterCollection(typeof(IReadOnlyDictionary<TKey, TValue>));
-    public static void RegisterFunction<TFunction>() => CoflowValueShape.RegisterFunction(typeof(TFunction));
+    internal CoflowLayoutRegistry Clone()
+    {
+        var clone = new CoflowLayoutRegistry();
+        foreach (var layout in _layouts.Values) clone.Register(layout);
+        return clone;
+    }
 }
 
 internal readonly record struct CoflowValueRegister(
@@ -237,7 +223,7 @@ internal enum CoflowRegisterOpCode : byte
 {
     Nop,
     ConstantInteger, ConstantFloat, ConstantReference, ConstantValue,
-    MoveInteger, MoveFloat, MoveReference, MoveValue,
+    MoveInteger, MoveFloat, MoveReference, ClearReference, MoveValue,
     LoadHostFieldInteger, LoadHostFieldFloat, LoadHostFieldReference, LoadHostFieldValue,
     LoadArenaFieldInteger, LoadArenaFieldFloat, LoadArenaFieldReference, LoadArenaFieldValue, Native,
     MakeArray, MakeDictionary, ArrayIndex, DictionaryIndex,
@@ -266,14 +252,6 @@ internal readonly record struct CoflowRegisterInstruction(
     int B = 0,
     int C = 0);
 
-internal readonly record struct CoflowLoweredInstruction(
-    CoflowRegisterOpCode Code,
-    int A = 0,
-    int B = 0,
-    int C = 0,
-    long Immediate = 0,
-    object? Operation = null);
-
 internal sealed record CoflowRegisterValueTransfer(
     CoflowValueRegister Source,
     CoflowValueRegister Target);
@@ -288,10 +266,22 @@ internal sealed record CoflowRegisterFieldValueSite(
 
 internal sealed record CoflowRegisterTargetSite(CoflowValueRegister Target);
 
-internal sealed record CoflowRegisterCollectionSite(
-    CoflowValueRegister[] First,
-    CoflowValueRegister[]? Second,
-    CoflowValueRegister Target);
+internal sealed class CoflowRegisterCollectionSite
+{
+    internal CoflowRegisterCollectionSite(
+        CoflowValueRegister[] first,
+        CoflowValueRegister[]? second,
+        CoflowValueRegister target)
+    {
+        First = CoflowFrozenArray<CoflowValueRegister>.CopyOf(first);
+        Second = second is null ? null : CoflowFrozenArray<CoflowValueRegister>.CopyOf(second);
+        Target = target;
+    }
+
+    internal CoflowFrozenArray<CoflowValueRegister> First { get; }
+    internal CoflowFrozenArray<CoflowValueRegister>? Second { get; }
+    internal CoflowValueRegister Target { get; }
+}
 
 internal sealed record CoflowRegisterArrayIndexSite(
     CoflowValueRegister Collection,
@@ -323,14 +313,27 @@ internal sealed record CoflowRegisterPropagateSite(
     CoflowValueRegister Payload,
     CoflowValueRegister ReturnValue);
 
-internal sealed record CoflowRegisterClosureSite(
-    CoflowClosureTemplate Template,
-    CoflowValueRegister[] Captures,
-    CoflowValueRegister Target);
+internal sealed class CoflowRegisterClosureSite
+{
+    internal CoflowRegisterClosureSite(
+        CoflowClosureTemplate template,
+        CoflowValueRegister[] captures,
+        CoflowValueRegister target)
+    {
+        Template = template;
+        Captures = CoflowFrozenArray<CoflowValueRegister>.CopyOf(captures);
+        Target = target;
+    }
+
+    internal CoflowClosureTemplate Template { get; }
+    internal CoflowFrozenArray<CoflowValueRegister> Captures { get; }
+    internal CoflowValueRegister Target { get; }
+}
 
 internal sealed class CoflowRegisterCallSite(
     int programIndex,
     CoflowFunctionSignature signature,
+    Type[] vmParameterTypes,
     CoflowValueRegister[] sourceArguments,
     CoflowValueRegister[] windowArguments,
     bool[] copyArguments,
@@ -341,52 +344,68 @@ internal sealed class CoflowRegisterCallSite(
 {
     internal int ProgramIndex { get; } = programIndex;
     internal CoflowFunctionSignature Signature { get; } = signature;
-    internal CoflowValueRegister[] SourceArguments { get; } = sourceArguments;
-    internal CoflowValueRegister[] Arguments { get; } = windowArguments;
-    internal bool[] CopyArguments { get; } = copyArguments;
+    internal CoflowFrozenArray<Type> VmParameterTypes { get; } = CoflowFrozenArray<Type>.CopyOf(vmParameterTypes);
+    internal CoflowFrozenArray<CoflowValueRegister> SourceArguments { get; } = CoflowFrozenArray<CoflowValueRegister>.CopyOf(sourceArguments);
+    internal CoflowFrozenArray<CoflowValueRegister> Arguments { get; } = CoflowFrozenArray<CoflowValueRegister>.CopyOf(windowArguments);
+    internal CoflowFrozenArray<bool> CopyArguments { get; } = CoflowFrozenArray<bool>.CopyOf(copyArguments);
     internal CoflowValueRegister Result { get; } = result;
     internal int IntegerWindowBase { get; } = integerWindowBase;
     internal int FloatWindowBase { get; } = floatWindowBase;
     internal int ReferenceWindowBase { get; } = referenceWindowBase;
+
+    internal CoflowRegisterCallSite Relink(int linkedProgramIndex) => new(
+        linkedProgramIndex,
+        Signature,
+        VmParameterTypes.ToArray(),
+        SourceArguments.ToArray(),
+        Arguments.ToArray(),
+        CopyArguments.ToArray(),
+        Result,
+        IntegerWindowBase,
+        FloatWindowBase,
+        ReferenceWindowBase);
 }
 
-internal sealed record CoflowRegisterIndirectCallSite(
-    CoflowValueRegister Callable,
-    CoflowValueRegister[] Arguments,
-    CoflowValueRegister Result,
-    Type ResultType);
+internal sealed class CoflowRegisterIndirectCallSite
+{
+    internal CoflowRegisterIndirectCallSite(
+        CoflowValueRegister callable,
+        CoflowValueRegister[] arguments,
+        CoflowValueRegister result,
+        Type resultType)
+    {
+        Callable = callable;
+        Arguments = CoflowFrozenArray<CoflowValueRegister>.CopyOf(arguments);
+        Result = result;
+        ResultType = resultType;
+    }
 
-internal sealed record CoflowLoweringInput(
-    CoflowFunctionIdentity Identity,
-    CoflowInstruction[] Instructions,
-    CfdSpan?[] InstructionSpans,
-    object?[] Operations,
-    CoflowEncodedValue?[] EncodedConstants,
-    Type[] ParameterTypes,
-    Type ReturnType,
-    int LocalCount,
-    IReadOnlyDictionary<CoflowFunctionIdentity, int> FunctionIndexes);
+    internal CoflowValueRegister Callable { get; }
+    internal CoflowFrozenArray<CoflowValueRegister> Arguments { get; }
+    internal CoflowValueRegister Result { get; }
+    internal Type ResultType { get; }
+}
 
 internal sealed class CoflowRegisterOperations
 {
-    internal object?[] References { get; init; } = Array.Empty<object?>();
-    internal CoflowRegisterConstantSite[] Constants { get; init; } = Array.Empty<CoflowRegisterConstantSite>();
-    internal CoflowRegisterValueTransfer[] Transfers { get; init; } = Array.Empty<CoflowRegisterValueTransfer>();
-    internal CoflowFieldAccess[] Fields { get; init; } = Array.Empty<CoflowFieldAccess>();
-    internal CoflowRegisterFieldValueSite[] FieldValues { get; init; } = Array.Empty<CoflowRegisterFieldValueSite>();
-    internal CoflowNativeCallSite[] NativeCalls { get; init; } = Array.Empty<CoflowNativeCallSite>();
-    internal CoflowRegisterCollectionSite[] Collections { get; init; } = Array.Empty<CoflowRegisterCollectionSite>();
-    internal CoflowRegisterArrayIndexSite[] Indexes { get; init; } = Array.Empty<CoflowRegisterArrayIndexSite>();
-    internal CoflowRegisterCollectionReadSite[] CollectionReads { get; init; } = Array.Empty<CoflowRegisterCollectionReadSite>();
-    internal CoflowRegisterCollectionProjectionSite[] Projections { get; init; } = Array.Empty<CoflowRegisterCollectionProjectionSite>();
-    internal CoflowRegisterCollectionBuiltinSite[] CollectionBuiltins { get; init; } = Array.Empty<CoflowRegisterCollectionBuiltinSite>();
-    internal CoflowRegisterArrayBuilderSite[] ArrayBuilders { get; init; } = Array.Empty<CoflowRegisterArrayBuilderSite>();
-    internal CoflowRegisterTargetSite[] Targets { get; init; } = Array.Empty<CoflowRegisterTargetSite>();
-    internal CoflowRegisterPropagateSite[] Propagates { get; init; } = Array.Empty<CoflowRegisterPropagateSite>();
-    internal CoflowRegisterClosureSite[] Closures { get; init; } = Array.Empty<CoflowRegisterClosureSite>();
-    internal Type[] Types { get; init; } = Array.Empty<Type>();
-    internal CoflowRegisterCallSite[] Calls { get; init; } = Array.Empty<CoflowRegisterCallSite>();
-    internal CoflowRegisterIndirectCallSite[] IndirectCalls { get; init; } = Array.Empty<CoflowRegisterIndirectCallSite>();
+    internal CoflowFrozenArray<object?> References { get; init; } = CoflowFrozenArray<object?>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterConstantSite> Constants { get; init; } = CoflowFrozenArray<CoflowRegisterConstantSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterValueTransfer> Transfers { get; init; } = CoflowFrozenArray<CoflowRegisterValueTransfer>.Empty;
+    internal CoflowFrozenArray<CoflowFieldAccess> Fields { get; init; } = CoflowFrozenArray<CoflowFieldAccess>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterFieldValueSite> FieldValues { get; init; } = CoflowFrozenArray<CoflowRegisterFieldValueSite>.Empty;
+    internal CoflowFrozenArray<CoflowNativeCallSite> NativeCalls { get; init; } = CoflowFrozenArray<CoflowNativeCallSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterCollectionSite> Collections { get; init; } = CoflowFrozenArray<CoflowRegisterCollectionSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterArrayIndexSite> Indexes { get; init; } = CoflowFrozenArray<CoflowRegisterArrayIndexSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterCollectionReadSite> CollectionReads { get; init; } = CoflowFrozenArray<CoflowRegisterCollectionReadSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterCollectionProjectionSite> Projections { get; init; } = CoflowFrozenArray<CoflowRegisterCollectionProjectionSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterCollectionBuiltinSite> CollectionBuiltins { get; init; } = CoflowFrozenArray<CoflowRegisterCollectionBuiltinSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterArrayBuilderSite> ArrayBuilders { get; init; } = CoflowFrozenArray<CoflowRegisterArrayBuilderSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterTargetSite> Targets { get; init; } = CoflowFrozenArray<CoflowRegisterTargetSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterPropagateSite> Propagates { get; init; } = CoflowFrozenArray<CoflowRegisterPropagateSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterClosureSite> Closures { get; init; } = CoflowFrozenArray<CoflowRegisterClosureSite>.Empty;
+    internal CoflowFrozenArray<Type> Types { get; init; } = CoflowFrozenArray<Type>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterCallSite> Calls { get; init; } = CoflowFrozenArray<CoflowRegisterCallSite>.Empty;
+    internal CoflowFrozenArray<CoflowRegisterIndirectCallSite> IndirectCalls { get; init; } = CoflowFrozenArray<CoflowRegisterIndirectCallSite>.Empty;
 
     internal sealed class Builder
     {
@@ -409,43 +428,27 @@ internal sealed class CoflowRegisterOperations
         private readonly List<CoflowRegisterCallSite> _calls = new();
         private readonly List<CoflowRegisterIndirectCallSite> _indirectCalls = new();
 
-        internal int Add(CoflowRegisterOpCode code, object? operation) => code switch
+        internal int Add(CoflowRegisterOpCode code, object? operation) =>
+            CoflowRegisterInstructionSpec.Descriptor(code) switch
         {
-            CoflowRegisterOpCode.ConstantReference => Add(_references, operation),
-            CoflowRegisterOpCode.ConstantValue => Add(_constants, (CoflowRegisterConstantSite)operation!),
-            CoflowRegisterOpCode.MoveValue or CoflowRegisterOpCode.MakeOptionSome or
-                CoflowRegisterOpCode.MakeResultOk or CoflowRegisterOpCode.MakeResultErr or
-                CoflowRegisterOpCode.ReadFirstPayload or CoflowRegisterOpCode.ReadSecondPayload =>
-                Add(_transfers, (CoflowRegisterValueTransfer)operation!),
-            CoflowRegisterOpCode.LoadHostFieldInteger or CoflowRegisterOpCode.LoadHostFieldFloat or
-                CoflowRegisterOpCode.LoadHostFieldReference or CoflowRegisterOpCode.LoadArenaFieldInteger or
-                CoflowRegisterOpCode.LoadArenaFieldFloat or CoflowRegisterOpCode.LoadArenaFieldReference =>
-                Add(_fields, (CoflowFieldAccess)operation!),
-            CoflowRegisterOpCode.LoadHostFieldValue or CoflowRegisterOpCode.LoadArenaFieldValue =>
-                Add(_fieldValues, (CoflowRegisterFieldValueSite)operation!),
-            CoflowRegisterOpCode.Native => Add(_nativeCalls, (CoflowNativeCallSite)operation!),
-            CoflowRegisterOpCode.MakeArray or CoflowRegisterOpCode.MakeDictionary =>
-                Add(_collections, (CoflowRegisterCollectionSite)operation!),
-            CoflowRegisterOpCode.ArrayIndex or CoflowRegisterOpCode.DictionaryIndex =>
-                Add(_indexes, (CoflowRegisterArrayIndexSite)operation!),
-            CoflowRegisterOpCode.CollectionCount or CoflowRegisterOpCode.ArrayItem or
-                CoflowRegisterOpCode.DictionaryKey or CoflowRegisterOpCode.DictionaryValue =>
-                Add(_collectionReads, (CoflowRegisterCollectionReadSite)operation!),
-            CoflowRegisterOpCode.DictionaryKeys or CoflowRegisterOpCode.DictionaryValues =>
-                Add(_projections, (CoflowRegisterCollectionProjectionSite)operation!),
-            CoflowRegisterOpCode.CollectionBuiltin =>
-                Add(_collectionBuiltins, (CoflowRegisterCollectionBuiltinSite)operation!),
-            CoflowRegisterOpCode.BeginArrayBuilder or CoflowRegisterOpCode.AppendArrayBuilder =>
-                Add(_arrayBuilders, (CoflowRegisterArrayBuilderSite)operation!),
-            CoflowRegisterOpCode.MakeOptionNone or CoflowRegisterOpCode.Return =>
-                Add(_targets, (CoflowRegisterTargetSite)operation!),
-            CoflowRegisterOpCode.Propagate => Add(_propagates, (CoflowRegisterPropagateSite)operation!),
-            CoflowRegisterOpCode.MakeClosure => Add(_closures, (CoflowRegisterClosureSite)operation!),
-            CoflowRegisterOpCode.IsType or CoflowRegisterOpCode.IsArenaType => Add(_types, (Type)operation!),
-            CoflowRegisterOpCode.Call or CoflowRegisterOpCode.TailCall =>
-                Add(_calls, (CoflowRegisterCallSite)operation!),
-            CoflowRegisterOpCode.CallIndirect or CoflowRegisterOpCode.TailCallIndirect =>
-                Add(_indirectCalls, (CoflowRegisterIndirectCallSite)operation!),
+            CoflowRegisterDescriptorKind.Reference => Add(_references, operation),
+            CoflowRegisterDescriptorKind.Constant => Add(_constants, (CoflowRegisterConstantSite)operation!),
+            CoflowRegisterDescriptorKind.Transfer => Add(_transfers, (CoflowRegisterValueTransfer)operation!),
+            CoflowRegisterDescriptorKind.Field => Add(_fields, (CoflowFieldAccess)operation!),
+            CoflowRegisterDescriptorKind.FieldValue => Add(_fieldValues, (CoflowRegisterFieldValueSite)operation!),
+            CoflowRegisterDescriptorKind.NativeCall => Add(_nativeCalls, (CoflowNativeCallSite)operation!),
+            CoflowRegisterDescriptorKind.Collection => Add(_collections, (CoflowRegisterCollectionSite)operation!),
+            CoflowRegisterDescriptorKind.Index => Add(_indexes, (CoflowRegisterArrayIndexSite)operation!),
+            CoflowRegisterDescriptorKind.CollectionRead => Add(_collectionReads, (CoflowRegisterCollectionReadSite)operation!),
+            CoflowRegisterDescriptorKind.Projection => Add(_projections, (CoflowRegisterCollectionProjectionSite)operation!),
+            CoflowRegisterDescriptorKind.CollectionBuiltin => Add(_collectionBuiltins, (CoflowRegisterCollectionBuiltinSite)operation!),
+            CoflowRegisterDescriptorKind.ArrayBuilder => Add(_arrayBuilders, (CoflowRegisterArrayBuilderSite)operation!),
+            CoflowRegisterDescriptorKind.Target => Add(_targets, (CoflowRegisterTargetSite)operation!),
+            CoflowRegisterDescriptorKind.Propagate => Add(_propagates, (CoflowRegisterPropagateSite)operation!),
+            CoflowRegisterDescriptorKind.Closure => Add(_closures, (CoflowRegisterClosureSite)operation!),
+            CoflowRegisterDescriptorKind.Type => Add(_types, (Type)operation!),
+            CoflowRegisterDescriptorKind.Call => Add(_calls, (CoflowRegisterCallSite)operation!),
+            CoflowRegisterDescriptorKind.IndirectCall => Add(_indirectCalls, (CoflowRegisterIndirectCallSite)operation!),
             _ => throw new InvalidOperationException($"Opcode `{code}` has no typed descriptor array."),
         };
 
@@ -458,24 +461,24 @@ internal sealed class CoflowRegisterOperations
 
         internal CoflowRegisterOperations Build() => new()
         {
-            References = _references.ToArray(),
-            Constants = _constants.ToArray(),
-            Transfers = _transfers.ToArray(),
-            Fields = _fields.ToArray(),
-            FieldValues = _fieldValues.ToArray(),
-            NativeCalls = _nativeCalls.ToArray(),
-            Collections = _collections.ToArray(),
-            Indexes = _indexes.ToArray(),
-            CollectionReads = _collectionReads.ToArray(),
-            Projections = _projections.ToArray(),
-            CollectionBuiltins = _collectionBuiltins.ToArray(),
-            ArrayBuilders = _arrayBuilders.ToArray(),
-            Targets = _targets.ToArray(),
-            Propagates = _propagates.ToArray(),
-            Closures = _closures.ToArray(),
-            Types = _types.ToArray(),
-            Calls = _calls.ToArray(),
-            IndirectCalls = _indirectCalls.ToArray(),
+            References = CoflowFrozenArray<object?>.Owned(_references.ToArray()),
+            Constants = CoflowFrozenArray<CoflowRegisterConstantSite>.Owned(_constants.ToArray()),
+            Transfers = CoflowFrozenArray<CoflowRegisterValueTransfer>.Owned(_transfers.ToArray()),
+            Fields = CoflowFrozenArray<CoflowFieldAccess>.Owned(_fields.ToArray()),
+            FieldValues = CoflowFrozenArray<CoflowRegisterFieldValueSite>.Owned(_fieldValues.ToArray()),
+            NativeCalls = CoflowFrozenArray<CoflowNativeCallSite>.Owned(_nativeCalls.ToArray()),
+            Collections = CoflowFrozenArray<CoflowRegisterCollectionSite>.Owned(_collections.ToArray()),
+            Indexes = CoflowFrozenArray<CoflowRegisterArrayIndexSite>.Owned(_indexes.ToArray()),
+            CollectionReads = CoflowFrozenArray<CoflowRegisterCollectionReadSite>.Owned(_collectionReads.ToArray()),
+            Projections = CoflowFrozenArray<CoflowRegisterCollectionProjectionSite>.Owned(_projections.ToArray()),
+            CollectionBuiltins = CoflowFrozenArray<CoflowRegisterCollectionBuiltinSite>.Owned(_collectionBuiltins.ToArray()),
+            ArrayBuilders = CoflowFrozenArray<CoflowRegisterArrayBuilderSite>.Owned(_arrayBuilders.ToArray()),
+            Targets = CoflowFrozenArray<CoflowRegisterTargetSite>.Owned(_targets.ToArray()),
+            Propagates = CoflowFrozenArray<CoflowRegisterPropagateSite>.Owned(_propagates.ToArray()),
+            Closures = CoflowFrozenArray<CoflowRegisterClosureSite>.Owned(_closures.ToArray()),
+            Types = CoflowFrozenArray<Type>.Owned(_types.ToArray()),
+            Calls = CoflowFrozenArray<CoflowRegisterCallSite>.Owned(_calls.ToArray()),
+            IndirectCalls = CoflowFrozenArray<CoflowRegisterIndirectCallSite>.Owned(_indirectCalls.ToArray()),
         };
     }
 }
@@ -492,6 +495,30 @@ internal sealed class CoflowRegisterProgram
         int floatRegisterCount,
         int referenceRegisterCount)
     {
+        Parameters = CoflowFrozenArray<CoflowValueRegister>.CopyOf(parameters);
+        Instructions = CoflowFrozenArray<CoflowRegisterInstruction>.CopyOf(instructions);
+        InstructionSpans = CoflowFrozenArray<CfdSpan?>.CopyOf(instructionSpans);
+        Immediates = CoflowFrozenArray<long>.CopyOf(immediates);
+        Operations = operations;
+        ParameterIntegerCount = parameters.Sum(value => value.Shape.IntegerCount);
+        ParameterFloatCount = parameters.Sum(value => value.Shape.FloatCount);
+        ParameterReferenceCount = parameters.Sum(value => value.Shape.ReferenceCount);
+        IntegerRegisterCount = integerRegisterCount;
+        FloatRegisterCount = floatRegisterCount;
+        ReferenceRegisterCount = referenceRegisterCount;
+        CoflowExecutableVerifier.Verify(this);
+    }
+
+    private CoflowRegisterProgram(
+        CoflowFrozenArray<CoflowValueRegister> parameters,
+        CoflowFrozenArray<CoflowRegisterInstruction> instructions,
+        CoflowFrozenArray<CfdSpan?> instructionSpans,
+        CoflowFrozenArray<long> immediates,
+        CoflowRegisterOperations operations,
+        int integerRegisterCount,
+        int floatRegisterCount,
+        int referenceRegisterCount)
+    {
         Parameters = parameters;
         Instructions = instructions;
         InstructionSpans = instructionSpans;
@@ -503,12 +530,17 @@ internal sealed class CoflowRegisterProgram
         IntegerRegisterCount = integerRegisterCount;
         FloatRegisterCount = floatRegisterCount;
         ReferenceRegisterCount = referenceRegisterCount;
+        CoflowExecutableVerifier.Verify(this);
     }
 
-    internal CoflowValueRegister[] Parameters { get; }
-    internal CoflowRegisterInstruction[] Instructions { get; }
-    internal CfdSpan?[] InstructionSpans { get; }
-    internal long[] Immediates { get; }
+    internal CoflowRegisterProgram Relink(CoflowRegisterOperations operations) => new(
+        Parameters, Instructions, InstructionSpans, Immediates, operations,
+        IntegerRegisterCount, FloatRegisterCount, ReferenceRegisterCount);
+
+    internal CoflowFrozenArray<CoflowValueRegister> Parameters { get; }
+    internal CoflowFrozenArray<CoflowRegisterInstruction> Instructions { get; }
+    internal CoflowFrozenArray<CfdSpan?> InstructionSpans { get; }
+    internal CoflowFrozenArray<long> Immediates { get; }
     internal CoflowRegisterOperations Operations { get; }
     internal int IntegerRegisterCount { get; }
     internal int FloatRegisterCount { get; }

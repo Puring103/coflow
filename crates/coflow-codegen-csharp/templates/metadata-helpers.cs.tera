@@ -1,18 +1,19 @@
-{% for factory in object_factories %}{% if factory.invalid %}    private static Delegate CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
+{% for factory in object_factories %}{% if factory.invalid %}    private static CoflowVmFactory CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
         throw new InvalidOperationException("CFT type `{{ factory.source_name }}` cannot be constructed as an object.");
-{% else %}    private delegate {{ factory.qualified_name }} VmObjectFactory{{ factory.metadata_name }}({% for parameter in factory.vm_parameters %}{{ parameter }}{% if not loop.last %}, {% endif %}{% endfor %});
-    private static Delegate CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
-        new VmObjectFactory{{ factory.metadata_name }}(({% for parameter in factory.vm_parameters %}{{ parameter }}{% if not loop.last %}, {% endif %}{% endfor %}) => new {{ factory.qualified_name }}(
-{% for argument in factory.vm_arguments %}            {{ argument }}{% if not loop.last %},{% endif %}
-{% endfor %}        ));
+{% else %}    private static CoflowVmFactory CreateVmObject{{ factory.metadata_name }}(CfdLoadContext context) =>
+        new(new Type[] { {% for type in factory.vm_types %}typeof({{ type }}){% if not loop.last %}, {% endif %}{% endfor %} }, typeof({{ factory.qualified_name }}),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new {{ factory.qualified_name }}(
+{% for argument in factory.vm_factory_arguments %}                {{ argument }}{% if not loop.last %},{% endif %}
+{% endfor %}            )));
 {% endif %}
-    private static Delegate CreateVmDefault{{ factory.metadata_name }}(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefault{{ factory.metadata_name }}(string fieldName, CfdLoadContext context)
     {
 {% if factory.needs_key %}        const string key = "";
 {% endif %}
         return fieldName switch
         {
-{% for default in factory.defaults %}            "{{ default.source_name }}" => new Func<{{ default.runtime_type }}>(() => {{ default.expression }}),
+{% for default in factory.defaults %}            "{{ default.source_name }}" => new CoflowVmFactory(Type.EmptyTypes, typeof({{ default.runtime_type }}),
+                (ref CoflowVmFactoryFrame frame) => frame.Write({{ default.expression }})),
 {% endfor %}            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
         };
     }

@@ -25,8 +25,8 @@ public readonly partial struct Stats : IEquatable<Stats>
 
     public long Score(global::Coflow.Runtime.Coflow coflow, long bonus)
     {
-        return CoflowInvoker.Invoke<global::Stats, long, long>(
-            coflow, this, _coflowId, new CoflowTypeId(9), new CoflowFieldId(3), bonus);
+        return CoflowInvoker.Invoke<long, long>(
+            coflow, _coflowId, new CoflowTypeId(9), new CoflowFieldId(3), bonus);
     }
 
 

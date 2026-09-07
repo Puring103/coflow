@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
@@ -16,6 +15,8 @@ public static class Schema
 internal sealed class CoflowSchema : ICoflowSchema
 {
     internal static readonly CoflowSchema Instance = new();
+
+    public CoflowSchemaRuntime Runtime { get; } = BuildRuntime();
 
     public IReadOnlyList<ICoflowTypeMetadata> Types { get; } = new ICoflowTypeMetadata[]
     {
@@ -40,14 +41,14 @@ internal sealed class CoflowSchema : ICoflowSchema
     {
     };
 
-    [ModuleInitializer]
-    internal static void Register()
+    private static CoflowSchemaRuntime BuildRuntime()
     {
-        CoflowValueLayout.RegisterEnum<global::CharacterClass>();
-        CoflowValueLayout.RegisterEnum<global::CharacterId>();
-        CoflowValueLayout.RegisterEnum<global::CharacterTrait>();
+        var runtime = new CoflowSchemaRuntimeBuilder();
+        runtime.RegisterEnum<global::CharacterClass>();
+        runtime.RegisterEnum<global::CharacterId>();
+        runtime.RegisterEnum<global::CharacterTrait>();
 
-        CoflowStructCodec.Register<global::ScenarioConfig>(
+        runtime.RegisterStruct<global::ScenarioConfig>(
             14, 0, 2,
             static (ref CoflowValueWriter writer, global::ScenarioConfig value) =>
             {
@@ -67,7 +68,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                     reader.Read<Result<Option<global::Stats>, string>>()
                 ),
                 reader.ReadValueId()));
-        CoflowStructCodec.Register<global::Stats>(
+        runtime.RegisterStruct<global::Stats>(
             4, 0, 0,
             static (ref CoflowValueWriter writer, global::Stats value) =>
             {
@@ -84,11 +85,11 @@ internal sealed class CoflowSchema : ICoflowSchema
                 ),
                 reader.ReadValueId()));
 
-        CoflowType.Register<global::Ability>(new CoflowTypeId(1));
+        runtime.RegisterType<global::Ability>(new CoflowTypeId(1));
 
-        CoflowType.Register<global::HostServices>(new CoflowTypeId(5));
+        runtime.RegisterType<global::HostServices>(new CoflowTypeId(5));
 
-        CoflowTypeCodec.Register<global::Character>(
+        runtime.RegisterTypeCodec<global::Character>(
             new CoflowTypeId(2),
             16, 0, 2,
             static value => value._coflowId,
@@ -123,7 +124,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Fallback);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::DamageAbility>(
+        runtime.RegisterTypeCodec<global::DamageAbility>(
             new CoflowTypeId(3),
             2, 0, 1,
             static value => value._coflowId,
@@ -140,7 +141,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Damage);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::HealAbility>(
+        runtime.RegisterTypeCodec<global::HealAbility>(
             new CoflowTypeId(4),
             2, 0, 1,
             static value => value._coflowId,
@@ -157,7 +158,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Healing);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::RuntimeSettings>(
+        runtime.RegisterTypeCodec<global::RuntimeSettings>(
             new CoflowTypeId(6),
             2, 0, 1,
             static value => value._coflowId,
@@ -173,7 +174,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Retries);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::Scenario>(
+        runtime.RegisterTypeCodec<global::Scenario>(
             new CoflowTypeId(7),
             17, 0, 2,
             static value => value._coflowId,
@@ -192,7 +193,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Stages);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::ScenarioConfig>(
+        runtime.RegisterTypeCodec<global::ScenarioConfig>(
             new CoflowTypeId(8),
             14, 0, 2,
             static value => value._coflowId,
@@ -214,7 +215,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.Validation);
                 writer.WriteValueId(value._coflowId);
             });
-        CoflowTypeCodec.Register<global::Stats>(
+        runtime.RegisterTypeCodec<global::Stats>(
             new CoflowTypeId(9),
             4, 0, 0,
             static value => value._coflowId,
@@ -233,51 +234,52 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.WriteValueId(value._coflowId);
             });
 
-        CoflowValueLayout.RegisterArray<string>();
-        CoflowValueLayout.RegisterDictionary<string, long>();
-        CoflowValueLayout.RegisterArray<global::Ability>();
-        CoflowValueLayout.RegisterResult<long, string>();
-        CoflowValueLayout.RegisterOption<global::Character>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<string, Unit>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<string, string>>();
-        CoflowValueLayout.RegisterOption<long>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Option<long>, Result<long, string>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<global::Stats, global::Stats>>();
-        CoflowValueLayout.RegisterArray<CoflowFunction<long, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>>();
-        CoflowValueLayout.RegisterOption<CoflowFunction<long, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Option<CoflowFunction<long, long>>, Option<CoflowFunction<long, long>>>>();
-        CoflowValueLayout.RegisterResult<CoflowFunction<long, long>, string>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, double>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, double, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<global::CharacterId, bool>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, long, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Option<long>, Option<long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Result<long, string>, Result<long, string>>>();
-        CoflowValueLayout.RegisterResult<Result<long, string>, string>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Result<Result<long, string>, string>, Result<long, string>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Option<long>, CoflowFunction<long, long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, global::Stats>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<global::Stats, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<global::Character, global::Character>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<global::Character, long>>();
-        CoflowValueLayout.RegisterOption<global::Stats>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Option<global::Stats>, Option<global::Stats>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, double, bool, Option<long>, string>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, long, string, bool>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, Option<long>, Result<long, string>, global::CharacterId, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<string>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<string, bool>>();
-        CoflowValueLayout.RegisterArray<long>();
-        CoflowValueLayout.RegisterDictionary<string, global::Stats>();
-        CoflowValueLayout.RegisterResult<Option<global::Stats>, string>();
+        runtime.RegisterArray<string>();
+        runtime.RegisterDictionary<string, long>();
+        runtime.RegisterArray<global::Ability>();
+        runtime.RegisterResult<long, string>();
+        runtime.RegisterOption<global::Character>();
+        runtime.RegisterFunction<CoflowFunction<long, long>>();
+        runtime.RegisterFunction<CoflowFunction<string, Unit>>();
+        runtime.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>, long>>();
+        runtime.RegisterFunction<CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>>>();
+        runtime.RegisterFunction<CoflowFunction<string, string>>();
+        runtime.RegisterOption<long>();
+        runtime.RegisterFunction<CoflowFunction<Option<long>, Result<long, string>>>();
+        runtime.RegisterFunction<CoflowFunction<global::Stats, global::Stats>>();
+        runtime.RegisterArray<CoflowFunction<long, long>>();
+        runtime.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>>>();
+        runtime.RegisterFunction<CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>>();
+        runtime.RegisterOption<CoflowFunction<long, long>>();
+        runtime.RegisterFunction<CoflowFunction<Option<CoflowFunction<long, long>>, Option<CoflowFunction<long, long>>>>();
+        runtime.RegisterResult<CoflowFunction<long, long>, string>();
+        runtime.RegisterFunction<CoflowFunction<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>>();
+        runtime.RegisterFunction<CoflowFunction<long, double>>();
+        runtime.RegisterFunction<CoflowFunction<long, double, long>>();
+        runtime.RegisterFunction<CoflowFunction<global::CharacterId, bool>>();
+        runtime.RegisterFunction<CoflowFunction<long, long, long>>();
+        runtime.RegisterFunction<CoflowFunction<Option<long>, Option<long>>>();
+        runtime.RegisterFunction<CoflowFunction<Result<long, string>, Result<long, string>>>();
+        runtime.RegisterResult<Result<long, string>, string>();
+        runtime.RegisterFunction<CoflowFunction<Result<Result<long, string>, string>, Result<long, string>>>();
+        runtime.RegisterFunction<CoflowFunction<Option<long>, CoflowFunction<long, long>>>();
+        runtime.RegisterFunction<CoflowFunction<long>>();
+        runtime.RegisterFunction<CoflowFunction<long, global::Stats>>();
+        runtime.RegisterFunction<CoflowFunction<global::Stats, long>>();
+        runtime.RegisterFunction<CoflowFunction<global::Character, global::Character>>();
+        runtime.RegisterFunction<CoflowFunction<global::Character, long>>();
+        runtime.RegisterOption<global::Stats>();
+        runtime.RegisterFunction<CoflowFunction<Option<global::Stats>, Option<global::Stats>>>();
+        runtime.RegisterFunction<CoflowFunction<long, double, bool, Option<long>, string>>();
+        runtime.RegisterFunction<CoflowFunction<long, long, string, bool>>();
+        runtime.RegisterFunction<CoflowFunction<long, Option<long>, Result<long, string>, global::CharacterId, long>>();
+        runtime.RegisterFunction<CoflowFunction<string>>();
+        runtime.RegisterFunction<CoflowFunction<string, bool>>();
+        runtime.RegisterArray<long>();
+        runtime.RegisterDictionary<string, global::Stats>();
+        runtime.RegisterResult<Option<global::Stats>, string>();
 
+        return runtime.Build();
     }
 
     private sealed class Cft_436861726163746572436C617373CoflowEnumMetadata : ICoflowEnumMetadata
@@ -422,14 +424,18 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "Character" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(2) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_436861726163746572(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_436861726163746572(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_436861726163746572(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_436861726163746572(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_436861726163746572(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::Character)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::Character.WithCoflowValueId((global::Character)value, id);
         public object ParseKey(string key) => ReadEnumCft_4368617261637465724964Text(key);
-        public Delegate GetKeyReader() => new Func<global::Character, global::CharacterId>(static record => record.Id);
+        public object GetKey(object value) => ((global::Character)value).Id;
 
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.Enum<global::Character, global::CharacterId>(values, static record => record.Id);
+        }
 
         public object CreateRecord(string key, CfdLoadContext context) => new global::Character();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -468,14 +474,18 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "DamageAbility", "Ability" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(3), new(1) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_44616D6167654162696C697479(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_44616D6167654162696C697479(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_44616D6167654162696C697479(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_44616D6167654162696C697479(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_44616D6167654162696C697479(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::DamageAbility)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::DamageAbility.WithCoflowValueId((global::DamageAbility)value, id);
         public object ParseKey(string key) => key;
-        public Delegate GetKeyReader() => new Func<global::DamageAbility, string>(static record => record.Id);
+        public object GetKey(object value) => ((global::DamageAbility)value).Id;
 
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.String<global::DamageAbility>(values, static record => record.Id);
+        }
 
         public object CreateRecord(string key, CfdLoadContext context) => new global::DamageAbility();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -514,14 +524,18 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "HealAbility", "Ability" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(4), new(1) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_4865616C4162696C697479(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_4865616C4162696C697479(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_4865616C4162696C697479(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_4865616C4162696C697479(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_4865616C4162696C697479(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::HealAbility)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::HealAbility.WithCoflowValueId((global::HealAbility)value, id);
         public object ParseKey(string key) => key;
-        public Delegate GetKeyReader() => new Func<global::HealAbility, string>(static record => record.Id);
+        public object GetKey(object value) => ((global::HealAbility)value).Id;
 
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.String<global::HealAbility>(values, static record => record.Id);
+        }
 
         public object CreateRecord(string key, CfdLoadContext context) => new global::HealAbility();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -578,8 +592,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "HostServices" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(5) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_486F73745365727669636573(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_486F73745365727669636573(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_486F73745365727669636573(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_486F73745365727669636573(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_486F73745365727669636573(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::HostServices)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::HostServices.WithCoflowValueId((global::HostServices)value, id);
@@ -618,14 +632,18 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "RuntimeSettings" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(6) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_52756E74696D6553657474696E6773(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_52756E74696D6553657474696E6773(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_52756E74696D6553657474696E6773(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_52756E74696D6553657474696E6773(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_52756E74696D6553657474696E6773(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::RuntimeSettings)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::RuntimeSettings.WithCoflowValueId((global::RuntimeSettings)value, id);
         public object ParseKey(string key) => key;
-        public Delegate GetKeyReader() => new Func<global::RuntimeSettings, string>(static _ => string.Empty);
+        public object GetKey(object value) => string.Empty;
 
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.String<global::RuntimeSettings>(values, static _ => string.Empty);
+        }
 
         public object CreateRecord(string key, CfdLoadContext context) => new global::RuntimeSettings();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -841,14 +859,18 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "Scenario" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(7) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5363656E6172696F(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::Scenario)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::Scenario.WithCoflowValueId((global::Scenario)value, id);
         public object ParseKey(string key) => key;
-        public Delegate GetKeyReader() => new Func<global::Scenario, string>(static record => record.Id);
+        public object GetKey(object value) => ((global::Scenario)value).Id;
 
+        public CoflowTable CreateTable(object[] values)
+        {
+            return CoflowTableFactory.String<global::Scenario>(values, static record => record.Id);
+        }
 
         public object CreateRecord(string key, CfdLoadContext context) => new global::Scenario();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
@@ -901,8 +923,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "ScenarioConfig" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(8) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5363656E6172696F436F6E666967(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F436F6E666967(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F436F6E666967(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F436F6E666967(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F436F6E666967(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::ScenarioConfig)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::ScenarioConfig.WithCoflowValueId((global::ScenarioConfig)value, id);
@@ -947,8 +969,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<string> AssignableTypes { get; } = new string[] { "Stats" };
         public IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; } = new CoflowTypeId[] { new(9) };
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5374617473(context, fields);
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5374617473(context);
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5374617473(fieldName, context);
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5374617473(context);
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5374617473(fieldName, context);
         public CoflowValueId GetValueId(object value) => ((global::Stats)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
             global::Stats.WithCoflowValueId((global::Stats)value, id);
@@ -956,10 +978,10 @@ internal sealed class CoflowSchema : ICoflowSchema
 
     }
 
-    private static Delegate CreateVmObjectCft_4162696C697479(CfdLoadContext context) =>
+    private static CoflowVmFactory CreateVmObjectCft_4162696C697479(CfdLoadContext context) =>
         throw new InvalidOperationException("CFT type `Ability` cannot be constructed as an object.");
 
-    private static Delegate CreateVmDefaultCft_4162696C697479(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_4162696C697479(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
@@ -968,63 +990,51 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
-    private delegate global::Character VmObjectFactoryCft_436861726163746572(string value0, global::CharacterClass value1, global::CharacterTrait value2, bool value3, global::Stats value4, IReadOnlyList<string> value5, IReadOnlyDictionary<string, long> value6, global::Ability value7, IReadOnlyList<global::Ability> value8, Result<long, string> value9, Option<global::Character> value10);
-    private static Delegate CreateVmObjectCft_436861726163746572(CfdLoadContext context) =>
-        new VmObjectFactoryCft_436861726163746572((string value0, global::CharacterClass value1, global::CharacterTrait value2, bool value3, global::Stats value4, IReadOnlyList<string> value5, IReadOnlyDictionary<string, long> value6, global::Ability value7, IReadOnlyList<global::Ability> value8, Result<long, string> value9, Option<global::Character> value10) => new global::Character(
-            default(global::CharacterId),
-            value0,
-            value1,
-            value2,
-            value3,
-            value4,
-            value5,
-            value6,
-            value7,
-            value8,
-            value9,
-            value10
-        ));
+    private static CoflowVmFactory CreateVmObjectCft_436861726163746572(CfdLoadContext context) =>
+        new(new Type[] { typeof(string), typeof(global::CharacterClass), typeof(global::CharacterTrait), typeof(bool), typeof(global::Stats), typeof(IReadOnlyList<string>), typeof(IReadOnlyDictionary<string, long>), typeof(global::Ability), typeof(IReadOnlyList<global::Ability>), typeof(Result<long, string>), typeof(Option<global::Character>) }, typeof(global::Character),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Character(
+                default(global::CharacterId),
+                frame.Read<string>(0),
+                frame.Read<global::CharacterClass>(1),
+                frame.Read<global::CharacterTrait>(2),
+                frame.Read<bool>(3),
+                frame.Read<global::Stats>(4),
+                frame.Read<IReadOnlyList<string>>(5),
+                frame.Read<IReadOnlyDictionary<string, long>>(6),
+                frame.Read<global::Ability>(7),
+                frame.Read<IReadOnlyList<global::Ability>>(8),
+                frame.Read<Result<long, string>>(9),
+                frame.Read<Option<global::Character>>(10)
+            )));
 
-    private static Delegate CreateVmDefaultCft_436861726163746572(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_436861726163746572(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
         {
-            "traits" => new Func<global::CharacterTrait>(() => (global::CharacterTrait)0L),
-            "enabled" => new Func<bool>(() => true),
-            "abilities" => new Func<IReadOnlyList<global::Ability>>(() => CoflowConstantValues.List<global::Ability>()),
-            "status" => new Func<Result<long, string>>(() => Result<long, string>.Ok(0L)),
-            "fallback" => new Func<Option<global::Character>>(() => Option<global::Character>.None),
+            "traits" => new CoflowVmFactory(Type.EmptyTypes, typeof(global::CharacterTrait),
+                (ref CoflowVmFactoryFrame frame) => frame.Write((global::CharacterTrait)0L)),
+            "enabled" => new CoflowVmFactory(Type.EmptyTypes, typeof(bool),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(true)),
+            "abilities" => new CoflowVmFactory(Type.EmptyTypes, typeof(IReadOnlyList<global::Ability>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(CoflowConstantValues.List<global::Ability>())),
+            "status" => new CoflowVmFactory(Type.EmptyTypes, typeof(Result<long, string>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(Result<long, string>.Ok(0L))),
+            "fallback" => new CoflowVmFactory(Type.EmptyTypes, typeof(Option<global::Character>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(Option<global::Character>.None)),
             _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
         };
     }
 
-    private delegate global::DamageAbility VmObjectFactoryCft_44616D6167654162696C697479(string value0, long value1);
-    private static Delegate CreateVmObjectCft_44616D6167654162696C697479(CfdLoadContext context) =>
-        new VmObjectFactoryCft_44616D6167654162696C697479((string value0, long value1) => new global::DamageAbility(
-            string.Empty,
-            value0,
-            value1
-        ));
+    private static CoflowVmFactory CreateVmObjectCft_44616D6167654162696C697479(CfdLoadContext context) =>
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::DamageAbility),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::DamageAbility(
+                string.Empty,
+                frame.Read<string>(0),
+                frame.Read<long>(1)
+            )));
 
-    private static Delegate CreateVmDefaultCft_44616D6167654162696C697479(string fieldName, CfdLoadContext context)
-    {
-
-        return fieldName switch
-        {
-            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
-        };
-    }
-
-    private delegate global::HealAbility VmObjectFactoryCft_4865616C4162696C697479(string value0, long value1);
-    private static Delegate CreateVmObjectCft_4865616C4162696C697479(CfdLoadContext context) =>
-        new VmObjectFactoryCft_4865616C4162696C697479((string value0, long value1) => new global::HealAbility(
-            string.Empty,
-            value0,
-            value1
-        ));
-
-    private static Delegate CreateVmDefaultCft_4865616C4162696C697479(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_44616D6167654162696C697479(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
@@ -1033,10 +1043,27 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
-    private static Delegate CreateVmObjectCft_486F73745365727669636573(CfdLoadContext context) =>
+    private static CoflowVmFactory CreateVmObjectCft_4865616C4162696C697479(CfdLoadContext context) =>
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::HealAbility),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::HealAbility(
+                string.Empty,
+                frame.Read<string>(0),
+                frame.Read<long>(1)
+            )));
+
+    private static CoflowVmFactory CreateVmDefaultCft_4865616C4162696C697479(string fieldName, CfdLoadContext context)
+    {
+
+        return fieldName switch
+        {
+            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
+        };
+    }
+
+    private static CoflowVmFactory CreateVmObjectCft_486F73745365727669636573(CfdLoadContext context) =>
         throw new InvalidOperationException("CFT type `HostServices` cannot be constructed as an object.");
 
-    private static Delegate CreateVmDefaultCft_486F73745365727669636573(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_486F73745365727669636573(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
@@ -1045,52 +1072,34 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
-    private delegate global::RuntimeSettings VmObjectFactoryCft_52756E74696D6553657474696E6773(string value0, long value1);
-    private static Delegate CreateVmObjectCft_52756E74696D6553657474696E6773(CfdLoadContext context) =>
-        new VmObjectFactoryCft_52756E74696D6553657474696E6773((string value0, long value1) => new global::RuntimeSettings(
-            value0,
-            value1
-        ));
+    private static CoflowVmFactory CreateVmObjectCft_52756E74696D6553657474696E6773(CfdLoadContext context) =>
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::RuntimeSettings),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::RuntimeSettings(
+                frame.Read<string>(0),
+                frame.Read<long>(1)
+            )));
 
-    private static Delegate CreateVmDefaultCft_52756E74696D6553657474696E6773(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_52756E74696D6553657474696E6773(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
         {
-            "retries" => new Func<long>(() => 3L),
+            "retries" => new CoflowVmFactory(Type.EmptyTypes, typeof(long),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(3L)),
             _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
         };
     }
 
-    private delegate global::Scenario VmObjectFactoryCft_5363656E6172696F(global::Character value0, global::ScenarioConfig value1, IReadOnlyList<CoflowFunction<long, long>> value2);
-    private static Delegate CreateVmObjectCft_5363656E6172696F(CfdLoadContext context) =>
-        new VmObjectFactoryCft_5363656E6172696F((global::Character value0, global::ScenarioConfig value1, IReadOnlyList<CoflowFunction<long, long>> value2) => new global::Scenario(
-            string.Empty,
-            value0,
-            value1,
-            value2
-        ));
+    private static CoflowVmFactory CreateVmObjectCft_5363656E6172696F(CfdLoadContext context) =>
+        new(new Type[] { typeof(global::Character), typeof(global::ScenarioConfig), typeof(IReadOnlyList<CoflowFunction<long, long>>) }, typeof(global::Scenario),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Scenario(
+                string.Empty,
+                frame.Read<global::Character>(0),
+                frame.Read<global::ScenarioConfig>(1),
+                frame.Read<IReadOnlyList<CoflowFunction<long, long>>>(2)
+            )));
 
-    private static Delegate CreateVmDefaultCft_5363656E6172696F(string fieldName, CfdLoadContext context)
-    {
-
-        return fieldName switch
-        {
-            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
-        };
-    }
-
-    private delegate global::ScenarioConfig VmObjectFactoryCft_5363656E6172696F436F6E666967(string value0, IReadOnlyList<long> value1, IReadOnlyDictionary<string, global::Stats> value2, Option<global::Stats> value3, Result<Option<global::Stats>, string> value4);
-    private static Delegate CreateVmObjectCft_5363656E6172696F436F6E666967(CfdLoadContext context) =>
-        new VmObjectFactoryCft_5363656E6172696F436F6E666967((string value0, IReadOnlyList<long> value1, IReadOnlyDictionary<string, global::Stats> value2, Option<global::Stats> value3, Result<Option<global::Stats>, string> value4) => new global::ScenarioConfig(
-            value0,
-            value1,
-            value2,
-            value3,
-            value4
-        ));
-
-    private static Delegate CreateVmDefaultCft_5363656E6172696F436F6E666967(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_5363656E6172696F(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
@@ -1099,20 +1108,40 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
-    private delegate global::Stats VmObjectFactoryCft_5374617473(long value0, long value1, IReadOnlyDictionary<string, long> value2);
-    private static Delegate CreateVmObjectCft_5374617473(CfdLoadContext context) =>
-        new VmObjectFactoryCft_5374617473((long value0, long value1, IReadOnlyDictionary<string, long> value2) => new global::Stats(
-            value0,
-            value1,
-            value2
-        ));
+    private static CoflowVmFactory CreateVmObjectCft_5363656E6172696F436F6E666967(CfdLoadContext context) =>
+        new(new Type[] { typeof(string), typeof(IReadOnlyList<long>), typeof(IReadOnlyDictionary<string, global::Stats>), typeof(Option<global::Stats>), typeof(Result<Option<global::Stats>, string>) }, typeof(global::ScenarioConfig),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::ScenarioConfig(
+                frame.Read<string>(0),
+                frame.Read<IReadOnlyList<long>>(1),
+                frame.Read<IReadOnlyDictionary<string, global::Stats>>(2),
+                frame.Read<Option<global::Stats>>(3),
+                frame.Read<Result<Option<global::Stats>, string>>(4)
+            )));
 
-    private static Delegate CreateVmDefaultCft_5374617473(string fieldName, CfdLoadContext context)
+    private static CoflowVmFactory CreateVmDefaultCft_5363656E6172696F436F6E666967(string fieldName, CfdLoadContext context)
     {
 
         return fieldName switch
         {
-            "resistances" => new Func<IReadOnlyDictionary<string, long>>(() => CoflowConstantValues.Dictionary<string, long>()),
+            _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
+        };
+    }
+
+    private static CoflowVmFactory CreateVmObjectCft_5374617473(CfdLoadContext context) =>
+        new(new Type[] { typeof(long), typeof(long), typeof(IReadOnlyDictionary<string, long>) }, typeof(global::Stats),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Stats(
+                frame.Read<long>(0),
+                frame.Read<long>(1),
+                frame.Read<IReadOnlyDictionary<string, long>>(2)
+            )));
+
+    private static CoflowVmFactory CreateVmDefaultCft_5374617473(string fieldName, CfdLoadContext context)
+    {
+
+        return fieldName switch
+        {
+            "resistances" => new CoflowVmFactory(Type.EmptyTypes, typeof(IReadOnlyDictionary<string, long>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(CoflowConstantValues.Dictionary<string, long>())),
             _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
         };
     }
@@ -1285,7 +1314,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         target._coflowAbilities = CfdValueReader.FindField(fields, "abilities") is { } valueAbilities ? CfdValueReader.Array(valueAbilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>();
         target._coflowStatus = CfdValueReader.FindField(fields, "status") is { } valueStatus ? CfdValueReader.Result(valueStatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L);
         target._coflowFallback = CfdValueReader.FindField(fields, "fallback") is { } valueFallback ? CfdValueReader.Option(valueFallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None;
-        _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\n    stats.health + bonus\n  }", "power", typeof(long), typeof(long));
+        _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
     }
 
 
@@ -1302,7 +1331,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "name", "class", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
-            _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\n    stats.health + bonus\n  }", "power", typeof(long), typeof(long));
+            _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
         return new global::Character(
             ReadEnumCft_4368617261637465724964Text(key),
             CfdValueReader.String(CfdValueReader.Field(fields, "name"), context),
@@ -1619,7 +1648,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "health", "attack", "resistances", "score");
-            _ = CfdValueReader.FindField(fields, "score") is { } valueScore ? context.RequiredFunction(valueScore, "score", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\n    health + attack + bonus\n  }", "score", typeof(long), typeof(long));
+            _ = CfdValueReader.FindField(fields, "score") is { } valueScore ? context.RequiredFunction(valueScore, "score", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    health + attack + bonus\r\n  }", "score", typeof(long), typeof(long));
         return new global::Stats(
             CfdValueReader.Int64(CfdValueReader.Field(fields, "health")),
             CfdValueReader.Int64(CfdValueReader.Field(fields, "attack")),

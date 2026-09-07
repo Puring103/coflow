@@ -56,6 +56,7 @@ struct MetadataType {
     source_name: String,
     qualified_name: String,
     key_type: String,
+    key_is_string: bool,
     annotations: String,
     is_singleton: bool,
     is_host: bool,
@@ -116,8 +117,8 @@ struct MetadataObjectFactory {
     invalid: bool,
     needs_key: bool,
     arguments: Vec<String>,
-    vm_parameters: Vec<String>,
-    vm_arguments: Vec<String>,
+    vm_types: Vec<String>,
+    vm_factory_arguments: Vec<String>,
     defaults: Vec<MetadataDefaultFactory>,
 }
 
@@ -316,6 +317,7 @@ fn metadata_type(
         source_name: escape_csharp_string(&ty.source_name),
         qualified_name: ty.qualified_name.clone(),
         key_type: key_type.to_string(),
+        key_is_string: key_type == "string",
         annotations: render_annotations(&ty.annotations),
         is_singleton: singleton,
         is_host: ty.is_host,
@@ -377,20 +379,17 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
         needs_key: ty.loader_fields.iter().filter_map(|field| field.default_expression.as_deref())
             .any(|default| default.contains("key")),
         arguments,
-        vm_parameters: ty.loader_fields.iter().filter(|field| !field.is_function)
-            .enumerate().map(|(index, field)| format!("{} value{index}", field.value_type)).collect(),
-        vm_arguments: {
+        vm_types: ty.loader_fields.iter().filter(|field| !field.is_function)
+            .map(|field| field.value_type.clone()).collect(),
+        vm_factory_arguments: {
             let mut values = Vec::new();
             if let Some(id_type) = &ty.loader_id_type {
                 values.push(if id_type == "string" { "string.Empty".to_string() }
                     else { format!("default({id_type})") });
             }
-            let mut value_index = 0usize;
-            values.extend(ty.loader_fields.iter().filter(|field| !field.is_function).map(|_| {
-                    let value = format!("value{value_index}");
-                    value_index += 1;
-                    value
-            }));
+            values.extend(ty.loader_fields.iter().filter(|field| !field.is_function)
+                .enumerate().map(|(index, field)|
+                    format!("frame.Read<{}>({index})", field.value_type)));
             values
         },
         defaults: ty.loader_fields.iter().filter(|field| !field.is_function)

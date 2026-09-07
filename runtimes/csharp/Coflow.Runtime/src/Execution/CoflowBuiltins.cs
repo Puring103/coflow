@@ -27,7 +27,7 @@ internal enum CoflowBuiltinKind : byte
 internal readonly record struct CoflowBuiltin(
     Type ResultType,
     CoflowBuiltinKind Kind,
-    Delegate? Invoke = null)
+    CoflowNativeCall? Call = null)
 {
     internal bool HasCollectionArgument => Kind is
         CoflowBuiltinKind.CollectionContains or
@@ -127,9 +127,21 @@ internal static class CoflowBuiltinLibrary
         return Builtin((Func<string, bool>)regex.IsMatch);
     }
 
-    private static CoflowBuiltin Builtin(Delegate implementation) =>
-        new(implementation.GetType().GetMethod("Invoke")!.ReturnType,
-            CoflowBuiltinKind.Native, implementation);
+    private static CoflowBuiltin Builtin<T1, TResult>(Func<T1, TResult> implementation) =>
+        new(typeof(TResult), CoflowBuiltinKind.Native,
+            new CoflowNativeCall(new[] { typeof(T1) }, typeof(TResult),
+                frame => frame.Write(implementation(frame.Read<T1>(0)))));
+
+    private static CoflowBuiltin Builtin<T1, T2, TResult>(Func<T1, T2, TResult> implementation) =>
+        new(typeof(TResult), CoflowBuiltinKind.Native,
+            new CoflowNativeCall(new[] { typeof(T1), typeof(T2) }, typeof(TResult),
+                frame => frame.Write(implementation(frame.Read<T1>(0), frame.Read<T2>(1)))));
+
+    private static CoflowBuiltin Builtin<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> implementation) =>
+        new(typeof(TResult), CoflowBuiltinKind.Native,
+            new CoflowNativeCall(new[] { typeof(T1), typeof(T2), typeof(T3) }, typeof(TResult),
+                frame => frame.Write(implementation(
+                    frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2)))));
 
     private static CoflowBuiltin Collection(Type resultType, CoflowBuiltinKind kind) =>
         new(resultType, kind);

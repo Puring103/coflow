@@ -12,9 +12,12 @@ public sealed class CoflowModuleTests
     private static readonly CoflowStringTableToken<Node> Nodes = new();
     private static readonly CoflowStringTableToken<Rule> Rules = new();
 
-    static CoflowModuleTests()
+    private static readonly CoflowSchemaRuntime TestRuntime = BuildTestRuntime();
+
+    private static CoflowSchemaRuntime BuildTestRuntime()
     {
-        CoflowTypeCodec.Register<Node>(new(1), 4, 0, 0,
+        var runtime = new CoflowSchemaRuntimeBuilder();
+        runtime.RegisterTypeCodec<Node>(new(1), 4, 0, 0,
             static value => value.CoflowId,
             static _ => true,
             static (value, id) => { value.CoflowId = id; return value; },
@@ -30,7 +33,7 @@ public sealed class CoflowModuleTests
                 writer.Write(value.Next);
                 writer.WriteValueId(value.CoflowId);
             });
-        CoflowTypeCodec.Register<Settings>(new(2), 2, 0, 0,
+        runtime.RegisterTypeCodec<Settings>(new(2), 2, 0, 0,
             static value => value.CoflowId,
             static _ => true,
             static (value, id) => { value.CoflowId = id; return value; },
@@ -40,22 +43,23 @@ public sealed class CoflowModuleTests
                 writer.Write(value.Value);
                 writer.WriteValueId(value.CoflowId);
             });
-        CoflowTypeCodec.Register<Rule>(new(3), 1, 0, 0,
+        runtime.RegisterTypeCodec<Rule>(new(3), 1, 0, 0,
             static value => value.CoflowId,
             static _ => true,
             static (value, id) => { value.CoflowId = id; return value; },
             static (_, value) => new Rule { Id = value.Id },
             static (ref CoflowValueWriter writer, Rule value) => writer.WriteValueId(value.CoflowId));
-        CoflowValueLayout.RegisterEnum<TestMode>();
-        CoflowValueLayout.RegisterOption<Node>();
-        CoflowValueLayout.RegisterArray<long>();
-        CoflowValueLayout.RegisterArray<string>();
-        CoflowValueLayout.RegisterDictionary<string, long>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<long>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Node, CoflowFunction<long>>>();
-        CoflowValueLayout.RegisterFunction<CoflowFunction<Node, Node, Node>>();
+        runtime.RegisterEnum<TestMode>();
+        runtime.RegisterOption<Node>();
+        runtime.RegisterArray<long>();
+        runtime.RegisterArray<string>();
+        runtime.RegisterDictionary<string, long>();
+        runtime.RegisterFunction<CoflowFunction<long, long>>();
+        runtime.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>>>();
+        runtime.RegisterFunction<CoflowFunction<long>>();
+        runtime.RegisterFunction<CoflowFunction<Node, CoflowFunction<long>>>();
+        runtime.RegisterFunction<CoflowFunction<Node, Node, Node>>();
+        return runtime.Build();
     }
 
     [Fact]
@@ -143,6 +147,11 @@ public sealed class CoflowModuleTests
         Assert.Equal(11, rule.Calculate(module, 5));
         Assert.Equal(0, rule.Tail(module, 1_000));
         Assert.Equal(9, rule.Make(module, 4).Invoke(module, 5));
+        var makeProgram = rule.MakeEntry.CompiledProgram!.RegisterProgram;
+        Assert.Contains(makeProgram.Instructions, instruction => instruction.Code == CoflowRegisterOpCode.MakeClosure);
+        var closureProgram = Assert.Single(makeProgram.Operations.Closures).Template.Program.RegisterProgram;
+        Assert.Contains(closureProgram.Instructions, instruction => instruction.Code == CoflowRegisterOpCode.AddInt);
+        Assert.DoesNotContain(closureProgram.Instructions, instruction => instruction.Code == CoflowRegisterOpCode.MoveInteger);
     }
 
     [Fact]
@@ -158,6 +167,9 @@ public sealed class CoflowModuleTests
 
         Assert.Equal(1, rule.Calculate(coflow, 1_000));
         Assert.Equal(0, rule.Calculate(coflow, 1_001));
+        var instructions = rule.CalculateEntry.CompiledProgram!.RegisterProgram.Instructions;
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.TailCall);
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.ConstantValue);
     }
 
     [Fact]
@@ -195,7 +207,7 @@ public sealed class CoflowModuleTests
 
         Assert.Equal(3, rule.Calculate(coflow, 0));
         var program = rule.CalculateEntry.CompiledProgram!;
-        Assert.Equal(new[] { CoflowRegisterOpCode.ConstantInteger, CoflowRegisterOpCode.Return },
+        Assert.Equal(new[] { CoflowRegisterOpCode.ConstantValue, CoflowRegisterOpCode.Return },
             program.RegisterProgram.Instructions.Select(instruction => instruction.Code));
     }
 
@@ -245,6 +257,10 @@ public sealed class CoflowModuleTests
         Assert.Equal(1, caller.TemplateCompileCount);
         var oldSnapshot = coflow.Snapshot;
         var oldCaller = coflow.Table(Rules).Get("caller").Value;
+        Assert.True(caller.TryGetTemplate(oldCaller.CalculateEntry.Identity, out var callerTemplate));
+        Assert.Equal(1, callerTemplate.AllocationCount);
+        Assert.Equal(1, callerTemplate.LoweringCount);
+        Assert.Equal(1, callerTemplate.LinkCount);
         Assert.Equal(2, oldCaller.Calculate(coflow, 1));
 
         coflow.ReplaceModule(target, new CoflowSource("target.cfd",
@@ -253,6 +269,10 @@ public sealed class CoflowModuleTests
 
         Assert.Equal(2, target.TemplateCompileCount);
         Assert.Equal(1, caller.TemplateCompileCount);
+        Assert.Same(callerTemplate, AssertTemplate(caller, oldCaller.CalculateEntry.Identity));
+        Assert.Equal(1, callerTemplate.AllocationCount);
+        Assert.Equal(1, callerTemplate.LoweringCount);
+        Assert.Equal(2, callerTemplate.LinkCount);
         Assert.Equal(11, coflow.Table(Rules).Get("caller").Value.Calculate(coflow, 1));
         using (CoflowInvocationContext.Enter(coflow, oldSnapshot))
             Assert.Equal(2, oldCaller.CalculateEntry.Invoke<long, long>(1));
@@ -264,6 +284,14 @@ public sealed class CoflowModuleTests
         Assert.Same(publishedBeforeFailure, coflow.Snapshot);
         Assert.Equal(11, coflow.Table(Rules).Get("caller").Value.Calculate(coflow, 1));
         Assert.NotSame(oldSnapshot, coflow.Snapshot);
+
+        coflow.LoadModule(new CoflowSource("restored-target.cfd",
+            "Rule { target { calculate: fn(value: int) -> int { value + 20 } } }"));
+        Assert.True(coflow.Compile().Success);
+        Assert.Equal(21, coflow.Table(Rules).Get("caller").Value.Calculate(coflow, 1));
+        Assert.Equal(1, callerTemplate.AllocationCount);
+        Assert.Equal(1, callerTemplate.LoweringCount);
+        Assert.Equal(3, callerTemplate.LinkCount);
     }
 
     [Fact]
@@ -322,6 +350,24 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void WarmedGeneratedFunctionCallDoesNotAllocate()
+    {
+        var coflow = Compile(
+            "Rule { main { calculate: fn(value: int) -> int { value + 1 } } }",
+            Contract(new RuleMetadata()));
+        var rule = coflow.Table(Rules).Get("main").Value;
+        for (var index = 0; index < 1_000; index++) _ = rule.Calculate(coflow, index);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        long sum = 0;
+        for (var index = 0; index < 10_000; index++) sum += rule.Calculate(coflow, index);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(50_005_000, sum);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
     public void SameTypeNumericConversionDoesNotEmitReinterpret()
     {
         var source = "Rule { main { calculate: fn(value: int) -> int { int(value) } } }";
@@ -346,11 +392,96 @@ public sealed class CoflowModuleTests
             .RegisterProgram.Instructions;
         var add = Assert.Single(instructions, instruction =>
             instruction.Code == CoflowRegisterOpCode.AddInt);
+        Assert.Contains(instructions, instruction =>
+            instruction.Code == CoflowRegisterOpCode.ConstantValue);
         Assert.DoesNotContain(instructions, instruction =>
             instruction.Code == CoflowRegisterOpCode.MoveInteger);
         Assert.Equal(16, System.Runtime.InteropServices.Marshal.SizeOf<CoflowRegisterInstruction>());
         Assert.NotEqual(add.A, add.B);
         Assert.NotEqual(add.B, add.C);
+    }
+
+    [Fact]
+    public void RecompilingWithoutChangesReusesLoweredInstructionStorage()
+    {
+        var coflow = Coflow.Create(Contract(new RuleMetadata()));
+        var module = coflow.LoadModule(new CoflowSource("rules.cfd",
+            "Rule { main { calculate: fn(value: int) -> int { value + 1 } } }"));
+        Assert.True(coflow.Compile().Success);
+        var first = coflow.Table(Rules).Get("main").Value.CalculateEntry.CompiledProgram!.RegisterProgram;
+        var template = AssertTemplate(module, coflow.Table(Rules).Get("main").Value.CalculateEntry.Identity);
+
+        Assert.True(coflow.Compile().Success);
+        var second = coflow.Table(Rules).Get("main").Value.CalculateEntry.CompiledProgram!.RegisterProgram;
+
+        Assert.Equal(1, template.AllocationCount);
+        Assert.Equal(1, template.LoweringCount);
+        Assert.Equal(1, template.LinkCount);
+        Assert.Same(first, second);
+        Assert.Same(first.Instructions, second.Instructions);
+        Assert.Same(first.InstructionSpans, second.InstructionSpans);
+    }
+
+    [Fact]
+    public void RecompilingNestedClosureReusesChildAllocationAndLowering()
+    {
+        var coflow = Coflow.Create(Contract(new RuleMetadata()));
+        var module = coflow.LoadModule(new CoflowSource("closures.cfd",
+            "Rule { main { calculate: fn(value: int) -> int { value }, " +
+            "make: fn(offset: int) -> fn(int) -> int { " +
+            "fn(value: int) -> int { value + offset } } } }"));
+        Assert.True(coflow.Compile().Success);
+        var rule = coflow.Table(Rules).Get("main").Value;
+        var outer = AssertTemplate(module, rule.MakeEntry.Identity);
+        var nested = Assert.Single(outer.NestedClosureTemplates);
+
+        Assert.True(coflow.Compile().Success);
+
+        Assert.Equal(1, outer.AllocationCount);
+        Assert.Equal(1, outer.LoweringCount);
+        Assert.Equal(2, outer.LinkCount);
+        Assert.Equal(1, nested.AllocationCount);
+        Assert.Equal(1, nested.LoweringCount);
+        Assert.Equal(1, nested.LinkCount);
+        Assert.Equal(9, coflow.Table(Rules).Get("main").Value.Make(coflow, 4).Invoke(coflow, 5));
+    }
+
+    private static CoflowProgramTemplate AssertTemplate(
+        CoflowModule module,
+        CoflowFunctionIdentity identity)
+    {
+        Assert.True(module.TryGetTemplate(identity, out var template));
+        return template;
+    }
+
+    [Fact]
+    public void CompilerEmitsTypedCfgForConditionalAndShortCircuitExpressions()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "if value > 0 && value < 10 { value + 1 } else { value - 1 } } } }";
+        var coflow = Compile(source, Contract(new RuleMetadata()));
+        var rule = coflow.Table(Rules).Get("main").Value;
+
+        Assert.Equal(6, rule.Calculate(coflow, 5));
+        Assert.Equal(11, rule.Calculate(coflow, 12));
+        var instructions = rule.CalculateEntry.CompiledProgram!.RegisterProgram.Instructions;
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.JumpIfFalse);
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.ConstantValue);
+        Assert.DoesNotContain(instructions, instruction => instruction.Code == CoflowRegisterOpCode.ConstantInteger);
+    }
+
+    [Fact]
+    public void CompilerEmitsTypedCfgForLocalAssignments()
+    {
+        var source = "Rule { main { calculate: fn(value: int) -> int { " +
+            "var next = value + 1; next * 2 } } }";
+        var coflow = Compile(source, Contract(new RuleMetadata()));
+        var rule = coflow.Table(Rules).Get("main").Value;
+
+        Assert.Equal(10, rule.Calculate(coflow, 4));
+        var instructions = rule.CalculateEntry.CompiledProgram!.RegisterProgram.Instructions;
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.MoveValue);
+        Assert.Contains(instructions, instruction => instruction.Code == CoflowRegisterOpCode.ConstantValue);
     }
 
     [Fact]
@@ -431,6 +562,7 @@ public sealed class CoflowModuleTests
         var rule = coflow.Table(Rules).Get("main").Value;
 
         var closure = rule.Make(coflow, 4);
+        using var runtimeScope = CoflowSchemaRuntimeContext.Enter(TestRuntime);
         Assert.Equal(2, CoflowValueShape.Of(typeof(CoflowFunction<long, long>)).IntegerCount);
         Assert.Equal(0, CoflowValueShape.Of(typeof(CoflowFunction<long, long>)).ReferenceCount);
         Assert.Equal(9, closure.Invoke(coflow, 5));
@@ -444,6 +576,43 @@ public sealed class CoflowModuleTests
     }
 
     [Fact]
+    public void RecordIdentityCannotCrossCoflowInstancesAtTheSameGeneration()
+    {
+        const string source = "Rule { main { calculate: fn(value: int) -> int { value } } }";
+        var first = Compile(source, Contract(new RuleMetadata()));
+        var second = Compile(source, Contract(new RuleMetadata()));
+        var foreign = first.Table(Rules).Get("main").Value;
+
+        Assert.Throws<CoflowStaleValueException>(() => foreign.Calculate(second, 7));
+    }
+
+    [Fact]
+    public void InvocationCacheDoesNotRetainThePreviousSnapshot()
+    {
+        var snapshot = InvokeAndReleaseSnapshot();
+
+        for (var attempt = 0; attempt < 5 && snapshot.IsAlive; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        Assert.False(snapshot.IsAlive);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference InvokeAndReleaseSnapshot()
+    {
+        const string source = "Rule { main { calculate: fn(value: int) -> int { value } } }";
+        var coflow = Compile(source, Contract(new RuleMetadata()));
+        var snapshot = new WeakReference(coflow.Snapshot);
+        Assert.Equal(7, coflow.Table(Rules).Get("main").Value.Calculate(coflow, 7));
+        return snapshot;
+    }
+
+    [Fact]
     public void ReturnedClosureKeepsCapturedInvocationCollectionsAlive()
     {
         var source = "Rule { main { calculate: fn(value: int) -> int { value }, " +
@@ -453,7 +622,8 @@ public sealed class CoflowModuleTests
         var coflow = Compile(source, Contract(new RuleMetadata()));
         var closure = coflow.Table(Rules).Get("main").Value.Make(coflow, 4);
 
-        var vmClosure = coflow.Snapshot.Function(closure.FunctionId, closure.EnvironmentId).Closure!;
+        var vmClosure = coflow.Snapshot.Function(closure.FunctionId, closure.EnvironmentId,
+            CoflowTransientValues.None).Closure!;
         Assert.Single(vmClosure.Collections);
         Assert.Equal(14, closure.Invoke(coflow, 5));
         Assert.Equal(15, closure.Invoke(coflow, 6));
@@ -469,7 +639,8 @@ public sealed class CoflowModuleTests
         var coflow = Compile(source, Contract(new RuleMetadata()));
         var closure = coflow.Table(Rules).Get("main").Value.Make(coflow, 4);
 
-        var vmClosure = coflow.Snapshot.Function(closure.FunctionId, closure.EnvironmentId).Closure!;
+        var vmClosure = coflow.Snapshot.Function(closure.FunctionId, closure.EnvironmentId,
+            CoflowTransientValues.None).Closure!;
         Assert.Empty(vmClosure.Collections);
         Assert.Equal(9, closure.Invoke(coflow, 5));
     }
@@ -487,6 +658,7 @@ public sealed class CoflowModuleTests
         var unrelated = new Node { CoflowId = new CoflowValueId(7, 12), Value = 3 };
         var collector = new CoflowValueIdCollector();
 
+        using var runtimeScope = CoflowSchemaRuntimeContext.Enter(TestRuntime);
         CoflowEscapeValue<Node>.Collect(root, collector);
 
         Assert.Contains(root.CoflowId, collector.Ids);
@@ -610,6 +782,8 @@ public sealed class CoflowModuleTests
         Assert.Equal(long.MaxValue, rule.Calculate(coflow, long.MaxValue));
         Assert.Equal(7, rule.Helper(coflow, 1));
         Assert.Equal(3, rule.Helper(coflow, 0));
+        Assert.Contains(rule.HelperEntry.CompiledProgram!.RegisterProgram.Instructions,
+            instruction => instruction.Code == CoflowRegisterOpCode.ConstantValue);
         Assert.DoesNotContain(rule.CalculateEntry.CompiledProgram!
             .RegisterProgram.Instructions,
             instruction => instruction.Code == CoflowRegisterOpCode.Native);
@@ -710,6 +884,7 @@ public sealed class CoflowModuleTests
 
     private sealed class TestContract(params ICoflowTypeMetadata[] types) : ICoflowSchema
     {
+        public CoflowSchemaRuntime Runtime => TestRuntime;
         public IReadOnlyList<ICoflowTypeMetadata> Types { get; } = types;
         public IReadOnlyList<ICoflowEnumMetadata> Enums { get; } = Array.Empty<ICoflowEnumMetadata>();
         public IReadOnlyList<CoflowConstant> Constants { get; } = Array.Empty<CoflowConstant>();
@@ -747,20 +922,20 @@ public sealed class CoflowModuleTests
         internal CoflowFunctionEntry MakeEntry = default!;
         internal CoflowFunctionEntry DeepEntry = default!;
         public long Calculate(Coflow coflow, long value) =>
-            CoflowInvoker.Invoke<Rule, long, long>(coflow, this, CoflowId, new(3), new(0), value);
+            CoflowInvoker.Invoke<long, long>(coflow, CoflowId, new(3), new(0), value);
         public long Helper(Coflow coflow, long value) =>
-            CoflowInvoker.Invoke<Rule, long, long>(coflow, this, CoflowId, new(3), new(1), value);
+            CoflowInvoker.Invoke<long, long>(coflow, CoflowId, new(3), new(1), value);
         public long Tail(Coflow coflow, long value) =>
-            CoflowInvoker.Invoke<Rule, long, long>(coflow, this, CoflowId, new(3), new(2), value);
+            CoflowInvoker.Invoke<long, long>(coflow, CoflowId, new(3), new(2), value);
         public CoflowFunction<long, long> Make(Coflow coflow, long value) =>
-            CoflowInvoker.Invoke<Rule, long, CoflowFunction<long, long>>(coflow, this, CoflowId, new(3), new(3), value);
+            CoflowInvoker.Invoke<long, CoflowFunction<long, long>>(coflow, CoflowId, new(3), new(3), value);
         public long Deep(Coflow coflow, long value) =>
-            CoflowInvoker.Invoke<Rule, long, long>(coflow, this, CoflowId, new(3), new(4), value);
+            CoflowInvoker.Invoke<long, long>(coflow, CoflowId, new(3), new(4), value);
         public CoflowFunction<long> MakeNode(Coflow coflow, Node value) =>
-            CoflowInvoker.Invoke<Rule, Node, CoflowFunction<long>>(coflow, this, CoflowId, new(3), new(5), value);
+            CoflowInvoker.Invoke<Node, CoflowFunction<long>>(coflow, CoflowId, new(3), new(5), value);
         public Node Select(Coflow coflow, Node keep, Node discard) =>
-            CoflowInvoker.Invoke<Rule, Node, Node, Node>(
-                coflow, this, CoflowId, new(3), new(6), keep, discard);
+            CoflowInvoker.Invoke<Node, Node, Node>(
+                coflow, CoflowId, new(3), new(6), keep, discard);
     }
 
     private sealed class Rival : IIdentified
@@ -790,12 +965,15 @@ public sealed class CoflowModuleTests
         public abstract CoflowFieldBinding GetFieldBinding(string fieldName);
         public bool HasFieldDefault(string fieldName) => false;
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => throw new InvalidOperationException();
-        public Delegate CreateVmObjectFactory(CfdLoadContext context) => throw new InvalidOperationException();
-        public Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => throw new ArgumentException(nameof(fieldName));
+        public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => throw new InvalidOperationException();
+        public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => throw new ArgumentException(nameof(fieldName));
         public string? ObjectFieldType(string fieldName) => null;
         public virtual string? ReferenceFieldType(string fieldName) => null;
         public object ParseKey(string key) => key;
-        public abstract Delegate GetKeyReader();
+        public abstract object GetKey(object value);
+        public CoflowTable CreateTable(object[] values) =>
+            new CoflowStringTable<T>(Array.ConvertAll(values, static value => (T)value),
+                value => (string)GetKey(value));
         public object CreateRecord(string key, CfdLoadContext context) => new T();
         public CoflowValueId GetValueId(object value) => ((IIdentified)value).CoflowId;
         public object WithValueId(object value, CoflowValueId id)
@@ -820,7 +998,7 @@ public sealed class CoflowModuleTests
         public override CoflowFieldBinding GetFieldBinding(string name) => name switch
             { "value" => Value, "next" => Next, _ => throw new ArgumentException(nameof(name)) };
         public override string? ReferenceFieldType(string name) => name == "next" ? "Node" : null;
-        public override Delegate GetKeyReader() => new Func<Node, string>(static value => value.Id);
+        public override object GetKey(object value) => ((Node)value).Id;
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);
@@ -843,7 +1021,7 @@ public sealed class CoflowModuleTests
         public override IReadOnlyList<string> FieldNames => new[] { "value" };
         public override CoflowFieldBinding GetFieldBinding(string name) => name == "value"
             ? Value : throw new ArgumentException(nameof(name));
-        public override Delegate GetKeyReader() => new Func<Settings, string>(static _ => string.Empty);
+        public override object GetKey(object value) => string.Empty;
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context) =>
             ((Settings)target).Value = CfdValueReader.Int64(CfdValueReader.Field(record.Fields, "value"));
     }
@@ -874,7 +1052,7 @@ public sealed class CoflowModuleTests
         public override IReadOnlyList<string> FieldNames => Bindings.Keys.ToArray();
         public override CoflowFieldBinding GetFieldBinding(string name) => Bindings.TryGetValue(name, out var binding)
             ? binding : throw new ArgumentException(nameof(name));
-        public override Delegate GetKeyReader() => new Func<Rule, string>(static value => value.Id);
+        public override object GetKey(object value) => ((Rule)value).Id;
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);
@@ -914,7 +1092,7 @@ public sealed class CoflowModuleTests
         public override CoflowFieldBinding GetFieldBinding(string name) => name == "calculate"
             ? Calculate
             : throw new ArgumentException(nameof(name));
-        public override Delegate GetKeyReader() => new Func<Rival, string>(static value => value.Id);
+        public override object GetKey(object value) => ((Rival)value).Id;
         public override void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
             using var scope = context.EnterRecord(record.DeclaredType, record.Key);

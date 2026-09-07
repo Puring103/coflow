@@ -45,6 +45,16 @@ Layout
 integer tag 加静态 payload layout；inactive payload 不参与语义读取。
 集合只在 collection store 中保存，寄存器和 Arena 保存其稳定索引。
 
+集合编码先预留外层的连续列空间，再递归写入字段和嵌套集合。struct writer 与普通值编码器直接写入
+目标列，集合元素不创建独立的 encoded 列数组。嵌套集合追加到预留空间之后。
+
+复合值相等通过布局和只读列视图执行，不将集合还原为 CLR 容器。Option/Result 只比较活动分支，
+struct 比较字段并跳过身份列，record 保持对象身份相等，dictionary 按 key 匹配而不依赖排列顺序。
+浮点值沿用语言的数值相等规则，包括 NaN 不等于自身。
+
+ExecutionSession 在建立调用时确定 Schema runtime，并在归池前清除该引用。codec 读写从 session
+取得 runtime；VM 和 codec 的标量读写直接访问 RegisterStorage，不经 session 逐项转发。
+
 ## 3. VM Data Arena
 
 每个发布快照拥有不可变 Arena：

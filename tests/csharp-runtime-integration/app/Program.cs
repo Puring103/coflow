@@ -275,6 +275,26 @@ Assert(reloadedScenario.MakeScaler(root, 3).Invoke(root, 4) == 32,
     "replacement closure did not capture updated data");
 AssertThrows<CoflowStaleValueException>(() => staleScenario.Execute(root, 5));
 
+// Host 返回值无论从生成 API 还是 VM 调用，都经过相同的边界验证。
+var invalidHostRuntime = Schema.Create();
+invalidHostRuntime.LoadModule(
+    new CoflowSource("characters.cfd", charactersSource),
+    new CoflowSource("scenario.cfd", scenarioSource));
+invalidHostRuntime.Bind(new HostServices(
+    "invalid-host",
+    static _ => { },
+    static (value, _) => value,
+    static operation => operation,
+    static _ => null!,
+    static _ => Result<long, string>.Ok(0),
+    static value => value));
+Compile(invalidHostRuntime);
+var invalidHost = Require(invalidHostRuntime.Singleton<HostServices>(), "HostServices");
+var invalidHostScenario = Require(
+    invalidHostRuntime.Table(Scenario.Table).Get("fullRoundTrip"), "fullRoundTrip");
+AssertThrows<CoflowFaultException>(() => invalidHost.Decorate(invalidHostRuntime, "value"));
+AssertThrows<CoflowFaultException>(() => invalidHostScenario.Execute(invalidHostRuntime, 1));
+
 Console.WriteLine("csharp-runtime-integration-ok");
 
 static T Require<T>(Option<T> value, string key) => value.HasValue

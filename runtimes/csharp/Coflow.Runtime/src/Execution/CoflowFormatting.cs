@@ -7,9 +7,8 @@ using System.Text;
 internal static class CoflowFormatting
 {
     private delegate void ValueRenderer(CoflowNativeFrame frame, int index, StringBuilder output);
-    private static readonly System.Reflection.MethodInfo RendererMethod =
-        typeof(CoflowFormatting).GetMethod(nameof(Renderer),
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+    private static readonly System.Reflection.MethodInfo FrameReadMethod =
+        typeof(CoflowNativeFrame).GetMethod(nameof(CoflowNativeFrame.Read))!;
 
     internal static CoflowNativeCall Interpolation(
         IReadOnlyList<string?> texts,
@@ -23,8 +22,7 @@ internal static class CoflowFormatting
         {
             if (types[index] is not { } type) continue;
             var formatter = CreateFormatter(type, metadata, enums);
-            renderers[index] = (ValueRenderer)RendererMethod.MakeGenericMethod(type)
-                .Invoke(null, new object[] { formatter })!;
+            renderers[index] = CreateRenderer(type, formatter);
             argument++;
         }
         return new CoflowNativeCall(types.Where(type => type is not null).Select(type => type!).ToArray(),
@@ -41,7 +39,7 @@ internal static class CoflowFormatting
         });
     }
 
-    internal static Delegate RecordMetadata(
+    internal static CoflowNativeCall RecordMetadata(
         Type receiverType,
         string name,
         IReadOnlyDictionary<string, ICoflowTypeMetadata> metadata,
@@ -50,13 +48,8 @@ internal static class CoflowFormatting
         var formatters = metadata.Values.OfType<ICoflowRecordMetadata>()
             .ToDictionary(item => item.RuntimeType,
                 item => CreateRecordMetadataFormatter(item, name, metadata, enums));
-        var receiver = Expression.Parameter(receiverType, "value");
-        var method = typeof(CoflowFormatting).GetMethod(nameof(FormatRecordMetadata),
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-        var body = Expression.Call(method, Expression.Convert(receiver, typeof(object)),
-            Expression.Constant(formatters));
-        return CoflowExpressionCompiler.Compile(Expression.Lambda(
-            Expression.GetFuncType(receiverType, typeof(string)), body, receiver));
+        return new CoflowNativeCall(new[] { receiverType }, typeof(string), frame =>
+            frame.Write(FormatRecordMetadata(frame.ReadRecord(0, receiverType), formatters)));
     }
 
     private static string FormatRecordMetadata(
@@ -77,10 +70,9 @@ internal static class CoflowFormatting
         IReadOnlyDictionary<string, ICoflowEnumMetadata> enums)
     {
         var value = Expression.Parameter(typeof(object), "value");
-        var typed = Expression.Convert(value, record.RuntimeType);
-        var keyReader = record.GetKeyReader();
-        var key = Expression.Invoke(Expression.Convert(Expression.Constant(keyReader),
-            Expression.GetFuncType(record.RuntimeType, record.KeyType)), typed);
+        var key = Expression.Convert(Expression.Call(Expression.Constant(record),
+            typeof(ICoflowRecordMetadata).GetMethod(nameof(ICoflowRecordMetadata.GetKey))!, value),
+            record.KeyType);
         var rendered = Format(record.KeyType, key, Expression.Constant(false), metadata, enums);
         Expression result = name == "id" ? rendered : Expression.Call(
             typeof(CoflowFormatting), nameof(Concat2), Type.EmptyTypes,
@@ -89,10 +81,23 @@ internal static class CoflowFormatting
             Expression.Lambda<Func<object, string>>(result, value));
     }
 
-    private static ValueRenderer Renderer<T>(Delegate formatter)
+    private static ValueRenderer CreateRenderer(Type type, Delegate formatter)
     {
-        var typed = (Func<T, bool, string>)formatter;
-        return (frame, index, output) => output.Append(typed(frame.Read<T>(index), false));
+        var frame = Expression.Parameter(typeof(CoflowNativeFrame), "frame");
+        var index = Expression.Parameter(typeof(int), "index");
+        var output = Expression.Parameter(typeof(StringBuilder), "output");
+        var value = Expression.Call(frame, FrameReadMethod.MakeGenericMethod(type), index);
+        var format = Expression.Invoke(
+            Expression.Convert(Expression.Constant(formatter),
+                Expression.GetFuncType(type, typeof(bool), typeof(string))),
+            value,
+            Expression.Constant(false));
+        var append = Expression.Call(output,
+            typeof(StringBuilder).GetMethod(nameof(StringBuilder.Append), new[] { typeof(string) })!,
+            format);
+        return CoflowExpressionCompiler.Compile(
+            Expression.Lambda<ValueRenderer>(
+                Expression.Block(append, Expression.Empty()), frame, index, output));
     }
 
     private static Delegate CreateFormatter(
@@ -167,10 +172,10 @@ internal static class CoflowFormatting
         var objectMetadata = metadata.Values.Single(item => item.RuntimeType == type);
         if (objectMetadata is ICoflowRecordMetadata recordMetadata)
         {
-            var keyReader = recordMetadata.GetKeyReader();
             var keyType = recordMetadata.KeyType;
-            var key = Expression.Invoke(Expression.Convert(Expression.Constant(keyReader),
-                Expression.GetFuncType(type, keyType)), value);
+            var key = Expression.Convert(Expression.Call(Expression.Constant(recordMetadata),
+                typeof(ICoflowRecordMetadata).GetMethod(nameof(ICoflowRecordMetadata.GetKey))!,
+                Expression.Convert(value, typeof(object))), keyType);
             var rendered = Format(keyType, key, Expression.Constant(false), metadata, enums);
             return Expression.Call(typeof(CoflowFormatting), nameof(FormatRecord), Type.EmptyTypes,
                 Expression.Constant(objectMetadata.DeclaredType), rendered);

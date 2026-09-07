@@ -63,8 +63,8 @@ public sealed class CoflowFieldBinding
         if (id is null) throw new ArgumentNullException(nameof(id));
         Func<object, object> read = value =>
         {
-            var handle = CoflowInvocationContext.FunctionHandle(id((TRecord)value), typeId, fieldId);
-            return CoflowFunctionHandle.Create(typeof(TDelegate), handle.FunctionId, handle.EnvironmentId);
+            var handle = CoflowFunctionHandle.Resolve(id((TRecord)value), typeId, fieldId);
+            return CoflowFunctionHandle.Create<TDelegate>(handle.FunctionId, handle.EnvironmentId)!;
         };
         var call = new CoflowNativeCall(
             new[] { typeof(TRecord) },
@@ -73,7 +73,7 @@ public sealed class CoflowFieldBinding
             {
                 var receiver = frame.Read<TRecord>(0);
                 if (receiver is null) throw new CoflowBoundaryException("Function receiver cannot be null.");
-                var handle = CoflowInvocationContext.FunctionHandle(id(receiver), typeId, fieldId);
+                var handle = CoflowFunctionHandle.Resolve(id(receiver), typeId, fieldId);
                 frame.WriteFunction(handle.FunctionId, handle.EnvironmentId);
             });
         return new CoflowFieldBinding(
@@ -100,13 +100,21 @@ public sealed class CoflowFieldBinding
     {
         if (name is null) throw new ArgumentNullException(nameof(name));
         if (reader is null) throw new ArgumentNullException(nameof(reader));
-        var shape = CoflowValueShape.Of(typeof(TValue));
+        var valueType = typeof(TValue);
+        CoflowRegisterKind? scalarKind =
+            valueType == typeof(long) || valueType == typeof(bool) || valueType.IsEnum
+                ? CoflowRegisterKind.Integer
+                : valueType == typeof(double)
+                    ? CoflowRegisterKind.Float
+                    : valueType == typeof(string)
+                        ? CoflowRegisterKind.Reference
+                        : null;
         Func<object, long>? readInteger = null;
         Func<object, double>? readFloat = null;
         Func<object, object?>? readReference = null;
-        if (shape.Kind == CoflowValueShapeKind.Scalar)
+        if (scalarKind is not null)
         {
-            switch (shape.ScalarKind)
+            switch (scalarKind)
             {
                 case CoflowRegisterKind.Integer when typeof(TValue) == typeof(long):
                 {
@@ -143,7 +151,7 @@ public sealed class CoflowFieldBinding
             readInteger,
             readFloat,
             readReference,
-            shape.Kind == CoflowValueShapeKind.Scalar ? null :
+            scalarKind is not null ? null :
                 (context, target, value) => CoflowBoundaryCodec<TValue>.Write(
                     context, target, reader((TRecord)value!)),
             false,
@@ -248,6 +256,6 @@ internal sealed class CoflowFieldAccess
 }
 
 internal delegate void CoflowFieldValueReader(
-    CoflowVm.CoflowExecutionContext context,
+    CoflowExecutionSession context,
     CoflowValueRegister target,
     object receiver);

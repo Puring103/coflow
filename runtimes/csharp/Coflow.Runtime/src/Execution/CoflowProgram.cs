@@ -46,7 +46,7 @@ internal sealed class CoflowProgramLinker
 
     internal CoflowRawFunctionHandle FunctionHandle(CoflowFunctionEntry entry)
     {
-        if (entry.Owner is null || !CoflowTypeCodecs.TryGet(entry.Owner.GetType(), out var descriptor))
+        if (entry.Owner is null || !CoflowSchemaRuntimeContext.TryGetTypeCodec(entry.Owner.GetType(), out var descriptor))
             throw new CoflowProgramLinkException($"function `{entry.Identity}` has no receiver value");
         var kind = entry.Source is null ? CoflowFunctionKind.Native : CoflowFunctionKind.Program;
         return new CoflowRawFunctionHandle(
@@ -57,41 +57,21 @@ internal sealed class CoflowProgramLinker
 
 internal sealed class CoflowProgramTemplate
 {
-    private readonly CoflowInstruction[] _instructions;
-    private readonly CfdSpan?[] _instructionSpans;
-    private readonly object?[] _constants;
-    private readonly int _localCount;
+    private readonly CoflowVirtualProgram _virtualProgram;
+    private CoflowRegisterAllocation? _allocation;
+    private CoflowRegisterTemplate? _registerTemplate;
     private readonly CoflowBindingDependency[] _bindingDependencies;
 
-    internal CoflowProgramTemplate(
-        CoflowFunctionIdentity identity,
-        string sourcePath,
-        CfdSpan? sourceSpan,
-        IReadOnlyList<CoflowInstruction> instructions,
-        IReadOnlyList<CfdSpan?> instructionSpans,
-        IReadOnlyList<object?> constants,
-        IReadOnlyList<Type> parameterTypes,
-        Type returnType,
-        int localCount,
-        IReadOnlyList<CoflowBindingDependency>? bindingDependencies = null)
+    internal CoflowProgramTemplate(CoflowVirtualProgram program)
     {
-        Identity = identity;
-        SourcePath = sourcePath;
-        SourceSpan = sourceSpan;
-        _instructions = instructions.ToArray();
-        _instructionSpans = instructionSpans.ToArray();
-        _constants = constants.ToArray();
-        ParameterTypes = parameterTypes.ToArray();
-        ReturnType = returnType;
-        _localCount = localCount;
-        _bindingDependencies = bindingDependencies?.ToArray() ?? Array.Empty<CoflowBindingDependency>();
-
-        if (_instructions.Length == 0)
-            throw new InvalidOperationException($"Coflow program `{identity}` has no instructions.");
-        if (_instructionSpans.Length != _instructions.Length)
-            throw new InvalidOperationException($"Coflow program `{identity}` has an invalid source map.");
-        if (localCount < 0)
-            throw new InvalidOperationException($"Coflow program `{identity}` has a negative local count.");
+        if (program is null) throw new ArgumentNullException(nameof(program));
+        _virtualProgram = program;
+        Identity = program.Identity;
+        SourcePath = program.SourcePath;
+        SourceSpan = program.SourceSpan;
+        ParameterTypes = program.Parameters.Select(value => value.Type).ToArray();
+        ReturnType = program.ReturnType;
+        _bindingDependencies = program.BindingDependencies;
     }
 
     internal CoflowFunctionIdentity Identity { get; }
@@ -100,6 +80,16 @@ internal sealed class CoflowProgramTemplate
     internal Type[] ParameterTypes { get; }
     internal Type ReturnType { get; }
     internal int ParameterCount => ParameterTypes.Length;
+    internal int AllocationCount { get; private set; }
+    internal int LoweringCount { get; private set; }
+    internal int LinkCount { get; private set; }
+    internal IReadOnlyList<CoflowProgramTemplate> NestedClosureTemplates =>
+        _virtualProgram.Blocks
+            .SelectMany(block => block.Instructions)
+            .Select(instruction => instruction.Operation)
+            .OfType<CoflowVirtualOperation.MakeClosure>()
+            .Select(operation => operation.Template.Program)
+            .ToArray();
 
     internal bool CanReuse(CoflowCompilerCatalog catalog, CoflowRecordCatalog records) =>
         _bindingDependencies.All(dependency => dependency.IsStillValid(catalog, records));
@@ -107,30 +97,21 @@ internal sealed class CoflowProgramTemplate
     internal CoflowProgram Link(CoflowProgramLinker linker)
     {
         if (linker is null) throw new ArgumentNullException(nameof(linker));
-        var operations = _constants.Select(value => value switch
+        if (_registerTemplate is null)
         {
-            CoflowClosureProgramTemplate closure => closure.Link(linker),
-            CoflowFunctionReferenceTemplate function => function.Link(linker),
-            CoflowRecordReferenceTemplate record => record.Link(linker),
-            CoflowConstantReferenceTemplate constant => constant.Link(linker),
-            _ => value,
-        }).ToArray();
-        var encodedConstants = new CoflowEncodedValue?[_constants.Length];
-        for (var index = 0; index < _instructions.Length; index++)
-        {
-            var instruction = _instructions[index];
-            if (instruction.Code != CoflowOpCode.Constant) continue;
-            if ((uint)instruction.Operand >= (uint)_constants.Length)
-                throw new InvalidOperationException($"Coflow program `{Identity}` has an invalid constant index.");
-            encodedConstants[instruction.Operand] ??= CoflowEncodedValue.Encode(
-                instruction.ValueType ?? _constants[instruction.Operand]?.GetType() ?? typeof(object),
-                operations[instruction.Operand]);
-            operations[instruction.Operand] = null;
+            if (_allocation is null)
+            {
+                _allocation = CoflowVirtualRegisterAllocator.Allocate(_virtualProgram);
+                AllocationCount++;
+            }
+            _registerTemplate = CoflowVirtualLowering.LowerTemplate(_virtualProgram, linker, _allocation);
+            LoweringCount++;
+            LinkCount++;
+            return new CoflowProgram(this, _registerTemplate.InitialProgram);
         }
-        var registerProgram = CoflowRegisterLowering.Lower(new CoflowLoweringInput(
-            Identity, _instructions, _instructionSpans, operations, encodedConstants,
-            ParameterTypes, ReturnType, _localCount, linker.FunctionIndexes));
-        return new CoflowProgram(this, registerProgram);
+        var linked = _registerTemplate.Link(linker, out var relinked);
+        if (relinked) LinkCount++;
+        return new CoflowProgram(this, linked);
     }
 }
 

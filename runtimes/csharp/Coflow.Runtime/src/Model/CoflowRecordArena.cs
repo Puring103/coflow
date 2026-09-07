@@ -26,15 +26,15 @@ internal sealed class CoflowRecordArena
     internal static CoflowRecordArena Build(
         IReadOnlyList<CoflowLoadedValue> values,
         IReadOnlyDictionary<CoflowTypeId, ICoflowTypeMetadata> metadata,
-        uint generation)
+        uint snapshotId)
     {
         var collections = new CoflowCollectionArena();
-        collections.Reset(generation);
+        collections.Reset(snapshotId);
         CoflowEncodedValue Encode(Type type, object? value) =>
             CoflowCollectionEncoding.Encode(type, value, collections);
         var encoded = values.Select(value =>
         {
-            if (!CoflowTypeCodecs.TryGet(value.ApiValue.GetType(), out var codec))
+            if (!CoflowSchemaRuntimeContext.TryGetTypeCodec(value.ApiValue.GetType(), out var codec))
             {
                 // Host 由 native adapter 访问，不进入 VM 数据 Arena，但仍保留对齐的 ValueEntry。
                 if (metadata[value.TypeId] is ICoflowHostMetadata)
@@ -73,20 +73,20 @@ internal sealed class CoflowRecordArena
     internal CoflowEncodedValue ReadArrayItem(CoflowCollectionId id, int index) =>
         _collections.ReadArrayItem(id, index);
     internal void CopyArrayItem(CoflowCollectionId id, int index,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister target) =>
+        CoflowExecutionSession context, CoflowValueRegister target) =>
         _collections.CopyArrayItem(id, index, context, target);
     internal CoflowEncodedValue ReadDictionaryKey(CoflowCollectionId id, int index) =>
         _collections.ReadDictionaryKey(id, index);
     internal CoflowEncodedValue ReadDictionaryValue(CoflowCollectionId id, int index) =>
         _collections.ReadDictionaryValue(id, index);
     internal void CopyDictionaryKey(CoflowCollectionId id, int index,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister target) =>
+        CoflowExecutionSession context, CoflowValueRegister target) =>
         _collections.CopyDictionaryKey(id, index, context, target);
     internal void CopyDictionaryValue(CoflowCollectionId id, int index,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister target) =>
+        CoflowExecutionSession context, CoflowValueRegister target) =>
         _collections.CopyDictionaryValue(id, index, context, target);
     internal int FindDictionaryKey(CoflowCollectionId id,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister key) =>
+        CoflowExecutionSession context, CoflowValueRegister key) =>
         _collections.FindDictionaryKey(id, context, key);
 
     internal long ReadInteger(int row, int offset) => _integers[_rows[row].IntegerBase + offset];
@@ -94,17 +94,17 @@ internal sealed class CoflowRecordArena
     internal object? ReadReference(int row, int offset) => _references[_rows[row].ReferenceBase + offset];
 
     internal void CopyField(int row, CoflowFieldAccess access,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister target)
+        CoflowExecutionSession context, CoflowValueRegister target)
     {
         var entry = _rows[row];
         for (var index = 0; index < target.Shape.IntegerCount; index++)
-            context.WriteInteger(new CoflowRegister(CoflowRegisterKind.Integer, target.IntegerBase + index),
+            context.Registers.WriteInteger(new CoflowRegister(CoflowRegisterKind.Integer, target.IntegerBase + index),
                 _integers[entry.IntegerBase + access.IntegerOffset + index]);
         for (var index = 0; index < target.Shape.FloatCount; index++)
-            context.WriteFloat(new CoflowRegister(CoflowRegisterKind.Float, target.FloatBase + index),
+            context.Registers.WriteFloat(new CoflowRegister(CoflowRegisterKind.Float, target.FloatBase + index),
                 _floats[entry.FloatBase + access.FloatOffset + index]);
         for (var index = 0; index < target.Shape.ReferenceCount; index++)
-            context.WriteReference(new CoflowRegister(CoflowRegisterKind.Reference, target.ReferenceBase + index),
+            context.Registers.WriteReference(new CoflowRegister(CoflowRegisterKind.Reference, target.ReferenceBase + index),
                 _references[entry.ReferenceBase + access.ReferenceOffset + index]);
     }
 

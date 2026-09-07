@@ -66,14 +66,15 @@ public sealed class Coflow
         try
         {
             // 候选快照独占编译期补全的 closed type 布局，编译失败时随候选整体丢弃。
-            var layouts = new CoflowLayoutRegistry();
+            using var schemaRuntime = CoflowSchemaRuntimeContext.Enter(_schema.Runtime);
+            var layouts = _schema.Runtime.CreateLayouts();
             using var layoutCompilation = CoflowLayoutCompilation.Enter(layouts);
             // Module 只定义管理边界；解析和链接必须看到同一个全局源码集合。
             var documents = _modules.SelectMany(module => module.Documents()).ToArray();
             var generation = checked(_generation + 1);
             var snapshotId = unchecked((uint)System.Threading.Interlocked.Increment(ref _nextSnapshotId));
             if (snapshotId == 0) throw new InvalidOperationException("Coflow snapshot identity space is exhausted.");
-            var candidate = CoflowSnapshot.Build(
+            var candidate = CoflowSnapshotBuilder.Build(
                 documents, _schema, _hostBindings, _modules.ToDictionary(module => module.Id),
                 layouts, _options, generation, snapshotId);
             _published = candidate;
@@ -95,24 +96,16 @@ public sealed class Coflow
     internal CoflowOptions Options => _options;
     internal bool IsExecuting => _executionDepth != 0;
 
-    internal TResult InvokeFunction<TResult>(CoflowFunctionId functionId, CoflowValueId environmentId)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<TResult>(); }
-    internal TResult InvokeFunction<T1, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, TResult>(a1); }
-    internal TResult InvokeFunction<T1, T2, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, TResult>(a1, a2); }
-    internal TResult InvokeFunction<T1, T2, T3, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, TResult>(a1, a2, a3); }
-    internal TResult InvokeFunction<T1, T2, T3, T4, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3, T4 a4)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, T4, TResult>(a1, a2, a3, a4); }
-    internal TResult InvokeFunction<T1, T2, T3, T4, T5, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, T4, T5, TResult>(a1, a2, a3, a4, a5); }
-    internal TResult InvokeFunction<T1, T2, T3, T4, T5, T6, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, T4, T5, T6, TResult>(a1, a2, a3, a4, a5, a6); }
-    internal TResult InvokeFunction<T1, T2, T3, T4, T5, T6, T7, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(a1, a2, a3, a4, a5, a6, a7); }
-    internal TResult InvokeFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(CoflowFunctionId functionId, CoflowValueId environmentId, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8)
-    { using var scope = EnterExecution(); return Snapshot.Function(functionId, environmentId).Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(a1, a2, a3, a4, a5, a6, a7, a8); }
+    internal TResult InvokeFunction<TArguments, TResult>(
+        CoflowFunctionId functionId,
+        CoflowValueId environmentId,
+        TArguments arguments)
+        where TArguments : struct, ICoflowArgumentPack
+    {
+        using var scope = EnterExecution();
+        return Snapshot.Function(functionId, environmentId,
+            CoflowInvocationContext.CurrentExecution.TransientValues).Invoke<TArguments, TResult>(arguments);
+    }
 
     internal ExecutionScope EnterExecution()
     {

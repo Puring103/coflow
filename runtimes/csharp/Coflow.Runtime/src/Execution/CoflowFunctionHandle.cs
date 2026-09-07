@@ -10,12 +10,12 @@ internal static class CoflowFunctionHandle
         type.GetGenericTypeDefinition().FullName is { } name &&
         name.StartsWith("Coflow.Runtime.CoflowFunction`", StringComparison.Ordinal);
 
-    internal static object Create(Type type, CoflowFunctionId functionId, CoflowValueId environmentId) =>
-        Activator.CreateInstance(type, System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.NonPublic, null, new object[] { functionId, environmentId }, null)!;
-
     internal static T Create<T>(CoflowFunctionId functionId, CoflowValueId environmentId) =>
         CoflowFunctionAccess<T>.Create(functionId, environmentId);
+
+    internal static CoflowRawFunctionHandle Resolve(
+        CoflowValueId id, CoflowTypeId typeId, CoflowFieldId fieldId) =>
+        CoflowInvocationContext.CurrentExecution.FunctionHandle(id, typeId, fieldId);
 }
 
 internal static class CoflowFunctionAccess<T>

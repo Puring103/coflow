@@ -7,14 +7,14 @@ public readonly struct CoflowValueId : IEquatable<CoflowValueId>
 {
     private readonly ulong _value;
 
-    public CoflowValueId(uint generation, uint index)
+    public CoflowValueId(uint snapshotId, uint index)
     {
-        _value = ((ulong)generation << 32) | index;
+        _value = ((ulong)snapshotId << 32) | index;
     }
 
     public static CoflowValueId Invalid => default;
     public bool IsValid => _value != 0;
-    internal uint Generation => (uint)(_value >> 32);
+    internal uint SnapshotId => (uint)(_value >> 32);
     internal uint Index => (uint)_value;
     internal ulong Packed => _value;
     internal static CoflowValueId FromPacked(ulong value) => new((uint)(value >> 32), (uint)value);

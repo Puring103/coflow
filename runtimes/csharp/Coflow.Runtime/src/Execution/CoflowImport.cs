@@ -2,18 +2,30 @@ namespace Coflow.Runtime.CompilerServices;
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq.Expressions;
 
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowImportContext
 {
     private CoflowSnapshot _snapshot = null!;
+    private CoflowImportState _imports = null!;
     private CoflowCollectionArena? _collections;
     private int _importDepth;
 
     internal CoflowImportContext() { }
 
-    internal void Reset(CoflowSnapshot snapshot) => _snapshot = snapshot;
+    internal void Reset(CoflowSnapshot snapshot, CoflowImportState imports)
+    {
+        _snapshot = snapshot;
+        _imports = imports;
+    }
+
+    internal void Clear()
+    {
+        _snapshot = null!;
+        _imports = null!;
+        _collections = null;
+        _importDepth = 0;
+    }
 
     public T Import<T>(T value) => CoflowImportValue<T>.Normalize(this, value);
 
@@ -34,6 +46,13 @@ public sealed class CoflowImportContext
         }
     }
 
+    internal void ReserveCollectionElements(int count)
+    {
+        (_collections ?? throw new InvalidOperationException(
+            "A collection must be imported into an execution Arena."))
+            .ReserveElements(count);
+    }
+
     internal T ImportRecord<T>(CoflowTypeDescriptor<T> descriptor, T value)
     {
         var id = descriptor.GetValueId(value);
@@ -41,19 +60,19 @@ public sealed class CoflowImportContext
             throw new CoflowBoundaryException($"The `{typeof(T)}` value is an uninitialized default struct.");
         if (id.IsValid)
         {
-            _snapshot.ValidateValue(id, descriptor.TypeId);
+            _snapshot.ValidateValue(id, descriptor.TypeId, _imports);
             return value;
         }
 
         // 外部值必须复制后再附加调用期身份，不能修改调用方持有的 class 或 struct。
         var normalized = descriptor.Normalize(this, value);
         var attached = descriptor.WithValueId(
-            normalized, CoflowInvocationContext.AttachExternal(descriptor.TypeId, normalized!));
+            normalized, _imports.Attach(descriptor.TypeId, normalized!));
         var collections = _collections ??
             throw new InvalidOperationException("An external Coflow value must be imported into an execution Arena.");
         CoflowEncodedValue Encode(Type type, object? item) =>
-            CoflowCollectionEncoding.Encode(type, item, collections);
-        CoflowInvocationContext.SetExternalValue(attached!, descriptor.EncodeArena(attached!, Encode));
+            CoflowCollectionEncoding.Encode(type, item, collections, budgetAlreadyCharged: true);
+        _imports.SetLastValue(attached!, descriptor.EncodeArena(attached!, Encode));
         return attached;
     }
 
@@ -66,62 +85,12 @@ public sealed class CoflowImportContext
     internal T ImportRuntime<T>(T value)
     {
         if (value is null) throw new CoflowBoundaryException($"A required `{typeof(T)}` value is null.");
-        if (!CoflowTypeCodecs.TryGet(value.GetType(), out var descriptor))
+        if (!CoflowSchemaRuntimeContext.TryGetTypeCodec(value.GetType(), out var descriptor))
             throw new CoflowBoundaryException($"Type `{value.GetType()}` has no Coflow schema codec.");
         if (!typeof(T).IsAssignableFrom(descriptor.Type))
             throw new CoflowBoundaryException($"Type `{descriptor.Type}` is not assignable to `{typeof(T)}`.");
         return (T)descriptor.Import(this, value);
     }
-}
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class CoflowTypeCodec
-{
-    public static void Register<T>(
-        CoflowTypeId typeId,
-        int arenaIntegerCount,
-        int arenaFloatCount,
-        int arenaReferenceCount,
-        Func<T, CoflowValueId> getValueId,
-        Func<T, bool> isInitialized,
-        Func<T, CoflowValueId, T> withValueId,
-        Func<CoflowImportContext, T, T> normalize,
-        CoflowStructWriter<T> arenaWriter)
-    {
-        if (!typeId.IsValid) throw new ArgumentOutOfRangeException(nameof(typeId));
-        CoflowTypes.Register(typeof(T), typeId);
-        CoflowTypeCodecs.Register(new CoflowTypeDescriptor<T>(typeId,
-            arenaIntegerCount, arenaFloatCount, arenaReferenceCount,
-            getValueId, isInitialized, withValueId, normalize, arenaWriter));
-    }
-}
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class CoflowType
-{
-    public static void Register<T>(CoflowTypeId typeId) =>
-        CoflowTypes.Register(typeof(T), typeId);
-}
-
-internal static class CoflowTypes
-{
-    private static readonly Dictionary<Type, CoflowTypeId> Types = new();
-
-    internal static void Register(Type type, CoflowTypeId typeId)
-    {
-        if (!typeId.IsValid) throw new ArgumentOutOfRangeException(nameof(typeId));
-        if (Types.TryGetValue(type, out var existing))
-        {
-            if (existing != typeId)
-                throw new InvalidOperationException($"Coflow type `{type}` has conflicting TypeIds.");
-            return;
-        }
-        Types.Add(type, typeId);
-        if (!CoflowStructCodecs.TryGet(type, out _))
-            CoflowValueShape.RegisterRecord(type);
-    }
-
-    internal static bool TryGet(Type type, out CoflowTypeId typeId) => Types.TryGetValue(type, out typeId);
 }
 
 internal abstract class CoflowTypeDescriptor
@@ -203,41 +172,12 @@ internal sealed class CoflowTypeDescriptor<T> : CoflowTypeDescriptor
     }
 }
 
-internal static class CoflowTypeCodecs
-{
-    private static readonly Dictionary<Type, CoflowTypeDescriptor> Descriptors = new();
-
-    internal static void Register<T>(CoflowTypeDescriptor<T> descriptor)
-    {
-        if (!Descriptors.TryAdd(typeof(T), descriptor))
-            throw new InvalidOperationException($"A type codec for `{typeof(T)}` is already registered.");
-    }
-
-    internal static bool TryGet<T>(out CoflowTypeDescriptor<T> descriptor)
-    {
-        if (Descriptors.TryGetValue(typeof(T), out var untyped))
-        {
-            descriptor = (CoflowTypeDescriptor<T>)untyped;
-            return true;
-        }
-        descriptor = null!;
-        return false;
-    }
-
-
-    internal static bool TryGet(Type type, out CoflowTypeDescriptor descriptor) =>
-        Descriptors.TryGetValue(type, out descriptor!);
-}
-
 internal static class CoflowImportValue<T>
 {
     internal static readonly Func<CoflowImportContext, T, T> Normalize = Build();
 
     private static Func<CoflowImportContext, T, T> Build()
     {
-        if (CoflowTypeCodecs.TryGet<T>(out var descriptor))
-            return (context, value) => context.ImportRecord(descriptor, value);
-
         var type = typeof(T);
         if (type == typeof(long) || type == typeof(double) || type == typeof(bool) || type == typeof(Unit))
             return static (_, value) => value;
@@ -263,20 +203,21 @@ internal static class CoflowImportValue<T>
         }
         if (!type.IsValueType)
             return static (context, value) => context.ImportRuntime(value);
-        return static (_, _) => throw new CoflowBoundaryException(
-            $"Type `{typeof(T)}` has no Coflow schema codec.");
+        return static (context, value) =>
+        {
+            if (CoflowSchemaRuntimeContext.TryGetTypeCodec<T>(out var descriptor))
+                return context.ImportRecord(descriptor, value);
+            throw new CoflowBoundaryException($"Type `{typeof(T)}` has no Coflow schema codec.");
+        };
     }
 
     private static Func<CoflowImportContext, T, T> BuildGeneric(string name, params Type[] arguments)
     {
-        var context = Expression.Parameter(typeof(CoflowImportContext), "context");
-        var value = Expression.Parameter(typeof(T), "value");
         var method = typeof(CoflowImportValue<T>).GetMethod(
             name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
             .MakeGenericMethod(arguments);
-        return CoflowExpressionCompiler.Compile(
-            Expression.Lambda<Func<CoflowImportContext, T, T>>(
-                Expression.Call(method, context, value), context, value));
+        return (Func<CoflowImportContext, T, T>)method.CreateDelegate(
+            typeof(Func<CoflowImportContext, T, T>));
     }
 
     private static TEnum ImportEnum<TEnum>(CoflowImportContext context, TEnum value)
@@ -294,6 +235,7 @@ internal static class CoflowImportValue<T>
         CoflowImportContext context, IReadOnlyList<TValue> value)
     {
         if (value is null) throw new CoflowBoundaryException("A required list value is null.");
+        context.ReserveCollectionElements(value.Count);
         var copy = new TValue[value.Count];
         for (var index = 0; index < copy.Length; index++) copy[index] = context.Import(value[index]);
         return Array.AsReadOnly(copy);
@@ -303,6 +245,7 @@ internal static class CoflowImportValue<T>
         CoflowImportContext context, IReadOnlyDictionary<TKey, TValue> value) where TKey : notnull
     {
         if (value is null) throw new CoflowBoundaryException("A required dictionary value is null.");
+        context.ReserveCollectionElements(value.Count);
         var copy = new Dictionary<TKey, TValue>();
         foreach (var pair in value)
             copy.Add(context.Import(pair.Key), context.Import(pair.Value));
@@ -325,9 +268,10 @@ internal static class CoflowEscapeValue<T>
 
     private static bool MayContain(Type type)
     {
-        if (CoflowTypes.TryGet(type, out _) || CoflowStructCodecs.TryGet(type, out _)) return true;
         if (CoflowFunctionHandle.IsFunctionType(type)) return true;
-        if (!type.IsGenericType) return false;
+        if (!type.IsGenericType)
+            return type != typeof(long) && type != typeof(double) && type != typeof(bool) &&
+                type != typeof(string) && type != typeof(Unit) && !type.IsEnum;
         var definition = type.GetGenericTypeDefinition();
         if (definition != typeof(Option<>) && definition != typeof(Result<,>) &&
             definition != typeof(IReadOnlyList<>) && definition != typeof(IReadOnlyDictionary<,>))
@@ -337,11 +281,6 @@ internal static class CoflowEscapeValue<T>
 
     private static Action<T, CoflowValueIdCollector> Build()
     {
-        if (CoflowTypeCodecs.TryGet<T>(out var record))
-            return (value, collector) => record.CollectValueIds(value!, collector);
-        if (CoflowStructCodecs.TryGet(typeof(T), out var schemaStruct))
-            return (value, collector) => schemaStruct.CollectValueIds(value!, collector);
-
         var type = typeof(T);
         if (CoflowFunctionHandle.IsFunctionType(type))
             return static (value, collector) =>
@@ -349,11 +288,14 @@ internal static class CoflowEscapeValue<T>
                 if (value is ICoflowFunctionHandle function)
                     collector.Add(function.EnvironmentId);
             };
-        if (!type.IsValueType && !type.IsGenericType)
+        if (!type.IsGenericType && MayContainRecord)
             return static (value, collector) =>
             {
-                if (value is object instance && CoflowTypeCodecs.TryGet(instance.GetType(), out var descriptor))
+                if (value is not object instance) return;
+                if (CoflowSchemaRuntimeContext.TryGetTypeCodec(instance.GetType(), out var descriptor))
                     descriptor.CollectValueIds(instance, collector);
+                else if (CoflowSchemaRuntimeContext.TryGetStructCodec(typeof(T), out var schemaStruct))
+                    schemaStruct.CollectValueIds(instance, collector);
             };
         if (!type.IsGenericType) return static (_, _) => { };
         var definition = type.GetGenericTypeDefinition();
@@ -367,14 +309,11 @@ internal static class CoflowEscapeValue<T>
 
     private static Action<T, CoflowValueIdCollector> BuildGeneric(string name, params Type[] arguments)
     {
-        var value = Expression.Parameter(typeof(T), "value");
-        var collector = Expression.Parameter(typeof(CoflowValueIdCollector), "collector");
         var method = typeof(CoflowEscapeValue<T>).GetMethod(
             name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
             .MakeGenericMethod(arguments);
-        return CoflowExpressionCompiler.Compile(
-            Expression.Lambda<Action<T, CoflowValueIdCollector>>(
-                Expression.Call(method, value, collector), value, collector));
+        return (Action<T, CoflowValueIdCollector>)method.CreateDelegate(
+            typeof(Action<T, CoflowValueIdCollector>));
     }
 
     private static void CollectOption<TValue>(Option<TValue> value, CoflowValueIdCollector collector)

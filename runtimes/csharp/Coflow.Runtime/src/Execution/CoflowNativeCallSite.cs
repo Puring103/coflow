@@ -4,7 +4,8 @@ internal sealed class CoflowNativeCallSite(CoflowNativeCall call, CoflowValueReg
 {
     internal CoflowNativeCall Call { get; } = call;
 
-    internal CoflowValueRegister[] Arguments { get; } = arguments;
+    internal CoflowFrozenArray<CoflowValueRegister> Arguments { get; } =
+        CoflowFrozenArray<CoflowValueRegister>.CopyOf(arguments);
 
     internal CoflowValueRegister Result { get; } = result;
 }

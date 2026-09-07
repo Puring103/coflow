@@ -28,6 +28,29 @@ internal static class CoflowExpressionCompiler
         return expression.Compile(preferInterpretation: true);
     }
 
+    internal static TDelegate CompileCollectibleSafe<TDelegate>(
+        Expression<TDelegate> expression,
+        params Type[] referencedTypes)
+        where TDelegate : Delegate
+    {
+        if (!DynamicCodeSupported || referencedTypes.Any(IsCollectible))
+        {
+            _interpretedCompilationCount++;
+            return expression.Compile(preferInterpretation: true);
+        }
+        return expression.Compile();
+    }
+
+    internal static bool IsCollectible(Type type)
+    {
+#if NET5_0_OR_GREATER
+        return type.Assembly.IsCollectible;
+#else
+        // netstandard2.1 不公开可卸载程序集 API；支持该能力的现代 Host 使用具体目标框架路径。
+        return false;
+#endif
+    }
+
     internal static IDisposable OverrideDynamicCodeSupportForCurrentThread(bool supported)
     {
         var previous = _dynamicCodeOverride;

@@ -44,7 +44,7 @@ public readonly struct CoflowFunction<TResult> : ICoflowFunctionHandle
     CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; }
     internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow) => coflow.InvokeFunction<TResult>(FunctionId, EnvironmentId);
+    public TResult Invoke(Coflow coflow) => coflow.InvokeFunction<CoflowArguments0, TResult>(FunctionId, EnvironmentId, default);
 }
 
 public readonly struct CoflowFunction<T1, TResult> : ICoflowFunctionHandle
@@ -52,7 +52,7 @@ public readonly struct CoflowFunction<T1, TResult> : ICoflowFunctionHandle
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1) => coflow.InvokeFunction<T1, TResult>(FunctionId, EnvironmentId, arg1);
+    public TResult Invoke(Coflow coflow, T1 arg1) => coflow.InvokeFunction<CoflowArguments1<T1>, TResult>(FunctionId, EnvironmentId, new(arg1));
 }
 
 public readonly struct CoflowFunction<T1, T2, TResult> : ICoflowFunctionHandle
@@ -60,7 +60,7 @@ public readonly struct CoflowFunction<T1, T2, TResult> : ICoflowFunctionHandle
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2) => coflow.InvokeFunction<T1, T2, TResult>(FunctionId, EnvironmentId, arg1, arg2);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2) => coflow.InvokeFunction<CoflowArguments2<T1, T2>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, TResult> : ICoflowFunctionHandle
@@ -68,7 +68,7 @@ public readonly struct CoflowFunction<T1, T2, T3, TResult> : ICoflowFunctionHand
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3) => coflow.InvokeFunction<T1, T2, T3, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3) => coflow.InvokeFunction<CoflowArguments3<T1, T2, T3>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, T4, TResult> : ICoflowFunctionHandle
@@ -76,7 +76,7 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, TResult> : ICoflowFunction
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => coflow.InvokeFunction<T1, T2, T3, T4, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3, arg4);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4) => coflow.InvokeFunction<CoflowArguments4<T1, T2, T3, T4>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, T4, T5, TResult> : ICoflowFunctionHandle
@@ -84,7 +84,7 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, T5, TResult> : ICoflowFunc
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => coflow.InvokeFunction<T1, T2, T3, T4, T5, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3, arg4, arg5);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) => coflow.InvokeFunction<CoflowArguments5<T1, T2, T3, T4, T5>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4, arg5));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, TResult> : ICoflowFunctionHandle
@@ -92,7 +92,7 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, TResult> : ICoflow
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => coflow.InvokeFunction<T1, T2, T3, T4, T5, T6, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3, arg4, arg5, arg6);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) => coflow.InvokeFunction<CoflowArguments6<T1, T2, T3, T4, T5, T6>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4, arg5, arg6));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, T7, TResult> : ICoflowFunctionHandle
@@ -100,7 +100,7 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, T7, TResult> : ICo
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => coflow.InvokeFunction<T1, T2, T3, T4, T5, T6, T7, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) => coflow.InvokeFunction<CoflowArguments7<T1, T2, T3, T4, T5, T6, T7>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4, arg5, arg6, arg7));
 }
 
 public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult> : ICoflowFunctionHandle
@@ -108,5 +108,5 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult> :
     internal CoflowFunction(CoflowFunctionId functionId, CoflowValueId environmentId) { FunctionId = functionId; EnvironmentId = environmentId; }
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
-    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => coflow.InvokeFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(FunctionId, EnvironmentId, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+    public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => coflow.InvokeFunction<CoflowArguments8<T1, T2, T3, T4, T5, T6, T7, T8>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
 }

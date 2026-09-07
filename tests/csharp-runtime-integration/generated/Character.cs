@@ -141,8 +141,8 @@ public sealed partial class Character : IEquatable<Character>
 
     public long Power(global::Coflow.Runtime.Coflow coflow, long bonus)
     {
-        return CoflowInvoker.Invoke<global::Character, long, long>(
-            coflow, this, _coflowId, new CoflowTypeId(2), new CoflowFieldId(11), bonus);
+        return CoflowInvoker.Invoke<long, long>(
+            coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(11), bonus);
     }
 
     internal Character() { }
