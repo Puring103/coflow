@@ -197,7 +197,7 @@ impl EvalEntries {
 }
 
 fn model_array<'a>(model: &'a CfdDataModel, cursor: &ModelCursor) -> Option<&'a [CfdValue]> {
-    match model_value(model, cursor)? {
+    match super::value::transparent_value(model_value(model, cursor)?) {
         CfdValue::Array(items) => Some(items),
         _ => None,
     }
@@ -207,7 +207,7 @@ fn model_dict<'a>(
     model: &'a CfdDataModel,
     cursor: &ModelCursor,
 ) -> Option<&'a [(CfdDictKey, CfdValue)]> {
-    match model_value(model, cursor)? {
+    match super::value::transparent_value(model_value(model, cursor)?) {
         CfdValue::Dict(entries) => Some(entries),
         _ => None,
     }

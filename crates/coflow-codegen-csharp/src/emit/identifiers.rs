@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::names::{camel_case, csharp_ident_error, csharp_type_name, pascal_case};
+use crate::names::{csharp_ident_error, csharp_type_name};
 use crate::CsharpCodegenError;
 
 pub(super) fn csharp_public_type_name(name: &str) -> String {
@@ -8,14 +8,14 @@ pub(super) fn csharp_public_type_name(name: &str) -> String {
 }
 
 pub(super) fn csharp_public_member_name(name: &str) -> String {
-    pascal_case(name)
+    name.to_string()
 }
 
 pub(super) fn field_local_name(
     field_name: &str,
     used_names: &mut HashSet<String>,
 ) -> Result<String, CsharpCodegenError> {
-    let candidate = camel_case(&pascal_case(field_name));
+    let candidate = field_name.to_string();
     let base_name = if csharp_ident_error(&candidate)
         .is_some_and(|reason| reason == "identifier is a C# keyword")
         || is_reserved_local_name(&candidate)
@@ -48,7 +48,7 @@ pub(super) fn function_parameter_name(
 ) -> Result<String, CsharpCodegenError> {
     let candidate = source_name.map_or_else(
         || format!("arg{index}"),
-        |name| camel_case(&pascal_case(name)),
+        str::to_string,
     );
     let keyword = csharp_ident_error(&candidate)
         .is_some_and(|reason| reason == "identifier is a C# keyword");

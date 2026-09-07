@@ -23,26 +23,9 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
     None
 }
 
-pub fn pascal_case(name: &str) -> String {
-    let mut out = String::new();
-    let mut upper = true;
-    for ch in name.chars() {
-        if matches!(ch, '_' | '-' | ' ') {
-            upper = true;
-            continue;
-        }
-        if upper {
-            out.extend(ch.to_uppercase());
-            upper = false;
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
 pub fn csharp_type_name(name: &str) -> String {
-    pascal_case(name)
+    // 生成 API 保留源名称，不转换大小写或移除下划线。
+    name.to_string()
 }
 
 pub fn csharp_qualified_type_name(name: &str) -> String {
@@ -151,13 +134,4 @@ fn is_csharp_keyword(value: &str) -> bool {
             | "volatile"
             | "while"
     )
-}
-
-pub fn camel_case(name: &str) -> String {
-    let pascal = pascal_case(name);
-    let mut chars = pascal.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    first.to_lowercase().collect::<String>() + chars.as_str()
 }

@@ -280,7 +280,14 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_type_predicate(&mut self) -> Result<TypePredicate, CftDiagnostics> {
-        self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
-            .map(TypePredicate::Type)
+        let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
+        if name.name == "Some" {
+            self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
+            let binding = self.expect_ident()?;
+            let end = self.expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?.end;
+            Ok(TypePredicate::Some { binding, span: Span::new(name.span.start, end) })
+        } else {
+            Ok(TypePredicate::Type(name))
+        }
     }
 }

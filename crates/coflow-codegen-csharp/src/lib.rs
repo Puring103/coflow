@@ -212,7 +212,7 @@ fn id_as_enum_variants(
                     )
                 })?;
                 Ok(CsharpIdAsEnumVariant {
-                    name: names::pascal_case(&source_name),
+                    name: source_name.clone(),
                     source_name,
                     value,
                 })
