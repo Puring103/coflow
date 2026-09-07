@@ -16,336 +16,336 @@ public sealed partial class Scenario : IEquatable<Scenario>
     public string Id { get; internal set; } = default!;
 
 
-    internal global::Character _coflowHero = default!;
+    internal global::Character _coflowhero = default!;
 
-    public global::Character Hero
+    public global::Character hero
     {
         get
         {
-            return _coflowHero;
+            return _coflowhero;
         }
     }
 
 
-    internal global::ScenarioConfig _coflowConfig = default!;
+    internal global::ScenarioConfig _coflowconfig = default!;
 
-    public global::ScenarioConfig Config
+    public global::ScenarioConfig config
     {
         get
         {
-            return _coflowConfig;
+            return _coflowconfig;
         }
     }
 
 
-    internal IReadOnlyList<CoflowFunction<long, long>> _coflowStages = default!;
+    internal IReadOnlyList<CoflowFunction<long, long>> _coflowstages = default!;
 
-    public IReadOnlyList<CoflowFunction<long, long>> Stages
+    public IReadOnlyList<CoflowFunction<long, long>> stages
     {
         get
         {
-            return _coflowStages;
+            return _coflowstages;
         }
     }
 
 
 
 
-    public long Execute(global::Coflow.Runtime.Coflow coflow, long value)
+    public long execute(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(3), value);
     }
 
 
-    public long CallHost(global::Coflow.Runtime.Coflow coflow, long value)
+    public long callHost(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(4), value);
     }
 
 
-    public CoflowFunction<long, long> MakeScaler(global::Coflow.Runtime.Coflow coflow, long scale)
+    public CoflowFunction<long, long> makeScaler(global::Coflow.Runtime.Coflow coflow, long scale)
     {
         return CoflowInvoker.Invoke<long, CoflowFunction<long, long>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(5), scale);
     }
 
 
-    public long Apply(global::Coflow.Runtime.Coflow coflow, long value, CoflowFunction<long, long> operation)
+    public long apply(global::Coflow.Runtime.Coflow coflow, long value, CoflowFunction<long, long> operation)
     {
         return CoflowInvoker.Invoke<long, CoflowFunction<long, long>, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(6), value, operation);
     }
 
 
-    public CoflowFunction<long, long> Compose(global::Coflow.Runtime.Coflow coflow, CoflowFunction<long, long> first, CoflowFunction<long, long> second)
+    public CoflowFunction<long, long> compose(global::Coflow.Runtime.Coflow coflow, CoflowFunction<long, long> first, CoflowFunction<long, long> second)
     {
         return CoflowInvoker.Invoke<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(7), first, second);
     }
 
 
-    public CoflowFunction<long, long> HostFunction(global::Coflow.Runtime.Coflow coflow, long value)
+    public CoflowFunction<long, long> hostFunction(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, CoflowFunction<long, long>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(8), value);
     }
 
 
-    public Option<CoflowFunction<long, long>> OptionalFunction(global::Coflow.Runtime.Coflow coflow, Option<CoflowFunction<long, long>> operation)
+    public Option<CoflowFunction<long, long>> optionalFunction(global::Coflow.Runtime.Coflow coflow, Option<CoflowFunction<long, long>> operation)
     {
         return CoflowInvoker.Invoke<Option<CoflowFunction<long, long>>, Option<CoflowFunction<long, long>>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(9), operation);
     }
 
 
-    public Result<CoflowFunction<long, long>, string> ResultFunction(global::Coflow.Runtime.Coflow coflow, Result<CoflowFunction<long, long>, string> operation)
+    public Result<CoflowFunction<long, long>, string> resultFunction(global::Coflow.Runtime.Coflow coflow, Result<CoflowFunction<long, long>, string> operation)
     {
         return CoflowInvoker.Invoke<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(10), operation);
     }
 
 
-    public long IntegerLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
+    public long integerLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(11), iterations);
     }
 
 
-    public double FloatLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
+    public double floatLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
     {
         return CoflowInvoker.Invoke<long, double>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(12), iterations);
     }
 
 
-    public long NumericConversions(global::Coflow.Runtime.Coflow coflow, long value, double ratio)
+    public long numericConversions(global::Coflow.Runtime.Coflow coflow, long value, double ratio)
     {
         return CoflowInvoker.Invoke<long, double, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(13), value, ratio);
     }
 
 
-    public bool EnumRoundTrip(global::Coflow.Runtime.Coflow coflow, global::CharacterId value)
+    public bool enumRoundTrip(global::Coflow.Runtime.Coflow coflow, global::CharacterId value)
     {
         return CoflowInvoker.Invoke<global::CharacterId, bool>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(14), value);
     }
 
 
-    public long Increment(global::Coflow.Runtime.Coflow coflow, long value)
+    public long increment(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(15), value);
     }
 
 
-    public long DirectCallChain(global::Coflow.Runtime.Coflow coflow, long value)
+    public long directCallChain(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(16), value);
     }
 
 
-    public long TailRecursion(global::Coflow.Runtime.Coflow coflow, long iterations)
+    public long tailRecursion(global::Coflow.Runtime.Coflow coflow, long iterations)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(17), iterations);
     }
 
 
-    public long TailAccumulator(global::Coflow.Runtime.Coflow coflow, long iterations, long total)
+    public long tailAccumulator(global::Coflow.Runtime.Coflow coflow, long iterations, long total)
     {
         return CoflowInvoker.Invoke<long, long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(18), iterations, total);
     }
 
 
-    public long FieldReadLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
+    public long fieldReadLoop(global::Coflow.Runtime.Coflow coflow, long iterations)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(19), iterations);
     }
 
 
-    public long CollectionPipeline(global::Coflow.Runtime.Coflow coflow, long value)
+    public long collectionPipeline(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(20), value);
     }
 
 
-    public long HostCall(global::Coflow.Runtime.Coflow coflow, long value)
+    public long hostCall(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(21), value);
     }
 
 
-    public Result<long, string> HostComposite(global::Coflow.Runtime.Coflow coflow, Option<long> value)
+    public Result<long, string> hostComposite(global::Coflow.Runtime.Coflow coflow, Option<long> value)
     {
         return CoflowInvoker.Invoke<Option<long>, Result<long, string>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(22), value);
     }
 
 
-    public Option<long> PropagateOption(global::Coflow.Runtime.Coflow coflow, Option<long> value)
+    public Option<long> propagateOption(global::Coflow.Runtime.Coflow coflow, Option<long> value)
     {
         return CoflowInvoker.Invoke<Option<long>, Option<long>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(23), value);
     }
 
 
-    public Result<long, string> PropagateResult(global::Coflow.Runtime.Coflow coflow, Result<long, string> value)
+    public Result<long, string> propagateResult(global::Coflow.Runtime.Coflow coflow, Result<long, string> value)
     {
         return CoflowInvoker.Invoke<Result<long, string>, Result<long, string>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(24), value);
     }
 
 
-    public Result<long, string> PropagateNested(global::Coflow.Runtime.Coflow coflow, Result<Result<long, string>, string> value)
+    public Result<long, string> propagateNested(global::Coflow.Runtime.Coflow coflow, Result<Result<long, string>, string> value)
     {
         return CoflowInvoker.Invoke<Result<Result<long, string>, string>, Result<long, string>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(25), value);
     }
 
 
-    public CoflowFunction<long, long> MakeOptionalAdder(global::Coflow.Runtime.Coflow coflow, Option<long> value)
+    public CoflowFunction<long, long> makeOptionalAdder(global::Coflow.Runtime.Coflow coflow, Option<long> value)
     {
         return CoflowInvoker.Invoke<Option<long>, CoflowFunction<long, long>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(26), value);
     }
 
 
-    public long CollectionQueries(global::Coflow.Runtime.Coflow coflow, long value)
+    public long collectionQueries(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(27), value);
     }
 
 
-    public long EmptyCollectionQueries(global::Coflow.Runtime.Coflow coflow)
+    public long emptyCollectionQueries(global::Coflow.Runtime.Coflow coflow)
     {
         return CoflowInvoker.Invoke<long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(28));
     }
 
 
-    public global::Stats MakeStats(global::Coflow.Runtime.Coflow coflow, long value)
+    public global::Stats makeStats(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, global::Stats>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(29), value);
     }
 
 
-    public global::Stats MakeDefaultStats(global::Coflow.Runtime.Coflow coflow, long value)
+    public global::Stats makeDefaultStats(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, global::Stats>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(30), value);
     }
 
 
-    public long ReadExternalStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public long readExternalStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
     {
         return CoflowInvoker.Invoke<global::Stats, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(31), value);
     }
 
 
-    public long HostStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public long hostStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
     {
         return CoflowInvoker.Invoke<global::Stats, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(32), value);
     }
 
 
-    public global::Character CopyExternalCharacter(global::Coflow.Runtime.Coflow coflow, global::Character value)
+    public global::Character copyExternalCharacter(global::Coflow.Runtime.Coflow coflow, global::Character value)
     {
         return CoflowInvoker.Invoke<global::Character, global::Character>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(33), value);
     }
 
 
-    public long ReadExternalCharacterCollections(global::Coflow.Runtime.Coflow coflow, global::Character value)
+    public long readExternalCharacterCollections(global::Coflow.Runtime.Coflow coflow, global::Character value)
     {
         return CoflowInvoker.Invoke<global::Character, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(34), value);
     }
 
 
-    public Option<global::Stats> CopyOptionalStats(global::Coflow.Runtime.Coflow coflow, Option<global::Stats> value)
+    public Option<global::Stats> copyOptionalStats(global::Coflow.Runtime.Coflow coflow, Option<global::Stats> value)
     {
         return CoflowInvoker.Invoke<Option<global::Stats>, Option<global::Stats>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(35), value);
     }
 
 
-    public string FormatValues(global::Coflow.Runtime.Coflow coflow, long value, double ratio, bool enabled, Option<long> optional)
+    public string formatValues(global::Coflow.Runtime.Coflow coflow, long value, double ratio, bool enabled, Option<long> optional)
     {
         return CoflowInvoker.Invoke<long, double, bool, Option<long>, string>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(36), value, ratio, enabled, optional);
     }
 
 
-    public long SyntaxControlFlow(global::Coflow.Runtime.Coflow coflow, long input)
+    public long syntaxControlFlow(global::Coflow.Runtime.Coflow coflow, long input)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(37), input);
     }
 
 
-    public bool SyntaxOperators(global::Coflow.Runtime.Coflow coflow, long left, long right, string text)
+    public bool syntaxOperators(global::Coflow.Runtime.Coflow coflow, long left, long right, string text)
     {
         return CoflowInvoker.Invoke<long, long, string, bool>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(38), left, right, text);
     }
 
 
-    public long SyntaxMatch(global::Coflow.Runtime.Coflow coflow, long value, Option<long> optional, Result<long, string> outcome, global::CharacterId character)
+    public long syntaxMatch(global::Coflow.Runtime.Coflow coflow, long value, Option<long> optional, Result<long, string> outcome, global::CharacterId character)
     {
         return CoflowInvoker.Invoke<long, Option<long>, Result<long, string>, global::CharacterId, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(39), value, optional, outcome, character);
     }
 
 
-    public string TypeMetadata(global::Coflow.Runtime.Coflow coflow)
+    public string typeMetadata(global::Coflow.Runtime.Coflow coflow)
     {
         return CoflowInvoker.Invoke<string>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(40));
     }
 
 
-    public bool BuiltinSyntax(global::Coflow.Runtime.Coflow coflow, string text)
+    public bool builtinSyntax(global::Coflow.Runtime.Coflow coflow, string text)
     {
         return CoflowInvoker.Invoke<string, bool>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(41), text);
     }
 
 
-    public string FormatSyntax(global::Coflow.Runtime.Coflow coflow, string text)
+    public string formatSyntax(global::Coflow.Runtime.Coflow coflow, string text)
     {
         return CoflowInvoker.Invoke<string, string>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(42), text);
     }
 
 
-    public long PrimeSum(global::Coflow.Runtime.Coflow coflow, long limit)
+    public long primeSum(global::Coflow.Runtime.Coflow coflow, long limit)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(43), limit);
     }
 
 
-    public long MatrixKernel(global::Coflow.Runtime.Coflow coflow, long size)
+    public long matrixKernel(global::Coflow.Runtime.Coflow coflow, long size)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(44), size);
     }
 
 
-    public long Fibonacci(global::Coflow.Runtime.Coflow coflow, long value)
+    public long fibonacci(global::Coflow.Runtime.Coflow coflow, long value)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(45), value);
@@ -361,10 +361,10 @@ public sealed partial class Scenario : IEquatable<Scenario>
         IReadOnlyList<CoflowFunction<long, long>> stages
     )
     {
-        Id = id;
-        _coflowHero = hero;
-        _coflowConfig = config;
-        _coflowStages = stages;
+        this.Id = id;
+        this._coflowhero = hero;
+        this._coflowconfig = config;
+        this._coflowstages = stages;
     }
 
     internal static Scenario WithCoflowValueId(Scenario value, CoflowValueId coflowId)

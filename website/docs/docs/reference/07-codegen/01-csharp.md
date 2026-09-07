@@ -8,6 +8,8 @@ codegen:
     dir: Generated
 ```
 
+类型、字段、函数、函数参数和 enum 成员保留 CFT 中的大小写与下划线；`@idAsEnum` 成员保留记录键的名称。例如 `hit_points` 生成 `hit_points`，`applyBonus` 生成 `applyBonus`。
+
 将生成目录和 `Coflow.Runtime` 引入 C# 项目后，先创建运行时实例，再按 Module 加载 CFD，最后编译并发布：
 
 ```csharp

@@ -4,6 +4,6 @@ using System;
 
 public enum CharacterId
 {
-    Arcanist = 1,
-    Guardian = 0,
+    arcanist = 1,
+    guardian = 0,
 }

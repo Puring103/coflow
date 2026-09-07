@@ -12,12 +12,12 @@ public readonly partial struct Stats : IEquatable<Stats>
     internal readonly bool _coflowInitialized;
 
 
-    public long Value { get; }
+    public long value { get; }
 
 
 
 
-    public long Transform(global::Coflow.Runtime.Coflow coflow, long arg0)
+    public long transform(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(3), new CoflowFieldId(1), arg0);
@@ -28,7 +28,7 @@ public readonly partial struct Stats : IEquatable<Stats>
         long valueValue
     )
     {
-        Value = valueValue;
+        this.value = valueValue;
         _coflowInitialized = true;
     }
 
@@ -46,7 +46,7 @@ public readonly partial struct Stats : IEquatable<Stats>
     public override string ToString() => "Stats";
 
     public bool Equals(Stats other) =>
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Value, other.Value);
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(value, other.value);
 
     public override bool Equals(object? obj) =>
         obj is Stats other && Equals(other);
@@ -54,7 +54,7 @@ public readonly partial struct Stats : IEquatable<Stats>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Value);
+        hash.Add(value);
         return hash.ToHashCode();
     }
 

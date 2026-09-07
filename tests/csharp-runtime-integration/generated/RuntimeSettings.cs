@@ -11,24 +11,24 @@ public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
     internal CoflowValueId _coflowId;
 
 
-    internal string _coflowEnvironment = default!;
+    internal string _coflowenvironment = default!;
 
-    public string Environment
+    public string environment
     {
         get
         {
-            return _coflowEnvironment;
+            return _coflowenvironment;
         }
     }
 
 
-    internal long _coflowRetries = default!;
+    internal long _coflowretries = default!;
 
-    public long Retries
+    public long retries
     {
         get
         {
-            return _coflowRetries;
+            return _coflowretries;
         }
     }
 
@@ -42,8 +42,8 @@ public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
         long retries
     )
     {
-        _coflowEnvironment = environment;
-        _coflowRetries = retries;
+        this._coflowenvironment = environment;
+        this._coflowretries = retries;
     }
 
     internal static RuntimeSettings WithCoflowValueId(RuntimeSettings value, CoflowValueId coflowId)
@@ -60,8 +60,8 @@ public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
 
     public bool Equals(RuntimeSettings? other) =>
         other is not null &&
-        System.Collections.Generic.EqualityComparer<string>.Default.Equals(Environment, other.Environment) &&
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Retries, other.Retries);
+        System.Collections.Generic.EqualityComparer<string>.Default.Equals(environment, other.environment) &&
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(retries, other.retries);
 
     public override bool Equals(object? obj) =>
         obj is RuntimeSettings other && Equals(other);
@@ -69,8 +69,8 @@ public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Environment);
-        hash.Add(Retries);
+        hash.Add(environment);
+        hash.Add(retries);
         return hash.ToHashCode();
     }
 

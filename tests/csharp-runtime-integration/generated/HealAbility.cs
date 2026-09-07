@@ -13,13 +13,13 @@ public sealed partial class HealAbility : global::Ability, IEquatable<HealAbilit
     public string Id { get; internal set; } = default!;
 
 
-    internal long _coflowHealing = default!;
+    internal long _coflowhealing = default!;
 
-    public long Healing
+    public long healing
     {
         get
         {
-            return _coflowHealing;
+            return _coflowhealing;
         }
     }
 
@@ -34,8 +34,8 @@ public sealed partial class HealAbility : global::Ability, IEquatable<HealAbilit
         long healing
     ) : base(label)
     {
-        Id = id;
-        _coflowHealing = healing;
+        this.Id = id;
+        this._coflowhealing = healing;
     }
 
     internal static HealAbility WithCoflowValueId(HealAbility value, CoflowValueId coflowId)

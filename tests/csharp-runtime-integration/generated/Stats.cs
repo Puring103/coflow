@@ -12,18 +12,18 @@ public readonly partial struct Stats : IEquatable<Stats>
     internal readonly bool _coflowInitialized;
 
 
-    public long Health { get; }
+    public long health { get; }
 
 
-    public long Attack { get; }
+    public long attack { get; }
 
 
-    public IReadOnlyDictionary<string, long> Resistances { get; }
+    public IReadOnlyDictionary<string, long> resistances { get; }
 
 
 
 
-    public long Score(global::Coflow.Runtime.Coflow coflow, long bonus)
+    public long score(global::Coflow.Runtime.Coflow coflow, long bonus)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(9), new CoflowFieldId(3), bonus);
@@ -36,9 +36,9 @@ public readonly partial struct Stats : IEquatable<Stats>
         IReadOnlyDictionary<string, long> resistances
     )
     {
-        Health = health;
-        Attack = attack;
-        Resistances = resistances;
+        this.health = health;
+        this.attack = attack;
+        this.resistances = resistances;
         _coflowInitialized = true;
     }
 
@@ -56,9 +56,9 @@ public readonly partial struct Stats : IEquatable<Stats>
     public override string ToString() => "Stats";
 
     public bool Equals(Stats other) =>
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Health, other.Health) &&
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Attack, other.Attack) &&
-        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, long>>.Default.Equals(Resistances, other.Resistances);
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(health, other.health) &&
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(attack, other.attack) &&
+        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, long>>.Default.Equals(resistances, other.resistances);
 
     public override bool Equals(object? obj) =>
         obj is Stats other && Equals(other);
@@ -66,9 +66,9 @@ public readonly partial struct Stats : IEquatable<Stats>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Health);
-        hash.Add(Attack);
-        hash.Add(Resistances);
+        hash.Add(health);
+        hash.Add(attack);
+        hash.Add(resistances);
         return hash.ToHashCode();
     }
 

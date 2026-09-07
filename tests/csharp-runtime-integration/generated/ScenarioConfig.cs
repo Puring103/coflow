@@ -12,19 +12,19 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     internal readonly bool _coflowInitialized;
 
 
-    public string Label { get; }
+    public string label { get; }
 
 
-    public IReadOnlyList<long> Samples { get; }
+    public IReadOnlyList<long> samples { get; }
 
 
-    public IReadOnlyDictionary<string, global::Stats> Checkpoints { get; }
+    public IReadOnlyDictionary<string, global::Stats> checkpoints { get; }
 
 
-    public Option<global::Stats> OptionalBonus { get; }
+    public Option<global::Stats> optionalBonus { get; }
 
 
-    public Result<Option<global::Stats>, string> Validation { get; }
+    public Result<Option<global::Stats>, string> validation { get; }
 
 
 
@@ -37,11 +37,11 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
         Result<Option<global::Stats>, string> validation
     )
     {
-        Label = label;
-        Samples = samples;
-        Checkpoints = checkpoints;
-        OptionalBonus = optionalBonus;
-        Validation = validation;
+        this.label = label;
+        this.samples = samples;
+        this.checkpoints = checkpoints;
+        this.optionalBonus = optionalBonus;
+        this.validation = validation;
         _coflowInitialized = true;
     }
 
@@ -59,11 +59,11 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     public override string ToString() => "ScenarioConfig";
 
     public bool Equals(ScenarioConfig other) =>
-        System.Collections.Generic.EqualityComparer<string>.Default.Equals(Label, other.Label) &&
-        System.Collections.Generic.EqualityComparer<IReadOnlyList<long>>.Default.Equals(Samples, other.Samples) &&
-        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, global::Stats>>.Default.Equals(Checkpoints, other.Checkpoints) &&
-        System.Collections.Generic.EqualityComparer<Option<global::Stats>>.Default.Equals(OptionalBonus, other.OptionalBonus) &&
-        System.Collections.Generic.EqualityComparer<Result<Option<global::Stats>, string>>.Default.Equals(Validation, other.Validation);
+        System.Collections.Generic.EqualityComparer<string>.Default.Equals(label, other.label) &&
+        System.Collections.Generic.EqualityComparer<IReadOnlyList<long>>.Default.Equals(samples, other.samples) &&
+        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, global::Stats>>.Default.Equals(checkpoints, other.checkpoints) &&
+        System.Collections.Generic.EqualityComparer<Option<global::Stats>>.Default.Equals(optionalBonus, other.optionalBonus) &&
+        System.Collections.Generic.EqualityComparer<Result<Option<global::Stats>, string>>.Default.Equals(validation, other.validation);
 
     public override bool Equals(object? obj) =>
         obj is ScenarioConfig other && Equals(other);
@@ -71,11 +71,11 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Label);
-        hash.Add(Samples);
-        hash.Add(Checkpoints);
-        hash.Add(OptionalBonus);
-        hash.Add(Validation);
+        hash.Add(label);
+        hash.Add(samples);
+        hash.Add(checkpoints);
+        hash.Add(optionalBonus);
+        hash.Add(validation);
         return hash.ToHashCode();
     }
 

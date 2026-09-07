@@ -52,11 +52,11 @@ internal sealed class CoflowSchema : ICoflowSchema
             14, 0, 2,
             static (ref CoflowValueWriter writer, global::ScenarioConfig value) =>
             {
-                writer.Write(value.Label);
-                writer.Write(value.Samples);
-                writer.Write(value.Checkpoints);
-                writer.Write(value.OptionalBonus);
-                writer.Write(value.Validation);
+                writer.Write(value.label);
+                writer.Write(value.samples);
+                writer.Write(value.checkpoints);
+                writer.Write(value.optionalBonus);
+                writer.Write(value.validation);
                 writer.WriteValueId(value._coflowId);
             },
             static (ref CoflowValueReader reader) => global::ScenarioConfig.WithCoflowValueId(
@@ -72,9 +72,9 @@ internal sealed class CoflowSchema : ICoflowSchema
             4, 0, 0,
             static (ref CoflowValueWriter writer, global::Stats value) =>
             {
-                writer.Write(value.Health);
-                writer.Write(value.Attack);
-                writer.Write(value.Resistances);
+                writer.Write(value.health);
+                writer.Write(value.attack);
+                writer.Write(value.resistances);
                 writer.WriteValueId(value._coflowId);
             },
             static (ref CoflowValueReader reader) => global::Stats.WithCoflowValueId(
@@ -97,31 +97,31 @@ internal sealed class CoflowSchema : ICoflowSchema
             static (value, id) => global::Character.WithCoflowValueId(value, id),
             static (context, value) => new global::Character(
                 context.Import(value.Id),
-                context.Import(value.Name),
-                context.Import(value.Class),
-                context.Import(value.Traits),
-                context.Import(value.Enabled),
-                context.Import(value.Stats),
-                context.Import(value.Tags),
-                context.Import(value.Attributes),
-                context.Import(value.PrimaryAbility),
-                context.Import(value.Abilities),
-                context.Import(value.Status),
-                context.Import(value.Fallback)
+                context.Import(value.name),
+                context.Import(value.characterClass),
+                context.Import(value.traits),
+                context.Import(value.enabled),
+                context.Import(value.stats),
+                context.Import(value.tags),
+                context.Import(value.attributes),
+                context.Import(value.primaryAbility),
+                context.Import(value.abilities),
+                context.Import(value.status),
+                context.Import(value.fallback)
             ),
             static (ref CoflowValueWriter writer, global::Character value) =>
             {
-                writer.Write(value.Name);
-                writer.Write(value.Class);
-                writer.Write(value.Traits);
-                writer.Write(value.Enabled);
-                writer.Write(value.Stats);
-                writer.Write(value.Tags);
-                writer.Write(value.Attributes);
-                writer.Write(value.PrimaryAbility);
-                writer.Write(value.Abilities);
-                writer.Write(value.Status);
-                writer.Write(value.Fallback);
+                writer.Write(value.name);
+                writer.Write(value.characterClass);
+                writer.Write(value.traits);
+                writer.Write(value.enabled);
+                writer.Write(value.stats);
+                writer.Write(value.tags);
+                writer.Write(value.attributes);
+                writer.Write(value.primaryAbility);
+                writer.Write(value.abilities);
+                writer.Write(value.status);
+                writer.Write(value.fallback);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::DamageAbility>(
@@ -132,13 +132,13 @@ internal sealed class CoflowSchema : ICoflowSchema
             static (value, id) => global::DamageAbility.WithCoflowValueId(value, id),
             static (context, value) => new global::DamageAbility(
                 context.Import(value.Id),
-                context.Import(value.Label),
-                context.Import(value.Damage)
+                context.Import(value.label),
+                context.Import(value.damage)
             ),
             static (ref CoflowValueWriter writer, global::DamageAbility value) =>
             {
-                writer.Write(value.Label);
-                writer.Write(value.Damage);
+                writer.Write(value.label);
+                writer.Write(value.damage);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::HealAbility>(
@@ -149,13 +149,13 @@ internal sealed class CoflowSchema : ICoflowSchema
             static (value, id) => global::HealAbility.WithCoflowValueId(value, id),
             static (context, value) => new global::HealAbility(
                 context.Import(value.Id),
-                context.Import(value.Label),
-                context.Import(value.Healing)
+                context.Import(value.label),
+                context.Import(value.healing)
             ),
             static (ref CoflowValueWriter writer, global::HealAbility value) =>
             {
-                writer.Write(value.Label);
-                writer.Write(value.Healing);
+                writer.Write(value.label);
+                writer.Write(value.healing);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::RuntimeSettings>(
@@ -165,13 +165,13 @@ internal sealed class CoflowSchema : ICoflowSchema
             static value => true,
             static (value, id) => global::RuntimeSettings.WithCoflowValueId(value, id),
             static (context, value) => new global::RuntimeSettings(
-                context.Import(value.Environment),
-                context.Import(value.Retries)
+                context.Import(value.environment),
+                context.Import(value.retries)
             ),
             static (ref CoflowValueWriter writer, global::RuntimeSettings value) =>
             {
-                writer.Write(value.Environment);
-                writer.Write(value.Retries);
+                writer.Write(value.environment);
+                writer.Write(value.retries);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::Scenario>(
@@ -182,15 +182,15 @@ internal sealed class CoflowSchema : ICoflowSchema
             static (value, id) => global::Scenario.WithCoflowValueId(value, id),
             static (context, value) => new global::Scenario(
                 context.Import(value.Id),
-                context.Import(value.Hero),
-                context.Import(value.Config),
-                context.Import(value.Stages)
+                context.Import(value.hero),
+                context.Import(value.config),
+                context.Import(value.stages)
             ),
             static (ref CoflowValueWriter writer, global::Scenario value) =>
             {
-                writer.Write(value.Hero);
-                writer.Write(value.Config);
-                writer.Write(value.Stages);
+                writer.Write(value.hero);
+                writer.Write(value.config);
+                writer.Write(value.stages);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::ScenarioConfig>(
@@ -200,19 +200,19 @@ internal sealed class CoflowSchema : ICoflowSchema
             static value => value._coflowInitialized,
             static (value, id) => global::ScenarioConfig.WithCoflowValueId(value, id),
             static (context, value) => new global::ScenarioConfig(
-                context.Import(value.Label),
-                context.Import(value.Samples),
-                context.Import(value.Checkpoints),
-                context.Import(value.OptionalBonus),
-                context.Import(value.Validation)
+                context.Import(value.label),
+                context.Import(value.samples),
+                context.Import(value.checkpoints),
+                context.Import(value.optionalBonus),
+                context.Import(value.validation)
             ),
             static (ref CoflowValueWriter writer, global::ScenarioConfig value) =>
             {
-                writer.Write(value.Label);
-                writer.Write(value.Samples);
-                writer.Write(value.Checkpoints);
-                writer.Write(value.OptionalBonus);
-                writer.Write(value.Validation);
+                writer.Write(value.label);
+                writer.Write(value.samples);
+                writer.Write(value.checkpoints);
+                writer.Write(value.optionalBonus);
+                writer.Write(value.validation);
                 writer.WriteValueId(value._coflowId);
             });
         runtime.RegisterTypeCodec<global::Stats>(
@@ -222,15 +222,15 @@ internal sealed class CoflowSchema : ICoflowSchema
             static value => value._coflowInitialized,
             static (value, id) => global::Stats.WithCoflowValueId(value, id),
             static (context, value) => new global::Stats(
-                context.Import(value.Health),
-                context.Import(value.Attack),
-                context.Import(value.Resistances)
+                context.Import(value.health),
+                context.Import(value.attack),
+                context.Import(value.resistances)
             ),
             static (ref CoflowValueWriter writer, global::Stats value) =>
             {
-                writer.Write(value.Health);
-                writer.Write(value.Attack);
-                writer.Write(value.Resistances);
+                writer.Write(value.health);
+                writer.Write(value.attack);
+                writer.Write(value.resistances);
                 writer.WriteValueId(value._coflowId);
             });
 
@@ -310,8 +310,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowAnnotation> Annotations { get; } = Array.Empty<CoflowAnnotation>();
         public IReadOnlyDictionary<string, object> Variants { get; } = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["arcanist"] = global::CharacterId.Arcanist,
-            ["guardian"] = global::CharacterId.Guardian,
+            ["arcanist"] = global::CharacterId.arcanist,
+            ["guardian"] = global::CharacterId.guardian,
         };
         public IReadOnlyList<CoflowAnnotation> VariantAnnotations(string variantName) => variantName switch
         {
@@ -352,57 +352,57 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::Character, string>(
-                    "name", static record => record.Name,
+                    "name", static record => record.name,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.CreateEnum<global::Character, global::CharacterClass>(
-                    "class", static record => record.Class, static value => (long)value,
+                    "characterClass", static record => record.characterClass, static value => (long)value,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.CreateEnum<global::Character, global::CharacterTrait>(
-                    "traits", static record => record.Traits, static value => (long)value,
+                    "traits", static record => record.traits, static value => (long)value,
                     false, 1, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
                 CoflowFieldBinding.Create<global::Character, bool>(
-                    "enabled", static record => record.Enabled,
+                    "enabled", static record => record.enabled,
                     false, 2, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
                 CoflowFieldBinding.Create<global::Character, global::Stats>(
-                    "stats", static record => record.Stats,
+                    "stats", static record => record.stats,
                     false, 3, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false, "Stats"),
             new(
                 CoflowFieldBinding.Create<global::Character, IReadOnlyList<string>>(
-                    "tags", static record => record.Tags,
+                    "tags", static record => record.tags,
                     false, 7, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::Character, IReadOnlyDictionary<string, long>>(
-                    "attributes", static record => record.Attributes,
+                    "attributes", static record => record.attributes,
                     false, 8, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::Character, global::Ability>(
-                    "primaryAbility", static record => record.PrimaryAbility,
+                    "primaryAbility", static record => record.primaryAbility,
                     false, 9, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false, "Ability"),
             new(
                 CoflowFieldBinding.Create<global::Character, IReadOnlyList<global::Ability>>(
-                    "abilities", static record => record.Abilities,
+                    "abilities", static record => record.abilities,
                     false, 10, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
                 CoflowFieldBinding.Create<global::Character, Result<long, string>>(
-                    "status", static record => record.Status,
+                    "status", static record => record.status,
                     false, 11, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
                 CoflowFieldBinding.Create<global::Character, Option<global::Character>>(
-                    "fallback", static record => record.Fallback,
+                    "fallback", static record => record.fallback,
                     false, 13, 0, 2),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
@@ -451,12 +451,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::DamageAbility, string>(
-                    "label", static record => record.Label,
+                    "label", static record => record.label,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::DamageAbility, long>(
-                    "damage", static record => record.Damage,
+                    "damage", static record => record.damage,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
 
@@ -501,12 +501,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::HealAbility, string>(
-                    "label", static record => record.Label,
+                    "label", static record => record.label,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::HealAbility, long>(
-                    "healing", static record => record.Healing,
+                    "healing", static record => record.healing,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
 
@@ -551,7 +551,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::HostServices, string>(
-                    "environment", static record => record.Environment,
+                    "environment", static record => record.environment,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
@@ -609,12 +609,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::RuntimeSettings, string>(
-                    "environment", static record => record.Environment,
+                    "environment", static record => record.environment,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::RuntimeSettings, long>(
-                    "retries", static record => record.Retries,
+                    "retries", static record => record.retries,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
 
@@ -659,17 +659,17 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::Scenario, global::Character>(
-                    "hero", static record => record.Hero,
+                    "hero", static record => record.hero,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false, null, "Character"),
             new(
                 CoflowFieldBinding.Create<global::Scenario, global::ScenarioConfig>(
-                    "config", static record => record.Config,
+                    "config", static record => record.config,
                     false, 1, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false, "ScenarioConfig"),
             new(
                 CoflowFieldBinding.Create<global::Scenario, IReadOnlyList<CoflowFunction<long, long>>>(
-                    "stages", static record => record.Stages,
+                    "stages", static record => record.stages,
                     false, 15, 0, 2),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
@@ -886,27 +886,27 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::ScenarioConfig, string>(
-                    "label", static record => record.Label,
+                    "label", static record => record.label,
                     true, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::ScenarioConfig, IReadOnlyList<long>>(
-                    "samples", static record => record.Samples,
+                    "samples", static record => record.samples,
                     true, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::ScenarioConfig, IReadOnlyDictionary<string, global::Stats>>(
-                    "checkpoints", static record => record.Checkpoints,
+                    "checkpoints", static record => record.checkpoints,
                     true, 1, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::ScenarioConfig, Option<global::Stats>>(
-                    "optionalBonus", static record => record.OptionalBonus,
+                    "optionalBonus", static record => record.optionalBonus,
                     true, 2, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::ScenarioConfig, Result<Option<global::Stats>, string>>(
-                    "validation", static record => record.Validation,
+                    "validation", static record => record.validation,
                     true, 7, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
 
@@ -938,17 +938,17 @@ internal sealed class CoflowSchema : ICoflowSchema
         {
             new(
                 CoflowFieldBinding.Create<global::Stats, long>(
-                    "health", static record => record.Health,
+                    "health", static record => record.health,
                     true, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::Stats, long>(
-                    "attack", static record => record.Attack,
+                    "attack", static record => record.attack,
                     true, 1, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
                 CoflowFieldBinding.Create<global::Stats, IReadOnlyDictionary<string, long>>(
-                    "resistances", static record => record.Resistances,
+                    "resistances", static record => record.resistances,
                     true, 2, 0, 0),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
@@ -1164,15 +1164,15 @@ internal sealed class CoflowSchema : ICoflowSchema
     private static global::CharacterId ReadEnumCft_4368617261637465724964(CfdValueNode node) =>
         CfdValueReader.Enum<global::CharacterId>(node, "CharacterId", static token => token switch
         {
-            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.Arcanist,
-            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.Guardian,
+            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.arcanist,
+            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.guardian,
             _ => null,
         });
     private static global::CharacterId ReadEnumCft_4368617261637465724964Text(string value) =>
         CfdValueReader.EnumText<global::CharacterId>(value, "CharacterId", static token => token switch
         {
-            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.Arcanist,
-            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.Guardian,
+            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.arcanist,
+            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.guardian,
             _ => null,
         });
 
@@ -1207,7 +1207,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         return new global::Character(
             default(global::CharacterId),
             fields.TryGetValue("name", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `name`", nameof(fields)),
-            fields.TryGetValue("class", out var value1) ? (global::CharacterClass)value1! : throw new ArgumentException("missing object field `class`", nameof(fields)),
+            fields.TryGetValue("characterClass", out var value1) ? (global::CharacterClass)value1! : throw new ArgumentException("missing object field `characterClass`", nameof(fields)),
             fields.TryGetValue("traits", out var value2) ? (global::CharacterTrait)value2! : (global::CharacterTrait)0L,
             fields.TryGetValue("enabled", out var value3) ? (bool)value3! : true,
             fields.TryGetValue("stats", out var value4) ? (global::Stats)value4! : throw new ArgumentException("missing object field `stats`", nameof(fields)),
@@ -1301,20 +1301,20 @@ internal sealed class CoflowSchema : ICoflowSchema
         using var scope = context.EnterRecord(record.DeclaredType, record.Key);
         var fields = record.Fields;
         var key = record.Key;
-        CfdValueReader.ValidateFields(fields, "name", "class", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
+        CfdValueReader.ValidateFields(fields, "name", "characterClass", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
         target.Id = ReadEnumCft_4368617261637465724964Text(key);
-        target._coflowName = CfdValueReader.String(CfdValueReader.Field(fields, "name"), context);
-        target._coflowClass = ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "class"));
-        target._coflowTraits = CfdValueReader.FindField(fields, "traits") is { } valueTraits ? ReadEnumCft_4368617261637465725472616974(valueTraits) : (global::CharacterTrait)0L;
-        target._coflowEnabled = CfdValueReader.FindField(fields, "enabled") is { } valueEnabled ? CfdValueReader.Boolean(valueEnabled) : true;
-        target._coflowStats = ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context);
-        target._coflowTags = CfdValueReader.Array(CfdValueReader.Field(fields, "tags"), context, static (item, context) => CfdValueReader.String(item, context));
-        target._coflowAttributes = CfdValueReader.Dictionary(CfdValueReader.Field(fields, "attributes"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item));
-        target._coflowPrimaryAbility = ReadCft_4162696C697479(CfdValueReader.Field(fields, "primaryAbility"), context);
-        target._coflowAbilities = CfdValueReader.FindField(fields, "abilities") is { } valueAbilities ? CfdValueReader.Array(valueAbilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>();
-        target._coflowStatus = CfdValueReader.FindField(fields, "status") is { } valueStatus ? CfdValueReader.Result(valueStatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L);
-        target._coflowFallback = CfdValueReader.FindField(fields, "fallback") is { } valueFallback ? CfdValueReader.Option(valueFallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None;
-        _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
+        target._coflowname = CfdValueReader.String(CfdValueReader.Field(fields, "name"), context);
+        target._coflowcharacterClass = ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "characterClass"));
+        target._coflowtraits = CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::CharacterTrait)0L;
+        target._coflowenabled = CfdValueReader.FindField(fields, "enabled") is { } valueenabled ? CfdValueReader.Boolean(valueenabled) : true;
+        target._coflowstats = ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context);
+        target._coflowtags = CfdValueReader.Array(CfdValueReader.Field(fields, "tags"), context, static (item, context) => CfdValueReader.String(item, context));
+        target._coflowattributes = CfdValueReader.Dictionary(CfdValueReader.Field(fields, "attributes"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item));
+        target._coflowprimaryAbility = ReadCft_4162696C697479(CfdValueReader.Field(fields, "primaryAbility"), context);
+        target._coflowabilities = CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>();
+        target._coflowstatus = CfdValueReader.FindField(fields, "status") is { } valuestatus ? CfdValueReader.Result(valuestatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L);
+        target._coflowfallback = CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None;
+        _ = CfdValueReader.FindField(fields, "power") is { } valuepower ? context.RequiredFunction(valuepower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
     }
 
 
@@ -1330,21 +1330,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         string key,
         CfdLoadContext context)
     {
-        CfdValueReader.ValidateFields(fields, "name", "class", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
-            _ = CfdValueReader.FindField(fields, "power") is { } valuePower ? context.RequiredFunction(valuePower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
+        CfdValueReader.ValidateFields(fields, "name", "characterClass", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
+            _ = CfdValueReader.FindField(fields, "power") is { } valuepower ? context.RequiredFunction(valuepower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
         return new global::Character(
             ReadEnumCft_4368617261637465724964Text(key),
             CfdValueReader.String(CfdValueReader.Field(fields, "name"), context),
-            ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "class")),
-            CfdValueReader.FindField(fields, "traits") is { } valueTraits ? ReadEnumCft_4368617261637465725472616974(valueTraits) : (global::CharacterTrait)0L,
-            CfdValueReader.FindField(fields, "enabled") is { } valueEnabled ? CfdValueReader.Boolean(valueEnabled) : true,
+            ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "characterClass")),
+            CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::CharacterTrait)0L,
+            CfdValueReader.FindField(fields, "enabled") is { } valueenabled ? CfdValueReader.Boolean(valueenabled) : true,
             ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context),
             CfdValueReader.Array(CfdValueReader.Field(fields, "tags"), context, static (item, context) => CfdValueReader.String(item, context)),
             CfdValueReader.Dictionary(CfdValueReader.Field(fields, "attributes"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item)),
             ReadCft_4162696C697479(CfdValueReader.Field(fields, "primaryAbility"), context),
-            CfdValueReader.FindField(fields, "abilities") is { } valueAbilities ? CfdValueReader.Array(valueAbilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>(),
-            CfdValueReader.FindField(fields, "status") is { } valueStatus ? CfdValueReader.Result(valueStatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L),
-            CfdValueReader.FindField(fields, "fallback") is { } valueFallback ? CfdValueReader.Option(valueFallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None
+            CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>(),
+            CfdValueReader.FindField(fields, "status") is { } valuestatus ? CfdValueReader.Result(valuestatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L),
+            CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None
         );
     }
 
@@ -1358,8 +1358,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         var key = record.Key;
         CfdValueReader.ValidateFields(fields, "label", "damage");
         target.Id = key;
-        target._coflowLabel = CfdValueReader.String(CfdValueReader.Field(fields, "label"), context);
-        target._coflowDamage = CfdValueReader.Int64(CfdValueReader.Field(fields, "damage"));
+        target._coflowlabel = CfdValueReader.String(CfdValueReader.Field(fields, "label"), context);
+        target._coflowdamage = CfdValueReader.Int64(CfdValueReader.Field(fields, "damage"));
     }
 
 
@@ -1393,8 +1393,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         var key = record.Key;
         CfdValueReader.ValidateFields(fields, "label", "healing");
         target.Id = key;
-        target._coflowLabel = CfdValueReader.String(CfdValueReader.Field(fields, "label"), context);
-        target._coflowHealing = CfdValueReader.Int64(CfdValueReader.Field(fields, "healing"));
+        target._coflowlabel = CfdValueReader.String(CfdValueReader.Field(fields, "label"), context);
+        target._coflowhealing = CfdValueReader.Int64(CfdValueReader.Field(fields, "healing"));
     }
 
 
@@ -1426,32 +1426,32 @@ internal sealed class CoflowSchema : ICoflowSchema
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function0,
-                host._coflowTrace));
+                host._coflowtrace));
         var function1 = context.Function(null, "adjust", typeof(long), typeof(long), typeof(CoflowFunction<long, long>));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function1,
-                host._coflowAdjust));
+                host._coflowadjust));
         var function2 = context.Function(null, "select", typeof(CoflowFunction<long, long>), typeof(CoflowFunction<long, long>));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function2,
-                host._coflowSelect));
+                host._coflowselect));
         var function3 = context.Function(null, "decorate", typeof(string), typeof(string));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function3,
-                host._coflowDecorate));
+                host._coflowdecorate));
         var function4 = context.Function(null, "normalize", typeof(Result<long, string>), typeof(Option<long>));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function4,
-                host._coflowNormalize));
+                host._coflownormalize));
         var function5 = context.Function(null, "echoStats", typeof(global::Stats), typeof(global::Stats));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function5,
-                host._coflowEchoStats));
+                host._coflowechoStats));
         return host;
     }
 
@@ -1464,8 +1464,8 @@ internal sealed class CoflowSchema : ICoflowSchema
         var fields = record.Fields;
         var key = record.Key;
         CfdValueReader.ValidateFields(fields, "environment", "retries");
-        target._coflowEnvironment = CfdValueReader.String(CfdValueReader.Field(fields, "environment"), context);
-        target._coflowRetries = CfdValueReader.FindField(fields, "retries") is { } valueRetries ? CfdValueReader.Int64(valueRetries) : 3L;
+        target._coflowenvironment = CfdValueReader.String(CfdValueReader.Field(fields, "environment"), context);
+        target._coflowretries = CfdValueReader.FindField(fields, "retries") is { } valueretries ? CfdValueReader.Int64(valueretries) : 3L;
     }
 
 
@@ -1484,7 +1484,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdValueReader.ValidateFields(fields, "environment", "retries");
         return new global::RuntimeSettings(
             CfdValueReader.String(CfdValueReader.Field(fields, "environment"), context),
-            CfdValueReader.FindField(fields, "retries") is { } valueRetries ? CfdValueReader.Int64(valueRetries) : 3L
+            CfdValueReader.FindField(fields, "retries") is { } valueretries ? CfdValueReader.Int64(valueretries) : 3L
         );
     }
 
@@ -1498,9 +1498,9 @@ internal sealed class CoflowSchema : ICoflowSchema
         var key = record.Key;
         CfdValueReader.ValidateFields(fields, "hero", "config", "stages", "execute", "callHost", "makeScaler", "apply", "compose", "hostFunction", "optionalFunction", "resultFunction", "integerLoop", "floatLoop", "numericConversions", "enumRoundTrip", "increment", "directCallChain", "tailRecursion", "tailAccumulator", "fieldReadLoop", "collectionPipeline", "hostCall", "hostComposite", "propagateOption", "propagateResult", "propagateNested", "makeOptionalAdder", "collectionQueries", "emptyCollectionQueries", "makeStats", "makeDefaultStats", "readExternalStats", "hostStats", "copyExternalCharacter", "readExternalCharacterCollections", "copyOptionalStats", "formatValues", "syntaxControlFlow", "syntaxOperators", "syntaxMatch", "typeMetadata", "builtinSyntax", "formatSyntax", "primeSum", "matrixKernel", "fibonacci");
         target.Id = key;
-        target._coflowHero = CfdValueReader.Reference<global::Character>(CfdValueReader.Field(fields, "hero"), context, "Character");
-        target._coflowConfig = ReadCft_5363656E6172696F436F6E666967(CfdValueReader.Field(fields, "config"), context);
-        target._coflowStages = CfdValueReader.Array(CfdValueReader.Field(fields, "stages"), context, static (item, context) => context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long), new Type[] { typeof(long) }));
+        target._coflowhero = CfdValueReader.Reference<global::Character>(CfdValueReader.Field(fields, "hero"), context, "Character");
+        target._coflowconfig = ReadCft_5363656E6172696F436F6E666967(CfdValueReader.Field(fields, "config"), context);
+        target._coflowstages = CfdValueReader.Array(CfdValueReader.Field(fields, "stages"), context, static (item, context) => context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long), new Type[] { typeof(long) }));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "execute"), "execute", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "callHost"), "callHost", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeScaler"), "makeScaler", typeof(CoflowFunction<long, long>), typeof(long));
@@ -1648,11 +1648,11 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "health", "attack", "resistances", "score");
-            _ = CfdValueReader.FindField(fields, "score") is { } valueScore ? context.RequiredFunction(valueScore, "score", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    health + attack + bonus\r\n  }", "score", typeof(long), typeof(long));
+            _ = CfdValueReader.FindField(fields, "score") is { } valuescore ? context.RequiredFunction(valuescore, "score", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    health + attack + bonus\r\n  }", "score", typeof(long), typeof(long));
         return new global::Stats(
             CfdValueReader.Int64(CfdValueReader.Field(fields, "health")),
             CfdValueReader.Int64(CfdValueReader.Field(fields, "attack")),
-            CfdValueReader.FindField(fields, "resistances") is { } valueResistances ? CfdValueReader.Dictionary(valueResistances, context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item)) : CoflowConstantValues.Dictionary<string, long>()
+            CfdValueReader.FindField(fields, "resistances") is { } valueresistances ? CfdValueReader.Dictionary(valueresistances, context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item)) : CoflowConstantValues.Dictionary<string, long>()
         );
     }
 

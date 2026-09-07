@@ -119,19 +119,21 @@ fn eval_when_stmt(
     condition: &CftSchemaCheckExpr,
     body: &[CftSchemaCheckStmt],
 ) -> EvalFlow {
-    match evaluator.eval_expr(condition) {
-        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
+    match evaluator.eval_condition(condition) {
+        Ok((value, bindings)) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
             evaluator.contexts.push(CheckDiagnosticContext::When {
                 expression: render_expr(condition),
             });
+            evaluator.scopes.push(bindings);
             let flow = eval_stmts(evaluator, body);
+            evaluator.scopes.pop();
             let _ = evaluator.contexts.pop();
             flow
         }
-        Ok(value) if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) => {
+        Ok((value, _)) if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) => {
             EvalFlow::Continue
         }
-        Ok(value) => {
+        Ok((value, _)) => {
             evaluator.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 value.location,

@@ -96,6 +96,9 @@ impl EvaluationTrace {
                 expr: inner,
                 predicate,
             } => match predicate {
+                CftSchemaTypePredicate::Some { .. } => {
+                    trace.request(inner, CaptureRequest::DISPLAY);
+                }
                 CftSchemaTypePredicate::Type(_) => {
                     trace.request(inner, CaptureRequest::ACTUAL_TYPE);
                 }

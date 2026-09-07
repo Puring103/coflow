@@ -500,9 +500,14 @@ fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftS
             } => CftSchemaCheckExprKind::Is {
                 expr: Box::new(self.convert_check_expr(module, inner)),
                 predicate: match predicate {
+                    TypePredicate::Some { binding, .. } => CftSchemaTypePredicate::Some {
+                        binding: binding.name.clone(),
+                    },
                     TypePredicate::Type(name) => {
                         CftSchemaTypePredicate::Type(TypeName::from_validated(
-                            name.name.clone(),
+                            self.resolved_aliases.get(&name.name)
+                                .and_then(super::inferred_type::InferredType::object_name)
+                                .map_or_else(|| name.name.clone(), ToString::to_string),
                         ))
                     }
                 },

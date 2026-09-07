@@ -11,13 +11,13 @@ public abstract partial class Ability
     internal CoflowValueId _coflowId;
 
 
-    internal string _coflowLabel = default!;
+    internal string _coflowlabel = default!;
 
-    public string Label
+    public string label
     {
         get
         {
-            return _coflowLabel;
+            return _coflowlabel;
         }
     }
 
@@ -30,7 +30,7 @@ public abstract partial class Ability
         string label
     )
     {
-        _coflowLabel = label;
+        this._coflowlabel = label;
     }
 
     internal static Ability WithCoflowValueId(Ability value, CoflowValueId coflowId)

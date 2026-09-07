@@ -11,31 +11,31 @@ public sealed partial class Services : IEquatable<Services>
     internal CoflowValueId _coflowId;
 
 
-    internal string _coflowEnvironment = default!;
+    internal string _coflowenvironment = default!;
 
-    public string Environment
+    public string environment
     {
         get
         {
-            return _coflowEnvironment;
+            return _coflowenvironment;
         }
     }
 
 
 
-    internal Func<long, long> _coflowAdjust { get; } = default!;
+    internal Func<long, long> _coflowadjust { get; } = default!;
 
 
-    public long Adjust(global::Coflow.Runtime.Coflow coflow, long arg0)
+    public long adjust(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(1), arg0);
     }
 
-    internal Action<long> _coflowNotify { get; } = default!;
+    internal Action<long> _coflownotify { get; } = default!;
 
 
-    public void Notify(global::Coflow.Runtime.Coflow coflow, long arg0)
+    public void notify(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         CoflowInvoker.InvokeVoid<long>(
             coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(2), arg0);
@@ -50,9 +50,9 @@ public sealed partial class Services : IEquatable<Services>
         Action<long> notify
     )
     {
-        _coflowEnvironment = environment;
-        _coflowAdjust = adjust;
-        _coflowNotify = notify;
+        this._coflowenvironment = environment;
+        this._coflowadjust = adjust;
+        this._coflownotify = notify;
     }
 
     internal static Services WithCoflowValueId(Services value, CoflowValueId coflowId)
@@ -70,7 +70,7 @@ public sealed partial class Services : IEquatable<Services>
 
     public bool Equals(Services? other) =>
         other is not null &&
-        System.Collections.Generic.EqualityComparer<string>.Default.Equals(Environment, other.Environment);
+        System.Collections.Generic.EqualityComparer<string>.Default.Equals(environment, other.environment);
 
     public override bool Equals(object? obj) =>
         obj is Services other && Equals(other);
@@ -78,7 +78,7 @@ public sealed partial class Services : IEquatable<Services>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Environment);
+        hash.Add(environment);
         return hash.ToHashCode();
     }
 

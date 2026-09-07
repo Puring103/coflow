@@ -11,67 +11,67 @@ public sealed partial class HostServices : IEquatable<HostServices>
     internal CoflowValueId _coflowId;
 
 
-    internal string _coflowEnvironment = default!;
+    internal string _coflowenvironment = default!;
 
-    public string Environment
+    public string environment
     {
         get
         {
-            return _coflowEnvironment;
+            return _coflowenvironment;
         }
     }
 
 
 
-    internal Action<string> _coflowTrace { get; } = default!;
+    internal Action<string> _coflowtrace { get; } = default!;
 
 
-    public void Trace(global::Coflow.Runtime.Coflow coflow, string message)
+    public void trace(global::Coflow.Runtime.Coflow coflow, string message)
     {
         CoflowInvoker.InvokeVoid<string>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(1), message);
     }
 
-    internal Func<long, CoflowFunction<long, long>, long> _coflowAdjust { get; } = default!;
+    internal Func<long, CoflowFunction<long, long>, long> _coflowadjust { get; } = default!;
 
 
-    public long Adjust(global::Coflow.Runtime.Coflow coflow, long value, CoflowFunction<long, long> operation)
+    public long adjust(global::Coflow.Runtime.Coflow coflow, long value, CoflowFunction<long, long> operation)
     {
         return CoflowInvoker.Invoke<long, CoflowFunction<long, long>, long>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(2), value, operation);
     }
 
-    internal Func<CoflowFunction<long, long>, CoflowFunction<long, long>> _coflowSelect { get; } = default!;
+    internal Func<CoflowFunction<long, long>, CoflowFunction<long, long>> _coflowselect { get; } = default!;
 
 
-    public CoflowFunction<long, long> Select(global::Coflow.Runtime.Coflow coflow, CoflowFunction<long, long> operation)
+    public CoflowFunction<long, long> select(global::Coflow.Runtime.Coflow coflow, CoflowFunction<long, long> operation)
     {
         return CoflowInvoker.Invoke<CoflowFunction<long, long>, CoflowFunction<long, long>>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(3), operation);
     }
 
-    internal Func<string, string> _coflowDecorate { get; } = default!;
+    internal Func<string, string> _coflowdecorate { get; } = default!;
 
 
-    public string Decorate(global::Coflow.Runtime.Coflow coflow, string value)
+    public string decorate(global::Coflow.Runtime.Coflow coflow, string value)
     {
         return CoflowInvoker.Invoke<string, string>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(4), value);
     }
 
-    internal Func<Option<long>, Result<long, string>> _coflowNormalize { get; } = default!;
+    internal Func<Option<long>, Result<long, string>> _coflownormalize { get; } = default!;
 
 
-    public Result<long, string> Normalize(global::Coflow.Runtime.Coflow coflow, Option<long> value)
+    public Result<long, string> normalize(global::Coflow.Runtime.Coflow coflow, Option<long> value)
     {
         return CoflowInvoker.Invoke<Option<long>, Result<long, string>>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(5), value);
     }
 
-    internal Func<global::Stats, global::Stats> _coflowEchoStats { get; } = default!;
+    internal Func<global::Stats, global::Stats> _coflowechoStats { get; } = default!;
 
 
-    public global::Stats EchoStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public global::Stats echoStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
     {
         return CoflowInvoker.Invoke<global::Stats, global::Stats>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(6), value);
@@ -90,13 +90,13 @@ public sealed partial class HostServices : IEquatable<HostServices>
         Func<global::Stats, global::Stats> echoStats
     )
     {
-        _coflowEnvironment = environment;
-        _coflowTrace = trace;
-        _coflowAdjust = adjust;
-        _coflowSelect = select;
-        _coflowDecorate = decorate;
-        _coflowNormalize = normalize;
-        _coflowEchoStats = echoStats;
+        this._coflowenvironment = environment;
+        this._coflowtrace = trace;
+        this._coflowadjust = adjust;
+        this._coflowselect = select;
+        this._coflowdecorate = decorate;
+        this._coflownormalize = normalize;
+        this._coflowechoStats = echoStats;
     }
 
     internal static HostServices WithCoflowValueId(HostServices value, CoflowValueId coflowId)
@@ -114,7 +114,7 @@ public sealed partial class HostServices : IEquatable<HostServices>
 
     public bool Equals(HostServices? other) =>
         other is not null &&
-        System.Collections.Generic.EqualityComparer<string>.Default.Equals(Environment, other.Environment);
+        System.Collections.Generic.EqualityComparer<string>.Default.Equals(environment, other.environment);
 
     public override bool Equals(object? obj) =>
         obj is HostServices other && Equals(other);
@@ -122,7 +122,7 @@ public sealed partial class HostServices : IEquatable<HostServices>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Environment);
+        hash.Add(environment);
         return hash.ToHashCode();
     }
 

@@ -54,50 +54,50 @@ public class VmExecutionBenchmarks
             BenchmarkData.Read("characters.cfd"),
             BenchmarkData.Read("scenario.cfd"));
         _scenario = _coflow.Table(Scenario.Table).Get("fullRoundTrip").Value;
-        _vmClosure = _scenario.MakeScaler(_coflow, 3);
+        _vmClosure = _scenario.makeScaler(_coflow, 3);
     }
 
     [Benchmark]
-    public long IntegerLoop() => _scenario.IntegerLoop(_coflow, 1_000);
+    public long IntegerLoop() => _scenario.integerLoop(_coflow, 1_000);
 
     [Benchmark]
-    public double FloatLoop() => _scenario.FloatLoop(_coflow, 1_000);
+    public double FloatLoop() => _scenario.floatLoop(_coflow, 1_000);
 
     [Benchmark]
-    public long DirectCfdCallChain() => _scenario.DirectCallChain(_coflow, 10);
+    public long DirectCfdCallChain() => _scenario.directCallChain(_coflow, 10);
 
     [Benchmark]
-    public long TailRecursion() => _scenario.TailRecursion(_coflow, 1_000);
+    public long TailRecursion() => _scenario.tailRecursion(_coflow, 1_000);
 
     [Benchmark]
-    public long TailAccumulator() => _scenario.TailAccumulator(_coflow, 1_000, 0);
+    public long TailAccumulator() => _scenario.tailAccumulator(_coflow, 1_000, 0);
 
     [Benchmark]
-    public long GeneratedFieldRead() => _scenario.FieldReadLoop(_coflow, 1_000);
+    public long GeneratedFieldRead() => _scenario.fieldReadLoop(_coflow, 1_000);
 
     [Benchmark]
-    public long MapFilterFold() => _scenario.CollectionPipeline(_coflow, 6);
+    public long MapFilterFold() => _scenario.collectionPipeline(_coflow, 6);
 
     [Benchmark]
-    public long CfdToHost() => _scenario.HostCall(_coflow, 4);
+    public long CfdToHost() => _scenario.hostCall(_coflow, 4);
 
     [Benchmark]
-    public long VmHostVmClosure() => _scenario.CallHost(_coflow, 4);
+    public long VmHostVmClosure() => _scenario.callHost(_coflow, 4);
 
     [Benchmark]
     public long ReturnedVmClosure() => _vmClosure.Invoke(_coflow, 4);
 
     [Benchmark]
-    public long PrimeTrialDivision() => _scenario.PrimeSum(_coflow, 250);
+    public long PrimeTrialDivision() => _scenario.primeSum(_coflow, 250);
 
     [Benchmark]
-    public long MatrixKernel() => _scenario.MatrixKernel(_coflow, 12);
+    public long MatrixKernel() => _scenario.matrixKernel(_coflow, 12);
 
     [Benchmark]
-    public long NonTailRecursiveFibonacci() => _scenario.Fibonacci(_coflow, 18);
+    public long NonTailRecursiveFibonacci() => _scenario.fibonacci(_coflow, 18);
 
     [Benchmark]
-    public bool BuiltinAnalytics() => _scenario.BuiltinSyntax(_coflow, "abc");
+    public bool BuiltinAnalytics() => _scenario.builtinSyntax(_coflow, "abc");
 }
 
 [MemoryDiagnoser]

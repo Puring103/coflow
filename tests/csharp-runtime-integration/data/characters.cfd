@@ -5,7 +5,7 @@ RuntimeSettings: RuntimeSettings {
 Character {
   guardian {
     name: "Guardian",
-    class: Guardian,
+    characterClass: Guardian,
     traits: Durable,
     stats: Stats {
       health: 120,
@@ -20,7 +20,7 @@ Character {
 
   arcanist {
     name: "Arcanist",
-    class: Arcanist,
+    characterClass: Arcanist,
     traits: Ranged | Magical,
     stats: Stats {
       health: 75,

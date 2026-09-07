@@ -13,13 +13,13 @@ public sealed partial class DamageAbility : global::Ability, IEquatable<DamageAb
     public string Id { get; internal set; } = default!;
 
 
-    internal long _coflowDamage = default!;
+    internal long _coflowdamage = default!;
 
-    public long Damage
+    public long damage
     {
         get
         {
-            return _coflowDamage;
+            return _coflowdamage;
         }
     }
 
@@ -34,8 +34,8 @@ public sealed partial class DamageAbility : global::Ability, IEquatable<DamageAb
         long damage
     ) : base(label)
     {
-        Id = id;
-        _coflowDamage = damage;
+        this.Id = id;
+        this._coflowdamage = damage;
     }
 
     internal static DamageAbility WithCoflowValueId(DamageAbility value, CoflowValueId coflowId)

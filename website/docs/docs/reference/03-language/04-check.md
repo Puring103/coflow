@@ -34,12 +34,12 @@ const MAX_LEVEL = 100;
 
 type Monster {
   level: int;
-  next: &Monster? = null;
+  next: Option<&Monster> = None;
 
   check {
     id != "";
     level <= MAX_LEVEL;
-    next == null || next.level >= level;
+    when (next is Some(monster)) { monster.level >= level; }
   }
 }
 ```
@@ -66,7 +66,7 @@ check {
 }
 ```
 
-普通字符串包含 `{expression}` 时会自动识别为格式化字符串，可以作为字符串表达式或诊断消息；不存在 `f"..."` 语法。插值支持 `null`、bool、int、float、string 和 enum；集合、object 和 record ref 不能直接插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
+普通字符串包含 `{expression}` 时会自动识别为格式化字符串，可以作为字符串表达式或诊断消息。插值支持 bool、int、float、string 和 enum；Option 通过 `Some` 绑定内部标量后可以插值。`&#123;&#123;` 和 `&#125;&#125;` 分别表示两个花括号转义，结果为字面量 `{` 和 `}`。消息只在条件失败时求值。
 
 ## 运算符
 
@@ -79,7 +79,7 @@ check {
 | 整数除法和余数 | `//`、`%` | `int` |
 | 移位 | `<<`、`>>` | `int` |
 | 位运算 | `&`、`|`、`^`、`~` | `int` 或同一个 `@flag` enum |
-| 类型判断 | `is TypeName`、`is null` | 对象或 nullable 值 |
+| 模式判断 | `is TypeName`、`is Some(name)` | 对象或 `Option<T>` |
 
 `//` 是整数除法，不是注释。CFT 注释使用 `#`。
 
@@ -101,7 +101,7 @@ check {
 
 从高到低：
 
-1. 字段访问、索引和调用：`.field`、`?.field`、`[index]`、`?[index]`、`()`
+1. 字段访问、索引和调用：`.field`、`[index]`、`()`
 2. 一元运算：`!`、`~`、`-`
 3. 幂：`**`，从右向左结合
 4. 乘除：`*`、`/`、`//`、`%`
@@ -111,7 +111,6 @@ check {
 8. 类型判断：`is`
 9. 逻辑与：`&&`
 10. 逻辑或：`||`
-11. null 合并：`??`，从右向左结合
 
 可以使用括号明确计算顺序。
 
@@ -127,24 +126,30 @@ check {
 }
 ```
 
-访问 nullable 值之前应先排除 `null`。`&&` 和 `||` 支持短路：
+## Option 模式匹配
+
+`Option<T>` 使用 `== None` 或 `!= None` 判断是否有值，使用 `is Some(name)` 将内部 `T` 绑定为局部变量。`&&` 和 `||` 支持短路：
 
 ```cft
 check {
-  next == null || next.level > level;
+  next == None || (next is Some(monster) && monster.level > level);
 }
 ```
 
-也可以使用安全访问和 null 合并：
+绑定在模式成立时可用于同一 `&&` 链的后续表达式，以及以该条件为前提的 `when` 块：
 
 ```cft
 check {
-  (next?.level ?? 0) >= 0;
-  (optional_rewards?[0]?.count ?? 0) > 0;
+  when (next is Some(monster)) {
+    monster.level > level;
+  }
+  when (optional_rewards is Some(rewards) && rewards.len() > 0) {
+    rewards[0].count > 0;
+  }
 }
 ```
 
-`?.` 和 `?[...]` 只允许 nullable receiver；receiver 为 `null` 时返回 `null`，否则执行普通访问。它们不会吞掉数组越界、字典 key 缺失、引用失败或其他求值错误。`lhs ?? rhs` 要求 `lhs` 为 nullable、`rhs` 与非 null 的 lhs 类型一致，并且只在 lhs 为 null 时求值 rhs。
+每层 `Option` 分别匹配一次。绑定的作用域限定在对应成立分支内，名称遵循局部变量的唯一性要求。`None` 比较保留变量的 `Option<T>` 类型，取内部值使用 `Some` 模式绑定。
 
 ## `when` 块
 
@@ -153,8 +158,7 @@ check {
 ```cft
 check {
   when !is_passive {
-    cooldown != null;
-    cooldown > 0.0;
+    cooldown is Some(duration) && duration > 0.0;
   }
 }
 ```
@@ -224,12 +228,17 @@ CFT 编译器静态记录 statement 在所有可能分支中使用的顶层字�
 
 ## 类型判断
 
-`is` 可以判断多态对象的实际类型，或判断 nullable 值是否为 `null`：
+`is TypeName` 判断多态对象或记录引用的实际类型。成立分支中的变量或字段访问路径收窄为目标类型，可以读取子类字段：
 
 ```cft
 check {
-  reward is CurrencyReward;
-  optional_item is null;
+  reward is CurrencyReward && reward.amount > 0;
+  when (reward is CurrencyReward) {
+    reward.amount > 0;
+  }
+  when (optional_item is Some(item) && item is Weapon) {
+    item.damage > 0;
+  }
 }
 ```
 
@@ -239,7 +248,7 @@ check {
 | --- | --- | --- | --- |
 | `value.len()` | string / array / dict | `int` | Unicode 字符数或元素数量 |
 | `value.contains(x)` | string / array / dict | `bool` | 子串、array 元素或 dict key 是否存在 |
-| `array.isUnique()` | int、bool、string、enum 数组及其 nullable 形式 | `bool` | 检查元素是否唯一 |
+| `array.isUnique()` | int、bool、string、enum 数组 | `bool` | 检查元素是否唯一 |
 | `array.min()` | int / float / enum array | 元素类型 | 最小值 |
 | `array.max()` | int / float / enum array | 元素类型 | 最大值 |
 | `array.sum()` | int / float array | 元素类型 | 求和 |

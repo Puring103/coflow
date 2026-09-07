@@ -47,7 +47,7 @@ sealed type HealAbility : Ability {
 @idAsEnum(CharacterId)
 type Character {
   name: string;
-  class: CharacterClass;
+  characterClass: CharacterClass;
   traits: CharacterTrait = CharacterTrait::Empty;
   enabled: bool = true;
   stats: Stats;

@@ -3,22 +3,22 @@
 using System.Collections.Generic;
 
     /// <summary>Values selected explicitly from the language dimension.</summary>
-    public readonly struct Language<T>
+    public readonly struct language<T>
     {
         private readonly IReadOnlyDictionary<string, T>? _variants;
         private static readonly IReadOnlyDictionary<string, T> EmptyVariants =
             new System.Collections.ObjectModel.ReadOnlyDictionary<string, T>(new Dictionary<string, T>());
         internal IReadOnlyDictionary<string, T> Variants => _variants ?? EmptyVariants;
-        internal Language<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
+        internal language<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
             new(context.Import(Default), context.Import(Variants));
         public T Default { get; }
-        public Language(T defaultValue)
+        public language(T defaultValue)
         {
             Default = defaultValue;
             _variants = null;
         }
 
-        internal Language(T defaultValue, IReadOnlyDictionary<string, T> variants)
+        internal language(T defaultValue, IReadOnlyDictionary<string, T> variants)
         {
             Default = defaultValue;
             _variants = variants;

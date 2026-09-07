@@ -13,7 +13,7 @@ if (!unbound.Success)
 var unboundFirst = coflow.Table(Item.Table).Get("first").Value;
 try
 {
-    _ = unboundFirst.Calculate(coflow, 3);
+    _ = unboundFirst.calculate(coflow, 3);
     throw new InvalidOperationException("An unbound Host call unexpectedly succeeded.");
 }
 catch (CoflowFaultException error) when (error.InnerException is CoflowFunctionNotBoundException)
@@ -29,14 +29,14 @@ if (!result.Success)
 var publishedServices = coflow.Singleton<Services>().Value;
 if (ReferenceEquals(publishedServices, services))
     throw new InvalidOperationException("The published snapshot reused the application-owned Host object.");
-if (publishedServices.Adjust(coflow, 3) != 13)
+if (publishedServices.adjust(coflow, 3) != 13)
     throw new InvalidOperationException("A published Host did not invoke its native implementation directly.");
-publishedServices.Notify(coflow, 7);
+publishedServices.notify(coflow, 7);
 if (notified != 7)
     throw new InvalidOperationException("A published void Host function did not invoke its native implementation directly.");
 try
 {
-    _ = services.Adjust(coflow, 3);
+    _ = services.adjust(coflow, 3);
     throw new InvalidOperationException("An application-owned Host binding unexpectedly became callable.");
 }
 catch (CoflowStaleValueException)
@@ -44,20 +44,20 @@ catch (CoflowStaleValueException)
 }
 
 var first = coflow.Table(Item.Table).Get("first").Value;
-if (first.Calculate(coflow, 3) != 19)
+if (first.calculate(coflow, 3) != 19)
     throw new InvalidOperationException("Cross-Module function invocation returned the wrong value.");
-if (first.Stats.Transform(coflow, 3) != 5)
+if (first.stats.transform(coflow, 3) != 5)
     throw new InvalidOperationException("Struct default function was not linked.");
 var second = coflow.Table(Item.Table).Get("second").Value;
 var self = coflow.Table(Item.Table).Get("self").Value;
-if (!ReferenceEquals(first.Next.Value, second) || !ReferenceEquals(second.Next.Value, first))
+if (!ReferenceEquals(first.next.Value, second) || !ReferenceEquals(second.next.Value, first))
     throw new InvalidOperationException("Cross-Module record reference was not linked.");
-if (!ReferenceEquals(self.Next.Value, self))
+if (!ReferenceEquals(self.next.Value, self))
     throw new InvalidOperationException("A self-referencing record was not linked.");
 
 coflow.ReplaceModule(gameplay, new CoflowSource("data/gameplay.cfd", "Item { second { stats: Stats { value: 6 } } }"));
 var failed = coflow.Compile();
-if (failed.Success || first.Calculate(coflow, 3) != 19 || publishedServices.Adjust(coflow, 3) != 13 ||
+if (failed.Success || first.calculate(coflow, 3) != 19 || publishedServices.adjust(coflow, 3) != 13 ||
     !ReferenceEquals(coflow.Singleton<Services>().Value, publishedServices))
     throw new InvalidOperationException("A failed compile replaced the published snapshot.");
 
@@ -70,12 +70,12 @@ if (!parallel.Compile().Success)
 var parallelServices = parallel.Singleton<Services>().Value;
 if (ReferenceEquals(parallelServices, services) || ReferenceEquals(parallelServices, publishedServices))
     throw new InvalidOperationException("Different Coflow instances shared a Host snapshot object.");
-if (parallelServices.Adjust(parallel, 3) != 13 || publishedServices.Adjust(coflow, 3) != 13 ||
-    parallel.Table(Item.Table).Get("first").Value.Calculate(parallel, 3) != 19 || first.Calculate(coflow, 3) != 19)
+if (parallelServices.adjust(parallel, 3) != 13 || publishedServices.adjust(coflow, 3) != 13 ||
+    parallel.Table(Item.Table).Get("first").Value.calculate(parallel, 3) != 19 || first.calculate(coflow, 3) != 19)
     throw new InvalidOperationException("Reusing one Host binding across Coflow instances corrupted a published snapshot.");
 try
 {
-    _ = publishedServices.Adjust(parallel, 3);
+    _ = publishedServices.adjust(parallel, 3);
     throw new InvalidOperationException("A Host snapshot executed against a different Coflow instance.");
 }
 catch (CoflowStaleValueException)
@@ -86,11 +86,11 @@ coflow.ReplaceModule(gameplay, new CoflowSource("data/gameplay.cfd", gameplaySou
 var replaced = coflow.Compile();
 if (!replaced.Success)
     throw new InvalidOperationException(string.Join(Environment.NewLine, replaced.Diagnostics));
-if (first.Stats.Value != 2)
+if (first.stats.value != 2)
     throw new InvalidOperationException("Old API values stopped being readable after replacement.");
 try
 {
-    _ = first.Calculate(coflow, 3);
+    _ = first.calculate(coflow, 3);
     throw new InvalidOperationException("A stale value unexpectedly executed against a new snapshot.");
 }
 catch (CoflowStaleValueException)
@@ -98,10 +98,10 @@ catch (CoflowStaleValueException)
 }
 
 var current = coflow.Table(Item.Table).Get("first").Value;
-if (current.Calculate(coflow, 3) != 21)
+if (current.calculate(coflow, 3) != 21)
     throw new InvalidOperationException("Module replacement was not globally relinked.");
 var currentSecond = coflow.Table(Item.Table).Get("second").Value;
-if (!ReferenceEquals(current.Next.Value, currentSecond) || !ReferenceEquals(currentSecond.Next.Value, current))
+if (!ReferenceEquals(current.next.Value, currentSecond) || !ReferenceEquals(currentSecond.next.Value, current))
     throw new InvalidOperationException("Module replacement did not rebuild the cross-Module reference cycle.");
 
 coflow.RemoveModule(gameplay);
@@ -117,14 +117,14 @@ budgeted.Bind(new Services("budget", value =>
 {
     if (reentering) return value;
     reentering = true;
-    try { return budgeted.Table(Item.Table).Get("first").Value.Calculate(budgeted, value); }
+    try { return budgeted.Table(Item.Table).Get("first").Value.calculate(budgeted, value); }
     finally { reentering = false; }
 }, static _ => { }));
 if (!budgeted.Compile().Success)
     throw new InvalidOperationException("The budget reentrancy project did not compile.");
 try
 {
-    _ = budgeted.Singleton<Services>().Value.Adjust(budgeted, 1);
+    _ = budgeted.Singleton<Services>().Value.adjust(budgeted, 1);
     throw new InvalidOperationException("Host reentrancy did not share the top-level execution budget.");
 }
 catch (CoflowFaultException error) when (
@@ -140,7 +140,7 @@ if (!throwing.Compile().Success)
     throw new InvalidOperationException("The throwing Host project did not compile.");
 try
 {
-    _ = throwing.Singleton<Services>().Value.Adjust(throwing, 1);
+    _ = throwing.Singleton<Services>().Value.adjust(throwing, 1);
     throw new InvalidOperationException("A direct Host exception was not propagated as a Coflow fault.");
 }
 catch (CoflowFaultException error) when (error.InnerException is InvalidOperationException { Message: "host-failure" })
@@ -158,16 +158,16 @@ var dimensionResult = dimensionFlow.Compile();
 if (!dimensionResult.Success)
     throw new InvalidOperationException(string.Join(Environment.NewLine, dimensionResult.Diagnostics));
 var text = dimensionFlow.Singleton<UiText>().Value;
-if (text.Welcome.Default != "Hello" || text.Welcome.For("zh") != "Ni hao" ||
-    text.Welcome.For("en") != "Hello" || text.Count != 17 || text.ReadCount(dimensionFlow) != 17 ||
-    !text.Weights.For("zh").SequenceEqual(new long[] { 3, 4, 5 }) ||
-    !text.Weights.For("en").SequenceEqual(new long[] { 1, 2 }) ||
-    text.Theme.For("zh").Value != 9 || text.Theme.For("en").Value != 5)
+if (text.welcome.Default != "Hello" || text.welcome.For("zh") != "Ni hao" ||
+    text.welcome.For("en") != "Hello" || text.count != 17 || text.readCount(dimensionFlow) != 17 ||
+    !text.weights.For("zh").SequenceEqual(new long[] { 3, 4, 5 }) ||
+    !text.weights.For("en").SequenceEqual(new long[] { 1, 2 }) ||
+    text.theme.For("zh").value != 9 || text.theme.For("en").value != 5)
     throw new InvalidOperationException("Dimension layout or fallback value is incorrect.");
-if (coflow.Table(Item.Table).Get("first").Value.Title.Default != "Item")
+if (coflow.Table(Item.Table).Get("first").Value.title.Default != "Item")
     throw new InvalidOperationException("The default-only dimension wrapper was not preserved.");
-if (!text.SameTheme(dimensionFlow, text.Theme.Default, new ThemeValue(5)) ||
-    text.SameTheme(dimensionFlow, text.Theme.Default, text.Theme.For("zh")))
+if (!text.sameTheme(dimensionFlow, text.theme.Default, new ThemeValue(5)) ||
+    text.sameTheme(dimensionFlow, text.theme.Default, text.theme.For("zh")))
     throw new InvalidOperationException("Struct equality did not compare the field before its identity lane.");
 
 Console.WriteLine("csharp-runtime-redesign-ok");

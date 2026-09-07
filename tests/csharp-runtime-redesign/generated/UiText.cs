@@ -11,60 +11,60 @@ public sealed partial class UiText : IEquatable<UiText>
     internal CoflowValueId _coflowId;
 
 
-    internal Language<string> _coflowWelcome = default!;
+    internal language<string> _coflowwelcome = default!;
 
-    public Language<string> Welcome
+    public language<string> welcome
     {
         get
         {
-            return _coflowWelcome;
+            return _coflowwelcome;
         }
     }
 
 
-    internal Language<IReadOnlyList<long>> _coflowWeights = default!;
+    internal language<IReadOnlyList<long>> _coflowweights = default!;
 
-    public Language<IReadOnlyList<long>> Weights
+    public language<IReadOnlyList<long>> weights
     {
         get
         {
-            return _coflowWeights;
+            return _coflowweights;
         }
     }
 
 
-    internal Language<global::ThemeValue> _coflowTheme = default!;
+    internal language<global::ThemeValue> _coflowtheme = default!;
 
-    public Language<global::ThemeValue> Theme
+    public language<global::ThemeValue> theme
     {
         get
         {
-            return _coflowTheme;
+            return _coflowtheme;
         }
     }
 
 
-    internal long _coflowCount = default!;
+    internal long _coflowcount = default!;
 
-    public long Count
+    public long count
     {
         get
         {
-            return _coflowCount;
+            return _coflowcount;
         }
     }
 
 
 
 
-    public long ReadCount(global::Coflow.Runtime.Coflow coflow)
+    public long readCount(global::Coflow.Runtime.Coflow coflow)
     {
         return CoflowInvoker.Invoke<long>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(4));
     }
 
 
-    public bool SameTheme(global::Coflow.Runtime.Coflow coflow, global::ThemeValue arg0, global::ThemeValue arg1)
+    public bool sameTheme(global::Coflow.Runtime.Coflow coflow, global::ThemeValue arg0, global::ThemeValue arg1)
     {
         return CoflowInvoker.Invoke<global::ThemeValue, global::ThemeValue, bool>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(5), arg0, arg1);
@@ -74,16 +74,16 @@ public sealed partial class UiText : IEquatable<UiText>
 
 
     public UiText(
-        Language<string> welcome,
-        Language<IReadOnlyList<long>> weights,
-        Language<global::ThemeValue> theme,
+        language<string> welcome,
+        language<IReadOnlyList<long>> weights,
+        language<global::ThemeValue> theme,
         long countValue
     )
     {
-        _coflowWelcome = welcome;
-        _coflowWeights = weights;
-        _coflowTheme = theme;
-        _coflowCount = countValue;
+        this._coflowwelcome = welcome;
+        this._coflowweights = weights;
+        this._coflowtheme = theme;
+        this._coflowcount = countValue;
     }
 
     internal static UiText WithCoflowValueId(UiText value, CoflowValueId coflowId)
@@ -100,10 +100,10 @@ public sealed partial class UiText : IEquatable<UiText>
 
     public bool Equals(UiText? other) =>
         other is not null &&
-        System.Collections.Generic.EqualityComparer<Language<string>>.Default.Equals(Welcome, other.Welcome) &&
-        System.Collections.Generic.EqualityComparer<Language<IReadOnlyList<long>>>.Default.Equals(Weights, other.Weights) &&
-        System.Collections.Generic.EqualityComparer<Language<global::ThemeValue>>.Default.Equals(Theme, other.Theme) &&
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Count, other.Count);
+        System.Collections.Generic.EqualityComparer<language<string>>.Default.Equals(welcome, other.welcome) &&
+        System.Collections.Generic.EqualityComparer<language<IReadOnlyList<long>>>.Default.Equals(weights, other.weights) &&
+        System.Collections.Generic.EqualityComparer<language<global::ThemeValue>>.Default.Equals(theme, other.theme) &&
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(count, other.count);
 
     public override bool Equals(object? obj) =>
         obj is UiText other && Equals(other);
@@ -111,10 +111,10 @@ public sealed partial class UiText : IEquatable<UiText>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Welcome);
-        hash.Add(Weights);
-        hash.Add(Theme);
-        hash.Add(Count);
+        hash.Add(welcome);
+        hash.Add(weights);
+        hash.Add(theme);
+        hash.Add(count);
         return hash.ToHashCode();
     }
 

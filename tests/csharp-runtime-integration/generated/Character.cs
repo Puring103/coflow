@@ -16,130 +16,130 @@ public sealed partial class Character : IEquatable<Character>
     public global::CharacterId Id { get; internal set; } = default!;
 
 
-    internal string _coflowName = default!;
+    internal string _coflowname = default!;
 
-    public string Name
+    public string name
     {
         get
         {
-            return _coflowName;
+            return _coflowname;
         }
     }
 
 
-    internal global::CharacterClass _coflowClass = default!;
+    internal global::CharacterClass _coflowcharacterClass = default!;
 
-    public global::CharacterClass Class
+    public global::CharacterClass characterClass
     {
         get
         {
-            return _coflowClass;
+            return _coflowcharacterClass;
         }
     }
 
 
-    internal global::CharacterTrait _coflowTraits = default!;
+    internal global::CharacterTrait _coflowtraits = default!;
 
-    public global::CharacterTrait Traits
+    public global::CharacterTrait traits
     {
         get
         {
-            return _coflowTraits;
+            return _coflowtraits;
         }
     }
 
 
-    internal bool _coflowEnabled = default!;
+    internal bool _coflowenabled = default!;
 
-    public bool Enabled
+    public bool enabled
     {
         get
         {
-            return _coflowEnabled;
+            return _coflowenabled;
         }
     }
 
 
-    internal global::Stats _coflowStats = default!;
+    internal global::Stats _coflowstats = default!;
 
-    public global::Stats Stats
+    public global::Stats stats
     {
         get
         {
-            return _coflowStats;
+            return _coflowstats;
         }
     }
 
 
-    internal IReadOnlyList<string> _coflowTags = default!;
+    internal IReadOnlyList<string> _coflowtags = default!;
 
-    public IReadOnlyList<string> Tags
+    public IReadOnlyList<string> tags
     {
         get
         {
-            return _coflowTags;
+            return _coflowtags;
         }
     }
 
 
-    internal IReadOnlyDictionary<string, long> _coflowAttributes = default!;
+    internal IReadOnlyDictionary<string, long> _coflowattributes = default!;
 
-    public IReadOnlyDictionary<string, long> Attributes
+    public IReadOnlyDictionary<string, long> attributes
     {
         get
         {
-            return _coflowAttributes;
+            return _coflowattributes;
         }
     }
 
 
-    internal global::Ability _coflowPrimaryAbility = default!;
+    internal global::Ability _coflowprimaryAbility = default!;
 
-    public global::Ability PrimaryAbility
+    public global::Ability primaryAbility
     {
         get
         {
-            return _coflowPrimaryAbility;
+            return _coflowprimaryAbility;
         }
     }
 
 
-    internal IReadOnlyList<global::Ability> _coflowAbilities = default!;
+    internal IReadOnlyList<global::Ability> _coflowabilities = default!;
 
-    public IReadOnlyList<global::Ability> Abilities
+    public IReadOnlyList<global::Ability> abilities
     {
         get
         {
-            return _coflowAbilities;
+            return _coflowabilities;
         }
     }
 
 
-    internal Result<long, string> _coflowStatus = default!;
+    internal Result<long, string> _coflowstatus = default!;
 
-    public Result<long, string> Status
+    public Result<long, string> status
     {
         get
         {
-            return _coflowStatus;
+            return _coflowstatus;
         }
     }
 
 
-    internal Option<global::Character> _coflowFallback = default!;
+    internal Option<global::Character> _coflowfallback = default!;
 
-    public Option<global::Character> Fallback
+    public Option<global::Character> fallback
     {
         get
         {
-            return _coflowFallback;
+            return _coflowfallback;
         }
     }
 
 
 
 
-    public long Power(global::Coflow.Runtime.Coflow coflow, long bonus)
+    public long power(global::Coflow.Runtime.Coflow coflow, long bonus)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(11), bonus);
@@ -151,7 +151,7 @@ public sealed partial class Character : IEquatable<Character>
     public Character(
         global::CharacterId id,
         string name,
-        global::CharacterClass classValue,
+        global::CharacterClass characterClass,
         global::CharacterTrait traits,
         bool enabled,
         global::Stats stats,
@@ -163,18 +163,18 @@ public sealed partial class Character : IEquatable<Character>
         Option<global::Character> fallback
     )
     {
-        Id = id;
-        _coflowName = name;
-        _coflowClass = classValue;
-        _coflowTraits = traits;
-        _coflowEnabled = enabled;
-        _coflowStats = stats;
-        _coflowTags = tags;
-        _coflowAttributes = attributes;
-        _coflowPrimaryAbility = primaryAbility;
-        _coflowAbilities = abilities;
-        _coflowStatus = status;
-        _coflowFallback = fallback;
+        this.Id = id;
+        this._coflowname = name;
+        this._coflowcharacterClass = characterClass;
+        this._coflowtraits = traits;
+        this._coflowenabled = enabled;
+        this._coflowstats = stats;
+        this._coflowtags = tags;
+        this._coflowattributes = attributes;
+        this._coflowprimaryAbility = primaryAbility;
+        this._coflowabilities = abilities;
+        this._coflowstatus = status;
+        this._coflowfallback = fallback;
     }
 
     internal static Character WithCoflowValueId(Character value, CoflowValueId coflowId)

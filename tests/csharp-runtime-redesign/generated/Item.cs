@@ -16,42 +16,42 @@ public sealed partial class Item : IEquatable<Item>
     public string Id { get; internal set; } = default!;
 
 
-    internal Language<string> _coflowTitle = default!;
+    internal language<string> _coflowtitle = default!;
 
-    public Language<string> Title
+    public language<string> title
     {
         get
         {
-            return _coflowTitle;
+            return _coflowtitle;
         }
     }
 
 
-    internal global::Stats _coflowStats = default!;
+    internal global::Stats _coflowstats = default!;
 
-    public global::Stats Stats
+    public global::Stats stats
     {
         get
         {
-            return _coflowStats;
+            return _coflowstats;
         }
     }
 
 
-    internal Option<global::Item> _coflowNext = default!;
+    internal Option<global::Item> _coflownext = default!;
 
-    public Option<global::Item> Next
+    public Option<global::Item> next
     {
         get
         {
-            return _coflowNext;
+            return _coflownext;
         }
     }
 
 
 
 
-    public long Calculate(global::Coflow.Runtime.Coflow coflow, long arg0)
+    public long calculate(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(1), new CoflowFieldId(3), arg0);
@@ -62,15 +62,15 @@ public sealed partial class Item : IEquatable<Item>
 
     public Item(
         string id,
-        Language<string> title,
+        language<string> title,
         global::Stats stats,
         Option<global::Item> next
     )
     {
-        Id = id;
-        _coflowTitle = title;
-        _coflowStats = stats;
-        _coflowNext = next;
+        this.Id = id;
+        this._coflowtitle = title;
+        this._coflowstats = stats;
+        this._coflownext = next;
     }
 
     internal static Item WithCoflowValueId(Item value, CoflowValueId coflowId)
