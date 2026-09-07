@@ -135,7 +135,11 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
     ) -> InferredType {
         let ok = match op {
-            CmpOp::Eq | CmpOp::Ne => types_comparable(lhs, rhs),
+            CmpOp::Eq | CmpOp::Ne => types_comparable(lhs, rhs) || matches!(
+                (lhs, rhs),
+                (InferredType::OptionNone, InferredType::OptionNone | InferredType::Value(CftValueType::Option(_)))
+                | (InferredType::Value(CftValueType::Option(_)), InferredType::OptionNone)
+            ),
             CmpOp::Lt | CmpOp::Le | CmpOp::Gt | CmpOp::Ge => ordered_comparable(lhs, rhs),
         };
         if !ok && !lhs.is_unknown() && !rhs.is_unknown() {

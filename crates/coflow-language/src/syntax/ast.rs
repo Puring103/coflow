@@ -357,6 +357,7 @@ pub enum CheckExprKind {
 #[derive(Debug, Clone)]
 pub enum TypePredicate {
     Type(NameRef),
+    Some { binding: NameRef, span: Span },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

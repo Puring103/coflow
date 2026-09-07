@@ -2,6 +2,8 @@
 mod functions;
 #[path = "check_operators.rs"]
 mod operators;
+#[path = "check_conditions.rs"]
+mod conditions;
 
 use super::inferred_type::{types_comparable, unwrap_reference, InferredType};
 use super::state::{SymbolKind, TypeInfo};
@@ -23,6 +25,7 @@ pub(super) struct CheckTypeAnalyzer<'a, 'b> {
     module: crate::ModuleId,
     scope: CheckScope,
     locals: Vec<HashMap<String, InferredType>>,
+    refinements: Vec<HashMap<Vec<String>, InferredType>>,
     dimensions: BTreeSet<crate::DimensionName>,
     dependencies: CheckStatementDependencies,
     diagnostics: Vec<CftDiagnostic>,
@@ -63,6 +66,7 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::Object(_)
             | CftValueType::RecordRef(_),
         )
+        | InferredType::OptionNone
         | InferredType::EnumNamespace(_)
         | InferredType::Entry(_, _) => false,
     }
@@ -75,6 +79,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             module: type_info.module.clone(),
             scope: CheckScope::Record(type_info.name.clone()),
             locals: Vec::new(),
+            refinements: Vec::new(),
             dimensions: BTreeSet::new(),
             dependencies: CheckStatementDependencies::default(),
             diagnostics: Vec::new(),
@@ -88,6 +93,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             module,
             scope: CheckScope::TopLevel,
             locals: Vec::new(),
+            refinements: Vec::new(),
             dimensions: BTreeSet::new(),
             dependencies: CheckStatementDependencies::default(),
             diagnostics: Vec::new(),
@@ -141,9 +147,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             CheckStmt::When {
                 condition, body, ..
             } => {
-                let ty = self.check_expr_value(condition);
+                let (ty, facts) = self.check_condition(condition);
                 self.expect_bool(&ty, condition.span);
+                self.push_condition_scope(&facts);
                 self.check_stmts(body);
+                self.pop_condition_scope();
             }
             CheckStmt::Quantifier {
                 bindings,
@@ -270,14 +278,16 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 self.quantifier_bindings
                     .insert((self.module.clone(), span.start, span.end), layout);
                 self.locals.push(scope);
+                self.refinements.push(HashMap::new());
                 self.check_stmts(body);
                 self.locals.pop();
+                self.refinements.pop();
             }
         }
     }
 
     fn check_expr(&mut self, expr: &CheckExpr) -> InferredType {
-        match &expr.kind {
+        let ty = match &expr.kind {
             CheckExprKind::Int(_) => InferredType::int(),
             CheckExprKind::Float(_) => InferredType::float(),
             CheckExprKind::Bool(_) => InferredType::bool(),
@@ -294,6 +304,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 self.check_unary(*op, &ty, expr.span)
             }
             CheckExprKind::BinOp { op, lhs, rhs } => {
+                if matches!(op, crate::syntax::ast::BinOp::And) {
+                    return self.check_condition(expr).0;
+                }
                 let lhs_ty = self.check_expr_value(lhs);
                 let rhs_ty = self.check_expr_value(rhs);
                 self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
@@ -311,14 +324,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             CheckExprKind::Index { expr: inner, index } => {
                 self.check_index(inner, index, expr.span)
             }
-            CheckExprKind::Is {
-                expr: inner,
-                predicate,
-            } => {
-                let inner_ty = self.check_expr_value(inner);
-                self.check_is(&inner_ty, predicate, expr.span);
-                InferredType::bool()
-            }
+            CheckExprKind::Is { .. } => return self.check_condition(expr).0,
             CheckExprKind::Call { name, args } if name.name == "records" => {
                 for arg in args {
                     let _ = self.check_expr_value(arg);
@@ -336,7 +342,12 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 name,
                 args,
             } => self.check_method_call(receiver, name, args, expr.span),
-        }
+        };
+        // 先解析原表达式以保留依赖和维度，再应用当前成立分支中的类型信息。
+        conditions::expression_path(expr)
+            .and_then(|path| self.refined_type(&path))
+            .cloned()
+            .unwrap_or(ty)
     }
 
     fn check_format_segments(&mut self, segments: &[CheckFormatSegment]) {
@@ -375,6 +386,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     }
 
     fn resolve_value_name(&mut self, name: &str, span: Span) -> InferredType {
+        if name == "None" {
+            return InferredType::OptionNone;
+        }
         for scope in self.locals.iter().rev() {
             if let Some(ty) = scope.get(name) {
                 return ty.clone();
@@ -629,6 +643,11 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
+            TypePredicate::Some { .. } => {
+                if !matches!(lhs, InferredType::Value(CftValueType::Option(_)) | InferredType::Unknown) {
+                    self.diag(CftErrorCode::OperatorTypeMismatch, span, "Some pattern requires an Option operand");
+                }
+            }
             TypePredicate::Type(name) => {
                 let resolved_name = name.name.clone();
                 let is_object = matches!(

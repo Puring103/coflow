@@ -445,7 +445,7 @@ pub(crate) fn model_value<'a>(
     Some(value)
 }
 
-fn transparent_value(mut value: &CfdValue) -> &CfdValue {
+pub(super) fn transparent_value(mut value: &CfdValue) -> &CfdValue {
     while let CfdValue::OptionSome(inner)
     | CfdValue::ResultOk(inner)
     | CfdValue::ResultErr(inner) = value
@@ -492,6 +492,11 @@ pub(crate) enum ComparableKey {
 }
 
 pub(crate) fn values_equal(lhs: &EvalValue<'_>, rhs: &EvalValue<'_>) -> bool {
+    let is_none = |value: &EvalValue<'_>| matches!(value,
+        EvalValue::Model(CfdValue::OptionNone) | EvalValue::Constant(CftConstValue::OptionNone));
+    if is_none(lhs) || is_none(rhs) {
+        return is_none(lhs) && is_none(rhs);
+    }
     match (lhs.scalar(), rhs.scalar()) {
         (Some(ScalarValue::Null), Some(ScalarValue::Null)) => true,
         (Some(ScalarValue::Bool(lhs)), Some(ScalarValue::Bool(rhs))) => lhs == rhs,

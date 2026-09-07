@@ -138,6 +138,11 @@ fn eval_is_expr<'model>(
     predicate: &coflow_language::cft::CftSchemaTypePredicate,
 ) -> EvalResult<LocatedEvalValue<'model>> {
     let value = evaluator.eval_expr(inner)?;
+    if let coflow_language::cft::CftSchemaTypePredicate::Some { binding } = predicate {
+        let location = value.location.clone();
+        let matched = evaluator.bind_some(value, binding)?;
+        return Ok(LocatedEvalValue::new(EvalValue::bool(matched), location));
+    }
     Ok(LocatedEvalValue::new(
         EvalValue::bool(type_predicates::value_matches_predicate(
             evaluator.schema,

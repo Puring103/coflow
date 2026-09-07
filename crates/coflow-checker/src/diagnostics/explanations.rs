@@ -170,6 +170,11 @@ pub(crate) fn explain_false_expr(
             expr: inner,
             predicate,
         } => match predicate {
+            coflow_language::cft::CftSchemaTypePredicate::Some { .. } => Some(
+                CheckExplanation::new(CfdErrorCode::CheckTypePredicateFailed, rendered, value.location.clone())
+                    .with_actual("None")
+                    .with_expected("Some"),
+            ),
             coflow_language::cft::CftSchemaTypePredicate::Type(type_name) => {
                 let actual = trace
                     .fact(inner)

@@ -3,6 +3,7 @@ use crate::{EnumName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum InferredType {
+    OptionNone,
     Value(CftValueType),
     EnumNamespace(EnumName),
     Entry(Box<InferredType>, Box<InferredType>),
@@ -103,7 +104,7 @@ impl InferredType {
     pub(super) const fn value_type(&self) -> Option<&CftValueType> {
         match self {
             Self::Value(value_type) => Some(value_type),
-            Self::EnumNamespace(_)
+            Self::OptionNone | Self::EnumNamespace(_)
             | Self::Entry(_, _)
             | Self::Unknown => None,
         }
