@@ -119,6 +119,14 @@ impl<'model> CheckEvaluator<'model> {
         &mut self,
         expr: &CftSchemaCheckExpr,
     ) -> EvalResult<LocatedEvalValue<'model>> {
+        self.eval_condition(expr).map(|(value, _)| value)
+    }
+
+    // 条件表达式拥有独立绑定作用域，只有成立的 && 链与 when 主体接收绑定。
+    pub(super) fn eval_condition(
+        &mut self,
+        expr: &CftSchemaCheckExpr,
+    ) -> EvalResult<(LocatedEvalValue<'model>, BTreeMap<String, LocatedEvalValue<'model>>)> {
         let parent = self
             .eval_stack
             .last()
@@ -132,14 +140,21 @@ impl<'model> CheckEvaluator<'model> {
             }
         };
         self.eval_stack.push(cursor);
+        self.scopes.push(BTreeMap::new());
         let result = super::expressions::eval_expr(self, expr);
+        let mut bindings = self.scopes.pop().unwrap_or_default();
         let _ = self.eval_stack.pop();
         if let Ok(value) = &result {
             if let Some(trace) = &mut self.trace {
                 trace.record(expr, value, self.model);
             }
         }
-        result
+        result.map(|value| {
+            if !matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) {
+                bindings.clear();
+            }
+            (value, bindings)
+        })
     }
 
     pub(super) fn charge_work_at(
@@ -229,6 +244,11 @@ impl<'model> CheckEvaluator<'model> {
     }
 
     pub(super) fn eval_name(&mut self, name: &str) -> EvalResult<LocatedEvalValue<'model>> {
+        if name == "None" {
+            return Ok(LocatedEvalValue::value(EvalValue::Constant(
+                coflow_language::cft::CftConstValue::OptionNone,
+            )));
+        }
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 let value = value.clone();
@@ -652,12 +672,18 @@ impl<'model> CheckEvaluator<'model> {
                 Ok(LocatedEvalValue::new(EvalValue::bool(rhs), rhs_path))
             }
             CftSchemaBinOp::And => {
-                let lhs = self.eval_expr(lhs)?;
+                let (lhs, bindings) = self.eval_condition(lhs)?;
                 let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(&lhs, "左"))?;
                 if !lhs {
                     return Ok(LocatedEvalValue::new(EvalValue::bool(false), lhs_path));
                 }
-                let rhs = self.eval_expr(rhs)?;
+                if let Some(scope) = self.scopes.last_mut() {
+                    scope.extend(bindings);
+                }
+                let (rhs, bindings) = self.eval_condition(rhs)?;
+                if let Some(scope) = self.scopes.last_mut() {
+                    scope.extend(bindings);
+                }
                 let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(&rhs, "右"))?;
                 Ok(LocatedEvalValue::new(EvalValue::bool(rhs), rhs_path))
             }
@@ -678,6 +704,41 @@ impl<'model> CheckEvaluator<'model> {
 
     pub(super) fn diag(&mut self, code: CfdErrorCode, message: impl Into<String>) {
         self.diag_at(code, None, message);
+    }
+
+    pub(super) fn bind_some(
+        &mut self,
+        value: LocatedEvalValue<'model>,
+        binding: &str,
+    ) -> EvalResult<bool> {
+        let inner = match value.value {
+            EvalValue::Model(coflow_model::CfdValue::OptionSome(inner)) => {
+                let Some(location) = value.location.clone() else {
+                    self.diag(CfdErrorCode::CheckEvalTypeError, "Some value has no model location");
+                    return Err(EvalAbort::Error);
+                };
+                let result = EvalValue::from_cfd_value(inner, None, location, self.model,
+                    &mut self.budget, EvaluationCursor::root());
+                match result {
+                    Ok(inner) => inner,
+                    Err(error) => {
+                        self.diag_at(CfdErrorCode::CheckBudgetExceeded, *error.location, error.error.to_string());
+                        return Err(EvalAbort::Error);
+                    }
+                }
+            }
+            EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(inner)) => EvalValue::from_const(&inner),
+            EvalValue::Model(coflow_model::CfdValue::OptionNone)
+            | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => return Ok(false),
+            _ => {
+                self.diag_at(CfdErrorCode::CheckEvalTypeError, value.location, "Some pattern requires an Option value");
+                return Err(EvalAbort::Error);
+            }
+        };
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(binding.to_string(), LocatedEvalValue::new(inner, value.location));
+        }
+        Ok(true)
     }
 
     pub(super) fn diag_at(

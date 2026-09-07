@@ -235,7 +235,8 @@ pub(crate) fn render_expr(expr: &CftSchemaCheckExpr) -> String {
         }
         CftSchemaCheckExprKind::Is { expr, predicate } => {
             let predicate = match predicate {
-                CftSchemaTypePredicate::Type(name) => name.as_str(),
+                CftSchemaTypePredicate::Type(name) => name.to_string(),
+                CftSchemaTypePredicate::Some { binding } => format!("Some({binding})"),
             };
             format!("{} is {predicate}", render_expr(expr))
         }
@@ -343,6 +344,10 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
         );
     }
     match value {
+        EvalValue::Model(coflow_model::CfdValue::OptionNone)
+        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => "None".to_string(),
+        EvalValue::Model(coflow_model::CfdValue::OptionSome(_))
+        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(_)) => "Some(...)".to_string(),
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }

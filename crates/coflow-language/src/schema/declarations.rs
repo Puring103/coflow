@@ -318,6 +318,7 @@ pub enum CftSchemaCheckExprKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CftSchemaTypePredicate {
     Type(TypeName),
+    Some { binding: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

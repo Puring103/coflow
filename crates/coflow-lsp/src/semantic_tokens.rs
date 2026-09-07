@@ -738,6 +738,9 @@ fn classify_check_expr(
             );
         }
         CheckExprKind::Is { predicate, .. } => match predicate {
+            coflow_language::cft::syntax::ast::TypePredicate::Some { binding, .. } => {
+                push_semantic_span(&document.source, binding.span, SEM_VARIABLE, MOD_DECLARATION, tokens);
+            }
             coflow_language::cft::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(
                     &document.source,

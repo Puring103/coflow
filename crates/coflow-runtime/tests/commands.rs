@@ -367,7 +367,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
         .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
-    assert!(generated.contains("ReadLanguage("));
+    assert!(generated.contains("Readlanguage("));
     assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
     assert!(!generated.contains("Localization"));
     assert!(!generated.contains("TbUiTextWelcomeVariants"));

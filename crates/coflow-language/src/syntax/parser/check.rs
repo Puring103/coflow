@@ -237,8 +237,10 @@ impl Parser<'_> {
         let mut expr = self.parse_cmp_chain()?;
         while let Some(operator) = self.eat(&TokenKind::Is) {
             let predicate = self.parse_type_predicate()?;
-            let TypePredicate::Type(name) = &predicate;
-            let end = name.span.end;
+            let end = match &predicate {
+                TypePredicate::Type(name) => name.span.end,
+                TypePredicate::Some { span, .. } => span.end,
+            };
             let span = Span::new(expr.value.span.start, end);
             let depth = expr.depth;
             expr = self.node(StructureKind::CheckAst, operator, [depth], || CheckExpr {
