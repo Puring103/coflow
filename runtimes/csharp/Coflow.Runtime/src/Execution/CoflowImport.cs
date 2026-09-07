@@ -272,10 +272,6 @@ internal static class CoflowEscapeValue<T>
         if (!type.IsGenericType)
             return type != typeof(long) && type != typeof(double) && type != typeof(bool) &&
                 type != typeof(string) && type != typeof(Unit) && !type.IsEnum;
-        var definition = type.GetGenericTypeDefinition();
-        if (definition != typeof(Option<>) && definition != typeof(Result<,>) &&
-            definition != typeof(IReadOnlyList<>) && definition != typeof(IReadOnlyDictionary<,>))
-            return false;
         return type.GetGenericArguments().Any(MayContain);
     }
 
@@ -304,7 +300,11 @@ internal static class CoflowEscapeValue<T>
         if (definition == typeof(Result<,>)) return BuildGeneric(nameof(CollectResult), arguments);
         if (definition == typeof(IReadOnlyList<>)) return BuildGeneric(nameof(CollectList), arguments);
         if (definition == typeof(IReadOnlyDictionary<,>)) return BuildGeneric(nameof(CollectDictionary), arguments);
-        return static (_, _) => { };
+        return static (value, collector) =>
+        {
+            if (CoflowSchemaRuntimeContext.TryGetStructCodec(typeof(T), out var descriptor))
+                descriptor.CollectValueIds(value!, collector);
+        };
     }
 
     private static Action<T, CoflowValueIdCollector> BuildGeneric(string name, params Type[] arguments)

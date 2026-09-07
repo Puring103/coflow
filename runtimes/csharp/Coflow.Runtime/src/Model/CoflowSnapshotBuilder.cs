@@ -20,7 +20,9 @@ internal static class CoflowSnapshotBuilder
         var schemaIndex = new CoflowSchemaIndex(schema);
         var context = new CfdLoadContext(
             documents, schema.Types, schema.Constants, generation, snapshotId);
-        var allRecords = context.Records.All;
+        // 维度辅助记录由生成 reader 按需读取，不作为普通表记录发布。
+        var allRecords = context.Records.All
+            .Where(record => !schema.Runtime.IsDimensionRecord(record.DeclaredType)).ToArray();
         foreach (var record in allRecords)
         {
             if (!schemaIndex.ByName.TryGetValue(record.DeclaredType, out var metadata))

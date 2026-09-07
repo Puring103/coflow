@@ -64,9 +64,7 @@ internal static class CoflowEquality
                 var comparisons = fields.Select(Build).ToArray();
                 return (session, left, right) =>
                 {
-                    // struct 首列是运行时身份，不属于值相等的字段。
-                    left = left.Advance(1);
-                    right = right.Advance(1);
+                    // 生成 codec 按字段顺序编码，末尾身份列不参与值相等。
                     for (var index = 0; index < fields.Length; index++)
                     {
                         if (!comparisons[index](session, left, right)) return false;

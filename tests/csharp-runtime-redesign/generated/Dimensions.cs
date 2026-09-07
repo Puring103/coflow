@@ -2,23 +2,23 @@
 #nullable enable
 using System.Collections.Generic;
 
-{% for dimension in project.dimensions %}    /// <summary>Values selected explicitly from the {{ dimension.source_name }} dimension.</summary>
-    public readonly struct {{ dimension.name }}<T>
+    /// <summary>Values selected explicitly from the language dimension.</summary>
+    public readonly struct Language<T>
     {
         private readonly IReadOnlyDictionary<string, T>? _variants;
         private static readonly IReadOnlyDictionary<string, T> EmptyVariants =
             new System.Collections.ObjectModel.ReadOnlyDictionary<string, T>(new Dictionary<string, T>());
         internal IReadOnlyDictionary<string, T> Variants => _variants ?? EmptyVariants;
-        internal {{ dimension.name }}<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
+        internal Language<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
             new(context.Import(Default), context.Import(Variants));
         public T Default { get; }
-        public {{ dimension.name }}(T defaultValue)
+        public Language(T defaultValue)
         {
             Default = defaultValue;
             _variants = null;
         }
 
-        internal {{ dimension.name }}(T defaultValue, IReadOnlyDictionary<string, T> variants)
+        internal Language(T defaultValue, IReadOnlyDictionary<string, T> variants)
         {
             Default = defaultValue;
             _variants = variants;
@@ -29,5 +29,4 @@ using System.Collections.Generic;
                 ? value
                 : Default;
     }
-{% if not loop.last %}
-{% endif %}{% endfor %}
+

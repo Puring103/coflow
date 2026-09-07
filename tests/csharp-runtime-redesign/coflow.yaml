@@ -1,6 +1,10 @@
 schema: schema/
 data:
   - data/
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
 codegen:
   - language: csharp
     dir: generated

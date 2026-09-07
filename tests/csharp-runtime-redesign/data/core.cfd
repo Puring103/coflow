@@ -1,3 +1,5 @@
+text: UiText { welcome: "Hello", count: 17 }
+
 Item {
     first {
         stats: Stats { value: 2 },

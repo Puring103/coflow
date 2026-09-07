@@ -425,3 +425,4 @@ static Coflow.Runtime.Option<T>.Some(T value) -> Coflow.Runtime.Option<T>
 static Coflow.Runtime.Result<T, TError>.Err(TError error) -> Coflow.Runtime.Result<T, TError>
 static Coflow.Runtime.Result<T, TError>.Ok(T value) -> Coflow.Runtime.Result<T, TError>
 static Coflow.Runtime.Unit.Value.get -> Coflow.Runtime.Unit
+Coflow.Runtime.CompilerServices.CoflowSchemaRuntimeBuilder.RegisterDimension(string! recordType) -> void

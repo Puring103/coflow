@@ -490,7 +490,9 @@ fn emits_schema_defaults_in_direct_cfd_readers() {
             r#"
 enum item_rarity { common_value, rare_value }
 type Stats { hp: int = 10; }
+@struct sealed type Offset { value: int; }
 type Item {
+    offset: Offset = Offset { value: 5 };
     rarity: item_rarity = item_rarity::common_value;
     enabled: bool = false;
     label: string = "line\ntext";
@@ -514,6 +516,7 @@ type Item {
     assert!(output.contains("CoflowConstantValues.List<string>()"));
     assert!(output.contains("CoflowConstantValues.Dictionary<string, long>()"));
     assert!(output.contains("new global::Stats(null, string.Empty, 10L)"));
+    assert!(output.contains("new global::Offset(5L)"));
     assert!(
         output.contains("valueTarget") && output.contains("Option<global::Item>.None")
     );
