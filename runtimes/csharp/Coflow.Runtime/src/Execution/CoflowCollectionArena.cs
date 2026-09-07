@@ -8,15 +8,15 @@ internal readonly struct CoflowCollectionId : IEquatable<CoflowCollectionId>
 {
     private readonly ulong _value;
 
-    internal CoflowCollectionId(uint generation, uint index)
+    internal CoflowCollectionId(uint snapshotId, uint index)
     {
-        _value = ((ulong)generation << 32) | index;
+        _value = ((ulong)snapshotId << 32) | index;
     }
 
-    internal uint Generation => (uint)(_value >> 32);
+    internal uint SnapshotId => (uint)(_value >> 32);
     internal uint Index => (uint)_value;
     internal ulong Packed => _value;
-    internal bool IsValid => Generation != 0 && Index != 0;
+    internal bool IsValid => SnapshotId != 0 && Index != 0;
     internal static CoflowCollectionId FromPacked(ulong value) =>
         new((uint)(value >> 32), (uint)value);
     public bool Equals(CoflowCollectionId other) => _value == other._value;
@@ -34,22 +34,23 @@ internal sealed class CoflowCollectionArena
     private readonly List<object?> _references = new();
     private readonly List<Entry> _entries = new();
     private readonly Dictionary<uint, int> _entryIndexes = new();
-    private uint _generation;
+    private uint _snapshotId;
     private uint _firstIndex;
     private uint _lastIndex;
     private Func<uint>? _allocateIndex;
     private CoflowExecutionBudget? _budget;
 
     internal int Count => _entries.Count;
+    internal IEnumerable<uint> Indexes => _entryIndexes.Keys;
     internal uint LastIndex => _lastIndex;
     internal int StorageLaneCount => checked(_integers.Count + _floats.Count + _references.Count);
 
-    internal void Reset(uint generation, uint firstIndex = 0, Func<uint>? allocateIndex = null,
+    internal void Reset(uint snapshotId, uint firstIndex = 0, Func<uint>? allocateIndex = null,
         CoflowExecutionBudget? budget = null)
     {
-        if (generation == 0) throw new ArgumentOutOfRangeException(nameof(generation));
+        if (snapshotId == 0) throw new ArgumentOutOfRangeException(nameof(snapshotId));
         Clear();
-        _generation = generation;
+        _snapshotId = snapshotId;
         _firstIndex = firstIndex;
         _lastIndex = firstIndex;
         _allocateIndex = allocateIndex;
@@ -58,30 +59,35 @@ internal sealed class CoflowCollectionArena
 
     internal CoflowCollectionId AddArray(
         CoflowValueShape elementShape,
-        IReadOnlyList<CoflowEncodedValue> elements) =>
-        Add(CoflowCollectionKind.Array, elementShape, null, elements, null);
+        IReadOnlyList<CoflowEncodedValue> elements,
+        bool budgetAlreadyCharged = false) =>
+        Add(CoflowCollectionKind.Array, elementShape, null, elements, null, budgetAlreadyCharged);
 
     internal CoflowCollectionId AddDictionary(
         CoflowValueShape keyShape,
         CoflowValueShape valueShape,
         IReadOnlyList<CoflowEncodedValue> keys,
-        IReadOnlyList<CoflowEncodedValue> values)
+        IReadOnlyList<CoflowEncodedValue> values,
+        bool budgetAlreadyCharged = false)
     {
         if (keys.Count != values.Count)
             throw new InvalidOperationException("Dictionary key and value counts must match.");
-        return Add(CoflowCollectionKind.Dictionary, keyShape, valueShape, keys, values);
+        return Add(CoflowCollectionKind.Dictionary, keyShape, valueShape, keys, values,
+            budgetAlreadyCharged);
     }
+
+    internal void ReserveElements(int count) => _budget?.CollectionElements(count);
 
     internal CoflowCollectionId AddArray(
         CoflowValueShape elementShape,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         IReadOnlyList<CoflowValueRegister> elements) =>
         AddFromRegisters(CoflowCollectionKind.Array, elementShape, null, context, elements, null);
 
     internal CoflowCollectionId AddDictionary(
         CoflowValueShape keyShape,
         CoflowValueShape valueShape,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         IReadOnlyList<CoflowValueRegister> keys,
         IReadOnlyList<CoflowValueRegister> values)
     {
@@ -93,8 +99,8 @@ internal sealed class CoflowCollectionArena
 
     internal CoflowCollectionId BeginArray(CoflowValueShape elementShape, int capacity)
     {
-        if (_generation == 0)
-            throw new InvalidOperationException("The collection Arena is not attached to a snapshot generation.");
+        if (_snapshotId == 0)
+            throw new InvalidOperationException("The collection Arena is not attached to a snapshot.");
         if (capacity < 0) throw new ArgumentOutOfRangeException(nameof(capacity));
         _budget?.CollectionElements(capacity);
         var entry = new Entry(CoflowCollectionKind.Array, elementShape, null, 0, capacity,
@@ -108,7 +114,7 @@ internal sealed class CoflowCollectionArena
 
     internal void AppendArray(
         CoflowCollectionId id,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister source)
     {
         var entry = EntryAt(id);
@@ -120,13 +126,13 @@ internal sealed class CoflowCollectionArena
         source = context.OffsetRelative(source);
         var (integerBase, floatBase, referenceBase) = Bases(entry, entry.Count, second: false);
         for (var lane = 0; lane < source.Shape.IntegerCount; lane++)
-            _integers[integerBase + lane] = context.ReadInteger(
+            _integers[integerBase + lane] = context.Registers.ReadInteger(
                 new CoflowRegister(CoflowRegisterKind.Integer, source.IntegerBase + lane));
         for (var lane = 0; lane < source.Shape.FloatCount; lane++)
-            _floats[floatBase + lane] = context.ReadFloat(
+            _floats[floatBase + lane] = context.Registers.ReadFloat(
                 new CoflowRegister(CoflowRegisterKind.Float, source.FloatBase + lane));
         for (var lane = 0; lane < source.Shape.ReferenceCount; lane++)
-            _references[referenceBase + lane] = context.ReadReference(
+            _references[referenceBase + lane] = context.Registers.ReadReference(
                 new CoflowRegister(CoflowRegisterKind.Reference, source.ReferenceBase + lane));
         entry.Count++;
     }
@@ -134,12 +140,12 @@ internal sealed class CoflowCollectionArena
     internal CoflowCollectionKind Kind(CoflowCollectionId id) => EntryAt(id).Kind;
     internal int ItemCount(CoflowCollectionId id) => EntryAt(id).Count;
     internal bool Contains(CoflowCollectionId id) => id.IsValid &&
-        id.Generation == _generation && _entryIndexes.ContainsKey(id.Index);
+        id.SnapshotId == _snapshotId && _entryIndexes.ContainsKey(id.Index);
 
     internal void CopyArrayItem(
         CoflowCollectionId id,
         int index,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister target)
     {
         var entry = EntryAt(id);
@@ -151,7 +157,7 @@ internal sealed class CoflowCollectionArena
     internal void CopyDictionaryKey(
         CoflowCollectionId id,
         int index,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister target)
     {
         var entry = RequireDictionary(id);
@@ -161,7 +167,7 @@ internal sealed class CoflowCollectionArena
     internal void CopyDictionaryValue(
         CoflowCollectionId id,
         int index,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister target)
     {
         var entry = RequireDictionary(id);
@@ -170,28 +176,27 @@ internal sealed class CoflowCollectionArena
 
     internal int FindDictionaryKey(
         CoflowCollectionId id,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister key)
     {
         var entry = RequireDictionary(id);
         RequireLayout(entry.FirstShape, key.Shape);
         key = context.OffsetRelative(key);
-        for (var index = 0; index < entry.Count; index++)
-        {
-            var (integerBase, floatBase, referenceBase) = Bases(entry, index, second: false);
-            var equal = true;
-            for (var lane = 0; equal && lane < key.Shape.IntegerCount; lane++)
-                equal = _integers[integerBase + lane] == context.ReadInteger(
-                    new CoflowRegister(CoflowRegisterKind.Integer, key.IntegerBase + lane));
-            for (var lane = 0; equal && lane < key.Shape.FloatCount; lane++)
-                equal = _floats[floatBase + lane].Equals(context.ReadFloat(
-                    new CoflowRegister(CoflowRegisterKind.Float, key.FloatBase + lane)));
-            for (var lane = 0; equal && lane < key.Shape.ReferenceCount; lane++)
-                equal = Equals(_references[referenceBase + lane], context.ReadReference(
-                    new CoflowRegister(CoflowRegisterKind.Reference, key.ReferenceBase + lane)));
-            if (equal) return index;
-        }
-        return -1;
+        return FindDictionaryKey(id, context.Registers.View(key));
+    }
+
+    internal CoflowValueView View(CoflowCollectionId id, int index, bool second = false)
+    {
+        var position = Bases(EntryAt(id), index, second);
+        return new(_integers, _floats, _references, position.Integer, position.Float, position.Reference);
+    }
+
+    internal int FindDictionaryKey(CoflowCollectionId id, CoflowValueView key)
+    {
+        var entry = EntryAt(id);
+        return entry.IntegerKeys is { } integers
+            ? integers.TryGetValue(key.Integer, out var index) ? index : -1
+            : entry.StringKeys!.TryGetValue((string)key.Reference!, out var stringIndex) ? stringIndex : -1;
     }
 
     internal bool ValueEquals(
@@ -223,7 +228,7 @@ internal sealed class CoflowCollectionArena
     }
 
     internal bool ValueEqualsRegister(CoflowCollectionId id, int index, bool second,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister value)
+        CoflowExecutionSession context, CoflowValueRegister value)
     {
         var entry = EntryAt(id);
         var shape = second ? entry.SecondShape! : entry.FirstShape;
@@ -232,13 +237,13 @@ internal sealed class CoflowCollectionArena
         value = context.OffsetRelative(value);
         var bases = Bases(entry, index, second);
         for (var lane = 0; lane < shape.IntegerCount; lane++)
-            if (_integers[bases.Integer + lane] != context.ReadInteger(
+            if (_integers[bases.Integer + lane] != context.Registers.ReadInteger(
                     new CoflowRegister(CoflowRegisterKind.Integer, value.IntegerBase + lane))) return false;
         for (var lane = 0; lane < shape.FloatCount; lane++)
-            if (!_floats[bases.Float + lane].Equals(context.ReadFloat(
+            if (!_floats[bases.Float + lane].Equals(context.Registers.ReadFloat(
                     new CoflowRegister(CoflowRegisterKind.Float, value.FloatBase + lane)))) return false;
         for (var lane = 0; lane < shape.ReferenceCount; lane++)
-            if (!Equals(_references[bases.Reference + lane], context.ReadReference(
+            if (!Equals(_references[bases.Reference + lane], context.Registers.ReadReference(
                     new CoflowRegister(CoflowRegisterKind.Reference, value.ReferenceBase + lane)))) return false;
         return true;
     }
@@ -352,7 +357,7 @@ internal sealed class CoflowCollectionArena
     {
         var frozen = new CoflowCollectionArena
         {
-            _generation = _generation,
+            _snapshotId = _snapshotId,
             _firstIndex = _firstIndex,
             _lastIndex = _lastIndex,
         };
@@ -361,7 +366,8 @@ internal sealed class CoflowCollectionArena
         frozen._references.AddRange(_references);
         foreach (var entry in _entries)
             frozen._entries.Add(new Entry(entry.Kind, entry.FirstShape, entry.SecondShape,
-                entry.Count, entry.Count, entry.IntegerBase, entry.FloatBase, entry.ReferenceBase));
+                entry.Count, entry.Count, entry.IntegerBase, entry.FloatBase, entry.ReferenceBase)
+            { IntegerKeys = entry.IntegerKeys, StringKeys = entry.StringKeys });
         foreach (var pair in _entryIndexes) frozen._entryIndexes.Add(pair.Key, pair.Value);
         return frozen;
     }
@@ -370,12 +376,12 @@ internal sealed class CoflowCollectionArena
     {
         if (reachable is null) throw new ArgumentNullException(nameof(reachable));
         var selected = _entryIndexes
-            .Where(pair => reachable.Contains(new CoflowCollectionId(_generation, pair.Key)))
+            .Where(pair => reachable.Contains(new CoflowCollectionId(_snapshotId, pair.Key)))
             .OrderBy(pair => pair.Value)
             .ToArray();
         var frozen = new CoflowCollectionArena
         {
-            _generation = _generation,
+            _snapshotId = _snapshotId,
             _firstIndex = _firstIndex,
             _lastIndex = selected.Length == 0 ? _firstIndex : selected.Max(pair => pair.Key),
         };
@@ -384,7 +390,8 @@ internal sealed class CoflowCollectionArena
             var source = _entries[pair.Value];
             var target = new Entry(source.Kind, source.FirstShape, source.SecondShape,
                 source.Count, source.Count, frozen._integers.Count,
-                frozen._floats.Count, frozen._references.Count);
+                frozen._floats.Count, frozen._references.Count)
+            { IntegerKeys = source.IntegerKeys, StringKeys = source.StringKeys };
             for (var index = 0; index < source.Count; index++)
             {
                 CopyValue(source, source.FirstShape, index, second: false, frozen);
@@ -414,11 +421,12 @@ internal sealed class CoflowCollectionArena
         CoflowValueShape firstShape,
         CoflowValueShape? secondShape,
         IReadOnlyList<CoflowEncodedValue> first,
-        IReadOnlyList<CoflowEncodedValue>? second)
+        IReadOnlyList<CoflowEncodedValue>? second,
+        bool budgetAlreadyCharged = false)
     {
-        if (_generation == 0)
-            throw new InvalidOperationException("The collection Arena is not attached to a snapshot generation.");
-        _budget?.CollectionElements(first.Count);
+        if (_snapshotId == 0)
+            throw new InvalidOperationException("The collection Arena is not attached to a snapshot.");
+        if (!budgetAlreadyCharged) _budget?.CollectionElements(first.Count);
         var entry = new Entry(kind, firstShape, secondShape, first.Count, first.Count,
             _integers.Count, _floats.Count, _references.Count);
         for (var index = 0; index < first.Count; index++)
@@ -426,6 +434,7 @@ internal sealed class CoflowCollectionArena
             Append(firstShape, first[index]);
             if (second is not null) Append(secondShape!, second[index]);
         }
+        IndexDictionary(entry);
         _entries.Add(entry);
         return NewId();
     }
@@ -434,12 +443,12 @@ internal sealed class CoflowCollectionArena
         CoflowCollectionKind kind,
         CoflowValueShape firstShape,
         CoflowValueShape? secondShape,
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         IReadOnlyList<CoflowValueRegister> first,
         IReadOnlyList<CoflowValueRegister>? second)
     {
-        if (_generation == 0)
-            throw new InvalidOperationException("The collection Arena is not attached to a snapshot generation.");
+        if (_snapshotId == 0)
+            throw new InvalidOperationException("The collection Arena is not attached to a snapshot.");
         _budget?.CollectionElements(first.Count);
         var entry = new Entry(kind, firstShape, secondShape, first.Count, first.Count,
             _integers.Count, _floats.Count, _references.Count);
@@ -448,6 +457,57 @@ internal sealed class CoflowCollectionArena
             Append(context, firstShape, first[index]);
             if (second is not null) Append(context, secondShape!, second[index]);
         }
+        IndexDictionary(entry);
+        _entries.Add(entry);
+        return NewId();
+    }
+
+    // key 类型由编译器确定；索引只构建一次，冻结副本共享只读索引。
+    private void IndexDictionary(Entry entry)
+    {
+        if (entry.Kind != CoflowCollectionKind.Dictionary) return;
+        if (entry.FirstShape.Type == typeof(string))
+        {
+            entry.StringKeys = new Dictionary<string, int>(entry.Count, StringComparer.Ordinal);
+            for (var index = 0; index < entry.Count; index++)
+                entry.StringKeys.TryAdd((string)_references[Bases(entry, index, false).Reference]!, index);
+        }
+        else
+        {
+            entry.IntegerKeys = new Dictionary<long, int>(entry.Count);
+            for (var index = 0; index < entry.Count; index++)
+                entry.IntegerKeys.TryAdd(_integers[Bases(entry, index, false).Integer], index);
+        }
+    }
+
+    internal CoflowCollectionId EncodeCollection(object value, int count,
+        Type[] arguments, Func<Type, object?, CoflowEncodedValue> encode)
+    {
+        var dictionary = arguments.Length == 2;
+        var first = CoflowValueShape.Of(arguments[0]);
+        var second = dictionary ? CoflowValueShape.Of(arguments[1]) : null;
+        var entry = new Entry(dictionary ? CoflowCollectionKind.Dictionary : CoflowCollectionKind.Array,
+            first, second, count, count, _integers.Count, _floats.Count, _references.Count);
+        // 先保留外层连续空间，递归编码的集合随后追加，互不覆盖。
+        AddDefaults(_integers, checked(count * (first.IntegerCount + (second?.IntegerCount ?? 0))));
+        AddDefaults(_floats, checked(count * (first.FloatCount + (second?.FloatCount ?? 0))));
+        AddDefaults(_references, checked(count * (first.ReferenceCount + (second?.ReferenceCount ?? 0))));
+        var accessors = dictionary ? CoflowDictionaryEntryAccessors.For(arguments[0], arguments[1]) : null;
+        var index = 0;
+        foreach (var item in (IEnumerable)value)
+        {
+            var position = Bases(entry, index, false);
+            CoflowEncodedValue.Encode(first, dictionary ? accessors!.Key(item) : item,
+                position.Integer, position.Float, position.Reference, _integers, _floats, _references, encode);
+            if (dictionary)
+            {
+                position = Bases(entry, index, true);
+                CoflowEncodedValue.Encode(second!, accessors!.Value(item),
+                    position.Integer, position.Float, position.Reference, _integers, _floats, _references, encode);
+            }
+            index++;
+        }
+        IndexDictionary(entry);
         _entries.Add(entry);
         return NewId();
     }
@@ -461,20 +521,20 @@ internal sealed class CoflowCollectionArena
     }
 
     private void Append(
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueShape shape,
         CoflowValueRegister source)
     {
         RequireLayout(shape, source.Shape);
         source = context.OffsetRelative(source);
         for (var lane = 0; lane < shape.IntegerCount; lane++)
-            _integers.Add(context.ReadInteger(
+            _integers.Add(context.Registers.ReadInteger(
                 new CoflowRegister(CoflowRegisterKind.Integer, source.IntegerBase + lane)));
         for (var lane = 0; lane < shape.FloatCount; lane++)
-            _floats.Add(context.ReadFloat(
+            _floats.Add(context.Registers.ReadFloat(
                 new CoflowRegister(CoflowRegisterKind.Float, source.FloatBase + lane)));
         for (var lane = 0; lane < shape.ReferenceCount; lane++)
-            _references.Add(context.ReadReference(
+            _references.Add(context.Registers.ReadReference(
                 new CoflowRegister(CoflowRegisterKind.Reference, source.ReferenceBase + lane)));
     }
 
@@ -489,19 +549,19 @@ internal sealed class CoflowCollectionArena
     }
 
     private void Copy(Entry entry, CoflowValueShape shape, int index, bool second,
-        CoflowVm.CoflowExecutionContext context, CoflowValueRegister target)
+        CoflowExecutionSession context, CoflowValueRegister target)
     {
         RequireLayout(shape, target.Shape);
         RequireIndex(entry, index);
         var (integerBase, floatBase, referenceBase) = Bases(entry, index, second);
         for (var lane = 0; lane < shape.IntegerCount; lane++)
-            context.WriteInteger(new CoflowRegister(CoflowRegisterKind.Integer, target.IntegerBase + lane),
+            context.Registers.WriteInteger(new CoflowRegister(CoflowRegisterKind.Integer, target.IntegerBase + lane),
                 _integers[integerBase + lane]);
         for (var lane = 0; lane < shape.FloatCount; lane++)
-            context.WriteFloat(new CoflowRegister(CoflowRegisterKind.Float, target.FloatBase + lane),
+            context.Registers.WriteFloat(new CoflowRegister(CoflowRegisterKind.Float, target.FloatBase + lane),
                 _floats[floatBase + lane]);
         for (var lane = 0; lane < shape.ReferenceCount; lane++)
-            context.WriteReference(new CoflowRegister(CoflowRegisterKind.Reference, target.ReferenceBase + lane),
+            context.Registers.WriteReference(new CoflowRegister(CoflowRegisterKind.Reference, target.ReferenceBase + lane),
                 _references[referenceBase + lane]);
     }
 
@@ -539,7 +599,7 @@ internal sealed class CoflowCollectionArena
         if (index <= _firstIndex || !_entryIndexes.TryAdd(index, _entries.Count - 1))
             throw new InvalidOperationException("The collection index allocator returned an invalid or duplicate index.");
         _lastIndex = Math.Max(_lastIndex, index);
-        return new CoflowCollectionId(_generation, index);
+        return new CoflowCollectionId(_snapshotId, index);
     }
 
     private static void RequireIndex(Entry entry, int index)
@@ -585,6 +645,8 @@ internal sealed class CoflowCollectionArena
             ReferenceBase = referenceBase;
         }
 
+        internal Dictionary<long, int>? IntegerKeys { get; set; }
+        internal Dictionary<string, int>? StringKeys { get; set; }
         internal CoflowCollectionKind Kind { get; }
         internal CoflowValueShape FirstShape { get; }
         internal CoflowValueShape? SecondShape { get; }
@@ -601,36 +663,33 @@ internal static class CoflowCollectionEncoding
     internal static CoflowEncodedValue Encode(
         Type type,
         object? value,
-        CoflowCollectionArena arena)
+        CoflowCollectionArena arena,
+        bool budgetAlreadyCharged = false)
     {
         if (value is null) throw new CoflowBoundaryException($"A required `{type}` collection is null.");
         if (!TryCollection(type, out var definition, out var arguments))
             return CoflowEncodedValue.EncodeArenaField(type, value,
-                (nestedType, nestedValue) => Encode(nestedType, nestedValue, arena));
+                (nestedType, nestedValue) => Encode(
+                    nestedType, nestedValue, arena, budgetAlreadyCharged));
 
         var recursive = new Func<Type, object?, CoflowEncodedValue>(
-            (nestedType, nestedValue) => Encode(nestedType, nestedValue, arena));
-        CoflowCollectionId id;
-        if (definition == typeof(IReadOnlyList<>))
-        {
-            var elements = ((IEnumerable)value).Cast<object?>()
-                .Select(item => CoflowEncodedValue.EncodeArenaField(arguments[0], item, recursive))
-                .ToArray();
-            id = arena.AddArray(CoflowValueShape.Of(arguments[0]), elements);
-        }
-        else
-        {
-            var accessors = CoflowDictionaryEntryAccessors.For(arguments[0], arguments[1]);
-            var pairs = ((IEnumerable)value).Cast<object>().ToArray();
-            var keys = pairs.Select(pair => CoflowEncodedValue.EncodeArenaField(
-                arguments[0], accessors.Key(pair), recursive)).ToArray();
-            var values = pairs.Select(pair => CoflowEncodedValue.EncodeArenaField(
-                arguments[1], accessors.Value(pair), recursive)).ToArray();
-            id = arena.AddDictionary(CoflowValueShape.Of(arguments[0]),
-                CoflowValueShape.Of(arguments[1]), keys, values);
-        }
+            (nestedType, nestedValue) => Encode(
+                nestedType, nestedValue, arena, budgetAlreadyCharged));
+        var count = CollectionCount(type, value);
+        if (!budgetAlreadyCharged) arena.ReserveElements(count);
+        var id = arena.EncodeCollection(value, count, arguments, recursive);
         return new CoflowEncodedValue(CoflowValueShape.Of(type),
             new[] { unchecked((long)id.Packed) }, Array.Empty<double>(), Array.Empty<object?>());
+    }
+
+    private static int CollectionCount(Type type, object value)
+    {
+        var property = type.GetProperty(nameof(IReadOnlyCollection<object>.Count)) ??
+            type.GetInterfaces().Select(candidate =>
+                    candidate.GetProperty(nameof(IReadOnlyCollection<object>.Count)))
+                .FirstOrDefault(candidate => candidate is not null);
+        return (int)(property?.GetValue(value) ??
+            throw new InvalidOperationException($"Collection `{type}` has no Count property."));
     }
 
     private static bool TryCollection(Type type, out Type definition, out Type[] arguments)
@@ -652,31 +711,36 @@ internal sealed record CoflowDictionaryEntryAccessors(
     Func<object, object?> Key,
     Func<object, object?> Value)
 {
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
-        (Type Key, Type Value), CoflowDictionaryEntryAccessors> Cache = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        Type, System.Runtime.CompilerServices.ConditionalWeakTable<Type, CoflowDictionaryEntryAccessors>> Cache = new();
 
-    internal static CoflowDictionaryEntryAccessors For(Type key, Type value) =>
-        Cache.GetOrAdd((key, value), static types => Build(types.Key, types.Value));
+    internal static CoflowDictionaryEntryAccessors For(Type key, Type value)
+    {
+        // collectible 类型不进入进程缓存，避免嵌套弱表的 value 图间接固定外层 key。
+        if (CoflowExpressionCompiler.IsCollectible(key) || CoflowExpressionCompiler.IsCollectible(value))
+            return Build(key, value);
+        return Cache.GetValue(key, static _ => new()).GetValue(value, _ => Build(key, value));
+    }
 
     private static CoflowDictionaryEntryAccessors Build(Type key, Type value)
     {
         var pairType = typeof(KeyValuePair<,>).MakeGenericType(key, value);
         var pair = System.Linq.Expressions.Expression.Parameter(typeof(object), "pair");
         var typed = System.Linq.Expressions.Expression.Convert(pair, pairType);
-        Func<string, Func<object, object?>> reader = name => CoflowExpressionCompiler.Compile(
+        Func<string, Func<object, object?>> reader = name => CoflowExpressionCompiler.CompileCollectibleSafe(
             System.Linq.Expressions.Expression.Lambda<Func<object, object?>>(
                 System.Linq.Expressions.Expression.Convert(
                     System.Linq.Expressions.Expression.Property(typed, name), typeof(object)),
-                pair));
+                pair), key, value);
         return new CoflowDictionaryEntryAccessors(reader("Key"), reader("Value"));
     }
 }
 
 internal static class CoflowCollectionMaterializer<T>
 {
-    internal static readonly Func<CoflowVm.CoflowExecutionContext, CoflowCollectionId, T> Read = Build();
+    internal static readonly Func<CoflowExecutionSession, CoflowCollectionId, T> Read = Build();
 
-    private static Func<CoflowVm.CoflowExecutionContext, CoflowCollectionId, T> Build()
+    private static Func<CoflowExecutionSession, CoflowCollectionId, T> Build()
     {
         var type = typeof(T);
         if (!type.IsGenericType)
@@ -689,17 +753,12 @@ internal static class CoflowCollectionMaterializer<T>
         var method = typeof(CoflowCollectionMaterializer<T>).GetMethod(methodName,
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
             .MakeGenericMethod(arguments);
-        var context = System.Linq.Expressions.Expression.Parameter(
-            typeof(CoflowVm.CoflowExecutionContext), "context");
-        var id = System.Linq.Expressions.Expression.Parameter(typeof(CoflowCollectionId), "id");
-        return CoflowExpressionCompiler.Compile(
-            System.Linq.Expressions.Expression.Lambda<Func<CoflowVm.CoflowExecutionContext, CoflowCollectionId, T>>(
-                System.Linq.Expressions.Expression.Convert(
-                    System.Linq.Expressions.Expression.Call(method, context, id), type), context, id));
+        return (Func<CoflowExecutionSession, CoflowCollectionId, T>)method.CreateDelegate(
+            typeof(Func<CoflowExecutionSession, CoflowCollectionId, T>));
     }
 
     private static IReadOnlyList<TElement> ReadArray<TElement>(
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowCollectionId id)
     {
         if (context.CollectionKind(id) != CoflowCollectionKind.Array)
@@ -711,7 +770,7 @@ internal static class CoflowCollectionMaterializer<T>
     }
 
     private static IReadOnlyDictionary<TKey, TValue> ReadDictionary<TKey, TValue>(
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowCollectionId id) where TKey : notnull
     {
         if (context.CollectionKind(id) != CoflowCollectionKind.Dictionary)

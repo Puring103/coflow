@@ -41,10 +41,20 @@ internal sealed class CoflowClosureTemplate
     }
 }
 
-internal sealed class CoflowClosureProgramTemplate(
-    CoflowProgramTemplate program,
-    IReadOnlyList<Type> captureTypes)
+internal sealed class CoflowClosureProgramTemplate
 {
+    private readonly IReadOnlyList<Type> _captureTypes;
+
+    internal CoflowClosureProgramTemplate(
+        CoflowProgramTemplate program,
+        IReadOnlyList<Type> captureTypes)
+    {
+        Program = program;
+        _captureTypes = captureTypes.ToArray();
+    }
+
+    internal CoflowProgramTemplate Program { get; }
+
     internal CoflowClosureTemplate Link(CoflowProgramLinker linker) =>
-        linker.RegisterClosure(new CoflowClosureTemplate(program.Link(linker), captureTypes));
+        linker.RegisterClosure(new CoflowClosureTemplate(Program.Link(linker), _captureTypes));
 }

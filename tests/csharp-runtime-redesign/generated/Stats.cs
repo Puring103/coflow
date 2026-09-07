@@ -19,8 +19,8 @@ public readonly partial struct Stats : IEquatable<Stats>
 
     public long Transform(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
-        return CoflowInvoker.Invoke<global::Stats, long, long>(
-            coflow, this, _coflowId, new CoflowTypeId(3), new CoflowFieldId(1), arg0);
+        return CoflowInvoker.Invoke<long, long>(
+            coflow, _coflowId, new CoflowTypeId(3), new CoflowFieldId(1), arg0);
     }
 
 

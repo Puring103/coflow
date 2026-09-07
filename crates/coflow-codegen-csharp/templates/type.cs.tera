@@ -37,13 +37,13 @@ using Coflow.Runtime.CompilerServices;
 {% if function.summary %}    /// <summary>{{ function.summary }}</summary>
 {% endif %}{% if function.returns_void %}    public void {{ function.method_name }}(global::Coflow.Runtime.Coflow coflow{% for parameter in function.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %})
     {
-        CoflowInvoker.InvokeVoid<{{ type.qualified_name }}{% for parameter in function.parameters %}, {{ parameter.ty }}{% endfor %}>(
-            coflow, this, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
+        CoflowInvoker.InvokeVoid{% if function.parameters | length > 0 %}<{% for parameter in function.parameters %}{{ parameter.ty }}{% if not loop.last %}, {% endif %}{% endfor %}>{% endif %}(
+            coflow, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
     }
 {% else %}    public {{ function.result_type }} {{ function.method_name }}(global::Coflow.Runtime.Coflow coflow{% for parameter in function.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %})
     {
-        return CoflowInvoker.Invoke<{{ type.qualified_name }}{% for parameter in function.parameters %}, {{ parameter.ty }}{% endfor %}, {{ function.result_type }}>(
-            coflow, this, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
+        return CoflowInvoker.Invoke<{% for parameter in function.parameters %}{{ parameter.ty }}, {% endfor %}{{ function.result_type }}>(
+            coflow, _coflowId, new CoflowTypeId({{ type.type_id }}), new CoflowFieldId({{ function.slot }}){% for parameter in function.parameters %}, {{ parameter.name }}{% endfor %});
     }
 {% endif %}
 {% endif %}{% endfor %}{% if not type.is_struct %}    internal {{ type.name }}() { }

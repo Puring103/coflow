@@ -150,7 +150,7 @@ public sealed class CfdLoadContext
     }
 
     private CoflowValueId AllocateValueId() =>
-        new(_generation, checked(++_nextValueIndex));
+        new(_snapshotId, checked(++_nextValueIndex));
 
     internal CoflowFunctionEntry ResolveFunction(object owner, string declaredType, string fieldName) =>
         _functions.First(entry =>

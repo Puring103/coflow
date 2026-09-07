@@ -1,7 +1,5 @@
-using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
@@ -9,412 +7,233 @@ namespace Coflow.Runtime.Tests;
 
 public sealed class CoflowProgramValidationTests
 {
-    static CoflowProgramValidationTests()
-    {
-        CoflowValueLayout.RegisterOption<long>();
-        CoflowValueLayout.RegisterOption<string>();
-        CoflowValueLayout.RegisterResult<long, string>();
-        CoflowValueLayout.RegisterResult<long, double>();
-    }
-
     [Fact]
-    public void RejectsJumpOutsideInstructionBoundaries()
+    public void FinalInstructionSpecificationCoversEveryOpcode()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Program(
-            new[] { new CoflowInstruction(CoflowOpCode.Jump, 4) },
-            Array.Empty<object?>(),
-            typeof(Unit)));
-        Assert.Contains("jump target", error.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RejectsOperationWithWrongDescriptorType()
-    {
-        var error = Assert.Throws<InvalidOperationException>(() => Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Native, 0, ValueType: typeof(long)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { 42L },
-            typeof(long)));
-        Assert.Contains("CoflowNativeCall descriptor", error.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RejectsReturnTypeMismatch()
-    {
-        var error = Assert.Throws<InvalidOperationException>(() => Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Constant, 0, ValueType: typeof(long)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { 1L },
-            typeof(double)));
-        Assert.Contains("return type", error.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ExecutesCompositeArgumentsWithoutExplicitIrValueTypes()
-    {
-        var option = Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Argument),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            Array.Empty<object?>(),
-            typeof(Option<long>),
-            parameterTypes: new[] { typeof(Option<long>) });
-        var result = Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Argument),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            Array.Empty<object?>(),
-            typeof(Result<long, string>),
-            parameterTypes: new[] { typeof(Result<long, string>) });
-
-        Assert.Equal(7, CoflowVm.ExecuteRaw<Option<long>, Option<long>>(
-            option, Option<long>.Some(7)).Value);
-        Assert.Equal("failure", CoflowVm.ExecuteRaw<Result<long, string>, Result<long, string>>(
-            result, Result<long, string>.Err("failure")).Error);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DirectCallWindowsAllocateMixedAndCompositeArgumentShapes(bool tail)
-    {
-        var parameterTypes = new[]
+        var codes = Enum.GetValues<CoflowRegisterOpCode>();
+        Assert.Equal(codes, CoflowRegisterInstructionSpec.All);
+        foreach (var code in codes)
         {
-            typeof(long), typeof(double), typeof(string), typeof(Option<long>),
-        };
-        var target = Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Argument, 0),
-                new CoflowInstruction(CoflowOpCode.Argument, 1),
-                new CoflowInstruction(CoflowOpCode.Argument, 2),
-                new CoflowInstruction(CoflowOpCode.Argument, 3),
-                new CoflowInstruction(CoflowOpCode.Native, 0, ValueType: typeof(long)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { new CoflowNativeCall(new Func<long, double, string, Option<long>, long>(
-                static (integer, floating, text, optional) =>
-                    integer + (long)floating + text.Length + optional.Value)) },
-            typeof(long),
-            parameterTypes: parameterTypes);
-        var entry = Entry(parameterTypes, typeof(long), target);
-        entry.AssignProgramIndex(0);
-        var caller = CallProgram(entry, parameterTypes, tail);
-        var site = Assert.Single(caller.RegisterProgram.Operations.Calls);
-        Assert.Equal(0, site.ProgramIndex);
-        Assert.Equal(parameterTypes, site.Arguments.Select(argument => argument.Shape.Type));
+            Assert.True(CoflowRegisterInstructionSpec.IsKnown(code));
+            _ = CoflowRegisterInstructionSpec.OperandKind(code, 0);
+            _ = CoflowRegisterInstructionSpec.OperandKind(code, 1);
+            _ = CoflowRegisterInstructionSpec.OperandKind(code, 2);
+            _ = CoflowRegisterInstructionSpec.Descriptor(code);
+            _ = CoflowRegisterInstructionSpec.ControlFlow(code);
+        }
+        Assert.False(CoflowRegisterInstructionSpec.IsKnown((CoflowRegisterOpCode)byte.MaxValue));
     }
 
     [Fact]
-    public void HostCallWindowUsesTheDeclaredMixedArgumentShapes()
+    public void FinalVerifierRejectsUnknownOpcodeAndInvalidSourceMap()
     {
-        var parameterTypes = new[]
+        var valid = RegisterProgram(1L, typeof(long));
+        var unknown = valid.Instructions.ToArray();
+        unknown[0] = unknown[0] with { Code = (CoflowRegisterOpCode)byte.MaxValue };
+
+        var opcodeError = Assert.Throws<InvalidOperationException>(() => Rebuild(valid, instructions: unknown));
+        Assert.Contains("unknown opcode", opcodeError.Message, StringComparison.Ordinal);
+
+        var mapError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(valid, instructionSpans: Array.Empty<CfdSpan?>()));
+        Assert.Contains("source map length", mapError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FinalVerifierRejectsRegisterImmediateAndDescriptorIndexes()
+    {
+        var integer = PrimitiveIntegerProgram();
+        var invalidRegister = integer.Instructions.ToArray();
+        invalidRegister[0] = invalidRegister[0] with { A = integer.IntegerRegisterCount };
+        var registerError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(integer, instructions: invalidRegister));
+        Assert.Contains("operand A", registerError.Message, StringComparison.Ordinal);
+
+        var invalidImmediate = integer.Instructions.ToArray();
+        invalidImmediate[0] = invalidImmediate[0] with { B = integer.Immediates.Length };
+        var immediateError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(integer, instructions: invalidImmediate));
+        Assert.Contains("immediate", immediateError.Message, StringComparison.Ordinal);
+
+        var reference = PrimitiveReferenceProgram();
+        var invalidDescriptor = reference.Instructions.ToArray();
+        invalidDescriptor[0] = invalidDescriptor[0] with { C = reference.Operations.References.Length };
+        var descriptorError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(reference, instructions: invalidDescriptor));
+        Assert.Contains("reference descriptor", descriptorError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FinalVerifierRejectsInvalidJumpAndReachableFallthrough()
+    {
+        var valid = RegisterProgram(1L, typeof(long));
+        var invalidJump = new[]
         {
-            typeof(long), typeof(double), typeof(string), typeof(Option<long>),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Jump, valid.Instructions.Length),
         };
-        var entry = Entry(parameterTypes, typeof(long), implementation: null);
-        entry.ConfigureHost(new Func<long, double, string, Option<long>, long>(
-            static (integer, floating, text, optional) =>
-                integer + (long)floating + text.Length + optional.Value));
-        entry.AssignProgramIndex(0);
-        var caller = CallProgram(entry, parameterTypes, tail: false);
-        var site = Assert.Single(caller.RegisterProgram.Operations.Calls);
-        Assert.Null(entry.CompiledProgram);
-        Assert.Equal(parameterTypes, site.Arguments.Select(argument => argument.Shape.Type));
+        var jumpError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(valid, instructions: invalidJump, instructionSpans: new CfdSpan?[1]));
+        Assert.Contains("jump target", jumpError.Message, StringComparison.Ordinal);
+
+        var fallthrough = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Nop),
+        };
+        var fallthroughError = Assert.Throws<InvalidOperationException>(() =>
+            Rebuild(valid, instructions: fallthrough, instructionSpans: new CfdSpan?[1]));
+        Assert.Contains("falls through", fallthroughError.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ArrayLiteralLowersDirectlyIntoTheCollectionArena()
+    public void FinalVerifierRejectsReadBeforeAssignment()
     {
-        var program = Program(
-            new[]
-            {
-                new CoflowInstruction(CoflowOpCode.Argument, 0),
-                new CoflowInstruction(CoflowOpCode.MakeArray, 1,
-                    typeof(IReadOnlyList<long>)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            Array.Empty<object?>(),
-            typeof(IReadOnlyList<long>),
-            parameterTypes: new[] { typeof(long) });
+        var target = new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 0, 0, 0);
+        var operations = new CoflowRegisterOperations
+        {
+            Targets = new[] { new CoflowRegisterTargetSite(target) },
+        };
+        var instructions = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.MoveInteger, 0, 0),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Return, C: 0),
+        };
 
-        Assert.Contains(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.MakeArray);
-        Assert.DoesNotContain(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.Native);
-        Assert.Equal(new long[] { 7 },
-            CoflowVm.ExecuteRaw<long, IReadOnlyList<long>>(program, 7));
+        var error = Assert.Throws<InvalidOperationException>(() => new CoflowRegisterProgram(
+            Array.Empty<CoflowValueRegister>(), instructions, new CfdSpan?[instructions.Length],
+            Array.Empty<long>(), operations, 1, 0, 0));
+
+        Assert.Contains("reads unassigned integer register 0", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DictionaryLiteralLowersDirectlyIntoTheCollectionArena()
+    public void FinalVerifierRequiresAssignmentOnEveryIncomingBranch()
     {
-        var program = Program(
-            new[]
-            {
-                Constant(0, typeof(string)),
-                Constant(1, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.MakeDictionary, 1,
-                    typeof(IReadOnlyDictionary<string, long>)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { "key", 9L },
-            typeof(IReadOnlyDictionary<string, long>),
-            parameterTypes: new[] { typeof(long) });
+        var condition = new CoflowValueRegister(CoflowValueShape.Of(typeof(bool)), 0, 0, 0);
+        var result = new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 1, 0, 0);
+        var operations = new CoflowRegisterOperations
+        {
+            Targets = new[] { new CoflowRegisterTargetSite(result) },
+        };
+        var instructions = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.JumpIfFalse, 0, 3),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.ConstantInteger, 1, 0),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Jump, 4),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Nop),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Return, C: 0),
+        };
 
-        Assert.Contains(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.MakeDictionary);
-        Assert.DoesNotContain(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.Native);
-        var result = CoflowVm.ExecuteRaw<long, IReadOnlyDictionary<string, long>>(program, 0);
-        Assert.Equal(9, result["key"]);
+        var error = Assert.Throws<InvalidOperationException>(() => new CoflowRegisterProgram(
+            new[] { condition }, instructions, new CfdSpan?[instructions.Length],
+            new[] { 1L }, operations, 2, 0, 0));
+
+        Assert.Contains("reads unassigned integer register 1", error.Message, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(1L, true, 20L)]
-    [InlineData(-1L, false, 0L)]
-    [InlineData(2L, false, 0L)]
-    public void ArrayIndexReadsTheArenaWithoutANativeCall(long index, bool hasValue, long expected)
+    [Fact]
+    public void VerifiedProgramDoesNotRetainMutableConstructionArrays()
     {
-        var program = Program(
-            new[]
-            {
-                Constant(0, typeof(long)),
-                Constant(1, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.MakeArray, 2,
-                    typeof(IReadOnlyList<long>)),
-                Constant(2, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.ArrayIndex, ValueType: typeof(Option<long>)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { 10L, 20L, index },
-            typeof(Option<long>),
-            parameterTypes: new[] { typeof(long) });
+        var target = new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 0, 0, 0);
+        var targets = new[] { new CoflowRegisterTargetSite(target) };
+        var instructions = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.ConstantInteger, 0, 0),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Return, C: 0),
+        };
+        var spans = new CfdSpan?[] { new(1, 1, 1, 2), new(1, 2, 1, 3) };
+        var immediates = new[] { 7L };
+        var program = new CoflowRegisterProgram(
+            Array.Empty<CoflowValueRegister>(), instructions, spans, immediates,
+            new CoflowRegisterOperations { Targets = targets }, 1, 0, 0);
 
-        Assert.Contains(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.ArrayIndex);
-        Assert.DoesNotContain(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.Native);
-        var result = CoflowVm.ExecuteRaw<long, Option<long>>(program, 0);
-        Assert.Equal(hasValue, result.HasValue);
-        if (hasValue) Assert.Equal(expected, result.Value);
+        instructions[0] = new CoflowRegisterInstruction((CoflowRegisterOpCode)byte.MaxValue);
+        spans[0] = null;
+        immediates[0] = 99;
+        targets[0] = new CoflowRegisterTargetSite(
+            new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 99, 0, 0));
+
+        Assert.Equal(CoflowRegisterOpCode.ConstantInteger, program.Instructions[0].Code);
+        Assert.NotNull(program.InstructionSpans[0]);
+        Assert.Equal(7, program.Immediates[0]);
+        Assert.Equal(0, program.Operations.Targets[0].Target.IntegerBase);
     }
 
-    [Theory]
-    [InlineData("second", true, 20L)]
-    [InlineData("missing", false, 0L)]
-    public void DictionaryIndexReadsTheArenaWithoutANativeCall(
-        string key,
-        bool hasValue,
-        long expected)
+    [Fact]
+    public void FinalDescriptorsDoNotRetainNestedRegisterArrays()
     {
-        var program = Program(
-            new[]
-            {
-                Constant(0, typeof(string)), Constant(1, typeof(long)),
-                Constant(2, typeof(string)), Constant(3, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.MakeDictionary, 2,
-                    typeof(IReadOnlyDictionary<string, long>)),
-                Constant(4, typeof(string)),
-                new CoflowInstruction(CoflowOpCode.DictionaryIndex,
-                    ValueType: typeof(Option<long>)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { "first", 10L, "second", 20L, key },
-            typeof(Option<long>),
-            parameterTypes: new[] { typeof(long) });
+        var original = new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 0, 0, 0);
+        var registers = new[] { original };
+        var collection = new CoflowRegisterCollectionSite(registers, null, original);
+        var closure = new CoflowRegisterClosureSite(null!, registers, original);
+        var native = new CoflowNativeCallSite(null!, registers, original);
 
-        Assert.Contains(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.DictionaryIndex);
-        Assert.DoesNotContain(program.RegisterProgram.Instructions,
-            instruction => instruction.Code == CoflowRegisterOpCode.Native);
-        var result = CoflowVm.ExecuteRaw<long, Option<long>>(program, 0);
-        Assert.Equal(hasValue, result.HasValue);
-        if (hasValue) Assert.Equal(expected, result.Value);
+        registers[0] = original with { IntegerBase = 9 };
+
+        Assert.Equal(0, collection.First[0].IntegerBase);
+        Assert.Equal(0, closure.Captures[0].IntegerBase);
+        Assert.Equal(0, native.Arguments[0].IntegerBase);
     }
 
-    public static IEnumerable<object[]> InvalidPrograms()
+    private static CoflowRegisterProgram RegisterProgram(object value, Type type)
     {
-        yield return Case("stack underflow",
-            new[] { new CoflowInstruction(CoflowOpCode.Pop) });
-        yield return Case("invalid argument index",
-            new[] { new CoflowInstruction(CoflowOpCode.Argument, 1) });
-        yield return Case("read before assignment",
-            new[] { new CoflowInstruction(CoflowOpCode.Local), new CoflowInstruction(CoflowOpCode.Return) },
-            localCount: 1);
-        yield return Case("changes type",
-            new[]
-            {
-                Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.StoreLocal),
-                Constant(1, typeof(double)), new CoflowInstruction(CoflowOpCode.StoreLocal),
-                Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { 1L, 1.0 }, localCount: 1);
-        yield return Case("requires a reference or struct receiver",
-            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.LoadField, 1) },
-            new object?[] { 1L, new object() });
-        yield return Case("cannot construct",
-            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.MakeOptionSome, ValueType: typeof(Option<string>)) },
-            new object?[] { 1L });
-        yield return Case("payload type",
-            new[] { Constant(0, typeof(Option<long>)), new CoflowInstruction(CoflowOpCode.ReadFirstPayload, ValueType: typeof(string)) },
-            new object?[] { Option<long>.None });
-        yield return Case("incompatible propagation layouts",
-            new[] { Constant(0, typeof(Result<long, string>)), new CoflowInstruction(CoflowOpCode.Propagate, ValueType: typeof(long)) },
-            new object?[] { Result<long, string>.Ok(1) }, typeof(Result<long, double>));
-        yield return Case("creates None with non-Option",
-            new[] { new CoflowInstruction(CoflowOpCode.MakeOptionNone, ValueType: typeof(long)) });
-        yield return Case("reads a tag",
-            new[] { Constant(0, typeof(long)), new CoflowInstruction(CoflowOpCode.ReadValueTag) },
-            new object?[] { 1L });
-        yield return Case("reinterprets incompatible layouts",
-            new[] { Constant(0, typeof(string)), new CoflowInstruction(CoflowOpCode.Reinterpret, ValueType: typeof(long)) },
-            new object?[] { "value" });
-        yield return Case("reinterprets a collection handle",
-            new[]
-            {
-                Constant(0, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.MakeArray, 1,
-                    ValueType: typeof(IReadOnlyList<long>)),
-                new CoflowInstruction(CoflowOpCode.Reinterpret, ValueType: typeof(long)),
-            },
-            new object?[] { 1L });
-        yield return Case("reinterprets a collection handle",
-            new[]
-            {
-                Constant(0, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.Reinterpret, ValueType: typeof(IReadOnlyList<long>)),
-            },
-            new object?[] { 1L });
-        yield return Case("reads `System.Double` as Integer",
-            new[] { Constant(0, typeof(double)), new CoflowInstruction(CoflowOpCode.ConvertIntToFloat) },
-            new object?[] { 1.0 });
-        yield return Case("invalid Type descriptor",
-            new[] { Constant(0, typeof(string)), new CoflowInstruction(CoflowOpCode.IsType, 1) },
-            new object?[] { "value", 42L });
-        yield return Case("native argument 0",
-            new[]
-            {
-                Constant(0, typeof(double)),
-                new CoflowInstruction(CoflowOpCode.Native, 1, ValueType: typeof(long)),
-            },
-            new object?[] { 1.0, new CoflowNativeCall(new Func<long, long>(value => value)) });
-        yield return Case("stack underflow",
-            new[] { new CoflowInstruction(CoflowOpCode.JumpIfFalseKeep, 1) });
-        yield return Case("incompatible stack layout",
-            new[]
-            {
-                Constant(0, typeof(bool)),
-                new CoflowInstruction(CoflowOpCode.JumpIfFalse, 4),
-                Constant(1, typeof(long)),
-                new CoflowInstruction(CoflowOpCode.Jump, 5),
-                Constant(2, typeof(double)),
-                new CoflowInstruction(CoflowOpCode.Return),
-            },
-            new object?[] { true, 1L, 1.0 });
-        yield return Case("unknown opcode",
-            new[] { new CoflowInstruction((CoflowOpCode)byte.MaxValue) });
-    }
-
-    [Theory]
-    [MemberData(nameof(InvalidPrograms))]
-    public void RejectsInvalidOpcodeStackDescriptorAndLayoutCombinations(object data)
-    {
-        var invalid = Assert.IsType<InvalidProgram>(data);
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            Program(invalid.Instructions, invalid.Constants, invalid.ReturnType, invalid.LocalCount));
-
-        Assert.Contains(invalid.Expected, error.Message, StringComparison.Ordinal);
-    }
-
-    private static object[] Case(
-        string expected,
-        CoflowInstruction[] instructions,
-        object?[]? constants = null,
-        Type? returnType = null,
-        int localCount = 0) =>
-        new object[] { new InvalidProgram(
-            expected, instructions, constants ?? Array.Empty<object?>(), returnType ?? typeof(Unit), localCount) };
-
-    private static CoflowInstruction Constant(int index, Type type) =>
-        new(CoflowOpCode.Constant, index, ValueType: type);
-
-    private static CoflowProgram CallProgram(
-        CoflowFunctionEntry entry,
-        Type[] parameterTypes,
-        bool tail)
-    {
-        var instructions = parameterTypes.Select((_, index) =>
-                new CoflowInstruction(CoflowOpCode.Argument, index))
-            .Append(new CoflowInstruction(
-                tail ? CoflowOpCode.TailCall : CoflowOpCode.Call,
-                0,
-                ValueType: typeof(long)))
-            .ToList();
-        if (!tail) instructions.Add(new CoflowInstruction(CoflowOpCode.Return));
-        return Program(
-            instructions.ToArray(),
-            new object?[] { CoflowCallSite.From(entry, parameterTypes.Length) },
-            typeof(long),
-            parameterTypes: parameterTypes,
-            functions: new Dictionary<CoflowFunctionIdentity, CoflowFunctionEntry>
-            {
-                [entry.Identity] = entry,
-            });
-    }
-
-    private static CoflowFunctionEntry Entry(
-        Type[] parameterTypes,
-        Type returnType,
-        CoflowProgram? implementation)
-    {
-        var entry = new CoflowFunctionEntry(
-            new CoflowFunctionIdentity("Validation", "test", "target"),
-            new CoflowFunctionSignature(returnType, parameterTypes),
-            typeof(object),
-            null,
+        var builder = new CoflowVirtualProgramBuilder(
+            new CoflowFunctionIdentity("Validation", "test", "program"),
             "validation.cfd",
-            null);
-        entry.PublishCompiled(implementation);
-        return entry;
+            null,
+            Array.Empty<Type>(),
+            type);
+        var origin = new CoflowSourceOrigin("validation.cfd", null);
+        var result = builder.Constant(type, value, origin);
+        builder.Return(result, origin);
+        return CoflowVirtualLowering.Lower(builder.Build());
     }
 
-    private sealed record InvalidProgram(
-        string Expected,
-        CoflowInstruction[] Instructions,
-        object?[] Constants,
-        Type ReturnType,
-        int LocalCount);
+    private static CoflowRegisterProgram PrimitiveIntegerProgram()
+    {
+        var target = new CoflowValueRegister(CoflowValueShape.Of(typeof(long)), 0, 0, 0);
+        var operations = new CoflowRegisterOperations
+        {
+            Targets = new[] { new CoflowRegisterTargetSite(target) },
+        };
+        var instructions = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.ConstantInteger, 0, 0),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Return, C: 0),
+        };
+        return new CoflowRegisterProgram(
+            Array.Empty<CoflowValueRegister>(), instructions, new CfdSpan?[instructions.Length],
+            new[] { 1L }, operations, 1, 0, 0);
+    }
 
-    private static CoflowProgram Program(
-        CoflowInstruction[] instructions,
-        object?[] constants,
-        Type returnType,
-        int localCount = 0,
-        Type[]? parameterTypes = null,
-        IReadOnlyDictionary<CoflowFunctionIdentity, CoflowFunctionEntry>? functions = null) =>
-        new CoflowProgramTemplate(
-                new CoflowFunctionIdentity("Validation", "test", "program"),
-                "validation.cfd",
-                null,
-                instructions,
-                new CfdSpan?[instructions.Length],
-                constants,
-                parameterTypes ?? Array.Empty<Type>(),
-                returnType,
-                localCount)
-            .Link(new CoflowProgramLinker(
-                functions ?? new Dictionary<CoflowFunctionIdentity, CoflowFunctionEntry>(),
-                new CoflowRecordCatalog(),
-                new CfdLoadContext(Array.Empty<CfdDocument>())));
+    private static CoflowRegisterProgram PrimitiveReferenceProgram()
+    {
+        var target = new CoflowValueRegister(CoflowValueShape.Of(typeof(string)), 0, 0, 0);
+        var operations = new CoflowRegisterOperations
+        {
+            References = new object?[] { "value" },
+            Targets = new[] { new CoflowRegisterTargetSite(target) },
+        };
+        var instructions = new[]
+        {
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.ConstantReference, 0, C: 0),
+            new CoflowRegisterInstruction(CoflowRegisterOpCode.Return, C: 0),
+        };
+        return new CoflowRegisterProgram(
+            Array.Empty<CoflowValueRegister>(), instructions, new CfdSpan?[instructions.Length],
+            Array.Empty<long>(), operations, 0, 0, 1);
+    }
+
+    private static CoflowRegisterProgram Rebuild(
+        CoflowRegisterProgram source,
+        CoflowRegisterInstruction[]? instructions = null,
+        CfdSpan?[]? instructionSpans = null) =>
+        new(
+            source.Parameters.ToArray(),
+            instructions ?? source.Instructions.ToArray(),
+            instructionSpans ?? source.InstructionSpans.ToArray(),
+            source.Immediates.ToArray(),
+            source.Operations,
+            source.IntegerRegisterCount,
+            source.FloatRegisterCount,
+            source.ReferenceRegisterCount);
 }

@@ -35,14 +35,18 @@ fn emits_declarations_and_runtime_metadata() {
     let output = all(&files);
     assert!(!output.contains("SourceFiles"));
     assert!(output.contains("ICoflowTypeMetadata"));
-    assert!(output.contains("[ModuleInitializer]"));
+    assert!(output.contains("public CoflowSchemaRuntime Runtime { get; } = BuildRuntime();"));
+    assert!(output.contains("var runtime = new CoflowSchemaRuntimeBuilder();"));
+    assert!(!output.contains("[ModuleInitializer]"));
     assert!(output.contains("public static class Schema"));
     assert!(output.contains("public static global::Coflow.Runtime.Coflow Create(global::Coflow.Runtime.CoflowOptions? options = null)"));
     assert!(!output.contains("CoflowGeneratedRegistry"));
     assert!(output.contains("CoflowSchema : ICoflowSchema"));
     assert!(output.contains("CoflowMetadata : ICoflowRecordMetadata"));
+    assert!(output.contains("CoflowTableFactory.String<global::Item>(values, static record => record.Id)"));
+    assert!(!output.contains("new CoflowStringTable<"));
     assert!(output.contains("CoflowFieldBinding.Create<global::Item, string>"));
-    assert!(output.contains("CoflowTypeCodec.Register<global::Item>(\n            new CoflowTypeId("));
+    assert!(output.contains("runtime.RegisterTypeCodec<global::Item>(\n            new CoflowTypeId("));
     assert!(output.contains("static (ref CoflowValueWriter writer, global::Item value)"));
     assert!(output.contains("writer.Write(value.Name);"));
     assert!(output.contains("writer.WriteValueId(value._coflowId);"));
@@ -78,8 +82,8 @@ fn registers_abstract_generated_types_for_value_id_vm_layouts() {
     )
     .expect("generate abstract layout");
     let output = all(&files);
-    assert!(output.contains("CoflowType.Register<global::Ability>(new CoflowTypeId("));
-    assert!(output.contains("CoflowTypeCodec.Register<global::Damage>("));
+    assert!(output.contains("runtime.RegisterType<global::Ability>(new CoflowTypeId("));
+    assert!(output.contains("runtime.RegisterTypeCodec<global::Damage>("));
 }
 
 #[test]
@@ -99,7 +103,7 @@ fn emits_cft_structs_as_readonly_value_types() {
     assert!(output.contains("internal readonly bool _coflowInitialized"));
     assert!(output.contains("_coflowInitialized = true;"));
     assert!(output.contains("static value => value._coflowInitialized"));
-    assert!(output.contains("CoflowStructCodec.Register<global::Point>("));
+    assert!(output.contains("runtime.RegisterStruct<global::Point>("));
     assert!(output.contains("3, 0, 0,"));
     assert!(output.contains("writer.Write(value.X);"));
     assert!(output.contains("reader.Read<long>()"));
@@ -109,7 +113,7 @@ fn emits_cft_structs_as_readonly_value_types() {
     assert!(!output.contains("Cft_506F696E74CoflowMetadata : ICoflowRecordMetadata"));
     assert!(!output.contains("public Type KeyType"));
     assert!(!output.contains("public object ParseKey"));
-    assert!(!output.contains("public Delegate GetKeyReader"));
+    assert!(!output.contains("public object GetKey"));
 }
 
 #[test]
@@ -293,6 +297,24 @@ fn emits_empty_type_reader_without_invalid_argument_list() {
 }
 
 #[test]
+fn emits_typed_vm_factories_without_delegate_reflection_contract() {
+    let files = generate_csharp_cfd(
+        &schema("type Entry { name: string; enabled: bool = true; }"),
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate");
+    let output = all(&files);
+    assert!(output.contains("public CoflowVmFactory CreateVmObjectFactory"));
+    assert!(output.contains("frame.Read<string>(0)"));
+    assert!(output.contains("frame.Read<bool>(1)"));
+    assert!(output.contains("new CoflowVmFactory(Type.EmptyTypes, typeof(bool)"));
+    assert!(output.contains("frame.Write(true)"));
+    assert!(!output.contains("private delegate global::Entry VmObjectFactory"));
+    assert!(!output.contains("public Delegate CreateVmObjectFactory"));
+}
+
+#[test]
 fn emits_singleton_metadata_without_a_generated_database() {
     let files = generate_csharp_cfd(
         &schema("@singleton type Settings { value: int; }"),
@@ -304,7 +326,7 @@ fn emits_singleton_metadata_without_a_generated_database() {
     assert!(output.contains("public bool IsSingleton => true;"));
     assert!(output.contains("public Type RuntimeType => typeof(global::Settings);"));
     assert!(output.contains("Cft_53657474696E6773CoflowMetadata : ICoflowRecordMetadata"));
-    assert!(output.contains("new Func<global::Settings, string>(static _ => string.Empty)"));
+    assert!(output.contains("public object GetKey(object value) => string.Empty;"));
     assert!(output.contains("new global::Settings()"));
     assert!(!output.contains("public sealed partial class CoflowTables"));
 }
@@ -362,7 +384,7 @@ fn maps_option_result_unit_and_function_types() {
     assert!(!output.contains("internal CoflowFunctionEntry"));
     assert!(output.contains("public Result<Unit, global::Failure> Run(global::Coflow.Runtime.Coflow coflow, string input)"));
     assert!(!output.contains("BindRun"));
-    assert!(output.contains("CoflowInvoker.Invoke<global::Api, string, Result<Unit, global::Failure>>"));
+    assert!(output.contains("CoflowInvoker.Invoke<string, Result<Unit, global::Failure>>"));
     assert!(output.contains("public Api("));
     assert!(!output.contains("Func<string, Result<Unit, Failure>> Run { get;"));
 }

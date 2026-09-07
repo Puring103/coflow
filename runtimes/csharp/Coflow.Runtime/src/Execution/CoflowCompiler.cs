@@ -3,244 +3,83 @@ namespace Coflow.Runtime.CompilerServices;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 
-internal static partial class CoflowCompiler
+internal static partial class CoflowFunctionFrontend
 {
-    internal static CoflowClosureTemplate[] Compile(
-        IReadOnlyList<CoflowFunctionEntry> entries,
-        ICoflowSchema module,
-        CoflowRecordCatalog records,
-        CfdLoadContext context,
-        IReadOnlyDictionary<long, CoflowModule> modules)
-    {
-        // Schema 默认函数属于类型定义；不同记录只保存同一个 ProgramIndex，不能重复编译函数体。
-        var canonical = new Dictionary<CoflowFunctionEntry, CoflowFunctionEntry>();
-        var defaults = new Dictionary<(string DeclaredType, string FieldName, string Source), CoflowFunctionEntry>();
-        var definitions = new List<CoflowFunctionEntry>();
-        foreach (var entry in entries)
-        {
-            var definition = entry;
-            if (entry.IsDefault && entry.Source is { } defaultSource)
-            {
-                var key = (entry.Identity.DeclaredType, entry.Identity.FieldName, defaultSource.Source);
-                if (!defaults.TryGetValue(key, out definition!))
-                {
-                    definition = entry;
-                    defaults.Add(key, definition);
-                }
-            }
-            if (!definitions.Contains(definition)) definitions.Add(definition);
-            canonical.Add(entry, definition);
-        }
-        for (var index = 0; index < definitions.Count; index++)
-            definitions[index].AssignProgramIndex(index);
-        foreach (var pair in canonical)
-            if (!ReferenceEquals(pair.Key, pair.Value)) pair.Key.AssignProgramIndex(pair.Value.ProgramIndex);
-        var functions = entries.ToDictionary(entry => entry.Identity);
-        var compiled = new List<(CoflowFunctionEntry Entry, CoflowProgramTemplate? Body)>();
-        var stagedTemplates = new List<(CoflowModule Module, CoflowFunctionIdentity Identity,
-            CoflowProgramTemplate Template)>();
-        var diagnostics = new List<CfdDiagnostic>();
-        var catalog = new CoflowCompilerCatalog(module);
-        foreach (var entry in definitions)
-        {
-            if (entry.Source is null)
-            {
-                if (entry.RequiresCfdBody)
-                {
-                    diagnostics.Add(new CfdDiagnostic(
-                        "COFLOW-FUNCTION-MISSING",
-                        $"{entry.Identity.DeclaredType}.{entry.Identity.RecordKey}.{entry.Identity.FieldName}: ordinary functions require a CFD body",
-                        entry.SourcePath,
-                        entry.SourceSpan));
-                    continue;
-                }
-                compiled.Add((entry, null));
-                continue;
-            }
-            try
-            {
-                if (modules.TryGetValue(entry.ModuleId, out var owner) &&
-                    owner.TryGetTemplate(entry.Identity, out var cached) &&
-                    cached.CanReuse(catalog, records))
-                {
-                    compiled.Add((entry, cached));
-                    continue;
-                }
-                var template = new FunctionParser(entry, catalog, records, context).Parse();
-                compiled.Add((entry, template));
-                if (owner is not null)
-                    stagedTemplates.Add((owner, entry.Identity, template));
-            }
-            catch (FunctionCompileException error)
-            {
-                diagnostics.Add(new CfdDiagnostic(
-                    error.Code,
-                    $"{entry.Identity.DeclaredType}.{entry.Identity.RecordKey}.{entry.Identity.FieldName}: {error.Message}",
-                    entry.SourcePath,
-                    error.Offset is { } offset
-                        ? FunctionSpan(entry.Source, offset)
-                        : entry.Source.Span));
-            }
-        }
-        if (diagnostics.Count != 0) throw new CoflowLoadException(diagnostics);
-        var linker = new CoflowProgramLinker(functions, records, context);
-        var linked = new List<(CoflowFunctionEntry Entry, CoflowProgram? Body)>();
-        foreach (var item in compiled)
-        {
-            try
-            {
-                linked.Add((item.Entry, item.Body?.Link(linker)));
-            }
-            catch (CoflowProgramLinkException error)
-            {
-                diagnostics.Add(new CfdDiagnostic(
-                    "COFLOW-FUNCTION-LINK",
-                    $"{item.Entry.Identity.DeclaredType}.{item.Entry.Identity.RecordKey}." +
-                    $"{item.Entry.Identity.FieldName}: {error.Message}",
-                    item.Entry.SourcePath,
-                    item.Entry.SourceSpan));
-            }
-        }
-        if (diagnostics.Count != 0) throw new CoflowLoadException(diagnostics);
-        // ModuleUnit 与可执行程序只在解析和全局链接全部成功后同时发布。
-        foreach (var item in stagedTemplates)
-            item.Module.PublishTemplate(item.Identity, item.Template);
-        foreach (var item in linked)
-            item.Entry.PublishCompiled(item.Body);
-        foreach (var pair in canonical)
-            if (!ReferenceEquals(pair.Key, pair.Value))
-                pair.Key.PublishCompiled(pair.Value.CompiledProgram);
-        return linker.Closures.ToArray();
-    }
-
-    private static CfdSpan FunctionSpan(CfdFunctionValue function, int offset)
-    {
-        var line = function.Span.StartLine;
-        var column = function.Span.StartColumn;
-        var length = Math.Min(Math.Max(offset, 0), function.Source.Length);
-        for (var index = 0; index < length; index++)
-        {
-            if (function.Source[index] == '\n')
-            {
-                line++;
-                column = 1;
-            }
-            else
-            {
-                column++;
-            }
-        }
-        return new CfdSpan(line, column, line, column + (length < function.Source.Length ? 1 : 0));
-    }
-
-    private sealed partial class FunctionParser
+    internal sealed class FunctionParser
     {
         private readonly CoflowFunctionEntry _entry;
-        private readonly CoflowRecordCatalog _records;
         private readonly IReadOnlyDictionary<string, ICoflowTypeMetadata> _metadata;
         private readonly IReadOnlyDictionary<string, ICoflowEnumMetadata> _enums;
-        private readonly IReadOnlyDictionary<string, CoflowConstant> _declaredConstants;
-        private readonly CfdLoadContext _context;
-        private readonly HashSet<string> _ownerFieldNames;
         private readonly IReadOnlyDictionary<Type, string> _schemaTypeNames;
         private readonly IReadOnlyDictionary<Type, ICoflowTypeMetadata> _metadataByRuntimeType;
         private readonly IReadOnlyDictionary<Type, ICoflowEnumMetadata> _enumsByRuntimeType;
-        private readonly List<Token> _tokens;
-        private readonly List<CoflowInstruction> _instructions = new();
-        private readonly List<CfdSpan?> _instructionSpans = new();
-        private readonly List<object?> _constants = new();
-        private readonly Dictionary<string, (int Index, Type Type)> _parameters = new(StringComparer.Ordinal);
-        private readonly List<Dictionary<string, (int Index, Type Type)>> _localScopes = new();
-        private readonly Stack<LambdaParseContext> _lambdaContexts = new();
-        private readonly Stack<IReadOnlyDictionary<string, Type>> _narrowings = new();
-        private readonly Stack<LoopEmitContext> _loops = new();
-        private readonly HashSet<int> _mutableLocals = new();
-        private readonly List<CoflowBindingDependency> _bindingDependencies = new();
-        private Type _returnType = typeof(Unit);
-        private int _loopParseDepth;
-        private int _localCount;
-        private int _index;
+        private readonly FunctionTokenCursor _tokens;
+        private readonly FunctionTypeChecker _typeChecker;
+        private readonly CoflowCompilerCatalog _catalog;
+        private readonly CoflowRecordCatalog _records;
+        private readonly CfdLoadContext _context;
+        private readonly HashSet<string> _ownerFieldNames;
+        private readonly ParseState _parse;
 
         internal FunctionParser(
-            CoflowFunctionEntry entry,
+            BoundFunction function,
             CoflowCompilerCatalog catalog,
             CoflowRecordCatalog records,
             CfdLoadContext context)
         {
+            var entry = function.Entry;
             _entry = entry;
-            _records = records;
-            _context = context;
             _metadata = catalog.Metadata;
             _enums = catalog.Enums;
-            _declaredConstants = catalog.Constants;
-            _ownerFieldNames = _metadata.TryGetValue(entry.Identity.DeclaredType, out var owner)
-                ? owner.Fields.Select(field => field.Name).ToHashSet(StringComparer.Ordinal)
-                : new HashSet<string>(StringComparer.Ordinal);
             _schemaTypeNames = catalog.SchemaTypeNames;
             _metadataByRuntimeType = catalog.MetadataByRuntimeType;
             _enumsByRuntimeType = catalog.EnumsByRuntimeType;
-            _tokens = Lex(entry.Source!.Source);
+            _tokens = new FunctionTokenCursor(function.Syntax.BodyTokens);
+            _typeChecker = new FunctionTypeChecker(catalog, () => _tokens.Peek().Offset);
+            _catalog = catalog;
+            _records = records;
+            _context = context;
+            _ownerFieldNames = catalog.Metadata.TryGetValue(entry.Identity.DeclaredType, out var owner)
+                ? owner.Fields.Select(field => field.Name).ToHashSet(StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+            _parse = new ParseState
+            {
+                ReturnType = entry.Signature.ResultType,
+            };
+            foreach (var parameter in function.Parameters)
+                _parse.Parameters.Add(parameter.Name, (parameter.Index, parameter.Type));
         }
 
-        internal CoflowProgramTemplate Parse()
+        /// <summary>单次解析和类型检查的全部可变状态；阶段结束后不再由 lowering 读取。</summary>
+        private sealed class ParseState
         {
-            ExpectIdentifier("fn");
-            Expect(TokenKind.LeftParen, "expected `(` after `fn`");
-            var parameterIndex = 0;
-            if (!Match(TokenKind.RightParen))
-            {
-                do
-                {
-                    var name = ExpectBindingIdentifier("expected a parameter name").Text;
-                    Expect(TokenKind.Colon, "expected `:` after the parameter name");
-                    var declaredName = ParseTypeName();
-                    if (parameterIndex >= _entry.Signature.ParameterTypes.Count)
-                        Error("COFLOW-FUNCTION-SIGNATURE", "CFD function declares too many parameters");
-                    var declared = ResolveTypeName(declaredName);
-                    var expectedType = _entry.Signature.ParameterTypes[parameterIndex];
-                    var expected = FormatType(expectedType);
-                    if (declared != expectedType)
-                        Error("COFLOW-FUNCTION-SIGNATURE",
-                            $"parameter `{name}` has type `{declaredName}` but CFT requires `{expected}`");
-                    if (!_parameters.TryAdd(name, (parameterIndex, expectedType)))
-                        Error("COFLOW-FUNCTION-NAME", $"parameter `{name}` is declared more than once");
-                    parameterIndex++;
-                } while (Match(TokenKind.Comma));
-                Expect(TokenKind.RightParen, "expected `)` after function parameters");
-            }
-            if (parameterIndex != _entry.Signature.ParameterTypes.Count)
-                Error("COFLOW-FUNCTION-SIGNATURE",
-                    $"CFD function declares {parameterIndex} parameters but CFT requires {_entry.Signature.ParameterTypes.Count}");
-            Expect(TokenKind.Arrow, "expected `->` after function parameters");
-            var resultName = ParseTypeName();
+            internal Dictionary<string, (int Index, Type Type)> Parameters { get; } =
+                new(StringComparer.Ordinal);
+            internal List<Dictionary<string, (int Index, Type Type)>> LocalScopes { get; } = new();
+            internal Stack<LambdaParseContext> LambdaContexts { get; } = new();
+            internal Stack<IReadOnlyDictionary<string, Type>> Narrowings { get; } = new();
+            internal HashSet<int> MutableLocals { get; } = new();
+            internal List<CoflowBindingDependency> BindingDependencies { get; } = new();
+            internal Type ReturnType { get; set; } = typeof(Unit);
+            internal int LoopDepth { get; set; }
+            internal int LocalCount { get; set; }
+        }
+
+        /// <summary>解析并检查已完成声明绑定的函数正文；后续阶段继续拆开正文 syntax 与 typing。</summary>
+        internal TypedFunction ParseAndTypeBody()
+        {
             var expectedResult = FormatType(_entry.Signature.ResultType);
-            _returnType = _entry.Signature.ResultType;
-            if (ResolveTypeName(resultName) != _entry.Signature.ResultType)
-                Error("COFLOW-FUNCTION-SIGNATURE",
-                    $"function returns `{resultName}` but CFT requires `{expectedResult}`");
-            Expect(TokenKind.LeftBrace, "expected a function body");
-            var expression = ParseBlockContents().WithExpected(_entry.Signature.ResultType, this);
+            var expression = ParseBlockContents().WithExpected(_entry.Signature.ResultType, _typeChecker);
             Expect(TokenKind.End, "unexpected content after the function body");
             if (expression.Type != _entry.Signature.ResultType && !expression.AlwaysTerminates)
                 Error("COFLOW-FUNCTION-RETURN",
                     $"body has type `{FormatType(expression.Type)}` but function returns `{expectedResult}`");
-            expression.EmitTail(this);
-            return new CoflowProgramTemplate(
-                _entry.Identity,
-                _entry.SourcePath,
-                _entry.SourceSpan,
-                _instructions,
-                _instructionSpans,
-                _constants,
-                _entry.VmParameterTypes,
-                _entry.Signature.ResultType,
-                _localCount,
-                _bindingDependencies);
+            return new TypedFunction(expression, _parse.BindingDependencies.ToArray());
         }
 
         private Expr ParseBlockContents(Dictionary<string, (int Index, Type Type)>? initialScope = null)
         {
-            _localScopes.Add(initialScope ?? new Dictionary<string, (int Index, Type Type)>(StringComparer.Ordinal));
+            _parse.LocalScopes.Add(initialScope ?? new Dictionary<string, (int Index, Type Type)>(StringComparer.Ordinal));
             var statements = new List<Expr>();
             Expr? result = null;
             try
@@ -259,7 +98,7 @@ internal static partial class CoflowCompiler
                     if (Peek().Kind == TokenKind.Identifier && Peek().Text == "return")
                     {
                         Advance();
-                        var value = ParseExpression().WithExpected(_returnType, this);
+                        var value = ParseExpression().WithExpected(_parse.ReturnType, _typeChecker);
                         Expect(TokenKind.Semicolon, "expected `;` after return");
                         statements.Add(new ReturnExpr(value));
                         continue;
@@ -279,7 +118,7 @@ internal static partial class CoflowCompiler
                     if (Peek().Kind == TokenKind.Identifier && Peek().Text is "break" or "continue")
                     {
                         var keyword = Advance().Text;
-                        if (_loopParseDepth == 0)
+                        if (_parse.LoopDepth == 0)
                             Error("COFLOW-FUNCTION-CONTROL", $"`{keyword}` can only be used inside a loop");
                         Expect(TokenKind.Semicolon, $"expected `;` after `{keyword}`");
                         statements.Add(new LoopControlExpr(keyword == "break"));
@@ -301,7 +140,7 @@ internal static partial class CoflowCompiler
             }
             finally
             {
-                _localScopes.RemoveAt(_localScopes.Count - 1);
+                _parse.LocalScopes.RemoveAt(_parse.LocalScopes.Count - 1);
             }
             return new BlockExpr(statements, result ?? new ConstantExpr(Unit.Value, typeof(Unit)));
         }
@@ -309,16 +148,12 @@ internal static partial class CoflowCompiler
         private Expr ParseWhile()
         {
             var condition = ParseExpression();
-            if (condition.Type != typeof(bool))
-                Error("COFLOW-FUNCTION-TYPE", "while condition must be bool");
             Expect(TokenKind.LeftBrace, "expected `{` after while condition");
-            _loopParseDepth++;
+            _parse.LoopDepth++;
             Expr body;
             try { body = ParseBlockContents(); }
-            finally { _loopParseDepth--; }
-            if (body.Type != typeof(Unit) && !body.AlwaysTerminates)
-                Error("COFLOW-FUNCTION-TYPE", "while body must have type `()`");
-            return new WhileExpr(condition, body);
+            finally { _parse.LoopDepth--; }
+            return _typeChecker.While(condition, body);
         }
 
         private Expr ParseFor()
@@ -330,43 +165,25 @@ internal static partial class CoflowCompiler
             ExpectIdentifier("in");
             var collection = ParseExpression();
             var range = collection as RangeExpr;
-            var isRange = range is not null;
-            if (!collection.Type.IsGenericType && !isRange)
-                Error("COFLOW-FUNCTION-TYPE", "for requires an array, dictionary, or range");
-            var definition = collection.Type.IsGenericType ? collection.Type.GetGenericTypeDefinition() : null;
-            var types = collection.Type.IsGenericType ? collection.Type.GetGenericArguments() : new[] { typeof(long) };
-            var isArray = definition == typeof(IReadOnlyList<>);
-            var isDictionary = definition == typeof(IReadOnlyDictionary<,>);
-            if (!isArray && !isDictionary && !isRange)
-                Error("COFLOW-FUNCTION-TYPE", "for requires an array, dictionary, or range");
-            if (isDictionary && secondName is null)
-                Error("COFLOW-FUNCTION-TYPE", "dictionary for loops require `key, value` bindings");
+            var typedCollection = _typeChecker.ForCollectionType(collection, secondName is not null);
             if (secondName == firstName)
                 Error("COFLOW-FUNCTION-NAME", $"loop binding `{firstName}` is declared more than once");
 
-            var collectionLocal = isRange ? -1 : _localCount++;
-            var indexLocal = isRange && secondName is null ? -1 : _localCount++;
-            var firstLocal = _localCount++;
-            var rangeEndLocal = isRange ? _localCount++ : -1;
-            int? secondLocal = secondName is null ? null : isRange ? indexLocal : _localCount++;
+            var collectionLocal = typedCollection.IsRange ? -1 : _parse.LocalCount++;
+            var indexLocal = typedCollection.IsRange && secondName is null ? -1 : _parse.LocalCount++;
+            var firstLocal = _parse.LocalCount++;
+            var rangeEndLocal = typedCollection.IsRange ? _parse.LocalCount++ : -1;
+            int? secondLocal = secondName is null ? null : typedCollection.IsRange ? indexLocal : _parse.LocalCount++;
             var scope = new Dictionary<string, (int Index, Type Type)>(StringComparer.Ordinal);
-            if (isArray || isRange)
-            {
-                scope.Add(firstName, (firstLocal, types[0]));
-                if (secondName is not null) scope.Add(secondName, (secondLocal!.Value, typeof(long)));
-            }
-            else
-            {
-                scope.Add(firstName, (firstLocal, types[0]));
-                scope.Add(secondName!, (secondLocal!.Value, types[1]));
-            }
+            scope.Add(firstName, (firstLocal, typedCollection.FirstType));
+            if (secondName is not null)
+                scope.Add(secondName, (secondLocal!.Value, typedCollection.SecondType!));
             Expect(TokenKind.LeftBrace, "expected `{` after for collection");
-            _loopParseDepth++;
+            _parse.LoopDepth++;
             Expr body;
             try { body = ParseBlockContents(scope); }
-            finally { _loopParseDepth--; }
-            if (body.Type != typeof(Unit) && !body.AlwaysTerminates)
-                Error("COFLOW-FUNCTION-TYPE", "for body must have type `()`");
+            finally { _parse.LoopDepth--; }
+            _typeChecker.RequireLoopBody(body);
             if (range is not null)
                 return new RangeForExpr(
                     range.Start,
@@ -376,8 +193,8 @@ internal static partial class CoflowCompiler
                     rangeEndLocal,
                     secondLocal,
                     body);
-            return new ForExpr(collection, isArray, collectionLocal, indexLocal,
-                firstLocal, secondLocal, types[0], isDictionary ? types[1] : null, body);
+            return new ForExpr(collection, typedCollection.IsArray, collectionLocal, indexLocal,
+                firstLocal, secondLocal, typedCollection.FirstType, typedCollection.SecondType, body);
         }
 
         private Expr ParseVariable()
@@ -388,14 +205,14 @@ internal static partial class CoflowCompiler
             Expect(TokenKind.Equal, "expected `=` in local variable declaration");
             var value = ParseExpression();
             if (declaredType is not null)
-                value = value.WithExpected(ResolveTypeName(declaredType), this);
-            var scope = _localScopes[^1];
+                value = value.WithExpected(ResolveTypeName(declaredType), _typeChecker);
+            var scope = _parse.LocalScopes[^1];
             if (scope.ContainsKey(name) ||
-                (_lambdaContexts.Count == 0 ? _parameters.ContainsKey(name) : _lambdaContexts.Peek().Parameters.ContainsKey(name)))
+                (_parse.LambdaContexts.Count == 0 ? _parse.Parameters.ContainsKey(name) : _parse.LambdaContexts.Peek().Parameters.ContainsKey(name)))
                 Error("COFLOW-FUNCTION-NAME", $"name `{name}` is already declared in this scope");
-            var local = (_localCount++, value.Type);
+            var local = (_parse.LocalCount++, value.Type);
             scope.Add(name, local);
-            _mutableLocals.Add(local.Item1);
+            _parse.MutableLocals.Add(local.Item1);
             return new StoreLocalExpr(local.Item1, value);
         }
 
@@ -413,8 +230,8 @@ internal static partial class CoflowCompiler
                 var inclusive = Advance().Kind == TokenKind.DotDotEqual;
                 var end = ParseBinary(0);
                 left = new RangeExpr(
-                    left.WithExpected(typeof(long), this),
-                    end.WithExpected(typeof(long), this),
+                    left.WithExpected(typeof(long), _typeChecker),
+                    end.WithExpected(typeof(long), _typeChecker),
                     inclusive);
             }
             var assignment = Peek().Kind;
@@ -425,11 +242,11 @@ internal static partial class CoflowCompiler
             if (left is not LocalExpr)
                 Error("COFLOW-FUNCTION-ASSIGN", "only a local `var` can be assigned");
             var local = (LocalExpr)left;
-            if (!_mutableLocals.Contains(local.Index))
+            if (!_parse.MutableLocals.Contains(local.Index))
                 Error("COFLOW-FUNCTION-ASSIGN", "only a local `var` can be assigned");
             var right = ParseExpression();
             if (assignment == TokenKind.Equal)
-                return new AssignLocalExpr(local.Index, right.WithExpected(local.Type, this));
+                return new AssignLocalExpr(local.Index, right.WithExpected(local.Type, _typeChecker));
             var operation = assignment switch
             {
                 TokenKind.PlusEqual => "+", TokenKind.MinusEqual => "-",
@@ -437,7 +254,7 @@ internal static partial class CoflowCompiler
                 _ => throw new InvalidOperationException(),
             };
             return new AssignLocalExpr(local.Index,
-                BinaryExpr.Create(operation, local, right, this).WithExpected(local.Type, this));
+                BinaryExpr.Create(operation, local, right, _typeChecker).WithExpected(local.Type, _typeChecker));
         }
 
         private Expr ParseBinary(int minimumPrecedence)
@@ -464,10 +281,10 @@ internal static partial class CoflowCompiler
                 Advance();
                 var right = ParseBinary(operation == "**" ? precedence : precedence + 1);
                 if (IsComparison(operation) && left is ComparisonChainExpr chain)
-                    left = chain.Append(operation, right, this);
+                    left = chain.Append(operation, right, _typeChecker);
                 else if (IsComparison(operation) && left is BinaryExpr previous && IsComparison(previous.Operation))
                     left = ComparisonChainExpr.Create(previous.Left, previous.Right,
-                        previous.Operation, operation, right, this);
+                        previous.Operation, operation, right, _typeChecker);
                 else
                     left = CreateBinary(operation, left, right);
             }
@@ -478,21 +295,14 @@ internal static partial class CoflowCompiler
 
         private Expr CreateBinary(string operation, Expr left, Expr right) =>
             left.Type.IsEnum || right.Type.IsEnum
-                ? EnumBinaryExpr.Create(operation, left, right, this, EnumMetadata(left.Type))
-                : BinaryExpr.Create(operation, left, right, this);
-
-        private ICoflowEnumMetadata EnumMetadata(Type type)
-        {
-            if (!_enumsByRuntimeType.TryGetValue(type, out var metadata))
-                Error("COFLOW-FUNCTION-TYPE", $"enum `{type}` has no schema metadata");
-            return metadata!;
-        }
+                ? EnumBinaryExpr.Create(operation, left, right, _typeChecker, _typeChecker.EnumMetadata(left.Type))
+                : BinaryExpr.Create(operation, left, right, _typeChecker);
 
         private Expr ParseUnary()
         {
-            if (Match(TokenKind.Minus)) return UnaryExpr.Create("-", ParseUnary(), this);
-            if (Match(TokenKind.Bang)) return UnaryExpr.Create("!", ParseUnary(), this);
-            if (Match(TokenKind.Tilde)) return UnaryExpr.Create("~", ParseUnary(), this);
+            if (Match(TokenKind.Minus)) return UnaryExpr.Create("-", ParseUnary(), _typeChecker);
+            if (Match(TokenKind.Bang)) return UnaryExpr.Create("!", ParseUnary(), _typeChecker);
+            if (Match(TokenKind.Tilde)) return UnaryExpr.Create("~", ParseUnary(), _typeChecker);
             var expression = ParsePrimary();
             while (true)
             {
@@ -505,7 +315,7 @@ internal static partial class CoflowCompiler
                 {
                     var index = ParseExpression();
                     Expect(TokenKind.RightBracket, "expected `]` after index");
-                    expression = IndexExpr.Create(expression, index, this);
+                    expression = IndexExpr.Create(expression, index, _typeChecker);
                     continue;
                 }
                 if (Match(TokenKind.Dot))
@@ -520,7 +330,7 @@ internal static partial class CoflowCompiler
                     var field = Expect(TokenKind.Identifier, "expected a field name after `.`").Text;
                     _metadataByRuntimeType.TryGetValue(expression.Type, out var metadata);
                     if (metadata?.Find(field) is not null)
-                        expression = ParseField(expression, field);
+                        expression = Field(expression, field);
                     else
                     {
                         Expect(TokenKind.LeftParen, $"expected `(` after built-in method `{field}`");
@@ -546,147 +356,21 @@ internal static partial class CoflowCompiler
                 do arguments.Add(ParseExpression()); while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightParen, "expected `)` after built-in arguments");
             }
-            string? regexPattern = null;
-            if (name == "matches")
-            {
-                if (arguments.Count != 1 || arguments[0] is not ConstantExpr { Value: string })
-                    Error("COFLOW-FUNCTION-BUILTIN", "matches pattern must be a string literal");
-                var pattern = (string)((ConstantExpr)arguments[0]).Value!;
-                regexPattern = pattern;
-                try { CoflowBuiltinLibrary.ValidateRegexPattern(pattern); }
-                catch (ArgumentException error) { Error("COFLOW-FUNCTION-BUILTIN", error.Message); }
-            }
-            if (name is "map" or "filter" or "fold" or "find" or "any" or "all")
-                return ParseHigherOrderBuiltin(receiver, name, arguments);
-            try
-            {
-                var builtin = regexPattern is null
-                    ? CoflowBuiltinLibrary.Resolve(name, receiver.Type,
-                        arguments.Select(argument => argument.Type).ToArray())
-                    : CoflowBuiltinLibrary.ResolveRegex(regexPattern);
-                return new BuiltinExpr(
-                    receiver,
-                    regexPattern is null ? arguments : Array.Empty<Expr>(),
-                    builtin);
-            }
-            catch (ArgumentException error)
-            {
-                Error("COFLOW-FUNCTION-BUILTIN", error.Message);
-                return null!;
-            }
-        }
-
-        private Expr ParseHigherOrderBuiltin(Expr receiver, string name, IReadOnlyList<Expr> arguments)
-        {
-            if (!receiver.Type.IsGenericType || receiver.Type.GetGenericTypeDefinition() != typeof(IReadOnlyList<>))
-                Error("COFLOW-FUNCTION-BUILTIN", $"{name} requires an array receiver");
-            var element = receiver.Type.GetGenericArguments()[0];
-            Expr callable;
-            Type result;
-            Type outputElement;
-            if (name == "fold")
-            {
-                if (arguments.Count != 2)
-                    Error("COFLOW-FUNCTION-BUILTIN", "fold requires an initial value and a function");
-                callable = arguments[1];
-                var signature = callable.CallableSignature;
-                var expected = new CoflowFunctionSignature(
-                    arguments[0].Type, new[] { arguments[0].Type, element });
-                if (signature is null || !IsFunctionAssignable(signature, expected))
-                    Error("COFLOW-FUNCTION-BUILTIN", "fold function must have signature fn(A, T) -> A");
-                result = arguments[0].Type;
-                outputElement = result;
-            }
-            else
-            {
-                if (arguments.Count != 1)
-                    Error("COFLOW-FUNCTION-BUILTIN", $"{name} requires exactly one function");
-                callable = arguments[0];
-                var signature = callable.CallableSignature;
-                if (signature is null || signature.ParameterTypes.Count != 1 ||
-                    !IsAssignable(element, signature.ParameterTypes[0]))
-                    Error("COFLOW-FUNCTION-BUILTIN", $"{name} function must accept the array element type");
-                if (name is "filter" or "find" or "any" or "all")
-                {
-                    if (signature!.ResultType != typeof(bool))
-                        Error("COFLOW-FUNCTION-BUILTIN", $"{name} function must return bool");
-                    outputElement = element;
-                    result = name switch
-                    {
-                        "filter" => receiver.Type,
-                        "find" => typeof(Option<>).MakeGenericType(element),
-                        _ => typeof(bool),
-                    };
-                }
-                else
-                {
-                    outputElement = signature!.ResultType;
-                    result = typeof(IReadOnlyList<>).MakeGenericType(outputElement);
-                }
-            }
-            return new HigherOrderExpr(receiver, arguments,
-                ValueFactories.HigherOrder(name, element, outputElement, result));
+            return _typeChecker.Builtin(receiver, name, arguments);
         }
 
         private Expr ParsePropagation(Expr operand)
-        {
-            if (!operand.Type.IsGenericType)
-                return Invalid();
-            var definition = operand.Type.GetGenericTypeDefinition();
-            var arguments = operand.Type.GetGenericArguments();
-            if (definition == typeof(Option<>))
-            {
-                if (!_returnType.IsGenericType || _returnType.GetGenericTypeDefinition() != typeof(Option<>))
-                    Error("COFLOW-FUNCTION-PROPAGATE", "Option can only propagate from an Option-returning function");
-                return new PropagateExpr(operand, arguments[0]);
-            }
-            if (definition == typeof(Result<,>))
-            {
-                if (!_returnType.IsGenericType || _returnType.GetGenericTypeDefinition() != typeof(Result<,>) ||
-                    _returnType.GetGenericArguments()[1] != arguments[1])
-                    Error("COFLOW-FUNCTION-PROPAGATE", "Result can only propagate to a Result with the same error type");
-                return new PropagateExpr(operand, arguments[0]);
-            }
-            return Invalid();
-
-            Expr Invalid()
-            {
-                Error("COFLOW-FUNCTION-PROPAGATE", "`?` requires Option or Result");
-                return null!;
-            }
-        }
-
-        private Expr ParseField(Expr receiver, string fieldName)
-        {
-            _metadataByRuntimeType.TryGetValue(receiver.Type, out var metadata);
-            if (metadata?.Find(fieldName) is null)
-                Error("COFLOW-FUNCTION-FIELD",
-                    $"type `{FormatType(receiver.Type)}` has no field `{fieldName}`");
-            var resolved = metadata!;
-            var binding = resolved.Require(fieldName).Binding;
-            return new FieldExpr(receiver, binding.RuntimeType,
-                CoflowFieldAccess.Bind(resolved, binding));
-        }
+            => _typeChecker.Propagate(operand, _parse.ReturnType);
 
         private Expr ParseCall(Expr target)
         {
-            var signature = target.CallableSignature;
-            if (signature is null)
-                Error("COFLOW-FUNCTION-CALL", "expression is not callable");
-            var callable = signature!;
             var arguments = new List<Expr>();
             if (!Match(TokenKind.RightParen))
             {
                 do arguments.Add(ParseExpression()); while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightParen, "expected `)` after function arguments");
             }
-            if (arguments.Count != callable.ParameterTypes.Count)
-                Error("COFLOW-FUNCTION-CALL",
-                    $"function expects {callable.ParameterTypes.Count} arguments but received {arguments.Count}");
-            for (var index = 0; index < arguments.Count; index++)
-                arguments[index] = arguments[index].WithExpected(
-                    callable.ParameterTypes[index], this);
-            return new CallExpr(target, callable, arguments);
+            return _typeChecker.Call(target, arguments);
         }
 
         private Expr ParsePrimary()
@@ -739,47 +423,31 @@ internal static partial class CoflowCompiler
                         TryResolveEnum(token.Text, out var enumConstructor))
                     {
                         Advance();
-                        var enumInteger = ParseExpression().WithExpected(typeof(long), this);
+                        var enumInteger = ParseExpression().WithExpected(typeof(long), _typeChecker);
                         Expect(TokenKind.RightParen, "expected `)` after enum integer value");
-                        return new ConversionExpr(enumInteger, enumConstructor.RuntimeType,
-                            CoflowOpCode.Reinterpret);
+                        return new ConversionExpr(enumInteger, enumConstructor.RuntimeType);
                     }
-                    if (_lambdaContexts.TryPeek(out var lambda) &&
+                    if (_parse.LambdaContexts.TryPeek(out var lambda) &&
                         lambda.Parameters.TryGetValue(token.Text, out var lambdaParameter))
                         return new ArgumentExpr(lambdaParameter.Index, lambdaParameter.Type);
-                    for (var scope = _localScopes.Count - 1; scope >= 0; scope--)
+                    for (var scope = _parse.LocalScopes.Count - 1; scope >= 0; scope--)
                     {
-                        if (_localScopes[scope].TryGetValue(token.Text, out var local))
+                        if (_parse.LocalScopes[scope].TryGetValue(token.Text, out var local))
                         {
                             if (lambda is null || scope >= lambda.ScopeBase)
                                 return new LocalExpr(local.Index, NarrowedType(token.Text) ?? local.Type, token.Text);
                             return lambda.Capture($"L:{local.Index}", new LocalExpr(local.Index, NarrowedType(token.Text) ?? local.Type, token.Text));
                         }
                     }
-                    if (_parameters.TryGetValue(token.Text, out var parameter))
+                    if (_parse.Parameters.TryGetValue(token.Text, out var parameter))
                     {
                         var argument = new ArgumentExpr(parameter.Index, NarrowedType(token.Text) ?? parameter.Type, token.Text);
                         return lambda is null ? argument : lambda.Capture($"A:{parameter.Index}", argument);
                     }
-                    if (_metadata.TryGetValue(_entry.Identity.DeclaredType, out var ownerMetadata) &&
-                        ownerMetadata.Find(token.Text) is not null)
-                    {
-                        Expr receiver = new ArgumentExpr(
-                            _entry.Signature.ParameterTypes.Count, ownerMetadata.RuntimeType);
-                        if (lambda is not null)
-                            receiver = lambda.Capture("R", receiver);
-                        var binding = ownerMetadata.Require(token.Text).Binding;
-                        if (binding.IsFunction)
-                            return new FunctionReferenceExpr(_context.ResolveFunction(
-                                _entry.Identity.DeclaredType, _entry.Identity.RecordKey, token.Text),
-                                receiver);
-                        return new FieldExpr(
-                            receiver,
-                            binding.RuntimeType,
-                            CoflowFieldAccess.Bind(ownerMetadata, binding));
-                    }
-                    if (_declaredConstants.TryGetValue(token.Text, out var constant))
-                        return ConstantReference(constant);
+                    if (OwnerMember(token.Text, lambda) is { } ownerMember)
+                        return ownerMember;
+                    if (DeclaredConstant(token.Text) is { } constant)
+                        return constant;
                     Error("COFLOW-FUNCTION-NAME", $"unknown name `{token.Text}`");
                     return null!;
                 case TokenKind.LeftParen:
@@ -811,7 +479,7 @@ internal static partial class CoflowCompiler
                     Error("COFLOW-FUNCTION-INTERPOLATION", "string interpolation expression cannot be empty");
                 var value = ParseExpression();
                 Expect(TokenKind.InterpolationEnd, "expected `}` after string interpolation expression");
-                if (!IsInterpolatable(value.Type))
+                if (!_typeChecker.IsInterpolatable(value.Type))
                     Error("COFLOW-FUNCTION-INTERPOLATION",
                         $"values of type `{FormatType(value.Type)}` cannot be interpolated");
                 parts.Add(new InterpolationPart(null, value));
@@ -819,66 +487,10 @@ internal static partial class CoflowCompiler
             return new InterpolatedStringExpr(parts);
         }
 
-        private bool IsInterpolatable(Type type) => IsInterpolatable(type, new HashSet<Type>());
-
-        private bool SupportsEquality(Type type) => SupportsEquality(type, new HashSet<Type>());
-
-        private bool SupportsEquality(Type type, HashSet<Type> visiting)
-        {
-            if (CoflowFunctionHandle.IsFunctionType(type) || type == typeof(CoflowFunctionEntry))
-                return false;
-            _metadataByRuntimeType.TryGetValue(type, out var metadata);
-            if (metadata is not null)
-            {
-                if (!visiting.Add(type)) return true;
-                var result = metadata.Fields.All(field =>
-                    SupportsEquality(field.Binding.RuntimeType, visiting));
-                visiting.Remove(type);
-                return result;
-            }
-            if (!type.IsGenericType) return true;
-            var definition = type.GetGenericTypeDefinition();
-            var arguments = type.GetGenericArguments();
-            return definition == typeof(Option<>) && SupportsEquality(arguments[0], visiting) ||
-                definition == typeof(Result<,>) && arguments.All(item => SupportsEquality(item, visiting)) ||
-                definition == typeof(IReadOnlyList<>) && SupportsEquality(arguments[0], visiting) ||
-                definition == typeof(IReadOnlyDictionary<,>) &&
-                    arguments.All(item => SupportsEquality(item, visiting));
-        }
-
-        private bool IsInterpolatable(Type type, HashSet<Type> visiting)
-        {
-            if (type == typeof(long) || type == typeof(double) || type == typeof(bool) ||
-                type == typeof(string) || type == typeof(Unit) || type.IsEnum)
-                return true;
-            if (CoflowFunctionHandle.IsFunctionType(type) || type == typeof(CoflowFunctionEntry))
-                return false;
-            _metadataByRuntimeType.TryGetValue(type, out var metadata);
-            if (metadata is not null)
-            {
-                if (metadata is ICoflowRecordMetadata || !visiting.Add(type)) return true;
-                var result = metadata.Fields.All(field =>
-                {
-                    var binding = field.Binding;
-                    return binding.IsFunction || IsInterpolatable(binding.RuntimeType, visiting);
-                });
-                visiting.Remove(type);
-                return result;
-            }
-            if (!type.IsGenericType) return false;
-            var definition = type.GetGenericTypeDefinition();
-            var arguments = type.GetGenericArguments();
-            return definition == typeof(Option<>) && IsInterpolatable(arguments[0], visiting) ||
-                   definition == typeof(Result<,>) && arguments.All(argument => IsInterpolatable(argument, visiting)) ||
-                   definition == typeof(IReadOnlyList<>) && IsInterpolatable(arguments[0], visiting) ||
-                   definition == typeof(IReadOnlyDictionary<,>) &&
-                       arguments.All(argument => IsInterpolatable(argument, visiting));
-        }
-
         private bool StartsObjectConstructor(string first)
         {
-            return _index < _tokens.Count &&
-                   _tokens[_index].Kind == TokenKind.LeftBrace &&
+            return _tokens.Index < _tokens.Tokens.Count &&
+                   _tokens.Peek().Kind == TokenKind.LeftBrace &&
                    _metadata.ContainsKey(first);
         }
 
@@ -905,7 +517,7 @@ internal static partial class CoflowCompiler
                 if (metadata.Require(field.Text).Binding.IsFunction)
                     Error("COFLOW-FUNCTION-OBJECT", $"function field `{field.Text}` cannot be supplied by an object constructor");
                 Expect(TokenKind.Colon, "expected `:` after an object field name");
-                fields.Add((field.Text, ParseExpression().WithExpected(fieldType, this)));
+                fields.Add((field.Text, ParseExpression().WithExpected(fieldType, _typeChecker)));
                 if (!Match(TokenKind.Comma))
                 {
                     Expect(TokenKind.RightBrace, "expected `,` or `}` after an object field");
@@ -960,30 +572,13 @@ internal static partial class CoflowCompiler
                 segments.Add(Expect(TokenKind.Identifier, "expected a name after `::`").Text);
             if (segments.Count != 2)
                 Error("COFLOW-FUNCTION-NAME", $"invalid static path `{first.Text}`");
-            var staticPath = string.Join("::", segments);
-            if (_declaredConstants.TryGetValue(staticPath, out var constant))
-                return ConstantReference(constant);
-            var owner = segments[0];
-            var member = segments[^1];
-            if (!_enums.TryGetValue(owner, out var enumMetadata))
-                Error("COFLOW-FUNCTION-NAME", $"unknown static owner `{owner}`");
-            if (!enumMetadata.Variants.TryGetValue(member, out var enumValue))
-                Error("COFLOW-FUNCTION-NAME", $"enum `{owner}` has no variant `{member}`");
-            return new ConstantExpr(enumValue, enumMetadata.RuntimeType);
+            return StaticValue(segments);
         }
 
-        private ConstantExpr ConstantReference(CoflowConstant constant) =>
-            new(_context.ResolveConstant(constant), constant.RuntimeType)
-            {
-                TemplateValue = new CoflowConstantReferenceTemplate(constant),
-            };
-
-        private bool TryResolveEnum(string name, out ICoflowEnumMetadata metadata) =>
-            _enums.TryGetValue(name, out metadata!);
 
         private Type? NarrowedType(string name)
         {
-            foreach (var narrowing in _narrowings)
+            foreach (var narrowing in _parse.Narrowings)
                 if (narrowing.TryGetValue(name, out var type)) return type;
             return null;
         }
@@ -993,16 +588,7 @@ internal static partial class CoflowCompiler
             Expect(TokenKind.LeftParen, $"expected `(` after `{target}`");
             var value = ParseExpression();
             Expect(TokenKind.RightParen, "expected `)` after numeric conversion");
-            var result = target == "int" ? typeof(long) : typeof(double);
-            if (value.Type is not null && value.Type != typeof(long) && value.Type != typeof(double))
-                Error("COFLOW-FUNCTION-TYPE", $"{target} conversion requires int or float");
-            if (value.Type == result) return value;
-            var convert = (value.Type, result) switch
-            {
-                (var source, _) when source == typeof(long) => CoflowOpCode.ConvertIntToFloat,
-                _ => CoflowOpCode.ConvertFloatToInt,
-            };
-            return ConversionExpr.Create(value, result, convert);
+            return _typeChecker.NumericConversion(target, value);
         }
 
         private Expr ParseAnonymousFunction()
@@ -1026,16 +612,16 @@ internal static partial class CoflowCompiler
             Expect(TokenKind.Arrow, "expected `->` after anonymous function parameters");
             var resultType = ResolveTypeName(ParseTypeName());
             Expect(TokenKind.LeftBrace, "expected an anonymous function body");
-            var context = new LambdaParseContext(_localScopes.Count, parameters, parameterTypes.Count);
-            _lambdaContexts.Push(context);
-            var previousReturn = _returnType;
-            _returnType = resultType;
+            var context = new LambdaParseContext(_parse.LocalScopes.Count, parameters, parameterTypes.Count);
+            _parse.LambdaContexts.Push(context);
+            var previousReturn = _parse.ReturnType;
+            _parse.ReturnType = resultType;
             Expr body;
-            try { body = ParseBlockContents().WithExpected(resultType, this); }
+            try { body = ParseBlockContents().WithExpected(resultType, _typeChecker); }
             finally
             {
-                _returnType = previousReturn;
-                _lambdaContexts.Pop();
+                _parse.ReturnType = previousReturn;
+                _parse.LambdaContexts.Pop();
             }
             return new LambdaExpr(
                 new CoflowFunctionSignature(resultType, parameterTypes),
@@ -1043,84 +629,11 @@ internal static partial class CoflowCompiler
                 body);
         }
 
-        private Type ResolveTypeName(string name)
-        {
-            if (name.StartsWith("&", StringComparison.Ordinal)) name = name[1..];
-            if (name == "int") return typeof(long);
-            if (name == "float") return typeof(double);
-            if (name == "bool") return typeof(bool);
-            if (name == "string") return typeof(string);
-            if (name == "()") return typeof(Unit);
-            if (_metadata.TryGetValue(name, out var schemaType)) return schemaType.RuntimeType;
-            if (_enums.TryGetValue(name, out var schemaEnum)) return schemaEnum.RuntimeType;
-            if (name.StartsWith("[", StringComparison.Ordinal) && name.EndsWith(']'))
-                return typeof(IReadOnlyList<>).MakeGenericType(ResolveTypeName(name[1..^1]));
-            if (name.StartsWith("{", StringComparison.Ordinal) && name.EndsWith('}'))
-            {
-                var parts = SplitTypeArguments(name[1..^1], ':');
-                return typeof(IReadOnlyDictionary<,>).MakeGenericType(
-                    ResolveTypeName(parts[0]), ResolveTypeName(parts[1]));
-            }
-            if (name.StartsWith("Option<", StringComparison.Ordinal))
-                return typeof(Option<>).MakeGenericType(ResolveTypeName(name[7..^1]));
-            if (name.StartsWith("Result<", StringComparison.Ordinal))
-            {
-                var parts = SplitTypeArguments(name[7..^1], ',');
-                return typeof(Result<,>).MakeGenericType(ResolveTypeName(parts[0]), ResolveTypeName(parts[1]));
-            }
-            if (name.StartsWith("fn(", StringComparison.Ordinal))
-            {
-                var arrow = FindFunctionParameterEnd(name);
-                var parameterText = name[3..arrow];
-                var parameterTypes = parameterText.Length == 0
-                    ? Array.Empty<Type>()
-                    : SplitTypeArguments(parameterText, ',').Select(ResolveTypeName).ToArray();
-                return DelegateType(new CoflowFunctionSignature(
-                    ResolveTypeName(name[(arrow + 3)..]), parameterTypes));
-            }
-            Error("COFLOW-FUNCTION-TYPE", $"unknown type `{name}`");
-            return null!;
-        }
-
-        private static int FindFunctionParameterEnd(string name)
-        {
-            var depth = 0;
-            for (var index = 2; index < name.Length; index++)
-            {
-                if (name[index] == '(') depth++;
-                else if (name[index] == ')' && --depth == 0 &&
-                    name.AsSpan(index).StartsWith(")->", StringComparison.Ordinal))
-                    return index;
-            }
-            throw new InvalidOperationException($"invalid function type `{name}`");
-        }
-
-        private static string[] SplitTypeArguments(string value, char separator)
-        {
-            var result = new List<string>();
-            var depth = 0;
-            var start = 0;
-            for (var index = 0; index < value.Length; index++)
-            {
-                depth += value[index] is '<' or '[' or '{' or '(' ? 1 : 0;
-                // 函数箭头可以出现在泛型参数内，其中的 `>` 不是泛型结束符。
-                depth -= value[index] is ']' or '}' or ')' ||
-                    value[index] == '>' && (index == 0 || value[index - 1] != '-') ? 1 : 0;
-                if (value[index] == separator && depth == 0)
-                {
-                    result.Add(value[start..index]);
-                    start = index + 1;
-                }
-            }
-            result.Add(value[start..]);
-            return result.ToArray();
-        }
-
         private Expr ParseMatchExpression()
         {
             var subject = ParseExpression();
             Expect(TokenKind.LeftBrace, "expected `{` after match value");
-            var subjectLocal = _localCount++;
+            var subjectLocal = _parse.LocalCount++;
             var arms = new List<MatchArm>();
             var patternKinds = new HashSet<string>(StringComparer.Ordinal);
             var hasCatchAll = false;
@@ -1137,7 +650,7 @@ internal static partial class CoflowCompiler
                 int? bindingLocal = null;
                 if (pattern.BindingName is { } binding)
                 {
-                    bindingLocal = _localCount++;
+                    bindingLocal = _parse.LocalCount++;
                     scope.Add(binding, (bindingLocal.Value, pattern.BindingType!));
                 }
                 Expr body;
@@ -1147,9 +660,9 @@ internal static partial class CoflowCompiler
                 }
                 else
                 {
-                    _localScopes.Add(scope);
+                    _parse.LocalScopes.Add(scope);
                     try { body = ParseExpression(); }
-                    finally { _localScopes.RemoveAt(_localScopes.Count - 1); }
+                    finally { _parse.LocalScopes.RemoveAt(_parse.LocalScopes.Count - 1); }
                 }
                 arms.Add(new MatchArm(pattern, bindingLocal, body));
                 if (!Match(TokenKind.Comma))
@@ -1163,22 +676,7 @@ internal static partial class CoflowCompiler
             if (arms.Count == 0) Error("COFLOW-FUNCTION-MATCH", "match requires at least one arm");
             var exhaustive = hasCatchAll || IsExhaustiveMatch(subject.Type, patternKinds);
             if (!exhaustive) Error("COFLOW-FUNCTION-MATCH", "match is not exhaustive");
-            var resultType = arms[0].Body.Type;
-            foreach (var arm in arms.Skip(1))
-            {
-                if (IsAssignable(arm.Body.Type, resultType)) continue;
-                if (IsAssignable(resultType, arm.Body.Type))
-                {
-                    resultType = arm.Body.Type;
-                    continue;
-                }
-                else
-                    Error("COFLOW-FUNCTION-TYPE", "match arms must have the same result type");
-            }
-            var typedArms = arms
-                .Select(arm => arm with { Body = arm.Body.WithExpected(resultType, this) })
-                .ToArray();
-            return new MatchExpr(subject, subjectLocal, typedArms, !hasCatchAll);
+            return _typeChecker.Match(subject, subjectLocal, arms, !hasCatchAll);
         }
 
         private MatchPattern ParseMatchPattern(Type subjectType)
@@ -1199,10 +697,10 @@ internal static partial class CoflowCompiler
                 Expect(TokenKind.LeftParen, $"expected `(` after `{token.Text}`");
                 var binding = ExpectBindingIdentifier("expected a pattern binding").Text;
                 Expect(TokenKind.RightParen, "expected `)` after pattern binding");
-                return ValueFactories.MatchBranch(subjectType, token.Text, binding, this);
+                return ValueFactories.MatchBranch(subjectType, token.Text, binding, _typeChecker);
             }
             if (token.Kind == TokenKind.Identifier && token.Text == "None")
-                return ValueFactories.MatchNone(subjectType, this);
+                return ValueFactories.MatchNone(subjectType, _typeChecker);
             if (token.Kind == TokenKind.Identifier)
             {
                 var segments = new List<string> { token.Text };
@@ -1319,41 +817,8 @@ internal static partial class CoflowCompiler
             }
             Expect(TokenKind.Dot, "record references in functions must select a field");
             var fieldName = Expect(TokenKind.Identifier, "expected a field name after record reference").Text;
-            CoflowRecord? match = null;
-            foreach (var candidate in _records.WithKey(key))
-            {
-                if (declaredType is not null && candidate.DeclaredType != declaredType) continue;
-                if (_metadata[candidate.DeclaredType].Find(fieldName) is null) continue;
-                if (match is not null)
-                    Error("COFLOW-FUNCTION-REFERENCE", $"record reference `{key}.{fieldName}` is ambiguous");
-                match = candidate;
-            }
-            if (match is null && declaredType is not null &&
-                _metadata[declaredType] is ICoflowHostMetadata hostMetadata &&
-                hostMetadata.Require(fieldName).Binding.IsFunction)
-                return new FunctionReferenceExpr(_context.ResolveFunction(declaredType, key, fieldName), null);
-            if (match is null)
-                Error("COFLOW-FUNCTION-REFERENCE", $"record `{key}` with field `{fieldName}` was not found");
-            var selected = match!.Value;
-            _bindingDependencies.Add(new CoflowBindingDependency(
-                declaredType, key, fieldName, selected.DeclaredType));
-            var metadata = _metadata[selected.DeclaredType];
-            var value = selected.Value;
-            var valueReference = new CoflowRecordReferenceTemplate(selected.DeclaredType, key);
-            var binding = metadata.Require(fieldName).Binding;
-            if (binding.IsFunction)
-            {
-                if (metadata is ICoflowHostMetadata)
-                    return new FunctionReferenceExpr(_context.ResolveFunction(
-                        value, selected.DeclaredType, fieldName), null);
-                return new FunctionReferenceExpr(_context.ResolveFunction(
-                    value, selected.DeclaredType, fieldName),
-                    new ConstantExpr(valueReference, metadata.RuntimeType));
-            }
-            return new FieldExpr(
-                new ConstantExpr(valueReference, metadata.RuntimeType),
-                binding.RuntimeType,
-                CoflowFieldAccess.Bind(metadata, binding));
+            return RecordFieldReference(
+                declaredType, key, fieldName, _parse.BindingDependencies);
         }
 
         private Expr ParseArrayLiteral()
@@ -1364,20 +829,7 @@ internal static partial class CoflowCompiler
                 do values.Add(ParseExpression()); while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightBracket, "expected `]` after array literal");
             }
-            if (values.Count == 0) return new EmptyArrayExpr();
-            var elementType = values[0].Type;
-            foreach (var value in values.Skip(1))
-            {
-                if (IsAssignable(value.Type, elementType)) continue;
-                if (IsAssignable(elementType, value.Type))
-                {
-                    elementType = value.Type;
-                    continue;
-                }
-                value.WithExpected(elementType, this);
-            }
-            var typedValues = values.Select(value => value.WithExpected(elementType, this)).ToArray();
-            return new ArrayExpr(typedValues, typeof(IReadOnlyList<>).MakeGenericType(elementType));
+            return _typeChecker.ArrayLiteral(values);
         }
 
         private Expr ParseDictionaryLiteral()
@@ -1393,29 +845,7 @@ internal static partial class CoflowCompiler
                 } while (Match(TokenKind.Comma));
                 Expect(TokenKind.RightBrace, "expected `}` after dictionary literal");
             }
-            if (entries.Count == 0) return new EmptyDictionaryExpr();
-            var keyType = entries[0].Key.Type;
-            var valueType = entries[0].Value.Type;
-            foreach (var entry in entries.Skip(1))
-            {
-                if (!IsAssignable(entry.Key.Type, keyType))
-                {
-                    if (IsAssignable(keyType, entry.Key.Type)) keyType = entry.Key.Type;
-                    else entry.Key.WithExpected(keyType, this);
-                }
-                if (!IsAssignable(entry.Value.Type, valueType))
-                {
-                    if (IsAssignable(valueType, entry.Value.Type)) valueType = entry.Value.Type;
-                    else entry.Value.WithExpected(valueType, this);
-                }
-            }
-            if (keyType != typeof(long) && keyType != typeof(string) && !keyType.IsEnum)
-                Error("COFLOW-FUNCTION-TYPE", "dictionary keys must be int, string, or enum");
-            var typedEntries = entries.Select(entry => (
-                entry.Key.WithExpected(keyType, this),
-                entry.Value.WithExpected(valueType, this))).ToArray();
-            return new DictionaryExpr(typedEntries,
-                typeof(IReadOnlyDictionary<,>).MakeGenericType(keyType, valueType));
+            return _typeChecker.DictionaryLiteral(entries);
         }
 
         private Expr ParseValueConstructor(string name)
@@ -1435,227 +865,131 @@ internal static partial class CoflowCompiler
         private Expr ParseIfExpression()
         {
             var condition = ParseExpression();
-            if (condition.Type != typeof(bool))
-                Error("COFLOW-FUNCTION-TYPE", "if condition must be bool");
             Expect(TokenKind.LeftBrace, "expected `{` after if condition");
             if (condition is TypeIsExpr { NarrowName: { } name } typeIs)
-                _narrowings.Push(new Dictionary<string, Type>(StringComparer.Ordinal) { [name] = typeIs.TargetType });
+                _parse.Narrowings.Push(new Dictionary<string, Type>(StringComparer.Ordinal) { [name] = typeIs.TargetType });
             var whenTrue = ParseBlockContents();
-            if (condition is TypeIsExpr { NarrowName: not null }) _narrowings.Pop();
-            Expr whenFalse;
+            if (condition is TypeIsExpr { NarrowName: not null }) _parse.Narrowings.Pop();
+            Expr? whenFalse = null;
             if (Peek().Kind == TokenKind.Identifier && Peek().Text == "else")
             {
                 Advance();
                 Expect(TokenKind.LeftBrace, "expected `{` after `else`");
                 whenFalse = ParseBlockContents();
             }
-            else
-            {
-                if (whenTrue.Type != typeof(Unit) && !whenTrue.AlwaysTerminates)
-                    Error("COFLOW-FUNCTION-TYPE", "if without else must have type `()`");
-                whenFalse = new ConstantExpr(Unit.Value, typeof(Unit));
-            }
-            if (whenTrue.Type == typeof(NoneMarker) &&
-                whenFalse.Type.IsGenericType &&
-                whenFalse.Type.GetGenericTypeDefinition() == typeof(Option<>))
-                whenTrue = whenTrue.WithExpected(whenFalse.Type, this);
-            else if (whenFalse.Type == typeof(NoneMarker) &&
-                whenTrue.Type.IsGenericType &&
-                whenTrue.Type.GetGenericTypeDefinition() == typeof(Option<>))
-                whenFalse = whenFalse.WithExpected(whenTrue.Type, this);
-            else if (ResultBranch(whenTrue) is { } trueResult &&
-                ResultBranch(whenFalse) is { } falseResult &&
-                trueResult.IsOk != falseResult.IsOk)
-            {
-                var ok = trueResult.IsOk ? trueResult.Value.Type : falseResult.Value.Type;
-                var error = trueResult.IsOk ? falseResult.Value.Type : trueResult.Value.Type;
-                var resultType = typeof(Result<,>).MakeGenericType(ok, error);
-                whenTrue = whenTrue.WithExpected(resultType, this);
-                whenFalse = whenFalse.WithExpected(resultType, this);
-            }
-            if (whenTrue.Type != whenFalse.Type)
-            {
-                if (IsAssignable(whenTrue.Type, whenFalse.Type))
-                    whenTrue = whenTrue.WithExpected(whenFalse.Type, this);
-                else if (IsAssignable(whenFalse.Type, whenTrue.Type))
-                    whenFalse = whenFalse.WithExpected(whenTrue.Type, this);
-                else
-                    Error("COFLOW-FUNCTION-TYPE",
-                        $"if branches have different types `{FormatType(whenTrue.Type)}` and `{FormatType(whenFalse.Type)}`");
-            }
-            return IfExpr.Create(condition, whenTrue, whenFalse);
-
-            static ResultBranchExpr? ResultBranch(Expr expression) => expression switch
-            {
-                ResultBranchExpr result => result,
-                BlockExpr block => ResultBranch(block.Result),
-                _ => null,
-            };
+            return _typeChecker.IfExpression(condition, whenTrue, whenFalse);
         }
 
         private string ParseTypeName()
+            => _tokens.ParseTypeName();
+
+        private Type ResolveTypeName(string name)
         {
-            if (Match(TokenKind.LeftParen))
+            try { return CoflowTypeNameResolver.Resolve(name, _catalog); }
+            catch (FunctionCompileException error) when (error.Offset is null)
             {
-                Expect(TokenKind.RightParen, "only `()` is valid as a tuple type");
-                return "()";
+                Error(error.Code, error.Message);
             }
-            if (Match(TokenKind.LeftBracket))
+            return null!;
+        }
+
+        private string FormatType(Type type) => CoflowTypeNameResolver.Format(type, _catalog);
+
+        private Expr Field(Expr receiver, string fieldName)
+        {
+            _catalog.MetadataByRuntimeType.TryGetValue(receiver.Type, out var metadata);
+            if (metadata?.Find(fieldName) is null)
+                Error("COFLOW-FUNCTION-FIELD", $"type `{FormatType(receiver.Type)}` has no field `{fieldName}`");
+            var binding = metadata!.Require(fieldName).Binding;
+            return new FieldExpr(receiver, binding.RuntimeType, CoflowFieldAccess.Bind(metadata, binding));
+        }
+
+
+        private Expr? OwnerMember(string name, LambdaParseContext? lambda)
+        {
+            if (!_catalog.Metadata.TryGetValue(_entry.Identity.DeclaredType, out var metadata) ||
+                metadata.Find(name) is null) return null;
+            Expr receiver = new ArgumentExpr(_entry.Signature.ParameterTypes.Count, metadata.RuntimeType);
+            if (lambda is not null) receiver = lambda.Capture("R", receiver);
+            var binding = metadata.Require(name).Binding;
+            return binding.IsFunction
+                ? new FunctionReferenceExpr(_context.ResolveFunction(
+                    _entry.Identity.DeclaredType, _entry.Identity.RecordKey, name), receiver)
+                : new FieldExpr(receiver, binding.RuntimeType, CoflowFieldAccess.Bind(metadata, binding));
+        }
+
+        private ConstantExpr? DeclaredConstant(string name) =>
+            _catalog.Constants.TryGetValue(name, out var constant) ? ConstantReference(constant) : null;
+
+        private Expr StaticValue(IReadOnlyList<string> segments)
+        {
+            var path = string.Join("::", segments);
+            if (_catalog.Constants.TryGetValue(path, out var constant)) return ConstantReference(constant);
+            var owner = segments[0];
+            var member = segments[^1];
+            if (!_catalog.Enums.TryGetValue(owner, out var metadata))
+                Error("COFLOW-FUNCTION-NAME", $"unknown static owner `{owner}`");
+            if (!metadata.Variants.TryGetValue(member, out var value))
+                Error("COFLOW-FUNCTION-NAME", $"enum `{owner}` has no variant `{member}`");
+            return new ConstantExpr(value, metadata.RuntimeType);
+        }
+
+        private bool TryResolveEnum(string name, out ICoflowEnumMetadata metadata) =>
+            _catalog.Enums.TryGetValue(name, out metadata!);
+
+        private Expr RecordFieldReference(string? declaredType, string key, string fieldName,
+            ICollection<CoflowBindingDependency> dependencies)
+        {
+            CoflowRecord? match = null;
+            foreach (var candidate in _records.WithKey(key))
             {
-                var inner = ParseTypeName();
-                Expect(TokenKind.RightBracket, "expected `]` in array type");
-                return $"[{inner}]";
+                if (declaredType is not null && candidate.DeclaredType != declaredType) continue;
+                if (_catalog.Metadata[candidate.DeclaredType].Find(fieldName) is null) continue;
+                if (match is not null)
+                    Error("COFLOW-FUNCTION-REFERENCE", $"record reference `{key}.{fieldName}` is ambiguous");
+                match = candidate;
             }
-            if (Match(TokenKind.LeftBrace))
+            if (match is null && declaredType is not null &&
+                _catalog.Metadata[declaredType] is ICoflowHostMetadata host &&
+                host.Require(fieldName).Binding.IsFunction)
+                return new FunctionReferenceExpr(_context.ResolveFunction(declaredType, key, fieldName), null);
+            if (match is null)
+                Error("COFLOW-FUNCTION-REFERENCE", $"record `{key}` with field `{fieldName}` was not found");
+            var selected = match!.Value;
+            dependencies.Add(new CoflowBindingDependency(declaredType, key, fieldName, selected.DeclaredType));
+            var metadata = _catalog.Metadata[selected.DeclaredType];
+            var reference = new CoflowRecordReferenceTemplate(selected.DeclaredType, key);
+            var binding = metadata.Require(fieldName).Binding;
+            if (binding.IsFunction)
             {
-                var key = ParseTypeName();
-                Expect(TokenKind.Colon, "expected `:` in dictionary type");
-                var value = ParseTypeName();
-                Expect(TokenKind.RightBrace, "expected `}` in dictionary type");
-                return $"{{{key}:{value}}}";
+                if (metadata is ICoflowHostMetadata)
+                    return new FunctionReferenceExpr(_context.ResolveFunction(
+                        selected.Value, selected.DeclaredType, fieldName), null);
+                return new FunctionReferenceExpr(_context.ResolveFunction(
+                    selected.Value, selected.DeclaredType, fieldName),
+                    new ConstantExpr(reference, metadata.RuntimeType));
             }
-            var reference = Match(TokenKind.Ampersand);
-            var name = Expect(TokenKind.Identifier, "expected a type name").Text;
-            if (name == "fn" && Match(TokenKind.LeftParen))
-            {
-                var parameters = new List<string>();
-                if (!Match(TokenKind.RightParen))
-                {
-                    do parameters.Add(ParseTypeName()); while (Match(TokenKind.Comma));
-                    Expect(TokenKind.RightParen, "expected `)` after function parameter types");
-                }
-                Expect(TokenKind.Arrow, "expected `->` in function type");
-                return $"fn({string.Join(",", parameters)})->{ParseTypeName()}";
-            }
-            while (Match(TokenKind.DoubleColon))
-                name += "::" + Expect(TokenKind.Identifier, "expected a name after `::`").Text;
-            if (Match(TokenKind.Less))
-            {
-                var arguments = new List<string>();
-                do arguments.Add(ParseTypeName()); while (Match(TokenKind.Comma));
-                Expect(TokenKind.Greater, "expected `>` after generic arguments");
-                name += $"<{string.Join(",", arguments)}>";
-            }
-            return reference ? $"&{name}" : name;
+            return new FieldExpr(new ConstantExpr(reference, metadata.RuntimeType),
+                binding.RuntimeType, CoflowFieldAccess.Bind(metadata, binding));
         }
 
-        private string FormatType(Type type)
+        private void ValidateBindingIdentifier(Token token)
         {
-            if (type == typeof(long) || type == typeof(int)) return "int";
-            if (type == typeof(double) || type == typeof(float)) return "float";
-            if (type == typeof(bool)) return "bool";
-            if (type == typeof(string)) return "string";
-            if (type == typeof(Unit)) return "()";
-            if (_schemaTypeNames.TryGetValue(type, out var schemaName)) return schemaName;
-            if (CoflowFunctionHandle.IsFunctionType(type))
-            {
-                var signature = type.GetGenericArguments();
-                var parameters = signature[..^1].Select(FormatType);
-                var result = FormatType(signature[^1]);
-                return $"fn({string.Join(",", parameters)})->{result}";
-            }
-            if (type.IsGenericType)
-            {
-                var definition = type.GetGenericTypeDefinition();
-                var arguments = type.GetGenericArguments().Select(FormatType).ToArray();
-                if (definition == typeof(Option<>)) return $"Option<{arguments[0]}>";
-                if (definition == typeof(Result<,>)) return $"Result<{arguments[0]},{arguments[1]}>";
-                if (definition == typeof(IReadOnlyList<>)) return $"[{arguments[0]}]";
-                if (definition == typeof(IReadOnlyDictionary<,>)) return $"{{{arguments[0]}:{arguments[1]}}}";
-            }
-            return type.Name;
+            if (!CfdIdentifiers.IsIdentifier(token.Text))
+                Error("COFLOW-FUNCTION-NAME", $"`{token.Text}` is reserved and cannot be used as a binding");
+            if (_ownerFieldNames.Contains(token.Text))
+                Error("COFLOW-FUNCTION-NAME",
+                    $"binding `{token.Text}` conflicts with a field on `{_entry.Identity.DeclaredType}`");
         }
 
-        private int Constant(object? value)
-        {
-            var index = _constants.Count;
-            _constants.Add(value);
-            return index;
-        }
+        private ConstantExpr ConstantReference(CoflowConstant constant) =>
+            new(_context.ResolveConstant(constant), constant.RuntimeType)
+            { TemplateValue = new CoflowConstantReferenceTemplate(constant) };
 
-        private int Emit(CoflowOpCode code, int operand = 0)
-        {
-            var index = _instructions.Count;
-            _instructions.Add(new CoflowInstruction(code, operand, ValueType: _emissionType));
-            _instructionSpans.Add(_emissionOffset < 0 || _entry.Source is null
-                ? null
-                : FunctionSpan(_entry.Source, _emissionOffset));
-            return index;
-        }
 
-        private int Emit(CoflowOpCode code, int operand, Type valueType)
-        {
-            var index = _instructions.Count;
-            _instructions.Add(new CoflowInstruction(code, operand, ValueType: valueType));
-            _instructionSpans.Add(_emissionOffset < 0 || _entry.Source is null
-                ? null
-                : FunctionSpan(_entry.Source, _emissionOffset));
-            return index;
-        }
-
-        private int _emissionOffset = -1;
-        private Type? _emissionType;
-
-        private int SetEmissionOffset(int offset)
-        {
-            var previous = _emissionOffset;
-            if (offset >= 0) _emissionOffset = offset;
-            return previous;
-        }
-
-        private void RestoreEmissionOffset(int offset) => _emissionOffset = offset;
-
-        private Type? SetEmissionType(Type type)
-        {
-            var previous = _emissionType;
-            _emissionType = type;
-            return previous;
-        }
-
-        private void RestoreEmissionType(Type? type) => _emissionType = type;
-
-        private void Patch(int index, int target) => _instructions[index] =
-            _instructions[index] with { Operand = target };
-
-        private CoflowProgramTemplate CompileLambda(
-            CoflowFunctionSignature signature,
-            IReadOnlyList<Expr> captures,
-            Expr body)
-        {
-            var outerInstructions = _instructions.ToArray();
-            var outerInstructionSpans = _instructionSpans.ToArray();
-            var outerConstants = _constants.ToArray();
-            _instructions.Clear();
-            _instructionSpans.Clear();
-            _constants.Clear();
-            body.EmitTail(this);
-            var program = new CoflowProgramTemplate(
-                _entry.Identity,
-                _entry.SourcePath,
-                _entry.SourceSpan,
-                _instructions.ToArray(),
-                _instructionSpans.ToArray(),
-                _constants.ToArray(),
-                signature.ParameterTypes.Concat(captures.Select(value => value.Type)).ToArray(),
-                signature.ResultType,
-                _localCount);
-            _instructions.Clear();
-            _instructions.AddRange(outerInstructions);
-            _instructionSpans.Clear();
-            _instructionSpans.AddRange(outerInstructionSpans);
-            _constants.Clear();
-            _constants.AddRange(outerConstants);
-            return program;
-        }
-
-        private Token Peek() => _tokens[_index];
-        private Token Advance() => _tokens[_index++];
-        private bool Match(TokenKind kind)
-        {
-            if (Peek().Kind != kind) return false;
-            _index++;
-            return true;
-        }
+        private Token Peek() => _tokens.Peek();
+        private Token Advance() => _tokens.Advance();
+        private bool Match(TokenKind kind) => _tokens.Match(kind);
         private Token Expect(TokenKind kind, string message)
         {
             if (Peek().Kind != kind) Error("COFLOW-FUNCTION-SYNTAX", message);
@@ -1667,30 +1001,28 @@ internal static partial class CoflowCompiler
             ValidateBindingIdentifier(token);
             return token;
         }
-        private void ValidateBindingIdentifier(Token token)
-        {
-            if (!CfdIdentifiers.IsIdentifier(token.Text))
-                Error("COFLOW-FUNCTION-NAME", $"`{token.Text}` is reserved and cannot be used as a binding");
-            if (_ownerFieldNames.Contains(token.Text))
-                Error("COFLOW-FUNCTION-NAME",
-                    $"binding `{token.Text}` conflicts with a field on `{_entry.Identity.DeclaredType}`");
-        }
         private void ExpectIdentifier(string value)
         {
             var token = Expect(TokenKind.Identifier, $"expected `{value}`");
             if (token.Text != value) Error("COFLOW-FUNCTION-SYNTAX", $"expected `{value}`");
         }
         [DoesNotReturn]
-        private void Error(string code, string message)
+        internal void Error(string code, string message)
         {
-            var offset = _emissionOffset >= 0
-                ? _emissionOffset
-                : _index < _tokens.Count ? _tokens[_index].Offset : _tokens[^1].Offset;
-            throw new FunctionCompileException(code, message, offset);
+            throw new FunctionCompileException(code, message, CurrentOffset());
         }
+
+        private int CurrentOffset() => _tokens.Index < _tokens.Tokens.Count
+            ? _tokens.Peek().Offset
+            : _tokens.Tokens[_tokens.Tokens.Count - 1].Offset;
+
+        [DoesNotReturn]
+        private static void ErrorAt(int offset, string code, string message) =>
+            throw new FunctionCompileException(code, message, offset);
 
 
     }
 
 
 }
+

@@ -4,6 +4,9 @@ public sealed class CoflowStaleValueException : InvalidOperationException
 {
     public CoflowStaleValueException()
         : base("The value does not belong to the current Coflow snapshot.") { }
+
+    internal CoflowStaleValueException(string details)
+        : base($"The value does not belong to the current Coflow snapshot. {details}") { }
 }
 
 public sealed class CoflowBoundaryException : InvalidOperationException

@@ -89,6 +89,7 @@ public static class CoflowConstantValues
 [EditorBrowsable(EditorBrowsableState.Never)]
 public interface ICoflowSchema
 {
+    CoflowSchemaRuntime Runtime { get; }
     IReadOnlyList<ICoflowTypeMetadata> Types { get; }
     IReadOnlyList<ICoflowEnumMetadata> Enums { get; }
     IReadOnlyList<CoflowConstant> Constants { get; }
@@ -117,8 +118,8 @@ public interface ICoflowTypeMetadata : ICfdTypeBinding
     IReadOnlyList<CoflowAnnotation> Annotations { get; }
     IReadOnlyList<CoflowTypeId> AssignableTypeIds { get; }
     object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields);
-    Delegate CreateVmObjectFactory(CfdLoadContext context);
-    Delegate CreateVmDefaultFactory(string fieldName, CfdLoadContext context);
+    CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context);
+    CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context);
     CoflowValueId GetValueId(object value);
     object WithValueId(object value, CoflowValueId id);
 }
@@ -159,7 +160,8 @@ public interface ICoflowRecordMetadata : ICoflowTypeMetadata
 {
     Type KeyType { get; }
     object ParseKey(string key);
-    Delegate GetKeyReader();
+    object GetKey(object value);
+    CoflowTable CreateTable(object[] values);
     object CreateRecord(string key, CfdLoadContext context);
     void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context);
 }

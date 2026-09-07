@@ -3,21 +3,18 @@ namespace Coflow.Runtime.CompilerServices;
 using System.ComponentModel;
 
 [EditorBrowsable(EditorBrowsableState.Never)]
-public readonly record struct CoflowHostFunctionBinding
+public sealed class CoflowHostFunctionBinding
 {
-    public CoflowHostFunctionBinding(CoflowFunctionEntry entry, Delegate implementation)
-        : this(entry, implementation, null) { }
-
-    private CoflowHostFunctionBinding(CoflowFunctionEntry entry, Delegate implementation, CoflowNativeCall? call)
+    private CoflowHostFunctionBinding(CoflowFunctionEntry entry, Delegate implementation, CoflowNativeCall call)
     {
         Entry = entry ?? throw new ArgumentNullException(nameof(entry));
         Implementation = implementation ?? throw new ArgumentNullException(nameof(implementation));
-        Call = call;
+        Call = call ?? throw new ArgumentNullException(nameof(call));
     }
 
     public CoflowFunctionEntry Entry { get; }
     public Delegate Implementation { get; }
-    internal CoflowNativeCall? Call { get; }
+    internal CoflowNativeCall Call { get; }
 
     public static CoflowHostFunctionBinding Create<TResult>(CoflowFunctionEntry entry, Func<TResult> implementation) =>
         new(entry, implementation, new(Type.EmptyTypes, typeof(TResult), frame => frame.WriteImported(implementation())));

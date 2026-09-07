@@ -250,7 +250,7 @@ internal abstract class CoflowClosure
         }
         if (shape.Kind == CoflowValueShapeKind.Struct)
         {
-            var descriptor = CoflowStructCodecs.TryGet(shape.Type, out var value)
+            var descriptor = CoflowSchemaRuntimeContext.TryGetStructCodec(shape.Type, out var value)
                 ? value : throw new InvalidOperationException($"No schema struct codec exists for `{shape.Type}`.");
             var integerOffset = integerBase;
             var floatOffset = floatBase;
@@ -283,15 +283,15 @@ internal abstract class CoflowClosure
     {
         foreach (var arena in Collections)
             if (arena.Contains(id)) return arena;
-        return CoflowInvocationContext.CollectionArena(id);
+        return Owner.Snapshot.CollectionArena(id);
     }
 
-    internal static CoflowClosure Create(CoflowProgram program, CoflowCaptureLayout[] captures,
+    internal static CoflowClosure Create(Coflow owner, CoflowProgram program, CoflowCaptureLayout[] captures,
         CoflowCollectionArena[] collections, int integerCount, int floatCount, int referenceCount)
     {
         return integerCount == 0 && floatCount == 0 && referenceCount == 0
-            ? new Empty(CoflowInvocationContext.Owner, program, captures, collections)
-            : new WithCaptures(CoflowInvocationContext.Owner, program, captures, collections,
+            ? new Empty(owner, program, captures, collections)
+            : new WithCaptures(owner, program, captures, collections,
                 integerCount, floatCount, referenceCount);
     }
 }

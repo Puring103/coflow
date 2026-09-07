@@ -118,7 +118,7 @@ fn collect_layout_registrations(
             collect_layout_registrations(inner, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("CoflowValueLayout.RegisterOption<{}>();", csharp_type(inner, view)));
+                output.push(format!("runtime.RegisterOption<{}>();", csharp_type(inner, view)));
             }
         }
         CftValueType::Result(ok, error) => {
@@ -126,7 +126,7 @@ fn collect_layout_registrations(
             collect_layout_registrations(error, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("CoflowValueLayout.RegisterResult<{}, {}>();",
+                output.push(format!("runtime.RegisterResult<{}, {}>();",
                     csharp_type(ok, view), csharp_type(error, view)));
             }
         }
@@ -134,7 +134,7 @@ fn collect_layout_registrations(
             collect_layout_registrations(inner, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("CoflowValueLayout.RegisterArray<{}>();", csharp_type(inner, view)));
+                output.push(format!("runtime.RegisterArray<{}>();", csharp_type(inner, view)));
             }
         }
         CftValueType::Dict(key_type, value_type) => {
@@ -142,7 +142,7 @@ fn collect_layout_registrations(
             collect_layout_registrations(value_type, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("CoflowValueLayout.RegisterDictionary<{}, {}>();",
+                output.push(format!("runtime.RegisterDictionary<{}, {}>();",
                     csharp_type(key_type, view), csharp_type(value_type, view)));
             }
         }
@@ -153,7 +153,7 @@ fn collect_layout_registrations(
             collect_layout_registrations(result, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key.clone()) {
-                output.push(format!("CoflowValueLayout.RegisterFunction<{key}>();"));
+                output.push(format!("runtime.RegisterFunction<{key}>();"));
             }
         }
         CftValueType::Int | CftValueType::Float | CftValueType::Bool |

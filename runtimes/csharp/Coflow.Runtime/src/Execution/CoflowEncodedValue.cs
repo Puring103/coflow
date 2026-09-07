@@ -18,19 +18,19 @@ internal sealed record CoflowEncodedValue(CoflowValueShape Shape, long[] Integer
 
     internal static CoflowEncodedValue EncodeArenaField(Type type, object? value, Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null)
     {
-        if (value != null && !type.IsValueType && CoflowTypes.TryGet(type, out var _) && CoflowTypeCodecs.TryGet(value.GetType(), out CoflowTypeDescriptor descriptor))
+        if (value != null && !type.IsValueType && CoflowSchemaRuntimeContext.TryGetType(type, out var _) && CoflowSchemaRuntimeContext.TryGetTypeCodec(value.GetType(), out CoflowTypeDescriptor descriptor))
         {
             CoflowValueId valueIdObject = descriptor.GetValueIdObject(value);
             return new CoflowEncodedValue(CoflowValueShape.Of(type), new long[1] { (long)valueIdObject.Packed }, Array.Empty<double>(), Array.Empty<object>());
         }
-        if (CoflowStructCodecs.TryGet(type, out CoflowStructDescriptor descriptor2))
+        if (CoflowSchemaRuntimeContext.TryGetStructCodec(type, out CoflowStructDescriptor descriptor2))
         {
             return descriptor2.Encode(value!, encodeArenaValue);
         }
         return Encode(type, value, encodeArenaValue);
     }
 
-    private static void Encode(CoflowValueShape shape, object? value, int integerBase, int floatBase, int referenceBase, long[] integers, double[] floats, object?[] references, Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null)
+    internal static void Encode(CoflowValueShape shape, object? value, int integerBase, int floatBase, int referenceBase, IList<long> integers, IList<double> floats, IList<object?> references, Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null)
     {
         if (shape.Kind == CoflowValueShapeKind.Unit)
         {
@@ -38,7 +38,7 @@ internal sealed record CoflowEncodedValue(CoflowValueShape Shape, long[] Integer
         }
         if (shape.Kind == CoflowValueShapeKind.Record)
         {
-            if (value == null || !CoflowTypeCodecs.TryGet(value.GetType(), out CoflowTypeDescriptor descriptor))
+            if (value == null || !CoflowSchemaRuntimeContext.TryGetTypeCodec(value.GetType(), out CoflowTypeDescriptor descriptor))
             {
                 throw new InvalidOperationException($"No schema codec exists for `{shape.Type}`.");
             }
@@ -83,14 +83,12 @@ internal sealed record CoflowEncodedValue(CoflowValueShape Shape, long[] Integer
         }
         if (shape.Kind == CoflowValueShapeKind.Struct)
         {
-            if (!CoflowStructCodecs.TryGet(shape.Type, out CoflowStructDescriptor descriptor2))
+            if (!CoflowSchemaRuntimeContext.TryGetStructCodec(shape.Type, out CoflowStructDescriptor descriptor2))
             {
                 throw new InvalidOperationException($"No schema struct codec exists for `{shape.Type}`.");
             }
-            CoflowEncodedValue coflowEncodedValue2 = descriptor2.Encode(value!, encodeArenaValue);
-            Array.Copy(coflowEncodedValue2.Integers, 0, integers, integerBase, coflowEncodedValue2.Integers.Length);
-            Array.Copy(coflowEncodedValue2.Floats, 0, floats, floatBase, coflowEncodedValue2.Floats.Length);
-            Array.Copy(coflowEncodedValue2.References, 0, references, referenceBase, coflowEncodedValue2.References.Length);
+            descriptor2.EncodeInto(value!, integers, floats, references,
+                integerBase, floatBase, referenceBase, encodeArenaValue);
             return;
         }
         var union = CoflowUnionAccessors.For(shape.Type, shape.Kind);
@@ -120,11 +118,11 @@ internal sealed record CoflowUnionAccessors(
     Func<object, object?> First,
     Func<object, object?>? Second)
 {
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
         Type, CoflowUnionAccessors> Cache = new();
 
     internal static CoflowUnionAccessors For(Type type, CoflowValueShapeKind kind) =>
-        Cache.GetOrAdd(type, value => Build(value, kind));
+        Cache.GetValue(type, value => Build(value, kind));
 
     private static CoflowUnionAccessors Build(Type type, CoflowValueShapeKind kind)
     {

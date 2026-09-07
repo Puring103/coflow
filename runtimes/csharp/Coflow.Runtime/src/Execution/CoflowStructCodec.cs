@@ -9,30 +9,12 @@ public delegate void CoflowStructWriter<T>(ref CoflowValueWriter writer, T value
 public delegate T CoflowStructReader<T>(ref CoflowValueReader reader);
 
 [EditorBrowsable(EditorBrowsableState.Never)]
-public static class CoflowStructCodec
-{
-    public static void Register<T>(
-        int integerCount,
-        int floatCount,
-        int referenceCount,
-        CoflowStructWriter<T> writer,
-        CoflowStructReader<T> reader) where T : struct
-    {
-        if (integerCount < 1) throw new ArgumentOutOfRangeException(nameof(integerCount));
-        if (floatCount < 0) throw new ArgumentOutOfRangeException(nameof(floatCount));
-        if (referenceCount < 0) throw new ArgumentOutOfRangeException(nameof(referenceCount));
-        CoflowStructCodecs.Register(new CoflowStructDescriptor<T>(
-            integerCount, floatCount, referenceCount, writer, reader));
-    }
-}
-
-[EditorBrowsable(EditorBrowsableState.Never)]
 public struct CoflowValueWriter
 {
-    private readonly CoflowVm.CoflowExecutionContext? _context;
-    private readonly long[]? _integers;
-    private readonly double[]? _floats;
-    private readonly object?[]? _references;
+    private readonly CoflowExecutionSession? _context;
+    private readonly IList<long>? _integers;
+    private readonly IList<double>? _floats;
+    private readonly IList<object?>? _references;
     private readonly Func<Type, object?, CoflowEncodedValue>? _encodeArenaValue;
     private readonly CoflowValueIdCollector? _collector;
     private readonly List<Type>? _layout;
@@ -40,7 +22,7 @@ public struct CoflowValueWriter
     private int _floatBase;
     private int _referenceBase;
 
-    internal CoflowValueWriter(CoflowVm.CoflowExecutionContext context, CoflowValueRegister register)
+    internal CoflowValueWriter(CoflowExecutionSession context, CoflowValueRegister register)
     {
         _context = context;
         _integers = null;
@@ -55,10 +37,11 @@ public struct CoflowValueWriter
     }
 
     internal CoflowValueWriter(
-        long[] integers,
-        double[] floats,
-        object?[] references,
-        Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null)
+        IList<long> integers,
+        IList<double> floats,
+        IList<object?> references,
+        Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null,
+        int integerBase = 0, int floatBase = 0, int referenceBase = 0)
     {
         _context = null;
         _integers = integers;
@@ -67,9 +50,9 @@ public struct CoflowValueWriter
         _encodeArenaValue = encodeArenaValue;
         _collector = null;
         _layout = null;
-        _integerBase = 0;
-        _floatBase = 0;
-        _referenceBase = 0;
+        _integerBase = integerBase;
+        _floatBase = floatBase;
+        _referenceBase = referenceBase;
     }
 
     internal CoflowValueWriter(CoflowValueIdCollector collector)
@@ -119,18 +102,8 @@ public struct CoflowValueWriter
         }
         else
         {
-            var encoded = _encodeArenaValue is null
-                ? CoflowEncodedValue.EncodeArenaField(typeof(T), value)
-                : _encodeArenaValue(typeof(T), value);
-            if (_integerBase + encoded.Integers.Length > _integers!.Length ||
-                _floatBase + encoded.Floats.Length > _floats!.Length ||
-                _referenceBase + encoded.References.Length > _references!.Length)
-                throw new InvalidOperationException(
-                    $"Schema Arena layout for `{typeof(T)}` exceeds its declared lane counts " +
-                    $"at ({_integerBase}, {_floatBase}, {_referenceBase}).");
-            Array.Copy(encoded.Integers, 0, _integers!, _integerBase, encoded.Integers.Length);
-            Array.Copy(encoded.Floats, 0, _floats!, _floatBase, encoded.Floats.Length);
-            Array.Copy(encoded.References, 0, _references!, _referenceBase, encoded.References.Length);
+            CoflowEncodedValue.Encode(shape, value, _integerBase, _floatBase, _referenceBase,
+                _integers!, _floats!, _references!, _encodeArenaValue);
         }
         Advance(shape);
     }
@@ -139,7 +112,7 @@ public struct CoflowValueWriter
     {
         if (_layout is not null) return;
         else if (_collector is { } collector) collector.Add(value);
-        else if (_context is { } context) context.WriteInteger(
+        else if (_context is { } context) context.Registers.WriteInteger(
             new CoflowRegister(CoflowRegisterKind.Integer, _integerBase), unchecked((long)value.Packed));
         else _integers![_integerBase] = unchecked((long)value.Packed);
         _integerBase++;
@@ -160,12 +133,12 @@ public struct CoflowValueWriter
 [EditorBrowsable(EditorBrowsableState.Never)]
 public struct CoflowValueReader
 {
-    private readonly CoflowVm.CoflowExecutionContext _context;
+    private readonly CoflowExecutionSession _context;
     private int _integerBase;
     private int _floatBase;
     private int _referenceBase;
 
-    internal CoflowValueReader(CoflowVm.CoflowExecutionContext context, CoflowValueRegister register)
+    internal CoflowValueReader(CoflowExecutionSession context, CoflowValueRegister register)
     {
         _context = context;
         _integerBase = register.IntegerBase;
@@ -185,7 +158,7 @@ public struct CoflowValueReader
     }
 
     public CoflowValueId ReadValueId() =>
-        CoflowValueId.FromPacked(unchecked((ulong)_context.ReadInteger(
+        CoflowValueId.FromPacked(unchecked((ulong)_context.Registers.ReadInteger(
             new CoflowRegister(CoflowRegisterKind.Integer, _integerBase++))));
 }
 
@@ -207,8 +180,11 @@ internal abstract class CoflowStructDescriptor
     internal abstract CoflowEncodedValue Encode(
         object value,
         Func<Type, object?, CoflowEncodedValue>? encodeArenaValue = null);
+    internal abstract void EncodeInto(object value, IList<long> integers, IList<double> floats,
+        IList<object?> references, int integerBase, int floatBase, int referenceBase,
+        Func<Type, object?, CoflowEncodedValue>? encodeArenaValue);
     internal abstract void WriteObject(
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister register,
         object value);
     internal abstract void CollectValueIds(object value, CoflowValueIdCollector collector);
@@ -232,13 +208,13 @@ internal sealed class CoflowStructDescriptor<T> : CoflowStructDescriptor
         FieldTypes = fieldTypes;
     }
 
-    internal void Write(CoflowVm.CoflowExecutionContext context, CoflowValueRegister register, T value)
+    internal void Write(CoflowExecutionSession context, CoflowValueRegister register, T value)
     {
         var writer = new CoflowValueWriter(context, register);
         _writer(ref writer, value);
     }
 
-    internal T Read(CoflowVm.CoflowExecutionContext context, CoflowValueRegister register)
+    internal T Read(CoflowExecutionSession context, CoflowValueRegister register)
     {
         var reader = new CoflowValueReader(context, register);
         return Reader(ref reader);
@@ -251,16 +227,21 @@ internal sealed class CoflowStructDescriptor<T> : CoflowStructDescriptor
         var integers = new long[IntegerCount];
         var floats = new double[FloatCount];
         var references = new object?[ReferenceCount];
-        var writer = new CoflowValueWriter(integers, floats, references, encodeArenaValue);
-        _writer(ref writer, (T)value);
-        if (writer.WrittenIntegerCount != IntegerCount || writer.WrittenFloatCount != FloatCount ||
-            writer.WrittenReferenceCount != ReferenceCount)
-            throw new InvalidOperationException($"Schema struct codec for `{typeof(T)}` wrote an invalid lane count.");
+        EncodeInto(value, integers, floats, references, 0, 0, 0, encodeArenaValue);
         return new CoflowEncodedValue(CoflowValueShape.Of(typeof(T)), integers, floats, references);
     }
 
+    internal override void EncodeInto(object value, IList<long> integers, IList<double> floats,
+        IList<object?> references, int integerBase, int floatBase, int referenceBase,
+        Func<Type, object?, CoflowEncodedValue>? encodeArenaValue)
+    {
+        var writer = new CoflowValueWriter(integers, floats, references, encodeArenaValue,
+            integerBase, floatBase, referenceBase);
+        _writer(ref writer, (T)value);
+    }
+
     internal override void WriteObject(
-        CoflowVm.CoflowExecutionContext context,
+        CoflowExecutionSession context,
         CoflowValueRegister register,
         object value) => Write(context, register, (T)value);
 
@@ -271,23 +252,3 @@ internal sealed class CoflowStructDescriptor<T> : CoflowStructDescriptor
     }
 }
 
-internal static class CoflowStructCodecs
-{
-    private static readonly Dictionary<Type, CoflowStructDescriptor> Descriptors = new();
-
-    internal static void Register(CoflowStructDescriptor descriptor)
-    {
-        if (!Descriptors.TryAdd(descriptor.Type, descriptor))
-            throw new InvalidOperationException($"A struct codec for `{descriptor.Type}` is already registered.");
-        CoflowValueShape.RegisterStruct(descriptor.Type, descriptor.IntegerCount,
-            descriptor.FloatCount, descriptor.ReferenceCount);
-    }
-
-    internal static bool TryGet(Type type, out CoflowStructDescriptor descriptor) =>
-        Descriptors.TryGetValue(type, out descriptor!);
-
-    internal static CoflowStructDescriptor<T> Get<T>() =>
-        Descriptors.TryGetValue(typeof(T), out var descriptor)
-            ? (CoflowStructDescriptor<T>)descriptor
-            : throw new InvalidOperationException($"No schema struct codec exists for `{typeof(T)}`.");
-}
