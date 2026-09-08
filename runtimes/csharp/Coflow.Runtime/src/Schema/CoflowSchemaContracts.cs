@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -170,4 +177,5 @@ public interface ICoflowRecordMetadata : ICoflowTypeMetadata
 public interface ICoflowHostMetadata : ICoflowTypeMetadata
 {
     object? BindHost(object? value, CfdLoadContext context);
+}
 }

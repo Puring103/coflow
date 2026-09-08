@@ -1,6 +1,6 @@
 [package]
 name = "cfd-editor-core"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
 description = "Host-independent CFD editor sessions, operations, and file watching"
 license = "Apache-2.0"

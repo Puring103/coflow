@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal enum CoflowRegisterDescriptorKind : byte
 {
@@ -10,19 +17,37 @@ internal enum CoflowRegisterDescriptorKind : byte
 internal enum CoflowRegisterOperandAccess : byte { None, Read, Write }
 internal enum CoflowRegisterControlFlow : byte { Next, Branch, Jump, Terminal, Propagate }
 
-internal readonly record struct CoflowRegisterOperandSpec(
-    CoflowRegisterKind? Kind,
-    CoflowRegisterOperandAccess Access)
+internal readonly struct CoflowRegisterOperandSpec
 {
+    public CoflowRegisterKind? Kind { get; init; }
+    public CoflowRegisterOperandAccess Access { get; init; }
+
+    public CoflowRegisterOperandSpec(CoflowRegisterKind? Kind, CoflowRegisterOperandAccess Access)
+    {
+        this.Kind = Kind;
+        this.Access = Access;
+    }
+
     internal static readonly CoflowRegisterOperandSpec None = new(null, CoflowRegisterOperandAccess.None);
 }
 
-internal readonly record struct CoflowRegisterOpSpec(
-    CoflowRegisterOperandSpec A,
-    CoflowRegisterOperandSpec B,
-    CoflowRegisterOperandSpec C,
-    CoflowRegisterDescriptorKind Descriptor,
-    CoflowRegisterControlFlow ControlFlow);
+internal readonly struct CoflowRegisterOpSpec
+{
+    public CoflowRegisterOperandSpec A { get; init; }
+    public CoflowRegisterOperandSpec B { get; init; }
+    public CoflowRegisterOperandSpec C { get; init; }
+    public CoflowRegisterDescriptorKind Descriptor { get; init; }
+    public CoflowRegisterControlFlow ControlFlow { get; init; }
+
+    public CoflowRegisterOpSpec(CoflowRegisterOperandSpec A, CoflowRegisterOperandSpec B, CoflowRegisterOperandSpec C, CoflowRegisterDescriptorKind Descriptor, CoflowRegisterControlFlow ControlFlow)
+    {
+        this.A = A;
+        this.B = B;
+        this.C = C;
+        this.Descriptor = Descriptor;
+        this.ControlFlow = ControlFlow;
+    }
+}
 
 /// <summary>最终指令的操作数、descriptor 与控制流规格；编码、验证和 CFG 必须共同使用。</summary>
 internal static class CoflowRegisterInstructionSpec
@@ -136,4 +161,5 @@ internal static class CoflowRegisterInstructionSpec
         CoflowRegisterDescriptorKind descriptor = CoflowRegisterDescriptorKind.None,
         CoflowRegisterControlFlow controlFlow = CoflowRegisterControlFlow.Next) =>
         new(a ?? None, b ?? None, c ?? None, descriptor, controlFlow);
+}
 }

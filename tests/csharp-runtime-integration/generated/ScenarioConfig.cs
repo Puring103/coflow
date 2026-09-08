@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
@@ -45,6 +46,7 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
         this.checkpoints = checkpoints;
         this.optionalBonus = optionalBonus;
         this.validation = validation;
+        _coflowId = default;
         _coflowInitialized = true;
     }
 
@@ -82,4 +84,5 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
         return hash.ToHashCode();
     }
 
+}
 }

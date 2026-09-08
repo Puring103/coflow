@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "cfd-editor-core",
  "coflow-runtime",
@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor-core"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "atomicwrites",
  "coflow-language",
@@ -519,7 +519,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "coflow"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "atomicwrites",
  "clap",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-checker"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-language",
  "coflow-model",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen-csharp"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-codegen",
  "coflow-language",
@@ -567,18 +567,18 @@ dependencies = [
 
 [[package]]
 name = "coflow-diagnostics"
-version = "0.10.2"
+version = "0.10.3"
 
 [[package]]
 name = "coflow-format"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-language",
 ]
 
 [[package]]
 name = "coflow-language"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "regex",
  "serde",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-lsp"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-format",
  "coflow-language",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-model"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-runtime"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "coflow-checker",
  "coflow-codegen",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-staging"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "tempfile",
 ]

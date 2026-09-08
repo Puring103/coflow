@@ -1,6 +1,12 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using System;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal readonly struct CoflowNativeFrame
 {
@@ -65,4 +71,5 @@ internal readonly struct CoflowNativeFrame
         _context.Registers.WriteIntegerRelative(_result.IntegerBase, functionId.Packed);
         _context.Registers.WriteIntegerRelative(_result.IntegerBase + 1, unchecked((long)environmentId.Packed));
     }
+}
 }

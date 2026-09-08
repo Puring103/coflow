@@ -1,7 +1,13 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using System;
 using Coflow.Runtime.CompilerServices;
 
-namespace Coflow.Runtime;
+namespace Coflow.Runtime
+{
 
 internal readonly struct CoflowFunctionId : IEquatable<CoflowFunctionId>
 {
@@ -109,4 +115,5 @@ public readonly struct CoflowFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult> :
     CoflowFunctionId ICoflowFunctionHandle.FunctionId => FunctionId; CoflowValueId ICoflowFunctionHandle.EnvironmentId => EnvironmentId;
     internal CoflowFunctionId FunctionId { get; } internal CoflowValueId EnvironmentId { get; }
     public TResult Invoke(Coflow coflow, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) => coflow.InvokeFunction<CoflowArguments8<T1, T2, T3, T4, T5, T6, T7, T8>, TResult>(FunctionId, EnvironmentId, new(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8));
+}
 }

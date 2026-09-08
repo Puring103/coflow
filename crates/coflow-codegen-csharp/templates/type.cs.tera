@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-{% if project.namespace %}namespace {{ project.namespace }};
+{% if project.namespace %}namespace {{ project.namespace }}
+{
 
 {% endif %}
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
@@ -57,7 +58,8 @@ using Coflow.Runtime.CompilerServices;
 {% endfor %}    ){{ type.base_constructor_call | default(value="") }}
     {
 {% for assignment in type.assignments %}        this.{{ assignment.target }} = {{ assignment.parameter }};
-{% endfor %}{% if type.is_struct %}        _coflowInitialized = true;
+{% endfor %}{% if type.is_struct %}        _coflowId = default;
+        _coflowInitialized = true;
 {% endif %}    }
 {% if type.is_struct %}
     private {{ type.name }}({{ type.name }} value, CoflowValueId coflowId)
@@ -115,3 +117,4 @@ using Coflow.Runtime.CompilerServices;
         {{ type.equality.key_property }}.GetHashCode();
 {% endif %}{% endif %}
 }
+{% if project.namespace %}}{% endif %}

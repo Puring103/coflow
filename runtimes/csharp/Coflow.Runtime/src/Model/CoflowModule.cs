@@ -1,4 +1,11 @@
-namespace Coflow.Runtime;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime
+{
 
 using System.Collections;
 using global::Coflow.Runtime.CompilerServices;
@@ -438,10 +445,21 @@ internal sealed class CoflowSnapshot
             throw new CoflowStaleValueException();
     }
 
-    internal readonly record struct ValueEntry(
-        CoflowTypeId TypeId,
-        string RecordKey,
-        object ApiValue,
-        int FunctionSetIndex);
+    internal readonly struct ValueEntry
+    {
+        public CoflowTypeId TypeId { get; init; }
+        public string RecordKey { get; init; }
+        public object ApiValue { get; init; }
+        public int FunctionSetIndex { get; init; }
 
+        public ValueEntry(CoflowTypeId TypeId, string RecordKey, object ApiValue, int FunctionSetIndex)
+        {
+            this.TypeId = TypeId;
+            this.RecordKey = RecordKey;
+            this.ApiValue = ApiValue;
+            this.FunctionSetIndex = FunctionSetIndex;
+        }
+    }
+
+}
 }

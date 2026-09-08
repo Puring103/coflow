@@ -6,7 +6,8 @@ using System.Linq;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-{% if project.namespace %}namespace {{ project.namespace }};
+{% if project.namespace %}namespace {{ project.namespace }}
+{
 
 {% endif %}
 public static class Schema
@@ -150,3 +151,4 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 {% endfor %}{% include "metadata-helpers.cs.tera" %}
 }
+{% if project.namespace %}}{% endif %}

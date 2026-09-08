@@ -1,8 +1,14 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using System;
 using System.Linq.Expressions;
 using Coflow.Runtime;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static class CoflowFunctionHandle
 {
@@ -44,6 +50,15 @@ internal static class CoflowFunctionAccess<T>
     }
 }
 
-internal readonly record struct CoflowRawFunctionHandle(
-    CoflowFunctionId FunctionId,
-    CoflowValueId EnvironmentId) : ICoflowFunctionHandle;
+internal readonly struct CoflowRawFunctionHandle : ICoflowFunctionHandle
+{
+    public CoflowFunctionId FunctionId { get; init; }
+    public CoflowValueId EnvironmentId { get; init; }
+
+    public CoflowRawFunctionHandle(CoflowFunctionId FunctionId, CoflowValueId EnvironmentId)
+    {
+        this.FunctionId = FunctionId;
+        this.EnvironmentId = EnvironmentId;
+    }
+}
+}

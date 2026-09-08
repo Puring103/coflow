@@ -1,6 +1,13 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
-internal readonly record struct CoflowFunctionTarget
+internal readonly struct CoflowFunctionTarget
 {
     private readonly CoflowFunctionEntry? _entry;
     private readonly object? _receiver;
@@ -51,4 +58,5 @@ internal readonly record struct CoflowFunctionTarget
         }
         _entry.InvokeHostVoid(arguments);
     }
+}
 }

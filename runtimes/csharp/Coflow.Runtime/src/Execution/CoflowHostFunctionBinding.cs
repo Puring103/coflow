@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -53,4 +60,5 @@ public sealed class CoflowHostFunctionBinding
         new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6)); frame.WriteImported(Unit.Value); }));
     public static CoflowHostFunctionBinding Create<T1, T2, T3, T4, T5, T6, T7, T8>(CoflowFunctionEntry entry, Action<T1, T2, T3, T4, T5, T6, T7, T8> implementation) =>
         new(entry, implementation, new(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7), typeof(T8) }, typeof(Unit), frame => { implementation(frame.Read<T1>(0), frame.Read<T2>(1), frame.Read<T3>(2), frame.Read<T4>(3), frame.Read<T5>(4), frame.Read<T6>(5), frame.Read<T7>(6), frame.Read<T8>(7)); frame.WriteImported(Unit.Value); }));
+}
 }

@@ -1,6 +1,12 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using System;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal sealed class CoflowNativeCall
 {
@@ -30,4 +36,5 @@ internal sealed class CoflowNativeCall
             frame.Write(implementation(frame.Read<TRecord>(0)));
         });
     }
+}
 }

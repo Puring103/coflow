@@ -1,4 +1,11 @@
-namespace Coflow.Runtime;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime
+{
 
 using global::Coflow.Runtime.CompilerServices;
 
@@ -236,4 +243,5 @@ public sealed class CoflowCompileResult
 public sealed class CoflowNotCompiledException : InvalidOperationException
 {
     public CoflowNotCompiledException() : base("Coflow has no successfully compiled snapshot.") { }
+}
 }

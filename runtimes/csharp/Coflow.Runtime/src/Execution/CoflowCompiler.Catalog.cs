@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal sealed class CoflowCompilerCatalog
 {
@@ -23,7 +30,17 @@ internal sealed class CoflowCompilerCatalog
     internal IReadOnlyDictionary<Type, ICoflowEnumMetadata> EnumsByRuntimeType { get; }
 }
 
-internal readonly record struct CoflowRecord(string DeclaredType, object Value);
+internal readonly struct CoflowRecord
+{
+    public string DeclaredType { get; init; }
+    public object Value { get; init; }
+
+    public CoflowRecord(string DeclaredType, object Value)
+    {
+        this.DeclaredType = DeclaredType;
+        this.Value = Value;
+    }
+}
 
 internal sealed class CoflowRecordCatalog
 {
@@ -42,4 +59,5 @@ internal sealed class CoflowRecordCatalog
         _byIdentity.TryGetValue((declaredType, key), out value!);
     internal IReadOnlyList<CoflowRecord> WithKey(string key) =>
         _byKey.TryGetValue(key, out var records) ? records : Array.Empty<CoflowRecord>();
+}
 }

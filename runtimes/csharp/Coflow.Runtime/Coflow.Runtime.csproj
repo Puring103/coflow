@@ -4,8 +4,8 @@
     <RootNamespace>Coflow.Runtime</RootNamespace>
     <AssemblyName>Coflow.Runtime</AssemblyName>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9.0</LangVersion>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Coflow.Runtime</PackageId>

@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>发布快照使用的不可变列式记录存储。</summary>
 internal sealed class CoflowRecordArena
@@ -108,5 +115,18 @@ internal sealed class CoflowRecordArena
                 _references[entry.ReferenceBase + access.ReferenceOffset + index]);
     }
 
-    private readonly record struct Row(int IntegerBase, int FloatBase, int ReferenceBase);
+    private readonly struct Row
+    {
+        public int IntegerBase { get; init; }
+        public int FloatBase { get; init; }
+        public int ReferenceBase { get; init; }
+
+        public Row(int IntegerBase, int FloatBase, int ReferenceBase)
+        {
+            this.IntegerBase = IntegerBase;
+            this.FloatBase = FloatBase;
+            this.ReferenceBase = ReferenceBase;
+        }
+    }
+}
 }

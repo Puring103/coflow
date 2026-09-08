@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>拥有一次执行中的集合 Arena、捕获集合视图和集合 ID 解析顺序。</summary>
 internal sealed class CoflowValueResolver
@@ -59,4 +66,5 @@ internal sealed class CoflowValueResolver
         _captured = Array.Empty<CoflowCollectionArena>();
         _publishedResolver = null;
     }
+}
 }

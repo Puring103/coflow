@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Linq.Expressions;
 
@@ -58,8 +65,15 @@ internal static class CoflowExpressionCompiler
         return new RestoreDynamicCodeSupport(previous);
     }
 
-    private sealed class RestoreDynamicCodeSupport(bool? previous) : IDisposable
+    private sealed class RestoreDynamicCodeSupport : IDisposable
     {
+        private readonly bool? previous;
+
+        public RestoreDynamicCodeSupport(bool? previous)
+        {
+            this.previous = previous;
+        }
+
         private bool _disposed;
 
         public void Dispose()
@@ -69,4 +83,5 @@ internal static class CoflowExpressionCompiler
             _dynamicCodeOverride = previous;
         }
     }
+}
 }

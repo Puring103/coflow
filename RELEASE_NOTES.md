@@ -1,3 +1,13 @@
+# Coflow 0.10.3
+
+## 修复
+
+- 生成的 C# 代码和 `Coflow.Runtime` 统一使用 C# 9 语法，支持 Unity 2021.3 LTS。
+- C# Runtime 保持 `netstandard2.1` 与 `net8.0` 双目标，并移除文件级命名空间、`record struct`、结构体 `with` 等较新语法依赖。
+- 补丁版本发布使用普通 Rust 门禁；仅 `X.Y.0` 大版本或小版本更新执行完整门禁。
+
+---
+
 # Coflow 0.10.2
 
 ## 修复

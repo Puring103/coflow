@@ -95,16 +95,14 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 
 ## 工程门禁
 
-提交或合并前必须从仓库根目录通过以下检查：
+普通开发提交、合并及补丁版本发布（如 `0.10.2` 到 `0.10.3`）必须从仓库根目录通过以下检查：
 
 ```powershell
 cargo check --workspace
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI 应与本地门禁保持一致。
+主版本或次版本升级（如 `0.9.x` 到 `0.10.0`）执行 `AGENTS.md` 中的完整门禁，包括格式、Clippy、C# Runtime、前端、扩展和 bindings 检查。发布版本 `X.Y.0` 使用完整门禁，补丁号大于零的版本使用普通门禁；手动发布和打包采用相同规则。所有发布均需完成版本校验、产物构建和签名。CI 与本地门禁保持一致。
 
 建议补充的工程检查：
 

@@ -1,8 +1,12 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal sealed class CoflowProgramLinker
 {
@@ -115,12 +119,21 @@ internal sealed class CoflowProgramTemplate
     }
 }
 
-internal readonly record struct CoflowBindingDependency(
-    string? DeclaredType,
-    string RecordKey,
-    string FieldName,
-    string ResolvedDeclaredType)
+internal readonly struct CoflowBindingDependency
 {
+    public string? DeclaredType { get; init; }
+    public string RecordKey { get; init; }
+    public string FieldName { get; init; }
+    public string ResolvedDeclaredType { get; init; }
+
+    public CoflowBindingDependency(string? DeclaredType, string RecordKey, string FieldName, string ResolvedDeclaredType)
+    {
+        this.DeclaredType = DeclaredType;
+        this.RecordKey = RecordKey;
+        this.FieldName = FieldName;
+        this.ResolvedDeclaredType = ResolvedDeclaredType;
+    }
+
     internal bool IsStillValid(CoflowCompilerCatalog catalog, CoflowRecordCatalog records)
     {
         var declaredType = DeclaredType;
@@ -152,4 +165,5 @@ internal sealed class CoflowProgram
     internal Type ReturnType { get; }
     internal int ParameterCount => ParameterTypes.Length;
     internal CoflowRegisterProgram RegisterProgram { get; }
+}
 }

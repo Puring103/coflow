@@ -101,7 +101,7 @@ fn generated_identifiers_and_empty_inheritance_compile_in_csharp() {
             .expect("write generated source");
     }
     std::fs::write(output_dir.join("Regression.csproj"), r#"<Project Sdk="Microsoft.NET.Sdk">
-      <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><Nullable>enable</Nullable><LangVersion>latest</LangVersion></PropertyGroup>
+      <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><Nullable>enable</Nullable><LangVersion>9.0</LangVersion></PropertyGroup>
       <ItemGroup><ProjectReference Include="../../runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj" /></ItemGroup>
     </Project>"#).expect("write compilation project");
     std::fs::write(output_dir.join("Program.cs"), r#"
@@ -705,7 +705,7 @@ fn namespace_qualifies_references_without_changing_source_names() {
         .expect("generate namespaced code");
     assert!(files
         .iter()
-        .all(|file| file.contents.contains("namespace Game.Config;")));
+        .all(|file| file.contents.contains("namespace Game.Config\n{")));
     let output = all(&files);
     assert!(output.contains("typeof(global::Game.Config.Item)"));
     assert!(output.contains("global::Game.Config.Rarity.Common"));

@@ -1,4 +1,11 @@
-namespace Coflow.Runtime;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime
+{
 
 using global::Coflow.Runtime.CompilerServices;
 
@@ -39,4 +46,5 @@ internal sealed class CoflowSchemaIndex
 
     private static long TypePair(CoflowTypeId concrete, CoflowTypeId target) =>
         ((long)concrete.Value << 32) | (uint)target.Value;
+}
 }

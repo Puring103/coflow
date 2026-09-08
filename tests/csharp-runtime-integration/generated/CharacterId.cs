@@ -2,11 +2,13 @@
 #nullable enable
 using System;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public enum CharacterId
 {
     Arcanist = 1,
     Guardian = 0,
+}
 }

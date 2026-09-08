@@ -16,29 +16,42 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+
+      - name: Select release gate and validate version
+        id: gate
+        shell: pwsh
+        run: |
+          $line = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1
+          $version = $line.Matches[0].Groups[1].Value
+          if ($version -notmatch '^\d+\.\d+\.(\d+)$') {
+            throw "Expected release version X.Y.Z, got $version"
+          }
+          # 新版本系列的首版执行完整门禁，补丁版本执行普通 Rust 门禁。
+          $full = [int]$Matches[1] -eq 0
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
+          }
+          "full=$($full.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Release $version uses $(if ($full) { 'full' } else { 'standard' }) gate"
+
+      - name: Install full gate Rust components
+        if: steps.gate.outputs.full == 'true'
+        run: rustup component add rustfmt clippy
 
       - name: Install Node
+        if: steps.gate.outputs.full == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install .NET
+        if: steps.gate.outputs.full == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Validate release version
-        shell: pwsh
-        run: |
-          $line = Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1
-          $version = $line.Matches[0].Groups[1].Value
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
-            throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
-          }
-
       - name: Sync skill references
+        if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
           pwsh scripts/sync-skill-references.ps1
@@ -53,21 +66,26 @@ jobs:
         run: cargo check --workspace
 
       - name: Check formatting
+        if: steps.gate.outputs.full == 'true'
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        if: steps.gate.outputs.full == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test workspace
         run: cargo test --workspace
 
       - name: Build all C# runtime targets
+        if: steps.gate.outputs.full == 'true'
         run: dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
 
       - name: Consume the netstandard2.1 C# runtime
+        if: steps.gate.outputs.full == 'true'
         run: dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
 
       - name: Test C# runtime with coverage
+        if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: >-
           dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj
@@ -80,6 +98,7 @@ jobs:
           /p:ThresholdStat=total
 
       - name: Regenerate and run C# integration
+        if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
           cargo run -- codegen tests/csharp-runtime-integration
@@ -87,16 +106,19 @@ jobs:
           dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
 
       - name: Check TypeScript bindings
+        if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
           cargo test --features ts-export -p cfd-editor export_bindings
           git diff --exit-code editors/cfd-editor/frontend/src/bindings
 
       - name: Test and build CFD editor frontend
+        if: steps.gate.outputs.full == 'true'
         run: npm ci && npm test && npm run build
         working-directory: editors/cfd-editor/frontend
 
       - name: Test VS Code extension
+        if: steps.gate.outputs.full == 'true'
         run: node editors/vscode-coflow/test/extension-unit.test.js
 
   windows-full:

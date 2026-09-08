@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Collections;
 
@@ -783,4 +790,5 @@ internal static class CoflowCollectionMaterializer<T>
                 context.DecodeEncoded<TValue>(context.ReadDictionaryValue(id, index)));
         return new System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>(values);
     }
+}
 }

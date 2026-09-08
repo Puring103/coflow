@@ -1,5 +1,8 @@
 # Unity 中使用 C# Runtime
 
+`Coflow.Runtime` 和生成的 C# binding 支持 Unity 2021.3 LTS。生成代码的语言基线为
+C# 9，不会使用文件作用域命名空间等 C# 10 及以上语法。
+
 `Coflow.Runtime` 同时面向 `netstandard2.1` 和 `net8.0`。Unity 项目应引用
 `netstandard2.1` 版本以及由 Coflow 生成的 C# binding。
 

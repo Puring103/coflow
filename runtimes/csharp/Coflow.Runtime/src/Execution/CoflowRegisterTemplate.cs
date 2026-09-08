@@ -1,9 +1,58 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
-internal readonly record struct CoflowConstantRelocation(int Descriptor, Type Type, object Symbol);
-internal readonly record struct CoflowNativeRelocation(int Descriptor, object Symbol);
-internal readonly record struct CoflowClosureRelocation(int Descriptor, CoflowClosureProgramTemplate Template);
-internal readonly record struct CoflowCallRelocation(int Descriptor, CoflowCallSite Call);
+internal readonly struct CoflowConstantRelocation
+{
+    public int Descriptor { get; init; }
+    public Type Type { get; init; }
+    public object Symbol { get; init; }
+
+    public CoflowConstantRelocation(int Descriptor, Type Type, object Symbol)
+    {
+        this.Descriptor = Descriptor;
+        this.Type = Type;
+        this.Symbol = Symbol;
+    }
+}
+internal readonly struct CoflowNativeRelocation
+{
+    public int Descriptor { get; init; }
+    public object Symbol { get; init; }
+
+    public CoflowNativeRelocation(int Descriptor, object Symbol)
+    {
+        this.Descriptor = Descriptor;
+        this.Symbol = Symbol;
+    }
+}
+internal readonly struct CoflowClosureRelocation
+{
+    public int Descriptor { get; init; }
+    public CoflowClosureProgramTemplate Template { get; init; }
+
+    public CoflowClosureRelocation(int Descriptor, CoflowClosureProgramTemplate Template)
+    {
+        this.Descriptor = Descriptor;
+        this.Template = Template;
+    }
+}
+internal readonly struct CoflowCallRelocation
+{
+    public int Descriptor { get; init; }
+    public CoflowCallSite Call { get; init; }
+
+    public CoflowCallRelocation(int Descriptor, CoflowCallSite Call)
+    {
+        this.Descriptor = Descriptor;
+        this.Call = Call;
+    }
+}
 
 /// <summary>保存链接无关的最终编码；新快照只替换包含快照身份或程序索引的 descriptor。</summary>
 internal sealed class CoflowRegisterTemplate
@@ -116,4 +165,5 @@ internal sealed class CoflowRelocationBuilder
     internal List<CoflowNativeRelocation> NativeCalls { get; } = new();
     internal List<CoflowClosureRelocation> Closures { get; } = new();
     internal List<CoflowCallRelocation> Calls { get; } = new();
+}
 }

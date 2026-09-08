@@ -2,7 +2,8 @@
 #nullable enable
 using System.Collections.Generic;
 
-{% if project.namespace %}namespace {{ project.namespace }};
+{% if project.namespace %}namespace {{ project.namespace }}
+{
 
 {% endif %}
 {% for dimension in project.dimensions %}    /// <summary>Values selected explicitly from the {{ dimension.source_name }} dimension.</summary>
@@ -34,3 +35,4 @@ using System.Collections.Generic;
     }
 {% if not loop.last %}
 {% endif %}{% endfor %}
+{% if project.namespace %}}{% endif %}

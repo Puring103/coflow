@@ -1,9 +1,38 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>编译期虚拟值；编号只在所属函数内有效，类型在创建后不可变。</summary>
-internal readonly record struct CoflowVirtualValue(int OwnerId, int Index, Type Type);
+internal readonly struct CoflowVirtualValue
+{
+    public int OwnerId { get; init; }
+    public int Index { get; init; }
+    public Type Type { get; init; }
 
-internal readonly record struct CoflowSourceOrigin(string SourcePath, CfdSpan? Span);
+    public CoflowVirtualValue(int OwnerId, int Index, Type Type)
+    {
+        this.OwnerId = OwnerId;
+        this.Index = Index;
+        this.Type = Type;
+    }
+}
+
+internal readonly struct CoflowSourceOrigin
+{
+    public string SourcePath { get; init; }
+    public CfdSpan? Span { get; init; }
+
+    public CoflowSourceOrigin(string SourcePath, CfdSpan? Span)
+    {
+        this.SourcePath = SourcePath;
+        this.Span = Span;
+    }
+}
 
 /// <summary>typed CFG 操作只表达语言语义；最终 opcode 由寄存器 lowering 唯一选择。</summary>
 internal abstract record CoflowVirtualOperation
@@ -422,7 +451,7 @@ internal sealed class CoflowVirtualProgramBuilder
 
     private void RequireOwned(CoflowVirtualValue value)
     {
-        if (value.OwnerId != _ownerId || (uint)value.Index >= (uint)_values.Count || _values[value.Index] != value)
+        if (value.OwnerId != _ownerId || (uint)value.Index >= (uint)_values.Count || !_values[value.Index].Equals(value))
             throw new InvalidOperationException("A virtual value belongs to another function.");
     }
 
@@ -431,4 +460,5 @@ internal sealed class CoflowVirtualProgramBuilder
         if (block.OwnerId != _ownerId || (uint)block.Index >= (uint)_blocks.Count || !ReferenceEquals(_blocks[block.Index], block))
             throw new InvalidOperationException("A basic block belongs to another function.");
     }
+}
 }

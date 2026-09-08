@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>验证紧凑寄存器程序的结构边界，阻止损坏编码进入 VM。</summary>
 internal static class CoflowExecutableVerifier
@@ -598,4 +605,5 @@ internal static class CoflowExecutableVerifier
 
     private static InvalidOperationException Invalid(string message) =>
         new($"Invalid Coflow register program: {message}.");
+}
 }

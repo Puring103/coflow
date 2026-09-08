@@ -1,4 +1,11 @@
-namespace Coflow.Runtime;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime
+{
 
 public sealed class CoflowStaleValueException : InvalidOperationException
 {
@@ -26,8 +33,19 @@ public sealed class CoflowHostNotBoundException : InvalidOperationException
         : base("The @Host singleton has not been bound.") { }
 }
 
-public readonly record struct CoflowFunctionIdentity(
-    string DeclaredType,
-    string RecordKey,
-    string FieldName,
-    string ValuePath = "");
+public readonly struct CoflowFunctionIdentity
+{
+    public string DeclaredType { get; init; }
+    public string RecordKey { get; init; }
+    public string FieldName { get; init; }
+    public string ValuePath { get; init; }
+
+    public CoflowFunctionIdentity(string DeclaredType, string RecordKey, string FieldName, string ValuePath = "")
+    {
+        this.DeclaredType = DeclaredType;
+        this.RecordKey = RecordKey;
+        this.FieldName = FieldName;
+        this.ValuePath = ValuePath;
+    }
+}
+}

@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class HostServices : IEquatable<HostServices>
@@ -129,4 +130,5 @@ public sealed partial class HostServices : IEquatable<HostServices>
         return hash.ToHashCode();
     }
 
+}
 }

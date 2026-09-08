@@ -1,8 +1,14 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using System;
 using System.Linq.Expressions;
 using System.Reflection;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static class CoflowBoundaryCodec<T>
 {
@@ -74,12 +80,11 @@ internal static class CoflowBoundaryCodec
             CoflowStructDescriptor<T> descriptor2 = CoflowSchemaRuntimeContext.GetStructCodec<T>();
             return delegate (CoflowExecutionSession context, CoflowValueRegister register, T value)
             {
-                descriptor2.Write(context, relative ? register with
-                {
-                    IntegerBase = register.IntegerBase + context.IntegerBase,
-                    FloatBase = register.FloatBase + context.FloatBase,
-                    ReferenceBase = register.ReferenceBase + context.ReferenceBase
-                } : register, value);
+                descriptor2.Write(context, relative ? new CoflowValueRegister(
+                    register.Shape,
+                    register.IntegerBase + context.IntegerBase,
+                    register.FloatBase + context.FloatBase,
+                    register.ReferenceBase + context.ReferenceBase) : register, value);
             };
         }
         if (CoflowSchemaRuntimeContext.TryGetType(typeof(T), out var _) && !typeof(T).IsValueType)
@@ -108,12 +113,11 @@ internal static class CoflowBoundaryCodec
         if (CoflowSchemaRuntimeContext.TryGetStructCodec(typeof(T), out CoflowStructDescriptor _))
         {
             CoflowStructDescriptor<T> descriptor2 = CoflowSchemaRuntimeContext.GetStructCodec<T>();
-            return (CoflowExecutionSession context, CoflowValueRegister register) => descriptor2.Read(context, relative ? register with
-            {
-                IntegerBase = register.IntegerBase + context.IntegerBase,
-                FloatBase = register.FloatBase + context.FloatBase,
-                ReferenceBase = register.ReferenceBase + context.ReferenceBase
-            } : register);
+            return (CoflowExecutionSession context, CoflowValueRegister register) => descriptor2.Read(context, relative ? new CoflowValueRegister(
+                register.Shape,
+                register.IntegerBase + context.IntegerBase,
+                register.FloatBase + context.FloatBase,
+                register.ReferenceBase + context.ReferenceBase) : register);
         }
         if (CoflowSchemaRuntimeContext.TryGetType(typeof(T), out var _) && !typeof(T).IsValueType)
         {
@@ -226,12 +230,11 @@ internal static class CoflowBoundaryCodec
     internal static void WriteStruct<T>(CoflowExecutionSession context, CoflowValueRegister register, T value, bool relative)
     {
         CoflowStructDescriptor<T> coflowStructDescriptor = CoflowSchemaRuntimeContext.GetStructCodec<T>();
-        coflowStructDescriptor.Write(context, relative ? register with
-        {
-            IntegerBase = register.IntegerBase + context.IntegerBase,
-            FloatBase = register.FloatBase + context.FloatBase,
-            ReferenceBase = register.ReferenceBase + context.ReferenceBase
-        } : register, value);
+        coflowStructDescriptor.Write(context, relative ? new CoflowValueRegister(
+            register.Shape,
+            register.IntegerBase + context.IntegerBase,
+            register.FloatBase + context.FloatBase,
+            register.ReferenceBase + context.ReferenceBase) : register, value);
     }
 
     internal static void WriteFunction<T>(CoflowExecutionSession context,
@@ -258,12 +261,11 @@ internal static class CoflowBoundaryCodec
     internal static T ReadStruct<T>(CoflowExecutionSession context, CoflowValueRegister register, bool relative)
     {
         CoflowStructDescriptor<T> coflowStructDescriptor = CoflowSchemaRuntimeContext.GetStructCodec<T>();
-        return coflowStructDescriptor.Read(context, relative ? register with
-        {
-            IntegerBase = register.IntegerBase + context.IntegerBase,
-            FloatBase = register.FloatBase + context.FloatBase,
-            ReferenceBase = register.ReferenceBase + context.ReferenceBase
-        } : register);
+        return coflowStructDescriptor.Read(context, relative ? new CoflowValueRegister(
+            register.Shape,
+            register.IntegerBase + context.IntegerBase,
+            register.FloatBase + context.FloatBase,
+            register.ReferenceBase + context.ReferenceBase) : register);
     }
 
     internal static void WriteCollection<T>(CoflowExecutionSession context, CoflowValueRegister register, T value, bool relative)
@@ -302,4 +304,5 @@ internal static class SchemaFreeBoundaryCodec<T>
         relative ? RelativeImportedWrite : AbsoluteImportedWrite;
     internal static Func<CoflowExecutionSession, CoflowValueRegister, T> Read(bool relative) =>
         relative ? RelativeRead : AbsoluteRead;
+}
 }

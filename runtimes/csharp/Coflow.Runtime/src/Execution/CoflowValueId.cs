@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -23,4 +30,5 @@ public readonly struct CoflowValueId : IEquatable<CoflowValueId>
     public override int GetHashCode() => _value.GetHashCode();
     public static bool operator ==(CoflowValueId left, CoflowValueId right) => left.Equals(right);
     public static bool operator !=(CoflowValueId left, CoflowValueId right) => !left.Equals(right);
+}
 }

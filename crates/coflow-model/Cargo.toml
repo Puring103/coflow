@@ -1,6 +1,6 @@
 [package]
 name = "coflow-model"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
 description = "Schema-guided CFD data model for Coflow."
 license = "Apache-2.0"
