@@ -5,11 +5,9 @@ use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::LoadedValueDraft;
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
-use crate::semantics::{
-    CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest,
-};
-use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
+use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
 use coflow_language::cft::{CftField, CftValueType, TypeName};
+use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Validation and resolution helper.
@@ -183,15 +181,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
 
         let diagnostics = &self.diagnostics[diagnostic_start..];
-        if diagnostics
-            .iter()
-            .all(|diagnostic| {
-                matches!(
-                    diagnostic.code,
-                    CfdErrorCode::MissingRequiredField | CfdErrorCode::InvalidEnumVariant
-                )
-            })
-        {
+        if diagnostics.iter().all(|diagnostic| {
+            matches!(
+                diagnostic.code,
+                CfdErrorCode::MissingRequiredField | CfdErrorCode::InvalidEnumVariant
+            )
+        }) {
             Some(RecordDraft {
                 key: key.to_string(),
                 actual_type: actual_type_meta.name.clone(),
@@ -269,11 +264,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 Some(ValueDraft::FormattedString(value.clone()))
             }
             (CftValueType::Function(_, _), LoadedValueDraft::Function(value)) => {
-                Some(ValueDraft::Value(CfdValue::Function(
-                    crate::CfdFunction {
-                        source: value.source.clone(),
-                    },
-                )))
+                Some(ValueDraft::Value(CfdValue::Function(crate::CfdFunction {
+                    source: value.source.clone(),
+                })))
             }
             (
                 CftValueType::Enum(expected),
@@ -450,11 +443,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let context = SourceValueSemanticContext;
         let request =
             ValueValidationRequest::new(expected, value, ValueValidationMode::SourceFragment);
-        match crate::semantics::validate_value_for_schema(
-            self.schema.cft(),
-            &context,
-            request,
-        ) {
+        match crate::semantics::validate_value_for_schema(self.schema.cft(), &context, request) {
             Ok(()) => Some(()),
             Err(error) => {
                 self.push(
@@ -507,8 +496,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             .and_then(|()| {
                 self.budget
                     .charge_nodes(StructureKind::DefaultValue, additional_nodes)
-            })
-            ;
+            });
         match result {
             Ok(()) => Some(()),
             Err(error) => {

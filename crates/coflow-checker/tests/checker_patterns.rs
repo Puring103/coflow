@@ -55,14 +55,14 @@ fn option_patterns_bind_scalars_objects_collections_and_nested_options() {
 #[test]
 fn pattern_binding_preserves_reference_dependencies_and_diagnostic_paths() {
     let schema = compile_schema(
-        r#"
+        r"
         abstract type Reward {}
         type Coins : Reward { amount: int; }
         type Item {
             reward: Option<&Reward>;
             check { when (reward is Some(r) && r is Coins) { r.amount > 0; } }
         }
-    "#,
+    ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -139,7 +139,7 @@ fn option_comparison_and_pattern_scopes_reject_invalid_access() {
 #[test]
 fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
     let schema = compile_schema(
-        r#"
+        r"
         abstract type Reward {}
         type Coins : Reward { amount: int; }
         type Currency = Coins;
@@ -156,7 +156,7 @@ fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
                 when (reward is Coins && optional is Some(reward)) { reward == 5; }
             }
         }
-    "#,
+    ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [] as [(&str, LoadedValueDraft); 0]);

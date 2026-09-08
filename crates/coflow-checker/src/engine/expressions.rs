@@ -3,7 +3,9 @@ use super::ops;
 use super::type_predicates;
 use super::value::{EvalValue, LocatedEvalValue};
 use crate::limits::EvaluationKind;
-use coflow_language::cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment};
+use coflow_language::cft::{
+    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
+};
 
 pub(super) fn eval_expr<'model>(
     evaluator: &mut CheckEvaluator<'model>,
@@ -39,7 +41,9 @@ pub(super) fn eval_expr<'model>(
             )?;
             Ok(LocatedEvalValue::value(EvalValue::Array {
                 items: super::value::EvalItems::Records(records),
-                element_type: Some(coflow_language::cft::CftValueType::RecordRef(type_name.clone())),
+                element_type: Some(coflow_language::cft::CftValueType::RecordRef(
+                    type_name.clone(),
+                )),
             }))
         }
         CftSchemaCheckExprKind::Field { expr: inner, name } => {

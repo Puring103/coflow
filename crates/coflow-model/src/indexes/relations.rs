@@ -89,15 +89,15 @@ fn collect_ref_edges(
     out: &mut RefIndexes,
 ) {
     match (value, ty) {
-        (CfdValue::OptionSome(value), CftValueType::Option(inner)) => collect_ref_edges(
-            value, inner, host, path, dimension, context, out,
-        ),
-        (CfdValue::ResultOk(value), CftValueType::Result(ok, _)) => collect_ref_edges(
-            value, ok, host, path, dimension, context, out,
-        ),
-        (CfdValue::ResultErr(value), CftValueType::Result(_, error)) => collect_ref_edges(
-            value, error, host, path, dimension, context, out,
-        ),
+        (CfdValue::OptionSome(value), CftValueType::Option(inner)) => {
+            collect_ref_edges(value, inner, host, path, dimension, context, out);
+        }
+        (CfdValue::ResultOk(value), CftValueType::Result(ok, _)) => {
+            collect_ref_edges(value, ok, host, path, dimension, context, out);
+        }
+        (CfdValue::ResultErr(value), CftValueType::Result(_, error)) => {
+            collect_ref_edges(value, error, host, path, dimension, context, out);
+        }
         (CfdValue::Ref(key), CftValueType::RecordRef(expected_type)) => {
             let Some(target) = lookup_domain_ref(
                 context.schema,

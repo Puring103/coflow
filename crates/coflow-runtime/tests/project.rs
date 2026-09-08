@@ -35,10 +35,7 @@ fn parses_only_data_and_codegen_contract() {
     assert_eq!(opened.data_paths()[0].path(), std::path::Path::new("data/"));
     assert_eq!(opened.config().codegen.len(), 1);
     assert_eq!(opened.config().codegen[0].language, "csharp");
-    assert_eq!(
-        opened.config().codegen[0].options(),
-        &serde_json::json!({})
-    );
+    assert_eq!(opened.config().codegen[0].options(), &serde_json::json!({}));
 }
 
 #[test]
@@ -121,7 +118,10 @@ fn adds_existing_inputs_to_project_config() {
 
     let opened = Project::open_schema_only(Some(&config)).expect("reopen project");
     assert_eq!(opened.config().schema.paths().len(), 2);
-    assert!(opened.data_paths().iter().any(|source| source.path() == std::path::Path::new("extra.cfd")));
+    assert!(opened
+        .data_paths()
+        .iter()
+        .any(|source| source.path() == std::path::Path::new("extra.cfd")));
 }
 
 #[test]
@@ -134,7 +134,10 @@ fn rejects_configured_inputs_that_contain_one_another() {
         &nested,
     )
     .expect_err("nested input must be rejected");
-    assert!(error.diagnostics.iter().any(|diagnostic| diagnostic.code == "PROJECT-CONFIG-OVERLAP"));
+    assert!(error
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "PROJECT-CONFIG-OVERLAP"));
 }
 
 #[test]

@@ -3,8 +3,8 @@ use super::Validator;
 use crate::build::{RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, RecordOrigin};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
-use coflow_language::limits::TraversalCursor;
 use coflow_language::cft::{CftField, CftSchemaDefaultValue, CftValueType};
+use coflow_language::limits::TraversalCursor;
 use std::collections::BTreeMap;
 
 impl Validator<'_, '_> {
@@ -18,10 +18,9 @@ impl Validator<'_, '_> {
     ) -> Option<ValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
             if let CftValueType::Object(type_name) = &field.value_type {
-                if let Some(cycle) = crate::dependencies::schema_default_cycle(
-                    self.schema.cft(),
-                    type_name,
-                ) {
+                if let Some(cycle) =
+                    crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
+                {
                     self.push(
                         CfdDiagnostic::error(
                             CfdErrorCode::ValueDependencyCycle,
@@ -141,9 +140,7 @@ impl Validator<'_, '_> {
                     value: *value,
                 })
             }
-            CftSchemaDefaultValue::EmptyArray
-                if matches!(ty, CftValueType::Array(_)) =>
-            {
+            CftSchemaDefaultValue::EmptyArray if matches!(ty, CftValueType::Array(_)) => {
                 CfdValue::Array(Vec::new())
             }
             CftSchemaDefaultValue::Array(values) => {
@@ -172,23 +169,14 @@ impl Validator<'_, '_> {
                 let mut out = Vec::with_capacity(entries.len());
                 for (index, (key, value)) in entries.iter().enumerate() {
                     let key_path = path.clone().index(index);
-                    let key = self.default_value(
-                        key_type,
-                        key,
-                        record,
-                        key_path.clone(),
-                        cursor,
-                    )?;
+                    let key =
+                        self.default_value(key_type, key, record, key_path.clone(), cursor)?;
                     let key = match key {
-                        ValueDraft::Value(CfdValue::Int(value)) => {
-                            crate::CfdDictKey::Int(value)
-                        }
+                        ValueDraft::Value(CfdValue::Int(value)) => crate::CfdDictKey::Int(value),
                         ValueDraft::Value(CfdValue::String(value)) => {
                             crate::CfdDictKey::String(value)
                         }
-                        ValueDraft::Value(CfdValue::Enum(value)) => {
-                            crate::CfdDictKey::Enum(value)
-                        }
+                        ValueDraft::Value(CfdValue::Enum(value)) => crate::CfdDictKey::Enum(value),
                         _ => {
                             self.push_default_type_mismatch(record, key_path);
                             return None;
@@ -214,13 +202,7 @@ impl Validator<'_, '_> {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 }
-                return self.default_explicit_object_value(
-                    type_name,
-                    fields,
-                    record,
-                    path,
-                    cursor,
-                );
+                return self.default_explicit_object_value(type_name, fields, record, path, cursor);
             }
             CftSchemaDefaultValue::RecordReference { type_name, key } => {
                 let CftValueType::RecordRef(expected) = ty else {
@@ -270,13 +252,7 @@ impl Validator<'_, '_> {
         for field in schema.full_fields(type_name) {
             let field_path = path.clone().field(field.name.as_str());
             let value = if let Some(value) = supplied.get(&field.name) {
-                self.default_value(
-                    &field.value_type,
-                    value,
-                    record,
-                    field_path,
-                    cursor,
-                )
+                self.default_value(&field.value_type, value, record, field_path, cursor)
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path, cursor)
             } else {
@@ -319,8 +295,7 @@ impl Validator<'_, '_> {
                 .get(type_name)
                 .map(|cached| ValueDraft::Object(Box::new(cached.draft.clone())));
         }
-        if let Some(cycle) =
-            crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
+        if let Some(cycle) = crate::dependencies::schema_default_cycle(self.schema.cft(), type_name)
         {
             self.push(
                 CfdDiagnostic::error(

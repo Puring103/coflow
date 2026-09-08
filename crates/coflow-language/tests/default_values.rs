@@ -6,7 +6,9 @@ use coflow_language::cft::{
 };
 use coflow_language::diagnostics::CftErrorCode;
 
-fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
+fn compile(
+    source: &str,
+) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default())
 }
@@ -42,7 +44,8 @@ type Rule {
         Some(CftSchemaDefaultValue::String(value)) if value == "{ready}"
     ));
     assert!(matches!(
-        rule.field("permissions").and_then(|field| field.default.as_ref()),
+        rule.field("permissions")
+            .and_then(|field| field.default.as_ref()),
         Some(CftSchemaDefaultValue::Enum { value: 3, .. })
     ));
     assert!(matches!(
@@ -75,13 +78,14 @@ fn rejects_removed_formatted_string_prefix() {
 
 #[test]
 fn rejects_invalid_function_defaults() {
-    let diagnostics = compile(
-        "type Rule { apply: fn(value: int) -> int = fn(value: string) -> int { 1 }; }",
-    )
-    .expect_err("a mismatched default signature must fail");
+    let diagnostics =
+        compile("type Rule { apply: fn(value: int) -> int = fn(value: string) -> int { 1 }; }")
+            .expect_err("a mismatched default signature must fail");
     assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == CftErrorCode::InvalidConstValue
-            && diagnostic.message.contains("expected `fn(value: int) -> int`")
+            && diagnostic
+                .message
+                .contains("expected `fn(value: int) -> int`")
     }));
 
     let diagnostics = compile(
@@ -99,7 +103,9 @@ fn rejects_invalid_function_defaults() {
     .expect_err("host functions cannot inherit default implementations");
     assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == CftErrorCode::InvalidDefaultExpression
-            && diagnostic.message.contains("inherited by @Host type `Services`")
+            && diagnostic
+                .message
+                .contains("inherited by @Host type `Services`")
     }));
 
     let diagnostics = compile(
@@ -114,10 +120,9 @@ fn rejects_invalid_function_defaults() {
 
 #[test]
 fn rejects_invalid_flag_default_expressions() {
-    let diagnostics = compile(
-        "enum Mode { A = 1, B = 2 } type Rule { mode: Mode = Mode::A | Mode::B; }",
-    )
-    .expect_err("bit expressions require a flag enum");
+    let diagnostics =
+        compile("enum Mode { A = 1, B = 2 } type Rule { mode: Mode = Mode::A | Mode::B; }")
+            .expect_err("bit expressions require a flag enum");
     assert!(diagnostics
         .diagnostics
         .iter()

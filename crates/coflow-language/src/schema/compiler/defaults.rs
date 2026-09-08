@@ -1,6 +1,6 @@
 use super::ValueResolver;
-use crate::CftErrorCode;
 use crate::syntax::ast::DefaultExprKind;
+use crate::CftErrorCode;
 
 impl ValueResolver<'_, '_> {
     pub(super) fn validate_defaults(&mut self) {
@@ -33,19 +33,13 @@ impl ValueResolver<'_, '_> {
                     );
                     continue;
                 }
-                let expected = self
-                    .resolve_field_type(&field.ty)
-                    .value_type()
-                    .cloned();
+                let expected = self.resolve_field_type(&field.ty).value_type().cloned();
                 let Some(expected) = expected else {
                     continue;
                 };
-                if let Some((_, value)) = self.resolve_static_value(
-                    module,
-                    default,
-                    Some(&expected),
-                    &mut Vec::new(),
-                ) {
+                if let Some((_, value)) =
+                    self.resolve_static_value(module, default, Some(&expected), &mut Vec::new())
+                {
                     self.resolved_defaults.insert(
                         (module.clone(), default.span.start, default.span.end),
                         value,
@@ -96,9 +90,9 @@ fn contains_function_default(expression: &crate::syntax::ast::DefaultExpr) -> bo
             contains_function_default(lhs) || contains_function_default(rhs)
         }
         DefaultExprKind::Array(values) => values.iter().any(contains_function_default),
-        DefaultExprKind::Dictionary(entries) => entries.iter().any(|(key, value)| {
-            contains_function_default(key) || contains_function_default(value)
-        }),
+        DefaultExprKind::Dictionary(entries) => entries
+            .iter()
+            .any(|(key, value)| contains_function_default(key) || contains_function_default(value)),
         DefaultExprKind::Object(fields) | DefaultExprKind::TypedObject { fields, .. } => fields
             .iter()
             .any(|(_, value)| contains_function_default(value)),

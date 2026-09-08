@@ -1,7 +1,7 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use crate::data_model::{
-    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext,
-    ValueValidationMode, ValueValidationRequest,
+    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
+    ValueValidationRequest,
 };
 use coflow_language::cft::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
@@ -195,7 +195,11 @@ pub(crate) fn expected_type_for_record_path(
             }
             CfdPathSegment::Index(item_index) => {
                 let CftValueType::Array(inner) = &current_type else {
-                    return Err(one_error(code, stage, "array index cannot be selected here"));
+                    return Err(one_error(
+                        code,
+                        stage,
+                        "array index cannot be selected here",
+                    ));
                 };
                 let next_value = current_value.and_then(|value| match value {
                     CfdValue::Array(items) => items.get(*item_index),
@@ -205,7 +209,11 @@ pub(crate) fn expected_type_for_record_path(
             }
             CfdPathSegment::DictKey(key) => {
                 let CftValueType::Dict(_, inner) = &current_type else {
-                    return Err(one_error(code, stage, "dictionary key cannot be selected here"));
+                    return Err(one_error(
+                        code,
+                        stage,
+                        "dictionary key cannot be selected here",
+                    ));
                 };
                 let next_value = current_value.and_then(|value| match value {
                     CfdValue::Dict(entries) => entries.iter().find_map(|(candidate, value)| {
@@ -304,10 +312,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
     }
 
     fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
-        self.session
-            .model
-            .record(id)
-            .map(CfdRecord::actual_type)
+        self.session.model.record(id).map(CfdRecord::actual_type)
     }
 
     fn pending_record_actual_type(&self, inheritance_root: &TypeName, key: &str) -> Option<&str> {

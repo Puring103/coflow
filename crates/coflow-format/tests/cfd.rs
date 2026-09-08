@@ -19,7 +19,8 @@ fn cfd_formatter_rejoins_split_function_headers() {
 
 #[test]
 fn cfd_formatter_separates_array_close_after_structural_object() {
-    let source = "bundle: EffectBundle {\n  additional: [\n    HealEffect {\n      amount: 5,\n    }],\n}\n";
+    let source =
+        "bundle: EffectBundle {\n  additional: [\n    HealEffect {\n      amount: 5,\n    }],\n}\n";
     let expected = "bundle: EffectBundle {\n  additional: [\n    HealEffect {\n      amount: 5,\n    }\n  ],\n}\n";
     assert_eq!(format_cfd(source), expected);
     assert_eq!(format_cfd(expected), expected);

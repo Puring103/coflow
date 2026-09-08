@@ -23,7 +23,7 @@ pub(super) enum ReferenceUpdateAction {
     },
     Dimension {
         manager: Arc<CfdWriter>,
-        request: OwnedDimensionWriteRequest,
+        request: Box<OwnedDimensionWriteRequest>,
         display_path: String,
     },
 }
@@ -40,9 +40,7 @@ impl ReferenceUpdateAction {
     pub(super) fn execute(&self, schema: &CftSchema) -> Result<DiagnosticSet, DiagnosticSet> {
         match self {
             Self::Source {
-                writer,
-                requests,
-                ..
+                writer, requests, ..
             } => {
                 let requests = requests
                     .iter()
@@ -221,7 +219,7 @@ pub(super) fn reference_update_actions(
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
                 display_path: source_entry.display_path.clone(),
-                request: OwnedDimensionWriteRequest {
+                request: Box::new(OwnedDimensionWriteRequest {
                     source: source_entry.source.clone(),
                     source_type: field.declaring_type.clone(),
                     source_field: field.name.clone(),
@@ -233,7 +231,7 @@ pub(super) fn reference_update_actions(
                         ))
                     })?,
                     new_value: root,
-                },
+                }),
             });
             dimension_actions.insert(action_key, action_index);
         } else {

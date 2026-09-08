@@ -388,11 +388,9 @@ mod tests {
         fs::write(&path, "{\"version\":2}").expect("write unsupported settings");
 
         let error = read_project_settings(&root).expect_err("reject unknown settings version");
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported editor settings version")
-        );
+        assert!(error
+            .to_string()
+            .contains("unsupported editor settings version"));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

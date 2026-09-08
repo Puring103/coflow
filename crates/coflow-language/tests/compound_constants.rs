@@ -5,7 +5,9 @@ use coflow_language::cft::{
 };
 use coflow_language::diagnostics::CftErrorCode;
 
-fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
+fn compile(
+    source: &str,
+) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default())
 }
@@ -48,7 +50,9 @@ const RESULT: Result<int, string> = Ok(BASE);
         ])
     );
 
-    let stats = schema.resolve_const("DEFAULT_STATS").expect("DEFAULT_STATS");
+    let stats = schema
+        .resolve_const("DEFAULT_STATS")
+        .expect("DEFAULT_STATS");
     assert!(matches!(
         &stats.value,
         CftConstValue::Object { fields, .. }
@@ -81,8 +85,8 @@ fn infers_unambiguous_constant_types_and_rejects_dependency_cycles() {
         CftValueType::Array(Box::new(CftValueType::Int))
     );
 
-    let diagnostics = compile("const A: int = B; const B: int = A;")
-        .expect_err("constant cycle must fail");
+    let diagnostics =
+        compile("const A: int = B; const B: int = A;").expect_err("constant cycle must fail");
     assert!(diagnostics
         .diagnostics
         .iter()
@@ -109,7 +113,11 @@ const DEFAULT_STATS: Stats = { hp: 10 };
         "sealed type Stats { hp: int; attack: int; } const DEFAULT_STATS: Stats = { hp: 10 };",
     )
     .expect_err("missing required object fields must fail during schema compilation");
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic|
-        diagnostic.code == CftErrorCode::InvalidConstValue &&
-        diagnostic.message.contains("missing field `attack`")));
+    assert!(diagnostics
+        .diagnostics
+        .iter()
+        .any(
+            |diagnostic| diagnostic.code == CftErrorCode::InvalidConstValue
+                && diagnostic.message.contains("missing field `attack`")
+        ));
 }

@@ -415,8 +415,7 @@ type Item {\n\
 
     let option_position = position_from_byte(
         source,
-        source.find("maybe: Option<int> = None").expect("Option")
-            + "maybe: Option<int> = ".len(),
+        source.find("maybe: Option<int> = None").expect("Option") + "maybe: Option<int> = ".len(),
     );
     let option_labels = completion_labels(completion_items(&build, document, &option_position));
     assert!(option_labels.contains(&"None".to_string()));
@@ -664,7 +663,6 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
     );
 }
 
-
 #[test]
 fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
     let source = "type Rule {\n\
@@ -698,8 +696,14 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
         document,
         &position_from_byte(source, body_offset),
     ));
-    assert!(body_labels.contains(&"input".to_string()), "{body_labels:?}");
-    assert!(body_labels.contains(&"total".to_string()), "{body_labels:?}");
+    assert!(
+        body_labels.contains(&"input".to_string()),
+        "{body_labels:?}"
+    );
+    assert!(
+        body_labels.contains(&"total".to_string()),
+        "{body_labels:?}"
+    );
     assert!(body_labels.contains(&"var".to_string()), "{body_labels:?}");
 
     let raw_tokens = semantic_raw_tokens(&build, document);
@@ -720,13 +724,6 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
         MOD_DECLARATION,
     ));
 }
-
-
-
-
-
-
-
 
 #[test]
 fn formatter_returns_independent_local_text_edits() {

@@ -1,6 +1,6 @@
 use coflow_codegen::{
-    CodeArtifactFile, CodeArtifactSet, CodeGenerator, CodegenDescriptor, CodegenError, CodegenInput,
-    CodegenRegistry,
+    CodeArtifactFile, CodeArtifactSet, CodeGenerator, CodegenDescriptor, CodegenError,
+    CodegenInput, CodegenRegistry,
 };
 
 #[derive(Debug)]
@@ -37,7 +37,10 @@ fn artifacts_reject_duplicate_or_non_portable_paths() {
             contents: String::new(),
         },
     ]);
-    assert!(matches!(duplicate, Err(CodegenError::DuplicateArtifactPath(_))));
+    assert!(matches!(
+        duplicate,
+        Err(CodegenError::DuplicateArtifactPath(_))
+    ));
 
     for paths in [
         vec!["../Item.cs"],

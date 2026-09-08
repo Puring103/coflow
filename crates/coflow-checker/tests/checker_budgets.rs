@@ -107,7 +107,10 @@ fn raising_iterations_does_not_raise_the_work_limit() {
     builder.add_record(
         "item",
         "Item",
-        [("nums", LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()]))],
+        [(
+            "nums",
+            LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()]),
+        )],
     );
     let model = builder.build().expect("model builds");
 

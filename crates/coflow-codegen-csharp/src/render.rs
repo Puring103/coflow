@@ -191,9 +191,7 @@ pub fn render_common_project(
     Ok(files)
 }
 
-pub fn render_cfd_metadata_template(
-    project: &CsharpProject,
-) -> Result<String, CsharpCodegenError> {
+pub fn render_cfd_metadata_template(project: &CsharpProject) -> Result<String, CsharpCodegenError> {
     let view = metadata_project(project)?;
     let mut context = Context::new();
     context.insert("metadata", &view);
@@ -212,34 +210,52 @@ pub fn render_cfd_metadata_template(
 fn metadata_project(project: &CsharpProject) -> Result<MetadataProject, CsharpCodegenError> {
     Ok(MetadataProject {
         enums: project.enums.iter().map(metadata_enum).collect(),
-        abstract_types: project.types.iter()
+        abstract_types: project
+            .types
+            .iter()
             .filter(|ty| ty.is_abstract && !ty.is_host)
             .map(|ty| MetadataAbstractType {
                 type_id: ty.type_id,
                 qualified_name: ty.qualified_name.clone(),
-            }).collect(),
-        types: project.types.iter().filter(|ty| ty.loader_enabled)
-            .map(|ty| metadata_type(project, ty)).collect::<Result<Vec<_>, _>>()?,
-        constants: project.constants.iter().map(|constant| MetadataConstant {
-            source_name: escape_csharp_string(&constant.source_name),
-            runtime_type: constant.runtime_type.clone(),
-            value: if constant.deferred {
-                format!("static context => {}", constant.value_expression)
-            } else {
-                constant.value_expression.clone()
-            },
-        }).collect(),
+            })
+            .collect(),
+        types: project
+            .types
+            .iter()
+            .filter(|ty| ty.loader_enabled)
+            .map(|ty| metadata_type(project, ty))
+            .collect::<Result<Vec<_>, _>>()?,
+        constants: project
+            .constants
+            .iter()
+            .map(|constant| MetadataConstant {
+                source_name: escape_csharp_string(&constant.source_name),
+                runtime_type: constant.runtime_type.clone(),
+                value: if constant.deferred {
+                    format!("static context => {}", constant.value_expression)
+                } else {
+                    constant.value_expression.clone()
+                },
+            })
+            .collect(),
         object_factories: project.types.iter().map(metadata_object_factory).collect(),
-        readers: project.types.iter().filter(|ty| ty.loader_enabled)
-            .map(metadata_reader).collect(),
-        polymorphic_readers: project.types.iter()
+        readers: project
+            .types
+            .iter()
+            .filter(|ty| ty.loader_enabled)
+            .map(metadata_reader)
+            .collect(),
+        polymorphic_readers: project
+            .types
+            .iter()
             .filter(|ty| !ty.loader_enabled && !ty.loader_variants.is_empty())
             .map(|ty| MetadataPolymorphicReader {
                 metadata_name: ty.metadata_name.clone(),
                 source_name: escape_csharp_string(&ty.source_name),
                 qualified_name: ty.qualified_name.clone(),
                 variants: metadata_variants(ty),
-            }).collect(),
+            })
+            .collect(),
         dimensions: project.dimensions.clone(),
         layout_registrations: project.layout_registrations.clone(),
     })
@@ -252,51 +268,57 @@ fn metadata_enum(schema_enum: &crate::model::CsharpEnum) -> MetadataEnum {
         qualified_name: schema_enum.qualified_name.clone(),
         annotations: render_annotations(&schema_enum.annotations),
         is_flags: schema_enum.is_flags,
-        declared_mask: schema_enum.variants.iter().fold(0, |mask, variant| mask | variant.value),
-        variants: schema_enum.variants.iter().map(|variant| MetadataEnumVariant {
-            name: variant.name.clone(),
-            source_name: escape_csharp_string(&variant.source_name),
-            annotations: render_annotations(&variant.annotations),
-        }).collect(),
+        declared_mask: schema_enum
+            .variants
+            .iter()
+            .fold(0, |mask, variant| mask | variant.value),
+        variants: schema_enum
+            .variants
+            .iter()
+            .map(|variant| MetadataEnumVariant {
+                name: variant.name.clone(),
+                source_name: escape_csharp_string(&variant.source_name),
+                annotations: render_annotations(&variant.annotations),
+            })
+            .collect(),
     }
 }
 
-fn metadata_type(
-    project: &CsharpProject,
-    ty: &CsharpType,
-) -> Result<MetadataType, CsharpCodegenError> {
-    let singleton = project.singletons.iter().any(|item| item.source_name == ty.source_name);
-    let key_type = ty.loader_id_type.as_deref().unwrap_or("string");
-    let parse_key = if key_type == "string" {
-        "key".to_string()
-    } else {
-        let reader = project.enums.iter()
-            .find(|item| item.qualified_name == key_type)
-            .map_or(ty.metadata_name.as_str(), |item| item.metadata_name.as_str());
-        format!("ReadEnum{reader}Text(key)")
-    };
-    let mut fields = ty.loader_fields.iter().map(|field| {
-        let function = ty.functions.iter().find(|item| item.source_name == field.source_name);
-        MetadataField {
-            source_name: escape_csharp_string(&field.source_name),
-            runtime_type: field.value_type.clone(),
-            access: function.map_or_else(|| field.property_name.clone(),
-                |item| format!("{}.RuntimeEntry", item.entry_name)),
-            is_enum: project.enums.iter().any(|item| item.qualified_name == field.value_type),
-            is_function: field.is_function,
-            annotations: render_annotations(&field.annotations),
-            has_default: field.default_expression.is_some(),
-            object_type: field.object_type.as_deref().map(escape_csharp_string),
-            reference_type: field.reference_type.as_deref().map(escape_csharp_string),
-            function_slot: function.map(|value| value.slot),
-            integer_offset: 0,
-            float_offset: 0,
-            reference_offset: 0,
-            layout_integer_count: field.layout_integer_count,
-            layout_float_count: field.layout_float_count,
-            layout_reference_count: field.layout_reference_count,
-        }
-    }).collect::<Vec<_>>();
+fn metadata_fields(project: &CsharpProject, ty: &CsharpType) -> Vec<MetadataField> {
+    let mut fields = ty
+        .loader_fields
+        .iter()
+        .map(|field| {
+            let function = ty
+                .functions
+                .iter()
+                .find(|item| item.source_name == field.source_name);
+            MetadataField {
+                source_name: escape_csharp_string(&field.source_name),
+                runtime_type: field.value_type.clone(),
+                access: function.map_or_else(
+                    || field.property_name.clone(),
+                    |item| format!("{}.RuntimeEntry", item.entry_name),
+                ),
+                is_enum: project
+                    .enums
+                    .iter()
+                    .any(|item| item.qualified_name == field.value_type),
+                is_function: field.is_function,
+                annotations: render_annotations(&field.annotations),
+                has_default: field.default_expression.is_some(),
+                object_type: field.object_type.as_deref().map(escape_csharp_string),
+                reference_type: field.reference_type.as_deref().map(escape_csharp_string),
+                function_slot: function.map(|value| value.slot),
+                integer_offset: 0,
+                float_offset: 0,
+                reference_offset: 0,
+                layout_integer_count: field.layout_integer_count,
+                layout_float_count: field.layout_float_count,
+                layout_reference_count: field.layout_reference_count,
+            }
+        })
+        .collect::<Vec<_>>();
     let (mut integer_offset, mut float_offset, mut reference_offset) = (0, 0, 0);
     for field in fields.iter_mut().filter(|field| !field.is_function) {
         field.integer_offset = integer_offset;
@@ -306,15 +328,55 @@ fn metadata_type(
         float_offset += field.layout_float_count;
         reference_offset += field.layout_reference_count;
     }
-    let import_arguments = ty.loader_id_type.as_ref().map(|_| "context.Import(value.Id)".to_string())
+    fields
+}
+
+fn metadata_parse_key(project: &CsharpProject, ty: &CsharpType, key_type: &str) -> String {
+    if key_type == "string" {
+        return "key".to_string();
+    }
+    let reader = project
+        .enums
+        .iter()
+        .find(|item| item.qualified_name == key_type)
+        .map_or(ty.metadata_name.as_str(), |item| {
+            item.metadata_name.as_str()
+        });
+    format!("ReadEnum{reader}Text(key)")
+}
+
+fn metadata_type(
+    project: &CsharpProject,
+    ty: &CsharpType,
+) -> Result<MetadataType, CsharpCodegenError> {
+    let singleton = project
+        .singletons
+        .iter()
+        .any(|item| item.source_name == ty.source_name);
+    let key_type = ty.loader_id_type.as_deref().unwrap_or("string");
+    let parse_key = metadata_parse_key(project, ty, key_type);
+    let fields = metadata_fields(project, ty);
+    let import_arguments = ty
+        .loader_id_type
+        .as_ref()
+        .map(|_| "context.Import(value.Id)".to_string())
         .into_iter()
-        .chain(fields.iter().filter(|field| !field.is_function)
-            .map(|field| {
-                let dimension = ty.loader_fields.iter().any(|source|
-                    source.is_dimension && escape_csharp_string(&source.source_name) == field.source_name);
-                if dimension { format!("value.{}.Import(context)", field.access) }
-                else { format!("context.Import(value.{})", field.access) }
-            }))
+        .chain(
+            fields
+                .iter()
+                .filter(|field| !field.is_function)
+                .map(|field| {
+                    let dimension = ty.loader_fields.iter().any(|source| {
+                        source.is_dimension
+                            && escape_csharp_string(&source.source_name) == field.source_name
+                    });
+                    if dimension {
+                        format!("value.{}.Import(context)", field.access)
+                    } else {
+                        format!("context.Import(value.{})", field.access)
+                    }
+                }),
+        )
         .collect();
     Ok(MetadataType {
         type_id: ty.type_id,
@@ -335,26 +397,48 @@ fn metadata_type(
         layout_float_count: ty.layout_float_count,
         layout_reference_count: ty.layout_reference_count,
         can_create_record: !ty.is_host && !ty.is_struct && !ty.is_abstract,
-        assignable_types: ty.loader_assignable_to.iter()
-            .map(|value| escape_csharp_string(value)).collect(),
-        assignable_type_ids: ty.loader_assignable_to.iter()
-            .map(|name| project.types.iter()
-                .find(|candidate| candidate.source_name == *name)
-                .map(|candidate| candidate.type_id)
-                .ok_or_else(|| CsharpCodegenError::new(format!(
-                    "assignable type `{name}` is missing from the generated project"
-                ))))
+        assignable_types: ty
+            .loader_assignable_to
+            .iter()
+            .map(|value| escape_csharp_string(value))
+            .collect(),
+        assignable_type_ids: ty
+            .loader_assignable_to
+            .iter()
+            .map(|name| {
+                project
+                    .types
+                    .iter()
+                    .find(|candidate| candidate.source_name == *name)
+                    .map(|candidate| candidate.type_id)
+                    .ok_or_else(|| {
+                        CsharpCodegenError::new(format!(
+                            "assignable type `{name}` is missing from the generated project"
+                        ))
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?,
-        data_fields: fields.iter().filter(|field| !field.is_function).cloned().collect(),
+        data_fields: fields
+            .iter()
+            .filter(|field| !field.is_function)
+            .cloned()
+            .collect(),
         import_arguments,
         fields,
         parse_key,
-        host_functions: ty.loader_fields.iter().filter(|field| field.is_function)
+        host_functions: ty
+            .loader_fields
+            .iter()
+            .filter(|field| field.is_function)
             .map(|field| MetadataHostFunction {
-                entry_expression: field.reader_expression.replace("VALUE", "null")
-                    .replace("CONTEXT", "context").replace("RECORD_KEY", "string.Empty"),
+                entry_expression: field
+                    .reader_expression
+                    .replace("VALUE", "null")
+                    .replace("CONTEXT", "context")
+                    .replace("RECORD_KEY", "string.Empty"),
                 access: format!("_coflow{}", field.property_name),
-            }).collect(),
+            })
+            .collect(),
     })
 }
 
@@ -363,8 +447,11 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
     let mut arguments = Vec::new();
     if !invalid {
         if let Some(id_type) = &ty.loader_id_type {
-            arguments.push(if id_type == "string" { "string.Empty".to_string() }
-                else { format!("default({id_type})") });
+            arguments.push(if id_type == "string" {
+                "string.Empty".to_string()
+            } else {
+                format!("default({id_type})")
+            });
         }
         arguments.extend(ty.loader_fields.iter().filter(|field| !field.is_function).enumerate().map(|(index, field)| {
             let supplied = format!(
@@ -381,68 +468,117 @@ fn metadata_object_factory(ty: &CsharpType) -> MetadataObjectFactory {
         source_name: escape_csharp_string(&ty.source_name),
         qualified_name: ty.qualified_name.clone(),
         invalid,
-        needs_key: ty.loader_fields.iter().filter_map(|field| field.default_expression.as_deref())
+        needs_key: ty
+            .loader_fields
+            .iter()
+            .filter_map(|field| field.default_expression.as_deref())
             .any(|default| default.contains("key")),
         arguments,
-        vm_types: ty.loader_fields.iter().filter(|field| !field.is_function)
-            .map(|field| field.value_type.clone()).collect(),
+        vm_types: ty
+            .loader_fields
+            .iter()
+            .filter(|field| !field.is_function)
+            .map(|field| field.value_type.clone())
+            .collect(),
         vm_factory_arguments: {
             let mut values = Vec::new();
             if let Some(id_type) = &ty.loader_id_type {
-                values.push(if id_type == "string" { "string.Empty".to_string() }
-                    else { format!("default({id_type})") });
+                values.push(if id_type == "string" {
+                    "string.Empty".to_string()
+                } else {
+                    format!("default({id_type})")
+                });
             }
-            values.extend(ty.loader_fields.iter().filter(|field| !field.is_function)
-                .enumerate().map(|(index, field)|
-                    format!("frame.Read<{}>({index})", field.value_type)));
+            values.extend(
+                ty.loader_fields
+                    .iter()
+                    .filter(|field| !field.is_function)
+                    .enumerate()
+                    .map(|(index, field)| format!("frame.Read<{}>({index})", field.value_type)),
+            );
             values
         },
-        defaults: ty.loader_fields.iter().filter(|field| !field.is_function)
-            .filter_map(|field| field.default_expression.as_ref().map(|expression| MetadataDefaultFactory {
-                source_name: escape_csharp_string(&field.source_name),
-                runtime_type: field.value_type.clone(),
-                expression: expression.clone(),
-            })).collect(),
+        defaults: ty
+            .loader_fields
+            .iter()
+            .filter(|field| !field.is_function)
+            .filter_map(|field| {
+                field
+                    .default_expression
+                    .as_ref()
+                    .map(|expression| MetadataDefaultFactory {
+                        source_name: escape_csharp_string(&field.source_name),
+                        runtime_type: field.value_type.clone(),
+                        expression: expression.clone(),
+                    })
+            })
+            .collect(),
     }
 }
 
 fn metadata_reader(ty: &CsharpType) -> MetadataReader {
-    let arguments = ty.loader_id_type.as_ref().map(|_| {
-        ty.loader_id_reader.as_ref().map_or_else(|| "key".to_string(),
-            |reader| format!("ReadEnum{reader}Text(key)"))
-    }).into_iter().chain(ty.loader_fields.iter().filter(|field| !field.is_function)
-        .map(reader_argument)).collect::<Vec<_>>();
+    let arguments = ty
+        .loader_id_type
+        .as_ref()
+        .map(|_| {
+            ty.loader_id_reader.as_ref().map_or_else(
+                || "key".to_string(),
+                |reader| format!("ReadEnum{reader}Text(key)"),
+            )
+        })
+        .into_iter()
+        .chain(
+            ty.loader_fields
+                .iter()
+                .filter(|field| !field.is_function)
+                .map(reader_argument),
+        )
+        .collect::<Vec<_>>();
     MetadataReader {
         metadata_name: ty.metadata_name.clone(),
         source_name: escape_csharp_string(&ty.source_name),
         qualified_name: ty.qualified_name.clone(),
         is_host: ty.is_host,
         is_record: !ty.is_struct && !ty.is_host,
-        expected_fields: ty.loader_fields.iter()
-            .map(|field| escape_csharp_string(&field.source_name)).collect(),
+        expected_fields: ty
+            .loader_fields
+            .iter()
+            .map(|field| escape_csharp_string(&field.source_name))
+            .collect(),
         constructor_arguments: arguments,
         populate_id: ty.loader_id_type.as_ref().map(|_| {
-            let value = ty.loader_id_reader.as_ref().map_or_else(|| "key".to_string(),
-                |reader| format!("ReadEnum{reader}Text(key)"));
+            let value = ty.loader_id_reader.as_ref().map_or_else(
+                || "key".to_string(),
+                |reader| format!("ReadEnum{reader}Text(key)"),
+            );
             format!("target.Id = {value};")
         }),
-        populate_assignments: ty.loader_fields.iter().map(|field| {
-            if field.is_function {
-                format!("_ = {};", reader_argument(field))
-            } else {
-                format!("target.{} = {};", assignment_target(ty, field), reader_argument(field))
-            }
-        }).collect(),
-        function_loads: ty.loader_fields.iter().filter(|field| field.is_function)
-            .map(reader_argument).collect(),
+        populate_assignments: ty
+            .loader_fields
+            .iter()
+            .map(|field| {
+                if field.is_function {
+                    format!("_ = {};", reader_argument(field))
+                } else {
+                    format!(
+                        "target.{} = {};",
+                        assignment_target(ty, field),
+                        reader_argument(field)
+                    )
+                }
+            })
+            .collect(),
+        function_loads: ty
+            .loader_fields
+            .iter()
+            .filter(|field| field.is_function)
+            .map(reader_argument)
+            .collect(),
         variants: metadata_variants(ty),
     }
 }
 
-fn assignment_target(
-    ty: &CsharpType,
-    field: &crate::model::CsharpLoaderField,
-) -> String {
+fn assignment_target(ty: &CsharpType, field: &crate::model::CsharpLoaderField) -> String {
     if field.is_function {
         format!("_coflow{}", field.property_name)
     } else if ty.is_struct {
@@ -455,42 +591,81 @@ fn assignment_target(
 
 fn reader_argument(field: &crate::model::CsharpLoaderField) -> String {
     let node = if field.is_function || field.default_expression.is_some() {
-        format!("CfdValueReader.FindField(fields, \"{}\")", escape_csharp_string(&field.source_name))
+        format!(
+            "CfdValueReader.FindField(fields, \"{}\")",
+            escape_csharp_string(&field.source_name)
+        )
     } else {
-        format!("CfdValueReader.Field(fields, \"{}\")", escape_csharp_string(&field.source_name))
+        format!(
+            "CfdValueReader.Field(fields, \"{}\")",
+            escape_csharp_string(&field.source_name)
+        )
     };
-    let expression = field.reader_expression.replace("VALUE", &node)
-        .replace("CONTEXT", "context").replace("RECORD_KEY", "key");
-    field.default_expression.as_ref().map_or(expression, |default| {
-        let value_name = format!("value{}", field.property_name);
-        let value_expression = field.reader_expression.replace("VALUE", &value_name)
-            .replace("CONTEXT", "context").replace("RECORD_KEY", "key");
-        format!("{node} is {{ }} {value_name} ? {value_expression} : {default}")
-    })
+    let expression = field
+        .reader_expression
+        .replace("VALUE", &node)
+        .replace("CONTEXT", "context")
+        .replace("RECORD_KEY", "key");
+    field
+        .default_expression
+        .as_ref()
+        .map_or(expression, |default| {
+            let value_name = format!("value{}", field.property_name);
+            let value_expression = field
+                .reader_expression
+                .replace("VALUE", &value_name)
+                .replace("CONTEXT", "context")
+                .replace("RECORD_KEY", "key");
+            format!("{node} is {{ }} {value_name} ? {value_expression} : {default}")
+        })
 }
 
 fn metadata_variants(ty: &CsharpType) -> Vec<MetadataVariant> {
-    ty.loader_variants.iter().map(|variant| MetadataVariant {
-        source_name: escape_csharp_string(&variant.source_name),
-        reader_name: variant.type_name.clone(),
-    }).collect()
+    ty.loader_variants
+        .iter()
+        .map(|variant| MetadataVariant {
+            source_name: escape_csharp_string(&variant.source_name),
+            reader_name: variant.type_name.clone(),
+        })
+        .collect()
 }
 
 fn render_annotations(annotations: &[CsharpAnnotation]) -> String {
-    if annotations.is_empty() { return "Array.Empty<CoflowAnnotation>()".to_string(); }
-    let values = annotations.iter().map(|annotation| {
-        let arguments = annotation.arguments.iter().map(|argument| format!(
-            "new CoflowAnnotationArgument(CoflowAnnotationArgumentKind.{}, {})",
-            argument.kind, argument.value_expression)).collect::<Vec<_>>().join(", ");
-        format!("new CoflowAnnotation(\"{}\", new CoflowAnnotationArgument[] {{ {} }})",
-            escape_csharp_string(&annotation.name), arguments)
-    }).collect::<Vec<_>>().join(", ");
+    if annotations.is_empty() {
+        return "Array.Empty<CoflowAnnotation>()".to_string();
+    }
+    let values = annotations
+        .iter()
+        .map(|annotation| {
+            let arguments = annotation
+                .arguments
+                .iter()
+                .map(|argument| {
+                    format!(
+                        "new CoflowAnnotationArgument(CoflowAnnotationArgumentKind.{}, {})",
+                        argument.kind, argument.value_expression
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "new CoflowAnnotation(\"{}\", new CoflowAnnotationArgument[] {{ {} }})",
+                escape_csharp_string(&annotation.name),
+                arguments
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     format!("new CoflowAnnotation[] {{ {values} }}")
 }
 
 pub(crate) fn escape_csharp_string(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-        .replace('\r', "\\r").replace('\n', "\\n").replace('\t', "\\t")
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
 }
 
 fn templates() -> Result<Tera, CsharpCodegenError> {

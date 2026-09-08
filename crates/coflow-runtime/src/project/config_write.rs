@@ -23,15 +23,26 @@ pub fn add_project_input(
 ) -> Result<(), DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
     let selected = fs::canonicalize(selected_path).map_err(|error| {
-        file_error(selected_path, "PROJECT-CONFIG-WRITE", "PROJECT", format!("failed to resolve selected source: {error}"))
+        file_error(
+            selected_path,
+            "PROJECT-CONFIG-WRITE",
+            "PROJECT",
+            format!("failed to resolve selected source: {error}"),
+        )
     })?;
     let configured = portable_config_path(project.root_dir(), &selected);
 
-    let configured_roots = project.config.schema.paths().iter()
+    let configured_roots = project
+        .config
+        .schema
+        .paths()
+        .iter()
         .chain(project.config.data.iter().map(SourceConfig::path))
         .map(|path| project.resolve_path(path))
         .collect::<Vec<_>>();
-    let already_in_kind = roots_for(&project, kind).iter().any(|root| super::normalized_path_identity(root) == super::normalized_path_identity(&selected));
+    let already_in_kind = roots_for(&project, kind).iter().any(|root| {
+        super::normalized_path_identity(root) == super::normalized_path_identity(&selected)
+    });
     if already_in_kind {
         return Ok(());
     }
@@ -60,10 +71,18 @@ pub fn add_project_input(
             }
         }
         ProjectInputKind::Data => {
-            if project.config.data.iter().any(|source| source.path() == &configured) {
+            if project
+                .config
+                .data
+                .iter()
+                .any(|source| source.path() == &configured)
+            {
                 false
             } else {
-                project.config.data.push(SourceConfig::from_path(configured));
+                project
+                    .config
+                    .data
+                    .push(SourceConfig::from_path(configured));
                 true
             }
         }
@@ -97,24 +116,52 @@ pub fn create_project_file(
     let project = Project::open_schema_only(Some(config_path))?;
     let parent = project.resolve_path(parent_path);
     let parent = fs::canonicalize(&parent).map_err(|error| {
-        file_error(&parent, "PROJECT-FILE-CREATE", "PROJECT", format!("failed to resolve parent directory: {error}"))
+        file_error(
+            &parent,
+            "PROJECT-FILE-CREATE",
+            "PROJECT",
+            format!("failed to resolve parent directory: {error}"),
+        )
     })?;
     let name = Path::new(file_name);
     if name.file_name().is_none() || name.components().count() != 1 {
-        return Err(file_error(&parent, "PROJECT-FILE-CREATE", "PROJECT", "file name must not contain a directory path"));
+        return Err(file_error(
+            &parent,
+            "PROJECT-FILE-CREATE",
+            "PROJECT",
+            "file name must not contain a directory path",
+        ));
     }
-    let expected_extension = match kind { ProjectInputKind::Schema => "cft", ProjectInputKind::Data => "cfd" };
+    let expected_extension = match kind {
+        ProjectInputKind::Schema => "cft",
+        ProjectInputKind::Data => "cfd",
+    };
     if name.extension().and_then(|value| value.to_str()) != Some(expected_extension) {
-        return Err(file_error(name, "PROJECT-FILE-CREATE", "PROJECT", format!("file name must end with .{expected_extension}")));
+        return Err(file_error(
+            name,
+            "PROJECT-FILE-CREATE",
+            "PROJECT",
+            format!("file name must end with .{expected_extension}"),
+        ));
     }
-    if !roots_for(&project, kind).iter().any(|root| super::path_is_same_or_descendant(&parent, root)) {
-        return Err(file_error(&parent, "PROJECT-FILE-CREATE", "PROJECT", "target directory is outside the configured input roots"));
+    if !roots_for(&project, kind)
+        .iter()
+        .any(|root| super::path_is_same_or_descendant(&parent, root))
+    {
+        return Err(file_error(
+            &parent,
+            "PROJECT-FILE-CREATE",
+            "PROJECT",
+            "target directory is outside the configured input roots",
+        ));
     }
     let target = parent.join(name);
     let mut staged = StagedFile::create(&target, None, b"").map_err(|error| {
         file_error(&target, "PROJECT-FILE-CREATE", "PROJECT", error.to_string())
     })?;
-    staged.publish().map_err(|error| file_error(&target, "PROJECT-FILE-CREATE", "PROJECT", error.to_string()))?;
+    staged.publish().map_err(|error| {
+        file_error(&target, "PROJECT-FILE-CREATE", "PROJECT", error.to_string())
+    })?;
     staged.finish();
     Ok(())
 }
@@ -129,7 +176,12 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
     let mut project = Project::open_schema_only(Some(config_path))?;
     let target = project.resolve_path(entry_path);
     let target = fs::canonicalize(&target).map_err(|error| {
-        file_error(&target, "PROJECT-FILE-DELETE", "PROJECT", format!("failed to resolve entry: {error}"))
+        file_error(
+            &target,
+            "PROJECT-FILE-DELETE",
+            "PROJECT",
+            format!("failed to resolve entry: {error}"),
+        )
     })?;
     let root_dir = project.root_dir().to_path_buf();
     let mut removed_config = false;
@@ -144,18 +196,30 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
         keep
     });
     let configured_roots = roots_for(&project, ProjectInputKind::Schema)
-        .into_iter().chain(roots_for(&project, ProjectInputKind::Data)).collect::<Vec<_>>();
+        .into_iter()
+        .chain(roots_for(&project, ProjectInputKind::Data))
+        .collect::<Vec<_>>();
     let inside_project = super::path_is_same_or_descendant(&target, project.root_dir())
-        && super::normalized_path_identity(&target) != super::normalized_path_identity(project.root_dir());
+        && super::normalized_path_identity(&target)
+            != super::normalized_path_identity(project.root_dir());
     if !removed_config
         && !inside_project
-        && !configured_roots.iter().any(|root| super::path_is_same_or_descendant(&target, root))
+        && !configured_roots
+            .iter()
+            .any(|root| super::path_is_same_or_descendant(&target, root))
     {
-        return Err(file_error(&target, "PROJECT-FILE-DELETE", "PROJECT", "entry is outside the configured input roots"));
+        return Err(file_error(
+            &target,
+            "PROJECT-FILE-DELETE",
+            "PROJECT",
+            "entry is outside the configured input roots",
+        ));
     }
 
     let mut removal = StagedRemoval::create(&target);
-    removal.publish().map_err(|error| file_error(&target, "PROJECT-FILE-DELETE", "PROJECT", error.to_string()))?;
+    removal.publish().map_err(|error| {
+        file_error(&target, "PROJECT-FILE-DELETE", "PROJECT", error.to_string())
+    })?;
     if removed_config {
         if let Err(error) = publish_config(config_path, &project) {
             removal.restore();
@@ -168,34 +232,71 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
 
 fn roots_for(project: &Project, kind: ProjectInputKind) -> Vec<PathBuf> {
     match kind {
-        ProjectInputKind::Schema => project.config.schema.paths().iter().map(|path| project.resolve_path(path)).collect(),
-        ProjectInputKind::Data => project.config.data.iter().map(|source| project.resolve_path(source.path())).collect(),
+        ProjectInputKind::Schema => project
+            .config
+            .schema
+            .paths()
+            .iter()
+            .map(|path| project.resolve_path(path))
+            .collect(),
+        ProjectInputKind::Data => project
+            .config
+            .data
+            .iter()
+            .map(|source| project.resolve_path(source.path()))
+            .collect(),
     }
 }
 
 fn same_path(root: &Path, configured: &Path, target: &Path) -> bool {
-    let resolved = if configured.is_absolute() { configured.to_path_buf() } else { root.join(configured) };
+    let resolved = if configured.is_absolute() {
+        configured.to_path_buf()
+    } else {
+        root.join(configured)
+    };
     super::normalized_path_identity(&resolved) == super::normalized_path_identity(target)
 }
 
 fn publish_config(config_path: &Path, project: &Project) -> Result<(), DiagnosticSet> {
     let original = fs::read(config_path).map_err(|error| {
-        file_error(config_path, "PROJECT-CONFIG-WRITE", "PROJECT", format!("failed to read project config: {error}"))
+        file_error(
+            config_path,
+            "PROJECT-CONFIG-WRITE",
+            "PROJECT",
+            format!("failed to read project config: {error}"),
+        )
     })?;
     let output = serde_yaml::to_string(&project.config).map_err(|error| {
-        file_error(config_path, "PROJECT-CONFIG-WRITE", "PROJECT", format!("failed to encode project config: {error}"))
+        file_error(
+            config_path,
+            "PROJECT-CONFIG-WRITE",
+            "PROJECT",
+            format!("failed to encode project config: {error}"),
+        )
     })?;
-    let mut staged = StagedFile::create(config_path, Some(original), output.as_bytes()).map_err(|error| {
-        file_error(config_path, "PROJECT-CONFIG-WRITE", "PROJECT", error.to_string())
+    let mut staged =
+        StagedFile::create(config_path, Some(original), output.as_bytes()).map_err(|error| {
+            file_error(
+                config_path,
+                "PROJECT-CONFIG-WRITE",
+                "PROJECT",
+                error.to_string(),
+            )
+        })?;
+    staged.publish().map_err(|error| {
+        file_error(
+            config_path,
+            "PROJECT-CONFIG-WRITE",
+            "PROJECT",
+            error.to_string(),
+        )
     })?;
-    staged.publish().map_err(|error| file_error(config_path, "PROJECT-CONFIG-WRITE", "PROJECT", error.to_string()))?;
     staged.finish();
     Ok(())
 }
 
 fn portable_config_path(project_root: &Path, selected: &Path) -> PathBuf {
-    selected.strip_prefix(project_root).map_or_else(
-        |_| selected.to_path_buf(),
-        Path::to_path_buf,
-    )
+    selected
+        .strip_prefix(project_root)
+        .map_or_else(|_| selected.to_path_buf(), Path::to_path_buf)
 }

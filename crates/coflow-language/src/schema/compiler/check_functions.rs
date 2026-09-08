@@ -5,8 +5,8 @@ use crate::schema::compiler::inferred_type::{
     unique_supported, InferredType,
 };
 use crate::schema::{CftCheckBuiltin, CftValueType};
-use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
 use crate::source::Span;
+use crate::syntax::ast::{CheckExpr, CheckExprKind, NameRef};
 use regex::Regex;
 
 impl CheckTypeAnalyzer<'_, '_> {

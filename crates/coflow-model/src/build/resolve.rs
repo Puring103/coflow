@@ -1,11 +1,9 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordId, CfdValue};
-use crate::{
-    stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
-};
-use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
+use crate::{stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
 use coflow_language::cft::{CftValueType, FieldName, RecordKey, TypeName};
+use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
@@ -522,8 +520,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             .and_then(|()| {
                 self.budget
                     .charge_nodes(StructureKind::DataValue, additional_nodes)
-            })
-            ;
+            });
         match result {
             Ok(()) => Some(()),
             Err(error) => {

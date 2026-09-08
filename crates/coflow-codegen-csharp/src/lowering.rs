@@ -222,10 +222,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             .collect())
     }
 
-    pub fn dimension_variants(
-        &self,
-        dimension: &str,
-    ) -> Result<Vec<String>, CsharpCodegenError> {
+    pub fn dimension_variants(&self, dimension: &str) -> Result<Vec<String>, CsharpCodegenError> {
         self.schema
             .resolve_dimension(dimension)
             .map(|dimension| dimension.variants.iter().map(ToString::to_string).collect())

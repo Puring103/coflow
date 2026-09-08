@@ -2,12 +2,12 @@ use super::{negate_u64_to_i64, Parsed, Parser};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
 use crate::module::ModuleId;
+use crate::source::Span;
 use crate::syntax::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckMessage, CheckMessageKind, CheckStmt, CmpOp,
     QuantifierKind, TypePredicate, UnaryOp,
 };
 use crate::syntax::lexer::TokenKind;
-use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_check_block(&mut self) -> Result<CheckBlock, CftDiagnostics> {

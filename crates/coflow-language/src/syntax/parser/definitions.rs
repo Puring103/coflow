@@ -1,12 +1,12 @@
 use super::{Parsed, Parser};
 use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
+use crate::source::Span;
 use crate::syntax::ast::{
     Annotation, ConstDef, EnumDef, EnumVariant, FieldDef, Item, TypeAliasDef, TypeDef, TypeRef,
     TypeRefKind,
 };
 use crate::syntax::lexer::{Token, TokenKind};
-use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_const(

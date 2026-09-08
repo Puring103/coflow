@@ -1,9 +1,9 @@
 use super::{Parsed, Parser};
 use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
+use crate::source::Span;
 use crate::syntax::ast::{CheckExpr, CheckExprKind, CheckFormatSegment, NameRef, TypePredicate};
 use crate::syntax::lexer::TokenKind;
-use crate::source::Span;
 
 impl Parser<'_> {
     #[allow(clippy::too_many_lines)]
@@ -16,10 +16,10 @@ impl Parser<'_> {
                     CheckExprKind::Name(name) => name,
                     CheckExprKind::StaticPath(path) => path.canonical(),
                     _ => {
-                    return self.err(
-                        CftErrorCode::UnexpectedToken,
-                        "only named functions can be called",
-                    );
+                        return self.err(
+                            CftErrorCode::UnexpectedToken,
+                            "only named functions can be called",
+                        );
                     }
                 };
                 let call_name = NameRef { name, span };
@@ -199,10 +199,7 @@ impl Parser<'_> {
                     kind: if segments.len() == 1 {
                         CheckExprKind::Name(segments.remove(0).name)
                     } else {
-                        CheckExprKind::StaticPath(crate::syntax::ast::NamePath {
-                            segments,
-                            span,
-                        })
+                        CheckExprKind::StaticPath(crate::syntax::ast::NamePath { segments, span })
                     },
                     span,
                 })
@@ -284,8 +281,13 @@ impl Parser<'_> {
         if name.name == "Some" {
             self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
             let binding = self.expect_ident()?;
-            let end = self.expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?.end;
-            Ok(TypePredicate::Some { binding, span: Span::new(name.span.start, end) })
+            let end = self
+                .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
+                .end;
+            Ok(TypePredicate::Some {
+                binding,
+                span: Span::new(name.span.start, end),
+            })
         } else {
             Ok(TypePredicate::Type(name))
         }

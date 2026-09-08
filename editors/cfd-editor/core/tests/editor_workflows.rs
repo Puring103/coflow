@@ -12,7 +12,7 @@ use cfd_editor_core::editor::{
 use coflow_runtime::{CfdObject, CfdPathSegment, CfdValue, RecordCoordinate};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -249,11 +249,8 @@ fn cyclic_reference_project() -> PathBuf {
         "type Quest { prerequisite: Option<&Quest> = None; }\n",
     )
     .expect("write cyclic-reference schema");
-    fs::write(
-        root.join("data/quests.cfd"),
-        "advanced: Quest {}\n",
-    )
-    .expect("write cyclic-reference data");
+    fs::write(root.join("data/quests.cfd"), "advanced: Quest {}\n")
+        .expect("write cyclic-reference data");
     root
 }
 
@@ -302,7 +299,10 @@ fn repository_projects_open_in_editor() {
     let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
 
     for (project, config) in [
-        ("showcase", repository_root.join("examples/showcase/coflow.yaml")),
+        (
+            "showcase",
+            repository_root.join("examples/showcase/coflow.yaml"),
+        ),
         (
             "editor-project",
             repository_root.join("tests/editor-project/coflow.yaml"),
@@ -357,15 +357,25 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     let empty_records = store
         .get_file_records(session_id, "data/empty.cfd")
         .expect("empty file records");
-    assert!(empty_records.type_names.iter().any(|name| name == "ItemReward"));
-    assert!(empty_records.type_names.iter().any(|name| name == "CurrencyReward"));
+    assert!(empty_records
+        .type_names
+        .iter()
+        .any(|name| name == "ItemReward"));
+    assert!(empty_records
+        .type_names
+        .iter()
+        .any(|name| name == "CurrencyReward"));
     assert!(!empty_records.type_names.iter().any(|name| name == "Reward"));
 
     let draft = store
         .create_record_draft(session_id, "ItemReward")
         .expect("create concrete child draft");
     assert_eq!(
-        draft.fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(),
+        draft
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
         ["label", "count", "tags"]
     );
     let new_reward = store
@@ -429,18 +439,29 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
         )
         .expect("wrap a bare editor value for an Option field");
 
+    assert_inheritance_edits(&store, session_id, &root, &populated);
+}
+
+fn assert_inheritance_edits(store: &SessionStore, session_id: u32, root: &Path, populated: &Path) {
     let reloaded = store
         .reload_session(session_id)
         .expect("reload inheritance project");
-    assert!(reloaded.diagnostics.is_empty(), "{:#?}", reloaded.diagnostics);
+    assert!(
+        reloaded.diagnostics.is_empty(),
+        "{:#?}",
+        reloaded.diagnostics
+    );
     let source = fs::read_to_string(populated).expect("read inheritance source");
     assert!(source.contains("label: \"updated\""), "{source}");
     assert!(source.contains("count: 2"), "{source}");
     assert!(source.contains("tags: [\"\"]"), "{source}");
     assert!(source.contains("note: \"new\""), "{source}");
-    let empty_source = fs::read_to_string(root.join("data/empty.cfd"))
-        .expect("read formerly empty source");
-    assert!(empty_source.contains("new_reward: ItemReward"), "{empty_source}");
+    let empty_source =
+        fs::read_to_string(root.join("data/empty.cfd")).expect("read formerly empty source");
+    assert!(
+        empty_source.contains("new_reward: ItemReward"),
+        "{empty_source}"
+    );
 }
 
 #[test]
@@ -471,13 +492,7 @@ fn array_editor_mutations_round_trip_through_reload() {
         .make_default_object(session_id, "ArrayExample")
         .expect("create default array record");
     store
-        .insert_record(
-            session_id,
-            file_path,
-            "empty_array",
-            "ArrayExample",
-            draft,
-        )
+        .insert_record(session_id, file_path, "empty_array", "ArrayExample", draft)
         .expect("insert array record");
     let inserted = RecordCoordinate::try_new("ArrayExample", "empty_array")
         .expect("valid inserted coordinate");
@@ -491,7 +506,11 @@ fn array_editor_mutations_round_trip_through_reload() {
     let reloaded = store
         .reload_session(session_id)
         .expect("reload after editor mutations");
-    assert!(reloaded.diagnostics.is_empty(), "{:#?}", reloaded.diagnostics);
+    assert!(
+        reloaded.diagnostics.is_empty(),
+        "{:#?}",
+        reloaded.diagnostics
+    );
     let records = store
         .get_file_records(session_id, file_path)
         .expect("read records after reload");
@@ -500,7 +519,10 @@ fn array_editor_mutations_round_trip_through_reload() {
     let source = fs::read_to_string(data_file).expect("read final CFD source");
     // 无显式值的追加项来自元素类型默认值，不能复制现有末项。
     assert!(source.contains("\"recommended\", \"\""), "{source}");
-    assert!(!source.contains("\"recommended\", \"recommended\""), "{source}");
+    assert!(
+        !source.contains("\"recommended\", \"recommended\""),
+        "{source}"
+    );
 }
 
 #[test]
@@ -606,8 +628,8 @@ fn deep_default_parents_materialize_for_collection_and_batch_edits() {
     let snapshot = store
         .load_project(&root.join("coflow.yaml"))
         .expect("load nested-default project");
-    let deep_collection = RecordCoordinate::try_new("Unit", "deep_collection")
-        .expect("deep collection coordinate");
+    let deep_collection =
+        RecordCoordinate::try_new("Unit", "deep_collection").expect("deep collection coordinate");
     let enum_key = coflow_runtime::CfdDictKey::Enum(coflow_runtime::CfdEnumValue {
         enum_name: "Element".try_into().expect("enum name"),
         variant: Some("Ice".try_into().expect("variant name")),
@@ -625,8 +647,14 @@ fn deep_default_parents_materialize_for_collection_and_batch_edits() {
             },
         )
         .expect("edit collection through an omitted intermediate default");
-    assert!(matches!(collection_outcome.old_value, Some(CfdValue::Dict(_))));
-    assert!(matches!(collection_outcome.new_value, Some(CfdValue::Dict(_))));
+    assert!(matches!(
+        collection_outcome.old_value,
+        Some(CfdValue::Dict(_))
+    ));
+    assert!(matches!(
+        collection_outcome.new_value,
+        Some(CfdValue::Dict(_))
+    ));
 
     let deep_batch =
         RecordCoordinate::try_new("Unit", "deep_batch").expect("deep batch coordinate");
@@ -650,8 +678,14 @@ fn deep_default_parents_materialize_for_collection_and_batch_edits() {
     assert_eq!(batch_outcome.edits.len(), 2);
     assert_eq!(batch_outcome.edits[0].old_value, Some(CfdValue::Int(100)));
     assert_eq!(batch_outcome.edits[0].new_value, Some(CfdValue::Int(175)));
-    assert!(matches!(batch_outcome.edits[1].old_value, Some(CfdValue::Dict(_))));
-    assert!(matches!(batch_outcome.edits[1].new_value, Some(CfdValue::Dict(_))));
+    assert!(matches!(
+        batch_outcome.edits[1].old_value,
+        Some(CfdValue::Dict(_))
+    ));
+    assert!(matches!(
+        batch_outcome.edits[1].new_value,
+        Some(CfdValue::Dict(_))
+    ));
 
     let source = fs::read_to_string(data_file).expect("read deeply materialized source");
     assert_eq!(source.matches("label: \"keep\"").count(), 2, "{source}");
@@ -677,17 +711,17 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
         .validate_source_text(session_id, file_path, invalid)
         .expect("validate invalid draft");
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == "error"),
         "{diagnostics:#?}"
     );
     assert!(
-        diagnostics
-            .iter()
-            .any(|diagnostic| matches!(
-                &diagnostic.target,
-                coflow_runtime::DiagnosticTarget::Source { range: Some(range), .. }
-                    if range.start.line == 1
-            )),
+        diagnostics.iter().any(|diagnostic| matches!(
+            &diagnostic.target,
+            coflow_runtime::DiagnosticTarget::Source { range: Some(range), .. }
+                if range.start.line == 1
+        )),
         "{diagnostics:#?}"
     );
     let bootstrap = store
@@ -734,10 +768,17 @@ fn editor_language_features_are_served_by_embedded_lsp() {
     let document = store
         .sync_language_document(snapshot.session_id, file_path, &source, 1)
         .expect("synchronize through embedded LSP");
-    assert!(document.diagnostics.is_empty(), "{:#?}", document.diagnostics);
+    assert!(
+        document.diagnostics.is_empty(),
+        "{:#?}",
+        document.diagnostics
+    );
     assert!(document.syntax_valid);
     assert!(!document.semantic_token_data.is_empty());
-    assert!(document.semantic_token_types.iter().any(|kind| kind == "type"));
+    assert!(document
+        .semantic_token_types
+        .iter()
+        .any(|kind| kind == "type"));
 
     let unformatted = source.replace("  tags:", "tags:");
     let formatted = store
@@ -752,7 +793,10 @@ fn editor_language_features_are_served_by_embedded_lsp() {
             file_path,
             &source,
             3,
-            &LanguagePosition { line: 0, character: 0 },
+            &LanguagePosition {
+                line: 0,
+                character: 0,
+            },
         )
         .expect("complete through embedded LSP");
     let record_completion = completions
@@ -773,7 +817,10 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         )
         .expect("analyze function virtual document through embedded LSP");
     assert_eq!(function.body, "value + 1");
-    assert!(function.completions.iter().any(|item| item.label == "value"));
+    assert!(function
+        .completions
+        .iter()
+        .any(|item| item.label == "value"));
     assert!(!function.semantic_token_data.is_empty());
 
     let invalid = "broken: ArrayExample {";
@@ -818,7 +865,11 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
             )
         });
     let cell = |name: &str| {
-        let index = row.field_index.get(name).copied().expect("declared cell index");
+        let index = row
+            .field_index
+            .get(name)
+            .copied()
+            .expect("declared cell index");
         &row.fields[index]
     };
 
@@ -831,7 +882,13 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
     assert!(!cell("target").missing);
     assert!(matches!(cell("target").value, CfdValue::Ref(_)));
     assert!(cell("rarity").missing);
-    assert_eq!(cell("rarity").annotation.as_ref().and_then(|a| a.enum_type.as_deref()), Some("Rarity"));
+    assert_eq!(
+        cell("rarity")
+            .annotation
+            .as_ref()
+            .and_then(|a| a.enum_type.as_deref()),
+        Some("Rarity")
+    );
 
     assert!(snapshot.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "DATA-006"
@@ -869,7 +926,10 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
             ),
         )
         .expect("repair invalid enum");
-    assert!(repaired.diagnostics.iter().all(|diagnostic| diagnostic.severity != "error"));
+    assert!(repaired
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.severity != "error"));
 
     let repaired_records = store
         .get_file_records(snapshot.session_id, "data/items.cfd")
@@ -928,7 +988,11 @@ fn cft_function_defaults_are_supported_through_the_editor_backend() {
     let document = store
         .sync_language_document(snapshot.session_id, "schema.cft", &source, 1)
         .expect("synchronize CFT defaults through embedded LSP");
-    assert!(document.diagnostics.is_empty(), "{:#?}", document.diagnostics);
+    assert!(
+        document.diagnostics.is_empty(),
+        "{:#?}",
+        document.diagnostics
+    );
     assert!(document.syntax_valid);
     assert!(!document.semantic_token_data.is_empty());
 
@@ -964,7 +1028,10 @@ fn cft_function_defaults_are_supported_through_the_editor_backend() {
     let CfdValue::Object(rule) = value else {
         panic!("expected Rule object");
     };
-    assert!(matches!(rule.field("label"), Some(CfdValue::FormattedString(_))));
+    assert!(matches!(
+        rule.field("label"),
+        Some(CfdValue::FormattedString(_))
+    ));
     assert!(matches!(rule.field("apply"), Some(CfdValue::Function(_))));
 }
 
@@ -1004,9 +1071,11 @@ fn cft_source_is_visible_editable_and_validated() {
         .write_source_text(snapshot.session_id, file_path, &source_with_added_type)
         .expect("save valid CFT source");
     assert!(saved.revision > snapshot.revision);
-    assert!(saved.file_types.values().flatten().any(|option| {
-        option.name == "AddedFromSourceEditor"
-    }));
+    assert!(saved
+        .file_types
+        .values()
+        .flatten()
+        .any(|option| { option.name == "AddedFromSourceEditor" }));
 
     let invalid_syntax = source.replacen("type ArrayExample {", "type ArrayExample", 1);
     let invalid_formatting = store

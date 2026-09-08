@@ -6,8 +6,8 @@ mod store;
 use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
-use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
 use crate::data_model::{CfdDataModel, RecordOrigin};
+use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
 use coflow_language::cft::CftSchema;
 
 use crate::indexes::DiagnosticLogicalLocation;
@@ -110,12 +110,12 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
-    use coflow_checker::{CheckProjection, CheckTarget};
     use crate::checks::impact::{
         ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact,
     };
     use crate::data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use crate::RecordCoordinate;
+    use coflow_checker::{CheckProjection, CheckTarget};
     use coflow_language::cft::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CheckOwner, DimensionName,
         FieldName, ModuleId, RecordKey, TypeName, VariantName,

@@ -35,8 +35,8 @@ mod operations;
 mod output;
 mod task;
 
-use coflow_model::CfdDataModel;
 use coflow_language::cft::CftSchema;
+use coflow_model::CfdDataModel;
 pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
 pub use limits::EvaluationLimits;
 pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult};

@@ -1,9 +1,7 @@
-use crate::emit::{build_csharp_enum, build_csharp_type};
 use crate::emit::types::csharp_type;
+use crate::emit::{build_csharp_enum, build_csharp_type};
 use crate::lowering::CsharpLoweringPlan;
-use crate::model::{
-    CsharpConstant, CsharpDimension, CsharpEnum, CsharpEnumVariant, CsharpProject,
-};
+use crate::model::{CsharpConstant, CsharpDimension, CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{csharp_ident_error, csharp_type_name};
 use crate::CsharpCodegenError;
 use coflow_language::cft::{CftConstValue, CftSchema, CftValueType};
@@ -64,16 +62,18 @@ pub fn build_project(
         .collect();
     let constants = schema
         .all_consts()
-        .map(|constant| Ok(CsharpConstant {
-            source_name: constant.name.to_string(),
-            runtime_type: csharp_type(&constant.value_type, &view),
-            value_expression: render_constant_value(
-                &constant.value,
-                &constant.value_type,
-                &view,
-            )?,
-            deferred: contains_record_reference(&constant.value),
-        }))
+        .map(|constant| {
+            Ok(CsharpConstant {
+                source_name: constant.name.to_string(),
+                runtime_type: csharp_type(&constant.value_type, &view),
+                value_expression: render_constant_value(
+                    &constant.value,
+                    &constant.value_type,
+                    &view,
+                )?,
+                deferred: contains_record_reference(&constant.value),
+            })
+        })
         .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
 
     let mut layout_registrations = Vec::new();
@@ -97,9 +97,11 @@ pub fn build_project(
                 if registered_layouts.insert(wrapper.clone()) {
                     let dictionary = format!("IReadOnlyDictionary<string, {inner}>");
                     if registered_layouts.insert(dictionary.clone()) {
-                        layout_registrations.push(format!("runtime.RegisterDictionary<string, {inner}>();"));
+                        layout_registrations
+                            .push(format!("runtime.RegisterDictionary<string, {inner}>();"));
                     }
-                    let width = crate::emit::field_layout_widths(field, &view, &mut BTreeSet::new())?;
+                    let width =
+                        crate::emit::field_layout_widths(field, &view, &mut BTreeSet::new())?;
                     layout_registrations.push(format!(
                         "runtime.RegisterStruct<{wrapper}>({}, {}, {},\n            static (ref CoflowValueWriter writer, {wrapper} value) => {{ writer.Write(value.Default); writer.Write(value.Variants); }},\n            static (ref CoflowValueReader reader) => new {wrapper}(reader.Read<{inner}>(), reader.Read<{dictionary}>()));",
                         width.0, width.1, width.2));
@@ -137,7 +139,10 @@ fn collect_layout_registrations(
             collect_layout_registrations(inner, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("runtime.RegisterOption<{}>();", csharp_type(inner, view)));
+                output.push(format!(
+                    "runtime.RegisterOption<{}>();",
+                    csharp_type(inner, view)
+                ));
             }
         }
         CftValueType::Result(ok, error) => {
@@ -145,15 +150,21 @@ fn collect_layout_registrations(
             collect_layout_registrations(error, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("runtime.RegisterResult<{}, {}>();",
-                    csharp_type(ok, view), csharp_type(error, view)));
+                output.push(format!(
+                    "runtime.RegisterResult<{}, {}>();",
+                    csharp_type(ok, view),
+                    csharp_type(error, view)
+                ));
             }
         }
         CftValueType::Array(inner) => {
             collect_layout_registrations(inner, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("runtime.RegisterArray<{}>();", csharp_type(inner, view)));
+                output.push(format!(
+                    "runtime.RegisterArray<{}>();",
+                    csharp_type(inner, view)
+                ));
             }
         }
         CftValueType::Dict(key_type, value_type) => {
@@ -161,8 +172,11 @@ fn collect_layout_registrations(
             collect_layout_registrations(value_type, view, seen, output);
             let key = csharp_type(ty, view);
             if seen.insert(key) {
-                output.push(format!("runtime.RegisterDictionary<{}, {}>();",
-                    csharp_type(key_type, view), csharp_type(value_type, view)));
+                output.push(format!(
+                    "runtime.RegisterDictionary<{}, {}>();",
+                    csharp_type(key_type, view),
+                    csharp_type(value_type, view)
+                ));
             }
         }
         CftValueType::Function(parameters, result) => {
@@ -175,9 +189,14 @@ fn collect_layout_registrations(
                 output.push(format!("runtime.RegisterFunction<{key}>();"));
             }
         }
-        CftValueType::Int | CftValueType::Float | CftValueType::Bool |
-        CftValueType::String | CftValueType::Object(_) | CftValueType::Enum(_) |
-        CftValueType::RecordRef(_) | CftValueType::Unit => {}
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::Bool
+        | CftValueType::String
+        | CftValueType::Object(_)
+        | CftValueType::Enum(_)
+        | CftValueType::RecordRef(_)
+        | CftValueType::Unit => {}
     }
 }
 
@@ -192,10 +211,9 @@ fn render_constant_value(
         (CftConstValue::Int(value), CftValueType::Int) => format!("{value}L"),
         (CftConstValue::Float(value), CftValueType::Float) => format!("{value}D"),
         (CftConstValue::Bool(value), CftValueType::Bool) => value.to_string(),
-        (CftConstValue::String(value), CftValueType::String) => format!(
-            "\"{}\"",
-            crate::render::escape_csharp_string(value)
-        ),
+        (CftConstValue::String(value), CftValueType::String) => {
+            format!("\"{}\"", crate::render::escape_csharp_string(value))
+        }
         (CftConstValue::Enum { value, .. }, CftValueType::Enum(name)) => {
             format!("({}){value}L", view.csharp_enum_ref(name))
         }
@@ -275,36 +293,38 @@ fn render_constant_value(
                     }
                 });
             }
-            arguments.extend(view
-                .fields(type_name.as_str())?
-                .map(|field| {
-                    if matches!(field.value_type, CftValueType::Function(_, _)) {
-                        return Err(CsharpCodegenError::new(format!(
-                            "constant object `{type_name}` cannot contain function field `{}`",
-                            field.name
-                        )));
-                    }
-                    let value = values.get(&field.name).ok_or_else(|| {
-                        CsharpCodegenError::new(format!(
-                            "constant object `{type_name}` is missing field `{}`",
-                            field.name
-                        ))
-                    })?;
-                    render_constant_value(value, &field.value_type, view)
-                })
-                .collect::<Result<Vec<_>, _>>()?);
+            arguments.extend(
+                view.fields(type_name.as_str())?
+                    .map(|field| {
+                        if matches!(field.value_type, CftValueType::Function(_, _)) {
+                            return Err(CsharpCodegenError::new(format!(
+                                "constant object `{type_name}` cannot contain function field `{}`",
+                                field.name
+                            )));
+                        }
+                        let value = values.get(&field.name).ok_or_else(|| {
+                            CsharpCodegenError::new(format!(
+                                "constant object `{type_name}` is missing field `{}`",
+                                field.name
+                            ))
+                        })?;
+                        render_constant_value(value, &field.value_type, view)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
             let arguments = arguments.join(", ");
             format!("new {}({arguments})", view.csharp_type_ref(type_name))
         }
-        (
-            CftConstValue::RecordReference { type_name, key },
-            CftValueType::RecordRef(expected),
-        ) if type_name == expected => format!(
-            "context.Resolve<{}>(\"{}\", \"{}\")",
-            view.csharp_type_ref(type_name),
-            crate::render::escape_csharp_string(type_name.as_str()),
-            crate::render::escape_csharp_string(key),
-        ),
+        (CftConstValue::RecordReference { type_name, key }, CftValueType::RecordRef(expected))
+            if type_name == expected =>
+        {
+            format!(
+                "context.Resolve<{}>(\"{}\", \"{}\")",
+                view.csharp_type_ref(type_name),
+                crate::render::escape_csharp_string(type_name.as_str()),
+                crate::render::escape_csharp_string(key),
+            )
+        }
         _ => {
             return Err(CsharpCodegenError::new(format!(
                 "constant value does not match generated type `{ty}`"
@@ -320,9 +340,9 @@ fn contains_record_reference(value: &CftConstValue) -> bool {
         | CftConstValue::ResultOk(value)
         | CftConstValue::ResultErr(value) => contains_record_reference(value),
         CftConstValue::Array(values) => values.iter().any(contains_record_reference),
-        CftConstValue::Dictionary(entries) => entries.iter().any(|(key, value)| {
-            contains_record_reference(key) || contains_record_reference(value)
-        }),
+        CftConstValue::Dictionary(entries) => entries
+            .iter()
+            .any(|(key, value)| contains_record_reference(key) || contains_record_reference(value)),
         CftConstValue::Object { fields, .. } => fields
             .iter()
             .any(|(_, value)| contains_record_reference(value)),
@@ -445,9 +465,7 @@ fn validate_generated_names(
         if let Some(source) = root_names.get(&generated) {
             push_codegen_diagnostic(
                 diagnostics,
-                format!(
-                    "generated C# dimension type `{generated}` collides with `{source}`"
-                ),
+                format!("generated C# dimension type `{generated}` collides with `{source}`"),
             );
         }
         if let Some(existing) = dimension_names.insert(generated.clone(), source_name.clone()) {
@@ -511,7 +529,11 @@ fn validate_id_as_enum_variants(
                 format!("@idAsEnum variants provided for undeclared enum `{enum_name}`"),
             );
         }
-        validate_ident("@idAsEnum enum", &view.csharp_enum_name(enum_name), diagnostics);
+        validate_ident(
+            "@idAsEnum enum",
+            &view.csharp_enum_name(enum_name),
+            diagnostics,
+        );
         let mut values = BTreeMap::<i64, String>::new();
         for variant in variants.get(enum_name).into_iter().flatten() {
             validate_ident("@idAsEnum enum variant", &variant.name, diagnostics);
@@ -527,10 +549,9 @@ fn validate_id_as_enum_variants(
         }
         let mut generated_names = BTreeMap::<String, String>::new();
         for variant in variants.get(enum_name).into_iter().flatten() {
-            if let Some(existing) = generated_names.insert(
-                variant.name.clone(),
-                variant.source_name.clone(),
-            ) {
+            if let Some(existing) =
+                generated_names.insert(variant.name.clone(), variant.source_name.clone())
+            {
                 push_codegen_diagnostic(
                     diagnostics,
                     format!(

@@ -81,8 +81,8 @@ fn require_arity(
     })
 }
 
-use coflow_model::CfdEnumValue;
 use coflow_language::cft::{CftSchema, EnumName};
+use coflow_model::CfdEnumValue;
 
 pub(crate) fn enum_with_value(
     schema: &CftSchema,
@@ -105,8 +105,8 @@ pub(crate) fn anonymous_enum_value(enum_name: &EnumName, value: i64) -> CfdEnumV
 
 use std::collections::BTreeMap;
 
-use coflow_model::{CfdDataModel, CfdErrorCode};
 use crate::limits::{EvaluationBudget, EvaluationKind};
+use coflow_model::{CfdDataModel, CfdErrorCode};
 use regex::Regex;
 
 use super::diagnostics::{format_value_for_message, value_type_is_float};

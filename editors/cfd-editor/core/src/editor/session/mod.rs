@@ -438,7 +438,11 @@ impl SessionStore {
         self.reload_session(id)
     }
 
-    pub fn delete_project_entry(&self, id: u32, path: &StdPath) -> Result<ProjectBootstrap, EditorError> {
+    pub fn delete_project_entry(
+        &self,
+        id: u32,
+        path: &StdPath,
+    ) -> Result<ProjectBootstrap, EditorError> {
         let yaml_path = self.project_action_context(id)?;
         coflow_runtime::delete_project_entry(&yaml_path, path)
             .map_err(|error| EditorError::project(diagnostic_messages(&error)))?;
@@ -582,11 +586,17 @@ fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRec
             max_summary_len: stats.max_summary_len,
         })
         .collect();
-    let type_names = session.file_type_names.get(file_path).cloned().unwrap_or_else(|| {
-        queries.schema_type_names().into_iter()
-            .filter(|name| !queries.type_is_abstract(name))
-            .collect()
-    });
+    let type_names = session
+        .file_type_names
+        .get(file_path)
+        .cloned()
+        .unwrap_or_else(|| {
+            queries
+                .schema_type_names()
+                .into_iter()
+                .filter(|name| !queries.type_is_abstract(name))
+                .collect()
+        });
     FileRecords {
         revision: session.revisions.current(),
         file_path: file_path.to_string(),
@@ -665,15 +675,18 @@ fn write_field_in_session(
         .queries()
         .effective_field_write(coordinate, field_path)
         .and_then(|preview| preview.old_value);
-    let report = coflow_runtime::commands::apply_project_mutation(&mut session.engine, MutationRequest {
-        stop_on_write_error: true,
-        ops: vec![MutationOp::SetField {
-            record: coordinate.clone(),
-            file: None,
-            path: field_path.to_vec(),
-            value: MutationValue::Cfd(new_value.clone()),
-        }],
-    })
+    let report = coflow_runtime::commands::apply_project_mutation(
+        &mut session.engine,
+        MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::SetField {
+                record: coordinate.clone(),
+                file: None,
+                path: field_path.to_vec(),
+                value: MutationValue::Cfd(new_value.clone()),
+            }],
+        },
+    )
     .map_err(api_diagnostics_to_editor_error)?;
     let report = finalize_mutation(session, report, "write field failed")?;
     let outcome = report
@@ -974,12 +987,12 @@ mod collection_edit_tests {
 
         assert_eq!(
             next,
-            CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(
-                CfdValue::Dict(vec![(
+            CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(CfdValue::Dict(
+                vec![(
                     coflow_runtime::CfdDictKey::String("key".to_string()),
                     CfdValue::Bool(true),
-                )]),
-            ))))
+                )]
+            ),))))
         );
     }
 }

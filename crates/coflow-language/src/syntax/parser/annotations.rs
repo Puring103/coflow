@@ -1,9 +1,9 @@
 use super::Parser;
 use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
+use crate::source::Span;
 use crate::syntax::ast::{Annotation, AnnotationArg};
 use crate::syntax::lexer::TokenKind;
-use crate::source::Span;
 
 impl Parser<'_> {
     pub(super) fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {

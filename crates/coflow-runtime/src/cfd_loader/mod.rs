@@ -78,9 +78,8 @@ fn parse_cfd_input_records_with_spans(
 /// diagnostics for schema/data/reference errors.
 pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
     let records = parse_cfd_input_records_with_spans(schema, source)?;
-    let mut builder = CfdDataModel::builder(schema).with_structural_limits(
-        crate::limits::RuntimeLimits::default().structural,
-    );
+    let mut builder = CfdDataModel::builder(schema)
+        .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
     let mut origins = Vec::with_capacity(records.len());
     for record in records {
         let origin = RecordOrigin::File {
@@ -192,7 +191,9 @@ mod tests {
 
     use std::fs;
 
-    use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_language::cft::{
+        build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
+    };
 
     use super::CfdLoader;
     use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
@@ -212,8 +213,7 @@ mod tests {
             location: CfdSourcePath::new("data/items.json"),
             display_name: "data/items.json".to_string(),
         };
-        let diagnostics = CfdLoader::resolve(&source)
-            .expect_err("only CFD is supported");
+        let diagnostics = CfdLoader::resolve(&source).expect_err("only CFD is supported");
         assert!(diagnostics.contains("unsupported extension"));
     }
 
@@ -228,16 +228,16 @@ mod tests {
         .expect("write source");
         let schema = schema();
         let loaded = CfdLoader::load(
-                CfdLoadContext {
-                    schema: &schema,
-                    source_text: None,
-                },
-                &CfdSource {
-                    location: CfdSourcePath::new(source_path.clone()),
-                    display_name: source_path.display().to_string(),
-                },
-            )
-            .expect("load source");
+            CfdLoadContext {
+                schema: &schema,
+                source_text: None,
+            },
+            &CfdSource {
+                location: CfdSourcePath::new(source_path.clone()),
+                display_name: source_path.display().to_string(),
+            },
+        )
+        .expect("load source");
         let origins = origins_of(&loaded.records);
         let mut builder = CfdDataModel::builder(&schema);
         for record in loaded.records {

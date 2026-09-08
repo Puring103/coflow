@@ -1,8 +1,8 @@
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::module::ModuleId;
+use crate::source::Span;
 use crate::syntax::ast::ModuleAst;
 use crate::syntax::parser::{parse_module_with_options, CftParseOptions};
-use crate::source::Span;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

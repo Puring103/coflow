@@ -7,9 +7,9 @@ use crate::data_model::CfdDataModel;
 use crate::project::Project;
 use coflow_language::cft::{CftModuleSet, CftSchema};
 
+use crate::cfd_loader::CfdWriter;
 use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;
-use crate::cfd_loader::CfdWriter;
 use crate::dimensions::DimensionRuntimePlan;
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{

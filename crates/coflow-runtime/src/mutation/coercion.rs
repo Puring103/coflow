@@ -23,7 +23,9 @@ pub(super) fn coerce_mutation_value(
         MutationValue::Cfd(value) => normalize_cfd_value(session, value),
     }?;
     let value = match (expected, value) {
-        (CftValueType::Option(_), value @ (CfdValue::OptionNone | CfdValue::OptionSome(_))) => value,
+        (CftValueType::Option(_), value @ (CfdValue::OptionNone | CfdValue::OptionSome(_))) => {
+            value
+        }
         (CftValueType::Option(_), value) => CfdValue::OptionSome(Box::new(value)),
         (_, value) => value,
     };
@@ -136,9 +138,9 @@ fn coerce_json_value(
                 },
             )
         }
-        CftValueType::Function(_, _) | CftValueType::Unit => {
-            Err(one_value_error(format!("JSON coercion for `{expected}` is not supported")))
-        }
+        CftValueType::Function(_, _) | CftValueType::Unit => Err(one_value_error(format!(
+            "JSON coercion for `{expected}` is not supported"
+        ))),
     }
 }
 
@@ -154,7 +156,9 @@ fn single_tag_object<'a>(
     if tags.iter().any(|tag| object.contains_key(*tag)) {
         Ok(object)
     } else {
-        Err(one_value_error(format!("expected tagged {expected} object")))
+        Err(one_value_error(format!(
+            "expected tagged {expected} object"
+        )))
     }
 }
 
@@ -174,12 +178,15 @@ fn normalize_cfd_value(
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     match value {
-        CfdValue::OptionSome(value) => normalize_cfd_value(session, *value)
-            .map(|value| CfdValue::OptionSome(Box::new(value))),
-        CfdValue::ResultOk(value) => normalize_cfd_value(session, *value)
-            .map(|value| CfdValue::ResultOk(Box::new(value))),
-        CfdValue::ResultErr(value) => normalize_cfd_value(session, *value)
-            .map(|value| CfdValue::ResultErr(Box::new(value))),
+        CfdValue::OptionSome(value) => {
+            normalize_cfd_value(session, *value).map(|value| CfdValue::OptionSome(Box::new(value)))
+        }
+        CfdValue::ResultOk(value) => {
+            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultOk(Box::new(value)))
+        }
+        CfdValue::ResultErr(value) => {
+            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultErr(Box::new(value)))
+        }
         CfdValue::Array(items) => items
             .into_iter()
             .map(|item| normalize_cfd_value(session, item))

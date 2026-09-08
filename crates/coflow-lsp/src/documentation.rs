@@ -20,15 +20,19 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
     ("float", "64-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
-    ("Option", "Optional value written as `None` or `Some(value)`."),
-    ("Result", "Success or error value written as `Ok(value)` or `Err(error)`."),
+    (
+        "Option",
+        "Optional value written as `None` or `Some(value)`.",
+    ),
+    (
+        "Result",
+        "Success or error value written as `Ok(value)` or `Err(error)`.",
+    ),
     ("fn", "Function type written as `fn(parameters) -> result`."),
 ];
 
-pub(crate) const LITERALS: &[(&str, &str)] = &[
-    ("true", "Boolean true."),
-    ("false", "Boolean false."),
-];
+pub(crate) const LITERALS: &[(&str, &str)] =
+    &[("true", "Boolean true."), ("false", "Boolean false.")];
 
 pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
     ("None", "Option without a value."),

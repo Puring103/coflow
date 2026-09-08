@@ -1,27 +1,30 @@
 //! Record queries and mutation commands for loaded editor sessions.
 
 use super::{
+    api_diagnostics_to_editor_error, apply_collection_edit, create_record_draft_to_wire,
+    file_records_for_session, finalize_mutation, graph, record_container_index, record_type_index,
+    record_view_to_row, reorder_file_path, snapshot_record_before_delete, write_field_in_session,
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CfdValue,
     CollectionEdit, CreateRecordDraft, DefaultMaterialization, DeleteRecordOutcome, EditorError,
     EditorSession, FileRecords, GraphData, GraphQuery, InsertRecordOutcome, MutationFields,
     MutationOp, MutationRequest, MutationValue, PluginSchemaField, PluginSchemaType,
-    ProjectSearchHit, ProjectSearchMode, ProjectSearchResults,
-    RecordCoordinate, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome,
-    SessionStore, WireContext, WriteFieldOutcome, api_diagnostics_to_editor_error,
-    apply_collection_edit, create_record_draft_to_wire, file_records_for_session,
-    finalize_mutation, graph, record_container_index, record_type_index, record_view_to_row,
-    reorder_file_path, snapshot_record_before_delete, write_field_in_session,
+    ProjectSearchHit, ProjectSearchMode, ProjectSearchResults, RecordCoordinate, RecordRow,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, SessionStore, WireContext,
+    WriteFieldOutcome,
 };
-use crate::editor::{ProjectBootstrap, types::{
-    FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
-    LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit,
-}};
+use crate::editor::{
+    types::{
+        FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
+        LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit,
+    },
+    ProjectBootstrap,
+};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_runtime::{
     DataSourceTextOverride, FlatDiagnostic, Project, ProjectRuntime, RecordSearchMode,
     RecordSearchOptions, Runtime, SchemaTextOverride,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::io::Write;
 
 fn has_extension(path: &str, expected: &str) -> bool {
@@ -393,7 +396,8 @@ impl SessionStore {
             .flatten()
             .filter_map(language_diagnostic)
             .collect();
-        let completions = completion_items(result.get("completions").unwrap_or_else(|| &Value::Null));
+        let completions =
+            completion_items(result.get("completions").unwrap_or_else(|| &Value::Null));
         let document = FunctionDocumentState {
             source: result
                 .get("source")
@@ -449,8 +453,8 @@ impl SessionStore {
     ) -> Result<Vec<FlatDiagnostic>, EditorError> {
         let path = self.source_file_path(id, file_path)?;
         let yaml_path = self.project_action_context(id)?;
-        let project = Project::open_schema_only(Some(&yaml_path))
-            .map_err(api_diagnostics_to_editor_error)?;
+        let project =
+            Project::open_schema_only(Some(&yaml_path)).map_err(api_diagnostics_to_editor_error)?;
         if has_extension(file_path, "cft") {
             let mut schema_runtime = ProjectRuntime::new(project);
             let source_override = SchemaTextOverride {

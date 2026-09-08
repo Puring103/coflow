@@ -1,12 +1,12 @@
 use crate::api::{
-    map_diagnostics_with_origins, CfdLoadContext, CfdSource, CfdSourceCatalog,
-    Diagnostic, DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
+    map_diagnostics_with_origins, CfdLoadContext, CfdSource, CfdSourceCatalog, Diagnostic,
+    DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
 };
+use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
     CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
     LoadedRecordDraft, RecordOrigin,
 };
-use crate::cfd_loader::CfdLoader;
 use crate::project::{path_to_slash, Project};
 use coflow_language::cft::{CftSchema, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
@@ -204,10 +204,8 @@ pub(crate) fn load_project_data(
                     .sources_resolved
                     .saturating_add(resolved_sources.len());
                 for resolved_source in resolved_sources {
-                    if is_deleted_override(
-                        resolved_source.source.location.path(),
-                        source_overrides,
-                    ) {
+                    if is_deleted_override(resolved_source.source.location.path(), source_overrides)
+                    {
                         continue;
                     }
                     diagnostics.extend(load_resolved_dimension_source(
@@ -293,12 +291,8 @@ pub(crate) fn reload_project_data_from_cache(
     };
     if options.load.include_implicit_dimension_sources && options.refresh_implicit_dimension_sources
     {
-        statistics.sources_resolved = refresh_dimension_source_plans(
-            project,
-            dimension_plan,
-            previous,
-            &mut source_data,
-        )?;
+        statistics.sources_resolved =
+            refresh_dimension_source_plans(project, dimension_plan, previous, &mut source_data)?;
     }
 
     let mut diagnostics = DiagnosticSet::empty();
@@ -454,12 +448,9 @@ fn source_override_text<'a>(
 
 fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverride]) -> bool {
     let normalized_path = crate::normalize_path(path);
-    overrides
-        .iter()
-        .rev()
-        .any(|source_override| {
-            source_override.normalized_path == normalized_path && source_override.deleted
-        })
+    overrides.iter().rev().any(|source_override| {
+        source_override.normalized_path == normalized_path && source_override.deleted
+    })
 }
 
 fn load_resolved_dimension_source(
@@ -540,18 +531,17 @@ fn load_dimension_batch(
         .filter(|field| field.is_singleton)
         .map(|field| field.source_field.clone())
         .collect::<Vec<_>>();
-    let mut loaded = manager
-        .load_dimension_source(&DimensionSourceLoadRequest {
-            source,
-            schema: DimensionSourceSchema {
-                schema,
-                dimension,
-                source_type,
-                source_field,
-            },
-            singleton_source_fields: &singleton_source_fields,
-            validate_singleton_shape,
-        })?;
+    let mut loaded = manager.load_dimension_source(&DimensionSourceLoadRequest {
+        source,
+        schema: DimensionSourceSchema {
+            schema,
+            dimension,
+            source_type,
+            source_field,
+        },
+        singleton_source_fields: &singleton_source_fields,
+        validate_singleton_shape,
+    })?;
     if field.is_singleton {
         let key = records
             .iter()
@@ -746,11 +736,7 @@ fn build_partial_model(
     records: &[LoadedRecordDraft],
     source_data: &SourceDataCache,
 ) -> Result<PartialModelBuild, LoadDiagnostics> {
-    let mut candidates = records
-        .iter()
-        .cloned()
-        .enumerate()
-        .collect::<Vec<_>>();
+    let mut candidates = records.iter().cloned().enumerate().collect::<Vec<_>>();
     let mut diagnostics = DiagnosticSet::empty();
     let mut logical_locations = BTreeMap::new();
 
@@ -763,9 +749,8 @@ fn build_partial_model(
             .iter()
             .map(|(_, record)| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
             .collect::<Vec<_>>();
-        let mut builder = CfdDataModel::builder(schema).with_structural_limits(
-            crate::limits::RuntimeLimits::default().structural,
-        );
+        let mut builder = CfdDataModel::builder(schema)
+            .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
         for (_, record) in &candidates {
             builder.add_loaded_record(record.clone());
         }
@@ -826,7 +811,9 @@ fn build_partial_model(
                 candidates = candidates
                     .into_iter()
                     .enumerate()
-                    .filter_map(|(index, candidate)| (!rejected.contains(&index)).then_some(candidate))
+                    .filter_map(|(index, candidate)| {
+                        (!rejected.contains(&index)).then_some(candidate)
+                    })
                     .collect();
                 if candidates.len() == previous_len {
                     diagnostics.extend(runtime_invariant(

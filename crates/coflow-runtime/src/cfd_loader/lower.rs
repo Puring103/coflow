@@ -162,31 +162,31 @@ fn lower_value_resolved(
         CftValueType::Float => lower_float(value),
         CftValueType::Bool => lower_bool(value),
         CftValueType::String => lower_string(value),
-        CftValueType::Enum(name) => {
-            lower_enum(schema, value, name, preserve_repairable_values)
-        }
-        CftValueType::Object(name) => {
-            lower_object(schema, value, name, preserve_repairable_values)
-        }
+        CftValueType::Enum(name) => lower_enum(schema, value, name, preserve_repairable_values),
+        CftValueType::Object(name) => lower_object(schema, value, name, preserve_repairable_values),
         CftValueType::RecordRef(name) => lower_ref(schema, value, name),
-        CftValueType::Array(inner) => {
-            lower_array(schema, value, inner, preserve_repairable_values)
-        }
+        CftValueType::Array(inner) => lower_array(schema, value, inner, preserve_repairable_values),
         CftValueType::Dict(key, item) => {
             lower_dict(schema, value, key, item, preserve_repairable_values)
         }
         CftValueType::Option(inner) => match value {
             CfdValue::OptionNone(_) => Ok(LoadedValueDraft::OptionNone),
-            CfdValue::OptionSome(value, _) => lower_value_resolved(schema, value, inner, preserve_repairable_values)
-                .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
+            CfdValue::OptionSome(value, _) => {
+                lower_value_resolved(schema, value, inner, preserve_repairable_values)
+                    .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
+            }
             value => lower_value_resolved(schema, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         },
         CftValueType::Result(ok, error_type) => match value {
-            CfdValue::ResultOk(value, _) => lower_value_resolved(schema, value, ok, preserve_repairable_values)
-                .map(|value| LoadedValueDraft::ResultOk(Box::new(value))),
-            CfdValue::ResultErr(value, _) => lower_value_resolved(schema, value, error_type, preserve_repairable_values)
-                .map(|value| LoadedValueDraft::ResultErr(Box::new(value))),
+            CfdValue::ResultOk(value, _) => {
+                lower_value_resolved(schema, value, ok, preserve_repairable_values)
+                    .map(|value| LoadedValueDraft::ResultOk(Box::new(value)))
+            }
+            CfdValue::ResultErr(value, _) => {
+                lower_value_resolved(schema, value, error_type, preserve_repairable_values)
+                    .map(|value| LoadedValueDraft::ResultErr(Box::new(value)))
+            }
             _ => Err(error(
                 CfdTextErrorCode::TypeMismatch,
                 format!("expected `Ok(...)` or `Err(...)` for `{ty}`"),
@@ -521,11 +521,7 @@ fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics
     }
 }
 
-fn enum_variant(
-    expected_enum: &str,
-    raw: &str,
-    span: Span,
-) -> Result<String, CfdTextDiagnostics> {
+fn enum_variant(expected_enum: &str, raw: &str, span: Span) -> Result<String, CfdTextDiagnostics> {
     let Some((owner, variant)) = raw.rsplit_once("::") else {
         return Ok(raw.to_string());
     };
@@ -554,9 +550,7 @@ fn lower_enum(
     })?;
     if schema_enum.is_flag {
         let flag_value = match value {
-            CfdValue::Scalar(raw, span) => {
-                lower_flag_operand(schema, enum_name, raw, *span)?
-            }
+            CfdValue::Scalar(raw, span) => lower_flag_operand(schema, enum_name, raw, *span)?,
             CfdValue::BitExpr(expr) => lower_flag_expr(schema, enum_name, expr)?,
             _ => {
                 return Err(error(
@@ -775,12 +769,8 @@ fn lower_dict(
     let mut diagnostics = Vec::new();
     for field in &block.fields {
         let key = lower_dict_key(schema, &field.name, field.name_span, key_type);
-        let value = lower_value_resolved(
-            schema,
-            &field.value,
-            value_type,
-            preserve_repairable_values,
-        );
+        let value =
+            lower_value_resolved(schema, &field.value, value_type, preserve_repairable_values);
         match (key, value) {
             (Ok(key), Ok(value)) => entries.push((key, value)),
             (key, value) => {

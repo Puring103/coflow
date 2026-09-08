@@ -8,10 +8,10 @@ use crate::{
     CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckProjection, CheckTarget,
     CheckTask, CheckTaskResult,
 };
-use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use coflow_language::cft::{
     CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType, CheckOwner, CheckStatementInfo,
 };
+use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 

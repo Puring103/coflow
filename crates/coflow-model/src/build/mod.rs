@@ -7,9 +7,7 @@ mod validate;
 pub(crate) use context::BuildSchema;
 pub(crate) use draft::{RecordDraft, ValueDraft};
 
-use crate::diagnostics::{
-    CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin,
-};
+use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin};
 use crate::indexes::{self, build_ref_indexes};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
@@ -19,8 +17,8 @@ use crate::model::{
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::limits::StructuralLimits;
 use coflow_language::cft::{CftSchema, CftValueType, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::limits::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
 use validate::Validator;
@@ -149,8 +147,7 @@ impl<'a> ModelCompiler<'a> {
         self.move_editable_diagnostics(|code| {
             matches!(
                 code,
-                crate::CfdErrorCode::MissingRequiredField
-                    | crate::CfdErrorCode::InvalidEnumVariant
+                crate::CfdErrorCode::MissingRequiredField | crate::CfdErrorCode::InvalidEnumVariant
             )
         });
         self.fail_if_diagnostics()?;
@@ -179,8 +176,7 @@ impl<'a> ModelCompiler<'a> {
         self.move_editable_diagnostics(|code| {
             matches!(
                 code,
-                crate::CfdErrorCode::RefTargetNotFound
-                    | crate::CfdErrorCode::RefTargetTypeMismatch
+                crate::CfdErrorCode::RefTargetNotFound | crate::CfdErrorCode::RefTargetTypeMismatch
             )
         });
         self.fail_if_diagnostics()?;
@@ -209,10 +205,7 @@ impl<'a> ModelCompiler<'a> {
         })
     }
 
-    fn move_editable_diagnostics(
-        &mut self,
-        predicate: impl Fn(crate::CfdErrorCode) -> bool,
-    ) {
+    fn move_editable_diagnostics(&mut self, predicate: impl Fn(crate::CfdErrorCode) -> bool) {
         let (editable, blocking) = std::mem::take(&mut self.diagnostics)
             .into_iter()
             .partition(|diagnostic| predicate(diagnostic.code));
@@ -604,11 +597,9 @@ fn validate_resolved_records(
                 value,
                 ValueValidationMode::Complete,
             );
-            if let Err(error) = crate::semantics::validate_value_for_schema(
-                schema.cft(),
-                &context,
-                request,
-            ) {
+            if let Err(error) =
+                crate::semantics::validate_value_for_schema(schema.cft(), &context, request)
+            {
                 diagnostics.push(
                     CfdDiagnostic::error(semantic_error_code(error.kind()), error.message())
                         .with_primary(
@@ -627,30 +618,20 @@ fn prefixed_field_path(field: &FieldName, relative: &CfdPath) -> CfdPath {
     path
 }
 
-pub(super) const fn semantic_error_code(
-    kind: CfdValueSemanticErrorKind,
-) -> crate::CfdErrorCode {
+pub(super) const fn semantic_error_code(kind: CfdValueSemanticErrorKind) -> crate::CfdErrorCode {
     match kind {
         CfdValueSemanticErrorKind::UnknownType => crate::CfdErrorCode::UnknownType,
-        CfdValueSemanticErrorKind::AbstractType => {
-            crate::CfdErrorCode::AbstractRecordType
-        }
+        CfdValueSemanticErrorKind::AbstractType => crate::CfdErrorCode::AbstractRecordType,
         CfdValueSemanticErrorKind::SingletonType | CfdValueSemanticErrorKind::TypeMismatch => {
             crate::CfdErrorCode::TypeMismatch
         }
-        CfdValueSemanticErrorKind::ObjectTypeMismatch => {
-            crate::CfdErrorCode::ObjectTypeMismatch
-        }
+        CfdValueSemanticErrorKind::ObjectTypeMismatch => crate::CfdErrorCode::ObjectTypeMismatch,
         CfdValueSemanticErrorKind::UnknownField => crate::CfdErrorCode::UnknownField,
         CfdValueSemanticErrorKind::MissingRequiredField => {
             crate::CfdErrorCode::MissingRequiredField
         }
-        CfdValueSemanticErrorKind::InvalidEnumVariant => {
-            crate::CfdErrorCode::InvalidEnumVariant
-        }
-        CfdValueSemanticErrorKind::RefTargetNotFound => {
-            crate::CfdErrorCode::RefTargetNotFound
-        }
+        CfdValueSemanticErrorKind::InvalidEnumVariant => crate::CfdErrorCode::InvalidEnumVariant,
+        CfdValueSemanticErrorKind::RefTargetNotFound => crate::CfdErrorCode::RefTargetNotFound,
         CfdValueSemanticErrorKind::RefTargetTypeMismatch => {
             crate::CfdErrorCode::RefTargetTypeMismatch
         }

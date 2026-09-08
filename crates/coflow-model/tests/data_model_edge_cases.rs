@@ -66,10 +66,7 @@ fn cyclic_record_refs_build_and_remain_resolvable() {
         Some(alice)
     );
     assert_eq!(
-        model.resolve_ref(&RefSite::new(
-            self_record,
-            CfdPath::root().field("parent")
-        )),
+        model.resolve_ref(&RefSite::new(self_record, CfdPath::root().field("parent"))),
         Some(self_record)
     );
 }

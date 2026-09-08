@@ -3,7 +3,6 @@ use similar::{DiffTag, TextDiff};
 
 use super::position::byte_range;
 
-
 pub(crate) fn formatting_edits(source: &str, formatted: &str) -> Vec<Value> {
     if source == formatted {
         return Vec::new();

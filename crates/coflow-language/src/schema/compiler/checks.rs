@@ -1,9 +1,9 @@
+#[path = "check_conditions.rs"]
+mod conditions;
 #[path = "check_functions.rs"]
 mod functions;
 #[path = "check_operators.rs"]
 mod operators;
-#[path = "check_conditions.rs"]
-mod conditions;
 
 use super::inferred_type::{types_comparable, unwrap_reference, InferredType};
 use super::state::{SymbolKind, TypeInfo};
@@ -13,11 +13,11 @@ use crate::schema::CftValueType;
 use crate::schema::{
     CheckDependency, CheckDependencyLocality, CheckField, CheckStatementDependencies,
 };
-use crate::syntax::ast::{
-    CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NameRef,
-    NamePath, TypePredicate,
-};
 use crate::source::Span;
+use crate::syntax::ast::{
+    CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind, CheckStmt, NamePath, NameRef,
+    TypePredicate,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(super) struct CheckTypeAnalyzer<'a, 'b> {
@@ -455,7 +455,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 let enum_name = owner;
                 if let Some(info) = self.schema.enums.get(&enum_name) {
                     if info.variants.contains(&variant.name) {
-                        return InferredType::enum_value(crate::EnumName::from_validated(enum_name));
+                        return InferredType::enum_value(crate::EnumName::from_validated(
+                            enum_name,
+                        ));
                     }
                     self.diag(
                         CftErrorCode::TypeUnknownEnumVariant,
@@ -644,8 +646,15 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn check_is(&mut self, lhs: &InferredType, predicate: &TypePredicate, span: Span) {
         match predicate {
             TypePredicate::Some { .. } => {
-                if !matches!(lhs, InferredType::Value(CftValueType::Option(_)) | InferredType::Unknown) {
-                    self.diag(CftErrorCode::OperatorTypeMismatch, span, "Some pattern requires an Option operand");
+                if !matches!(
+                    lhs,
+                    InferredType::Value(CftValueType::Option(_)) | InferredType::Unknown
+                ) {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "Some pattern requires an Option operand",
+                    );
                 }
             }
             TypePredicate::Type(name) => {
@@ -653,17 +662,18 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 let is_object = matches!(
                     self.schema.symbols.get(&resolved_name),
                     Some(symbol) if symbol.kind == SymbolKind::Type
-                ) || self.schema
+                ) || self
+                    .schema
                     .resolved_aliases
                     .get(&resolved_name)
                     .is_some_and(|alias| alias.object_name().is_some());
                 if !is_object {
-                        self.diag(
-                            CftErrorCode::InvalidIsPredicate,
-                            name.span,
-                            "is predicate must name a type",
-                        );
-                        return;
+                    self.diag(
+                        CftErrorCode::InvalidIsPredicate,
+                        name.span,
+                        "is predicate must name a type",
+                    );
+                    return;
                 }
                 let operand = unwrap_reference(lhs);
                 if operand.object_name().is_none() && !operand.is_unknown() {

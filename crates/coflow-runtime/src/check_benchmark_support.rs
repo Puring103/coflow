@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_checker::CheckTask;
 use crate::data_model::CfdDataModel;
+use coflow_checker::CheckTask;
 use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};

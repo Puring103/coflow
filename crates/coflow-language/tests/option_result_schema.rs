@@ -5,7 +5,9 @@ use coflow_language::cft::{
     ModuleId,
 };
 
-fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
+fn compile(
+    source: &str,
+) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default())
 }

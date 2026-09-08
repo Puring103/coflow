@@ -88,7 +88,7 @@ fn reorders_records_without_changing_document_slots() {
                     actual_type: "Item",
                 },
             },
-    })
+        })
         .expect("swap records");
     writer.publish().expect("publish staged swap");
     let swapped = fs::read_to_string(&file).expect("read swapped");
@@ -973,7 +973,11 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     writer.publish().expect("publish staged rewrite");
 
     let after = fs::read_to_string(&file).expect("read rewritten chemical equation");
-    assert_eq!(after, format_cfd(&after), "writer output must already be formatted");
+    assert_eq!(
+        after,
+        format_cfd(&after),
+        "writer output must already be formatted"
+    );
     let rewritten = load_cfd_model(&schema, &after).expect("reload rewritten effect bundle");
     let rewritten_id = rewritten
         .lookup_assignable(&schema, "EffectBundle", "starter_effects")

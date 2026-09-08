@@ -3,13 +3,13 @@ use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLoo
 use coflow_language::cft::{CftSchema, CftValueType};
 
 use crate::indexes::{FileIndex, SourceIndex};
+use crate::mutation::defaults::default_value_for_value_type;
+use crate::DefaultMaterialization;
 use crate::{
     DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
     EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
     ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
 };
-use crate::mutation::defaults::default_value_for_value_type;
-use crate::DefaultMaterialization;
 
 /// Read-only capability over one immutable project generation.
 ///
@@ -560,8 +560,8 @@ mod tests {
             ModuleId::from("main"),
             "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
         )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default())
-            .expect("schema should compile");
+        let schema =
+            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
         let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
 
         let shape = field_shape(&schema, &npc_type);
@@ -571,12 +571,9 @@ mod tests {
 
     #[test]
     fn optional_concrete_object_shape_exposes_its_inner_object_type() {
-        let modules = parse_modules([CftFile::from_source(
-            ModuleId::from("main"),
-            "type Node {}",
-        )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default())
-            .expect("schema should compile");
+        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), "type Node {}")]);
+        let schema =
+            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
         let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
             CftValueType::Object(TypeName::new("Node").expect("valid type name")),
         ))));
@@ -594,8 +591,8 @@ mod tests {
             ModuleId::from("main"),
             "enum Element { Fire, Ice, }",
         )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default())
-            .expect("schema should compile");
+        let schema =
+            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
         let dict_type = CftValueType::Dict(
             Box::new(CftValueType::Enum(
                 coflow_language::cft::EnumName::new("Element").expect("valid enum name"),
@@ -606,11 +603,17 @@ mod tests {
         let shape = field_shape(&schema, &dict_type);
 
         assert_eq!(
-            shape.collection_key.as_deref().and_then(|key| key.enum_type.as_deref()),
+            shape
+                .collection_key
+                .as_deref()
+                .and_then(|key| key.enum_type.as_deref()),
             Some("Element")
         );
         assert_eq!(
-            shape.collection_item.as_deref().map(|item| item.display_label.as_str()),
+            shape
+                .collection_item
+                .as_deref()
+                .map(|item| item.display_label.as_str()),
             Some("int")
         );
     }

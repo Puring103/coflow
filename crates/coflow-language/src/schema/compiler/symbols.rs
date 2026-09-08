@@ -1,12 +1,10 @@
 use super::annotations::has_annotation;
-use super::state::{
-    CheckInfo, ConstInfo, EnumInfo, Symbol, SymbolKind, TypeAliasInfo, TypeInfo,
-};
+use super::state::{CheckInfo, ConstInfo, EnumInfo, Symbol, SymbolKind, TypeAliasInfo, TypeInfo};
 use super::SymbolTable;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
-use crate::syntax::ast::Item;
 use crate::source::Span;
+use crate::syntax::ast::Item;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl SymbolTable<'_> {
@@ -92,12 +90,7 @@ impl SymbolTable<'_> {
                     Item::Const(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
                         let name = def.name.clone();
-                        if self.insert_symbol(
-                            &name,
-                            SymbolKind::Const,
-                            module_id,
-                            def.name_span,
-                        ) {
+                        if self.insert_symbol(&name, SymbolKind::Const, module_id, def.name_span) {
                             self.consts.insert(
                                 name.clone(),
                                 ConstInfo {
@@ -110,8 +103,7 @@ impl SymbolTable<'_> {
                     Item::Enum(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
                         let name = def.name.clone();
-                        if self.insert_symbol(&name, SymbolKind::Enum, module_id, def.name_span)
-                        {
+                        if self.insert_symbol(&name, SymbolKind::Enum, module_id, def.name_span) {
                             self.enums.insert(
                                 name.clone(),
                                 EnumInfo {
@@ -128,8 +120,7 @@ impl SymbolTable<'_> {
                     Item::Type(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
                         let name = def.name.clone();
-                        if self.insert_symbol(&name, SymbolKind::Type, module_id, def.name_span)
-                        {
+                        if self.insert_symbol(&name, SymbolKind::Type, module_id, def.name_span) {
                             self.types.insert(
                                 name.clone(),
                                 TypeInfo {

@@ -78,17 +78,19 @@ impl InferredType {
         let Some(parameters) = parameters
             .into_iter()
             .map(|(name, parameter)| {
-                parameter.value_type().cloned().map(|value_type| CftFunctionParameter {
-                    name,
-                    value_type,
-                })
+                parameter
+                    .value_type()
+                    .cloned()
+                    .map(|value_type| CftFunctionParameter { name, value_type })
             })
             .collect::<Option<Vec<_>>>()
         else {
             return Self::Unknown;
         };
         match result {
-            Self::Value(result) => Self::Value(CftValueType::Function(parameters, Box::new(result))),
+            Self::Value(result) => {
+                Self::Value(CftValueType::Function(parameters, Box::new(result)))
+            }
             _ => Self::Unknown,
         }
     }
@@ -104,9 +106,7 @@ impl InferredType {
     pub(super) const fn value_type(&self) -> Option<&CftValueType> {
         match self {
             Self::Value(value_type) => Some(value_type),
-            Self::OptionNone | Self::EnumNamespace(_)
-            | Self::Entry(_, _)
-            | Self::Unknown => None,
+            Self::OptionNone | Self::EnumNamespace(_) | Self::Entry(_, _) | Self::Unknown => None,
         }
     }
 
@@ -143,7 +143,6 @@ impl InferredType {
     pub(super) const fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)
     }
-
 }
 
 pub(super) fn unwrap_reference(ty: &InferredType) -> InferredType {
@@ -225,11 +224,6 @@ pub(super) fn set_element_supported(ty: &InferredType) -> bool {
 pub(super) fn sorted_element_supported(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(
-            CftValueType::Int
-                | CftValueType::Bool
-                | CftValueType::String
-                | CftValueType::Enum(_)
-        )
+        Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
     )
 }

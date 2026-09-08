@@ -36,14 +36,9 @@ pub(crate) fn hover_at(
         ));
     }
 
-    if let Some(alias) = build.documents.values().find_map(|candidate| {
-        candidate.ast.as_ref()?.items.iter().find_map(|item| match item {
-            Item::TypeAlias(alias) if alias.name == word.text => Some(alias),
-            _ => None,
-        })
-    }) {
+    if has_type_alias(build, &word.text) {
         return Some(hover_response(
-            &format!("CFT type alias `{}`.", alias.name),
+            &format!("CFT type alias `{}`.", word.text),
             &byte_range(&document.source, word.start, word.end),
         ));
     }
@@ -121,6 +116,16 @@ pub(crate) fn hover_at(
     None
 }
 
+fn has_type_alias(build: &LspBuild, name: &str) -> bool {
+    build.documents.values().any(|candidate| {
+        candidate.ast.as_ref().is_some_and(|ast| {
+            ast.items
+                .iter()
+                .any(|item| matches!(item, Item::TypeAlias(alias) if alias.name == name))
+        })
+    })
+}
+
 fn type_hover_text(ty: &CftType) -> String {
     let mut flags = Vec::new();
     if ty.is_abstract {
@@ -147,13 +152,9 @@ fn const_value_to_string(value: &CftConstValue) -> String {
         CftConstValue::Float(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
-        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => {
-            source.clone()
-        }
+        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => source.clone(),
         CftConstValue::Enum {
-            enum_name,
-            variant,
-            ..
+            enum_name, variant, ..
         } => format!("{enum_name}::{variant}"),
         CftConstValue::OptionNone => "None".to_string(),
         CftConstValue::OptionSome(value) => format!("Some({})", const_value_to_string(value)),

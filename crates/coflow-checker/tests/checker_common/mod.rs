@@ -1,10 +1,10 @@
 #![allow(dead_code, unused_imports)]
 #![allow(clippy::redundant_pub_crate)]
 
+pub(crate) use coflow_checker::*;
 pub(crate) use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-pub(crate) use coflow_checker::*;
 pub(crate) use coflow_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftSchema {
@@ -98,7 +98,12 @@ pub(crate) fn base_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckT
     tasks.extend(
         schema
             .all_check_statements()
-            .filter(|statement| matches!(statement.owner, coflow_language::cft::CheckOwner::Project(_)))
+            .filter(|statement| {
+                matches!(
+                    statement.owner,
+                    coflow_language::cft::CheckOwner::Project(_)
+                )
+            })
             .map(|statement| CheckTask {
                 statement: statement.id,
                 target: CheckTarget::Project,

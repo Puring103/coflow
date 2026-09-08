@@ -249,36 +249,18 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
         },
         CftValueType::Option(inner) => match value {
             CfdValue::OptionNone => Ok(()),
-            CfdValue::OptionSome(value) => validate_value_inner(
-                schema,
-                context,
-                inner,
-                value,
-                pending_insert,
-                mode,
-                path,
-            ),
+            CfdValue::OptionSome(value) => {
+                validate_value_inner(schema, context, inner, value, pending_insert, mode, path)
+            }
             _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
         CftValueType::Result(ok, error) => match value {
-            CfdValue::ResultOk(value) => validate_value_inner(
-                schema,
-                context,
-                ok,
-                value,
-                pending_insert,
-                mode,
-                path,
-            ),
-            CfdValue::ResultErr(value) => validate_value_inner(
-                schema,
-                context,
-                error,
-                value,
-                pending_insert,
-                mode,
-                path,
-            ),
+            CfdValue::ResultOk(value) => {
+                validate_value_inner(schema, context, ok, value, pending_insert, mode, path)
+            }
+            CfdValue::ResultErr(value) => {
+                validate_value_inner(schema, context, error, value, pending_insert, mode, path)
+            }
             _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
         CftValueType::Function(_, _) => match value {

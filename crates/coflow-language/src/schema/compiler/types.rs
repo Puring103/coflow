@@ -4,8 +4,8 @@ use super::state::{FieldInfo, SymbolKind};
 use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
-use crate::syntax::ast::{TypeRef, TypeRefKind};
 use crate::source::Span;
+use crate::syntax::ast::{TypeRef, TypeRefKind};
 use std::collections::BTreeMap;
 
 impl ResolvedTypes<'_> {
@@ -17,11 +17,7 @@ impl ResolvedTypes<'_> {
         }
     }
 
-    fn resolve_type_alias(
-        &mut self,
-        name: &str,
-        visiting: &mut Vec<String>,
-    ) -> InferredType {
+    fn resolve_type_alias(&mut self, name: &str, visiting: &mut Vec<String>) -> InferredType {
         if let Some(resolved) = self.resolved_aliases.get(name) {
             return resolved.clone();
         }
@@ -143,10 +139,7 @@ impl ResolvedTypes<'_> {
                         "dict key type must be string, int, or enum",
                     );
                 }
-                InferredType::dict(
-                    key_ty,
-                    self.resolve_alias_target(module, value, visiting),
-                )
+                InferredType::dict(key_ty, self.resolve_alias_target(module, value, visiting))
             }
             TypeRefKind::Option(inner) => {
                 InferredType::option(self.resolve_alias_target(module, inner, visiting))
@@ -347,20 +340,15 @@ impl ResolvedTypes<'_> {
                             .collect::<Vec<_>>();
                         cycle.push(format!("{owner}.{}", edge.field));
                         cycle.push(edge.target.clone());
-                        let module = self
-                            .types
-                            .get(&edge.declaring_type)
-                            .map_or_else(|| self.types[owner].module.clone(), |info| {
-                                info.module.clone()
-                            });
+                        let module = self.types.get(&edge.declaring_type).map_or_else(
+                            || self.types[owner].module.clone(),
+                            |info| info.module.clone(),
+                        );
                         self.diagnostics.push(CftDiagnostic::error(
                             CftErrorCode::RequiredObjectCycle,
                             module,
                             edge.span,
-                            format!(
-                                "required object field cycle: {}",
-                                cycle.join(" -> ")
-                            ),
+                            format!("required object field cycle: {}", cycle.join(" -> ")),
                         ));
                     }
                     Some(2) => {}
@@ -388,35 +376,26 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Named(name) => {
                 let name = name.clone();
                 match self.symbols.get(&name) {
-                Some(symbol) if symbol.kind == SymbolKind::Type => {
-                    InferredType::object(crate::TypeName::from_validated(name))
-                }
-                Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                    InferredType::enum_value(crate::EnumName::from_validated(name))
-                }
-                Some(symbol) if symbol.kind == SymbolKind::TypeAlias => self
-                    .resolved_aliases
-                    .get(&name)
-                    .cloned()
-                    .unwrap_or(InferredType::Unknown),
-                _ => InferredType::Unknown,
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {
+                        InferredType::object(crate::TypeName::from_validated(name))
+                    }
+                    Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                        InferredType::enum_value(crate::EnumName::from_validated(name))
+                    }
+                    Some(symbol) if symbol.kind == SymbolKind::TypeAlias => self
+                        .resolved_aliases
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or(InferredType::Unknown),
+                    _ => InferredType::Unknown,
                 }
             }
-            TypeRefKind::Ref(inner) => {
-                InferredType::record_ref(self.resolve_field_type(inner))
-            }
-            TypeRefKind::Array(inner) => {
-                InferredType::array(self.resolve_field_type(inner))
-            }
+            TypeRefKind::Ref(inner) => InferredType::record_ref(self.resolve_field_type(inner)),
+            TypeRefKind::Array(inner) => InferredType::array(self.resolve_field_type(inner)),
             TypeRefKind::Dict(key, value) => {
-                InferredType::dict(
-                    self.resolve_field_type(key),
-                    self.resolve_field_type(value),
-                )
+                InferredType::dict(self.resolve_field_type(key), self.resolve_field_type(value))
             }
-            TypeRefKind::Option(inner) => {
-                InferredType::option(self.resolve_field_type(inner))
-            }
+            TypeRefKind::Option(inner) => InferredType::option(self.resolve_field_type(inner)),
             TypeRefKind::Result(value, error) => InferredType::result(
                 self.resolve_field_type(value),
                 self.resolve_field_type(error),
@@ -446,9 +425,8 @@ impl ResolvedTypes<'_> {
         ty: &TypeRef,
         diagnostics: &mut Vec<CftDiagnostic>,
     ) -> InferredType {
-        let diagnostic = |code, span, message: String| {
-            CftDiagnostic::error(code, module.clone(), span, message)
-        };
+        let diagnostic =
+            |code, span, message: String| CftDiagnostic::error(code, module.clone(), span, message);
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
             TypeRefKind::Float => InferredType::float(),
@@ -530,10 +508,7 @@ impl ResolvedTypes<'_> {
                         "dict key type must be string, int, or enum".into(),
                     ));
                 }
-                InferredType::dict(
-                    key_ty,
-                    self.validate_field_type(module, value, diagnostics),
-                )
+                InferredType::dict(key_ty, self.validate_field_type(module, value, diagnostics))
             }
             TypeRefKind::Option(inner) => {
                 InferredType::option(self.validate_field_type(module, inner, diagnostics))

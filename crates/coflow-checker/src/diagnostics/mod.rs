@@ -1,10 +1,10 @@
 use coflow_diagnostics::CfdErrorCode;
-use coflow_model::{CfdPath, CfdPathSegment, DimensionFieldLookupError};
 use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment,
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
     CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
 };
+use coflow_model::{CfdPath, CfdPathSegment, DimensionFieldLookupError};
 
 use crate::eval::{EvalValue, ValueLocation};
 
@@ -196,7 +196,9 @@ pub(crate) fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
             };
             let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
             let binding = match bindings {
-                coflow_language::cft::CftSchemaQuantifierBindings::Single { binding } => binding.clone(),
+                coflow_language::cft::CftSchemaQuantifierBindings::Single { binding } => {
+                    binding.clone()
+                }
                 coflow_language::cft::CftSchemaQuantifierBindings::Array { item, index } => {
                     format!("{item}, {index}")
                 }
@@ -338,16 +340,17 @@ pub(crate) fn format_cfd_path_for_message(path: &CfdPath) -> String {
 /// message: strings are quoted, collections summarize, records show their key.
 pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
     if let Some(scalar) = value.scalar() {
-        return crate::eval::format_scalar(
-            scalar,
-            crate::eval::ScalarFormat::Diagnostic,
-        );
+        return crate::eval::format_scalar(scalar, crate::eval::ScalarFormat::Diagnostic);
     }
     match value {
         EvalValue::Model(coflow_model::CfdValue::OptionNone)
-        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => "None".to_string(),
+        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => {
+            "None".to_string()
+        }
         EvalValue::Model(coflow_model::CfdValue::OptionSome(_))
-        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(_)) => "Some(...)".to_string(),
+        | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(_)) => {
+            "Some(...)".to_string()
+        }
         EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }

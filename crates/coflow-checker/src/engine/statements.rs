@@ -219,7 +219,10 @@ fn eval_quantifier<'model>(
         if first_item_location.is_none() {
             first_item_location.clone_from(&item.location);
         }
-        if evaluator.charge_iteration_at(item.location.clone()).is_err() {
+        if evaluator
+            .charge_iteration_at(item.location.clone())
+            .is_err()
+        {
             return EvalFlow::HardStop;
         }
         let diagnostic_start = evaluator.diagnostics.len();

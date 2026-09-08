@@ -2,8 +2,10 @@
 
 #[path = "checker_common/mod.rs"]
 mod common;
-use coflow_language::cft::{CheckOwner, DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
+use coflow_language::cft::{
+    CheckOwner, DimensionName, FieldName, RecordKey, TypeName, VariantName,
+};
 use common::*;
 
 fn schema() -> CftSchema {

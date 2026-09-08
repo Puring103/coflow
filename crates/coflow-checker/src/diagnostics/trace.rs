@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use coflow_model::CfdDataModel;
 use coflow_language::cft::{
     CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp,
     CftSchemaTypePredicate,
 };
+use coflow_model::CfdDataModel;
 
 use super::format_value_for_message;
 use crate::eval::{LocatedEvalValue, ScalarValue, ValueLocation};

@@ -3,8 +3,8 @@ use super::state::SymbolKind;
 use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
-use crate::syntax::ast::{Annotation, AnnotationArg, FieldDef};
 use crate::source::Span;
+use crate::syntax::ast::{Annotation, AnnotationArg, FieldDef};
 use std::collections::BTreeMap;
 
 impl ResolvedTypes<'_> {
@@ -69,7 +69,9 @@ impl ResolvedTypes<'_> {
                 }
             }
             if let Some(host) = find_annotation(&info.def.annotations, "Host") {
-                if info.def.is_abstract || find_annotation(&info.def.annotations, "singleton").is_none() {
+                if info.def.is_abstract
+                    || find_annotation(&info.def.annotations, "singleton").is_none()
+                {
                     push_diag(
                         &mut diagnostics,
                         CftErrorCode::InvalidAnnotatedFieldType,

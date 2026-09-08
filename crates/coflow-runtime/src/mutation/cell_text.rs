@@ -66,12 +66,8 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
         LoadedValueDraft::OptionSome(value) => {
             Ok(tagged_json("$some", input_value_to_json(*value)?))
         }
-        LoadedValueDraft::ResultOk(value) => {
-            Ok(tagged_json("$ok", input_value_to_json(*value)?))
-        }
-        LoadedValueDraft::ResultErr(value) => {
-            Ok(tagged_json("$err", input_value_to_json(*value)?))
-        }
+        LoadedValueDraft::ResultOk(value) => Ok(tagged_json("$ok", input_value_to_json(*value)?)),
+        LoadedValueDraft::ResultErr(value) => Ok(tagged_json("$err", input_value_to_json(*value)?)),
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
         LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
             Ok(Value::Number(Number::from(value)))

@@ -3,18 +3,18 @@ pub(crate) mod types;
 
 use crate::lowering::CsharpLoweringPlan;
 use crate::model::{
-    CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum, CsharpEnumVariant, CsharpEquality, CsharpFunction,
-    CsharpEqualityField, CsharpLoaderField, CsharpParameter, CsharpProperty, CsharpType,
+    CsharpAnnotation, CsharpAnnotationArgument, CsharpConstructorAssignment, CsharpEnum,
+    CsharpEnumVariant, CsharpEquality, CsharpEqualityField, CsharpFunction, CsharpLoaderField,
+    CsharpParameter, CsharpProperty, CsharpType,
 };
-use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use crate::CsharpCodegenError;
+use coflow_language::cft::{CftAnnotation, CftAnnotationValue, CftSchemaDefaultValue};
 use coflow_language::cft::{CftEnum, CftField, CftFunctionParameter, CftType, CftValueType};
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use identifiers::{
-    csharp_public_member_name, csharp_public_type_name, field_local_name,
-    function_parameter_name,
+    csharp_public_member_name, csharp_public_type_name, field_local_name, function_parameter_name,
 };
 use types::{csharp_field_property_type, csharp_native_delegate_type, csharp_type};
 
@@ -53,11 +53,7 @@ fn function_parameters(
         .map(|(index, parameter)| {
             Ok(CsharpParameter {
                 ty: csharp_type(&parameter.value_type, view),
-                name: function_parameter_name(
-                    parameter.name.as_deref(),
-                    index,
-                    &mut used_names,
-                )?,
+                name: function_parameter_name(parameter.name.as_deref(), index, &mut used_names)?,
             })
         })
         .collect()
@@ -76,11 +72,12 @@ pub fn build_csharp_type(
     let mut functions = Vec::new();
 
     let is_struct = schema_type.is_struct;
-    let (layout_integer_count, layout_float_count, layout_reference_count) = if schema_type.is_abstract {
-        (0, 0, 0)
-    } else {
-        generated_value_layout_widths(schema_type, view)?
-    };
+    let (layout_integer_count, layout_float_count, layout_reference_count) =
+        if schema_type.is_abstract {
+            (0, 0, 0)
+        } else {
+            generated_value_layout_widths(schema_type, view)?
+        };
     let is_table = !schema_type.is_abstract && !is_struct && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
@@ -101,7 +98,8 @@ pub fn build_csharp_type(
 
     for (field_slot, field) in all_fields.iter().enumerate() {
         let local_name = field_local_name(&field.name, &mut HashSet::new())?;
-        let inherited = !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name);
+        let inherited =
+            !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name);
         if let CftValueType::Function(parameters, result) = &field.value_type {
             let method_name = csharp_public_member_name(&field.name);
             let entry_name = format!("_coflow{method_name}");
@@ -251,7 +249,8 @@ pub fn build_csharp_type(
             })
         })
         .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
-    let loader_variants = if schema_type.is_abstract || view.type_has_descendants(&schema_type.name) {
+    let loader_variants = if schema_type.is_abstract || view.type_has_descendants(&schema_type.name)
+    {
         view.concrete_assignable_types(&schema_type.name)?
             .iter()
             .filter(|source_name| source_name.as_str() != schema_type.name.as_str())
@@ -267,10 +266,14 @@ pub fn build_csharp_type(
     } else {
         Vec::new()
     };
-    let loader_id_type = is_table.then(|| csharp_type(&view.key_field_type(&schema_type.name), view));
+    let loader_id_type =
+        is_table.then(|| csharp_type(&view.key_field_type(&schema_type.name), view));
     let table_token_type = loader_id_type.as_ref().map(|key_type| {
         if key_type == "string" {
-            format!("CoflowStringTableToken<{}>", view.csharp_type_ref(&schema_type.name))
+            format!(
+                "CoflowStringTableToken<{}>",
+                view.csharp_type_ref(&schema_type.name)
+            )
         } else {
             format!(
                 "CoflowEnumTableToken<{}, {key_type}>",
@@ -306,7 +309,10 @@ pub fn build_csharp_type(
         loader_id_type,
         table_token_type,
         loader_id_reader: (!schema_type.is_singleton && !schema_type.is_abstract)
-            .then(|| view.id_as_enum(&schema_type.name).map(|name| view.metadata_name(&name)))
+            .then(|| {
+                view.id_as_enum(&schema_type.name)
+                    .map(|name| view.metadata_name(&name))
+            })
             .flatten(),
         loader_enabled: !schema_type.is_abstract,
         is_host: schema_type.is_host,
@@ -396,7 +402,11 @@ fn function_loader_reader(
             csharp_type(&parameter.value_type, view)
         );
     }
-    let method = if required { "RequiredFunction" } else { "Function" };
+    let method = if required {
+        "RequiredFunction"
+    } else {
+        "Function"
+    };
     Some(format!(
         "{context}.{method}({node}, \"{}\", typeof({}){parameter_types})",
         escape_csharp_literal(&field.name),
@@ -430,7 +440,9 @@ pub(crate) fn field_layout_widths(
 ) -> Result<(usize, usize, usize), CsharpCodegenError> {
     let mut width = value_layout_widths(&field.value_type, view, visiting)?;
     // 维度包装内联默认值，变体字典占一个集合 ID 列。
-    if field.dimension.is_some() { width.0 += 1; }
+    if field.dimension.is_some() {
+        width.0 += 1;
+    }
     Ok(width)
 }
 
@@ -476,7 +488,11 @@ fn value_layout_widths(
         CftValueType::Result(ok, error) => {
             let first = value_layout_widths(ok, view, visiting)?;
             let second = value_layout_widths(error, view, visiting)?;
-            Ok((first.0 + second.0 + 1, first.1 + second.1, first.2 + second.2))
+            Ok((
+                first.0 + second.0 + 1,
+                first.1 + second.1,
+                first.2 + second.2,
+            ))
         }
         CftValueType::String => Ok((0, 0, 1)),
         CftValueType::Function(_, _) => Ok((2, 0, 0)),
@@ -524,13 +540,17 @@ fn loader_default_inner(
     Ok(match value {
         CftSchemaDefaultValue::OptionNone => {
             let CftValueType::Option(inner) = ty else {
-                return Err(CsharpCodegenError::new("None default used on a non-Option field"));
+                return Err(CsharpCodegenError::new(
+                    "None default used on a non-Option field",
+                ));
             };
             format!("Option<{}>.None", csharp_type(inner, view))
         }
         CftSchemaDefaultValue::OptionSome(value) => {
             let CftValueType::Option(inner) = ty else {
-                return Err(CsharpCodegenError::new("Some default used on a non-Option field"));
+                return Err(CsharpCodegenError::new(
+                    "Some default used on a non-Option field",
+                ));
             };
             format!(
                 "Option<{}>.Some({})",
@@ -540,7 +560,9 @@ fn loader_default_inner(
         }
         CftSchemaDefaultValue::ResultOk(value) => {
             let CftValueType::Result(ok, error) = ty else {
-                return Err(CsharpCodegenError::new("Ok default used on a non-Result field"));
+                return Err(CsharpCodegenError::new(
+                    "Ok default used on a non-Result field",
+                ));
             };
             format!(
                 "Result<{}, {}>.Ok({})",
@@ -551,7 +573,9 @@ fn loader_default_inner(
         }
         CftSchemaDefaultValue::ResultErr(value) => {
             let CftValueType::Result(ok, error) = ty else {
-                return Err(CsharpCodegenError::new("Err default used on a non-Result field"));
+                return Err(CsharpCodegenError::new(
+                    "Err default used on a non-Result field",
+                ));
             };
             format!(
                 "Result<{}, {}>.Err({})",
@@ -603,7 +627,9 @@ fn loader_default_inner(
         }
         CftSchemaDefaultValue::EmptyArray => {
             let CftValueType::Array(item) = ty else {
-                return Err(CsharpCodegenError::new("empty array default used on a non-array field"));
+                return Err(CsharpCodegenError::new(
+                    "empty array default used on a non-array field",
+                ));
             };
             format!("Array.Empty<{}>()", csharp_type(item, view))
         }
@@ -613,9 +639,7 @@ fn loader_default_inner(
                 csharp_type(key, view),
                 csharp_type(value, view)
             ),
-            CftValueType::Object(name) => {
-                loader_object_default(name, &[], view, object_stack)?
-            }
+            CftValueType::Object(name) => loader_object_default(name, &[], view, object_stack)?,
             _ => {
                 return Err(CsharpCodegenError::new(
                     "empty object default used on a non-object field",
@@ -624,7 +648,9 @@ fn loader_default_inner(
         },
         CftSchemaDefaultValue::Array(values) => {
             let CftValueType::Array(item) = ty else {
-                return Err(CsharpCodegenError::new("array default used on a non-array field"));
+                return Err(CsharpCodegenError::new(
+                    "array default used on a non-array field",
+                ));
             };
             let values = values
                 .iter()
@@ -663,7 +689,9 @@ fn loader_default_inner(
         }
         CftSchemaDefaultValue::Object { type_name, fields } => {
             let CftValueType::Object(expected) = ty else {
-                return Err(CsharpCodegenError::new("object default used on a non-object field"));
+                return Err(CsharpCodegenError::new(
+                    "object default used on a non-object field",
+                ));
             };
             if !view
                 .assignable_target_names(type_name.as_str())?
@@ -738,33 +766,36 @@ fn loader_object_default(
             let key = match view.key_field_type(type_name) {
                 CftValueType::String => "string.Empty".to_string(),
                 CftValueType::Enum(name) => format!("default({})", view.csharp_enum_ref(&name)),
-                other => return Err(CsharpCodegenError::new(format!(
-                    "record key `{type_name}` has unsupported type `{other:?}`"
-                ))),
+                other => {
+                    return Err(CsharpCodegenError::new(format!(
+                        "record key `{type_name}` has unsupported type `{other:?}`"
+                    )))
+                }
             };
             arguments.push(key);
         }
-        arguments.extend(view
-            .fields(type_name.as_str())?
-            .map(|field| {
-                if matches!(field.value_type, CftValueType::Function(_, _)) {
-                    return Err(CsharpCodegenError::new(format!(
-                        "object default `{type_name}` cannot contain function field `{}`",
-                        field.name
-                    )));
-                }
-                if let Some(value) = values.get(&field.name) {
-                    loader_default_inner(value, &field.value_type, view, object_stack)
-                } else if let Some(value) = &field.default {
-                    loader_default_inner(value, &field.value_type, view, object_stack)
-                } else {
-                    Err(CsharpCodegenError::new(format!(
-                        "object default `{type_name}` is missing field `{}`",
-                        field.name
-                    )))
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?);
+        arguments.extend(
+            view.fields(type_name.as_str())?
+                .map(|field| {
+                    if matches!(field.value_type, CftValueType::Function(_, _)) {
+                        return Err(CsharpCodegenError::new(format!(
+                            "object default `{type_name}` cannot contain function field `{}`",
+                            field.name
+                        )));
+                    }
+                    if let Some(value) = values.get(&field.name) {
+                        loader_default_inner(value, &field.value_type, view, object_stack)
+                    } else if let Some(value) = &field.default {
+                        loader_default_inner(value, &field.value_type, view, object_stack)
+                    } else {
+                        Err(CsharpCodegenError::new(format!(
+                            "object default `{type_name}` is missing field `{}`",
+                            field.name
+                        )))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         Ok(format!(
             "new {}({})",
             view.csharp_type_ref(type_name),
@@ -927,10 +958,7 @@ fn has_concrete_parent(type_name: &str, view: &CsharpLoweringPlan<'_>) -> bool {
     false
 }
 
-pub(super) fn backing_field_name(
-    property_name: &str,
-    is_struct: bool,
-) -> Option<String> {
+pub(super) fn backing_field_name(property_name: &str, is_struct: bool) -> Option<String> {
     (!is_struct).then(|| format!("_coflow{property_name}"))
 }
 

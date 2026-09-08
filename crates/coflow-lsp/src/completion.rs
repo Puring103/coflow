@@ -74,10 +74,12 @@ pub(crate) fn completion_items(
     if let Some(chain) = receiver_chain_before_dot(line_prefix) {
         let mut items = dot_completion_items(build, document, offset, &chain);
         if scope == CompletionScope::CheckBlock {
-            items.extend(type_of_chain(build, document, offset, &chain).map_or_else(
-                function_completion_items,
-                |receiver| function_completion_items_for_type(&receiver),
-            ));
+            items.extend(
+                type_of_chain(build, document, offset, &chain)
+                    .map_or_else(function_completion_items, |receiver| {
+                        function_completion_items_for_type(&receiver)
+                    }),
+            );
         }
         return items;
     }
@@ -89,7 +91,6 @@ pub(crate) fn completion_items(
     if is_type_header_parent_context(line_prefix) {
         return inheritable_type_completion_items(build, line_prefix);
     }
-
 
     if is_const_type_context(line_prefix) || is_type_alias_target_context(line_prefix) {
         return type_completion_items(build);
@@ -152,9 +153,7 @@ fn type_member_completion_items() -> Vec<Value> {
         "CFT field",
         "Define a typed field.",
     )];
-    if let Some(check) =
-        keyword_snippet_completion_item("check", "check {\n\t${1:condition};\n}")
-    {
+    if let Some(check) = keyword_snippet_completion_item("check", "check {\n\t${1:condition};\n}") {
         items.push(check);
     }
     items
@@ -256,7 +255,9 @@ fn function_completion_items() -> Vec<Value> {
         .collect()
 }
 
-pub(crate) fn function_completion_items_for_type(receiver: &coflow_language::cft::CftValueType) -> Vec<Value> {
+pub(crate) fn function_completion_items_for_type(
+    receiver: &coflow_language::cft::CftValueType,
+) -> Vec<Value> {
     CftCheckBuiltin::ALL
         .into_iter()
         .filter(|builtin| builtin_supports_receiver(*builtin, receiver))
@@ -285,7 +286,10 @@ fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
     item
 }
 
-fn builtin_supports_receiver(builtin: CftCheckBuiltin, receiver: &coflow_language::cft::CftValueType) -> bool {
+fn builtin_supports_receiver(
+    builtin: CftCheckBuiltin,
+    receiver: &coflow_language::cft::CftValueType,
+) -> bool {
     use CftCheckBuiltin::{
         Abs, ApproxEqual, Contains, ContainsKey, ContainsValue, EndsWith, Intersects, IsBlank,
         IsDisjoint, IsFinite, IsSorted, IsStrictlySorted, IsSubsetOf, IsSupersetOf, Keys, Len,
@@ -293,8 +297,14 @@ fn builtin_supports_receiver(builtin: CftCheckBuiltin, receiver: &coflow_languag
     };
     let receiver = TypeRefLike::from(receiver);
     match builtin {
-        Len => matches!(receiver, TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict),
-        Contains => matches!(receiver, TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict),
+        Len => matches!(
+            receiver,
+            TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict
+        ),
+        Contains => matches!(
+            receiver,
+            TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict
+        ),
         Unique | Min | Max | Sum | IsSorted | IsStrictlySorted | Intersects | IsDisjoint
         | IsSubsetOf | IsSupersetOf => matches!(receiver, TypeRefLike::Array),
         Keys | Values | ContainsKey | ContainsValue => matches!(receiver, TypeRefLike::Dict),
@@ -329,14 +339,8 @@ impl<'a> From<&'a coflow_language::cft::CftValueType> for TypeRefLike {
 fn check_structure_completion_items() -> Vec<Value> {
     [
         ("when", "when ${1:condition} {\n\t${2:condition};\n}"),
-        (
-            "all",
-            "all ${1:item} in ${2:items} {\n\t${3:condition};\n}",
-        ),
-        (
-            "any",
-            "any ${1:item} in ${2:items} {\n\t${3:condition};\n}",
-        ),
+        ("all", "all ${1:item} in ${2:items} {\n\t${3:condition};\n}"),
+        ("any", "any ${1:item} in ${2:items} {\n\t${3:condition};\n}"),
         (
             "none",
             "none ${1:item} in ${2:items} {\n\t${3:condition};\n}",
@@ -367,7 +371,9 @@ fn const_value_completion_items_for_context(
 ) -> Vec<Value> {
     let ty = document.ast().and_then(|ast| {
         ast.items.iter().find_map(|item| match item {
-            Item::Const(constant) if constant.span.start <= offset && offset <= constant.span.end => {
+            Item::Const(constant)
+                if constant.span.start <= offset && offset <= constant.span.end =>
+            {
                 constant.ty.as_ref()
             }
             _ => None,
@@ -733,7 +739,11 @@ fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec
         .collect()
 }
 
-fn type_descends_from(schema: &coflow_language::cft::CftSchema, candidate: &str, ancestor: &str) -> bool {
+fn type_descends_from(
+    schema: &coflow_language::cft::CftSchema,
+    candidate: &str,
+    ancestor: &str,
+) -> bool {
     let mut current = schema.resolve_type(candidate);
     while let Some(ty) = current {
         let Some(parent) = ty.parent.as_deref() else {
@@ -749,29 +759,30 @@ fn type_descends_from(schema: &coflow_language::cft::CftSchema, candidate: &str,
 
 fn annotation_argument_completion_items(build: &LspBuild, line_prefix: &str) -> Option<Vec<Value>> {
     let trimmed = line_prefix.trim_end();
-    let (annotation, detail, labels): (&str, &str, Vec<String>) = if annotation_argument_open(trimmed, "@dimension") {
-        (
-            "@dimension",
-            "Configured dimension",
-            build
-                .schema()?
-                .all_dimensions()
-                .map(|dimension| dimension.name.to_string())
-                .collect(),
-        )
-    } else if annotation_argument_open(trimmed, "@idAsEnum") {
-        (
-            "@idAsEnum",
-            "CFT enum",
-            build
-                .schema()?
-                .all_enums()
-                .map(|enum_def| enum_def.name.to_string())
-                .collect(),
-        )
-    } else {
-        return None;
-    };
+    let (annotation, detail, labels): (&str, &str, Vec<String>) =
+        if annotation_argument_open(trimmed, "@dimension") {
+            (
+                "@dimension",
+                "Configured dimension",
+                build
+                    .schema()?
+                    .all_dimensions()
+                    .map(|dimension| dimension.name.to_string())
+                    .collect(),
+            )
+        } else if annotation_argument_open(trimmed, "@idAsEnum") {
+            (
+                "@idAsEnum",
+                "CFT enum",
+                build
+                    .schema()?
+                    .all_enums()
+                    .map(|enum_def| enum_def.name.to_string())
+                    .collect(),
+            )
+        } else {
+            return None;
+        };
     Some(
         labels
             .into_iter()
@@ -889,12 +900,7 @@ fn snippet_completion_item(
     detail: &str,
     documentation: &str,
 ) -> Value {
-    let mut item = completion_item(
-        label,
-        COMPLETION_KIND_FUNCTION,
-        detail,
-        Some(documentation),
-    );
+    let mut item = completion_item(label, COMPLETION_KIND_FUNCTION, detail, Some(documentation));
     insert_object_field(&mut item, "insertText", json!(insert_text));
     insert_object_field(&mut item, "insertTextFormat", json!(2));
     item
@@ -937,13 +943,7 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match scope {
         CompletionScope::TopLevel => matches!(
             label,
-            "@struct"
-                | "@flag"
-                | "@idAsEnum"
-                | "@singleton"
-                | "@Host"
-                | "@label"
-                | "@description"
+            "@struct" | "@flag" | "@idAsEnum" | "@singleton" | "@Host" | "@label" | "@description"
         ),
         CompletionScope::TypeBody => matches!(
             label,
@@ -984,10 +984,7 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
     inferred_completion_scope(document, offset).unwrap_or(CompletionScope::TopLevel)
 }
 
-fn inferred_completion_scope(
-    document: &LspDocument,
-    offset: usize,
-) -> Option<CompletionScope> {
+fn inferred_completion_scope(document: &LspDocument, offset: usize) -> Option<CompletionScope> {
     #[derive(Clone, Copy)]
     enum PendingBody {
         Type,
@@ -1010,7 +1007,10 @@ fn inferred_completion_scope(
                 pending = Some(PendingBody::Enum);
             }
             TokenKind::Check
-                if matches!(current, CompletionScope::TopLevel | CompletionScope::TypeBody) =>
+                if matches!(
+                    current,
+                    CompletionScope::TopLevel | CompletionScope::TypeBody
+                ) =>
             {
                 pending = Some(PendingBody::Check);
             }
@@ -1126,10 +1126,7 @@ pub(crate) fn receiver_chain_before_dot(line_prefix: &str) -> Option<Vec<String>
 
 fn enum_name_before_double_colon(line_prefix: &str) -> Option<&str> {
     let separator = line_prefix.rfind("::")?;
-    if !line_prefix[separator + 2..]
-        .chars()
-        .all(is_ident_continue)
-    {
+    if !line_prefix[separator + 2..].chars().all(is_ident_continue) {
         return None;
     }
     last_ident(line_prefix[..separator].trim_end())
@@ -1167,10 +1164,7 @@ fn enum_variant_completion_item(enum_name: &str, variant_name: &str) -> Value {
 }
 
 fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<String> {
-    let Ok(tokens) = lex(
-        &ModuleId::new(document.module_id.clone()),
-        &document.source,
-    ) else {
+    let Ok(tokens) = lex(&ModuleId::new(document.module_id.clone()), &document.source) else {
         return Vec::new();
     };
 
@@ -1210,7 +1204,10 @@ fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<Str
     Vec::new()
 }
 
-fn skip_annotation_tokens(tokens: &[coflow_language::cft::syntax::lexer::Token], index: &mut usize) {
+fn skip_annotation_tokens(
+    tokens: &[coflow_language::cft::syntax::lexer::Token],
+    index: &mut usize,
+) {
     *index += 1;
     if *index < tokens.len() && matches!(tokens[*index].kind, TokenKind::Ident(_)) {
         *index += 1;

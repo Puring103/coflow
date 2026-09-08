@@ -1,9 +1,9 @@
 use crate::artifacts::{CodeOutput, PreparedCodeRelease};
-use coflow_codegen_csharp::CsharpCfdCodeGenerator;
 use crate::codegen::{CodegenInput, CodegenRegistry, CodegenTarget};
 use crate::Project;
 use crate::Runtime;
 use crate::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
+use coflow_codegen_csharp::CsharpCfdCodeGenerator;
 use std::path::{Path, PathBuf};
 
 mod id_as_enum;
@@ -50,10 +50,12 @@ pub fn apply_project_mutation(
     request: crate::MutationRequest,
 ) -> Result<crate::MutationReport, DiagnosticSet> {
     let project = session.project().clone();
-    Ok(session.apply_mutation_with_project_files(request, move |queries, applied| {
-        id_as_enum::prepare_rename_update(&project, queries, applied)
-            .map(|update| update.into_iter().collect())
-    }))
+    Ok(
+        session.apply_mutation_with_project_files(request, move |queries, applied| {
+            id_as_enum::prepare_rename_update(&project, queries, applied)
+                .map(|update| update.into_iter().collect())
+        }),
+    )
 }
 
 #[derive(Debug)]

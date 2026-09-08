@@ -1,11 +1,11 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
-use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-};
+use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 use coflow_language::diagnostics::CftErrorCode;
 
-fn compile(source: &str) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
+fn compile(
+    source: &str,
+) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     build_schema(&modules, &CftDimensionInputs::default())
 }
@@ -68,9 +68,10 @@ fn recursive_default_materialization_is_rejected() {
     ] {
         let diagnostics = compile(source).expect_err("recursive default must fail");
         assert!(
-            diagnostics.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == CftErrorCode::DefaultMaterializationCycle
-            }),
+            diagnostics
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.code == CftErrorCode::DefaultMaterializationCycle }),
             "expected default materialization cycle: {source}"
         );
     }

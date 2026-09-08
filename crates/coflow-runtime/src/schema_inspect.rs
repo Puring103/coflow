@@ -84,13 +84,31 @@ pub enum SchemaTypeRefInfo {
     Float,
     Bool,
     String,
-    Named { name: String, target_kind: String },
-    Ref { target: String },
-    Array { item: Box<Self> },
-    Dict { key: Box<Self>, value: Box<Self> },
-    Option { inner: Box<Self> },
-    Result { value: Box<Self>, error: Box<Self> },
-    Function { parameters: Vec<Self>, result: Box<Self> },
+    Named {
+        name: String,
+        target_kind: String,
+    },
+    Ref {
+        target: String,
+    },
+    Array {
+        item: Box<Self>,
+    },
+    Dict {
+        key: Box<Self>,
+        value: Box<Self>,
+    },
+    Option {
+        inner: Box<Self>,
+    },
+    Result {
+        value: Box<Self>,
+        error: Box<Self>,
+    },
+    Function {
+        parameters: Vec<Self>,
+        result: Box<Self>,
+    },
     Unit,
 }
 
@@ -362,9 +380,7 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::FormattedString(source) => {
             SchemaDefaultValueInfo::FormattedString(source.clone())
         }
-        CftSchemaDefaultValue::Function(source) => {
-            SchemaDefaultValueInfo::Function(source.clone())
-        }
+        CftSchemaDefaultValue::Function(source) => SchemaDefaultValueInfo::Function(source.clone()),
         CftSchemaDefaultValue::Enum {
             enum_name,
             variant,
@@ -385,15 +401,13 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
                 .map(|(key, value)| (default_value_info(key), default_value_info(value)))
                 .collect(),
         ),
-        CftSchemaDefaultValue::Object { type_name, fields } => {
-            SchemaDefaultValueInfo::Object {
-                type_name: type_name.to_string(),
-                fields: fields
-                    .iter()
-                    .map(|(name, value)| (name.to_string(), default_value_info(value)))
-                    .collect(),
-            }
-        }
+        CftSchemaDefaultValue::Object { type_name, fields } => SchemaDefaultValueInfo::Object {
+            type_name: type_name.to_string(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| (name.to_string(), default_value_info(value)))
+                .collect(),
+        },
         CftSchemaDefaultValue::RecordReference { type_name, key } => {
             SchemaDefaultValueInfo::RecordReference {
                 type_name: type_name.to_string(),

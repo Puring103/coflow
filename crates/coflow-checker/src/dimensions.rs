@@ -1,9 +1,9 @@
+use crate::limits::{EvaluationBudget, EvaluationCursor};
+use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 use coflow_model::{
     CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
     DimensionValueLookup,
 };
-use crate::limits::{EvaluationBudget, EvaluationCursor};
-use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 
 use crate::diagnostics::dimension_lookup_error_message;
 use crate::eval::{EvalRecordRef, EvalValue, LocatedEvalValue, ValueLocation};
@@ -39,8 +39,9 @@ fn attach_dimension_origin(
         .iter()
         .find_map(|segment| match segment {
             coflow_model::CfdPathSegment::Field(field) => Some(field.as_str()),
-            coflow_model::CfdPathSegment::Index(_)
-            | coflow_model::CfdPathSegment::DictKey(_) => None,
+            coflow_model::CfdPathSegment::Index(_) | coflow_model::CfdPathSegment::DictKey(_) => {
+                None
+            }
         })
     else {
         return;

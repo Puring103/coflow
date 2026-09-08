@@ -30,7 +30,9 @@ fn preserves_source_identifier_spelling() {
         "enum item_kind { rare_item } type item_data { hit_points: int; displayName: string; Kind: item_kind; apply_bonus: fn(BonusValue: int) -> int; }"
     ), BTreeMap::new(), None).expect("generate original names");
     let output = all(&files);
-    assert!(files.iter().any(|file| file.relative_path == PathBuf::from("item_data.cs")));
+    assert!(files
+        .iter()
+        .any(|file| file.relative_path.as_os_str() == "item_data.cs"));
     assert!(output.contains("long hit_points"));
     assert!(output.contains("string displayName"));
     assert!(output.contains("global::item_kind Kind"));
@@ -43,9 +45,16 @@ fn preserves_source_identifier_spelling() {
 fn id_as_enum_preserves_record_key_spelling() {
     let schema = schema("enum ItemId {} @idAsEnum(ItemId) type Item {}");
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("rare_sword", "Item", [] as [(&str, coflow_model::LoadedValueDraft); 0]);
+    builder.add_record(
+        "rare_sword",
+        "Item",
+        [] as [(&str, coflow_model::LoadedValueDraft); 0],
+    );
     let model = builder.build().expect("model");
-    let values = BTreeMap::from([("ItemId".to_string(), BTreeMap::from([("rare_sword".to_string(), 1)]))]);
+    let values = BTreeMap::from([(
+        "ItemId".to_string(),
+        BTreeMap::from([("rare_sword".to_string(), 1)]),
+    )]);
     let variants = id_as_enum_variants(&schema, &model, &values).expect("stable enum variants");
     let files = generate_csharp_cfd(&schema, variants, None).expect("generate enum");
     let output = all(&files);
@@ -57,7 +66,11 @@ fn id_as_enum_preserves_record_key_spelling() {
 fn empty_abstract_type_has_one_parameterless_constructor() {
     let files = generate_csharp(&schema("abstract type Empty {} type Child : Empty {}"))
         .expect("generate empty inheritance");
-    let empty = &files.iter().find(|file| file.relative_path == PathBuf::from("Empty.cs")).unwrap().contents;
+    let empty = &files
+        .iter()
+        .find(|file| file.relative_path.as_os_str() == "Empty.cs")
+        .unwrap()
+        .contents;
     assert_eq!(empty.matches("Empty(").count(), 1, "{empty}");
     assert!(empty.contains("protected internal Empty("));
 }
@@ -65,19 +78,27 @@ fn empty_abstract_type_has_one_parameterless_constructor() {
 #[test]
 #[ignore = "requires the .NET 10 SDK"]
 fn generated_identifiers_and_empty_inheritance_compile_in_csharp() {
-    let output_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/csharp-codegen-regressions");
+    let output_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/csharp-codegen-regressions");
     std::fs::create_dir_all(&output_dir).expect("create compilation directory");
-    let files = generate_csharp_cfd(&schema(r#"
+    let files = generate_csharp_cfd(
+        &schema(
+            r#"
         abstract type empty_base {}
         type child_type : empty_base { hit_points: int; }
         enum item_kind { rare_item }
         @struct sealed type item_value { hit_points: int; Kind: item_kind; }
         @singleton type empty_config {}
         @Host @singleton type host_config { apply_bonus: fn(BonusValue: int) -> int; }
-    "#), BTreeMap::new(), None).expect("generate compilation fixtures");
+    "#,
+        ),
+        BTreeMap::new(),
+        None,
+    )
+    .expect("generate compilation fixtures");
     for file in files {
-        std::fs::write(output_dir.join(file.relative_path), file.contents).expect("write generated source");
+        std::fs::write(output_dir.join(file.relative_path), file.contents)
+            .expect("write generated source");
     }
     std::fs::write(output_dir.join("Regression.csproj"), r#"<Project Sdk="Microsoft.NET.Sdk">
       <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><Nullable>enable</Nullable><LangVersion>latest</LangVersion></PropertyGroup>
@@ -89,9 +110,17 @@ fn generated_identifiers_and_empty_inheritance_compile_in_csharp() {
         var child = new child_type("row", 9);
         if (child.hit_points != 9) throw new System.Exception("inherited construction");
     "#).expect("write runtime assertions");
-    let output = std::process::Command::new("dotnet").args(["run", "--project"])
-        .arg(output_dir.join("Regression.csproj")).output().expect("run .NET compilation");
-    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    let output = std::process::Command::new("dotnet")
+        .args(["run", "--project"])
+        .arg(output_dir.join("Regression.csproj"))
+        .output()
+        .expect("run .NET compilation");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -113,16 +142,17 @@ fn emits_declarations_and_runtime_metadata() {
     assert!(!output.contains("CoflowGeneratedRegistry"));
     assert!(output.contains("CoflowSchema : ICoflowSchema"));
     assert!(output.contains("CoflowMetadata : ICoflowRecordMetadata"));
-    assert!(output.contains("CoflowTableFactory.String<global::Item>(values, static record => record.Id)"));
+    assert!(output
+        .contains("CoflowTableFactory.String<global::Item>(values, static record => record.Id)"));
     assert!(!output.contains("new CoflowStringTable<"));
     assert!(output.contains("CoflowFieldBinding.Create<global::Item, string>"));
-    assert!(output.contains("runtime.RegisterTypeCodec<global::Item>(\n            new CoflowTypeId("));
+    assert!(
+        output.contains("runtime.RegisterTypeCodec<global::Item>(\n            new CoflowTypeId(")
+    );
     assert!(output.contains("static (ref CoflowValueWriter writer, global::Item value)"));
     assert!(output.contains("writer.Write(value.name);"));
     assert!(output.contains("writer.WriteValueId(value._coflowId);"));
-    assert!(
-        output.contains("PopulateCft_4974656D((global::Item)target, record, context)")
-    );
+    assert!(output.contains("PopulateCft_4974656D((global::Item)target, record, context)"));
     assert!(output.contains("target._coflowname = CfdValueReader.String"));
     assert!(!output.contains("var loaded = ReadCft_4974656D"));
     assert!(!output.contains("public Type GetFieldType(string fieldName) => fieldName switch"));
@@ -214,7 +244,9 @@ type Rule {
             "Predicate.cs" | "OptionalName.cs"
         )
     }));
-    assert!(output.contains("public bool predicate(global::Coflow.Runtime.Coflow coflow, long input)"));
+    assert!(
+        output.contains("public bool predicate(global::Coflow.Runtime.Coflow coflow, long input)")
+    );
     assert!(!output.contains("BindPredicate"));
     assert!(output.contains("Option<string> name"));
     assert!(!output.contains("class Predicate"));
@@ -237,9 +269,7 @@ fn emits_scalar_constants_in_internal_runtime_metadata() {
     assert!(output.contains("new CoflowConstant(\"LEVEL\", typeof(long), 42L)"));
     assert!(output.contains("new CoflowConstant(\"RATIO\", typeof(double), 0.5D)"));
     assert!(output.contains("new CoflowConstant(\"ENABLED\", typeof(bool), true)"));
-    assert!(
-        output.contains("new CoflowConstant(\"LABEL\", typeof(string), \"line\\ntext\")")
-    );
+    assert!(output.contains("new CoflowConstant(\"LABEL\", typeof(string), \"line\\ntext\")"));
     assert!(!output.contains("public class Constants"));
 }
 
@@ -274,11 +304,9 @@ const ITEM: Option<&Item> = Some(&Item::sword);
 
 #[test]
 fn preserves_display_metadata_as_xml_docs() {
-    let files = generate_csharp(
-        &schema(
-            r#"@label("Item") @description("Description") type Item { @label("Name") name: string; }"#,
-        ),
-    )
+    let files = generate_csharp(&schema(
+        r#"@label("Item") @description("Description") type Item { @label("Name") name: string; }"#,
+    ))
     .expect("generate");
     let item = files
         .iter()
@@ -355,12 +383,8 @@ fn descriptor_declares_cfd_runtime_contract() {
 
 #[test]
 fn emits_empty_type_reader_without_invalid_argument_list() {
-    let files = generate_csharp_cfd(
-        &schema("type Empty { }"),
-        BTreeMap::new(),
-        None,
-    )
-    .expect("generate");
+    let files =
+        generate_csharp_cfd(&schema("type Empty { }"), BTreeMap::new(), None).expect("generate");
     let output = all(&files);
     assert!(output.contains("CfdValueReader.ValidateFields(fields);"));
     assert!(!output.contains("ValidateFields(fields, );"));
@@ -475,7 +499,9 @@ fn loads_function_values_nested_in_collections_and_option() {
     assert!(output.contains("IReadOnlyDictionary<string, CoflowFunction<string, bool>> named"));
     assert!(output.contains("Option<CoflowFunction<long, long>> optional"));
     assert!(output.contains("context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long)"));
-    assert!(output.contains("context.FunctionValue<CoflowFunction<string, bool>>(item, typeof(bool)"));
+    assert!(
+        output.contains("context.FunctionValue<CoflowFunction<string, bool>>(item, typeof(bool)")
+    );
     assert!(!output.contains("CoflowDelegateAdapter"));
 }
 
@@ -493,8 +519,12 @@ fn ordinary_function_loader_marks_the_cfd_body_as_required() {
     assert!(output.contains(
         "context.RequiredFunction(CfdValueReader.FindField(fields, \"evaluate\"), \"evaluate\", typeof(long), typeof(long))"
     ));
-    assert!(output.contains("public long evaluate(global::Coflow.Runtime.Coflow coflow, long value)"));
-    assert!(output.contains("public void notify(global::Coflow.Runtime.Coflow coflow, string message)"));
+    assert!(
+        output.contains("public long evaluate(global::Coflow.Runtime.Coflow coflow, long value)")
+    );
+    assert!(
+        output.contains("public void notify(global::Coflow.Runtime.Coflow coflow, string message)")
+    );
     assert!(!output.contains("public void Configure("));
     assert!(!output.contains("BindEvaluate"));
     assert!(!output.contains("BindNotify"));
@@ -519,12 +549,7 @@ fn function_defaults_use_the_runtime_function_entry_path() {
 #[test]
 fn generated_metadata_has_no_physical_source_paths() {
     let schema = schema("type Item { value: int; }");
-    let files = generate_csharp_cfd(
-        &schema,
-        BTreeMap::new(),
-        None,
-    )
-    .expect("generate");
+    let files = generate_csharp_cfd(&schema, BTreeMap::new(), None).expect("generate");
     let output = all(&files);
     assert!(!output.contains("data/dimensions/language/Item_value.cfd"));
     assert!(output.contains("ICoflowTypeMetadata"));
@@ -545,9 +570,7 @@ fn emits_source_enum_mappings_and_flag_masks() {
     assert!(output.contains("\"common_value\" or \"item_rarity::common_value\""));
     assert!(output.contains("ReadEnumCft_6974656D5F666C616773"));
     assert!(output.contains(" 3L"));
-    assert!(output.contains(
-        "CoflowFieldBinding.CreateEnum<global::Item, global::item_rarity>"
-    ));
+    assert!(output.contains("CoflowFieldBinding.CreateEnum<global::Item, global::item_rarity>"));
     assert!(output.contains("static value => (long)value"));
     assert!(!output.contains("public object GetKey(object record)"));
     assert!(output.contains("CfdValueReader.Object(node, context, \"Item\""));
@@ -587,9 +610,7 @@ type Item {
     assert!(output.contains("CoflowConstantValues.Dictionary<string, long>()"));
     assert!(output.contains("new global::Stats(null, string.Empty, 10L)"));
     assert!(output.contains("new global::Offset(5L)"));
-    assert!(
-        output.contains("valuetarget") && output.contains("Option<global::Item>.None")
-    );
+    assert!(output.contains("valuetarget") && output.contains("Option<global::Item>.None"));
     assert!(output.contains("Option<long>.Some(4L)"));
 }
 

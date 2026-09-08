@@ -2,8 +2,8 @@
 
 #[path = "checker_common/mod.rs"]
 mod common;
-use coflow_language::cft::{CheckOwner, CheckStatementId, TypeName};
 use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
+use coflow_language::cft::{CheckOwner, CheckStatementId, TypeName};
 use common::*;
 
 fn type_statements(schema: &CftSchema, owner: &str) -> Vec<CheckStatementId> {

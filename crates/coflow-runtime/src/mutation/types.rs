@@ -325,10 +325,12 @@ impl PreparedMutationOp {
                 record, write_file, ..
             } => ("set_field", Some(record.clone()), Some(write_file.clone())),
             Self::UnsetField {
-                record,
-                write_file,
-                ..
-            } => ("unset_field", Some(record.clone()), Some(write_file.clone())),
+                record, write_file, ..
+            } => (
+                "unset_field",
+                Some(record.clone()),
+                Some(write_file.clone()),
+            ),
             Self::WriteDimensionValue {
                 record,
                 new_value,

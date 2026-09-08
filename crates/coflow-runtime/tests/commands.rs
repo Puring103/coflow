@@ -1,8 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
-use coflow_runtime::{
-    MutationOp, MutationRequest, Project, RecordCoordinate, Runtime,
-};
+use coflow_runtime::{MutationOp, MutationRequest, Project, RecordCoordinate, Runtime};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -49,8 +47,7 @@ fn write_id_as_enum_project(is_flag: bool, records: &str) -> TempDir {
 
 fn active_enum_values(dir: &TempDir) -> serde_json::Map<String, Value> {
     let lock: Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join("coflow.enum.lock.json"))
-            .expect("enum lockfile"),
+        &fs::read_to_string(dir.path().join("coflow.enum.lock.json")).expect("enum lockfile"),
     )
     .expect("valid enum lockfile");
     lock["ItemId"]
@@ -101,13 +98,13 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     )
     .expect("rename id key");
     assert!(report.write_ok && report.check_ok);
-    assert!(report.affected_files.contains(&"data/items.cfd".to_string()));
+    assert!(report
+        .affected_files
+        .contains(&"data/items.cfd".to_string()));
     assert!(report.written_files.contains(&"data/items.cfd".to_string()));
-    assert!(
-        report
-            .written_files
-            .contains(&"coflow.enum.lock.json".to_string())
-    );
+    assert!(report
+        .written_files
+        .contains(&"coflow.enum.lock.json".to_string()));
     let values = active_enum_values(&project_dir);
     assert_eq!(values["delta"], 0);
     assert!(!values.contains_key("beta"));
@@ -147,15 +144,12 @@ fn runtime_is_cfd_only_and_loads_the_project() {
         .open_read_only_session(opened)
         .expect("load CFD");
     assert_eq!(session.queries().record_count_for_type("Item"), 1);
-    assert!(session
-        .queries()
-        .source_files()
-        .all(|path| {
-            Path::new(path)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("cfd"))
-        }));
+    assert!(session.queries().source_files().all(|path| {
+        Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cfd"))
+    }));
 }
 
 #[test]
@@ -274,7 +268,8 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
     let project =
         Project::open(Some(&project_dir.path().join("coflow.yaml"))).expect("open project");
 
-    let status = coflow_runtime::commands::build_project_status(&project).expect("inspect build status");
+    let status =
+        coflow_runtime::commands::build_project_status(&project).expect("inspect build status");
     assert!(matches!(
         status,
         coflow_runtime::commands::CommandOutcome::Success(true)
@@ -283,7 +278,8 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
     assert!(!project_dir.path().join(".coflow/artifacts").exists());
 
     coflow_runtime::commands::generate_project_code(&project).expect("generate code");
-    let status = coflow_runtime::commands::build_project_status(&project).expect("inspect clean status");
+    let status =
+        coflow_runtime::commands::build_project_status(&project).expect("inspect clean status");
     assert!(matches!(
         status,
         coflow_runtime::commands::CommandOutcome::Success(false)
@@ -296,7 +292,8 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
         "changed",
     )
     .expect("change generated output");
-    let status = coflow_runtime::commands::build_project_status(&project).expect("inspect changed status");
+    let status =
+        coflow_runtime::commands::build_project_status(&project).expect("inspect changed status");
     assert!(matches!(
         status,
         coflow_runtime::commands::CommandOutcome::Success(true)

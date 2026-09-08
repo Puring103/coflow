@@ -71,10 +71,7 @@ impl CfdWriter {
 
     fn read_source(&self, path: &Path) -> Result<String, DiagnosticSet> {
         let mut workspace = self.workspace.lock().map_err(|_| {
-            DiagnosticSet::one(diag(
-                "CFD-READ",
-                "mutation write workspace is poisoned",
-            ))
+            DiagnosticSet::one(diag("CFD-READ", "mutation write workspace is poisoned"))
         })?;
         if let Some(file) = workspace.files.get(path) {
             if file.deleted {
@@ -124,10 +121,7 @@ impl CfdWriter {
         ensure_parse_ok(path, new_source, &diagnostics)?;
 
         let mut workspace = self.workspace.lock().map_err(|_| {
-            DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "mutation write workspace is poisoned",
-            ))
+            DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
         if let Some(file) = workspace.files.get_mut(path) {
             file.deleted = false;
@@ -199,7 +193,10 @@ impl CfdWriter {
             let current = String::from_utf8(update.contents).map_err(|error| {
                 DiagnosticSet::one(diag(
                     "CFD-WRITE",
-                    format!("project file `{}` is not UTF-8: {error}", update.path.display()),
+                    format!(
+                        "project file `{}` is not UTF-8: {error}",
+                        update.path.display()
+                    ),
                 ))
             })?;
             workspace.files.insert(
@@ -248,7 +245,10 @@ impl CfdWriter {
         let workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
-        Ok(workspace.files.get(path).and_then(|file| file.original.clone()))
+        Ok(workspace
+            .files
+            .get(path)
+            .and_then(|file| file.original.clone()))
     }
 }
 
@@ -410,10 +410,11 @@ impl CfdWriter {
             });
         };
         let (mut source, mut ast) =
-            self.read_or_parse(path).map_err(|diagnostics| WriteBatchFailure {
-                index: 0,
-                diagnostics,
-            })?;
+            self.read_or_parse(path)
+                .map_err(|diagnostics| WriteBatchFailure {
+                    index: 0,
+                    diagnostics,
+                })?;
         for (index, request) in requests.iter().enumerate() {
             let RecordOrigin::File {
                 path: request_path, ..
@@ -443,10 +444,11 @@ impl CfdWriter {
                 .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
             ast = next_ast;
         }
-        self.write_source(path, &source).map_err(|diagnostics| WriteBatchFailure {
-            index: requests.len() - 1,
-            diagnostics,
-        })?;
+        self.write_source(path, &source)
+            .map_err(|diagnostics| WriteBatchFailure {
+                index: requests.len() - 1,
+                diagnostics,
+            })?;
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
 

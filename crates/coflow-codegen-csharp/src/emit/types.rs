@@ -50,8 +50,11 @@ pub(crate) fn csharp_native_delegate_type(
         .map(|parameter| csharp_type(&parameter.value_type, view))
         .collect::<Vec<_>>();
     if matches!(result, CftValueType::Unit) {
-        if arguments.is_empty() { "Action".to_string() }
-        else { format!("Action<{}>", arguments.join(", ")) }
+        if arguments.is_empty() {
+            "Action".to_string()
+        } else {
+            format!("Action<{}>", arguments.join(", "))
+        }
     } else {
         arguments.push(csharp_type(result, view));
         format!("Func<{}>", arguments.join(", "))

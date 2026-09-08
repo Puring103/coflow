@@ -3,8 +3,8 @@ use super::super::document_symbols::document_symbols;
 use super::super::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
     semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_KEY,
-    SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR, SEM_PROPERTY,
+    SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::super::text::{is_after_line_comment, is_inside_string};
 use super::super::uri::{hex_value, percent_decode};
@@ -171,10 +171,7 @@ fn type_aliases_are_symbols_semantic_declarations_and_definition_targets() {
     let symbols = document_symbols(document);
     assert!(symbols.iter().any(|symbol| symbol["name"] == "Count"));
 
-    let position = position_from_byte(
-        source,
-        source.rfind("Count").expect("alias use") + 1,
-    );
+    let position = position_from_byte(source, source.rfind("Count").expect("alias use") + 1);
     let definitions = definitions_at(&build, document, &position);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0]["range"]["start"]["line"], 0);

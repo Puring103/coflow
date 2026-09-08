@@ -11,8 +11,8 @@
 use coflow_language::cft::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
-use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_runtime::SourceLocation;
+use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,10 +45,7 @@ fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
 #[test]
 fn project_global_names_resolve_types_enums_dict_keys_and_references() -> TestResult {
     let schema = compile_schema_files(&[
-        (
-            "common.cft",
-            "enum Rarity { Common, Rare }",
-        ),
+        ("common.cft", "enum Rarity { Common, Rare }"),
         (
             "items.cft",
             r#"
@@ -79,9 +76,7 @@ Item {
     )?;
 
     assert_eq!(records.len(), 2);
-    assert!(records
-        .iter()
-        .all(|record| record.actual_type == "Item"));
+    assert!(records.iter().all(|record| record.actual_type == "Item"));
     assert_eq!(
         records[1].fields.get("backup"),
         Some(&LoadedValueDraft::OptionSome(Box::new(
@@ -99,11 +94,8 @@ fn cfd_rejects_removed_namespace_and_use_headers() {
         .expect_err("use is not syntax");
     assert_has_text_code(&unknown, CfdTextErrorCode::Syntax);
 
-    let conflict = parse_cfd_input_records(
-        &schema,
-        "namespace game; Item { value {} }",
-    )
-    .expect_err("namespace is not syntax");
+    let conflict = parse_cfd_input_records(&schema, "namespace game; Item { value {} }")
+        .expect_err("namespace is not syntax");
     assert_has_text_code(&conflict, CfdTextErrorCode::Syntax);
 }
 
