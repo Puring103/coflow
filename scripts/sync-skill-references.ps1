@@ -25,9 +25,19 @@ $Mappings = @(
         Url = "$PublicDocsBase/docs/reference/02-project-pipeline"
     }
     @{
+        Source = "website/docs/docs/reference/03-language/02-cfd.md"
+        Target = "skills/coflow-workflow/references/cfd.md"
+        Url = "$PublicDocsBase/docs/reference/03-language/02-cfd"
+    }
+    @{
         Source = "website/docs/docs/reference/05-data-model.md"
         Target = "skills/coflow-workflow/references/data-model.md"
         Url = "$PublicDocsBase/docs/reference/05-data-model"
+    }
+    @{
+        Source = "website/docs/docs/reference/07-codegen/01-csharp.md"
+        Target = "skills/coflow-workflow/references/csharp.md"
+        Url = "$PublicDocsBase/docs/reference/07-codegen/01-csharp"
     }
     @{
         Source = "website/docs/docs/reference/08-cli.md"

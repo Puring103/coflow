@@ -179,6 +179,46 @@ impl Project {
         }
     }
 
+    /// Returns the configured source roots whose changes can affect the project.
+    #[must_use]
+    pub fn source_roots(&self) -> Vec<PathBuf> {
+        let mut roots = self
+            .config
+            .schema
+            .paths()
+            .iter()
+            .map(|path| self.resolve_path(path))
+            .chain(
+                self.config
+                    .data
+                    .iter()
+                    .map(|source| self.resolve_path(source.path())),
+            )
+            .chain(
+                self.config
+                    .dimensions
+                    .values()
+                    .filter_map(|dimension| dimension.out_dir.as_deref())
+                    .map(|path| self.resolve_path(path)),
+            )
+            .map(|path| normalize_path(&path))
+            .collect::<Vec<_>>();
+        roots.sort();
+        roots.dedup();
+        roots
+    }
+
+    /// Reports whether a path is the project config or belongs to a declared source root.
+    #[must_use]
+    pub fn tracks_path(&self, path: &Path) -> bool {
+        let path = normalize_path(path);
+        path == normalize_path(&self.config_path)
+            || self
+                .source_roots()
+                .iter()
+                .any(|root| path_is_same_or_descendant(&path, root))
+    }
+
     /// Returns all schema files configured for this project.
     ///
     /// # Errors

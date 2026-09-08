@@ -282,14 +282,13 @@ impl LspValidationCore {
     }
 
     pub(crate) fn apply_watched_files(&mut self, uris: &[String]) -> Result<bool, String> {
-        let root = normalize_path(self.project.root_dir());
         let mut relevant = false;
         let mut config_changed = false;
         for uri in uris {
             let Some(path) = path_from_file_uri(uri).map(|path| normalize_path(&path)) else {
                 continue;
             };
-            if !path.starts_with(&root) {
+            if !self.project.tracks_path(&path) {
                 continue;
             }
             if is_project_config_path(&path) {

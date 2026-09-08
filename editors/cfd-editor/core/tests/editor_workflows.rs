@@ -17,6 +17,65 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn configured_external_sources_can_be_opened() {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-external-source-{id}"));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("remove old external-source project");
+    }
+    let project_root = root.join("project");
+    let shared_root = root.join("shared");
+    fs::create_dir_all(&project_root).expect("create project directory");
+    fs::create_dir_all(&shared_root).expect("create shared directory");
+    fs::write(
+        project_root.join("coflow.yaml"),
+        concat!(
+            "schema: ../shared/schema.cft\n",
+            "data: ../shared/items.cfd\n",
+            "codegen:\n",
+            "  - language: csharp\n",
+            "    dir: generated/csharp\n",
+        ),
+    )
+    .expect("write project config");
+    let schema_path = shared_root.join("schema.cft");
+    let data_path = shared_root.join("items.cfd");
+    fs::write(&schema_path, "type Item { value: int; }\n").expect("write external schema");
+    fs::write(&data_path, "one: Item { value: 1 }\n").expect("write external data");
+
+    let sessions = SessionStore::new().expect("create session store");
+    let bootstrap = sessions
+        .load_project(&project_root.join("coflow.yaml"))
+        .expect("load project with external sources");
+    let external_data = bootstrap
+        .first_source_file
+        .expect("external data is present in file tree");
+    assert_eq!(
+        sessions
+            .source_file_path(bootstrap.session_id, &external_data)
+            .expect("resolve external data source"),
+        data_path
+            .canonicalize()
+            .expect("canonicalize external data")
+    );
+    let external_schema = coflow_runtime::path_to_slash(
+        &schema_path
+            .canonicalize()
+            .expect("canonicalize external schema"),
+    );
+    assert_eq!(
+        sessions
+            .source_file_path(bootstrap.session_id, &external_schema)
+            .expect("resolve external schema source"),
+        schema_path
+            .canonicalize()
+            .expect("canonicalize external schema")
+    );
+
+    fs::remove_dir_all(&root).expect("remove external-source project");
+}
+
 fn array_project() -> (PathBuf, PathBuf) {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("cfd-editor-array-workflow-{id}"));

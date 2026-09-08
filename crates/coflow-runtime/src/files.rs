@@ -109,6 +109,73 @@ pub fn build_file_tree(
     roots
 }
 
+pub(crate) fn build_external_source_subtree(
+    source_path: &Path,
+    display_path: &str,
+    in_sources: &BTreeSet<String>,
+    in_schema: bool,
+    in_data: bool,
+) -> Option<FileTreeNode> {
+    let name = source_path.file_name()?.to_string_lossy().to_string();
+    if source_path.is_file() {
+        return Some(FileTreeNode {
+            name,
+            path: display_path.to_string(),
+            is_dir: false,
+            in_sources: true,
+            in_schema,
+            in_data,
+            first_source_descendant: Some(display_path.to_string()),
+            children: Vec::new(),
+        });
+    }
+    if !source_path.is_dir() {
+        return None;
+    }
+
+    let expected_extension = if in_schema { "cft" } else { "cfd" };
+    let mut children = Vec::new();
+    for entry in walkdir::WalkDir::new(source_path)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some(expected_extension)
+        {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(source_path).ok()?;
+        let parts = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        insert_dimension_path(&mut children, &parts, 0, display_path, in_sources);
+    }
+    set_membership(&mut children, in_schema, in_data);
+    sort_tree(&mut children);
+    annotate_first_source_descendant(&mut children);
+    Some(FileTreeNode {
+        name,
+        path: display_path.to_string(),
+        is_dir: true,
+        in_sources: true,
+        in_schema,
+        in_data,
+        first_source_descendant: first_source_descendant(&children),
+        children,
+    })
+}
+
+fn set_membership(nodes: &mut [FileTreeNode], in_schema: bool, in_data: bool) {
+    for node in nodes {
+        node.in_schema = in_schema;
+        node.in_data = in_data;
+        node.in_sources = true;
+        set_membership(&mut node.children, in_schema, in_data);
+    }
+}
+
 pub fn build_dimension_subtree(
     root: &Path,
     group_name: String,
@@ -312,6 +379,10 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
             sort_tree(&mut node.children);
         }
     }
+}
+
+pub(crate) fn sort_file_tree(nodes: &mut Vec<FileTreeNode>) {
+    sort_tree(nodes);
 }
 
 fn annotate_first_source_descendant(nodes: &mut [FileTreeNode]) {

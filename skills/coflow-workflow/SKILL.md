@@ -37,6 +37,8 @@ cargo run -- <command>
 - 工作流、CI、团队协作和 AI agent 最佳实践：读 `references/best-practices.md`。
 - 项目配置字段和路径语义：读 `references/project-config.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/01-project-config>。
 - 项目 pipeline、check/build/codegen 阶段：读 `references/project-pipeline.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/02-project-pipeline>。
+- CFD 文件语法和记录写法：读 `references/cfd.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/03-language/02-cfd>。
+- C# 生成 API、Module 加载、Host 绑定、编译和查询：读 `references/csharp.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/07-codegen/01-csharp>。
 - CLI 命令行为：读 `references/cli.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/08-cli>。
 - 诊断格式和处理方式：读 `references/diagnostics.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/09-diagnostics/01-diagnostics>。
 - CFD 数据模型阶段语义：读 `references/data-model.md`，公开链接 <https://puring103.github.io/coflow/docs/reference/05-data-model>。
