@@ -37,7 +37,7 @@ use diagnostics::cli_error;
 
 use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, DiffArgs, FormatArgs,
-    InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs, SkillArgs,
+    InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SkillArgs,
     SkillCommand, SkillScopeArgs,
 };
 

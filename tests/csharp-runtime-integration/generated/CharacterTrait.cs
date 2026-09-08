@@ -2,6 +2,9 @@
 #nullable enable
 using System;
 
+namespace Game.Config;
+
+
 [Flags]
 public enum CharacterTrait
 {

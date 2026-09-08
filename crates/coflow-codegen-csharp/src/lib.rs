@@ -74,6 +74,7 @@ fn build_csharp_project(
     schema: &CftSchema,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
+    namespace: &str,
 ) -> Result<model::CsharpProject, CsharpCodegenError> {
     let unsupported = schema
         .all_types()
@@ -96,7 +97,14 @@ fn build_csharp_project(
     if let Some(message) = unsupported {
         return Err(CsharpCodegenError::new(message));
     }
-    ir::build_project(schema, id_as_enum_variants, non_empty_tables)
+    for segment in namespace.split('.').filter(|_| !namespace.is_empty()) {
+        if let Some(error) = names::csharp_ident_error(segment) {
+            return Err(CsharpCodegenError::new(format!(
+                "invalid C# namespace `{namespace}`: {error}"
+            )));
+        }
+    }
+    ir::build_project(schema, id_as_enum_variants, non_empty_tables, namespace)
 }
 
 /// Generates format-independent C# declarations.
@@ -121,15 +129,16 @@ pub fn generate_csharp_cfd(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_cfd_with_variants(schema, id_as_enum_variants, non_empty_tables)
+    generate_csharp_cfd_with_variants(schema, id_as_enum_variants, non_empty_tables, "")
 }
 
 fn generate_csharp_cfd_with_variants(
     schema: &CftSchema,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
+    namespace: &str,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables)?;
+    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables, namespace)?;
     let mut files = render::render_common_project(&project)?;
     files.push(GeneratedFile {
         relative_path: PathBuf::from("Coflow.Metadata.cs"),
@@ -157,7 +166,7 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
 
     fn generate(&self, input: CfdCodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError> {
         let raw = input.target.options.clone();
-        let _options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
+        let options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
             CodegenError::Message(format!("invalid C# output options: {error}"))
         })?;
         let model = input.model.ok_or_else(|| {
@@ -167,8 +176,13 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
         })?;
         let id_as_enum_variants = id_as_enum_variants(input.schema, model, input.id_as_enum_values)
             .map_err(CodegenError::Message)?;
-        let files = generate_csharp_cfd_with_variants(input.schema, id_as_enum_variants, None)
-            .map_err(|error| CodegenError::Message(error.to_string()))?;
+        let files = generate_csharp_cfd_with_variants(
+            input.schema,
+            id_as_enum_variants,
+            None,
+            &options.namespace,
+        )
+        .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
                 .into_iter()
@@ -227,13 +241,15 @@ fn generate_common_with_id_as_enum_variants(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables)?;
+    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables, "")?;
     render::render_common_project(&project)
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct CsharpOutputOptionsConfig {}
+struct CsharpOutputOptionsConfig {
+    namespace: String,
+}
 
 #[cfg(test)]
 mod tests;

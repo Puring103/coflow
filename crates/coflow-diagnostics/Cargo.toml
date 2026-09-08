@@ -1,6 +1,6 @@
 [package]
 name = "coflow-diagnostics"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 description = "Shared diagnostic taxonomy for Coflow."
 license = "Apache-2.0"

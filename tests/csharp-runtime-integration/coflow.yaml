@@ -5,3 +5,4 @@ data:
 codegen:
   - language: csharp
     dir: generated
+    namespace: Game.Config

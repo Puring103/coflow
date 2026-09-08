@@ -5,141 +5,144 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public sealed partial class Character : IEquatable<Character>
 {
-    public static CoflowEnumTableToken<global::Character, global::CharacterId> Table { get; } = new();
+    public static CoflowEnumTableToken<global::Game.Config.Character, global::Game.Config.CharacterId> Table { get; } = new();
 
 
     internal CoflowValueId _coflowId;
 
 
-    public global::CharacterId Id { get; internal set; } = default!;
+    public global::Game.Config.CharacterId Id { get; internal set; } = default!;
 
 
-    internal string _coflowName = default!;
+    internal string _coflowname = default!;
 
-    public string Name
+    public string name
     {
         get
         {
-            return _coflowName;
+            return _coflowname;
         }
     }
 
 
-    internal global::CharacterClass _coflowClass = default!;
+    internal global::Game.Config.CharacterClass _coflowcharacterClass = default!;
 
-    public global::CharacterClass Class
+    public global::Game.Config.CharacterClass characterClass
     {
         get
         {
-            return _coflowClass;
+            return _coflowcharacterClass;
         }
     }
 
 
-    internal global::CharacterTrait _coflowTraits = default!;
+    internal global::Game.Config.CharacterTrait _coflowtraits = default!;
 
-    public global::CharacterTrait Traits
+    public global::Game.Config.CharacterTrait traits
     {
         get
         {
-            return _coflowTraits;
+            return _coflowtraits;
         }
     }
 
 
-    internal bool _coflowEnabled = default!;
+    internal bool _coflowenabled = default!;
 
-    public bool Enabled
+    public bool enabled
     {
         get
         {
-            return _coflowEnabled;
+            return _coflowenabled;
         }
     }
 
 
-    internal global::Stats _coflowStats = default!;
+    internal global::Game.Config.Stats _coflowstats = default!;
 
-    public global::Stats Stats
+    public global::Game.Config.Stats stats
     {
         get
         {
-            return _coflowStats;
+            return _coflowstats;
         }
     }
 
 
-    internal IReadOnlyList<string> _coflowTags = default!;
+    internal IReadOnlyList<string> _coflowtags = default!;
 
-    public IReadOnlyList<string> Tags
+    public IReadOnlyList<string> tags
     {
         get
         {
-            return _coflowTags;
+            return _coflowtags;
         }
     }
 
 
-    internal IReadOnlyDictionary<string, long> _coflowAttributes = default!;
+    internal IReadOnlyDictionary<string, long> _coflowattributes = default!;
 
-    public IReadOnlyDictionary<string, long> Attributes
+    public IReadOnlyDictionary<string, long> attributes
     {
         get
         {
-            return _coflowAttributes;
+            return _coflowattributes;
         }
     }
 
 
-    internal global::Ability _coflowPrimaryAbility = default!;
+    internal global::Game.Config.Ability _coflowprimaryAbility = default!;
 
-    public global::Ability PrimaryAbility
+    public global::Game.Config.Ability primaryAbility
     {
         get
         {
-            return _coflowPrimaryAbility;
+            return _coflowprimaryAbility;
         }
     }
 
 
-    internal IReadOnlyList<global::Ability> _coflowAbilities = default!;
+    internal IReadOnlyList<global::Game.Config.Ability> _coflowabilities = default!;
 
-    public IReadOnlyList<global::Ability> Abilities
+    public IReadOnlyList<global::Game.Config.Ability> abilities
     {
         get
         {
-            return _coflowAbilities;
+            return _coflowabilities;
         }
     }
 
 
-    internal Result<long, string> _coflowStatus = default!;
+    internal Result<long, string> _coflowstatus = default!;
 
-    public Result<long, string> Status
+    public Result<long, string> status
     {
         get
         {
-            return _coflowStatus;
+            return _coflowstatus;
         }
     }
 
 
-    internal Option<global::Character> _coflowFallback = default!;
+    internal Option<global::Game.Config.Character> _coflowfallback = default!;
 
-    public Option<global::Character> Fallback
+    public Option<global::Game.Config.Character> fallback
     {
         get
         {
-            return _coflowFallback;
+            return _coflowfallback;
         }
     }
 
 
 
 
-    public long Power(global::Coflow.Runtime.Coflow coflow, long bonus)
+    public long power(global::Coflow.Runtime.Coflow coflow, long bonus)
     {
         return CoflowInvoker.Invoke<long, long>(
             coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(11), bonus);
@@ -149,32 +152,32 @@ public sealed partial class Character : IEquatable<Character>
 
 
     public Character(
-        global::CharacterId id,
+        global::Game.Config.CharacterId id,
         string name,
-        global::CharacterClass classValue,
-        global::CharacterTrait traits,
+        global::Game.Config.CharacterClass characterClass,
+        global::Game.Config.CharacterTrait traits,
         bool enabled,
-        global::Stats stats,
+        global::Game.Config.Stats stats,
         IReadOnlyList<string> tags,
         IReadOnlyDictionary<string, long> attributes,
-        global::Ability primaryAbility,
-        IReadOnlyList<global::Ability> abilities,
+        global::Game.Config.Ability primaryAbility,
+        IReadOnlyList<global::Game.Config.Ability> abilities,
         Result<long, string> status,
-        Option<global::Character> fallback
+        Option<global::Game.Config.Character> fallback
     )
     {
-        Id = id;
-        _coflowName = name;
-        _coflowClass = classValue;
-        _coflowTraits = traits;
-        _coflowEnabled = enabled;
-        _coflowStats = stats;
-        _coflowTags = tags;
-        _coflowAttributes = attributes;
-        _coflowPrimaryAbility = primaryAbility;
-        _coflowAbilities = abilities;
-        _coflowStatus = status;
-        _coflowFallback = fallback;
+        this.Id = id;
+        this._coflowname = name;
+        this._coflowcharacterClass = characterClass;
+        this._coflowtraits = traits;
+        this._coflowenabled = enabled;
+        this._coflowstats = stats;
+        this._coflowtags = tags;
+        this._coflowattributes = attributes;
+        this._coflowprimaryAbility = primaryAbility;
+        this._coflowabilities = abilities;
+        this._coflowstatus = status;
+        this._coflowfallback = fallback;
     }
 
     internal static Character WithCoflowValueId(Character value, CoflowValueId coflowId)

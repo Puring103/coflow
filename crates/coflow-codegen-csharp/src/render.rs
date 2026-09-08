@@ -166,6 +166,7 @@ pub fn render_common_project(
     for schema_enum in &project.enums {
         let mut context = Context::new();
         context.insert("enum", schema_enum);
+        context.insert("project", project);
         files.push(GeneratedFile {
             relative_path: PathBuf::from(&schema_enum.relative_path),
             contents: render(&tera, "enum.cs.tera", &context)?,
@@ -195,6 +196,7 @@ pub fn render_cfd_metadata_template(project: &CsharpProject) -> Result<String, C
     let view = metadata_project(project)?;
     let mut context = Context::new();
     context.insert("metadata", &view);
+    context.insert("project", project);
     context.insert("enums", &view.enums);
     context.insert("abstract_types", &view.abstract_types);
     context.insert("types", &view.types);

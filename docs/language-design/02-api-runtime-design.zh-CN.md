@@ -36,7 +36,7 @@ coflow.RemoveModule(core);
 
 ## 2. Schema 与生成边界
 
-生成类型直接位于 C# global namespace。仅供生成代码实现 Runtime 协议的类型位于
+生成类型、Schema 绑定和维度类型位于 C# 目标的 `namespace` 配置指定的命名空间，未配置或为空字符串时使用 global namespace。命名空间只影响 C# 名称，不改变 CFT/CFD 源名称和 Runtime 查找标识。仅供生成代码实现 Runtime 协议的类型位于
 `Coflow.Runtime.CompilerServices`，并通过编辑器隐藏属性避免成为应用调用面。
 
 每个 Schema 生成一份静态描述：

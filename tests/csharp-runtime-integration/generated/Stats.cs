@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public readonly partial struct Stats : IEquatable<Stats>
 {
 

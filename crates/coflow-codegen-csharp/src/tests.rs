@@ -693,3 +693,44 @@ fn registry_generator_returns_safe_code_artifacts() {
     assert!(registry.get("csharp").is_some());
     assert!(registry.register(CsharpCfdCodeGenerator).is_err());
 }
+
+#[test]
+fn namespace_qualifies_references_without_changing_source_names() {
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("main"),
+        "enum Rarity { Common } type Item { rarity: Rarity = Rarity::Common; @localized title: string; target: Option<&Item> = None; }")]);
+    let dimensions =
+        CftDimensionInputs::try_new([("language", vec!["en".into()])]).expect("dimensions");
+    let schema = build_schema(&modules, &dimensions).expect("schema");
+    let files = generate_csharp_cfd_with_variants(&schema, BTreeMap::new(), None, "Game.Config")
+        .expect("generate namespaced code");
+    assert!(files
+        .iter()
+        .all(|file| file.contents.contains("namespace Game.Config;")));
+    let output = all(&files);
+    assert!(output.contains("typeof(global::Game.Config.Item)"));
+    assert!(output.contains("global::Game.Config.Rarity.Common"));
+    assert!(output.contains("Option<global::Game.Config.Item>"));
+    assert!(output.contains("DeclaredType => \"Item\""));
+    assert!(!output.contains("global::Item"));
+    assert!(files
+        .iter()
+        .any(|file| file.relative_path == std::path::Path::new("Dimensions.cs")));
+}
+
+#[test]
+fn invalid_namespaces_are_rejected() {
+    let schema = schema("type Item { value: int; }");
+    for namespace in [
+        "Game..Config",
+        ".Game",
+        "Game.",
+        "Game.class",
+        "Game Config",
+        "1Game",
+        "Game;class Injected {}",
+    ] {
+        let error = generate_csharp_cfd_with_variants(&schema, BTreeMap::new(), None, namespace)
+            .expect_err("invalid namespace");
+        assert!(error.to_string().contains("invalid C# namespace"));
+    }
+}

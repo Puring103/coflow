@@ -2,6 +2,9 @@
 #nullable enable
 using System;
 
+namespace Game.Config;
+
+
 public enum CharacterId
 {
     Arcanist = 1,

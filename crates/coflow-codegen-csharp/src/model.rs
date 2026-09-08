@@ -2,6 +2,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct CsharpProject {
+    pub namespace: String,
     pub dimensions: Vec<CsharpDimension>,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
