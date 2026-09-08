@@ -2,6 +2,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Running;
 using Coflow.Runtime;
+using Game.Config;
 
 BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
 
