@@ -77,9 +77,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
 
         if pending_blank_line {
             let preserve_function_blank = function_bodies.is_inside();
-            if preserve_function_blank
-                || (!is_closing && !last_output_line_opens_block(&output))
-            {
+            if preserve_function_blank || (!is_closing && !last_output_line_opens_block(&output)) {
                 ensure_blank_line(&mut output);
             }
             pending_blank_line = false;
@@ -161,9 +159,8 @@ impl FunctionScopes {
                     self.return_type_started = false;
                 }
                 "{" => {
-                    let is_function = self.pending_signature
-                        && self.pending_arrow
-                        && self.return_type_started;
+                    let is_function =
+                        self.pending_signature && self.pending_arrow && self.return_type_started;
                     self.braces.push(is_function);
                     if is_function {
                         self.pending_signature = false;
@@ -197,10 +194,7 @@ fn collapse_logical_lines(source: &str) -> String {
     while index < lines.len() {
         let mut line = lines[index].trim().to_string();
 
-        loop {
-            let Some(code) = uncommented_code(&line) else {
-                break;
-            };
+        while let Some(code) = uncommented_code(&line) {
             let join_field_value = joinable_colon_prefix(code);
             let join_arrow_result = code.ends_with("->");
             let join_closing_arrow = code.ends_with(')');
@@ -323,8 +317,8 @@ fn line_requires_continuation(line: &str) -> bool {
         return false;
     }
     [
-        ":", "=", "->", "=>", "+", "-", "*", "/", "%", "&&", "||", "&", "|", "^",
-        "==", "!=", "<", ">", "<=", ">=", ".",
+        ":", "=", "->", "=>", "+", "-", "*", "/", "%", "&&", "||", "&", "|", "^", "==", "!=", "<",
+        ">", "<=", ">=", ".",
     ]
     .iter()
     .any(|operator| code.ends_with(operator))
@@ -415,8 +409,7 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
                 braces.push((kind, bracket_depth));
                 output.push_str(text);
                 if kind != BraceKind::Inline
-                    && next_token_on_line(&tokens, source, index)
-                        .is_some_and(|next| next != "}")
+                    && next_token_on_line(&tokens, source, index).is_some_and(|next| next != "}")
                 {
                     push_line_break(&mut output);
                 }
@@ -429,9 +422,8 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
                 output.push_str(text);
                 just_closed_structural = kind != BraceKind::Inline;
                 if kind != BraceKind::Inline
-                    && next_token_on_line(&tokens, source, index).is_some_and(|next| {
-                        !matches!(next, "," | ";" | ")" | "]" | "}" | "else")
-                    })
+                    && next_token_on_line(&tokens, source, index)
+                        .is_some_and(|next| !matches!(next, "," | ";" | ")" | "]" | "}" | "else"))
                 {
                     push_line_break(&mut output);
                 }
@@ -619,9 +611,7 @@ fn is_cfd_record_start(line: &str) -> bool {
 fn is_grouped_record_start(line: &str) -> bool {
     let line = line.trim();
     let header = line.strip_suffix('{').map(str::trim).unwrap_or_default();
-    !header.contains(':')
-        && !header.is_empty()
-        && is_identifier(header)
+    !header.contains(':') && !header.is_empty() && is_identifier(header)
 }
 
 // 行内空白规则集中穷举 token，避免同一符号在多个阶段重复改写。
@@ -741,8 +731,8 @@ fn normalize_inline_spacing(line: &str) -> String {
                 pending_space = false;
                 tight_right = true;
             }
-            "=" | "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||"
-            | "+=" | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" | "<" | ">" => {
+            "=" | "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||" | "+="
+            | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" | "<" | ">" => {
                 push_spaced_operator(&mut output, text);
                 pending_space = true;
                 tight_right = false;
@@ -790,10 +780,40 @@ fn is_binary_operator_token(tokens: &[LosslessToken], source: &str, index: usize
     previous.is_some_and(|token| {
         !matches!(
             token,
-            "(" | "[" | "{" | ":" | "," | "=" | "+" | "-" | "*" | "/" | "%"
-                | "!" | "&" | "|" | "^" | "<" | ">" | "->" | "=>" | ".." | "..="
-                | "<=" | ">=" | "==" | "!=" | "&&" | "||" | "+=" | "-=" | "*="
-                | "/=" | "<<" | ">>" | "**" | "//"
+            "(" | "["
+                | "{"
+                | ":"
+                | ","
+                | "="
+                | "+"
+                | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "!"
+                | "&"
+                | "|"
+                | "^"
+                | "<"
+                | ">"
+                | "->"
+                | "=>"
+                | ".."
+                | "..="
+                | "<="
+                | ">="
+                | "=="
+                | "!="
+                | "&&"
+                | "||"
+                | "+="
+                | "-="
+                | "*="
+                | "/="
+                | "<<"
+                | ">>"
+                | "**"
+                | "//"
         )
     }) && next.is_some_and(|token| !matches!(token, ")" | "]" | "}" | "," | ";"))
 }
@@ -858,10 +878,7 @@ impl DelimiterIndent {
         let mut projected = self.clone();
         let mut touched_groups = 0usize;
         let mut last_group = None;
-        for ch in line
-            .chars()
-            .take_while(|ch| matches!(ch, '}' | ']' | ')'))
-        {
+        for ch in line.chars().take_while(|ch| matches!(ch, '}' | ']' | ')')) {
             let group = projected.groups.len().checked_sub(1);
             if group.is_some() && group != last_group {
                 touched_groups += 1;

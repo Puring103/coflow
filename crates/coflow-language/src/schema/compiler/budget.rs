@@ -3,11 +3,11 @@ use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
 use crate::module::ModuleId;
 use crate::schema::LocatedBudgetError;
+use crate::source::Span;
 use crate::syntax::ast::{
     Annotation, CheckBlock, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
     CheckStmt, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use crate::source::Span;
 
 impl SymbolTable<'_> {
     pub(super) fn validate_structure(&mut self, budget: &mut StructuralBudget) -> bool {
@@ -30,7 +30,6 @@ impl SymbolTable<'_> {
         }
         true
     }
-
 }
 
 fn validate_module(
@@ -150,9 +149,7 @@ fn walk_value_type(
     while let Some((ty, parent)) = pending.pop() {
         let cursor = enter(budget, module, ty.span, parent, StructureKind::TypeRef)?;
         match &ty.kind {
-            TypeRefKind::Ref(inner)
-            | TypeRefKind::Array(inner)
-            | TypeRefKind::Option(inner) => {
+            TypeRefKind::Ref(inner) | TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
                 pending.push((inner, cursor));
             }
             TypeRefKind::Dict(key, value) | TypeRefKind::Result(key, value) => {

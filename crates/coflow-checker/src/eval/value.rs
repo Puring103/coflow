@@ -1,10 +1,8 @@
+use crate::limits::{EvaluationBudget, EvaluationBudgetExceeded, EvaluationCursor, EvaluationKind};
+use coflow_language::cft::{CftConstValue, CftValueType, EnumName, FieldName};
 use coflow_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdRecordId, CfdValue,
 };
-use crate::limits::{
-    EvaluationBudget, EvaluationBudgetExceeded, EvaluationCursor, EvaluationKind,
-};
-use coflow_language::cft::{CftConstValue, CftValueType, EnumName, FieldName};
 use std::collections::BTreeMap;
 
 use super::collections::{EvalEntries, EvalItems};
@@ -56,9 +54,7 @@ impl<'a> EvalValue<'a> {
             CftConstValue::Int(value) => Self::Temporary(TemporaryValue::Int(*value)),
             CftConstValue::Float(value) => Self::Temporary(TemporaryValue::Float(*value)),
             CftConstValue::Bool(value) => Self::Temporary(TemporaryValue::Bool(*value)),
-            CftConstValue::String(value) => {
-                Self::Temporary(TemporaryValue::String(value.clone()))
-            }
+            CftConstValue::String(value) => Self::Temporary(TemporaryValue::String(value.clone())),
             CftConstValue::Enum {
                 enum_name,
                 variant,
@@ -446,9 +442,8 @@ pub(crate) fn model_value<'a>(
 }
 
 pub(super) fn transparent_value(mut value: &CfdValue) -> &CfdValue {
-    while let CfdValue::OptionSome(inner)
-    | CfdValue::ResultOk(inner)
-    | CfdValue::ResultErr(inner) = value
+    while let CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) =
+        value
     {
         value = inner;
     }
@@ -492,8 +487,12 @@ pub(crate) enum ComparableKey {
 }
 
 pub(crate) fn values_equal(lhs: &EvalValue<'_>, rhs: &EvalValue<'_>) -> bool {
-    let is_none = |value: &EvalValue<'_>| matches!(value,
-        EvalValue::Model(CfdValue::OptionNone) | EvalValue::Constant(CftConstValue::OptionNone));
+    let is_none = |value: &EvalValue<'_>| {
+        matches!(
+            value,
+            EvalValue::Model(CfdValue::OptionNone) | EvalValue::Constant(CftConstValue::OptionNone)
+        )
+    };
     if is_none(lhs) || is_none(rhs) {
         return is_none(lhs) && is_none(rhs);
     }

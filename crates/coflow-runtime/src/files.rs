@@ -102,14 +102,7 @@ pub fn build_file_tree(
 
     let mut roots: Vec<FileTreeNode> = Vec::new();
     for (parts, terminal_is_dir) in entries {
-        insert_path(
-            &mut roots,
-            &parts,
-            0,
-            "",
-            terminal_is_dir,
-            &source_sets,
-        );
+        insert_path(&mut roots, &parts, 0, "", terminal_is_dir, &source_sets);
     }
     sort_tree(&mut roots);
     annotate_first_source_descendant(&mut roots);
@@ -224,11 +217,8 @@ fn insert_path(
         }
         return;
     }
-    let (in_schema, in_data) = source_membership(
-        &path,
-        source_sets.schema_roots,
-        source_sets.data_roots,
-    );
+    let (in_schema, in_data) =
+        source_membership(&path, source_sets.schema_roots, source_sets.data_roots);
     let in_src = is_dir || source_sets.in_sources.contains(&path);
     let mut node = FileTreeNode {
         name: name.clone(),
@@ -363,8 +353,14 @@ mod tests {
             &BTreeSet::new(),
         );
 
-        let schema = tree.iter().find(|node| node.path == "schema").expect("schema root");
-        let data = tree.iter().find(|node| node.path == "data").expect("data root");
+        let schema = tree
+            .iter()
+            .find(|node| node.path == "schema")
+            .expect("schema root");
+        let data = tree
+            .iter()
+            .find(|node| node.path == "data")
+            .expect("data root");
         assert!(schema.in_schema && !schema.in_data);
         assert_eq!(schema.children[0].children[0].path, "schema/nested/empty");
         assert!(data.in_data && !data.in_schema);

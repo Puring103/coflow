@@ -24,7 +24,9 @@ mod validation;
 
 pub use crate::api::path_to_slash;
 pub use config::{DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig};
-pub use config_write::{add_project_input, create_project_file, delete_project_entry, ProjectInputKind};
+pub use config_write::{
+    add_project_input, create_project_file, delete_project_entry, ProjectInputKind,
+};
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{

@@ -2,8 +2,8 @@ use super::state::{FieldOrigin, TypeInfo};
 use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::limits::{StructureKind, TraversalCursor};
-use crate::schema::AnalysisBudget;
 use crate::module::ModuleId;
+use crate::schema::AnalysisBudget;
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,8 +51,7 @@ impl<'a> ResolvedTypes<'a> {
                         let resolved = parent.name.clone();
                         self.types.contains_key(&resolved).then_some(resolved)
                     })
-                })
-                else {
+                }) else {
                     break None;
                 };
 

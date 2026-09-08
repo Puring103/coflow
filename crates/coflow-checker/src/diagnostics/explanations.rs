@@ -171,9 +171,13 @@ pub(crate) fn explain_false_expr(
             predicate,
         } => match predicate {
             coflow_language::cft::CftSchemaTypePredicate::Some { .. } => Some(
-                CheckExplanation::new(CfdErrorCode::CheckTypePredicateFailed, rendered, value.location.clone())
-                    .with_actual("None")
-                    .with_expected("Some"),
+                CheckExplanation::new(
+                    CfdErrorCode::CheckTypePredicateFailed,
+                    rendered,
+                    value.location.clone(),
+                )
+                .with_actual("None")
+                .with_expected("Some"),
             ),
             coflow_language::cft::CftSchemaTypePredicate::Type(type_name) => {
                 let actual = trace
@@ -211,16 +215,20 @@ fn explain_failed_comparison(
         (&failure.rhs_expression, failure.rhs.display.as_deref())
     };
     Some(
-        CheckExplanation::new(CfdErrorCode::CheckComparisonFailed, rendered.to_string(), location)
-            .with_actual(format!(
-                "{actual_expr} = {}",
-                actual_value.unwrap_or("<unknown>")
-            ))
-            .with_expected(format!(
-                "{} {}",
-                cmp_op_str(failure.op),
-                failure.rhs_expression
-            )),
+        CheckExplanation::new(
+            CfdErrorCode::CheckComparisonFailed,
+            rendered.to_string(),
+            location,
+        )
+        .with_actual(format!(
+            "{actual_expr} = {}",
+            actual_value.unwrap_or("<unknown>")
+        ))
+        .with_expected(format!(
+            "{} {}",
+            cmp_op_str(failure.op),
+            failure.rhs_expression
+        )),
     )
 }
 

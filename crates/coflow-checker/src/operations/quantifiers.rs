@@ -1,5 +1,5 @@
-use coflow_model::{CfdDataModel, CfdErrorCode};
 use crate::limits::EvaluationBudget;
+use coflow_model::{CfdDataModel, CfdErrorCode};
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};

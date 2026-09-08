@@ -1,5 +1,5 @@
-use coflow_model::CfdRecordId;
 use coflow_language::cft::{CftSchema, CheckStatementId, DimensionName, VariantName};
+use coflow_model::CfdRecordId;
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

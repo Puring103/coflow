@@ -21,7 +21,9 @@ pub use queries::CftEnumValue;
 pub use value_type::{CftFunctionParameter, CftValueType};
 
 use self::compiler::SchemaDeclarations;
-use crate::limits::{BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
+use crate::limits::{
+    BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor,
+};
 use crate::module::ModuleId;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode, Span};
 use std::collections::{BTreeMap, BTreeSet};

@@ -167,9 +167,8 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
         })?;
         let id_as_enum_variants = id_as_enum_variants(input.schema, model, input.id_as_enum_values)
             .map_err(CodegenError::Message)?;
-        let files =
-            generate_csharp_cfd_with_variants(input.schema, id_as_enum_variants, None)
-                .map_err(|error| CodegenError::Message(error.to_string()))?;
+        let files = generate_csharp_cfd_with_variants(input.schema, id_as_enum_variants, None)
+            .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
                 .into_iter()

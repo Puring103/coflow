@@ -2,8 +2,8 @@ use super::CheckTypeAnalyzer;
 use crate::diagnostics::CftErrorCode;
 use crate::schema::compiler::inferred_type::{ordered_comparable, types_comparable, InferredType};
 use crate::schema::CftValueType;
-use crate::syntax::ast::{BinOp, CmpOp, UnaryOp};
 use crate::source::Span;
+use crate::syntax::ast::{BinOp, CmpOp, UnaryOp};
 
 impl CheckTypeAnalyzer<'_, '_> {
     pub(super) fn check_unary(
@@ -135,11 +135,19 @@ impl CheckTypeAnalyzer<'_, '_> {
         span: Span,
     ) -> InferredType {
         let ok = match op {
-            CmpOp::Eq | CmpOp::Ne => types_comparable(lhs, rhs) || matches!(
-                (lhs, rhs),
-                (InferredType::OptionNone, InferredType::OptionNone | InferredType::Value(CftValueType::Option(_)))
-                | (InferredType::Value(CftValueType::Option(_)), InferredType::OptionNone)
-            ),
+            CmpOp::Eq | CmpOp::Ne => {
+                types_comparable(lhs, rhs)
+                    || matches!(
+                        (lhs, rhs),
+                        (
+                            InferredType::OptionNone,
+                            InferredType::OptionNone | InferredType::Value(CftValueType::Option(_))
+                        ) | (
+                            InferredType::Value(CftValueType::Option(_)),
+                            InferredType::OptionNone
+                        )
+                    )
+            }
             CmpOp::Lt | CmpOp::Le | CmpOp::Gt | CmpOp::Ge => ordered_comparable(lhs, rhs),
         };
         if !ok && !lhs.is_unknown() && !rhs.is_unknown() {

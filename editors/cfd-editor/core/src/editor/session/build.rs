@@ -34,9 +34,17 @@ pub(super) fn build_session(
     let project_root = project.root_dir().to_path_buf();
     let schema_files = project
         .schema_sources()
-        .map_err(|err| EditorError::project(prefixed_diagnostics("failed to discover schema", &err)))?
+        .map_err(|err| {
+            EditorError::project(prefixed_diagnostics("failed to discover schema", &err))
+        })?
         .into_iter()
-        .filter_map(|source| source.canonical_path.strip_prefix(&project_root).ok().map(coflow_runtime::path_to_slash))
+        .filter_map(|source| {
+            source
+                .canonical_path
+                .strip_prefix(&project_root)
+                .ok()
+                .map(coflow_runtime::path_to_slash)
+        })
         .collect();
     let runtime = Runtime::new();
     let language_server = coflow_lsp::EmbeddedLsp::new(project.clone());

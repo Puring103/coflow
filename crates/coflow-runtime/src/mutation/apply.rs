@@ -69,7 +69,10 @@ fn execute_generation_mutation<F>(
     prepare_additional_files: F,
 ) -> MutationReport
 where
-    F: FnOnce(&ProjectSession, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+    F: FnOnce(
+        &ProjectSession,
+        &[MutationAppliedOp],
+    ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
 {
     let mut staged = Vec::with_capacity(executable.len());
     let mut cursor = 0;
@@ -94,10 +97,7 @@ where
                         .zip(outcomes)
                         .map(|(item, outcome)| applied_op(&item.planned, outcome)),
                 ),
-                Err(MutationBatchFailure {
-                    index,
-                    diagnostics,
-                }) => {
+                Err(MutationBatchFailure { index, diagnostics }) => {
                     let failed_item = &executable[cursor + index.min(end - cursor - 1)];
                     failed.push(failed_op(&failed_item.planned, diagnostics));
                     return report_without_publish(session, false, failed);

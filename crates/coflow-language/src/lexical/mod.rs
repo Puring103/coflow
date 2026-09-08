@@ -2,12 +2,12 @@
 
 mod trivia;
 
-pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
 pub(crate) use trivia::{
     decode_simple_escape, scan_balanced_delimiter, scan_number_literal, scan_string_literal,
     scan_trivia, validate_formatted_string_literal, validate_number_literal, DelimiterNesting,
     NumberLiteralError, StringLiteralError,
 };
+pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
 
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -153,14 +153,16 @@ mod tests {
     #[test]
     fn rejects_all_target_language_reserved_identifiers() {
         for name in [
-            "fn", "var", "return", "if", "else", "match", "for", "while", "break",
-            "continue", "None", "Some", "Ok", "Err", "Option",
-            "Result", "Host", "alert", "records",
+            "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
+            "None", "Some", "Ok", "Err", "Option", "Result", "Host", "alert", "records",
         ] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }
         for name in ["namespace", "use", "as"] {
-            assert!(is_cft_identifier(name), "`{name}` is an ordinary identifier");
+            assert!(
+                is_cft_identifier(name),
+                "`{name}` is an ordinary identifier"
+            );
         }
     }
 }

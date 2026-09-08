@@ -190,10 +190,13 @@ impl Diagnostic {
             .primary
             .as_ref()
             .map(|label| source_location_display_path(&label.location));
-        let range = self.primary.as_ref().and_then(|label| match &label.location {
-            SourceLocation::FileSpan { .. } => Some(label.location.text_range()),
-            SourceLocation::ProjectConfig { .. } | SourceLocation::Artifact { .. } => None,
-        });
+        let range = self
+            .primary
+            .as_ref()
+            .and_then(|label| match &label.location {
+                SourceLocation::FileSpan { .. } => Some(label.location.text_range()),
+                SourceLocation::ProjectConfig { .. } | SourceLocation::Artifact { .. } => None,
+            });
         FlatDiagnostic {
             id: diagnostic_id(
                 self,

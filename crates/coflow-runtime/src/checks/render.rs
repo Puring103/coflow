@@ -2,8 +2,8 @@ use crate::api::{
     byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label,
     SourceLocation,
 };
-use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
 use crate::data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
+use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
 use coflow_language::cft::CftSchema;
 
 use super::{CheckDiagnosticStore, ProjectCheckOutput};

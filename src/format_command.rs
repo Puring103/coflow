@@ -87,11 +87,7 @@ fn discover_targets(project: &Project) -> Result<Vec<FormatTarget>, DiagnosticSe
         let path = project.resolve_path(source.path());
         let files = if path.is_dir() {
             discover_directory_files(&path).map_err(|error| {
-                cli_file_error(
-                    error.path(),
-                    "FORMAT-DISCOVERY",
-                    error.to_string(),
-                )
+                cli_file_error(error.path(), "FORMAT-DISCOVERY", error.to_string())
             })?
         } else {
             vec![path]
@@ -188,19 +184,27 @@ mod tests {
         let dir = tempdir().expect("temp dir");
         fs::create_dir_all(dir.path().join("schema")).expect("schema dir");
         fs::create_dir_all(dir.path().join("data")).expect("data dir");
-        fs::create_dir_all(dir.path().join("data/dimensions/language"))
-            .expect("dimension dir");
+        fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
         fs::write(
             dir.path().join("coflow.yaml"),
             "schema: schema/\ndata: data/\ndimensions:\n  language:\n    variants: [en]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/\n",
         )
         .expect("config");
-        fs::write(dir.path().join("schema/main.cft"), "type Item{name:string;}")
-            .expect("schema");
-        fs::write(dir.path().join("data/items.cfd"), "sword:Item{name:\"Sword\",}")
-            .expect("data");
-        fs::write(dir.path().join("ignored.cfd"), "ignored:Item{name:\"Ignored\",}")
-            .expect("ignored data");
+        fs::write(
+            dir.path().join("schema/main.cft"),
+            "type Item{name:string;}",
+        )
+        .expect("schema");
+        fs::write(
+            dir.path().join("data/items.cfd"),
+            "sword:Item{name:\"Sword\",}",
+        )
+        .expect("data");
+        fs::write(
+            dir.path().join("ignored.cfd"),
+            "ignored:Item{name:\"Ignored\",}",
+        )
+        .expect("ignored data");
         let dimension = dir.path().join("data/dimensions/language/Item_name.cfd");
         fs::write(&dimension, "ignored:Item{name:\"Generated\",}").expect("dimension data");
 

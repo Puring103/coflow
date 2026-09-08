@@ -253,7 +253,8 @@ impl CfdWriter {
             .iter()
             .map(|entry| entry.key.as_str())
             .collect::<BTreeSet<_>>();
-        let existing = self.read_existing_dimension_cfd(path, request.variants, Some(&expected_keys))?;
+        let existing =
+            self.read_existing_dimension_cfd(path, request.variants, Some(&expected_keys))?;
         let mut out = String::new();
         for entry in request.entries {
             let row = existing.get(&entry.key);
@@ -329,32 +330,32 @@ fn render_dimension_cfd(
 }
 
 impl CfdWriter {
-fn read_existing_dimension_cfd(
-    &self,
-    path: &Path,
-    variants: &[String],
-    expected_keys: Option<&BTreeSet<&str>>,
-) -> Result<BTreeMap<String, DimensionCfdRow>, DiagnosticSet> {
-    let text = match self.read_source(path) {
-        Ok(text) => text,
-        Err(_) if !path.exists() => return Ok(BTreeMap::new()),
-        Err(diagnostics) => return Err(diagnostics),
-    };
-    let (ast, diagnostics) = parse_cfd(&text);
-    if let Some(diagnostic) = diagnostics.first() {
-        return Err(DiagnosticSet::one(diag(
-            "CFD-DIMENSION",
-            format!(
-                "failed to parse dimension source `{}`: {}",
-                path.display(),
-                diagnostic.message
-            ),
-        )));
-    }
-    let mut out = BTreeMap::new();
-    for record in ast.records {
-        if expected_keys.is_some_and(|keys| !keys.contains(record.key.as_str())) {
+    fn read_existing_dimension_cfd(
+        &self,
+        path: &Path,
+        variants: &[String],
+        expected_keys: Option<&BTreeSet<&str>>,
+    ) -> Result<BTreeMap<String, DimensionCfdRow>, DiagnosticSet> {
+        let text = match self.read_source(path) {
+            Ok(text) => text,
+            Err(_) if !path.exists() => return Ok(BTreeMap::new()),
+            Err(diagnostics) => return Err(diagnostics),
+        };
+        let (ast, diagnostics) = parse_cfd(&text);
+        if let Some(diagnostic) = diagnostics.first() {
             return Err(DiagnosticSet::one(diag(
+                "CFD-DIMENSION",
+                format!(
+                    "failed to parse dimension source `{}`: {}",
+                    path.display(),
+                    diagnostic.message
+                ),
+            )));
+        }
+        let mut out = BTreeMap::new();
+        for record in ast.records {
+            if expected_keys.is_some_and(|keys| !keys.contains(record.key.as_str())) {
+                return Err(DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
                 format!(
                     "dimension source `{}` contains unmanaged id `{}`; variant records can only edit existing records",
@@ -362,9 +363,9 @@ fn read_existing_dimension_cfd(
                     record.key
                 ),
             )));
-        }
-        if out.contains_key(&record.key) {
-            return Err(DiagnosticSet::one(diag(
+            }
+            if out.contains_key(&record.key) {
+                return Err(DiagnosticSet::one(diag(
                 "CFD-DIMENSION",
                 format!(
                     "dimension source `{}` contains duplicate id `{}`; variant records can only edit existing records",
@@ -372,44 +373,44 @@ fn read_existing_dimension_cfd(
                     record.key
                 ),
             )));
-        }
-        let mut row = DimensionCfdRow::default();
-        for field in record.fields {
-            if field.name == "default" {
-                row.default = raw_span(&text, field.value.span());
-            } else if variants.iter().any(|variant| variant == &field.name) {
-                row.variants
-                    .insert(field.name, raw_span(&text, field.value.span()));
             }
+            let mut row = DimensionCfdRow::default();
+            for field in record.fields {
+                if field.name == "default" {
+                    row.default = raw_span(&text, field.value.span());
+                } else if variants.iter().any(|variant| variant == &field.name) {
+                    row.variants
+                        .insert(field.name, raw_span(&text, field.value.span()));
+                }
+            }
+            out.insert(record.key, row);
         }
-        out.insert(record.key, row);
+        Ok(out)
     }
-    Ok(out)
-}
 
-fn write_if_changed(
-    &self,
-    path: &Path,
-    body: &str,
-    code: &'static str,
-) -> Result<DimensionSourceResult, DiagnosticSet> {
-    match self.read_source(path) {
-        Ok(existing) if existing == body => {
-            return Ok(DimensionSourceResult { changed: false });
+    fn write_if_changed(
+        &self,
+        path: &Path,
+        body: &str,
+        code: &'static str,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        match self.read_source(path) {
+            Ok(existing) if existing == body => {
+                return Ok(DimensionSourceResult { changed: false });
+            }
+            Ok(_) => {}
+            Err(_) if !path.exists() => {}
+            Err(diagnostics) => return Err(diagnostics),
         }
-        Ok(_) => {}
-        Err(_) if !path.exists() => {}
-        Err(diagnostics) => return Err(diagnostics),
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                DiagnosticSet::one(diag(
+                    code,
+                    format!("failed to create `{}`: {err}", parent.display()),
+                ))
+            })?;
+        }
+        self.write_source(path, body)?;
+        Ok(DimensionSourceResult { changed: true })
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| {
-            DiagnosticSet::one(diag(
-                code,
-                format!("failed to create `{}`: {err}", parent.display()),
-            ))
-        })?;
-    }
-    self.write_source(path, body)?;
-    Ok(DimensionSourceResult { changed: true })
-}
 }

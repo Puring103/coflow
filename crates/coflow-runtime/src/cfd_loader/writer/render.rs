@@ -51,12 +51,7 @@ pub(super) fn serialize_value_for_type(
         CfdValue::FormattedString(v) => v.source.clone(),
         CfdValue::Function(v) => v.source.clone(),
         CfdValue::Enum(e) => render_enum_value(e, schema, expected),
-        CfdValue::Ref(target_key)
-            if matches!(
-                expected,
-                Some(CftValueType::RecordRef(_))
-            ) =>
-        {
+        CfdValue::Ref(target_key) if matches!(expected, Some(CftValueType::RecordRef(_))) => {
             format!("&{target_key}")
         }
         CfdValue::Ref(target_key) => format!("&{target_key}"),

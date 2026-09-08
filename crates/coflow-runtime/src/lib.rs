@@ -25,12 +25,12 @@ pub mod check_benchmark_support;
 mod checks;
 pub mod commands;
 pub use coflow_codegen as codegen;
-mod dimensions;
 mod diff;
+mod dimensions;
 mod files;
 mod indexes;
-mod load;
 mod limits;
+mod load;
 mod mutation;
 mod project;
 mod project_schema;
@@ -71,11 +71,11 @@ pub use coflow_model::{
     PendingInsertRef, RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan,
     ValueValidationMode, ValueValidationRequest,
 };
-pub use dimensions::{DimensionFieldInfo, DimensionInfo};
 pub use diff::{
     ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,
     ProjectFileDiff, ProjectRecordDiff, ProjectRecordSnapshot,
 };
+pub use dimensions::{DimensionFieldInfo, DimensionInfo};
 pub use files::FileTreeNode;
 pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef};
 pub use project::*;

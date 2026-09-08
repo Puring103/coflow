@@ -46,12 +46,9 @@ pub(super) fn function_parameter_name(
     index: usize,
     used_names: &mut HashSet<String>,
 ) -> Result<String, CsharpCodegenError> {
-    let candidate = source_name.map_or_else(
-        || format!("arg{index}"),
-        str::to_string,
-    );
-    let keyword = csharp_ident_error(&candidate)
-        .is_some_and(|reason| reason == "identifier is a C# keyword");
+    let candidate = source_name.map_or_else(|| format!("arg{index}"), str::to_string);
+    let keyword =
+        csharp_ident_error(&candidate).is_some_and(|reason| reason == "identifier is a C# keyword");
     if !keyword {
         if let Some(reason) = csharp_ident_error(&candidate) {
             return Err(CsharpCodegenError::new(format!(

@@ -4,9 +4,9 @@ use crate::api::{
     CfdSource, CfdSourceCatalog, CfdSourcePath, Diagnostic, DiagnosticSet, DimensionSourceEntry,
     DimensionSourceRequest, Label, Severity, SourceLocation,
 };
+use crate::cfd_loader::CfdWriter;
 use crate::data_model::CfdDataModel;
 use crate::dimensions::DimensionField;
-use crate::cfd_loader::CfdWriter;
 use crate::project::Project;
 use coflow_language::cft::CftSchema;
 use std::collections::BTreeSet;
@@ -56,19 +56,12 @@ fn commit_dimension_generation(
 
     for operation in plan.operations {
         let changed = match operation {
-            DimensionGenerationPlanOp::Move { from, to } => commit_dimension_move(
-                catalog,
-                from,
-                to,
-                &mut diagnostics,
-                &mut changed_paths,
-            ),
-            DimensionGenerationPlanOp::Remove(path) => commit_dimension_remove(
-                catalog,
-                path,
-                &mut diagnostics,
-                &mut changed_paths,
-            ),
+            DimensionGenerationPlanOp::Move { from, to } => {
+                commit_dimension_move(catalog, from, to, &mut diagnostics, &mut changed_paths)
+            }
+            DimensionGenerationPlanOp::Remove(path) => {
+                commit_dimension_remove(catalog, path, &mut diagnostics, &mut changed_paths)
+            }
             DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
                 project,
                 &catalog.writer(),
@@ -393,5 +386,4 @@ mod tests {
         assert!(codes.contains("DIM-SOURCE-006"));
         std::fs::remove_dir_all(root).expect("remove temp dir");
     }
-
 }

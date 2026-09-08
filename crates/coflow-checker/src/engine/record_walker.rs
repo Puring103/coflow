@@ -1,10 +1,10 @@
 use super::context::ExecutionContext;
 use super::value::ValueLocation;
 use crate::dimensions::DimensionVariantAbort;
-use crate::CheckDiagnostic;
 use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
-use coflow_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
+use crate::CheckDiagnostic;
 use coflow_language::cft::{CftSchemaCheckStmt, CftType};
+use coflow_model::{CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue};
 
 pub(super) struct RecordCheckWalker<'a> {
     context: ExecutionContext<'a>,

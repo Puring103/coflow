@@ -79,8 +79,7 @@ fn diagnostics_for_record(
     let mut fields = Vec::new();
     let mut best = None;
     for diagnostic in diagnostics.for_record(file_path, coordinate) {
-        if let coflow_runtime::DiagnosticTarget::TableField { field_path, .. } =
-            &diagnostic.target
+        if let coflow_runtime::DiagnosticTarget::TableField { field_path, .. } = &diagnostic.target
         {
             fields.push(FieldDiagnostic {
                 severity: normalized_severity(&diagnostic.severity).to_string(),

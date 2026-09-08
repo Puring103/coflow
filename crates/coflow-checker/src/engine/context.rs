@@ -2,11 +2,9 @@ use super::builtins;
 use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{EvalRecordRef, EvalValue, ValueLocation};
-use crate::{
-    CheckDiagnostic, CheckDiagnosticContext, CheckProjection, CheckSchemaLocation,
-};
-use coflow_model::CfdDataModel;
+use crate::{CheckDiagnostic, CheckDiagnosticContext, CheckProjection, CheckSchemaLocation};
 use coflow_language::cft::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType};
+use coflow_model::CfdDataModel;
 use std::cell::RefCell;
 
 pub(super) struct ExecutionContext<'a> {
@@ -86,8 +84,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     fn configure_projection(&self, evaluator: &mut CheckEvaluator<'_>) {
-        evaluator.projection_view =
-            crate::dimensions::CheckProjectionView::new(self.projection);
+        evaluator.projection_view = crate::dimensions::CheckProjectionView::new(self.projection);
         if let Some((dimension, variant)) = self.projection.dimension() {
             evaluator.contexts.insert(
                 0,

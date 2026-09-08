@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
 use crate::data_model::{CfdDataModel, CfdRecordId};
-use coflow_language::cft::{CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo};
+use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
+use coflow_language::cft::{
+    CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo,
+};
 
 use super::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::RecordCoordinate;

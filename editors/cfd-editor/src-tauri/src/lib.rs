@@ -19,12 +19,11 @@ use coflow_runtime::{
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
-    EditorRecordGroup, EditorWorkspaceState, FileRecords, GraphData, GraphQuery,
-    InsertRecordOutcome, PluginSchemaType, ProjectBootstrap, ProjectSearchMode,
-    ProjectSearchResults, RecordRow, RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, ViewConfig,
-    WriteDimensionValueOutcome, WriteFieldOutcome,
-    FunctionDocumentState, LanguageCompletion, LanguageDocumentState, LanguageFormattingResult,
-    LanguagePosition,
+    EditorRecordGroup, EditorWorkspaceState, FileRecords, FunctionDocumentState, GraphData,
+    GraphQuery, InsertRecordOutcome, LanguageCompletion, LanguageDocumentState,
+    LanguageFormattingResult, LanguagePosition, PluginSchemaType, ProjectBootstrap,
+    ProjectSearchMode, ProjectSearchResults, RecordRow, RefTarget, RenameRecordOutcome,
+    ReorderRecordsOutcome, ViewConfig, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 use plugin_manifest::PluginManifest;
 use serde::{Deserialize, Serialize};
@@ -564,33 +563,61 @@ async fn add_project_input(
     let kind = match kind.as_str() {
         "schema" => coflow_runtime::ProjectInputKind::Schema,
         "data" => coflow_runtime::ProjectInputKind::Data,
-        _ => return Err(EditorError::other("project input kind must be schema or data")),
+        _ => {
+            return Err(EditorError::other(
+                "project input kind must be schema or data",
+            ))
+        }
     };
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().add_project_input(session_id, kind, &PathBuf::from(path))).await
+    run_blocking(move || {
+        host.sessions()
+            .add_project_input(session_id, kind, &PathBuf::from(path))
+    })
+    .await
 }
 
 fn project_input_kind(kind: &str) -> Result<coflow_runtime::ProjectInputKind, EditorError> {
     match kind {
         "schema" => Ok(coflow_runtime::ProjectInputKind::Schema),
         "data" => Ok(coflow_runtime::ProjectInputKind::Data),
-        _ => Err(EditorError::other("project input kind must be schema or data")),
+        _ => Err(EditorError::other(
+            "project input kind must be schema or data",
+        )),
     }
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-async fn create_project_file(session_id: u32, kind: String, parent_path: String, file_name: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+async fn create_project_file(
+    session_id: u32,
+    kind: String,
+    parent_path: String,
+    file_name: String,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
     let kind = project_input_kind(&kind)?;
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().create_project_file(session_id, kind, Path::new(&parent_path), &file_name)).await
+    run_blocking(move || {
+        host.sessions()
+            .create_project_file(session_id, kind, Path::new(&parent_path), &file_name)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-async fn delete_project_entry(session_id: u32, path: String, host: State<'_, EditorHost>) -> Result<ProjectBootstrap, EditorError> {
+async fn delete_project_entry(
+    session_id: u32,
+    path: String,
+    host: State<'_, EditorHost>,
+) -> Result<ProjectBootstrap, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().delete_project_entry(session_id, Path::new(&path))).await
+    run_blocking(move || {
+        host.sessions()
+            .delete_project_entry(session_id, Path::new(&path))
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -819,13 +846,8 @@ async fn complete_language_document(
 ) -> Result<Vec<LanguageCompletion>, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
-        host.sessions().complete_language_document(
-            session_id,
-            &file_path,
-            &source,
-            version,
-            &position,
-        )
+        host.sessions()
+            .complete_language_document(session_id, &file_path, &source, version, &position)
     })
     .await
 }
@@ -855,7 +877,11 @@ async fn close_language_document(
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().close_language_document(session_id, &file_path)).await
+    run_blocking(move || {
+        host.sessions()
+            .close_language_document(session_id, &file_path)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -867,8 +893,11 @@ async fn function_document(
     host: State<'_, EditorHost>,
 ) -> Result<FunctionDocumentState, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().function_document(session_id, &source, body.as_deref()))
-        .await
+    run_blocking(move || {
+        host.sessions()
+            .function_document(session_id, &source, body.as_deref())
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1374,8 +1403,7 @@ mod frontend_plugin_tests {
             r#"{"id":"invalid/id","name":"Invalid","entry":"plugin.js"}"#,
         )
         .expect("write manifest");
-        fs::write(dir.join("plugin.js"), "export default () => {}")
-            .expect("write bundle");
+        fs::write(dir.join("plugin.js"), "export default () => {}").expect("write bundle");
 
         let error = load_frontend_plugin_bundle(&manifest).expect_err("reject invalid id");
 

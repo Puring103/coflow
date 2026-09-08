@@ -256,8 +256,11 @@ mod project_runtime_tests {
     fn duplicate_records_are_all_rejected_without_hiding_other_records() {
         let root = tempfile::tempdir().expect("temp project");
         fs::create_dir_all(root.path().join("data")).expect("create data");
-        fs::write(root.path().join("schema.cft"), "type Item { value: int; }\n")
-            .expect("write schema");
+        fs::write(
+            root.path().join("schema.cft"),
+            "type Item { value: int; }\n",
+        )
+        .expect("write schema");
         fs::write(
             root.path().join("coflow.yaml"),
             concat!(
@@ -681,13 +684,15 @@ impl WriteProjectSession {
         prepare_files: F,
     ) -> MutationReport
     where
-        F: FnOnce(ProjectQueries<'_>, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+        F: FnOnce(
+            ProjectQueries<'_>,
+            &[MutationAppliedOp],
+        ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
     {
         let next_revision = self.revision.saturating_add(1);
-        let report = self.session.apply_mutation(
-            request,
-            |candidate, applied| prepare_files(ProjectQueries::new(candidate, next_revision), applied),
-        );
+        let report = self.session.apply_mutation(request, |candidate, applied| {
+            prepare_files(ProjectQueries::new(candidate, next_revision), applied)
+        });
         if report.generation_changed {
             self.revision = next_revision;
         }

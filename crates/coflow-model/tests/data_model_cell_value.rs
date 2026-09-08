@@ -258,7 +258,9 @@ fn parses_schema_guided_scalar_values() -> TestResult {
         parse_ok(&schema, "bool", "true")?,
         ParsedCell::Value(LoadedValueDraft::Bool(true))
     );
-    for rejected in ["TRUE", "True", "FALSE", "False", "1", "yes", "Y", "0", "no", "N"] {
+    for rejected in [
+        "TRUE", "True", "FALSE", "False", "1", "yes", "Y", "0", "no", "N",
+    ] {
         parse_err(&schema, "bool", rejected)?;
     }
     assert_eq!(

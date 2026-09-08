@@ -1,11 +1,9 @@
 #![allow(clippy::expect_used)]
 
 use coflow_format::{format_cfd, format_cft};
-use coflow_language::lexical::{tokenize_lossless, LosslessTokenKind};
 use coflow_language::cfd::parse_cfd;
-use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-};
+use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+use coflow_language::lexical::{tokenize_lossless, LosslessTokenKind};
 
 fn semantic_tokens(source: &str) -> Vec<&str> {
     tokenize_lossless(source)
@@ -32,9 +30,7 @@ fn formatting_preserves_non_trivia_tokens_and_comments() {
         ),
         (
             "记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }",
-            format_cfd(
-                "记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }",
-            ),
+            format_cfd("记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }"),
         ),
     ] {
         assert_eq!(semantic_tokens(source), semantic_tokens(&formatted));
@@ -63,10 +59,8 @@ fn valid_sources_parse_before_and_after_formatting() {
     let before_modules = parse_modules([CftFile::from_source(ModuleId::from("main"), cft)]);
     let before = build_schema(&before_modules, &CftDimensionInputs::default()).expect("schema");
     let formatted_cft = format_cft(cft);
-    let after_modules = parse_modules([CftFile::from_source(
-        ModuleId::from("main"),
-        formatted_cft,
-    )]);
+    let after_modules =
+        parse_modules([CftFile::from_source(ModuleId::from("main"), formatted_cft)]);
     let after = build_schema(&after_modules, &CftDimensionInputs::default()).expect("schema");
     let shape = |schema: &coflow_language::cft::CftSchema| {
         schema

@@ -1,7 +1,7 @@
-use coflow_model::CfdDataModel;
-use coflow_diagnostics::CfdErrorCode;
 use crate::limits::EvaluationBudget;
+use coflow_diagnostics::CfdErrorCode;
 use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_model::CfdDataModel;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};

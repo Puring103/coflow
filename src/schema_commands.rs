@@ -218,7 +218,11 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
         SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
-            format!("{{{}: {}}}", display_value_type(key), display_value_type(value))
+            format!(
+                "{{{}: {}}}",
+                display_value_type(key),
+                display_value_type(value)
+            )
         }
         SchemaTypeRefInfo::Option { inner } => {
             format!("Option<{}>", display_value_type(inner))

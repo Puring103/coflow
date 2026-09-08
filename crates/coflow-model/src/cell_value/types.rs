@@ -40,8 +40,7 @@ impl CellType {
                 Box::new(Self::from_schema_type(ok)),
                 Box::new(Self::from_schema_type(error)),
             ),
-            CftValueType::Function(_, _)
-            | CftValueType::Unit => Self::Unsupported(ty.to_string()),
+            CftValueType::Function(_, _) | CftValueType::Unit => Self::Unsupported(ty.to_string()),
         }
     }
 

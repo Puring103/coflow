@@ -1,6 +1,6 @@
 use coflow_language::cft::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr,
-    DefaultExprKind, Item, TypeRef, TypeRefKind,
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
+    Item, TypeRef, TypeRefKind,
 };
 use coflow_language::cft::syntax::lexer::{lex, TokenKind};
 use coflow_language::cft::syntax::CheckVisitor;
@@ -233,7 +233,10 @@ fn add_lex_semantic_token(
             if matches!(
                 text.as_str(),
                 "fn" | "Option" | "Result" | "None" | "Some" | "Ok" | "Err"
-            ) => SEM_KEYWORD,
+            ) =>
+        {
+            SEM_KEYWORD
+        }
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
         TokenKind::String(_)
         | TokenKind::FormattedStringStart
@@ -460,8 +463,7 @@ fn add_value_type_semantic(
                 tokens,
             );
         }
-        TypeRefKind::Array(inner)
-        | TypeRefKind::Option(inner) => {
+        TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
             add_value_type_semantic(build, document, inner, tokens);
         }
         TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
@@ -538,13 +540,7 @@ fn add_default_expr_semantic(
                             tokens,
                         );
                     } else {
-                        push_semantic_span(
-                            &document.source,
-                            span,
-                            token_type,
-                            modifiers,
-                            tokens,
-                        );
+                        push_semantic_span(&document.source, span, token_type, modifiers, tokens);
                     }
                 },
             );
@@ -739,7 +735,13 @@ fn classify_check_expr(
         }
         CheckExprKind::Is { predicate, .. } => match predicate {
             coflow_language::cft::syntax::ast::TypePredicate::Some { binding, .. } => {
-                push_semantic_span(&document.source, binding.span, SEM_VARIABLE, MOD_DECLARATION, tokens);
+                push_semantic_span(
+                    &document.source,
+                    binding.span,
+                    SEM_VARIABLE,
+                    MOD_DECLARATION,
+                    tokens,
+                );
             }
             coflow_language::cft::syntax::ast::TypePredicate::Type(name) => {
                 push_semantic_span(

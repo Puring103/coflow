@@ -9,8 +9,8 @@ use crate::indexes::{RecordRef, SourceId};
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
 
-use super::refs::{ReferenceUpdateAction, reference_update_actions};
-use super::target::{WriteTarget, is_id_path, not_found, write_target_for_path};
+use super::refs::{reference_update_actions, ReferenceUpdateAction};
+use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
 use super::writer::{lookup_source_writer, source_for_file, source_for_id};
 use crate::write_rules;
 

@@ -6,12 +6,12 @@ use super::evaluation_trace::EvaluationTrace;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{EvalValue, LocatedEvalValue, ScalarValue, ValueLocation};
-use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
 use crate::EvaluationLimits;
 use coflow_language::cft::{
     CftSchema, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp,
 };
+use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -126,7 +126,10 @@ impl<'model> CheckEvaluator<'model> {
     pub(super) fn eval_condition(
         &mut self,
         expr: &CftSchemaCheckExpr,
-    ) -> EvalResult<(LocatedEvalValue<'model>, BTreeMap<String, LocatedEvalValue<'model>>)> {
+    ) -> EvalResult<(
+        LocatedEvalValue<'model>,
+        BTreeMap<String, LocatedEvalValue<'model>>,
+    )> {
         let parent = self
             .eval_stack
             .last()
@@ -714,29 +717,53 @@ impl<'model> CheckEvaluator<'model> {
         let inner = match value.value {
             EvalValue::Model(coflow_model::CfdValue::OptionSome(inner)) => {
                 let Some(location) = value.location.clone() else {
-                    self.diag(CfdErrorCode::CheckEvalTypeError, "Some value has no model location");
+                    self.diag(
+                        CfdErrorCode::CheckEvalTypeError,
+                        "Some value has no model location",
+                    );
                     return Err(EvalAbort::Error);
                 };
-                let result = EvalValue::from_cfd_value(inner, None, location, self.model,
-                    &mut self.budget, EvaluationCursor::root());
+                let result = EvalValue::from_cfd_value(
+                    inner,
+                    None,
+                    location,
+                    self.model,
+                    &mut self.budget,
+                    EvaluationCursor::root(),
+                );
                 match result {
                     Ok(inner) => inner,
                     Err(error) => {
-                        self.diag_at(CfdErrorCode::CheckBudgetExceeded, *error.location, error.error.to_string());
+                        self.diag_at(
+                            CfdErrorCode::CheckBudgetExceeded,
+                            *error.location,
+                            error.error.to_string(),
+                        );
                         return Err(EvalAbort::Error);
                     }
                 }
             }
-            EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(inner)) => EvalValue::from_const(&inner),
+            EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(inner)) => {
+                EvalValue::from_const(&inner)
+            }
             EvalValue::Model(coflow_model::CfdValue::OptionNone)
-            | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => return Ok(false),
+            | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => {
+                return Ok(false)
+            }
             _ => {
-                self.diag_at(CfdErrorCode::CheckEvalTypeError, value.location, "Some pattern requires an Option value");
+                self.diag_at(
+                    CfdErrorCode::CheckEvalTypeError,
+                    value.location,
+                    "Some pattern requires an Option value",
+                );
                 return Err(EvalAbort::Error);
             }
         };
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(binding.to_string(), LocatedEvalValue::new(inner, value.location));
+            scope.insert(
+                binding.to_string(),
+                LocatedEvalValue::new(inner, value.location),
+            );
         }
         Ok(true)
     }

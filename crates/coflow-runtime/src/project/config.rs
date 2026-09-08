@@ -209,7 +209,8 @@ impl Serialize for OutputConfig {
         S: Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(2 + self.options.as_object().map_or(0, Map::len)))?;
+        let mut map =
+            serializer.serialize_map(Some(2 + self.options.as_object().map_or(0, Map::len)))?;
         map.serialize_entry("language", &self.language)?;
         map.serialize_entry("dir", &self.dir)?;
         if let Some(options) = self.options.as_object() {

@@ -12,7 +12,10 @@ use crate::{Diagnostic, DiagnosticSet, Project, Runtime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectDiffChange {
     Added,
@@ -22,7 +25,10 @@ pub enum ProjectDiffChange {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectDiffValue {
     pub path: String,
     pub value: CfdValue,
@@ -30,7 +36,10 @@ pub struct ProjectDiffValue {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectRecordSnapshot {
     pub file_path: String,
     pub values: Vec<ProjectDiffValue>,
@@ -38,7 +47,10 @@ pub struct ProjectRecordSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectFieldDiff {
     pub path: String,
     pub change: ProjectDiffChange,
@@ -52,7 +64,10 @@ pub struct ProjectFieldDiff {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectRecordDiff {
     pub coordinate: RecordCoordinate,
     pub change: ProjectDiffChange,
@@ -67,7 +82,10 @@ pub struct ProjectRecordDiff {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectFileDiff {
     pub path: String,
     pub change: ProjectDiffChange,
@@ -83,7 +101,10 @@ pub struct ProjectFileDiff {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectDiffDiagnostic {
     pub endpoint: String,
     pub code: String,
@@ -92,7 +113,10 @@ pub struct ProjectDiffDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectDiff {
     pub head_oid: String,
     #[cfg_attr(feature = "ts-export", ts(type = "number"))]
@@ -122,11 +146,7 @@ pub(crate) fn diff_against_head(
         .and_then(|project| Runtime::new().open_read_only_session(project));
 
     let mut diagnostics = Vec::new();
-    append_diagnostics(
-        &mut diagnostics,
-        "current",
-        session.diagnostics.as_set(),
-    );
+    append_diagnostics(&mut diagnostics, "current", session.diagnostics.as_set());
     let (head_sources, head_records, head_valid) = match head_session {
         Ok(head_session) => {
             append_diagnostics(
@@ -234,10 +254,7 @@ fn record_states(session: &ProjectSession) -> BTreeMap<RecordCoordinate, RecordS
         for (field_name, dimensions) in &record.dimension_fields {
             for (variant, value) in &dimensions.variants {
                 values.insert(
-                    format!(
-                        "{}[{}={}]",
-                        field_name, dimensions.dimension, variant
-                    ),
+                    format!("{}[{}={}]", field_name, dimensions.dimension, variant),
                     normalized_semantic_value(&value.value),
                 );
             }
@@ -269,9 +286,7 @@ fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
         CfdValue::OptionSome(value) => {
             CfdValue::OptionSome(Box::new(normalized_semantic_value(value)))
         }
-        CfdValue::ResultOk(value) => {
-            CfdValue::ResultOk(Box::new(normalized_semantic_value(value)))
-        }
+        CfdValue::ResultOk(value) => CfdValue::ResultOk(Box::new(normalized_semantic_value(value))),
         CfdValue::ResultErr(value) => {
             CfdValue::ResultErr(Box::new(normalized_semantic_value(value)))
         }
@@ -310,35 +325,37 @@ fn record_diffs(
         .collect::<BTreeSet<_>>();
     coordinates
         .into_iter()
-        .filter_map(|coordinate| match (before.get(&coordinate), after.get(&coordinate)) {
-            (None, Some(after)) => Some(ProjectRecordDiff {
-                coordinate,
-                change: ProjectDiffChange::Added,
-                before: None,
-                after: Some(after.snapshot.clone()),
-                fields: field_diffs(&BTreeMap::new(), &after.values),
-            }),
-            (Some(before), None) => Some(ProjectRecordDiff {
-                coordinate,
-                change: ProjectDiffChange::Deleted,
-                before: Some(before.snapshot.clone()),
-                after: None,
-                fields: field_diffs(&before.values, &BTreeMap::new()),
-            }),
-            (Some(before), Some(after))
-                if before.values != after.values
-                    || before.snapshot.file_path != after.snapshot.file_path =>
-            {
-                Some(ProjectRecordDiff {
+        .filter_map(
+            |coordinate| match (before.get(&coordinate), after.get(&coordinate)) {
+                (None, Some(after)) => Some(ProjectRecordDiff {
                     coordinate,
-                    change: ProjectDiffChange::Modified,
-                    before: Some(before.snapshot.clone()),
+                    change: ProjectDiffChange::Added,
+                    before: None,
                     after: Some(after.snapshot.clone()),
-                    fields: field_diffs(&before.values, &after.values),
-                })
-            }
-            _ => None,
-        })
+                    fields: field_diffs(&BTreeMap::new(), &after.values),
+                }),
+                (Some(before), None) => Some(ProjectRecordDiff {
+                    coordinate,
+                    change: ProjectDiffChange::Deleted,
+                    before: Some(before.snapshot.clone()),
+                    after: None,
+                    fields: field_diffs(&before.values, &BTreeMap::new()),
+                }),
+                (Some(before), Some(after))
+                    if before.values != after.values
+                        || before.snapshot.file_path != after.snapshot.file_path =>
+                {
+                    Some(ProjectRecordDiff {
+                        coordinate,
+                        change: ProjectDiffChange::Modified,
+                        before: Some(before.snapshot.clone()),
+                        after: Some(after.snapshot.clone()),
+                        fields: field_diffs(&before.values, &after.values),
+                    })
+                }
+                _ => None,
+            },
+        )
         .collect()
 }
 
@@ -388,8 +405,12 @@ fn source_diffs(
         .collect::<BTreeSet<_>>();
     let mut files = Vec::new();
     for path in paths {
-        let old = before.get(&path).map(|source| normalized_line_endings(source));
-        let new = after.get(&path).map(|source| normalized_line_endings(source));
+        let old = before
+            .get(&path)
+            .map(|source| normalized_line_endings(source));
+        let new = after
+            .get(&path)
+            .map(|source| normalized_line_endings(source));
         if old == new {
             continue;
         }
@@ -414,7 +435,8 @@ fn source_diffs(
 }
 
 fn unified_hunks(before: &str, after: &str) -> Result<String, DiagnosticSet> {
-    let temp = tempfile::tempdir().map_err(|error| git_error(format!("创建 Diff 临时目录失败：{error}")))?;
+    let temp = tempfile::tempdir()
+        .map_err(|error| git_error(format!("创建 Diff 临时目录失败：{error}")))?;
     let before_path = temp.path().join("before");
     let after_path = temp.path().join("after");
     fs::write(&before_path, before)
@@ -455,25 +477,26 @@ impl GitProject {
     fn open(project: &Project) -> Result<Self, DiagnosticSet> {
         let root_output = git_output(project.root_dir(), ["rev-parse", "--show-toplevel"])?;
         let repo_root_text = utf8_stdout("git rev-parse --show-toplevel", root_output)?;
-        let repo_root = fs::canonicalize(repo_root_text.trim()).map_err(|error| {
-            git_error(format!("无法解析 Git 仓库根目录：{error}"))
-        })?;
-        let project_root = fs::canonicalize(project.root_dir()).map_err(|error| {
-            git_error(format!("无法解析项目目录：{error}"))
-        })?;
-        let config_path = fs::canonicalize(project.config_path()).map_err(|error| {
-            git_error(format!("无法解析项目配置：{error}"))
-        })?;
-        let project_relative = project_root.strip_prefix(&repo_root).map_err(|_| {
-            git_error("Coflow 项目不在当前 Git 工作区中")
-        })?.to_path_buf();
-        let config_relative = config_path.strip_prefix(&repo_root).map_err(|_| {
-            git_error("项目配置不在当前 Git 工作区中")
-        })?.to_path_buf();
+        let repo_root = fs::canonicalize(repo_root_text.trim())
+            .map_err(|error| git_error(format!("无法解析 Git 仓库根目录：{error}")))?;
+        let project_root = fs::canonicalize(project.root_dir())
+            .map_err(|error| git_error(format!("无法解析项目目录：{error}")))?;
+        let config_path = fs::canonicalize(project.config_path())
+            .map_err(|error| git_error(format!("无法解析项目配置：{error}")))?;
+        let project_relative = project_root
+            .strip_prefix(&repo_root)
+            .map_err(|_| git_error("Coflow 项目不在当前 Git 工作区中"))?
+            .to_path_buf();
+        let config_relative = config_path
+            .strip_prefix(&repo_root)
+            .map_err(|_| git_error("项目配置不在当前 Git 工作区中"))?
+            .to_path_buf();
         let head_oid = utf8_stdout(
             "git rev-parse HEAD",
-            git_output(&repo_root, ["rev-parse", "HEAD^{commit}"])?
-        )?.trim().to_string();
+            git_output(&repo_root, ["rev-parse", "HEAD^{commit}"])?,
+        )?
+        .trim()
+        .to_string();
         Ok(Self {
             repo_root,
             project_relative,
@@ -490,12 +513,24 @@ impl GitProject {
         };
         let output = git_output(
             &self.repo_root,
-            ["ls-tree", "-r", "-z", "--name-only", &self.head_oid, "--", &pathspec],
+            [
+                "ls-tree",
+                "-r",
+                "-z",
+                "--name-only",
+                &self.head_oid,
+                "--",
+                &pathspec,
+            ],
         )?;
         let temp = tempfile::tempdir()
             .map_err(|error| git_error(format!("创建 HEAD 快照目录失败：{error}")))?;
         let mut sources = BTreeMap::new();
-        for raw_path in output.stdout.split(|byte| *byte == 0).filter(|path| !path.is_empty()) {
+        for raw_path in output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+        {
             let git_path = std::str::from_utf8(raw_path)
                 .map_err(|error| git_error(format!("Git 路径不是 UTF-8：{error}")))?;
             let relative = safe_git_path(git_path)?;
@@ -513,13 +548,11 @@ impl GitProject {
             }
             let target = temp.path().join(&relative);
             if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(|error| {
-                    git_error(format!("创建 HEAD 快照目录失败：{error}"))
-                })?;
+                fs::create_dir_all(parent)
+                    .map_err(|error| git_error(format!("创建 HEAD 快照目录失败：{error}")))?;
             }
-            fs::write(&target, blob.stdout).map_err(|error| {
-                git_error(format!("写入 HEAD 快照 `{git_path}` 失败：{error}"))
-            })?;
+            fs::write(&target, blob.stdout)
+                .map_err(|error| git_error(format!("写入 HEAD 快照 `{git_path}` 失败：{error}")))?;
         }
         Ok(HeadMaterialization {
             config_path: temp.path().join(&self.config_relative),
@@ -558,7 +591,10 @@ fn safe_git_path(path: &str) -> Result<PathBuf, DiagnosticSet> {
         .components()
         .any(|component| !matches!(component, Component::Normal(_)))
     {
-        return Err(git_error(format!("Git 快照包含不安全路径 `{}`", path.display())));
+        return Err(git_error(format!(
+            "Git 快照包含不安全路径 `{}`",
+            path.display()
+        )));
     }
     Ok(path.to_path_buf())
 }

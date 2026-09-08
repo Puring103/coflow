@@ -15,9 +15,7 @@ mod types;
 pub use entry::{build_schema, build_schema_with_limits};
 
 use self::checks::CheckTypeAnalyzer;
-use self::state::{
-    CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeAliasInfo, TypeInfo,
-};
+use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeAliasInfo, TypeInfo};
 use crate::module::{CftModuleSet, ModuleId};
 use crate::schema::{
     CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
@@ -57,8 +55,7 @@ pub(super) struct ResolvedTypes<'a> {
 
 pub(super) struct ResolvedValues<'a> {
     type_state: ResolvedTypes<'a>,
-    constants:
-        BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
+    constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
     defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
 }
 

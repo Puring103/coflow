@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use crate::api::{
-    CfdSource, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity,
-    SourceLocation,
+    CfdSource, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation,
 };
 use crate::cfd_loader::CfdLoader;
 use crate::project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
@@ -102,13 +101,14 @@ impl<'a> SourceResolver<'a> {
         Ok(resolved)
     }
 
-    fn resolve_file(configured: &ConfiguredSource) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
+    fn resolve_file(
+        configured: &ConfiguredSource,
+    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let source = CfdSource {
             location: configured.location.clone(),
             display_name: configured.display_name.clone(),
         };
-        CfdLoader::resolve(&source)
-            .map(|source| vec![ResolvedLoaderSource { source }])
+        CfdLoader::resolve(&source).map(|source| vec![ResolvedLoaderSource { source }])
     }
 }
 
@@ -151,8 +151,7 @@ mod tests {
         use std::path::PathBuf;
 
         let config =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../examples/showcase/coflow.yaml");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/showcase/coflow.yaml");
         let project =
             Project::open_schema_only(Some(config.as_path())).expect("example project should open");
         let configured = configured_source(&project, &SourceConfig::from_path("data.cfd".into()));

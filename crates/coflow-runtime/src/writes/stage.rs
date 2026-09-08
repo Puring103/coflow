@@ -74,9 +74,7 @@ pub(crate) fn stage_mutation_op(
         }
         (
             PreparedMutationOp::UnsetField {
-                write_record,
-                path,
-                ..
+                write_record, path, ..
             },
             MutationExecutionPlan::UnsetField(plan),
         ) => {

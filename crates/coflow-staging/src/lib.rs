@@ -42,7 +42,11 @@ impl fmt::Display for StagingError {
                 self.path.display()
             ),
             StagingErrorKind::Io(operation, error) => {
-                write!(formatter, "failed to {operation} `{}`: {error}", self.path.display())
+                write!(
+                    formatter,
+                    "failed to {operation} `{}`: {error}",
+                    self.path.display()
+                )
             }
         }
     }
@@ -116,10 +120,13 @@ impl StagedFile {
     /// # Errors
     ///
     /// Returns [`StagingError`] when the staging file cannot be created, written, or synchronized.
-    pub fn create(path: &Path, expected: Option<Vec<u8>>, contents: &[u8]) -> Result<Self, StagingError> {
+    pub fn create(
+        path: &Path,
+        expected: Option<Vec<u8>>,
+        contents: &[u8],
+    ) -> Result<Self, StagingError> {
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)
-            .map_err(|error| io_error(parent, "create parent for", error))?;
+        fs::create_dir_all(parent).map_err(|error| io_error(parent, "create parent for", error))?;
         let staging = unique_sibling(path, "staging");
         let mut output = fs::File::create(&staging)
             .map_err(|error| io_error(&staging, "create staging file", error))?;
@@ -202,8 +209,7 @@ impl StagedDirectory {
     /// Returns [`StagingError`] when the staging directory cannot be created.
     pub fn create(path: &Path) -> Result<Self, StagingError> {
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)
-            .map_err(|error| io_error(parent, "create parent for", error))?;
+        fs::create_dir_all(parent).map_err(|error| io_error(parent, "create parent for", error))?;
         let staging = unique_sibling(path, "staging");
         fs::create_dir(&staging)
             .map_err(|error| io_error(&staging, "create staging directory", error))?;
@@ -357,12 +363,7 @@ fn replace_staged(
     Ok(())
 }
 
-fn restore_staged(
-    path: &Path,
-    published: bool,
-    backup: &mut Option<PathBuf>,
-    directory: bool,
-) {
+fn restore_staged(path: &Path, published: bool, backup: &mut Option<PathBuf>, directory: bool) {
     if published {
         if directory {
             let _ = fs::remove_dir_all(path);
@@ -417,8 +418,8 @@ mod tests {
         let path = root.path().join("file.txt");
         fs::write(&path, b"old").expect("write old");
 
-        let mut staged = StagedFile::create(&path, Some(b"old".to_vec()), b"new")
-            .expect("stage file");
+        let mut staged =
+            StagedFile::create(&path, Some(b"old".to_vec()), b"new").expect("stage file");
         staged.publish().expect("publish file");
         drop(staged);
 
@@ -431,8 +432,8 @@ mod tests {
         let path = root.path().join("file.txt");
         fs::write(&path, b"old").expect("write old");
 
-        let mut staged = StagedFile::create(&path, Some(b"old".to_vec()), b"new")
-            .expect("stage file");
+        let mut staged =
+            StagedFile::create(&path, Some(b"old".to_vec()), b"new").expect("stage file");
         staged.publish().expect("publish file");
         staged.finish();
         drop(staged);
@@ -446,8 +447,8 @@ mod tests {
         let path = root.path().join("file.txt");
         fs::write(&path, b"old").expect("write old");
 
-        let staged = StagedFile::create(&path, Some(b"expected".to_vec()), b"new")
-            .expect("stage file");
+        let staged =
+            StagedFile::create(&path, Some(b"expected".to_vec()), b"new").expect("stage file");
         let error = staged.verify().expect_err("conflict should be detected");
 
         assert!(error.is_conflict());
@@ -461,8 +462,7 @@ mod tests {
         fs::write(path.join("old.txt"), b"old").expect("write old file");
 
         let mut staged = StagedDirectory::create(&path).expect("stage directory");
-        fs::write(staged.staging().join("new.txt"), b"new")
-            .expect("write staged file");
+        fs::write(staged.staging().join("new.txt"), b"new").expect("write staged file");
         staged.publish().expect("publish directory");
         drop(staged);
 

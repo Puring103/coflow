@@ -163,12 +163,8 @@ pub(super) fn prepare_one(
                 effective_write_target_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let value = coerce_mutation_value(session, &expected.ty, value, pending_records)?;
-            let materialized_top_level = materialized_top_level_value(
-                session,
-                &write_record,
-                &path,
-                &value,
-            )?;
+            let materialized_top_level =
+                materialized_top_level_value(session, &write_record, &path, &value)?;
             Ok(PreparedMutationOp::SetField {
                 record,
                 write_record,
@@ -334,10 +330,9 @@ fn materialized_top_level_value(
         .record_view(&coordinate.actual_type, &coordinate.key)
         .map(|view| view.record)
         .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
-    let mut root = record
-        .value_at_path(&root_path)
-        .cloned()
-        .ok_or_else(|| one_path_error("top-level field was not found while materializing a field"))?;
+    let mut root = record.value_at_path(&root_path).cloned().ok_or_else(|| {
+        one_path_error("top-level field was not found while materializing a field")
+    })?;
     set_nested_value(&mut root, &path[1..], value.clone())?;
     Ok(Some(root))
 }
@@ -490,17 +485,32 @@ fn rename_pending_value_references(
     match (expected, value) {
         (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
             rename_pending_value_references(
-                schema, target_actual_type, inner, value, old_key, new_key,
+                schema,
+                target_actual_type,
+                inner,
+                value,
+                old_key,
+                new_key,
             );
         }
         (CftValueType::Result(ok, _), CfdValue::ResultOk(value)) => {
             rename_pending_value_references(
-                schema, target_actual_type, ok, value, old_key, new_key,
+                schema,
+                target_actual_type,
+                ok,
+                value,
+                old_key,
+                new_key,
             );
         }
         (CftValueType::Result(_, error), CfdValue::ResultErr(value)) => {
             rename_pending_value_references(
-                schema, target_actual_type, error, value, old_key, new_key,
+                schema,
+                target_actual_type,
+                error,
+                value,
+                old_key,
+                new_key,
             );
         }
         (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
@@ -584,9 +594,9 @@ pub(super) fn set_nested_value(
         return Ok(());
     };
     match current {
-        CfdValue::OptionSome(inner)
-        | CfdValue::ResultOk(inner)
-        | CfdValue::ResultErr(inner) => return set_nested_value(inner, path, value),
+        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
+            return set_nested_value(inner, path, value)
+        }
         CfdValue::OptionNone => {
             return Err(one_path_error(
                 "cannot write a nested path through an empty option",
@@ -729,9 +739,7 @@ fn effective_write_target_for_set_field(
         ))
     })?;
     Ok(writes::effective_write_target_for_path(
-        session,
-        record_ref,
-        path,
+        session, record_ref, path,
     ))
 }
 

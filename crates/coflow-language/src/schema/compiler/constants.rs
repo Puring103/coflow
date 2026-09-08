@@ -50,9 +50,9 @@ impl ValueResolver<'_, '_> {
             return None;
         }
         visiting.push(name.to_string());
-        let expected = declared_type.as_ref().and_then(|ty| {
-            self.resolve_field_type(ty).value_type().cloned()
-        });
+        let expected = declared_type
+            .as_ref()
+            .and_then(|ty| self.resolve_field_type(ty).value_type().cloned());
         if matches!(
             expected,
             Some(CftValueType::Function(_, _) | CftValueType::Unit)
@@ -87,7 +87,11 @@ impl ValueResolver<'_, '_> {
         let resolved = match &expression.kind {
             DefaultExprKind::Int(value) => {
                 if let Some(CftValueType::Enum(enum_name)) = expected {
-                    if self.enums.get(enum_name.as_str()).is_some_and(|info| info.is_flag) {
+                    if self
+                        .enums
+                        .get(enum_name.as_str())
+                        .is_some_and(|info| info.is_flag)
+                    {
                         self.resolve_flag_mask(module, expression, enum_name, *value)?
                     } else {
                         (CftValueType::Int, CftConstValue::Int(*value))
@@ -96,9 +100,7 @@ impl ValueResolver<'_, '_> {
                     (CftValueType::Int, CftConstValue::Int(*value))
                 }
             }
-            DefaultExprKind::Float(value) => {
-                (CftValueType::Float, CftConstValue::Float(*value))
-            }
+            DefaultExprKind::Float(value) => (CftValueType::Float, CftConstValue::Float(*value)),
             DefaultExprKind::Bool(value) => (CftValueType::Bool, CftConstValue::Bool(*value)),
             DefaultExprKind::String(value) => {
                 (CftValueType::String, CftConstValue::String(value.clone()))
@@ -108,20 +110,18 @@ impl ValueResolver<'_, '_> {
                 CftConstValue::FormattedString(source.clone()),
             ),
             DefaultExprKind::Function { signature, source } => {
-                let value_type = self
-                    .resolve_field_type(signature)
-                    .value_type()
-                    .cloned()?;
-                (
-                    value_type,
-                    CftConstValue::Function(source.clone()),
-                )
+                let value_type = self.resolve_field_type(signature).value_type().cloned()?;
+                (value_type, CftConstValue::Function(source.clone()))
             }
             DefaultExprKind::BitExpr { op, lhs, rhs } => {
                 let Some(CftValueType::Enum(enum_name)) = expected else {
                     return self.cannot_infer_const(module, expression, "flag expression");
                 };
-                if !self.enums.get(enum_name.as_str()).is_some_and(|info| info.is_flag) {
+                if !self
+                    .enums
+                    .get(enum_name.as_str())
+                    .is_some_and(|info| info.is_flag)
+                {
                     let expected_flag = CftValueType::Enum(enum_name.clone());
                     return self.const_type_mismatch(
                         module,
@@ -132,8 +132,10 @@ impl ValueResolver<'_, '_> {
                 }
                 let (_, lhs) = self.resolve_static_value(module, lhs, expected, visiting)?;
                 let (_, rhs) = self.resolve_static_value(module, rhs, expected, visiting)?;
-                let (CftConstValue::Enum { value: lhs, .. }, CftConstValue::Enum { value: rhs, .. }) =
-                    (lhs, rhs)
+                let (
+                    CftConstValue::Enum { value: lhs, .. },
+                    CftConstValue::Enum { value: rhs, .. },
+                ) = (lhs, rhs)
                 else {
                     let expected_flag = CftValueType::Enum(enum_name.clone());
                     return self.const_type_mismatch(
@@ -210,15 +212,16 @@ impl ValueResolver<'_, '_> {
                 let mut values = Vec::with_capacity(items.len());
                 let mut item_type = expected_item.cloned();
                 for item in items {
-                    let (resolved_type, value) = self.resolve_static_value(
-                        module,
-                        item,
-                        item_type.as_ref(),
-                        visiting,
-                    )?;
+                    let (resolved_type, value) =
+                        self.resolve_static_value(module, item, item_type.as_ref(), visiting)?;
                     if let Some(expected_item) = &item_type {
                         if !self.default_type_assignable(&resolved_type, expected_item) {
-                            return self.const_type_mismatch(module, item, expected_item, &resolved_type);
+                            return self.const_type_mismatch(
+                                module,
+                                item,
+                                expected_item,
+                                &resolved_type,
+                            );
                         }
                     } else {
                         item_type = Some(resolved_type);
@@ -297,7 +300,10 @@ impl ValueResolver<'_, '_> {
         value: i64,
     ) -> Option<(CftValueType, CftConstValue)> {
         let info = self.enums.get(enum_name.as_str())?;
-        let declared_mask = info.values_by_name.values().fold(0_i64, |mask, value| mask | value);
+        let declared_mask = info
+            .values_by_name
+            .values()
+            .fold(0_i64, |mask, value| mask | value);
         if value < 0 || value & !declared_mask != 0 {
             self.push_diag(
                 CftErrorCode::InvalidConstValue,
@@ -337,7 +343,12 @@ impl ValueResolver<'_, '_> {
 
         if path.segments.len() == 1 {
             if let Some(CftValueType::Enum(enum_name)) = expected {
-                return self.resolve_enum_variant(module, enum_name.as_str(), &path.segments[0].name, path.span);
+                return self.resolve_enum_variant(
+                    module,
+                    enum_name.as_str(),
+                    &path.segments[0].name,
+                    path.span,
+                );
             }
         } else if let Some((variant, owner)) = path.segments.split_last() {
             let owner = owner
@@ -408,7 +419,8 @@ impl ValueResolver<'_, '_> {
             .collect::<Vec<_>>()
             .join("::");
         let type_name = owner;
-        if !matches!(self.symbols.get(&type_name), Some(symbol) if symbol.kind == SymbolKind::Type) {
+        if !matches!(self.symbols.get(&type_name), Some(symbol) if symbol.kind == SymbolKind::Type)
+        {
             self.push_diag(
                 CftErrorCode::UnknownNamedType,
                 module,
@@ -436,7 +448,9 @@ impl ValueResolver<'_, '_> {
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
         let (mut key_type, mut value_type) = match expected {
-            Some(CftValueType::Dict(key, value)) => (Some((**key).clone()), Some((**value).clone())),
+            Some(CftValueType::Dict(key, value)) => {
+                (Some((**key).clone()), Some((**value).clone()))
+            }
             Some(_) | None => (None, None),
         };
         if entries.is_empty() && key_type.is_none() {
@@ -449,7 +463,10 @@ impl ValueResolver<'_, '_> {
                 self.resolve_static_value(module, key, key_type.as_ref(), visiting)?;
             let (resolved_value_type, resolved_value) =
                 self.resolve_static_value(module, value, value_type.as_ref(), visiting)?;
-            if !matches!(resolved_key_type, CftValueType::Int | CftValueType::String | CftValueType::Enum(_)) {
+            if !matches!(
+                resolved_key_type,
+                CftValueType::Int | CftValueType::String | CftValueType::Enum(_)
+            ) {
                 self.push_diag(
                     CftErrorCode::InvalidDictKeyType,
                     module,
@@ -467,7 +484,12 @@ impl ValueResolver<'_, '_> {
             }
             if let Some(expected_value) = &value_type {
                 if !self.default_type_assignable(&resolved_value_type, expected_value) {
-                    return self.const_type_mismatch(module, value, expected_value, &resolved_value_type);
+                    return self.const_type_mismatch(
+                        module,
+                        value,
+                        expected_value,
+                        &resolved_value_type,
+                    );
                 }
             } else {
                 value_type = Some(resolved_value_type);
@@ -485,10 +507,7 @@ impl ValueResolver<'_, '_> {
             values.push((resolved_key, resolved_value));
         }
         Some((
-            CftValueType::Dict(
-                Box::new(key_type?),
-                Box::new(value_type?),
-            ),
+            CftValueType::Dict(Box::new(key_type?), Box::new(value_type?)),
             CftConstValue::Dictionary(values),
         ))
     }
@@ -532,8 +551,7 @@ impl ValueResolver<'_, '_> {
                 return None;
             };
             let expected = field.inferred_type.value_type()?.clone();
-            let (_, value) =
-                self.resolve_static_value(module, value, Some(&expected), visiting)?;
+            let (_, value) = self.resolve_static_value(module, value, Some(&expected), visiting)?;
             values.push((FieldName::from_validated(name.name.clone()), value));
         }
         let resolving_constant = visiting.iter().any(|name| self.consts.contains_key(name));
@@ -567,7 +585,10 @@ impl ValueResolver<'_, '_> {
                     CftErrorCode::InvalidDefaultExpression,
                     &declaring_type.module,
                     default.span,
-                    format!("default dependency cycle at `{}.{name}`", field.declaring_type),
+                    format!(
+                        "default dependency cycle at `{}.{name}`",
+                        field.declaring_type
+                    ),
                 );
                 return None;
             }
@@ -636,9 +657,9 @@ fn contains_runtime_default(expression: &DefaultExpr) -> bool {
         DefaultExprKind::Object(fields) | DefaultExprKind::TypedObject { fields, .. } => fields
             .iter()
             .any(|(_, value)| contains_runtime_default(value)),
-        DefaultExprKind::Dictionary(entries) => entries.iter().any(|(key, value)| {
-            contains_runtime_default(key) || contains_runtime_default(value)
-        }),
+        DefaultExprKind::Dictionary(entries) => entries
+            .iter()
+            .any(|(key, value)| contains_runtime_default(key) || contains_runtime_default(value)),
         DefaultExprKind::Int(_)
         | DefaultExprKind::Float(_)
         | DefaultExprKind::Bool(_)

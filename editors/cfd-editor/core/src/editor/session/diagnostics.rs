@@ -106,7 +106,10 @@ pub fn diagnostics_from_store(queries: ProjectQueries<'_>, project_root: &Path) 
             .enumerate()
             .map(|(index, diagnostic)| {
                 let logical = store.logical_location(index);
-                let source_range = diagnostic.primary.as_ref().map(|label| label.location.text_range());
+                let source_range = diagnostic
+                    .primary
+                    .as_ref()
+                    .map(|label| label.location.text_range());
                 let mut flat = diagnostic.flat_view(
                     logical.and_then(|loc| loc.actual_type.clone()),
                     logical.and_then(|loc| loc.record_key.clone()),
@@ -141,19 +144,23 @@ fn normalize_target(
                 .is_none()
             {
                 let file_path = file_path.clone();
-                let range = source_range.or_else(|| queries
-                    .rejected_records_by_coordinate(&coordinate.actual_type, &coordinate.key)
-                    .find(|record| record.display_path == file_path)
-                    .and_then(|record| match &record.origin {
-                        coflow_runtime::RecordOrigin::File { span, .. } => *span,
-                        coflow_runtime::RecordOrigin::None => None,
-                    })
-                    .map(|span| coflow_runtime::TextRange::from_parts(
-                        span.start_line,
-                        span.start_character,
-                        span.end_line,
-                        span.end_character,
-                    )));
+                let range = source_range.or_else(|| {
+                    queries
+                        .rejected_records_by_coordinate(&coordinate.actual_type, &coordinate.key)
+                        .find(|record| record.display_path == file_path)
+                        .and_then(|record| match &record.origin {
+                            coflow_runtime::RecordOrigin::File { span, .. } => *span,
+                            coflow_runtime::RecordOrigin::None => None,
+                        })
+                        .map(|span| {
+                            coflow_runtime::TextRange::from_parts(
+                                span.start_line,
+                                span.start_character,
+                                span.end_line,
+                                span.end_character,
+                            )
+                        })
+                });
                 *target = DiagnosticTarget::Source { file_path, range };
             }
         }
@@ -223,11 +230,7 @@ mod tests {
             message: message.to_string(),
             target: DiagnosticTarget::TableField {
                 file_path: file_path.to_string(),
-                coordinate: RecordCoordinate::try_new(
-                    actual_type,
-                    record_key,
-                )
-                .expect("coordinate"),
+                coordinate: RecordCoordinate::try_new(actual_type, record_key).expect("coordinate"),
                 field_path: "name".to_string(),
             },
             contexts: Vec::new(),

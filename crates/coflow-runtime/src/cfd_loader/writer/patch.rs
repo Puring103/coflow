@@ -1,16 +1,16 @@
 use crate::api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
 use crate::data_model::CfdValue;
+use coflow_language::cfd::ast::CfdRecord as AstRecord;
+use coflow_language::cfd::CfdAst;
 use coflow_language::cft::CftSchema;
 use coflow_language::source::Span;
-use coflow_language::cfd::CfdAst;
-use coflow_language::cfd::ast::CfdRecord as AstRecord;
 use std::collections::BTreeMap;
 
-use super::CFD_INDENT;
 use super::diag;
 use super::render::serialize_value_for_type;
 use super::schema_nav::type_after_field_segment;
-use super::target::{WriteTarget, locate_target};
+use super::target::{locate_target, WriteTarget};
+use super::CFD_INDENT;
 
 // 补丁生成按路径形态完整分派，拆散会重复记录定位与类型校验上下文。
 #[allow(clippy::too_many_lines)]
@@ -55,12 +55,7 @@ pub(super) fn apply_patch(
                 return Err(error);
             };
             root_path = [WriteFieldPathSegment::Field(top_field.clone())];
-            let target = locate_target(
-                request.schema,
-                request.actual_type,
-                record,
-                &root_path,
-            )?;
+            let target = locate_target(request.schema, request.actual_type, record, &root_path)?;
             (target, materialized)
         }
         Err(error) => return Err(error),
@@ -116,12 +111,7 @@ pub(super) fn apply_patch(
             let outer = CFD_INDENT.repeat(depth);
             let fragment = format!(
                 "{indent}{field_name}: {},\n{outer}",
-                serialize_value_for_type(
-                new_value,
-                    Some(request.schema),
-                    Some(&ty),
-                    depth + 2
-                )
+                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth + 2)
             );
             Ok(format!(
                 "{}{}{}",

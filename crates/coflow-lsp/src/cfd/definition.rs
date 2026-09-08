@@ -252,4 +252,3 @@ fn reference_target_type(ty: &CftValueType) -> Option<&str> {
         _ => None,
     }
 }
-

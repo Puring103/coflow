@@ -1,17 +1,16 @@
 use super::annotations::{field_dimension_name, find_annotation, has_annotation};
 use super::ValidatedSchema;
 use crate::schema::{
-    CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftDisplayMetadata, CftEnum, CftEnumVariant, CftField,
-    CftFieldDimension, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
-    CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
+    CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftDisplayMetadata, CftEnum,
+    CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp, CftSchemaCheckBlock,
+    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue,
     CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp, CftTopLevelCheck, CftType,
     CftValueType,
 };
 use crate::syntax::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment,
-    CheckMessageKind, CheckStmt, CmpOp, DefaultExpr, FieldDef,
-    TypePredicate, UnaryOp,
+    CheckMessageKind, CheckStmt, CmpOp, DefaultExpr, FieldDef, TypePredicate, UnaryOp,
 };
 use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
@@ -136,9 +135,7 @@ impl ValidatedSchema<'_> {
                     .def
                     .fields
                     .iter()
-                    .map(|field| {
-                        Arc::new(self.build_schema_field(&info.module, field, &type_name))
-                    })
+                    .map(|field| Arc::new(self.build_schema_field(&info.module, field, &type_name)))
                     .collect::<Vec<_>>();
                 (type_name, fields)
             })
@@ -158,9 +155,7 @@ impl ValidatedSchema<'_> {
             let id_as_enum = find_annotation(&info.def.annotations, "idAsEnum")
                 .and_then(|annotation| annotation.args.first())
                 .and_then(|arg| match arg {
-                    AnnotationArg::Name(name) => Some(EnumName::from_validated(
-                        name.name.clone(),
-                    )),
+                    AnnotationArg::Name(name) => Some(EnumName::from_validated(name.name.clone())),
                     _ => None,
                 });
             let schema = CftType {
@@ -170,9 +165,7 @@ impl ValidatedSchema<'_> {
                     .def
                     .parent
                     .as_ref()
-                    .map(|parent| {
-                        TypeName::from_validated(parent.name.clone())
-                    }),
+                    .map(|parent| TypeName::from_validated(parent.name.clone())),
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
                 is_struct: has_annotation(&info.def.annotations, "struct"),
@@ -237,9 +230,7 @@ impl ValidatedSchema<'_> {
                     .args
                     .iter()
                     .map(|argument| match argument {
-                        AnnotationArg::Name(name) => CftAnnotationValue::Name(
-                            name.name.clone(),
-                        ),
+                        AnnotationArg::Name(name) => CftAnnotationValue::Name(name.name.clone()),
                         AnnotationArg::String(value, _) => {
                             CftAnnotationValue::String(value.clone())
                         }
@@ -278,7 +269,6 @@ impl ValidatedSchema<'_> {
             .get(&(module.clone(), expr.span.start, expr.span.end))?;
         Some(const_value_as_default(value))
     }
-
 }
 
 fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
@@ -310,15 +300,13 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
         CftConstValue::ResultErr(value) => {
             CftSchemaDefaultValue::ResultErr(Box::new(const_value_as_default(value)))
         }
-        CftConstValue::Array(values) => CftSchemaDefaultValue::Array(
-            values.iter().map(const_value_as_default).collect(),
-        ),
+        CftConstValue::Array(values) => {
+            CftSchemaDefaultValue::Array(values.iter().map(const_value_as_default).collect())
+        }
         CftConstValue::Dictionary(entries) => CftSchemaDefaultValue::Dictionary(
             entries
                 .iter()
-                .map(|(key, value)| {
-                    (const_value_as_default(key), const_value_as_default(value))
-                })
+                .map(|(key, value)| (const_value_as_default(key), const_value_as_default(value)))
                 .collect(),
         ),
         CftConstValue::Object { fields, .. } if fields.is_empty() => {
@@ -436,145 +424,144 @@ impl ValidatedSchema<'_> {
 }
 
 impl ValidatedSchema<'_> {
-// Check 表达式在此集中完成一对一 lowering，保持变体覆盖可审计。
-#[allow(clippy::too_many_lines)]
-fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftSchemaCheckExpr {
-    CftSchemaCheckExpr {
-        kind: match &expr.kind {
-            CheckExprKind::Int(value) => CftSchemaCheckExprKind::Int(*value),
-            CheckExprKind::Float(value) => CftSchemaCheckExprKind::Float(*value),
-            CheckExprKind::Bool(value) => CftSchemaCheckExprKind::Bool(*value),
-            CheckExprKind::String(value) => CftSchemaCheckExprKind::String(value.clone()),
-            CheckExprKind::FormattedString(segments) => {
-                CftSchemaCheckExprKind::FormattedString(
-                    self.convert_format_segments(module, segments),
-                )
-            }
-            CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
-            CheckExprKind::StaticPath(path) => {
-                let raw_name = path.canonical();
-                let resolved_name = raw_name;
-                if self.consts.contains_key(&resolved_name)
-                    || self.enums.contains_key(&resolved_name)
-                {
-                    CftSchemaCheckExprKind::Name(resolved_name)
-                } else {
-                    // 语法层保证名称路径至少包含一个段，这里直接拆出末段作为枚举成员。
-                    let Some((variant, owner)) = path.segments.split_last() else {
-                        debug_assert!(false, "name path must contain at least one segment");
-                        return CftSchemaCheckExpr {
-                            kind: CftSchemaCheckExprKind::Name(resolved_name),
-                            span: expr.span,
+    // Check 表达式在此集中完成一对一 lowering，保持变体覆盖可审计。
+    #[allow(clippy::too_many_lines)]
+    fn convert_check_expr(&self, module: &crate::ModuleId, expr: &CheckExpr) -> CftSchemaCheckExpr {
+        CftSchemaCheckExpr {
+            kind: match &expr.kind {
+                CheckExprKind::Int(value) => CftSchemaCheckExprKind::Int(*value),
+                CheckExprKind::Float(value) => CftSchemaCheckExprKind::Float(*value),
+                CheckExprKind::Bool(value) => CftSchemaCheckExprKind::Bool(*value),
+                CheckExprKind::String(value) => CftSchemaCheckExprKind::String(value.clone()),
+                CheckExprKind::FormattedString(segments) => {
+                    CftSchemaCheckExprKind::FormattedString(
+                        self.convert_format_segments(module, segments),
+                    )
+                }
+                CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
+                CheckExprKind::StaticPath(path) => {
+                    let raw_name = path.canonical();
+                    let resolved_name = raw_name;
+                    if self.consts.contains_key(&resolved_name)
+                        || self.enums.contains_key(&resolved_name)
+                    {
+                        CftSchemaCheckExprKind::Name(resolved_name)
+                    } else {
+                        // 语法层保证名称路径至少包含一个段，这里直接拆出末段作为枚举成员。
+                        let Some((variant, owner)) = path.segments.split_last() else {
+                            debug_assert!(false, "name path must contain at least one segment");
+                            return CftSchemaCheckExpr {
+                                kind: CftSchemaCheckExprKind::Name(resolved_name),
+                                span: expr.span,
+                            };
                         };
-                    };
-                    let owner = owner
-                        .iter()
-                        .map(|segment| segment.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join("::");
-                    CftSchemaCheckExprKind::Field {
-                        expr: Box::new(CftSchemaCheckExpr {
-                            kind: CftSchemaCheckExprKind::Name(owner),
-                            span: path.span,
-                        }),
-                        name: FieldName::from_validated(variant.name.clone()),
+                        let owner = owner
+                            .iter()
+                            .map(|segment| segment.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("::");
+                        CftSchemaCheckExprKind::Field {
+                            expr: Box::new(CftSchemaCheckExpr {
+                                kind: CftSchemaCheckExprKind::Name(owner),
+                                span: path.span,
+                            }),
+                            name: FieldName::from_validated(variant.name.clone()),
+                        }
                     }
                 }
-            }
-            CheckExprKind::Records { type_name } => CftSchemaCheckExprKind::Records {
-                type_name: TypeName::from_validated(
-                    type_name.name.clone(),
-                ),
-            },
-            CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
-                expr: Box::new(self.convert_check_expr(module, inner)),
-                name: FieldName::from_validated(name.name.clone()),
-            },
-            CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
-                expr: Box::new(self.convert_check_expr(module, inner)),
-                index: Box::new(self.convert_check_expr(module, index)),
-            },
-            CheckExprKind::Is {
-                expr: inner,
-                predicate,
-            } => CftSchemaCheckExprKind::Is {
-                expr: Box::new(self.convert_check_expr(module, inner)),
-                predicate: match predicate {
-                    TypePredicate::Some { binding, .. } => CftSchemaTypePredicate::Some {
-                        binding: binding.name.clone(),
+                CheckExprKind::Records { type_name } => CftSchemaCheckExprKind::Records {
+                    type_name: TypeName::from_validated(type_name.name.clone()),
+                },
+                CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
+                    expr: Box::new(self.convert_check_expr(module, inner)),
+                    name: FieldName::from_validated(name.name.clone()),
+                },
+                CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
+                    expr: Box::new(self.convert_check_expr(module, inner)),
+                    index: Box::new(self.convert_check_expr(module, index)),
+                },
+                CheckExprKind::Is {
+                    expr: inner,
+                    predicate,
+                } => CftSchemaCheckExprKind::Is {
+                    expr: Box::new(self.convert_check_expr(module, inner)),
+                    predicate: match predicate {
+                        TypePredicate::Some { binding, .. } => CftSchemaTypePredicate::Some {
+                            binding: binding.name.clone(),
+                        },
+                        TypePredicate::Type(name) => {
+                            CftSchemaTypePredicate::Type(TypeName::from_validated(
+                                self.resolved_aliases
+                                    .get(&name.name)
+                                    .and_then(super::inferred_type::InferredType::object_name)
+                                    .map_or_else(|| name.name.clone(), ToString::to_string),
+                            ))
+                        }
                     },
-                    TypePredicate::Type(name) => {
-                        CftSchemaTypePredicate::Type(TypeName::from_validated(
-                            self.resolved_aliases.get(&name.name)
-                                .and_then(super::inferred_type::InferredType::object_name)
-                                .map_or_else(|| name.name.clone(), ToString::to_string),
-                        ))
-                    }
+                },
+                CheckExprKind::Call { name, args } => CftSchemaCheckExprKind::Call {
+                    name: name.name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| self.convert_check_expr(module, arg))
+                        .collect(),
+                },
+                CheckExprKind::MethodCall {
+                    receiver,
+                    name,
+                    args,
+                } => CftSchemaCheckExprKind::MethodCall {
+                    receiver: Box::new(self.convert_check_expr(module, receiver)),
+                    name: name.name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| self.convert_check_expr(module, arg))
+                        .collect(),
+                },
+                CheckExprKind::BinOp { op, lhs, rhs } => CftSchemaCheckExprKind::BinOp {
+                    op: convert_bin_op(*op),
+                    lhs: Box::new(self.convert_check_expr(module, lhs)),
+                    rhs: Box::new(self.convert_check_expr(module, rhs)),
+                },
+                CheckExprKind::Unary { op, expr: inner } => CftSchemaCheckExprKind::Unary {
+                    op: match op {
+                        UnaryOp::Not => CftSchemaUnaryOp::Not,
+                        UnaryOp::BitNot => CftSchemaUnaryOp::BitNot,
+                        UnaryOp::Neg => CftSchemaUnaryOp::Neg,
+                    },
+                    expr: Box::new(self.convert_check_expr(module, inner)),
+                },
+                CheckExprKind::CmpChain { first, rest } => CftSchemaCheckExprKind::CmpChain {
+                    first: Box::new(self.convert_check_expr(module, first)),
+                    rest: rest
+                        .iter()
+                        .map(|(op, rhs)| {
+                            (convert_cmp_op(*op), self.convert_check_expr(module, rhs))
+                        })
+                        .collect(),
                 },
             },
-            CheckExprKind::Call { name, args } => CftSchemaCheckExprKind::Call {
-                name: name.name.clone(),
-                args: args
-                    .iter()
-                    .map(|arg| self.convert_check_expr(module, arg))
-                    .collect(),
-            },
-            CheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } => CftSchemaCheckExprKind::MethodCall {
-                receiver: Box::new(self.convert_check_expr(module, receiver)),
-                name: name.name.clone(),
-                args: args
-                    .iter()
-                    .map(|arg| self.convert_check_expr(module, arg))
-                    .collect(),
-            },
-            CheckExprKind::BinOp { op, lhs, rhs } => CftSchemaCheckExprKind::BinOp {
-                op: convert_bin_op(*op),
-                lhs: Box::new(self.convert_check_expr(module, lhs)),
-                rhs: Box::new(self.convert_check_expr(module, rhs)),
-            },
-            CheckExprKind::Unary { op, expr: inner } => CftSchemaCheckExprKind::Unary {
-                op: match op {
-                    UnaryOp::Not => CftSchemaUnaryOp::Not,
-                    UnaryOp::BitNot => CftSchemaUnaryOp::BitNot,
-                    UnaryOp::Neg => CftSchemaUnaryOp::Neg,
-                },
-                expr: Box::new(self.convert_check_expr(module, inner)),
-            },
-            CheckExprKind::CmpChain { first, rest } => CftSchemaCheckExprKind::CmpChain {
-                first: Box::new(self.convert_check_expr(module, first)),
-                rest: rest
-                    .iter()
-                    .map(|(op, rhs)| {
-                        (convert_cmp_op(*op), self.convert_check_expr(module, rhs))
-                    })
-                    .collect(),
-            },
-        },
-        span: expr.span,
+            span: expr.span,
+        }
     }
-}
 
-fn convert_format_segments(
-    &self,
-    module: &crate::ModuleId,
-    segments: &[CheckFormatSegment],
-) -> Vec<CftSchemaCheckFormatSegment> {
-    segments
-        .iter()
-        .map(|segment| match segment {
-            CheckFormatSegment::Text(value, span) => {
-                CftSchemaCheckFormatSegment::Text(value.clone(), *span)
-            }
-            CheckFormatSegment::Expr(expr) => {
-                CftSchemaCheckFormatSegment::Expr(self.convert_check_expr(module, expr))
-            }
-        })
-        .collect()
-}
+    fn convert_format_segments(
+        &self,
+        module: &crate::ModuleId,
+        segments: &[CheckFormatSegment],
+    ) -> Vec<CftSchemaCheckFormatSegment> {
+        segments
+            .iter()
+            .map(|segment| match segment {
+                CheckFormatSegment::Text(value, span) => {
+                    CftSchemaCheckFormatSegment::Text(value.clone(), *span)
+                }
+                CheckFormatSegment::Expr(expr) => {
+                    CftSchemaCheckFormatSegment::Expr(self.convert_check_expr(module, expr))
+                }
+            })
+            .collect()
+    }
 }
 
 fn convert_bin_op(op: BinOp) -> CftSchemaBinOp {

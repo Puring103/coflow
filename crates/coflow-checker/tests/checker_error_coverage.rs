@@ -513,9 +513,7 @@ fn formatted_field_reference(source: &str, field: &str) -> LoadedValueDraft {
     })
 }
 
-fn build_data_value_dependency_cycle(
-    schema: &CftSchema,
-) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_data_value_dependency_cycle(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(

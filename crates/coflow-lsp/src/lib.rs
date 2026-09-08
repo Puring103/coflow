@@ -30,6 +30,7 @@ mod text;
 mod uri;
 mod validation;
 
+use coflow_format::{format_cfd, format_cft};
 #[cfg(test)]
 use coflow_runtime::normalize_path;
 use coflow_runtime::Project;
@@ -49,12 +50,9 @@ use definition::{
 use diagnostics::lsp_diagnostic;
 use document_symbols::document_symbols;
 pub(crate) use documentation::is_builtin_name;
-use coflow_format::{format_cfd, format_cft};
 use formatting::formatting_edits;
 use hover::hover_at;
-use position::{
-    byte_offset_from_position, byte_range, range_from_span, LspPosition,
-};
+use position::{byte_offset_from_position, byte_range, range_from_span, LspPosition};
 use protocol::{
     did_change_document, did_change_watched_files, did_open_document, did_save_document,
     read_message, text_document_uri, TextRequest,
@@ -67,8 +65,8 @@ pub(crate) use state::{
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
 use std::collections::VecDeque;
-use std::io::{self, BufReader, Write};
 use std::io::Cursor as EmbeddedCursor;
+use std::io::{self, BufReader, Write};
 #[cfg(test)]
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -281,7 +279,10 @@ impl RequestMethod {
     }
 
     const fn requires_snapshot(self) -> bool {
-        !matches!(self, Self::Initialize | Self::FunctionDocument | Self::Shutdown)
+        !matches!(
+            self,
+            Self::Initialize | Self::FunctionDocument | Self::Shutdown
+        )
     }
 }
 
@@ -358,11 +359,7 @@ impl EmbeddedLsp {
     ///
     /// # Errors
     /// Returns an error when the LSP handler, response, or embedded transport fails.
-    pub fn request(
-        &mut self,
-        method: &str,
-        params: &Value,
-    ) -> Result<(Value, Vec<Value>), String> {
+    pub fn request(&mut self, method: &str, params: &Value) -> Result<(Value, Vec<Value>), String> {
         self.next_request_id = self.next_request_id.saturating_add(1);
         let id = self.next_request_id;
         self.server.handle_message(&json!({
@@ -715,7 +712,8 @@ impl<W: Write> LspServer<W> {
         };
         let result = match self.request_document(&uri)? {
             LspRequestDocument::Cfd(document) => {
-                let mut result = cfd::semantic_tokens(document.source, document.ast, document.schema);
+                let mut result =
+                    cfd::semantic_tokens(document.source, document.ast, document.schema);
                 result["x-coflow-syntax-valid"] = json!(document.syntax_valid);
                 result
             }

@@ -14,9 +14,9 @@ use self::tokens::{reserved_keyword_name, token_name};
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::limits::StructuralBudget;
 use crate::module::ModuleId;
+use crate::source::Span;
 use crate::syntax::ast::{ModuleAst, NamePath, NameRef};
 use crate::syntax::lexer::{lex, Token, TokenKind};
-use crate::source::Span;
 
 /// Parses one CFT module into its AST.
 ///

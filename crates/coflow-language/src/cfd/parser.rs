@@ -352,7 +352,8 @@ impl<'a> Parser<'a> {
         self.pos = scan_balanced_delimiter(self.source, body_start - 1, '{', '}')
             .ok_or_else(|| self.error("unterminated function body"))?;
         let body_end = self.pos.saturating_sub(1);
-        if let Err(error) = super::function::validate_function_value(&self.source[start..self.pos]) {
+        if let Err(error) = super::function::validate_function_value(&self.source[start..self.pos])
+        {
             return Err(CfdSyntaxDiagnostic {
                 message: error.message,
                 span: Span::new(start + error.offset, start + error.offset + 1),

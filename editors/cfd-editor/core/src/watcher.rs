@@ -4,9 +4,9 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use coflow_runtime::FlatDiagnostic;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use coflow_runtime::FlatDiagnostic;
 
 use crate::editor::{EditorError, ProjectBootstrap, SessionStore};
 
@@ -115,17 +115,14 @@ fn watch_loop(
                         Err(RecvTimeoutError::Timeout) => {
                             let relevant_paths = filter_relevant_paths(&pending_paths);
                             let changed_paths = normalize_paths(&relevant_paths);
-                            let external = sessions
-                                .has_external_file_changes(session_id, &relevant_paths);
+                            let external =
+                                sessions.has_external_file_changes(session_id, &relevant_paths);
                             pending_paths.clear();
                             match external {
                                 Ok(false) => break,
-                                Ok(true) => emit_reload(
-                                    sessions,
-                                    events,
-                                    session_id,
-                                    changed_paths,
-                                ),
+                                Ok(true) => {
+                                    emit_reload(sessions, events, session_id, changed_paths);
+                                }
                                 Err(err) => emit_watch_error(events, session_id, err.message),
                             }
                             break;

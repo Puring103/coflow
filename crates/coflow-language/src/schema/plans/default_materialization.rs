@@ -68,10 +68,7 @@ pub(crate) fn validate_default_materialization(
                     CftErrorCode::DefaultMaterializationCycle,
                     module,
                     source.span,
-                    format!(
-                        "default value materialization cycle: {}",
-                        path.join(" -> ")
-                    ),
+                    format!("default value materialization cycle: {}", path.join(" -> ")),
                 ));
                 continue;
             }
@@ -98,10 +95,7 @@ fn collect_dependencies(
                 collect_dependencies(inner, value, types, out);
             }
         }
-        (
-            CftValueType::Dict(key_type, value_type),
-            CftSchemaDefaultValue::Dictionary(entries),
-        ) => {
+        (CftValueType::Dict(key_type, value_type), CftSchemaDefaultValue::Dictionary(entries)) => {
             for (key, value) in entries {
                 collect_dependencies(key_type, key, types, out);
                 collect_dependencies(value_type, value, types, out);
@@ -110,10 +104,9 @@ fn collect_dependencies(
         (CftValueType::Object(expected), CftSchemaDefaultValue::EmptyObject) => {
             collect_missing_fields(expected, &BTreeSet::new(), types, out);
         }
-        (
-            CftValueType::Object(expected),
-            CftSchemaDefaultValue::Object { type_name, fields },
-        ) if types.contains_key(type_name) && is_assignable(types, type_name, expected) => {
+        (CftValueType::Object(expected), CftSchemaDefaultValue::Object { type_name, fields })
+            if types.contains_key(type_name) && is_assignable(types, type_name, expected) =>
+        {
             let supplied = fields
                 .iter()
                 .map(|(name, _)| name.clone())

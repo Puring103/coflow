@@ -25,9 +25,8 @@ fn cfd_type_names_are_short_and_static_paths_remain_valid() {
         assert!(!diagnostics.is_empty(), "source should fail: {source}");
     }
 
-    let (ast, diagnostics) = parse_cfd(
-        "Item { item { rarity: Quality::Good, target: &Item::other } other {} }",
-    );
+    let (ast, diagnostics) =
+        parse_cfd("Item { item { rarity: Quality::Good, target: &Item::other } other {} }");
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
     assert_eq!(ast.records.len(), 2);
 }

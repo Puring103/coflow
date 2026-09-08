@@ -1,7 +1,7 @@
 use super::inferred_type::InferredType;
 use crate::module::ModuleId;
-use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeAliasDef, TypeDef};
 use crate::source::Span;
+use crate::syntax::ast::{ConstDef, EnumDef, TopLevelCheckDef, TypeAliasDef, TypeDef};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]

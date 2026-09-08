@@ -2,8 +2,8 @@ use crate::build::ValueDraft;
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::{LoadedDictKeyDraft, LoadedValueDraft};
 use crate::model::{CfdDictKey, CfdRecordId};
-use coflow_language::limits::TraversalCursor;
 use coflow_language::cft::CftValueType;
+use coflow_language::limits::TraversalCursor;
 
 use super::Validator;
 
@@ -57,11 +57,7 @@ impl Validator<'_, '_> {
                 self.resolve_enum_key_value(enum_name, variant, record, path.clone())?,
             ),
         };
-        match crate::semantics::validate_dict_key_for_schema(
-            self.schema.cft(),
-            ty,
-            &value,
-        ) {
+        match crate::semantics::validate_dict_key_for_schema(self.schema.cft(), ty, &value) {
             Ok(()) => Some(value),
             Err(error) => {
                 self.push(
