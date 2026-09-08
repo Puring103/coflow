@@ -18,12 +18,13 @@ type Monster {
 
 ## 执行时机与产物边界
 
-`check` 在字段值和默认值构建完成、记录引用解析完成后执行。`coflow check`、`coflow build`、
-`coflow check` 和 `coflow build` 加载完整 CFD 数据并运行相关规则；
-只编译 schema 的 `coflow cft check`、`coflow schema` 和 `coflow codegen` 不执行数据规则。
+`check` 在字段值和默认值构建完成、记录引用解析完成后执行。`coflow check` 和 `coflow build`
+加载完整 CFD 数据并运行相关规则；`coflow cft check`、`coflow schema` 和 `coflow codegen`
+不执行数据规则。
 
-校验失败会作为诊断返回，并阻止 `build` 或 `codegen` 发布新的代码文件。`check` 块本身不会写入 CFD，
-也不会生成运行时代码；目标语言 runtime 读取的是已经通过 Coflow 校验的 CFD 和生成代码。
+数据规则失败会作为诊断返回，并阻止 `build` 发布新的代码文件。`codegen` 仍会拒绝 schema、数据模型或
+生成阶段诊断，但不执行 `check {}`。`check` 块本身不会写入 CFD，也不会生成运行时代码；目标语言
+runtime 读取的是 CFD 和生成代码，发布流程应先通过 `coflow check` 或直接使用 `coflow build`。
 
 ## 可用值
 

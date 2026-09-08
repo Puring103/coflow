@@ -6,7 +6,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{
     CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
 };
-use crate::project::{path_to_slash, Project};
+use crate::project::{normalize_path, path_is_same_or_descendant, path_to_slash, Project};
 use coflow_language::cft::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
@@ -287,6 +287,37 @@ impl ProjectSession {
             &options.data_roots,
             &skip,
         );
+        let project_root = normalize_path(self.project.root_dir());
+        for (configured, in_schema, in_data) in self
+            .project
+            .config()
+            .schema
+            .paths()
+            .iter()
+            .map(|path| (path.as_path(), true, false))
+            .chain(
+                self.project
+                    .data_paths()
+                    .iter()
+                    .map(|source| (source.path().as_path(), false, true)),
+            )
+        {
+            let absolute = self.project.resolve_path(configured);
+            if path_is_same_or_descendant(&absolute, &project_root) {
+                continue;
+            }
+            let display_path = path_to_slash(&normalize_path(&absolute));
+            if let Some(node) = files::build_external_source_subtree(
+                &absolute,
+                &display_path,
+                &options.in_sources,
+                in_schema,
+                in_data,
+            ) {
+                tree.push(node);
+            }
+        }
+        files::sort_file_tree(&mut tree);
         for group in options.dimension_groups.iter().rev() {
             if let Some(node) = files::build_dimension_subtree(
                 self.project.root_dir(),

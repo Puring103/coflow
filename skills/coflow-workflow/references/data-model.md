@@ -12,6 +12,6 @@ CfdDataModel
   diagnostics: DiagnosticSet
 ```
 
-`CfdValue` 覆盖 null、bool、整数、浮点、字符串、enum、引用、数组、字典和对象。默认值、继承、多态、维度 overlay 和 check 在 schema-guided lower/check 阶段完成；目标语言 generator 只读取最终 schema/model。
+`CfdValue` 覆盖 `Option`、`Result`、bool、整数、浮点、字符串、格式化字符串、函数、enum、引用、数组、字典和对象。默认值、继承、多态、维度 overlay 和 check 在 schema-guided lower/check 阶段完成；目标语言 generator 只读取最终 schema/model。
 
 重复记录、未知字段、缺失必填字段、错误引用和 check 失败均是带 source span 的诊断。模型发布是不可变操作，失败尝试不能覆盖上一份成功 generation。

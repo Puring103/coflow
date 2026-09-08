@@ -376,18 +376,15 @@ impl SessionStore {
         }
         let project_root = session.project_root.clone();
         drop(session);
-        let root = project_root.canonicalize().map_err(|error| {
-            EditorError::project(format!("failed to resolve project root: {error}"))
-        })?;
         let path = project_root
             .join(file_path)
             .canonicalize()
             .map_err(|error| {
                 EditorError::not_found(format!("failed to resolve `{file_path}`: {error}"))
             })?;
-        if !path.starts_with(&root) || !path.is_file() {
+        if !path.is_file() {
             return Err(EditorError::not_found(format!(
-                "source file `{file_path}` is outside the project or does not exist"
+                "source file `{file_path}` does not exist"
             )));
         }
         Ok(path)

@@ -38,13 +38,7 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to discover schema", &err))
         })?
         .into_iter()
-        .filter_map(|source| {
-            source
-                .canonical_path
-                .strip_prefix(&project_root)
-                .ok()
-                .map(coflow_runtime::path_to_slash)
-        })
+        .map(|source| source.module_id)
         .collect();
     let runtime = Runtime::new();
     let language_server = coflow_lsp::EmbeddedLsp::new(project.clone());
