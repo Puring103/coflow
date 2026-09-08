@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
@@ -77,4 +78,5 @@ public sealed partial class RuntimeSettings : IEquatable<RuntimeSettings>
         return hash.ToHashCode();
     }
 
+}
 }

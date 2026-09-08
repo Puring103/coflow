@@ -1,7 +1,12 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
 using System;
 using System.Collections.Generic;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal sealed class CoflowClosureTemplate
 {
@@ -57,4 +62,5 @@ internal sealed class CoflowClosureProgramTemplate
 
     internal CoflowClosureTemplate Link(CoflowProgramLinker linker) =>
         linker.RegisterClosure(new CoflowClosureTemplate(Program.Link(linker), _captureTypes));
+}
 }

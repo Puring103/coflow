@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static partial class CoflowFunctionFrontend
 {
@@ -189,16 +196,21 @@ internal static partial class CoflowFunctionFrontend
 
         }
 
-        private sealed class LambdaParseContext(
-            int scopeBase,
-            Dictionary<string, (int Index, Type Type)> parameters,
-            int parameterCount)
+        private sealed class LambdaParseContext
         {
             private readonly Dictionary<string, int> _captureIndexes = new(StringComparer.Ordinal);
             private readonly List<Expr> _captures = new();
+            private readonly int _parameterCount;
 
-            internal int ScopeBase { get; } = scopeBase;
-            internal Dictionary<string, (int Index, Type Type)> Parameters { get; } = parameters;
+            internal LambdaParseContext(int scopeBase, Dictionary<string, (int Index, Type Type)> parameters, int parameterCount)
+            {
+                ScopeBase = scopeBase;
+                Parameters = parameters;
+                _parameterCount = parameterCount;
+            }
+
+            internal int ScopeBase { get; }
+            internal Dictionary<string, (int Index, Type Type)> Parameters { get; }
             internal IReadOnlyList<Expr> Captures => _captures;
 
             internal Expr Capture(string identity, Expr source)
@@ -209,7 +221,7 @@ internal static partial class CoflowFunctionFrontend
                     _captureIndexes.Add(identity, index);
                     _captures.Add(source);
                 }
-                return new ArgumentExpr(parameterCount + index, source.Type);
+                return new ArgumentExpr(_parameterCount + index, source.Type);
             }
         }
 
@@ -401,9 +413,17 @@ internal static partial class CoflowFunctionFrontend
         {
         }
 
-        private sealed class LoopEmitContext(int continueTarget)
+        private sealed class LoopEmitContext
         {
-            internal int ContinueTarget { get; set; } = continueTarget;
+            private readonly int continueTarget;
+
+            internal LoopEmitContext(int continueTarget)
+            {
+                this.continueTarget = continueTarget;
+                ContinueTarget = continueTarget;
+            }
+
+            internal int ContinueTarget { get; set; }
             internal List<int> BreakJumps { get; } = new();
             internal List<int> ContinueJumps { get; } = new();
         }
@@ -738,4 +758,4 @@ internal static partial class CoflowFunctionFrontend
             return operation.Length != 0;
         }
 }
-
+}

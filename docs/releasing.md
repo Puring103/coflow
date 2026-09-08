@@ -88,5 +88,10 @@ whether a newer release exists. The Windows CLI ships as an installer rather
 than a plain archive, so it is updated by re-running that installer;
 `self-update` reports the platform as unsupported there.
 
-Release tags must match the root Cargo package version exactly (`vX.Y.Z`). Run
-the full release gate from `AGENTS.md` before tagging.
+Release tags must match the root Cargo package version exactly (`vX.Y.Z`).
+Patch releases (`Z > 0`, such as `0.10.3`) use the same gate as normal development:
+`cargo check --workspace` and `cargo test --workspace`.
+Major and minor releases (`X.Y.0`, such as `0.10.0` or `1.0.0`) require the full
+gate in `AGENTS.md`, including C# runtime and benchmark checks.
+Manual release workflow runs select the gate from the root Cargo version as well.
+All releases still validate their version and build, sign, and publish the same artifacts.

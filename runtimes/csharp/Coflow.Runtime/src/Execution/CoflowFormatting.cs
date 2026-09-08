@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Globalization;
 using System.Linq.Expressions;
@@ -227,7 +234,9 @@ internal static class CoflowFormatting
     {
         var formatKey = (Func<TKey, bool, string>)keyFormatter;
         var formatValue = (Func<TValue, bool, string>)valueFormatter;
-        return $"{{ {string.Join(", ", values.Select(item =>
-            formatKey(item.Key, true) + ": " + formatValue(item.Value, true)))} }}";
+        var entries = string.Join(", ", values.Select(item =>
+            formatKey(item.Key, true) + ": " + formatValue(item.Value, true)));
+        return "{ " + entries + " }";
     }
+}
 }

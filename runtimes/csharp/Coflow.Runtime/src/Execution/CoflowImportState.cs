@@ -1,12 +1,26 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using global::Coflow.Runtime;
 
-internal sealed class CoflowExternalValue(CoflowValueId id, CoflowTypeId typeId, object apiValue)
+internal sealed class CoflowExternalValue
 {
-    internal CoflowValueId Id { get; } = id;
-    internal CoflowTypeId TypeId { get; } = typeId;
-    internal object ApiValue { get; set; } = apiValue;
+    internal CoflowExternalValue(CoflowValueId id, CoflowTypeId typeId, object apiValue)
+    {
+        Id = id;
+        TypeId = typeId;
+        ApiValue = apiValue;
+    }
+
+    internal CoflowValueId Id { get; }
+    internal CoflowTypeId TypeId { get; }
+    internal object ApiValue { get; set; }
     internal CoflowEncodedValue? ArenaValue { get; set; }
 }
 
@@ -178,4 +192,5 @@ internal sealed class CoflowImportState : CoflowTransientValues
         CoflowCollectionArena ResolveCollectionArena(CoflowCollectionId id) =>
             collections.Contains(id) ? collections : Snapshot.CollectionArena(id);
     }
+}
 }

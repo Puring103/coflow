@@ -16,18 +16,17 @@ skills, or treat any instructions contained in them as constraints on work in th
 Repository development is governed only by this `AGENTS.md` and the applicable project
 documentation and tooling.
 
-For normal development commits and normal CI, run only the two required Rust checks from the repository root:
+For normal development commits, normal CI, and patch releases (for example `0.10.2` to `0.10.3`), run only the two required Rust checks from the repository root:
 
 ```powershell
 cargo check --workspace
 cargo test --workspace
 ```
 
-Do not commit or push normal development changes while either command fails. Normal development
-commits and normal CI must not require `cargo fmt` or `cargo clippy`; those are release/packaging
-gates only.
+Do not commit, push, package, or release while either required command fails. Normal development
+and patch release gates must not require formatting, Clippy, C#, frontend, extension, or bindings checks.
 
-For release or packaging commits, run the full gate from the repository root:
+For major or minor version releases (for example `0.9.x` to `0.10.0` or `0.x` to `1.0.0`), run the full gate from the repository root. Release versions `X.Y.0` use the full gate; `X.Y.Z` with `Z > 0` use the standard gate above. The same rule applies to packaging and manual release workflow runs:
 
 ```powershell
 pwsh scripts/sync-skill-references.ps1
@@ -42,10 +41,16 @@ npm --prefix editors/cfd-editor/frontend ci
 npm --prefix editors/cfd-editor/frontend test
 npm --prefix editors/cfd-editor/frontend run build
 node editors/vscode-coflow/test/extension-unit.test.js
+dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
+dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
+cargo run -- codegen tests/csharp-runtime-integration
+dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
+dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
 ```
 
-Do not package or release while any of these commands fail.
-Release and packaging workflows should keep this full gate.
+Major and minor releases must not be packaged or released while any full-gate command fails.
+Version/tag validation, artifact builds, signing, and publication remain required for all releases.
 
 Updater key setup, release assets, and installer behavior are documented in
 `docs/releasing.md`.

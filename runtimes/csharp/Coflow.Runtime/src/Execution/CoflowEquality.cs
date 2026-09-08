@@ -1,16 +1,38 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 // 只借用现有列及偏移；比较过程不解码 CLR 集合或复制寄存器。
-internal readonly record struct CoflowValueView(
-    IList<long> Integers, IList<double> Floats, IList<object?> References,
-    int IntegerBase, int FloatBase, int ReferenceBase)
+internal readonly struct CoflowValueView
 {
+    public IList<long> Integers { get; init; }
+    public IList<double> Floats { get; init; }
+    public IList<object?> References { get; init; }
+    public int IntegerBase { get; init; }
+    public int FloatBase { get; init; }
+    public int ReferenceBase { get; init; }
+
+    public CoflowValueView(IList<long> Integers, IList<double> Floats, IList<object?> References, int IntegerBase, int FloatBase, int ReferenceBase)
+    {
+        this.Integers = Integers;
+        this.Floats = Floats;
+        this.References = References;
+        this.IntegerBase = IntegerBase;
+        this.FloatBase = FloatBase;
+        this.ReferenceBase = ReferenceBase;
+    }
+
     internal long Integer => Integers[IntegerBase];
     internal double Float => Floats[FloatBase];
     internal object? Reference => References[ReferenceBase];
     internal CoflowValueView Advance(int integers, int floats = 0, int references = 0) =>
-        this with { IntegerBase = IntegerBase + integers, FloatBase = FloatBase + floats,
-            ReferenceBase = ReferenceBase + references };
+        new CoflowValueView(Integers, Floats, References, IntegerBase + integers,
+            FloatBase + floats, ReferenceBase + references);
 }
 
 internal static class CoflowEquality
@@ -104,4 +126,5 @@ internal static class CoflowEquality
                 throw new InvalidOperationException($"Type `{shape.Type}` does not support equality.");
         }
     }
+}
 }

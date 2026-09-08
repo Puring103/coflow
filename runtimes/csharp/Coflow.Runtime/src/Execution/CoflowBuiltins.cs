@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Text.RegularExpressions;
 
@@ -24,11 +31,19 @@ internal enum CoflowBuiltinKind : byte
     CollectionSuperset,
 }
 
-internal readonly record struct CoflowBuiltin(
-    Type ResultType,
-    CoflowBuiltinKind Kind,
-    CoflowNativeCall? Call = null)
+internal readonly struct CoflowBuiltin
 {
+    public Type ResultType { get; init; }
+    public CoflowBuiltinKind Kind { get; init; }
+    public CoflowNativeCall? Call { get; init; }
+
+    public CoflowBuiltin(Type ResultType, CoflowBuiltinKind Kind, CoflowNativeCall? Call = null)
+    {
+        this.ResultType = ResultType;
+        this.Kind = Kind;
+        this.Call = Call;
+    }
+
     internal bool HasCollectionArgument => Kind is
         CoflowBuiltinKind.CollectionContains or
         CoflowBuiltinKind.DictionaryContainsKey or
@@ -175,4 +190,5 @@ internal static class CoflowBuiltinLibrary
             throw new InvalidOperationException("approxEqual epsilon must be finite and non-negative");
         return Math.Abs(left - right) <= epsilon;
     }
+}
 }

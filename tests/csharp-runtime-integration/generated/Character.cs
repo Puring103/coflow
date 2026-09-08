@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class Character : IEquatable<Character>
@@ -201,4 +202,5 @@ public sealed partial class Character : IEquatable<Character>
     public override int GetHashCode() =>
         Id.GetHashCode();
 
+}
 }

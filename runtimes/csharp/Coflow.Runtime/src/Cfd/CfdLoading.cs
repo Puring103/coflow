@@ -1,18 +1,29 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 using System.Globalization;
 
-internal sealed class CoflowLoadedValue(
-    CoflowTypeId typeId,
-    string declaredType,
-    string recordKey,
-    object apiValue)
+internal sealed class CoflowLoadedValue
 {
-    internal CoflowTypeId TypeId { get; } = typeId;
-    internal string DeclaredType { get; } = declaredType;
-    internal string RecordKey { get; } = recordKey;
-    internal object ApiValue { get; } = apiValue;
+    internal CoflowLoadedValue(CoflowTypeId typeId, string declaredType, string recordKey, object apiValue)
+    {
+        TypeId = typeId;
+        DeclaredType = declaredType;
+        RecordKey = recordKey;
+        ApiValue = apiValue;
+    }
+
+    internal CoflowTypeId TypeId { get; }
+    internal string DeclaredType { get; }
+    internal string RecordKey { get; }
+    internal object ApiValue { get; }
     internal IReadOnlyList<CoflowFunctionEntry> Functions { get; set; } = Array.Empty<CoflowFunctionEntry>();
 }
 
@@ -633,7 +644,7 @@ public static class CfdValueReader
     {
         CfdStringValue value => value.Value,
         CfdFormattedStringValue value => value.Source,
-        CfdConstantValue { Constant.Value: string value } => value,
+        CfdConstantValue { Constant: { Value: string value } } => value,
         _ => throw Invalid(node, "string"),
     };
 
@@ -644,24 +655,24 @@ public static class CfdValueReader
 
     public static int Int32(CfdValueNode node) => node switch
     {
-        CfdConstantValue { Constant.Value: int value } => value,
-        CfdConstantValue { Constant.Value: long value } when value is >= int.MinValue and <= int.MaxValue => (int)value,
+        CfdConstantValue { Constant: { Value: int value } } => value,
+        CfdConstantValue { Constant: { Value: long value } } when value is >= int.MinValue and <= int.MaxValue => (int)value,
         _ when int.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) => value,
         _ => throw Invalid(node, "32-bit integer", "CFD-VALUE-NUMERIC"),
     };
 
     public static long Int64(CfdValueNode node) => node switch
     {
-        CfdConstantValue { Constant.Value: long value } => value,
-        CfdConstantValue { Constant.Value: int value } => value,
+        CfdConstantValue { Constant: { Value: long value } } => value,
+        CfdConstantValue { Constant: { Value: int value } } => value,
         _ when long.TryParse(ScalarText(node), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) => value,
         _ => throw Invalid(node, "64-bit integer", "CFD-VALUE-NUMERIC"),
     };
 
     public static float Float32(CfdValueNode node) => node switch
     {
-        CfdConstantValue { Constant.Value: float value } when float.IsFinite(value) => value,
-        CfdConstantValue { Constant.Value: double value } when double.IsFinite(value) &&
+        CfdConstantValue { Constant: { Value: float value } } when float.IsFinite(value) => value,
+        CfdConstantValue { Constant: { Value: double value } } when double.IsFinite(value) &&
             value is >= -float.MaxValue and <= float.MaxValue => (float)value,
         _ when float.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             && float.IsFinite(value) => value,
@@ -670,8 +681,8 @@ public static class CfdValueReader
 
     public static double Float64(CfdValueNode node) => node switch
     {
-        CfdConstantValue { Constant.Value: double value } when double.IsFinite(value) => value,
-        CfdConstantValue { Constant.Value: float value } when float.IsFinite(value) => value,
+        CfdConstantValue { Constant: { Value: double value } } when double.IsFinite(value) => value,
+        CfdConstantValue { Constant: { Value: float value } } when float.IsFinite(value) => value,
         _ when double.TryParse(ScalarText(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             && double.IsFinite(value) => value,
         _ => throw Invalid(node, "64-bit finite number", "CFD-VALUE-NUMERIC"),
@@ -679,7 +690,7 @@ public static class CfdValueReader
 
     public static bool Boolean(CfdValueNode node)
     {
-        if (node is CfdConstantValue { Constant.Value: bool constant }) return constant;
+        if (node is CfdConstantValue { Constant: { Value: bool constant } }) return constant;
         if (node is not CfdScalarValue scalar)
             throw Invalid(node, "boolean", "CFD-VALUE-BOOLEAN");
         if (scalar.Value.Equals("true", StringComparison.Ordinal)) return true;
@@ -688,7 +699,7 @@ public static class CfdValueReader
     }
 
     public static T Enum<T>(CfdValueNode node) where T : struct, System.Enum =>
-        node is CfdConstantValue { Constant.Value: T constant }
+        node is CfdConstantValue { Constant: { Value: T constant } }
             ? constant
             : typeof(T).IsDefined(typeof(FlagsAttribute), false)
             ? Flags<T>(node, typeof(T).Name, DeclaredMask<T>(), ResolveEnumValue<T>)
@@ -700,7 +711,7 @@ public static class CfdValueReader
     public static T Enum<T>(CfdValueNode node, string enumName, Func<string, T?> resolve)
         where T : struct, System.Enum
     {
-        if (node is CfdConstantValue { Constant.Value: T constant }) return constant;
+        if (node is CfdConstantValue { Constant: { Value: T constant } }) return constant;
         var token = EnumToken(node, enumName);
         return resolve(token) ?? throw Invalid(node, $"enum `{enumName}`", "CFD-VALUE-ENUM");
     }
@@ -987,4 +998,5 @@ public static class CfdValueReader
 
     private static CfdLoadException Invalid(CfdValueNode? node, string expected, string code = "CFD-VALUE-TYPE") =>
         new(new[] { new CfdDiagnostic(code, node is null ? $"value is not {expected}" : $"CFD value at {node.Span} is not {expected}", string.Empty, node?.Span) });
+}
 }

@@ -1,11 +1,23 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static partial class CoflowFunctionFrontend
 {
     /// <summary>token 游标只负责顺序读取，不持有绑定、类型或控制流状态。</summary>
-    internal sealed class FunctionTokenCursor(IReadOnlyList<Token> tokens)
+    internal sealed class FunctionTokenCursor
     {
-        internal IReadOnlyList<Token> Tokens { get; } = tokens;
+        internal FunctionTokenCursor(IReadOnlyList<Token> tokens)
+        {
+            Tokens = tokens;
+        }
+
+        internal IReadOnlyList<Token> Tokens { get; }
         internal int Index { get; private set; }
         internal Token Peek() => Tokens[Index];
         internal Token Advance() => Tokens[Index++];
@@ -323,4 +335,5 @@ internal static class CoflowTypeNameResolver
         result.Add(value[start..]);
         return result.ToArray();
     }
+}
 }

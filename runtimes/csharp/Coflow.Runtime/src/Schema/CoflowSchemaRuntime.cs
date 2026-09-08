@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -187,7 +194,7 @@ public sealed class CoflowSchemaRuntimeBuilder
         if (!typeId.IsValid) throw new ArgumentOutOfRangeException(nameof(typeId));
         if (_types.TryGetValue(type, out var existing))
         {
-            if (existing != typeId)
+            if (existing.Value != typeId.Value)
                 throw new InvalidOperationException($"Coflow type `{type}` has conflicting TypeIds.");
             return;
         }
@@ -283,11 +290,14 @@ internal static class CoflowSchemaRuntimeContext
         return new Scope(owns);
     }
 
-    internal readonly struct Scope(bool owns) : IDisposable
+    internal readonly struct Scope : IDisposable
     {
+        private readonly bool _owns;
+        internal Scope(bool owns) { _owns = owns; }
         public void Dispose()
         {
-            if (owns) _current = null;
+            if (_owns) _current = null;
         }
     }
+}
 }

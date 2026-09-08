@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static partial class CoflowFunctionFrontend
 {
@@ -924,4 +931,5 @@ internal static partial class CoflowFunctionFrontend
                 : CoflowCompilationPipeline.FunctionSpan(_entry.Source, expression.SourceOffset));
 
         }
+}
 }

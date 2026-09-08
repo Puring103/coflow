@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class Scenario : IEquatable<Scenario>
@@ -391,4 +392,5 @@ public sealed partial class Scenario : IEquatable<Scenario>
     public override int GetHashCode() =>
         Id.GetHashCode();
 
+}
 }

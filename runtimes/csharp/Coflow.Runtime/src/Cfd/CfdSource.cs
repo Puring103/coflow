@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>Logical project path and UTF-16 source text for one CFD file.</summary>
 internal readonly struct CfdSource : IEquatable<CfdSource>
@@ -34,4 +41,5 @@ internal sealed class DelegateCfdTextLoader : ICfdTextLoader
         text = _loader(logicalPath);
         return text is not null;
     }
+}
 }

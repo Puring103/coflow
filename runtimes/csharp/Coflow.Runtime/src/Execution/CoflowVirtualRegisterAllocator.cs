@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal sealed record CoflowRegisterAllocation(
     CoflowValueRegister[] Registers,
@@ -219,4 +226,5 @@ internal static class CoflowVirtualRegisterAllocator
         CoflowBlockTerminator.Propagate propagate => new[] { propagate.Payload, propagate.ReturnValue },
         _ => Array.Empty<CoflowVirtualValue>(),
     };
+}
 }

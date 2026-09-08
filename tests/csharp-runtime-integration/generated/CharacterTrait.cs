@@ -2,7 +2,8 @@
 #nullable enable
 using System;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 [Flags]
@@ -12,4 +13,5 @@ public enum CharacterTrait
     Durable = 1,
     Ranged = 2,
     Magical = 4,
+}
 }

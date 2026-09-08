@@ -6,7 +6,8 @@ using System.Linq;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public static class Schema
@@ -1690,4 +1691,5 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
+}
 }

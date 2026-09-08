@@ -1,8 +1,15 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
 using System.Globalization;
 using System.ComponentModel;
 using System.Text;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>Schema-free parser shared by generated target models.</summary>
 internal static class CfdParser
@@ -613,6 +620,17 @@ internal static class CfdParser
         private CfdSpan SpanFrom(Position start) => new(start.Line, start.Column, _line, _column);
         private void Error(string code, string message, CfdSpan span) => _errors.Add(new CfdDiagnostic(code, message, _source.Path, span));
         private void ThrowIfErrors() { if (_errors.Count != 0) throw new CfdParseException(_errors); }
-        private readonly record struct Position(int Line, int Column);
+        private readonly struct Position
+        {
+            public int Line { get; init; }
+            public int Column { get; init; }
+
+            public Position(int Line, int Column)
+            {
+                this.Line = Line;
+                this.Column = Column;
+            }
+        }
     }
+}
 }

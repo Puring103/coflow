@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static partial class CoflowFunctionFrontend
 {
@@ -71,7 +78,19 @@ internal static partial class CoflowFunctionFrontend
         FatArrow,
     }
 
-    internal readonly record struct Token(TokenKind Kind, string Text, int Offset);
+    internal readonly struct Token
+    {
+        public TokenKind Kind { get; init; }
+        public string Text { get; init; }
+        public int Offset { get; init; }
+
+        public Token(TokenKind Kind, string Text, int Offset)
+        {
+            this.Kind = Kind;
+            this.Text = Text;
+            this.Offset = Offset;
+        }
+    }
 
     /// <summary>词法扫描只把源码转换为带偏移的 token，不访问 Schema 或函数语义。</summary>
     private static class FunctionLexer
@@ -175,10 +194,8 @@ internal static partial class CoflowFunctionFrontend
                                     expressionStart + (error.Offset ?? 0));
                             }
                             foreach (var expressionToken in expressionTokens.Take(expressionTokens.Count - 1))
-                                pieces.Add(expressionToken with
-                                {
-                                    Offset = expressionStart + expressionToken.Offset,
-                                });
+                                pieces.Add(new Token(expressionToken.Kind, expressionToken.Text,
+                                    expressionStart + expressionToken.Offset));
                             pieces.Add(new Token(TokenKind.InterpolationEnd, "}", close));
                             index = close + 1;
                             textOffset = index;
@@ -320,4 +337,5 @@ internal static partial class CoflowFunctionFrontend
             return -1;
         }
     }
+}
 }

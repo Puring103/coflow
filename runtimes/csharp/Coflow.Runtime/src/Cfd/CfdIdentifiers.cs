@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Globalization;
 
@@ -77,4 +84,5 @@ internal static class CfdIdentifiers
         index += width;
         return valid;
     }
+}
 }

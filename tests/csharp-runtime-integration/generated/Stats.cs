@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public readonly partial struct Stats : IEquatable<Stats>
@@ -42,6 +43,7 @@ public readonly partial struct Stats : IEquatable<Stats>
         this.health = health;
         this.attack = attack;
         this.resistances = resistances;
+        _coflowId = default;
         _coflowInitialized = true;
     }
 
@@ -75,4 +77,5 @@ public readonly partial struct Stats : IEquatable<Stats>
         return hash.ToHashCode();
     }
 
+}
 }

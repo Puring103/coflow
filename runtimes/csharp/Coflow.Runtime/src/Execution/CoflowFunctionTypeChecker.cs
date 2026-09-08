@@ -1,17 +1,41 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal static partial class CoflowFunctionFrontend
 {
     /// <summary>类型检查上下文集中拥有类型关系、运算符约束和类型诊断。</summary>
-    internal sealed class FunctionTypeChecker(
-        CoflowCompilerCatalog catalog,
-        Func<int> currentOffset)
+    internal sealed class FunctionTypeChecker
     {
-        internal readonly record struct ForCollection(
-            bool IsRange,
-            bool IsArray,
-            Type FirstType,
-            Type? SecondType);
+        private readonly CoflowCompilerCatalog catalog;
+        private readonly Func<int> currentOffset;
+
+        internal FunctionTypeChecker(CoflowCompilerCatalog catalog, Func<int> currentOffset)
+        {
+            this.catalog = catalog;
+            this.currentOffset = currentOffset;
+        }
+
+        internal readonly struct ForCollection
+        {
+            public bool IsRange { get; init; }
+            public bool IsArray { get; init; }
+            public Type FirstType { get; init; }
+            public Type? SecondType { get; init; }
+
+            public ForCollection(bool IsRange, bool IsArray, Type FirstType, Type? SecondType)
+            {
+                this.IsRange = IsRange;
+                this.IsArray = IsArray;
+                this.FirstType = FirstType;
+                this.SecondType = SecondType;
+            }
+        }
 
         internal IReadOnlyDictionary<string, ICoflowTypeMetadata> Metadata => catalog.Metadata;
 
@@ -343,4 +367,5 @@ internal static partial class CoflowFunctionFrontend
                     arguments.All(item => IsInterpolatable(item, visiting));
         }
     }
+}
 }

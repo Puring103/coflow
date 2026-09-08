@@ -1,15 +1,34 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
-internal readonly record struct CoflowRegisterWindow(
-    int IntegerBase,
-    int FloatBase,
-    int ReferenceBase,
-    int IntegerTop,
-    int FloatTop,
-    int ReferenceTop);
+internal readonly struct CoflowRegisterWindow
+{
+    public int IntegerBase { get; init; }
+    public int FloatBase { get; init; }
+    public int ReferenceBase { get; init; }
+    public int IntegerTop { get; init; }
+    public int FloatTop { get; init; }
+    public int ReferenceTop { get; init; }
+
+    public CoflowRegisterWindow(int IntegerBase, int FloatBase, int ReferenceBase, int IntegerTop, int FloatTop, int ReferenceTop)
+    {
+        this.IntegerBase = IntegerBase;
+        this.FloatBase = FloatBase;
+        this.ReferenceBase = ReferenceBase;
+        this.IntegerTop = IntegerTop;
+        this.FloatTop = FloatTop;
+        this.ReferenceTop = ReferenceTop;
+    }
+}
 
 /// <summary>唯一拥有寄存器数组、当前窗口、codec 临时区和池化清理协议。</summary>
 internal sealed class CoflowRegisterStorage
@@ -63,20 +82,18 @@ internal sealed class CoflowRegisterStorage
         _codecReferenceTop = 0;
     }
 
-    internal CoflowValueRegister Offset(CoflowValueRegister register) => register with
-    {
-        IntegerBase = register.IntegerBase + _integerBase,
-        FloatBase = register.FloatBase + _floatBase,
-        ReferenceBase = register.ReferenceBase + _referenceBase
-    };
+    internal CoflowValueRegister Offset(CoflowValueRegister register) => new(
+        register.Shape,
+        register.IntegerBase + _integerBase,
+        register.FloatBase + _floatBase,
+        register.ReferenceBase + _referenceBase);
 
     internal static CoflowValueRegister Absolute(CoflowValueRegister register, CoflowRegisterWindow window) =>
-        register with
-        {
-            IntegerBase = register.IntegerBase + window.IntegerBase,
-            FloatBase = register.FloatBase + window.FloatBase,
-            ReferenceBase = register.ReferenceBase + window.ReferenceBase
-        };
+        new(
+            register.Shape,
+            register.IntegerBase + window.IntegerBase,
+            register.FloatBase + window.FloatBase,
+            register.ReferenceBase + window.ReferenceBase);
 
     internal long ReadInteger(CoflowRegister register) => _integers[register.Index];
     internal double ReadFloat(CoflowRegister register) => _floats[register.Index];
@@ -276,4 +293,5 @@ internal sealed class CoflowRegisterStorage
         values = RentCleared<T>(baselineCapacity);
         ArrayPool<T>.Shared.Return(expanded);
     }
+}
 }

@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class HealAbility : global::Game.Config.Ability, IEquatable<HealAbility>
@@ -62,4 +63,5 @@ public sealed partial class HealAbility : global::Game.Config.Ability, IEquatabl
     public override int GetHashCode() =>
         Id.GetHashCode();
 
+}
 }

@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public abstract partial class Ability
@@ -45,4 +46,5 @@ public abstract partial class Ability
     }
 
 
+}
 }

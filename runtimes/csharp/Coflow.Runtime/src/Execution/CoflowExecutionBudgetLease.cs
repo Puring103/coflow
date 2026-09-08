@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>唯一维护一次执行中的预算占用，保证帧和寄存器配额成对释放。</summary>
 internal sealed class CoflowExecutionBudgetLease
@@ -61,4 +68,5 @@ internal sealed class CoflowExecutionBudgetLease
         _referenceRegisters = 0;
         _budget = null;
     }
+}
 }

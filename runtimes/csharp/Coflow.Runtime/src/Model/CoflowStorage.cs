@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public sealed class CoflowFieldBinding
@@ -259,3 +266,4 @@ internal delegate void CoflowFieldValueReader(
     CoflowExecutionSession context,
     CoflowValueRegister target,
     object receiver);
+}

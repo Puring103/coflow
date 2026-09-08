@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -238,4 +245,5 @@ internal sealed class CfdDictionaryValue : CfdValueNode
 {
     public CfdDictionaryValue(IReadOnlyList<CfdEntryNode> entries, CfdSpan span) : base(span) => Entries = entries;
     public IReadOnlyList<CfdEntryNode> Entries { get; }
+}
 }

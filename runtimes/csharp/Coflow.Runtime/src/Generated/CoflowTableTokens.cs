@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 using System.ComponentModel;
 
@@ -24,4 +31,5 @@ public sealed class CoflowEnumTableToken<T, TKey> : ICoflowTableToken<CoflowEnum
     private static readonly CoflowEnumTable<T, TKey> EmptyTable = new(Array.Empty<T>(), static _ => default);
     public Type RecordType => typeof(T);
     public CoflowEnumTable<T, TKey> Empty => EmptyTable;
+}
 }

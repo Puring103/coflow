@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>最终程序持有的只读连续数据；构造时复制，避免验证后的编码被调用方修改。</summary>
 internal sealed class CoflowFrozenArray<T> : IReadOnlyList<T>
@@ -24,7 +31,17 @@ internal sealed class CoflowFrozenArray<T> : IReadOnlyList<T>
 
 internal enum CoflowRegisterKind : byte { Integer, Float, Reference }
 
-internal readonly record struct CoflowRegister(CoflowRegisterKind Kind, int Index);
+internal readonly struct CoflowRegister
+{
+    public CoflowRegisterKind Kind { get; init; }
+    public int Index { get; init; }
+
+    public CoflowRegister(CoflowRegisterKind Kind, int Index)
+    {
+        this.Kind = Kind;
+        this.Index = Index;
+    }
+}
 
 internal enum CoflowValueShapeKind : byte { Scalar, Unit, Option, Result, Struct, Collection, Record, Function }
 
@@ -185,12 +202,21 @@ internal sealed class CoflowLayoutRegistry
     }
 }
 
-internal readonly record struct CoflowValueRegister(
-    CoflowValueShape Shape,
-    int IntegerBase,
-    int FloatBase,
-    int ReferenceBase)
+internal readonly struct CoflowValueRegister
 {
+    public CoflowValueShape Shape { get; init; }
+    public int IntegerBase { get; init; }
+    public int FloatBase { get; init; }
+    public int ReferenceBase { get; init; }
+
+    public CoflowValueRegister(CoflowValueShape Shape, int IntegerBase, int FloatBase, int ReferenceBase)
+    {
+        this.Shape = Shape;
+        this.IntegerBase = IntegerBase;
+        this.FloatBase = FloatBase;
+        this.ReferenceBase = ReferenceBase;
+    }
+
     internal CoflowRegister Scalar => Shape.ScalarKind switch
     {
         CoflowRegisterKind.Integer => new(CoflowRegisterKind.Integer, IntegerBase),
@@ -246,11 +272,21 @@ internal enum CoflowRegisterOpCode : byte
     Call, CallIndirect, TailCall, TailCallIndirect, Return,
 }
 
-internal readonly record struct CoflowRegisterInstruction(
-    CoflowRegisterOpCode Code,
-    int A = 0,
-    int B = 0,
-    int C = 0);
+internal readonly struct CoflowRegisterInstruction
+{
+    public CoflowRegisterOpCode Code { get; init; }
+    public int A { get; init; }
+    public int B { get; init; }
+    public int C { get; init; }
+
+    public CoflowRegisterInstruction(CoflowRegisterOpCode Code, int A = 0, int B = 0, int C = 0)
+    {
+        this.Code = Code;
+        this.A = A;
+        this.B = B;
+        this.C = C;
+    }
+}
 
 internal sealed record CoflowRegisterValueTransfer(
     CoflowValueRegister Source,
@@ -330,28 +366,32 @@ internal sealed class CoflowRegisterClosureSite
     internal CoflowValueRegister Target { get; }
 }
 
-internal sealed class CoflowRegisterCallSite(
-    int programIndex,
-    CoflowFunctionSignature signature,
-    Type[] vmParameterTypes,
-    CoflowValueRegister[] sourceArguments,
-    CoflowValueRegister[] windowArguments,
-    bool[] copyArguments,
-    CoflowValueRegister result,
-    int integerWindowBase,
-    int floatWindowBase,
-    int referenceWindowBase)
+internal sealed class CoflowRegisterCallSite
 {
-    internal int ProgramIndex { get; } = programIndex;
-    internal CoflowFunctionSignature Signature { get; } = signature;
-    internal CoflowFrozenArray<Type> VmParameterTypes { get; } = CoflowFrozenArray<Type>.CopyOf(vmParameterTypes);
-    internal CoflowFrozenArray<CoflowValueRegister> SourceArguments { get; } = CoflowFrozenArray<CoflowValueRegister>.CopyOf(sourceArguments);
-    internal CoflowFrozenArray<CoflowValueRegister> Arguments { get; } = CoflowFrozenArray<CoflowValueRegister>.CopyOf(windowArguments);
-    internal CoflowFrozenArray<bool> CopyArguments { get; } = CoflowFrozenArray<bool>.CopyOf(copyArguments);
-    internal CoflowValueRegister Result { get; } = result;
-    internal int IntegerWindowBase { get; } = integerWindowBase;
-    internal int FloatWindowBase { get; } = floatWindowBase;
-    internal int ReferenceWindowBase { get; } = referenceWindowBase;
+    internal CoflowRegisterCallSite(int programIndex, CoflowFunctionSignature signature, Type[] vmParameterTypes, CoflowValueRegister[] sourceArguments, CoflowValueRegister[] windowArguments, bool[] copyArguments, CoflowValueRegister result, int integerWindowBase, int floatWindowBase, int referenceWindowBase)
+    {
+        ProgramIndex = programIndex;
+        Signature = signature;
+        VmParameterTypes = CoflowFrozenArray<Type>.CopyOf(vmParameterTypes);
+        SourceArguments = CoflowFrozenArray<CoflowValueRegister>.CopyOf(sourceArguments);
+        Arguments = CoflowFrozenArray<CoflowValueRegister>.CopyOf(windowArguments);
+        CopyArguments = CoflowFrozenArray<bool>.CopyOf(copyArguments);
+        Result = result;
+        IntegerWindowBase = integerWindowBase;
+        FloatWindowBase = floatWindowBase;
+        ReferenceWindowBase = referenceWindowBase;
+    }
+
+    internal int ProgramIndex { get; }
+    internal CoflowFunctionSignature Signature { get; }
+    internal CoflowFrozenArray<Type> VmParameterTypes { get; }
+    internal CoflowFrozenArray<CoflowValueRegister> SourceArguments { get; }
+    internal CoflowFrozenArray<CoflowValueRegister> Arguments { get; }
+    internal CoflowFrozenArray<bool> CopyArguments { get; }
+    internal CoflowValueRegister Result { get; }
+    internal int IntegerWindowBase { get; }
+    internal int FloatWindowBase { get; }
+    internal int ReferenceWindowBase { get; }
 
     internal CoflowRegisterCallSite Relink(int linkedProgramIndex) => new(
         linkedProgramIndex,
@@ -548,4 +588,5 @@ internal sealed class CoflowRegisterProgram
     internal int ParameterIntegerCount { get; }
     internal int ParameterFloatCount { get; }
     internal int ParameterReferenceCount { get; }
+}
 }

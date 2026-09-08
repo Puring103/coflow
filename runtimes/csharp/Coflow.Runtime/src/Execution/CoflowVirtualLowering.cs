@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>将 typed CFG 链接为最终寄存器程序；寄存器复用由后续活性分配阶段负责。</summary>
 internal static class CoflowVirtualLowering
@@ -743,4 +750,5 @@ internal static class CoflowVirtualLowering
         CoflowConstantReferenceTemplate constant when linker is not null => constant.Link(linker),
         _ => symbol,
     };
+}
 }

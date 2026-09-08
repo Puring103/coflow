@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-namespace Game.Config;
+namespace Game.Config
+{
 
 
 public sealed partial class DamageAbility : global::Game.Config.Ability, IEquatable<DamageAbility>
@@ -62,4 +63,5 @@ public sealed partial class DamageAbility : global::Game.Config.Ability, IEquata
     public override int GetHashCode() =>
         Id.GetHashCode();
 
+}
 }

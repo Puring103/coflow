@@ -1,7 +1,12 @@
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
 using System;
 using System.Collections.Generic;
 
-namespace Coflow.Runtime.CompilerServices;
+namespace Coflow.Runtime.CompilerServices
+{
 
 internal abstract class CoflowClosure
 {
@@ -294,4 +299,5 @@ internal abstract class CoflowClosure
             : new WithCaptures(owner, program, captures, collections,
                 integerCount, floatCount, referenceCount);
     }
+}
 }

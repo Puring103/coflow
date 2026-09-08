@@ -1,4 +1,11 @@
-namespace Coflow.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+using System;
+namespace Coflow.Runtime.CompilerServices
+{
 
 /// <summary>编排函数去重、模板缓存、全局链接和原子发布；不参与单个函数的语义分析。</summary>
 internal static class CoflowCompilationPipeline
@@ -142,4 +149,5 @@ internal static class CoflowCompilationPipeline
         }
         return new CfdSpan(line, column, line, column + (length < function.Source.Length ? 1 : 0));
     }
+}
 }
