@@ -171,8 +171,8 @@ impl ResolvedTypes<'_> {
                 let span = info
                     .def
                     .abstract_span
-                    .map_or(info.def.span, |span| span)
-                    .join(info.def.sealed_span.map_or(info.def.span, |span| span));
+                    .unwrap_or(info.def.span)
+                    .join(info.def.sealed_span.unwrap_or(info.def.span));
                 diagnostics.push(CftDiagnostic::error(
                     CftErrorCode::ConflictingTypeModifiers,
                     info.module.clone(),
