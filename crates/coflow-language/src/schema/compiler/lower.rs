@@ -88,11 +88,7 @@ impl ValidatedSchema<'_> {
                 .iter()
                 .map(|variant| CftEnumVariant {
                     name: EnumVariantName::from_validated(variant.name.clone()),
-                    value: info
-                        .values_by_name
-                        .get(&variant.name)
-                        .copied()
-                        .map_or(0, |value| value),
+                    value: info.values_by_name.get(&variant.name).copied().unwrap_or(0),
                     annotations: Self::schema_annotations(&variant.annotations),
                     display: display_metadata(&variant.annotations),
                     span: variant.span,
