@@ -705,7 +705,7 @@ fn namespace_qualifies_references_without_changing_source_names() {
         .expect("generate namespaced code");
     assert!(files
         .iter()
-        .all(|file| file.contents.contains("namespace Game.Config\n{")));
+        .all(|file| file.contents.replace("\r\n", "\n").contains("namespace Game.Config\n{")));
     let output = all(&files);
     assert!(output.contains("typeof(global::Game.Config.Item)"));
     assert!(output.contains("global::Game.Config.Rarity.Common"));
