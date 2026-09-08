@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+{% if project.namespace %}namespace {{ project.namespace }};
+
+{% endif %}
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
 {% endif %}{{ type.declaration }}
 {

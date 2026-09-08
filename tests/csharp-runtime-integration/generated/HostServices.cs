@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public sealed partial class HostServices : IEquatable<HostServices>
 {
 
@@ -68,12 +71,12 @@ public sealed partial class HostServices : IEquatable<HostServices>
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(5), value);
     }
 
-    internal Func<global::Stats, global::Stats> _coflowechoStats { get; } = default!;
+    internal Func<global::Game.Config.Stats, global::Game.Config.Stats> _coflowechoStats { get; } = default!;
 
 
-    public global::Stats echoStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public global::Game.Config.Stats echoStats(global::Coflow.Runtime.Coflow coflow, global::Game.Config.Stats value)
     {
-        return CoflowInvoker.Invoke<global::Stats, global::Stats>(
+        return CoflowInvoker.Invoke<global::Game.Config.Stats, global::Game.Config.Stats>(
             coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(6), value);
     }
 
@@ -87,7 +90,7 @@ public sealed partial class HostServices : IEquatable<HostServices>
         Func<CoflowFunction<long, long>, CoflowFunction<long, long>> select,
         Func<string, string> decorate,
         Func<Option<long>, Result<long, string>> normalize,
-        Func<global::Stats, global::Stats> echoStats
+        Func<global::Game.Config.Stats, global::Game.Config.Stats> echoStats
     )
     {
         this._coflowenvironment = environment;

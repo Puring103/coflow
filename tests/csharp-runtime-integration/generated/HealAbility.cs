@@ -5,9 +5,12 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
-public sealed partial class HealAbility : global::Ability, IEquatable<HealAbility>
+namespace Game.Config;
+
+
+public sealed partial class HealAbility : global::Game.Config.Ability, IEquatable<HealAbility>
 {
-    public static CoflowStringTableToken<global::HealAbility> Table { get; } = new();
+    public static CoflowStringTableToken<global::Game.Config.HealAbility> Table { get; } = new();
 
 
     public string Id { get; internal set; } = default!;

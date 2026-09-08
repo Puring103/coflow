@@ -6,6 +6,9 @@ using System.Linq;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+{% if project.namespace %}namespace {{ project.namespace }};
+
+{% endif %}
 public static class Schema
 {
     public static global::Coflow.Runtime.Coflow Create(global::Coflow.Runtime.CoflowOptions? options = null) =>

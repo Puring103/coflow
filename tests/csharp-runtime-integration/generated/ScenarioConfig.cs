@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
 {
 
@@ -18,13 +21,13 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     public IReadOnlyList<long> samples { get; }
 
 
-    public IReadOnlyDictionary<string, global::Stats> checkpoints { get; }
+    public IReadOnlyDictionary<string, global::Game.Config.Stats> checkpoints { get; }
 
 
-    public Option<global::Stats> optionalBonus { get; }
+    public Option<global::Game.Config.Stats> optionalBonus { get; }
 
 
-    public Result<Option<global::Stats>, string> validation { get; }
+    public Result<Option<global::Game.Config.Stats>, string> validation { get; }
 
 
 
@@ -32,9 +35,9 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     public ScenarioConfig(
         string label,
         IReadOnlyList<long> samples,
-        IReadOnlyDictionary<string, global::Stats> checkpoints,
-        Option<global::Stats> optionalBonus,
-        Result<Option<global::Stats>, string> validation
+        IReadOnlyDictionary<string, global::Game.Config.Stats> checkpoints,
+        Option<global::Game.Config.Stats> optionalBonus,
+        Result<Option<global::Game.Config.Stats>, string> validation
     )
     {
         this.label = label;
@@ -61,9 +64,9 @@ public readonly partial struct ScenarioConfig : IEquatable<ScenarioConfig>
     public bool Equals(ScenarioConfig other) =>
         System.Collections.Generic.EqualityComparer<string>.Default.Equals(label, other.label) &&
         System.Collections.Generic.EqualityComparer<IReadOnlyList<long>>.Default.Equals(samples, other.samples) &&
-        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, global::Stats>>.Default.Equals(checkpoints, other.checkpoints) &&
-        System.Collections.Generic.EqualityComparer<Option<global::Stats>>.Default.Equals(optionalBonus, other.optionalBonus) &&
-        System.Collections.Generic.EqualityComparer<Result<Option<global::Stats>, string>>.Default.Equals(validation, other.validation);
+        System.Collections.Generic.EqualityComparer<IReadOnlyDictionary<string, global::Game.Config.Stats>>.Default.Equals(checkpoints, other.checkpoints) &&
+        System.Collections.Generic.EqualityComparer<Option<global::Game.Config.Stats>>.Default.Equals(optionalBonus, other.optionalBonus) &&
+        System.Collections.Generic.EqualityComparer<Result<Option<global::Game.Config.Stats>, string>>.Default.Equals(validation, other.validation);
 
     public override bool Equals(object? obj) =>
         obj is ScenarioConfig other && Equals(other);

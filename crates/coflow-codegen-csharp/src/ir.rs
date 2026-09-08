@@ -24,8 +24,9 @@ pub fn build_project(
     schema: &CftSchema,
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
+    namespace: &str,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let view = CsharpLoweringPlan::lower(schema, non_empty_tables)?;
+    let view = CsharpLoweringPlan::lower(schema, non_empty_tables, namespace)?;
     let diagnostics = validate_csharp_codegen(&view, &id_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::from_messages(
@@ -119,6 +120,7 @@ pub fn build_project(
     }
 
     Ok(CsharpProject {
+        namespace: namespace.to_string(),
         dimensions,
         enums,
         types,

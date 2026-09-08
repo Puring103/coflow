@@ -5,9 +5,12 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public sealed partial class Scenario : IEquatable<Scenario>
 {
-    public static CoflowStringTableToken<global::Scenario> Table { get; } = new();
+    public static CoflowStringTableToken<global::Game.Config.Scenario> Table { get; } = new();
 
 
     internal CoflowValueId _coflowId;
@@ -16,9 +19,9 @@ public sealed partial class Scenario : IEquatable<Scenario>
     public string Id { get; internal set; } = default!;
 
 
-    internal global::Character _coflowhero = default!;
+    internal global::Game.Config.Character _coflowhero = default!;
 
-    public global::Character hero
+    public global::Game.Config.Character hero
     {
         get
         {
@@ -27,9 +30,9 @@ public sealed partial class Scenario : IEquatable<Scenario>
     }
 
 
-    internal global::ScenarioConfig _coflowconfig = default!;
+    internal global::Game.Config.ScenarioConfig _coflowconfig = default!;
 
-    public global::ScenarioConfig config
+    public global::Game.Config.ScenarioConfig config
     {
         get
         {
@@ -128,9 +131,9 @@ public sealed partial class Scenario : IEquatable<Scenario>
     }
 
 
-    public bool enumRoundTrip(global::Coflow.Runtime.Coflow coflow, global::CharacterId value)
+    public bool enumRoundTrip(global::Coflow.Runtime.Coflow coflow, global::Game.Config.CharacterId value)
     {
-        return CoflowInvoker.Invoke<global::CharacterId, bool>(
+        return CoflowInvoker.Invoke<global::Game.Config.CharacterId, bool>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(14), value);
     }
 
@@ -233,51 +236,51 @@ public sealed partial class Scenario : IEquatable<Scenario>
     }
 
 
-    public global::Stats makeStats(global::Coflow.Runtime.Coflow coflow, long value)
+    public global::Game.Config.Stats makeStats(global::Coflow.Runtime.Coflow coflow, long value)
     {
-        return CoflowInvoker.Invoke<long, global::Stats>(
+        return CoflowInvoker.Invoke<long, global::Game.Config.Stats>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(29), value);
     }
 
 
-    public global::Stats makeDefaultStats(global::Coflow.Runtime.Coflow coflow, long value)
+    public global::Game.Config.Stats makeDefaultStats(global::Coflow.Runtime.Coflow coflow, long value)
     {
-        return CoflowInvoker.Invoke<long, global::Stats>(
+        return CoflowInvoker.Invoke<long, global::Game.Config.Stats>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(30), value);
     }
 
 
-    public long readExternalStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public long readExternalStats(global::Coflow.Runtime.Coflow coflow, global::Game.Config.Stats value)
     {
-        return CoflowInvoker.Invoke<global::Stats, long>(
+        return CoflowInvoker.Invoke<global::Game.Config.Stats, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(31), value);
     }
 
 
-    public long hostStats(global::Coflow.Runtime.Coflow coflow, global::Stats value)
+    public long hostStats(global::Coflow.Runtime.Coflow coflow, global::Game.Config.Stats value)
     {
-        return CoflowInvoker.Invoke<global::Stats, long>(
+        return CoflowInvoker.Invoke<global::Game.Config.Stats, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(32), value);
     }
 
 
-    public global::Character copyExternalCharacter(global::Coflow.Runtime.Coflow coflow, global::Character value)
+    public global::Game.Config.Character copyExternalCharacter(global::Coflow.Runtime.Coflow coflow, global::Game.Config.Character value)
     {
-        return CoflowInvoker.Invoke<global::Character, global::Character>(
+        return CoflowInvoker.Invoke<global::Game.Config.Character, global::Game.Config.Character>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(33), value);
     }
 
 
-    public long readExternalCharacterCollections(global::Coflow.Runtime.Coflow coflow, global::Character value)
+    public long readExternalCharacterCollections(global::Coflow.Runtime.Coflow coflow, global::Game.Config.Character value)
     {
-        return CoflowInvoker.Invoke<global::Character, long>(
+        return CoflowInvoker.Invoke<global::Game.Config.Character, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(34), value);
     }
 
 
-    public Option<global::Stats> copyOptionalStats(global::Coflow.Runtime.Coflow coflow, Option<global::Stats> value)
+    public Option<global::Game.Config.Stats> copyOptionalStats(global::Coflow.Runtime.Coflow coflow, Option<global::Game.Config.Stats> value)
     {
-        return CoflowInvoker.Invoke<Option<global::Stats>, Option<global::Stats>>(
+        return CoflowInvoker.Invoke<Option<global::Game.Config.Stats>, Option<global::Game.Config.Stats>>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(35), value);
     }
 
@@ -303,9 +306,9 @@ public sealed partial class Scenario : IEquatable<Scenario>
     }
 
 
-    public long syntaxMatch(global::Coflow.Runtime.Coflow coflow, long value, Option<long> optional, Result<long, string> outcome, global::CharacterId character)
+    public long syntaxMatch(global::Coflow.Runtime.Coflow coflow, long value, Option<long> optional, Result<long, string> outcome, global::Game.Config.CharacterId character)
     {
-        return CoflowInvoker.Invoke<long, Option<long>, Result<long, string>, global::CharacterId, long>(
+        return CoflowInvoker.Invoke<long, Option<long>, Result<long, string>, global::Game.Config.CharacterId, long>(
             coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(39), value, optional, outcome, character);
     }
 
@@ -356,8 +359,8 @@ public sealed partial class Scenario : IEquatable<Scenario>
 
     public Scenario(
         string id,
-        global::Character hero,
-        global::ScenarioConfig config,
+        global::Game.Config.Character hero,
+        global::Game.Config.ScenarioConfig config,
         IReadOnlyList<CoflowFunction<long, long>> stages
     )
     {

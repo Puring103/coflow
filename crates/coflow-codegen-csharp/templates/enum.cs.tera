@@ -2,6 +2,9 @@
 #nullable enable
 using System;
 
+{% if project.namespace %}namespace {{ project.namespace }};
+
+{% endif %}
 {% if enum.summary %}/// <summary>{{ enum.summary }}</summary>
 {% endif %}{% if enum.is_flags %}[Flags]
 {% endif %}public enum {{ enum.name }}

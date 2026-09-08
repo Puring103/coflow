@@ -5,15 +5,18 @@ using System.Collections.Generic;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public sealed partial class Character : IEquatable<Character>
 {
-    public static CoflowEnumTableToken<global::Character, global::CharacterId> Table { get; } = new();
+    public static CoflowEnumTableToken<global::Game.Config.Character, global::Game.Config.CharacterId> Table { get; } = new();
 
 
     internal CoflowValueId _coflowId;
 
 
-    public global::CharacterId Id { get; internal set; } = default!;
+    public global::Game.Config.CharacterId Id { get; internal set; } = default!;
 
 
     internal string _coflowname = default!;
@@ -27,9 +30,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal global::CharacterClass _coflowcharacterClass = default!;
+    internal global::Game.Config.CharacterClass _coflowcharacterClass = default!;
 
-    public global::CharacterClass characterClass
+    public global::Game.Config.CharacterClass characterClass
     {
         get
         {
@@ -38,9 +41,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal global::CharacterTrait _coflowtraits = default!;
+    internal global::Game.Config.CharacterTrait _coflowtraits = default!;
 
-    public global::CharacterTrait traits
+    public global::Game.Config.CharacterTrait traits
     {
         get
         {
@@ -60,9 +63,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal global::Stats _coflowstats = default!;
+    internal global::Game.Config.Stats _coflowstats = default!;
 
-    public global::Stats stats
+    public global::Game.Config.Stats stats
     {
         get
         {
@@ -93,9 +96,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal global::Ability _coflowprimaryAbility = default!;
+    internal global::Game.Config.Ability _coflowprimaryAbility = default!;
 
-    public global::Ability primaryAbility
+    public global::Game.Config.Ability primaryAbility
     {
         get
         {
@@ -104,9 +107,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal IReadOnlyList<global::Ability> _coflowabilities = default!;
+    internal IReadOnlyList<global::Game.Config.Ability> _coflowabilities = default!;
 
-    public IReadOnlyList<global::Ability> abilities
+    public IReadOnlyList<global::Game.Config.Ability> abilities
     {
         get
         {
@@ -126,9 +129,9 @@ public sealed partial class Character : IEquatable<Character>
     }
 
 
-    internal Option<global::Character> _coflowfallback = default!;
+    internal Option<global::Game.Config.Character> _coflowfallback = default!;
 
-    public Option<global::Character> fallback
+    public Option<global::Game.Config.Character> fallback
     {
         get
         {
@@ -149,18 +152,18 @@ public sealed partial class Character : IEquatable<Character>
 
 
     public Character(
-        global::CharacterId id,
+        global::Game.Config.CharacterId id,
         string name,
-        global::CharacterClass characterClass,
-        global::CharacterTrait traits,
+        global::Game.Config.CharacterClass characterClass,
+        global::Game.Config.CharacterTrait traits,
         bool enabled,
-        global::Stats stats,
+        global::Game.Config.Stats stats,
         IReadOnlyList<string> tags,
         IReadOnlyDictionary<string, long> attributes,
-        global::Ability primaryAbility,
-        IReadOnlyList<global::Ability> abilities,
+        global::Game.Config.Ability primaryAbility,
+        IReadOnlyList<global::Game.Config.Ability> abilities,
         Result<long, string> status,
-        Option<global::Character> fallback
+        Option<global::Game.Config.Character> fallback
     )
     {
         this.Id = id;

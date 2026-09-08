@@ -232,7 +232,7 @@ fn csharp_codegen_rejects_removed_numeric_width_options() {
 }
 
 #[test]
-fn csharp_codegen_rejects_removed_namespace_option() {
+fn csharp_codegen_applies_namespace_option() {
     let project = write_project();
     fs::write(
         project.path().join("coflow.yaml"),
@@ -241,11 +241,11 @@ fn csharp_codegen_rejects_removed_namespace_option() {
     .expect("config");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
 
-    let error = coflow_runtime::commands::generate_project_code(&opened)
-        .expect_err("removed C# namespace option must not be accepted");
-
-    assert!(error.to_string().contains("unknown field `namespace`"));
-    assert!(!project.path().join("generated/csharp").exists());
+    coflow_runtime::commands::generate_project_code(&opened).expect("generate namespaced C#");
+    let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Metadata.cs"))
+        .expect("metadata");
+    assert!(metadata.contains("namespace Game.Config;"));
+    assert!(metadata.contains("global::Game.Config."));
 }
 
 #[test]

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug)]
 pub struct CsharpLoweringPlan<'a> {
+    namespace: String,
     schema: &'a CftSchema,
     types: Vec<&'a CftType>,
     enums: Vec<&'a CftEnum>,
@@ -25,6 +26,7 @@ impl<'a> CsharpLoweringPlan<'a> {
     pub fn lower(
         schema: &'a CftSchema,
         non_empty_tables: Option<&BTreeSet<String>>,
+        namespace: &str,
     ) -> Result<Self, CsharpCodegenError> {
         let enums = schema.all_enums().collect::<Vec<_>>();
         let csharp_enums = lower_enum_names(&enums);
@@ -74,6 +76,7 @@ impl<'a> CsharpLoweringPlan<'a> {
             .collect::<Vec<_>>();
         let loadable_table_set = loadable_tables.iter().cloned().collect();
         Ok(Self {
+            namespace: namespace.to_string(),
             schema,
             types,
             enums,
@@ -162,14 +165,17 @@ impl<'a> CsharpLoweringPlan<'a> {
             .unwrap_or_else(|| csharp_type_name(enum_name))
     }
 
-    #[allow(clippy::unused_self)] // 目标语言引用统一通过 lowering plan 暴露，调用方不依赖命名实现。
     pub fn csharp_type_ref(&self, type_name: &str) -> String {
-        csharp_qualified_type_name(type_name)
+        // 源名称保持不变，只有生成代码的类型引用附加目标命名空间。
+        if self.namespace.is_empty() {
+            csharp_qualified_type_name(type_name)
+        } else {
+            format!("global::{}.{}", self.namespace, csharp_type_name(type_name))
+        }
     }
 
-    #[allow(clippy::unused_self)] // 枚举与类型引用保持相同的 lowering 边界。
     pub fn csharp_enum_ref(&self, enum_name: &str) -> String {
-        csharp_qualified_type_name(enum_name)
+        self.csharp_type_ref(enum_name)
     }
 
     #[allow(clippy::unused_self)] // 保持所有目标语言命名操作都经由 lowering plan 暴露。

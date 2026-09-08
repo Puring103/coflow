@@ -6,6 +6,9 @@ using System.Linq;
 using Coflow.Runtime;
 using Coflow.Runtime.CompilerServices;
 
+namespace Game.Config;
+
+
 public static class Schema
 {
     public static global::Coflow.Runtime.Coflow Create(global::Coflow.Runtime.CoflowOptions? options = null) =>
@@ -44,13 +47,13 @@ internal sealed class CoflowSchema : ICoflowSchema
     private static CoflowSchemaRuntime BuildRuntime()
     {
         var runtime = new CoflowSchemaRuntimeBuilder();
-        runtime.RegisterEnum<global::CharacterClass>();
-        runtime.RegisterEnum<global::CharacterId>();
-        runtime.RegisterEnum<global::CharacterTrait>();
+        runtime.RegisterEnum<global::Game.Config.CharacterClass>();
+        runtime.RegisterEnum<global::Game.Config.CharacterId>();
+        runtime.RegisterEnum<global::Game.Config.CharacterTrait>();
 
-        runtime.RegisterStruct<global::ScenarioConfig>(
+        runtime.RegisterStruct<global::Game.Config.ScenarioConfig>(
             14, 0, 2,
-            static (ref CoflowValueWriter writer, global::ScenarioConfig value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.ScenarioConfig value) =>
             {
                 writer.Write(value.label);
                 writer.Write(value.samples);
@@ -59,43 +62,43 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.validation);
                 writer.WriteValueId(value._coflowId);
             },
-            static (ref CoflowValueReader reader) => global::ScenarioConfig.WithCoflowValueId(
-                new global::ScenarioConfig(
+            static (ref CoflowValueReader reader) => global::Game.Config.ScenarioConfig.WithCoflowValueId(
+                new global::Game.Config.ScenarioConfig(
                     reader.Read<string>(),
                     reader.Read<IReadOnlyList<long>>(),
-                    reader.Read<IReadOnlyDictionary<string, global::Stats>>(),
-                    reader.Read<Option<global::Stats>>(),
-                    reader.Read<Result<Option<global::Stats>, string>>()
+                    reader.Read<IReadOnlyDictionary<string, global::Game.Config.Stats>>(),
+                    reader.Read<Option<global::Game.Config.Stats>>(),
+                    reader.Read<Result<Option<global::Game.Config.Stats>, string>>()
                 ),
                 reader.ReadValueId()));
-        runtime.RegisterStruct<global::Stats>(
+        runtime.RegisterStruct<global::Game.Config.Stats>(
             4, 0, 0,
-            static (ref CoflowValueWriter writer, global::Stats value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.Stats value) =>
             {
                 writer.Write(value.health);
                 writer.Write(value.attack);
                 writer.Write(value.resistances);
                 writer.WriteValueId(value._coflowId);
             },
-            static (ref CoflowValueReader reader) => global::Stats.WithCoflowValueId(
-                new global::Stats(
+            static (ref CoflowValueReader reader) => global::Game.Config.Stats.WithCoflowValueId(
+                new global::Game.Config.Stats(
                     reader.Read<long>(),
                     reader.Read<long>(),
                     reader.Read<IReadOnlyDictionary<string, long>>()
                 ),
                 reader.ReadValueId()));
 
-        runtime.RegisterType<global::Ability>(new CoflowTypeId(1));
+        runtime.RegisterType<global::Game.Config.Ability>(new CoflowTypeId(1));
 
-        runtime.RegisterType<global::HostServices>(new CoflowTypeId(5));
+        runtime.RegisterType<global::Game.Config.HostServices>(new CoflowTypeId(5));
 
-        runtime.RegisterTypeCodec<global::Character>(
+        runtime.RegisterTypeCodec<global::Game.Config.Character>(
             new CoflowTypeId(2),
             16, 0, 2,
             static value => value._coflowId,
             static value => true,
-            static (value, id) => global::Character.WithCoflowValueId(value, id),
-            static (context, value) => new global::Character(
+            static (value, id) => global::Game.Config.Character.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.Character(
                 context.Import(value.Id),
                 context.Import(value.name),
                 context.Import(value.characterClass),
@@ -109,7 +112,7 @@ internal sealed class CoflowSchema : ICoflowSchema
                 context.Import(value.status),
                 context.Import(value.fallback)
             ),
-            static (ref CoflowValueWriter writer, global::Character value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.Character value) =>
             {
                 writer.Write(value.name);
                 writer.Write(value.characterClass);
@@ -124,89 +127,89 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.fallback);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::DamageAbility>(
+        runtime.RegisterTypeCodec<global::Game.Config.DamageAbility>(
             new CoflowTypeId(3),
             2, 0, 1,
             static value => value._coflowId,
             static value => true,
-            static (value, id) => global::DamageAbility.WithCoflowValueId(value, id),
-            static (context, value) => new global::DamageAbility(
+            static (value, id) => global::Game.Config.DamageAbility.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.DamageAbility(
                 context.Import(value.Id),
                 context.Import(value.label),
                 context.Import(value.damage)
             ),
-            static (ref CoflowValueWriter writer, global::DamageAbility value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.DamageAbility value) =>
             {
                 writer.Write(value.label);
                 writer.Write(value.damage);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::HealAbility>(
+        runtime.RegisterTypeCodec<global::Game.Config.HealAbility>(
             new CoflowTypeId(4),
             2, 0, 1,
             static value => value._coflowId,
             static value => true,
-            static (value, id) => global::HealAbility.WithCoflowValueId(value, id),
-            static (context, value) => new global::HealAbility(
+            static (value, id) => global::Game.Config.HealAbility.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.HealAbility(
                 context.Import(value.Id),
                 context.Import(value.label),
                 context.Import(value.healing)
             ),
-            static (ref CoflowValueWriter writer, global::HealAbility value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.HealAbility value) =>
             {
                 writer.Write(value.label);
                 writer.Write(value.healing);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::RuntimeSettings>(
+        runtime.RegisterTypeCodec<global::Game.Config.RuntimeSettings>(
             new CoflowTypeId(6),
             2, 0, 1,
             static value => value._coflowId,
             static value => true,
-            static (value, id) => global::RuntimeSettings.WithCoflowValueId(value, id),
-            static (context, value) => new global::RuntimeSettings(
+            static (value, id) => global::Game.Config.RuntimeSettings.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.RuntimeSettings(
                 context.Import(value.environment),
                 context.Import(value.retries)
             ),
-            static (ref CoflowValueWriter writer, global::RuntimeSettings value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.RuntimeSettings value) =>
             {
                 writer.Write(value.environment);
                 writer.Write(value.retries);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::Scenario>(
+        runtime.RegisterTypeCodec<global::Game.Config.Scenario>(
             new CoflowTypeId(7),
             17, 0, 2,
             static value => value._coflowId,
             static value => true,
-            static (value, id) => global::Scenario.WithCoflowValueId(value, id),
-            static (context, value) => new global::Scenario(
+            static (value, id) => global::Game.Config.Scenario.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.Scenario(
                 context.Import(value.Id),
                 context.Import(value.hero),
                 context.Import(value.config),
                 context.Import(value.stages)
             ),
-            static (ref CoflowValueWriter writer, global::Scenario value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.Scenario value) =>
             {
                 writer.Write(value.hero);
                 writer.Write(value.config);
                 writer.Write(value.stages);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::ScenarioConfig>(
+        runtime.RegisterTypeCodec<global::Game.Config.ScenarioConfig>(
             new CoflowTypeId(8),
             14, 0, 2,
             static value => value._coflowId,
             static value => value._coflowInitialized,
-            static (value, id) => global::ScenarioConfig.WithCoflowValueId(value, id),
-            static (context, value) => new global::ScenarioConfig(
+            static (value, id) => global::Game.Config.ScenarioConfig.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.ScenarioConfig(
                 context.Import(value.label),
                 context.Import(value.samples),
                 context.Import(value.checkpoints),
                 context.Import(value.optionalBonus),
                 context.Import(value.validation)
             ),
-            static (ref CoflowValueWriter writer, global::ScenarioConfig value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.ScenarioConfig value) =>
             {
                 writer.Write(value.label);
                 writer.Write(value.samples);
@@ -215,18 +218,18 @@ internal sealed class CoflowSchema : ICoflowSchema
                 writer.Write(value.validation);
                 writer.WriteValueId(value._coflowId);
             });
-        runtime.RegisterTypeCodec<global::Stats>(
+        runtime.RegisterTypeCodec<global::Game.Config.Stats>(
             new CoflowTypeId(9),
             4, 0, 0,
             static value => value._coflowId,
             static value => value._coflowInitialized,
-            static (value, id) => global::Stats.WithCoflowValueId(value, id),
-            static (context, value) => new global::Stats(
+            static (value, id) => global::Game.Config.Stats.WithCoflowValueId(value, id),
+            static (context, value) => new global::Game.Config.Stats(
                 context.Import(value.health),
                 context.Import(value.attack),
                 context.Import(value.resistances)
             ),
-            static (ref CoflowValueWriter writer, global::Stats value) =>
+            static (ref CoflowValueWriter writer, global::Game.Config.Stats value) =>
             {
                 writer.Write(value.health);
                 writer.Write(value.attack);
@@ -236,9 +239,9 @@ internal sealed class CoflowSchema : ICoflowSchema
 
         runtime.RegisterArray<string>();
         runtime.RegisterDictionary<string, long>();
-        runtime.RegisterArray<global::Ability>();
+        runtime.RegisterArray<global::Game.Config.Ability>();
         runtime.RegisterResult<long, string>();
-        runtime.RegisterOption<global::Character>();
+        runtime.RegisterOption<global::Game.Config.Character>();
         runtime.RegisterFunction<CoflowFunction<long, long>>();
         runtime.RegisterFunction<CoflowFunction<string, Unit>>();
         runtime.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>, long>>();
@@ -246,7 +249,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         runtime.RegisterFunction<CoflowFunction<string, string>>();
         runtime.RegisterOption<long>();
         runtime.RegisterFunction<CoflowFunction<Option<long>, Result<long, string>>>();
-        runtime.RegisterFunction<CoflowFunction<global::Stats, global::Stats>>();
+        runtime.RegisterFunction<CoflowFunction<global::Game.Config.Stats, global::Game.Config.Stats>>();
         runtime.RegisterArray<CoflowFunction<long, long>>();
         runtime.RegisterFunction<CoflowFunction<long, CoflowFunction<long, long>>>();
         runtime.RegisterFunction<CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>>();
@@ -256,7 +259,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         runtime.RegisterFunction<CoflowFunction<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>>();
         runtime.RegisterFunction<CoflowFunction<long, double>>();
         runtime.RegisterFunction<CoflowFunction<long, double, long>>();
-        runtime.RegisterFunction<CoflowFunction<global::CharacterId, bool>>();
+        runtime.RegisterFunction<CoflowFunction<global::Game.Config.CharacterId, bool>>();
         runtime.RegisterFunction<CoflowFunction<long, long, long>>();
         runtime.RegisterFunction<CoflowFunction<Option<long>, Option<long>>>();
         runtime.RegisterFunction<CoflowFunction<Result<long, string>, Result<long, string>>>();
@@ -264,20 +267,20 @@ internal sealed class CoflowSchema : ICoflowSchema
         runtime.RegisterFunction<CoflowFunction<Result<Result<long, string>, string>, Result<long, string>>>();
         runtime.RegisterFunction<CoflowFunction<Option<long>, CoflowFunction<long, long>>>();
         runtime.RegisterFunction<CoflowFunction<long>>();
-        runtime.RegisterFunction<CoflowFunction<long, global::Stats>>();
-        runtime.RegisterFunction<CoflowFunction<global::Stats, long>>();
-        runtime.RegisterFunction<CoflowFunction<global::Character, global::Character>>();
-        runtime.RegisterFunction<CoflowFunction<global::Character, long>>();
-        runtime.RegisterOption<global::Stats>();
-        runtime.RegisterFunction<CoflowFunction<Option<global::Stats>, Option<global::Stats>>>();
+        runtime.RegisterFunction<CoflowFunction<long, global::Game.Config.Stats>>();
+        runtime.RegisterFunction<CoflowFunction<global::Game.Config.Stats, long>>();
+        runtime.RegisterFunction<CoflowFunction<global::Game.Config.Character, global::Game.Config.Character>>();
+        runtime.RegisterFunction<CoflowFunction<global::Game.Config.Character, long>>();
+        runtime.RegisterOption<global::Game.Config.Stats>();
+        runtime.RegisterFunction<CoflowFunction<Option<global::Game.Config.Stats>, Option<global::Game.Config.Stats>>>();
         runtime.RegisterFunction<CoflowFunction<long, double, bool, Option<long>, string>>();
         runtime.RegisterFunction<CoflowFunction<long, long, string, bool>>();
-        runtime.RegisterFunction<CoflowFunction<long, Option<long>, Result<long, string>, global::CharacterId, long>>();
+        runtime.RegisterFunction<CoflowFunction<long, Option<long>, Result<long, string>, global::Game.Config.CharacterId, long>>();
         runtime.RegisterFunction<CoflowFunction<string>>();
         runtime.RegisterFunction<CoflowFunction<string, bool>>();
         runtime.RegisterArray<long>();
-        runtime.RegisterDictionary<string, global::Stats>();
-        runtime.RegisterResult<Option<global::Stats>, string>();
+        runtime.RegisterDictionary<string, global::Game.Config.Stats>();
+        runtime.RegisterResult<Option<global::Game.Config.Stats>, string>();
 
         return runtime.Build();
     }
@@ -285,13 +288,13 @@ internal sealed class CoflowSchema : ICoflowSchema
     private sealed class Cft_436861726163746572436C617373CoflowEnumMetadata : ICoflowEnumMetadata
     {
         public string DeclaredType => "CharacterClass";
-        public Type RuntimeType => typeof(global::CharacterClass);
+        public Type RuntimeType => typeof(global::Game.Config.CharacterClass);
         public bool IsFlags => false;
         public IReadOnlyList<CoflowAnnotation> Annotations { get; } = Array.Empty<CoflowAnnotation>();
         public IReadOnlyDictionary<string, object> Variants { get; } = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["Guardian"] = global::CharacterClass.Guardian,
-            ["Arcanist"] = global::CharacterClass.Arcanist,
+            ["Guardian"] = global::Game.Config.CharacterClass.Guardian,
+            ["Arcanist"] = global::Game.Config.CharacterClass.Arcanist,
         };
         public IReadOnlyList<CoflowAnnotation> VariantAnnotations(string variantName) => variantName switch
         {
@@ -299,19 +302,19 @@ internal sealed class CoflowSchema : ICoflowSchema
             "Arcanist" => Array.Empty<CoflowAnnotation>(),
             _ => Array.Empty<CoflowAnnotation>(),
         };
-        public object FromInt64(long value) => (global::CharacterClass)value;
+        public object FromInt64(long value) => (global::Game.Config.CharacterClass)value;
     }
 
     private sealed class Cft_4368617261637465724964CoflowEnumMetadata : ICoflowEnumMetadata
     {
         public string DeclaredType => "CharacterId";
-        public Type RuntimeType => typeof(global::CharacterId);
+        public Type RuntimeType => typeof(global::Game.Config.CharacterId);
         public bool IsFlags => false;
         public IReadOnlyList<CoflowAnnotation> Annotations { get; } = Array.Empty<CoflowAnnotation>();
         public IReadOnlyDictionary<string, object> Variants { get; } = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["arcanist"] = global::CharacterId.arcanist,
-            ["guardian"] = global::CharacterId.guardian,
+            ["arcanist"] = global::Game.Config.CharacterId.arcanist,
+            ["guardian"] = global::Game.Config.CharacterId.guardian,
         };
         public IReadOnlyList<CoflowAnnotation> VariantAnnotations(string variantName) => variantName switch
         {
@@ -319,21 +322,21 @@ internal sealed class CoflowSchema : ICoflowSchema
             "guardian" => Array.Empty<CoflowAnnotation>(),
             _ => Array.Empty<CoflowAnnotation>(),
         };
-        public object FromInt64(long value) => (global::CharacterId)value;
+        public object FromInt64(long value) => (global::Game.Config.CharacterId)value;
     }
 
     private sealed class Cft_4368617261637465725472616974CoflowEnumMetadata : ICoflowEnumMetadata
     {
         public string DeclaredType => "CharacterTrait";
-        public Type RuntimeType => typeof(global::CharacterTrait);
+        public Type RuntimeType => typeof(global::Game.Config.CharacterTrait);
         public bool IsFlags => true;
         public IReadOnlyList<CoflowAnnotation> Annotations { get; } = new CoflowAnnotation[] { new CoflowAnnotation("flag", new CoflowAnnotationArgument[] {  }) };
         public IReadOnlyDictionary<string, object> Variants { get; } = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["Empty"] = global::CharacterTrait.Empty,
-            ["Durable"] = global::CharacterTrait.Durable,
-            ["Ranged"] = global::CharacterTrait.Ranged,
-            ["Magical"] = global::CharacterTrait.Magical,
+            ["Empty"] = global::Game.Config.CharacterTrait.Empty,
+            ["Durable"] = global::Game.Config.CharacterTrait.Durable,
+            ["Ranged"] = global::Game.Config.CharacterTrait.Ranged,
+            ["Magical"] = global::Game.Config.CharacterTrait.Magical,
         };
         public IReadOnlyList<CoflowAnnotation> VariantAnnotations(string variantName) => variantName switch
         {
@@ -343,7 +346,7 @@ internal sealed class CoflowSchema : ICoflowSchema
             "Magical" => Array.Empty<CoflowAnnotation>(),
             _ => Array.Empty<CoflowAnnotation>(),
         };
-        public object FromInt64(long value) => (global::CharacterTrait)value;
+        public object FromInt64(long value) => (global::Game.Config.CharacterTrait)value;
     }
 
     private sealed class Cft_436861726163746572CoflowMetadata : ICoflowRecordMetadata
@@ -351,70 +354,70 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::Character, string>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, string>(
                     "name", static record => record.name,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.CreateEnum<global::Character, global::CharacterClass>(
+                CoflowFieldBinding.CreateEnum<global::Game.Config.Character, global::Game.Config.CharacterClass>(
                     "characterClass", static record => record.characterClass, static value => (long)value,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.CreateEnum<global::Character, global::CharacterTrait>(
+                CoflowFieldBinding.CreateEnum<global::Game.Config.Character, global::Game.Config.CharacterTrait>(
                     "traits", static record => record.traits, static value => (long)value,
                     false, 1, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Create<global::Character, bool>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, bool>(
                     "enabled", static record => record.enabled,
                     false, 2, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Create<global::Character, global::Stats>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, global::Game.Config.Stats>(
                     "stats", static record => record.stats,
                     false, 3, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false, "Stats"),
             new(
-                CoflowFieldBinding.Create<global::Character, IReadOnlyList<string>>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, IReadOnlyList<string>>(
                     "tags", static record => record.tags,
                     false, 7, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::Character, IReadOnlyDictionary<string, long>>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, IReadOnlyDictionary<string, long>>(
                     "attributes", static record => record.attributes,
                     false, 8, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::Character, global::Ability>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, global::Game.Config.Ability>(
                     "primaryAbility", static record => record.primaryAbility,
                     false, 9, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false, "Ability"),
             new(
-                CoflowFieldBinding.Create<global::Character, IReadOnlyList<global::Ability>>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, IReadOnlyList<global::Game.Config.Ability>>(
                     "abilities", static record => record.abilities,
                     false, 10, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Create<global::Character, Result<long, string>>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, Result<long, string>>(
                     "status", static record => record.status,
                     false, 11, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Create<global::Character, Option<global::Character>>(
+                CoflowFieldBinding.Create<global::Game.Config.Character, Option<global::Game.Config.Character>>(
                     "fallback", static record => record.fallback,
                     false, 13, 0, 2),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Function<global::Character, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Character, CoflowFunction<long, long>>(
                     "power", new CoflowTypeId(2), new CoflowFieldId(11), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), true),
 
         };
 
         public CoflowTypeId TypeId => new(2);
-        public Type RuntimeType => typeof(global::Character);
-        public Type KeyType => typeof(global::CharacterId);
+        public Type RuntimeType => typeof(global::Game.Config.Character);
+        public Type KeyType => typeof(global::Game.Config.CharacterId);
 
         public bool IsSingleton => false;
         public bool IsAbstract => false;
@@ -426,21 +429,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_436861726163746572(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_436861726163746572(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_436861726163746572(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::Character)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.Character)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::Character.WithCoflowValueId((global::Character)value, id);
+            global::Game.Config.Character.WithCoflowValueId((global::Game.Config.Character)value, id);
         public object ParseKey(string key) => ReadEnumCft_4368617261637465724964Text(key);
-        public object GetKey(object value) => ((global::Character)value).Id;
+        public object GetKey(object value) => ((global::Game.Config.Character)value).Id;
 
         public CoflowTable CreateTable(object[] values)
         {
-            return CoflowTableFactory.Enum<global::Character, global::CharacterId>(values, static record => record.Id);
+            return CoflowTableFactory.Enum<global::Game.Config.Character, global::Game.Config.CharacterId>(values, static record => record.Id);
         }
 
-        public object CreateRecord(string key, CfdLoadContext context) => new global::Character();
+        public object CreateRecord(string key, CfdLoadContext context) => new global::Game.Config.Character();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-            PopulateCft_436861726163746572((global::Character)target, record, context);
+            PopulateCft_436861726163746572((global::Game.Config.Character)target, record, context);
         }
 
     }
@@ -450,12 +453,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::DamageAbility, string>(
+                CoflowFieldBinding.Create<global::Game.Config.DamageAbility, string>(
                     "label", static record => record.label,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::DamageAbility, long>(
+                CoflowFieldBinding.Create<global::Game.Config.DamageAbility, long>(
                     "damage", static record => record.damage,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
@@ -463,7 +466,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
 
         public CoflowTypeId TypeId => new(3);
-        public Type RuntimeType => typeof(global::DamageAbility);
+        public Type RuntimeType => typeof(global::Game.Config.DamageAbility);
         public Type KeyType => typeof(string);
 
         public bool IsSingleton => false;
@@ -476,21 +479,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_44616D6167654162696C697479(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_44616D6167654162696C697479(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_44616D6167654162696C697479(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::DamageAbility)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.DamageAbility)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::DamageAbility.WithCoflowValueId((global::DamageAbility)value, id);
+            global::Game.Config.DamageAbility.WithCoflowValueId((global::Game.Config.DamageAbility)value, id);
         public object ParseKey(string key) => key;
-        public object GetKey(object value) => ((global::DamageAbility)value).Id;
+        public object GetKey(object value) => ((global::Game.Config.DamageAbility)value).Id;
 
         public CoflowTable CreateTable(object[] values)
         {
-            return CoflowTableFactory.String<global::DamageAbility>(values, static record => record.Id);
+            return CoflowTableFactory.String<global::Game.Config.DamageAbility>(values, static record => record.Id);
         }
 
-        public object CreateRecord(string key, CfdLoadContext context) => new global::DamageAbility();
+        public object CreateRecord(string key, CfdLoadContext context) => new global::Game.Config.DamageAbility();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-            PopulateCft_44616D6167654162696C697479((global::DamageAbility)target, record, context);
+            PopulateCft_44616D6167654162696C697479((global::Game.Config.DamageAbility)target, record, context);
         }
 
     }
@@ -500,12 +503,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::HealAbility, string>(
+                CoflowFieldBinding.Create<global::Game.Config.HealAbility, string>(
                     "label", static record => record.label,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::HealAbility, long>(
+                CoflowFieldBinding.Create<global::Game.Config.HealAbility, long>(
                     "healing", static record => record.healing,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
@@ -513,7 +516,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
 
         public CoflowTypeId TypeId => new(4);
-        public Type RuntimeType => typeof(global::HealAbility);
+        public Type RuntimeType => typeof(global::Game.Config.HealAbility);
         public Type KeyType => typeof(string);
 
         public bool IsSingleton => false;
@@ -526,21 +529,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_4865616C4162696C697479(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_4865616C4162696C697479(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_4865616C4162696C697479(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::HealAbility)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.HealAbility)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::HealAbility.WithCoflowValueId((global::HealAbility)value, id);
+            global::Game.Config.HealAbility.WithCoflowValueId((global::Game.Config.HealAbility)value, id);
         public object ParseKey(string key) => key;
-        public object GetKey(object value) => ((global::HealAbility)value).Id;
+        public object GetKey(object value) => ((global::Game.Config.HealAbility)value).Id;
 
         public CoflowTable CreateTable(object[] values)
         {
-            return CoflowTableFactory.String<global::HealAbility>(values, static record => record.Id);
+            return CoflowTableFactory.String<global::Game.Config.HealAbility>(values, static record => record.Id);
         }
 
-        public object CreateRecord(string key, CfdLoadContext context) => new global::HealAbility();
+        public object CreateRecord(string key, CfdLoadContext context) => new global::Game.Config.HealAbility();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-            PopulateCft_4865616C4162696C697479((global::HealAbility)target, record, context);
+            PopulateCft_4865616C4162696C697479((global::Game.Config.HealAbility)target, record, context);
         }
 
     }
@@ -550,39 +553,39 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::HostServices, string>(
+                CoflowFieldBinding.Create<global::Game.Config.HostServices, string>(
                     "environment", static record => record.environment,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<string, Unit>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<string, Unit>>(
                     "trace", new CoflowTypeId(5), new CoflowFieldId(1), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<long, CoflowFunction<long, long>, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<long, CoflowFunction<long, long>, long>>(
                     "adjust", new CoflowTypeId(5), new CoflowFieldId(2), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>>>(
                     "select", new CoflowTypeId(5), new CoflowFieldId(3), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<string, string>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<string, string>>(
                     "decorate", new CoflowTypeId(5), new CoflowFieldId(4), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<Option<long>, Result<long, string>>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<Option<long>, Result<long, string>>>(
                     "normalize", new CoflowTypeId(5), new CoflowFieldId(5), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::HostServices, CoflowFunction<global::Stats, global::Stats>>(
+                CoflowFieldBinding.Function<global::Game.Config.HostServices, CoflowFunction<global::Game.Config.Stats, global::Game.Config.Stats>>(
                     "echoStats", new CoflowTypeId(5), new CoflowFieldId(6), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
 
         };
 
         public CoflowTypeId TypeId => new(5);
-        public Type RuntimeType => typeof(global::HostServices);
+        public Type RuntimeType => typeof(global::Game.Config.HostServices);
 
         public bool IsSingleton => true;
         public bool IsAbstract => false;
@@ -594,9 +597,9 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_486F73745365727669636573(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_486F73745365727669636573(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_486F73745365727669636573(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::HostServices)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.HostServices)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::HostServices.WithCoflowValueId((global::HostServices)value, id);
+            global::Game.Config.HostServices.WithCoflowValueId((global::Game.Config.HostServices)value, id);
 
         public object? BindHost(object? value, CfdLoadContext context) =>
             BindHostCft_486F73745365727669636573(value, context);
@@ -608,12 +611,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::RuntimeSettings, string>(
+                CoflowFieldBinding.Create<global::Game.Config.RuntimeSettings, string>(
                     "environment", static record => record.environment,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::RuntimeSettings, long>(
+                CoflowFieldBinding.Create<global::Game.Config.RuntimeSettings, long>(
                     "retries", static record => record.retries,
                     false, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), true),
@@ -621,7 +624,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
 
         public CoflowTypeId TypeId => new(6);
-        public Type RuntimeType => typeof(global::RuntimeSettings);
+        public Type RuntimeType => typeof(global::Game.Config.RuntimeSettings);
         public Type KeyType => typeof(string);
 
         public bool IsSingleton => true;
@@ -634,21 +637,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_52756E74696D6553657474696E6773(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_52756E74696D6553657474696E6773(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_52756E74696D6553657474696E6773(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::RuntimeSettings)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.RuntimeSettings)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::RuntimeSettings.WithCoflowValueId((global::RuntimeSettings)value, id);
+            global::Game.Config.RuntimeSettings.WithCoflowValueId((global::Game.Config.RuntimeSettings)value, id);
         public object ParseKey(string key) => key;
         public object GetKey(object value) => string.Empty;
 
         public CoflowTable CreateTable(object[] values)
         {
-            return CoflowTableFactory.String<global::RuntimeSettings>(values, static _ => string.Empty);
+            return CoflowTableFactory.String<global::Game.Config.RuntimeSettings>(values, static _ => string.Empty);
         }
 
-        public object CreateRecord(string key, CfdLoadContext context) => new global::RuntimeSettings();
+        public object CreateRecord(string key, CfdLoadContext context) => new global::Game.Config.RuntimeSettings();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-            PopulateCft_52756E74696D6553657474696E6773((global::RuntimeSettings)target, record, context);
+            PopulateCft_52756E74696D6553657474696E6773((global::Game.Config.RuntimeSettings)target, record, context);
         }
 
     }
@@ -658,197 +661,197 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::Scenario, global::Character>(
+                CoflowFieldBinding.Create<global::Game.Config.Scenario, global::Game.Config.Character>(
                     "hero", static record => record.hero,
                     false, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false, null, "Character"),
             new(
-                CoflowFieldBinding.Create<global::Scenario, global::ScenarioConfig>(
+                CoflowFieldBinding.Create<global::Game.Config.Scenario, global::Game.Config.ScenarioConfig>(
                     "config", static record => record.config,
                     false, 1, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false, "ScenarioConfig"),
             new(
-                CoflowFieldBinding.Create<global::Scenario, IReadOnlyList<CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Create<global::Game.Config.Scenario, IReadOnlyList<CoflowFunction<long, long>>>(
                     "stages", static record => record.stages,
                     false, 15, 0, 2),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "execute", new CoflowTypeId(7), new CoflowFieldId(3), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "callHost", new CoflowTypeId(7), new CoflowFieldId(4), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, CoflowFunction<long, long>>>(
                     "makeScaler", new CoflowTypeId(7), new CoflowFieldId(5), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, CoflowFunction<long, long>, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, CoflowFunction<long, long>, long>>(
                     "apply", new CoflowTypeId(7), new CoflowFieldId(6), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<CoflowFunction<long, long>, CoflowFunction<long, long>, CoflowFunction<long, long>>>(
                     "compose", new CoflowTypeId(7), new CoflowFieldId(7), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, CoflowFunction<long, long>>>(
                     "hostFunction", new CoflowTypeId(7), new CoflowFieldId(8), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Option<CoflowFunction<long, long>>, Option<CoflowFunction<long, long>>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Option<CoflowFunction<long, long>>, Option<CoflowFunction<long, long>>>>(
                     "optionalFunction", new CoflowTypeId(7), new CoflowFieldId(9), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Result<CoflowFunction<long, long>, string>, Result<CoflowFunction<long, long>, string>>>(
                     "resultFunction", new CoflowTypeId(7), new CoflowFieldId(10), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "integerLoop", new CoflowTypeId(7), new CoflowFieldId(11), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, double>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, double>>(
                     "floatLoop", new CoflowTypeId(7), new CoflowFieldId(12), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, double, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, double, long>>(
                     "numericConversions", new CoflowTypeId(7), new CoflowFieldId(13), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<global::CharacterId, bool>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<global::Game.Config.CharacterId, bool>>(
                     "enumRoundTrip", new CoflowTypeId(7), new CoflowFieldId(14), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "increment", new CoflowTypeId(7), new CoflowFieldId(15), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "directCallChain", new CoflowTypeId(7), new CoflowFieldId(16), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "tailRecursion", new CoflowTypeId(7), new CoflowFieldId(17), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long, long>>(
                     "tailAccumulator", new CoflowTypeId(7), new CoflowFieldId(18), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "fieldReadLoop", new CoflowTypeId(7), new CoflowFieldId(19), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "collectionPipeline", new CoflowTypeId(7), new CoflowFieldId(20), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "hostCall", new CoflowTypeId(7), new CoflowFieldId(21), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Option<long>, Result<long, string>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Option<long>, Result<long, string>>>(
                     "hostComposite", new CoflowTypeId(7), new CoflowFieldId(22), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Option<long>, Option<long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Option<long>, Option<long>>>(
                     "propagateOption", new CoflowTypeId(7), new CoflowFieldId(23), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Result<long, string>, Result<long, string>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Result<long, string>, Result<long, string>>>(
                     "propagateResult", new CoflowTypeId(7), new CoflowFieldId(24), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Result<Result<long, string>, string>, Result<long, string>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Result<Result<long, string>, string>, Result<long, string>>>(
                     "propagateNested", new CoflowTypeId(7), new CoflowFieldId(25), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Option<long>, CoflowFunction<long, long>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Option<long>, CoflowFunction<long, long>>>(
                     "makeOptionalAdder", new CoflowTypeId(7), new CoflowFieldId(26), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "collectionQueries", new CoflowTypeId(7), new CoflowFieldId(27), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long>>(
                     "emptyCollectionQueries", new CoflowTypeId(7), new CoflowFieldId(28), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, global::Stats>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, global::Game.Config.Stats>>(
                     "makeStats", new CoflowTypeId(7), new CoflowFieldId(29), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, global::Stats>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, global::Game.Config.Stats>>(
                     "makeDefaultStats", new CoflowTypeId(7), new CoflowFieldId(30), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<global::Stats, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<global::Game.Config.Stats, long>>(
                     "readExternalStats", new CoflowTypeId(7), new CoflowFieldId(31), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<global::Stats, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<global::Game.Config.Stats, long>>(
                     "hostStats", new CoflowTypeId(7), new CoflowFieldId(32), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<global::Character, global::Character>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<global::Game.Config.Character, global::Game.Config.Character>>(
                     "copyExternalCharacter", new CoflowTypeId(7), new CoflowFieldId(33), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<global::Character, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<global::Game.Config.Character, long>>(
                     "readExternalCharacterCollections", new CoflowTypeId(7), new CoflowFieldId(34), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<Option<global::Stats>, Option<global::Stats>>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<Option<global::Game.Config.Stats>, Option<global::Game.Config.Stats>>>(
                     "copyOptionalStats", new CoflowTypeId(7), new CoflowFieldId(35), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, double, bool, Option<long>, string>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, double, bool, Option<long>, string>>(
                     "formatValues", new CoflowTypeId(7), new CoflowFieldId(36), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "syntaxControlFlow", new CoflowTypeId(7), new CoflowFieldId(37), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long, string, bool>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long, string, bool>>(
                     "syntaxOperators", new CoflowTypeId(7), new CoflowFieldId(38), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, Option<long>, Result<long, string>, global::CharacterId, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, Option<long>, Result<long, string>, global::Game.Config.CharacterId, long>>(
                     "syntaxMatch", new CoflowTypeId(7), new CoflowFieldId(39), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<string>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<string>>(
                     "typeMetadata", new CoflowTypeId(7), new CoflowFieldId(40), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<string, bool>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<string, bool>>(
                     "builtinSyntax", new CoflowTypeId(7), new CoflowFieldId(41), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<string, string>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<string, string>>(
                     "formatSyntax", new CoflowTypeId(7), new CoflowFieldId(42), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "primeSum", new CoflowTypeId(7), new CoflowFieldId(43), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "matrixKernel", new CoflowTypeId(7), new CoflowFieldId(44), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Function<global::Scenario, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Scenario, CoflowFunction<long, long>>(
                     "fibonacci", new CoflowTypeId(7), new CoflowFieldId(45), static value => value._coflowId, false),
                 Array.Empty<CoflowAnnotation>(), false),
 
         };
 
         public CoflowTypeId TypeId => new(7);
-        public Type RuntimeType => typeof(global::Scenario);
+        public Type RuntimeType => typeof(global::Game.Config.Scenario);
         public Type KeyType => typeof(string);
 
         public bool IsSingleton => false;
@@ -861,21 +864,21 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5363656E6172696F(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::Scenario)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.Scenario)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::Scenario.WithCoflowValueId((global::Scenario)value, id);
+            global::Game.Config.Scenario.WithCoflowValueId((global::Game.Config.Scenario)value, id);
         public object ParseKey(string key) => key;
-        public object GetKey(object value) => ((global::Scenario)value).Id;
+        public object GetKey(object value) => ((global::Game.Config.Scenario)value).Id;
 
         public CoflowTable CreateTable(object[] values)
         {
-            return CoflowTableFactory.String<global::Scenario>(values, static record => record.Id);
+            return CoflowTableFactory.String<global::Game.Config.Scenario>(values, static record => record.Id);
         }
 
-        public object CreateRecord(string key, CfdLoadContext context) => new global::Scenario();
+        public object CreateRecord(string key, CfdLoadContext context) => new global::Game.Config.Scenario();
         public void PopulateRecord(object target, CfdRecordNode record, CfdLoadContext context)
         {
-            PopulateCft_5363656E6172696F((global::Scenario)target, record, context);
+            PopulateCft_5363656E6172696F((global::Game.Config.Scenario)target, record, context);
         }
 
     }
@@ -885,27 +888,27 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::ScenarioConfig, string>(
+                CoflowFieldBinding.Create<global::Game.Config.ScenarioConfig, string>(
                     "label", static record => record.label,
                     true, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::ScenarioConfig, IReadOnlyList<long>>(
+                CoflowFieldBinding.Create<global::Game.Config.ScenarioConfig, IReadOnlyList<long>>(
                     "samples", static record => record.samples,
                     true, 0, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::ScenarioConfig, IReadOnlyDictionary<string, global::Stats>>(
+                CoflowFieldBinding.Create<global::Game.Config.ScenarioConfig, IReadOnlyDictionary<string, global::Game.Config.Stats>>(
                     "checkpoints", static record => record.checkpoints,
                     true, 1, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::ScenarioConfig, Option<global::Stats>>(
+                CoflowFieldBinding.Create<global::Game.Config.ScenarioConfig, Option<global::Game.Config.Stats>>(
                     "optionalBonus", static record => record.optionalBonus,
                     true, 2, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::ScenarioConfig, Result<Option<global::Stats>, string>>(
+                CoflowFieldBinding.Create<global::Game.Config.ScenarioConfig, Result<Option<global::Game.Config.Stats>, string>>(
                     "validation", static record => record.validation,
                     true, 7, 0, 1),
                 Array.Empty<CoflowAnnotation>(), false),
@@ -913,7 +916,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
 
         public CoflowTypeId TypeId => new(8);
-        public Type RuntimeType => typeof(global::ScenarioConfig);
+        public Type RuntimeType => typeof(global::Game.Config.ScenarioConfig);
 
         public bool IsSingleton => false;
         public bool IsAbstract => false;
@@ -925,9 +928,9 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5363656E6172696F436F6E666967(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5363656E6172696F436F6E666967(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5363656E6172696F436F6E666967(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::ScenarioConfig)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.ScenarioConfig)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::ScenarioConfig.WithCoflowValueId((global::ScenarioConfig)value, id);
+            global::Game.Config.ScenarioConfig.WithCoflowValueId((global::Game.Config.ScenarioConfig)value, id);
 
 
     }
@@ -937,29 +940,29 @@ internal sealed class CoflowSchema : ICoflowSchema
         public IReadOnlyList<CoflowFieldMetadata> Fields { get; } = new CoflowFieldMetadata[]
         {
             new(
-                CoflowFieldBinding.Create<global::Stats, long>(
+                CoflowFieldBinding.Create<global::Game.Config.Stats, long>(
                     "health", static record => record.health,
                     true, 0, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::Stats, long>(
+                CoflowFieldBinding.Create<global::Game.Config.Stats, long>(
                     "attack", static record => record.attack,
                     true, 1, 0, 0),
                 Array.Empty<CoflowAnnotation>(), false),
             new(
-                CoflowFieldBinding.Create<global::Stats, IReadOnlyDictionary<string, long>>(
+                CoflowFieldBinding.Create<global::Game.Config.Stats, IReadOnlyDictionary<string, long>>(
                     "resistances", static record => record.resistances,
                     true, 2, 0, 0),
                 Array.Empty<CoflowAnnotation>(), true),
             new(
-                CoflowFieldBinding.Function<global::Stats, CoflowFunction<long, long>>(
+                CoflowFieldBinding.Function<global::Game.Config.Stats, CoflowFunction<long, long>>(
                     "score", new CoflowTypeId(9), new CoflowFieldId(3), static value => value._coflowId, true),
                 Array.Empty<CoflowAnnotation>(), true),
 
         };
 
         public CoflowTypeId TypeId => new(9);
-        public Type RuntimeType => typeof(global::Stats);
+        public Type RuntimeType => typeof(global::Game.Config.Stats);
 
         public bool IsSingleton => false;
         public bool IsAbstract => false;
@@ -971,9 +974,9 @@ internal sealed class CoflowSchema : ICoflowSchema
         public object CreateObject(CfdLoadContext context, IReadOnlyDictionary<string, object?> fields) => CreateObjectCft_5374617473(context, fields);
         public CoflowVmFactory CreateVmObjectFactory(CfdLoadContext context) => CreateVmObjectCft_5374617473(context);
         public CoflowVmFactory CreateVmDefaultFactory(string fieldName, CfdLoadContext context) => CreateVmDefaultCft_5374617473(fieldName, context);
-        public CoflowValueId GetValueId(object value) => ((global::Stats)value)._coflowId;
+        public CoflowValueId GetValueId(object value) => ((global::Game.Config.Stats)value)._coflowId;
         public object WithValueId(object value, CoflowValueId id) =>
-            global::Stats.WithCoflowValueId((global::Stats)value, id);
+            global::Game.Config.Stats.WithCoflowValueId((global::Game.Config.Stats)value, id);
 
 
     }
@@ -991,20 +994,20 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_436861726163746572(CfdLoadContext context) =>
-        new(new Type[] { typeof(string), typeof(global::CharacterClass), typeof(global::CharacterTrait), typeof(bool), typeof(global::Stats), typeof(IReadOnlyList<string>), typeof(IReadOnlyDictionary<string, long>), typeof(global::Ability), typeof(IReadOnlyList<global::Ability>), typeof(Result<long, string>), typeof(Option<global::Character>) }, typeof(global::Character),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Character(
-                default(global::CharacterId),
+        new(new Type[] { typeof(string), typeof(global::Game.Config.CharacterClass), typeof(global::Game.Config.CharacterTrait), typeof(bool), typeof(global::Game.Config.Stats), typeof(IReadOnlyList<string>), typeof(IReadOnlyDictionary<string, long>), typeof(global::Game.Config.Ability), typeof(IReadOnlyList<global::Game.Config.Ability>), typeof(Result<long, string>), typeof(Option<global::Game.Config.Character>) }, typeof(global::Game.Config.Character),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.Character(
+                default(global::Game.Config.CharacterId),
                 frame.Read<string>(0),
-                frame.Read<global::CharacterClass>(1),
-                frame.Read<global::CharacterTrait>(2),
+                frame.Read<global::Game.Config.CharacterClass>(1),
+                frame.Read<global::Game.Config.CharacterTrait>(2),
                 frame.Read<bool>(3),
-                frame.Read<global::Stats>(4),
+                frame.Read<global::Game.Config.Stats>(4),
                 frame.Read<IReadOnlyList<string>>(5),
                 frame.Read<IReadOnlyDictionary<string, long>>(6),
-                frame.Read<global::Ability>(7),
-                frame.Read<IReadOnlyList<global::Ability>>(8),
+                frame.Read<global::Game.Config.Ability>(7),
+                frame.Read<IReadOnlyList<global::Game.Config.Ability>>(8),
                 frame.Read<Result<long, string>>(9),
-                frame.Read<Option<global::Character>>(10)
+                frame.Read<Option<global::Game.Config.Character>>(10)
             )));
 
     private static CoflowVmFactory CreateVmDefaultCft_436861726163746572(string fieldName, CfdLoadContext context)
@@ -1012,23 +1015,23 @@ internal sealed class CoflowSchema : ICoflowSchema
 
         return fieldName switch
         {
-            "traits" => new CoflowVmFactory(Type.EmptyTypes, typeof(global::CharacterTrait),
-                (ref CoflowVmFactoryFrame frame) => frame.Write((global::CharacterTrait)0L)),
+            "traits" => new CoflowVmFactory(Type.EmptyTypes, typeof(global::Game.Config.CharacterTrait),
+                (ref CoflowVmFactoryFrame frame) => frame.Write((global::Game.Config.CharacterTrait)0L)),
             "enabled" => new CoflowVmFactory(Type.EmptyTypes, typeof(bool),
                 (ref CoflowVmFactoryFrame frame) => frame.Write(true)),
-            "abilities" => new CoflowVmFactory(Type.EmptyTypes, typeof(IReadOnlyList<global::Ability>),
-                (ref CoflowVmFactoryFrame frame) => frame.Write(CoflowConstantValues.List<global::Ability>())),
+            "abilities" => new CoflowVmFactory(Type.EmptyTypes, typeof(IReadOnlyList<global::Game.Config.Ability>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(CoflowConstantValues.List<global::Game.Config.Ability>())),
             "status" => new CoflowVmFactory(Type.EmptyTypes, typeof(Result<long, string>),
                 (ref CoflowVmFactoryFrame frame) => frame.Write(Result<long, string>.Ok(0L))),
-            "fallback" => new CoflowVmFactory(Type.EmptyTypes, typeof(Option<global::Character>),
-                (ref CoflowVmFactoryFrame frame) => frame.Write(Option<global::Character>.None)),
+            "fallback" => new CoflowVmFactory(Type.EmptyTypes, typeof(Option<global::Game.Config.Character>),
+                (ref CoflowVmFactoryFrame frame) => frame.Write(Option<global::Game.Config.Character>.None)),
             _ => throw new ArgumentException($"field `{fieldName}` has no default", nameof(fieldName)),
         };
     }
 
     private static CoflowVmFactory CreateVmObjectCft_44616D6167654162696C697479(CfdLoadContext context) =>
-        new(new Type[] { typeof(string), typeof(long) }, typeof(global::DamageAbility),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::DamageAbility(
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::Game.Config.DamageAbility),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.DamageAbility(
                 string.Empty,
                 frame.Read<string>(0),
                 frame.Read<long>(1)
@@ -1044,8 +1047,8 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_4865616C4162696C697479(CfdLoadContext context) =>
-        new(new Type[] { typeof(string), typeof(long) }, typeof(global::HealAbility),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::HealAbility(
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::Game.Config.HealAbility),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.HealAbility(
                 string.Empty,
                 frame.Read<string>(0),
                 frame.Read<long>(1)
@@ -1073,8 +1076,8 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_52756E74696D6553657474696E6773(CfdLoadContext context) =>
-        new(new Type[] { typeof(string), typeof(long) }, typeof(global::RuntimeSettings),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::RuntimeSettings(
+        new(new Type[] { typeof(string), typeof(long) }, typeof(global::Game.Config.RuntimeSettings),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.RuntimeSettings(
                 frame.Read<string>(0),
                 frame.Read<long>(1)
             )));
@@ -1091,11 +1094,11 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_5363656E6172696F(CfdLoadContext context) =>
-        new(new Type[] { typeof(global::Character), typeof(global::ScenarioConfig), typeof(IReadOnlyList<CoflowFunction<long, long>>) }, typeof(global::Scenario),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Scenario(
+        new(new Type[] { typeof(global::Game.Config.Character), typeof(global::Game.Config.ScenarioConfig), typeof(IReadOnlyList<CoflowFunction<long, long>>) }, typeof(global::Game.Config.Scenario),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.Scenario(
                 string.Empty,
-                frame.Read<global::Character>(0),
-                frame.Read<global::ScenarioConfig>(1),
+                frame.Read<global::Game.Config.Character>(0),
+                frame.Read<global::Game.Config.ScenarioConfig>(1),
                 frame.Read<IReadOnlyList<CoflowFunction<long, long>>>(2)
             )));
 
@@ -1109,13 +1112,13 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_5363656E6172696F436F6E666967(CfdLoadContext context) =>
-        new(new Type[] { typeof(string), typeof(IReadOnlyList<long>), typeof(IReadOnlyDictionary<string, global::Stats>), typeof(Option<global::Stats>), typeof(Result<Option<global::Stats>, string>) }, typeof(global::ScenarioConfig),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::ScenarioConfig(
+        new(new Type[] { typeof(string), typeof(IReadOnlyList<long>), typeof(IReadOnlyDictionary<string, global::Game.Config.Stats>), typeof(Option<global::Game.Config.Stats>), typeof(Result<Option<global::Game.Config.Stats>, string>) }, typeof(global::Game.Config.ScenarioConfig),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.ScenarioConfig(
                 frame.Read<string>(0),
                 frame.Read<IReadOnlyList<long>>(1),
-                frame.Read<IReadOnlyDictionary<string, global::Stats>>(2),
-                frame.Read<Option<global::Stats>>(3),
-                frame.Read<Result<Option<global::Stats>, string>>(4)
+                frame.Read<IReadOnlyDictionary<string, global::Game.Config.Stats>>(2),
+                frame.Read<Option<global::Game.Config.Stats>>(3),
+                frame.Read<Result<Option<global::Game.Config.Stats>, string>>(4)
             )));
 
     private static CoflowVmFactory CreateVmDefaultCft_5363656E6172696F436F6E666967(string fieldName, CfdLoadContext context)
@@ -1128,8 +1131,8 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static CoflowVmFactory CreateVmObjectCft_5374617473(CfdLoadContext context) =>
-        new(new Type[] { typeof(long), typeof(long), typeof(IReadOnlyDictionary<string, long>) }, typeof(global::Stats),
-            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Stats(
+        new(new Type[] { typeof(long), typeof(long), typeof(IReadOnlyDictionary<string, long>) }, typeof(global::Game.Config.Stats),
+            (ref CoflowVmFactoryFrame frame) => frame.Write(new global::Game.Config.Stats(
                 frame.Read<long>(0),
                 frame.Read<long>(1),
                 frame.Read<IReadOnlyDictionary<string, long>>(2)
@@ -1146,52 +1149,52 @@ internal sealed class CoflowSchema : ICoflowSchema
         };
     }
 
-    private static global::CharacterClass ReadEnumCft_436861726163746572436C617373(CfdValueNode node) =>
-        CfdValueReader.Enum<global::CharacterClass>(node, "CharacterClass", static token => token switch
+    private static global::Game.Config.CharacterClass ReadEnumCft_436861726163746572436C617373(CfdValueNode node) =>
+        CfdValueReader.Enum<global::Game.Config.CharacterClass>(node, "CharacterClass", static token => token switch
         {
-            "Guardian" or "CharacterClass::Guardian" => (global::CharacterClass?)global::CharacterClass.Guardian,
-            "Arcanist" or "CharacterClass::Arcanist" => (global::CharacterClass?)global::CharacterClass.Arcanist,
+            "Guardian" or "CharacterClass::Guardian" => (global::Game.Config.CharacterClass?)global::Game.Config.CharacterClass.Guardian,
+            "Arcanist" or "CharacterClass::Arcanist" => (global::Game.Config.CharacterClass?)global::Game.Config.CharacterClass.Arcanist,
             _ => null,
         });
-    private static global::CharacterClass ReadEnumCft_436861726163746572436C617373Text(string value) =>
-        CfdValueReader.EnumText<global::CharacterClass>(value, "CharacterClass", static token => token switch
+    private static global::Game.Config.CharacterClass ReadEnumCft_436861726163746572436C617373Text(string value) =>
+        CfdValueReader.EnumText<global::Game.Config.CharacterClass>(value, "CharacterClass", static token => token switch
         {
-            "Guardian" or "CharacterClass::Guardian" => (global::CharacterClass?)global::CharacterClass.Guardian,
-            "Arcanist" or "CharacterClass::Arcanist" => (global::CharacterClass?)global::CharacterClass.Arcanist,
-            _ => null,
-        });
-
-    private static global::CharacterId ReadEnumCft_4368617261637465724964(CfdValueNode node) =>
-        CfdValueReader.Enum<global::CharacterId>(node, "CharacterId", static token => token switch
-        {
-            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.arcanist,
-            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.guardian,
-            _ => null,
-        });
-    private static global::CharacterId ReadEnumCft_4368617261637465724964Text(string value) =>
-        CfdValueReader.EnumText<global::CharacterId>(value, "CharacterId", static token => token switch
-        {
-            "arcanist" or "CharacterId::arcanist" => (global::CharacterId?)global::CharacterId.arcanist,
-            "guardian" or "CharacterId::guardian" => (global::CharacterId?)global::CharacterId.guardian,
+            "Guardian" or "CharacterClass::Guardian" => (global::Game.Config.CharacterClass?)global::Game.Config.CharacterClass.Guardian,
+            "Arcanist" or "CharacterClass::Arcanist" => (global::Game.Config.CharacterClass?)global::Game.Config.CharacterClass.Arcanist,
             _ => null,
         });
 
-    private static global::CharacterTrait ReadEnumCft_4368617261637465725472616974(CfdValueNode node) =>
-        CfdValueReader.Flags<global::CharacterTrait>(node, "CharacterTrait", 7L, static token => token switch
+    private static global::Game.Config.CharacterId ReadEnumCft_4368617261637465724964(CfdValueNode node) =>
+        CfdValueReader.Enum<global::Game.Config.CharacterId>(node, "CharacterId", static token => token switch
         {
-            "Empty" or "CharacterTrait::Empty" => (long?)global::CharacterTrait.Empty,
-            "Durable" or "CharacterTrait::Durable" => (long?)global::CharacterTrait.Durable,
-            "Ranged" or "CharacterTrait::Ranged" => (long?)global::CharacterTrait.Ranged,
-            "Magical" or "CharacterTrait::Magical" => (long?)global::CharacterTrait.Magical,
+            "arcanist" or "CharacterId::arcanist" => (global::Game.Config.CharacterId?)global::Game.Config.CharacterId.arcanist,
+            "guardian" or "CharacterId::guardian" => (global::Game.Config.CharacterId?)global::Game.Config.CharacterId.guardian,
             _ => null,
         });
-    private static global::CharacterTrait ReadEnumCft_4368617261637465725472616974Text(string value) =>
-        CfdValueReader.EnumText<global::CharacterTrait>(value, "CharacterTrait", static token => token switch
+    private static global::Game.Config.CharacterId ReadEnumCft_4368617261637465724964Text(string value) =>
+        CfdValueReader.EnumText<global::Game.Config.CharacterId>(value, "CharacterId", static token => token switch
         {
-            "Empty" or "CharacterTrait::Empty" => (global::CharacterTrait?)global::CharacterTrait.Empty,
-            "Durable" or "CharacterTrait::Durable" => (global::CharacterTrait?)global::CharacterTrait.Durable,
-            "Ranged" or "CharacterTrait::Ranged" => (global::CharacterTrait?)global::CharacterTrait.Ranged,
-            "Magical" or "CharacterTrait::Magical" => (global::CharacterTrait?)global::CharacterTrait.Magical,
+            "arcanist" or "CharacterId::arcanist" => (global::Game.Config.CharacterId?)global::Game.Config.CharacterId.arcanist,
+            "guardian" or "CharacterId::guardian" => (global::Game.Config.CharacterId?)global::Game.Config.CharacterId.guardian,
+            _ => null,
+        });
+
+    private static global::Game.Config.CharacterTrait ReadEnumCft_4368617261637465725472616974(CfdValueNode node) =>
+        CfdValueReader.Flags<global::Game.Config.CharacterTrait>(node, "CharacterTrait", 7L, static token => token switch
+        {
+            "Empty" or "CharacterTrait::Empty" => (long?)global::Game.Config.CharacterTrait.Empty,
+            "Durable" or "CharacterTrait::Durable" => (long?)global::Game.Config.CharacterTrait.Durable,
+            "Ranged" or "CharacterTrait::Ranged" => (long?)global::Game.Config.CharacterTrait.Ranged,
+            "Magical" or "CharacterTrait::Magical" => (long?)global::Game.Config.CharacterTrait.Magical,
+            _ => null,
+        });
+    private static global::Game.Config.CharacterTrait ReadEnumCft_4368617261637465725472616974Text(string value) =>
+        CfdValueReader.EnumText<global::Game.Config.CharacterTrait>(value, "CharacterTrait", static token => token switch
+        {
+            "Empty" or "CharacterTrait::Empty" => (global::Game.Config.CharacterTrait?)global::Game.Config.CharacterTrait.Empty,
+            "Durable" or "CharacterTrait::Durable" => (global::Game.Config.CharacterTrait?)global::Game.Config.CharacterTrait.Durable,
+            "Ranged" or "CharacterTrait::Ranged" => (global::Game.Config.CharacterTrait?)global::Game.Config.CharacterTrait.Ranged,
+            "Magical" or "CharacterTrait::Magical" => (global::Game.Config.CharacterTrait?)global::Game.Config.CharacterTrait.Magical,
             _ => null,
         });
 
@@ -1204,19 +1207,19 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::Character(
-            default(global::CharacterId),
+        return new global::Game.Config.Character(
+            default(global::Game.Config.CharacterId),
             fields.TryGetValue("name", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `name`", nameof(fields)),
-            fields.TryGetValue("characterClass", out var value1) ? (global::CharacterClass)value1! : throw new ArgumentException("missing object field `characterClass`", nameof(fields)),
-            fields.TryGetValue("traits", out var value2) ? (global::CharacterTrait)value2! : (global::CharacterTrait)0L,
+            fields.TryGetValue("characterClass", out var value1) ? (global::Game.Config.CharacterClass)value1! : throw new ArgumentException("missing object field `characterClass`", nameof(fields)),
+            fields.TryGetValue("traits", out var value2) ? (global::Game.Config.CharacterTrait)value2! : (global::Game.Config.CharacterTrait)0L,
             fields.TryGetValue("enabled", out var value3) ? (bool)value3! : true,
-            fields.TryGetValue("stats", out var value4) ? (global::Stats)value4! : throw new ArgumentException("missing object field `stats`", nameof(fields)),
+            fields.TryGetValue("stats", out var value4) ? (global::Game.Config.Stats)value4! : throw new ArgumentException("missing object field `stats`", nameof(fields)),
             fields.TryGetValue("tags", out var value5) ? (IReadOnlyList<string>)value5! : throw new ArgumentException("missing object field `tags`", nameof(fields)),
             fields.TryGetValue("attributes", out var value6) ? (IReadOnlyDictionary<string, long>)value6! : throw new ArgumentException("missing object field `attributes`", nameof(fields)),
-            fields.TryGetValue("primaryAbility", out var value7) ? (global::Ability)value7! : throw new ArgumentException("missing object field `primaryAbility`", nameof(fields)),
-            fields.TryGetValue("abilities", out var value8) ? (IReadOnlyList<global::Ability>)value8! : CoflowConstantValues.List<global::Ability>(),
+            fields.TryGetValue("primaryAbility", out var value7) ? (global::Game.Config.Ability)value7! : throw new ArgumentException("missing object field `primaryAbility`", nameof(fields)),
+            fields.TryGetValue("abilities", out var value8) ? (IReadOnlyList<global::Game.Config.Ability>)value8! : CoflowConstantValues.List<global::Game.Config.Ability>(),
             fields.TryGetValue("status", out var value9) ? (Result<long, string>)value9! : Result<long, string>.Ok(0L),
-            fields.TryGetValue("fallback", out var value10) ? (Option<global::Character>)value10! : Option<global::Character>.None
+            fields.TryGetValue("fallback", out var value10) ? (Option<global::Game.Config.Character>)value10! : Option<global::Game.Config.Character>.None
         );
     }
 
@@ -1224,7 +1227,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::DamageAbility(
+        return new global::Game.Config.DamageAbility(
             string.Empty,
             fields.TryGetValue("label", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `label`", nameof(fields)),
             fields.TryGetValue("damage", out var value1) ? (long)value1! : throw new ArgumentException("missing object field `damage`", nameof(fields))
@@ -1235,7 +1238,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::HealAbility(
+        return new global::Game.Config.HealAbility(
             string.Empty,
             fields.TryGetValue("label", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `label`", nameof(fields)),
             fields.TryGetValue("healing", out var value1) ? (long)value1! : throw new ArgumentException("missing object field `healing`", nameof(fields))
@@ -1251,7 +1254,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::RuntimeSettings(
+        return new global::Game.Config.RuntimeSettings(
             fields.TryGetValue("environment", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `environment`", nameof(fields)),
             fields.TryGetValue("retries", out var value1) ? (long)value1! : 3L
         );
@@ -1261,10 +1264,10 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::Scenario(
+        return new global::Game.Config.Scenario(
             string.Empty,
-            fields.TryGetValue("hero", out var value0) ? (global::Character)value0! : throw new ArgumentException("missing object field `hero`", nameof(fields)),
-            fields.TryGetValue("config", out var value1) ? (global::ScenarioConfig)value1! : throw new ArgumentException("missing object field `config`", nameof(fields)),
+            fields.TryGetValue("hero", out var value0) ? (global::Game.Config.Character)value0! : throw new ArgumentException("missing object field `hero`", nameof(fields)),
+            fields.TryGetValue("config", out var value1) ? (global::Game.Config.ScenarioConfig)value1! : throw new ArgumentException("missing object field `config`", nameof(fields)),
             fields.TryGetValue("stages", out var value2) ? (IReadOnlyList<CoflowFunction<long, long>>)value2! : throw new ArgumentException("missing object field `stages`", nameof(fields))
         );
     }
@@ -1273,12 +1276,12 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::ScenarioConfig(
+        return new global::Game.Config.ScenarioConfig(
             fields.TryGetValue("label", out var value0) ? (string)value0! : throw new ArgumentException("missing object field `label`", nameof(fields)),
             fields.TryGetValue("samples", out var value1) ? (IReadOnlyList<long>)value1! : throw new ArgumentException("missing object field `samples`", nameof(fields)),
-            fields.TryGetValue("checkpoints", out var value2) ? (IReadOnlyDictionary<string, global::Stats>)value2! : throw new ArgumentException("missing object field `checkpoints`", nameof(fields)),
-            fields.TryGetValue("optionalBonus", out var value3) ? (Option<global::Stats>)value3! : throw new ArgumentException("missing object field `optionalBonus`", nameof(fields)),
-            fields.TryGetValue("validation", out var value4) ? (Result<Option<global::Stats>, string>)value4! : throw new ArgumentException("missing object field `validation`", nameof(fields))
+            fields.TryGetValue("checkpoints", out var value2) ? (IReadOnlyDictionary<string, global::Game.Config.Stats>)value2! : throw new ArgumentException("missing object field `checkpoints`", nameof(fields)),
+            fields.TryGetValue("optionalBonus", out var value3) ? (Option<global::Game.Config.Stats>)value3! : throw new ArgumentException("missing object field `optionalBonus`", nameof(fields)),
+            fields.TryGetValue("validation", out var value4) ? (Result<Option<global::Game.Config.Stats>, string>)value4! : throw new ArgumentException("missing object field `validation`", nameof(fields))
         );
     }
 
@@ -1286,7 +1289,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         CfdLoadContext context,
         IReadOnlyDictionary<string, object?> fields)
     {
-        return new global::Stats(
+        return new global::Game.Config.Stats(
             fields.TryGetValue("health", out var value0) ? (long)value0! : throw new ArgumentException("missing object field `health`", nameof(fields)),
             fields.TryGetValue("attack", out var value1) ? (long)value1! : throw new ArgumentException("missing object field `attack`", nameof(fields)),
             fields.TryGetValue("resistances", out var value2) ? (IReadOnlyDictionary<string, long>)value2! : CoflowConstantValues.Dictionary<string, long>()
@@ -1294,7 +1297,7 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static void PopulateCft_436861726163746572(
-        global::Character target,
+        global::Game.Config.Character target,
         CfdRecordNode record,
         CfdLoadContext context)
     {
@@ -1305,51 +1308,51 @@ internal sealed class CoflowSchema : ICoflowSchema
         target.Id = ReadEnumCft_4368617261637465724964Text(key);
         target._coflowname = CfdValueReader.String(CfdValueReader.Field(fields, "name"), context);
         target._coflowcharacterClass = ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "characterClass"));
-        target._coflowtraits = CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::CharacterTrait)0L;
+        target._coflowtraits = CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::Game.Config.CharacterTrait)0L;
         target._coflowenabled = CfdValueReader.FindField(fields, "enabled") is { } valueenabled ? CfdValueReader.Boolean(valueenabled) : true;
         target._coflowstats = ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context);
         target._coflowtags = CfdValueReader.Array(CfdValueReader.Field(fields, "tags"), context, static (item, context) => CfdValueReader.String(item, context));
         target._coflowattributes = CfdValueReader.Dictionary(CfdValueReader.Field(fields, "attributes"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item));
         target._coflowprimaryAbility = ReadCft_4162696C697479(CfdValueReader.Field(fields, "primaryAbility"), context);
-        target._coflowabilities = CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>();
+        target._coflowabilities = CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Game.Config.Ability>();
         target._coflowstatus = CfdValueReader.FindField(fields, "status") is { } valuestatus ? CfdValueReader.Result(valuestatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L);
-        target._coflowfallback = CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None;
+        target._coflowfallback = CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Game.Config.Character>(item, context, "Character")) : Option<global::Game.Config.Character>.None;
         _ = CfdValueReader.FindField(fields, "power") is { } valuepower ? context.RequiredFunction(valuepower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
     }
 
 
 
-    private static global::Character ReadCft_436861726163746572(
+    private static global::Game.Config.Character ReadCft_436861726163746572(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("Character", node, () =>
             CfdValueReader.Object(node, context, "Character", ReadCft_436861726163746572Fields));
 
-    private static global::Character ReadCft_436861726163746572Fields(
+    private static global::Game.Config.Character ReadCft_436861726163746572Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "name", "characterClass", "traits", "enabled", "stats", "tags", "attributes", "primaryAbility", "abilities", "status", "fallback", "power");
             _ = CfdValueReader.FindField(fields, "power") is { } valuepower ? context.RequiredFunction(valuepower, "power", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    stats.health + bonus\r\n  }", "power", typeof(long), typeof(long));
-        return new global::Character(
+        return new global::Game.Config.Character(
             ReadEnumCft_4368617261637465724964Text(key),
             CfdValueReader.String(CfdValueReader.Field(fields, "name"), context),
             ReadEnumCft_436861726163746572436C617373(CfdValueReader.Field(fields, "characterClass")),
-            CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::CharacterTrait)0L,
+            CfdValueReader.FindField(fields, "traits") is { } valuetraits ? ReadEnumCft_4368617261637465725472616974(valuetraits) : (global::Game.Config.CharacterTrait)0L,
             CfdValueReader.FindField(fields, "enabled") is { } valueenabled ? CfdValueReader.Boolean(valueenabled) : true,
             ReadCft_5374617473(CfdValueReader.Field(fields, "stats"), context),
             CfdValueReader.Array(CfdValueReader.Field(fields, "tags"), context, static (item, context) => CfdValueReader.String(item, context)),
             CfdValueReader.Dictionary(CfdValueReader.Field(fields, "attributes"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item)),
             ReadCft_4162696C697479(CfdValueReader.Field(fields, "primaryAbility"), context),
-            CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Ability>(),
+            CfdValueReader.FindField(fields, "abilities") is { } valueabilities ? CfdValueReader.Array(valueabilities, context, static (item, context) => ReadCft_4162696C697479(item, context)) : CoflowConstantValues.List<global::Game.Config.Ability>(),
             CfdValueReader.FindField(fields, "status") is { } valuestatus ? CfdValueReader.Result(valuestatus, context, static (item, context) => CfdValueReader.Int64(item), static (item, context) => CfdValueReader.String(item, context)) : Result<long, string>.Ok(0L),
-            CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Character>(item, context, "Character")) : Option<global::Character>.None
+            CfdValueReader.FindField(fields, "fallback") is { } valuefallback ? CfdValueReader.Option(valuefallback, context, static (item, context) => CfdValueReader.Reference<global::Game.Config.Character>(item, context, "Character")) : Option<global::Game.Config.Character>.None
         );
     }
 
     private static void PopulateCft_44616D6167654162696C697479(
-        global::DamageAbility target,
+        global::Game.Config.DamageAbility target,
         CfdRecordNode record,
         CfdLoadContext context)
     {
@@ -1364,19 +1367,19 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::DamageAbility ReadCft_44616D6167654162696C697479(
+    private static global::Game.Config.DamageAbility ReadCft_44616D6167654162696C697479(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("DamageAbility", node, () =>
             CfdValueReader.Object(node, context, "DamageAbility", ReadCft_44616D6167654162696C697479Fields));
 
-    private static global::DamageAbility ReadCft_44616D6167654162696C697479Fields(
+    private static global::Game.Config.DamageAbility ReadCft_44616D6167654162696C697479Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "label", "damage");
-        return new global::DamageAbility(
+        return new global::Game.Config.DamageAbility(
             key,
             CfdValueReader.String(CfdValueReader.Field(fields, "label"), context),
             CfdValueReader.Int64(CfdValueReader.Field(fields, "damage"))
@@ -1384,7 +1387,7 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static void PopulateCft_4865616C4162696C697479(
-        global::HealAbility target,
+        global::Game.Config.HealAbility target,
         CfdRecordNode record,
         CfdLoadContext context)
     {
@@ -1399,19 +1402,19 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::HealAbility ReadCft_4865616C4162696C697479(
+    private static global::Game.Config.HealAbility ReadCft_4865616C4162696C697479(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("HealAbility", node, () =>
             CfdValueReader.Object(node, context, "HealAbility", ReadCft_4865616C4162696C697479Fields));
 
-    private static global::HealAbility ReadCft_4865616C4162696C697479Fields(
+    private static global::Game.Config.HealAbility ReadCft_4865616C4162696C697479Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "label", "healing");
-        return new global::HealAbility(
+        return new global::Game.Config.HealAbility(
             key,
             CfdValueReader.String(CfdValueReader.Field(fields, "label"), context),
             CfdValueReader.Int64(CfdValueReader.Field(fields, "healing"))
@@ -1421,7 +1424,7 @@ internal sealed class CoflowSchema : ICoflowSchema
     private static object? BindHostCft_486F73745365727669636573(object? value, CfdLoadContext context)
     {
         using var scope = context.EnterRecord("HostServices", string.Empty);
-        var host = value as global::HostServices;
+        var host = value as global::Game.Config.HostServices;
         var function0 = context.Function(null, "trace", typeof(Unit), typeof(string));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
@@ -1447,7 +1450,7 @@ internal sealed class CoflowSchema : ICoflowSchema
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function4,
                 host._coflownormalize));
-        var function5 = context.Function(null, "echoStats", typeof(global::Stats), typeof(global::Stats));
+        var function5 = context.Function(null, "echoStats", typeof(global::Game.Config.Stats), typeof(global::Game.Config.Stats));
         if (host is not null)
             context.BindHostFunction(CoflowHostFunctionBinding.Create(
                 function5,
@@ -1456,7 +1459,7 @@ internal sealed class CoflowSchema : ICoflowSchema
     }
 
     private static void PopulateCft_52756E74696D6553657474696E6773(
-        global::RuntimeSettings target,
+        global::Game.Config.RuntimeSettings target,
         CfdRecordNode record,
         CfdLoadContext context)
     {
@@ -1470,26 +1473,26 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::RuntimeSettings ReadCft_52756E74696D6553657474696E6773(
+    private static global::Game.Config.RuntimeSettings ReadCft_52756E74696D6553657474696E6773(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("RuntimeSettings", node, () =>
             CfdValueReader.Object(node, context, "RuntimeSettings", ReadCft_52756E74696D6553657474696E6773Fields));
 
-    private static global::RuntimeSettings ReadCft_52756E74696D6553657474696E6773Fields(
+    private static global::Game.Config.RuntimeSettings ReadCft_52756E74696D6553657474696E6773Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "environment", "retries");
-        return new global::RuntimeSettings(
+        return new global::Game.Config.RuntimeSettings(
             CfdValueReader.String(CfdValueReader.Field(fields, "environment"), context),
             CfdValueReader.FindField(fields, "retries") is { } valueretries ? CfdValueReader.Int64(valueretries) : 3L
         );
     }
 
     private static void PopulateCft_5363656E6172696F(
-        global::Scenario target,
+        global::Game.Config.Scenario target,
         CfdRecordNode record,
         CfdLoadContext context)
     {
@@ -1498,7 +1501,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         var key = record.Key;
         CfdValueReader.ValidateFields(fields, "hero", "config", "stages", "execute", "callHost", "makeScaler", "apply", "compose", "hostFunction", "optionalFunction", "resultFunction", "integerLoop", "floatLoop", "numericConversions", "enumRoundTrip", "increment", "directCallChain", "tailRecursion", "tailAccumulator", "fieldReadLoop", "collectionPipeline", "hostCall", "hostComposite", "propagateOption", "propagateResult", "propagateNested", "makeOptionalAdder", "collectionQueries", "emptyCollectionQueries", "makeStats", "makeDefaultStats", "readExternalStats", "hostStats", "copyExternalCharacter", "readExternalCharacterCollections", "copyOptionalStats", "formatValues", "syntaxControlFlow", "syntaxOperators", "syntaxMatch", "typeMetadata", "builtinSyntax", "formatSyntax", "primeSum", "matrixKernel", "fibonacci");
         target.Id = key;
-        target._coflowhero = CfdValueReader.Reference<global::Character>(CfdValueReader.Field(fields, "hero"), context, "Character");
+        target._coflowhero = CfdValueReader.Reference<global::Game.Config.Character>(CfdValueReader.Field(fields, "hero"), context, "Character");
         target._coflowconfig = ReadCft_5363656E6172696F436F6E666967(CfdValueReader.Field(fields, "config"), context);
         target._coflowstages = CfdValueReader.Array(CfdValueReader.Field(fields, "stages"), context, static (item, context) => context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long), new Type[] { typeof(long) }));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "execute"), "execute", typeof(long), typeof(long));
@@ -1512,7 +1515,7 @@ internal sealed class CoflowSchema : ICoflowSchema
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "integerLoop"), "integerLoop", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "floatLoop"), "floatLoop", typeof(double), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "numericConversions"), "numericConversions", typeof(long), typeof(long), typeof(double));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "enumRoundTrip"), "enumRoundTrip", typeof(bool), typeof(global::CharacterId));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "enumRoundTrip"), "enumRoundTrip", typeof(bool), typeof(global::Game.Config.CharacterId));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "increment"), "increment", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "directCallChain"), "directCallChain", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "tailRecursion"), "tailRecursion", typeof(long), typeof(long));
@@ -1527,17 +1530,17 @@ internal sealed class CoflowSchema : ICoflowSchema
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeOptionalAdder"), "makeOptionalAdder", typeof(CoflowFunction<long, long>), typeof(Option<long>));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "collectionQueries"), "collectionQueries", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "emptyCollectionQueries"), "emptyCollectionQueries", typeof(long));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeStats"), "makeStats", typeof(global::Stats), typeof(long));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeDefaultStats"), "makeDefaultStats", typeof(global::Stats), typeof(long));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalStats"), "readExternalStats", typeof(long), typeof(global::Stats));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "hostStats"), "hostStats", typeof(long), typeof(global::Stats));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyExternalCharacter"), "copyExternalCharacter", typeof(global::Character), typeof(global::Character));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalCharacterCollections"), "readExternalCharacterCollections", typeof(long), typeof(global::Character));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyOptionalStats"), "copyOptionalStats", typeof(Option<global::Stats>), typeof(Option<global::Stats>));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeStats"), "makeStats", typeof(global::Game.Config.Stats), typeof(long));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeDefaultStats"), "makeDefaultStats", typeof(global::Game.Config.Stats), typeof(long));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalStats"), "readExternalStats", typeof(long), typeof(global::Game.Config.Stats));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "hostStats"), "hostStats", typeof(long), typeof(global::Game.Config.Stats));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyExternalCharacter"), "copyExternalCharacter", typeof(global::Game.Config.Character), typeof(global::Game.Config.Character));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalCharacterCollections"), "readExternalCharacterCollections", typeof(long), typeof(global::Game.Config.Character));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyOptionalStats"), "copyOptionalStats", typeof(Option<global::Game.Config.Stats>), typeof(Option<global::Game.Config.Stats>));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "formatValues"), "formatValues", typeof(string), typeof(long), typeof(double), typeof(bool), typeof(Option<long>));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxControlFlow"), "syntaxControlFlow", typeof(long), typeof(long));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxOperators"), "syntaxOperators", typeof(bool), typeof(long), typeof(long), typeof(string));
-        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxMatch"), "syntaxMatch", typeof(long), typeof(long), typeof(Option<long>), typeof(Result<long, string>), typeof(global::CharacterId));
+        _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxMatch"), "syntaxMatch", typeof(long), typeof(long), typeof(Option<long>), typeof(Result<long, string>), typeof(global::Game.Config.CharacterId));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "typeMetadata"), "typeMetadata", typeof(string));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "builtinSyntax"), "builtinSyntax", typeof(bool), typeof(string));
         _ = context.RequiredFunction(CfdValueReader.FindField(fields, "formatSyntax"), "formatSyntax", typeof(string), typeof(string));
@@ -1548,13 +1551,13 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::Scenario ReadCft_5363656E6172696F(
+    private static global::Game.Config.Scenario ReadCft_5363656E6172696F(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("Scenario", node, () =>
             CfdValueReader.Object(node, context, "Scenario", ReadCft_5363656E6172696FFields));
 
-    private static global::Scenario ReadCft_5363656E6172696FFields(
+    private static global::Game.Config.Scenario ReadCft_5363656E6172696FFields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
@@ -1571,7 +1574,7 @@ internal sealed class CoflowSchema : ICoflowSchema
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "integerLoop"), "integerLoop", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "floatLoop"), "floatLoop", typeof(double), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "numericConversions"), "numericConversions", typeof(long), typeof(long), typeof(double));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "enumRoundTrip"), "enumRoundTrip", typeof(bool), typeof(global::CharacterId));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "enumRoundTrip"), "enumRoundTrip", typeof(bool), typeof(global::Game.Config.CharacterId));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "increment"), "increment", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "directCallChain"), "directCallChain", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "tailRecursion"), "tailRecursion", typeof(long), typeof(long));
@@ -1586,26 +1589,26 @@ internal sealed class CoflowSchema : ICoflowSchema
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeOptionalAdder"), "makeOptionalAdder", typeof(CoflowFunction<long, long>), typeof(Option<long>));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "collectionQueries"), "collectionQueries", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "emptyCollectionQueries"), "emptyCollectionQueries", typeof(long));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeStats"), "makeStats", typeof(global::Stats), typeof(long));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeDefaultStats"), "makeDefaultStats", typeof(global::Stats), typeof(long));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalStats"), "readExternalStats", typeof(long), typeof(global::Stats));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "hostStats"), "hostStats", typeof(long), typeof(global::Stats));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyExternalCharacter"), "copyExternalCharacter", typeof(global::Character), typeof(global::Character));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalCharacterCollections"), "readExternalCharacterCollections", typeof(long), typeof(global::Character));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyOptionalStats"), "copyOptionalStats", typeof(Option<global::Stats>), typeof(Option<global::Stats>));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeStats"), "makeStats", typeof(global::Game.Config.Stats), typeof(long));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "makeDefaultStats"), "makeDefaultStats", typeof(global::Game.Config.Stats), typeof(long));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalStats"), "readExternalStats", typeof(long), typeof(global::Game.Config.Stats));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "hostStats"), "hostStats", typeof(long), typeof(global::Game.Config.Stats));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyExternalCharacter"), "copyExternalCharacter", typeof(global::Game.Config.Character), typeof(global::Game.Config.Character));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "readExternalCharacterCollections"), "readExternalCharacterCollections", typeof(long), typeof(global::Game.Config.Character));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "copyOptionalStats"), "copyOptionalStats", typeof(Option<global::Game.Config.Stats>), typeof(Option<global::Game.Config.Stats>));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "formatValues"), "formatValues", typeof(string), typeof(long), typeof(double), typeof(bool), typeof(Option<long>));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxControlFlow"), "syntaxControlFlow", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxOperators"), "syntaxOperators", typeof(bool), typeof(long), typeof(long), typeof(string));
-            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxMatch"), "syntaxMatch", typeof(long), typeof(long), typeof(Option<long>), typeof(Result<long, string>), typeof(global::CharacterId));
+            _ = context.RequiredFunction(CfdValueReader.FindField(fields, "syntaxMatch"), "syntaxMatch", typeof(long), typeof(long), typeof(Option<long>), typeof(Result<long, string>), typeof(global::Game.Config.CharacterId));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "typeMetadata"), "typeMetadata", typeof(string));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "builtinSyntax"), "builtinSyntax", typeof(bool), typeof(string));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "formatSyntax"), "formatSyntax", typeof(string), typeof(string));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "primeSum"), "primeSum", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "matrixKernel"), "matrixKernel", typeof(long), typeof(long));
             _ = context.RequiredFunction(CfdValueReader.FindField(fields, "fibonacci"), "fibonacci", typeof(long), typeof(long));
-        return new global::Scenario(
+        return new global::Game.Config.Scenario(
             key,
-            CfdValueReader.Reference<global::Character>(CfdValueReader.Field(fields, "hero"), context, "Character"),
+            CfdValueReader.Reference<global::Game.Config.Character>(CfdValueReader.Field(fields, "hero"), context, "Character"),
             ReadCft_5363656E6172696F436F6E666967(CfdValueReader.Field(fields, "config"), context),
             CfdValueReader.Array(CfdValueReader.Field(fields, "stages"), context, static (item, context) => context.FunctionValue<CoflowFunction<long, long>>(item, typeof(long), new Type[] { typeof(long) }))
         );
@@ -1613,19 +1616,19 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::ScenarioConfig ReadCft_5363656E6172696F436F6E666967(
+    private static global::Game.Config.ScenarioConfig ReadCft_5363656E6172696F436F6E666967(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("ScenarioConfig", node, () =>
             CfdValueReader.Object(node, context, "ScenarioConfig", ReadCft_5363656E6172696F436F6E666967Fields));
 
-    private static global::ScenarioConfig ReadCft_5363656E6172696F436F6E666967Fields(
+    private static global::Game.Config.ScenarioConfig ReadCft_5363656E6172696F436F6E666967Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "label", "samples", "checkpoints", "optionalBonus", "validation");
-        return new global::ScenarioConfig(
+        return new global::Game.Config.ScenarioConfig(
             CfdValueReader.String(CfdValueReader.Field(fields, "label"), context),
             CfdValueReader.Array(CfdValueReader.Field(fields, "samples"), context, static (item, context) => CfdValueReader.Int64(item)),
             CfdValueReader.Dictionary(CfdValueReader.Field(fields, "checkpoints"), context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => ReadCft_5374617473(item, context)),
@@ -1636,27 +1639,27 @@ internal sealed class CoflowSchema : ICoflowSchema
 
 
 
-    private static global::Stats ReadCft_5374617473(
+    private static global::Game.Config.Stats ReadCft_5374617473(
         CfdValueNode node,
         CfdLoadContext context) =>
         context.ReadValue("Stats", node, () =>
             CfdValueReader.Object(node, context, "Stats", ReadCft_5374617473Fields));
 
-    private static global::Stats ReadCft_5374617473Fields(
+    private static global::Game.Config.Stats ReadCft_5374617473Fields(
         IReadOnlyList<CfdFieldNode> fields,
         string key,
         CfdLoadContext context)
     {
         CfdValueReader.ValidateFields(fields, "health", "attack", "resistances", "score");
             _ = CfdValueReader.FindField(fields, "score") is { } valuescore ? context.RequiredFunction(valuescore, "score", typeof(long), typeof(long)) : context.DefaultFunction("fn(bonus: int) -> int {\r\n    health + attack + bonus\r\n  }", "score", typeof(long), typeof(long));
-        return new global::Stats(
+        return new global::Game.Config.Stats(
             CfdValueReader.Int64(CfdValueReader.Field(fields, "health")),
             CfdValueReader.Int64(CfdValueReader.Field(fields, "attack")),
             CfdValueReader.FindField(fields, "resistances") is { } valueresistances ? CfdValueReader.Dictionary(valueresistances, context, static (item, context) => CfdValueReader.String(item, context), static (item, context) => CfdValueReader.Int64(item)) : CoflowConstantValues.Dictionary<string, long>()
         );
     }
 
-    private static global::Ability ReadCft_4162696C697479(
+    private static global::Game.Config.Ability ReadCft_4162696C697479(
         CfdValueNode node,
         CfdLoadContext context)
     {

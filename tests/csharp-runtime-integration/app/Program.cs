@@ -1,4 +1,5 @@
 using Coflow.Runtime;
+using Game.Config;
 
 
 var exampleRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));

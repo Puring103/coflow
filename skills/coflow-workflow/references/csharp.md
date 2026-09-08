@@ -1,11 +1,12 @@
 # C# 代码生成
 
-C# generator 根据 CFT 生成全局命名空间中的强类型 API 和 Schema 绑定代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。C# target 不接受额外选项：
+C# generator 根据 CFT 生成强类型 API 和 Schema 绑定代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。C# target 支持可选的 `namespace` 配置；未配置或为空字符串时使用全局命名空间：
 
 ```yaml
 codegen:
   - language: csharp
     dir: Generated
+    namespace: Game.Config
 ```
 
 类型、字段、函数、函数参数和 enum 成员保留 CFT 中的大小写与下划线；`@idAsEnum` 成员保留记录键的名称。例如 `hit_points` 生成 `hit_points`，`applyBonus` 生成 `applyBonus`。
@@ -13,6 +14,9 @@ codegen:
 将生成目录和 `Coflow.Runtime` 引入 C# 项目后，先创建运行时实例，再按 Module 加载 CFD，最后编译并发布：
 
 ```csharp
+using Game.Config;
+using Coflow.Runtime;
+
 var coflow = Schema.Create(new CoflowOptions(
     maxInstructions: 10_000_000,
     maxFrameDepth: 1_024));
