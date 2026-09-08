@@ -1204,7 +1204,7 @@ fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<Str
     Vec::new()
 }
 
-fn skip_annotation_tokens(
+const fn skip_annotation_tokens(
     tokens: &[coflow_language::cft::syntax::lexer::Token],
     index: &mut usize,
 ) {
