@@ -311,16 +311,7 @@ impl<'a> ModelCompiler<'a> {
             .and_then(|records| records.get(input.source_key.as_str()))
             .copied()
         else {
-            self.diagnostics.push(dimension_diagnostic(
-                &input,
-                None,
-                path,
-                crate::CfdErrorCode::RefTargetNotFound,
-                format!(
-                    "dimension owner `{}:{}` was not found",
-                    input.source_type, input.source_key
-                ),
-            ));
+            // 主体删除后残留的维度值不参与模型，后续维度生成负责清理持久化记录。
             return None;
         };
         let record = records.get(record_id.index())?;

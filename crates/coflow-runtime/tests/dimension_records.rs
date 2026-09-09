@@ -7,6 +7,43 @@ use coflow_runtime::{
 use std::fs;
 
 #[test]
+fn orphan_dimension_records_are_ignored_and_cleaned_on_build() {
+    for singleton in [false, true] {
+        let dir = tempfile::tempdir().expect("project");
+        let annotation = if singleton { "@singleton " } else { "" };
+        fs::write(dir.path().join("schema.cft"), format!("{annotation}type Item {{ @localized title: string; }}\n")).expect("schema");
+        fs::write(dir.path().join("base.cfd"), if singleton { "" } else { "kept: Item { title: \"Keep\" }\n" }).expect("base");
+        fs::create_dir_all(dir.path().join("dimensions/language")).expect("dimension directory");
+        let path = dir.path().join(if singleton { "dimensions/language/Item.cfd" } else { "dimensions/language/Item_title.cfd" });
+        let key = if singleton { "title" } else { "removed" };
+        let mut source = format!("{key}: __coflow_language_Item_title {{ zh: \"旧文本\" }}\n");
+        if !singleton {
+            source.push_str("kept: __coflow_language_Item_title { zh: \"保留翻译\" }\n");
+        }
+        fs::write(&path, &source).expect("orphan dimension");
+        fs::write(dir.path().join("coflow.yaml"), "schema: schema.cft\ndata: base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated\n").expect("config");
+        let runtime = Runtime::new();
+        let session = runtime.open_read_only_session(Project::open(Some(dir.path())).expect("project")).expect("load orphan dimensions");
+        let diagnostics = session.into_diagnostics();
+        if singleton {
+            // singleton 必须恰有一条基础记录，但维度残留不再追加 owner 错误。
+            assert_eq!(diagnostics.diagnostics.len(), 1, "{diagnostics:?}");
+            assert_eq!(diagnostics.diagnostics[0].code, "DATA-015");
+        } else {
+            assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        }
+        assert_eq!(fs::read_to_string(&path).expect("read unchanged dimension"), source);
+        if singleton {
+            continue;
+        }
+        runtime.build_project_session(Project::open(Some(dir.path())).expect("project")).expect("clean dimensions");
+        let cleaned = fs::read_to_string(&path).expect("read cleaned dimension");
+        assert!(!cleaned.contains("旧文本"));
+        assert!(cleaned.contains("保留翻译"));
+    }
+}
+
+#[test]
 fn generated_singleton_records_keep_field_types_through_mutation_and_reload() {
     let dir = tempfile::tempdir().expect("project");
     fs::write(

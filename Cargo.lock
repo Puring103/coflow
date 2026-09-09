@@ -406,7 +406,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "cfd-editor-core",
  "coflow-runtime",
@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor-core"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "atomicwrites",
  "coflow-language",
@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "coflow"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "atomicwrites",
  "clap",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-checker"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-language",
  "coflow-model",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen-csharp"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-codegen",
  "coflow-language",
@@ -601,18 +601,18 @@ dependencies = [
 
 [[package]]
 name = "coflow-diagnostics"
-version = "0.10.7"
+version = "0.10.8"
 
 [[package]]
 name = "coflow-format"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-language",
 ]
 
 [[package]]
 name = "coflow-language"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "regex",
  "serde",
@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-lsp"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-format",
  "coflow-language",
@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-model"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-runtime"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "coflow-checker",
  "coflow-codegen",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-staging"
-version = "0.10.7"
+version = "0.10.8"
 dependencies = [
  "tempfile",
 ]

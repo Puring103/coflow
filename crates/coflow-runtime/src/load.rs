@@ -543,20 +543,15 @@ fn load_dimension_batch(
         validate_singleton_shape,
     })?;
     if field.is_singleton {
-        let key = records
+        let Some(key) = records
             .iter()
             .find(|record| schema.is_assignable(&record.actual_type, &field.source_type))
             .and_then(|record| RecordKey::new(record.key.clone()).ok())
-            .ok_or_else(|| {
-                DiagnosticSet::one(Diagnostic::error(
-                    "RUNTIME-DIMENSION-SINGLETON",
-                    "RUNTIME",
-                    format!(
-                        "singleton dimension owner `{}` has no record",
-                        field.source_type
-                    ),
-                ))
-            })?;
+        else {
+            // singleton 主体缺失时，其维度残留与普通记录一样静默忽略。
+            loaded.values.clear();
+            return Ok(loaded);
+        };
         for value in &mut loaded.values {
             value.source_key = key.clone();
         }

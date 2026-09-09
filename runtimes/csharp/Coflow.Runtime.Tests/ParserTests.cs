@@ -10,6 +10,29 @@ namespace Coflow.Runtime.Tests;
 
 public sealed class ParserTests
 {
+    [Theory]
+    [InlineData(false, "removed")]
+    [InlineData(true, "title")]
+    public void DimensionRecordsWithoutOwnersAreIgnored(bool singleton, string key)
+    {
+        var runtime = new CoflowSchemaRuntimeBuilder();
+        runtime.RegisterDimension("__coflow_language_Item_title", "Item", "title", singleton);
+        var document = CfdParser.Parse(new CfdSource("dimension.cfd",
+            $"{key}: __coflow_language_Item_title {{ zh: \"old\" }}"));
+        runtime.Build().ValidateDimensionRecords(new CfdLoadContext(new[] { document }));
+    }
+
+    [Fact]
+    public void SingletonDimensionRecordsStillRequireTheirFieldKey()
+    {
+        var runtime = new CoflowSchemaRuntimeBuilder();
+        runtime.RegisterDimension("__coflow_language_Item_title", "Item", "title", true);
+        var document = CfdParser.Parse(new CfdSource("dimension.cfd",
+            "unknown: __coflow_language_Item_title { zh: \"old\" }"));
+        Assert.Throws<CfdLoadException>(() =>
+            runtime.Build().ValidateDimensionRecords(new CfdLoadContext(new[] { document })));
+    }
+
     [Fact]
     public void ParsesProjectGlobalTypesAndStructuralPaths()
     {

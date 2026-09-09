@@ -195,6 +195,14 @@ pub(crate) fn semantic_raw_tokens(
     build: &LspBuild,
     document: &LspDocument,
 ) -> Vec<RawSemanticToken> {
+    snapshot_raw_tokens(Some(build), document)
+}
+
+pub(crate) fn snapshot_token_data(build: Option<&LspBuild>, document: &LspDocument) -> Vec<u32> {
+    encode_semantic_tokens(snapshot_raw_tokens(build, document))
+}
+
+fn snapshot_raw_tokens(build: Option<&LspBuild>, document: &LspDocument) -> Vec<RawSemanticToken> {
     let mut tokens = Vec::new();
     add_comment_semantic_tokens(&document.source, &mut tokens);
     if let Ok(lexed) = lex(&ModuleId::new(document.module_id.clone()), &document.source) {
@@ -202,7 +210,7 @@ pub(crate) fn semantic_raw_tokens(
             add_lex_semantic_token(&document.source, &token.kind, token.span, &mut tokens);
         }
     }
-    if let Some(ast) = &document.ast {
+    if let (Some(build), Some(ast)) = (build, &document.ast) {
         add_ast_semantic_tokens(build, document, ast, &mut tokens);
     }
     tokens

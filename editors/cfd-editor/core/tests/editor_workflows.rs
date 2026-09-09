@@ -809,6 +809,25 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
 }
 
 #[test]
+fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sources() {
+    let (root, _) = array_project();
+    let store = SessionStore::new().expect("create session store");
+    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
+    let source = store.read_source_text(project.session_id, "schema.cft").expect("read schema");
+    let live = store.sync_language_document(project.session_id, "schema.cft", &source, 1).expect("open live schema");
+    for path in ["schema.cft", "deleted.cft"] {
+        let tokens = store.highlight_source_snapshot(project.session_id, path, "type Old { value: int; }\n").expect("highlight CFT snapshot");
+        assert!(!tokens.semantic_token_data.is_empty(), "{path}");
+    }
+    let tokens = store.highlight_source_snapshot(project.session_id, "data/deleted.cfd", "old: Old { value: 1 }\n").expect("highlight deleted CFD snapshot");
+    assert!(!tokens.semantic_token_data.is_empty());
+    let current = store.sync_language_document(project.session_id, "schema.cft", &source, 2).expect("read live language state");
+    assert_eq!(live.semantic_token_data, current.semantic_token_data);
+    assert_eq!(fs::read_to_string(root.join("schema.cft")).expect("read disk"), source);
+    fs::remove_dir_all(root).expect("remove project");
+}
+
+#[test]
 fn editor_language_features_are_served_by_embedded_lsp() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create editor session store");
