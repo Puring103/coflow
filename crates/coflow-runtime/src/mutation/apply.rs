@@ -144,12 +144,7 @@ where
     let changed_dimension_files = rebuilt
         .changed_dimension_paths
         .iter()
-        .map(|path| {
-            path.strip_prefix(session.project.root_dir()).map_or_else(
-                |_| path.display().to_string(),
-                crate::project::path_to_slash,
-            )
-        })
+        .map(|path| crate::project_path(session.project.root_dir(), path))
         .collect::<Vec<_>>();
     let new_session = rebuilt.session;
     let additional_files = match prepare_additional_files(&new_session, &staged) {
@@ -304,8 +299,5 @@ fn report_without_publish(
 }
 
 fn project_display_path(session: &ProjectSession, path: &std::path::Path) -> String {
-    path.strip_prefix(session.project.root_dir()).map_or_else(
-        |_| path.display().to_string().replace('\\', "/"),
-        crate::project::path_to_slash,
-    )
+    crate::project_path(session.project.root_dir(), path)
 }

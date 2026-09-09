@@ -213,10 +213,7 @@ pub struct DimensionGenerationResult {
 }
 
 fn dimension_resolved_source(project: &Project, path: &Path) -> CfdSource {
-    let display_name = path.strip_prefix(project.root_dir()).map_or_else(
-        |_| path.display().to_string(),
-        crate::project::path_to_slash,
-    );
+    let display_name = crate::project_path(project.root_dir(), path);
     CfdSource {
         location: CfdSourcePath::new(path.to_path_buf()),
         display_name,

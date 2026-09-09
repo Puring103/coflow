@@ -22,7 +22,7 @@ pub fn add_project_input(
     selected_path: &Path,
 ) -> Result<(), DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
-    let selected = fs::canonicalize(selected_path).map_err(|error| {
+    let selected = crate::canonicalize_path(selected_path).map_err(|error| {
         file_error(
             selected_path,
             "PROJECT-CONFIG-WRITE",
@@ -115,7 +115,7 @@ pub fn create_project_file(
 ) -> Result<(), DiagnosticSet> {
     let project = Project::open_schema_only(Some(config_path))?;
     let parent = project.resolve_path(parent_path);
-    let parent = fs::canonicalize(&parent).map_err(|error| {
+    let parent = crate::canonicalize_path(&parent).map_err(|error| {
         file_error(
             &parent,
             "PROJECT-FILE-CREATE",
@@ -175,7 +175,7 @@ pub fn create_project_file(
 pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(), DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
     let target = project.resolve_path(entry_path);
-    let target = fs::canonicalize(&target).map_err(|error| {
+    let target = crate::canonicalize_path(&target).map_err(|error| {
         file_error(
             &target,
             "PROJECT-FILE-DELETE",

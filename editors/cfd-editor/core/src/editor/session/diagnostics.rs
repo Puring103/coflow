@@ -1,7 +1,7 @@
 //! Editor-side view of the engine's diagnostics in wire-friendly
 //! [`coflow_runtime::FlatDiagnostic`] shape.
 
-use coflow_runtime::{path_to_slash, DiagnosticTarget, FlatDiagnostic, ProjectQueries};
+use coflow_runtime::{DiagnosticTarget, FlatDiagnostic, ProjectQueries};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -177,18 +177,7 @@ fn normalize_target(
 /// path is already relative or doesn't sit under `project_root`, it's
 /// returned unchanged so we never silently strip an unrelated prefix.
 fn project_relative_path(project_root: &Path, path: &str) -> String {
-    let candidate = Path::new(path);
-    let root = normalize(project_root);
-    let normalized = normalize(candidate);
-    if let Some(rest) = normalized.strip_prefix(&root) {
-        let trimmed = rest.trim_start_matches('/');
-        return trimmed.to_string();
-    }
-    path.to_string()
-}
-
-fn normalize(path: &Path) -> String {
-    path_to_slash(path)
+    coflow_runtime::project_path(project_root, Path::new(path))
 }
 
 #[cfg(test)]

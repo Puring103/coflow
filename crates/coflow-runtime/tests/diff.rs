@@ -267,3 +267,240 @@ fn ignores_checkout_line_ending_differences() {
     assert!(diff.files.is_empty());
     assert!(diff.records.is_empty());
 }
+
+#[test]
+fn respects_nested_excludes_and_keeps_force_added_files() {
+    let repo = tempfile::tempdir().expect("temp repo");
+    let global = tempfile::NamedTempFile::new().expect("global excludes");
+    write_project(
+        repo.path(),
+        "type Item { value: int; }\n",
+        "Item { base { value: 1, } }\n",
+    );
+    git(repo.path(), &["init", "--quiet"]);
+    git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+    git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+    fs::write(repo.path().join(".gitignore"), "data/*.cfd\n").expect("root ignores");
+    fs::write(repo.path().join("data/.gitignore"), "!visible.cfd\n").expect("nested exception");
+    fs::write(repo.path().join(".git/info/exclude"), "data/info/*.cfd\n").expect("repo excludes");
+    fs::write(global.path(), "data/global/*.cfd\n").expect("global patterns");
+    git(
+        repo.path(),
+        &[
+            "config",
+            "core.excludesFile",
+            global.path().to_str().expect("UTF-8 path"),
+        ],
+    );
+    for (path, key) in [
+        ("hidden.cfd", "hidden"),
+        ("visible.cfd", "visible"),
+        ("staged.cfd", "staged"),
+        ("info/hidden.cfd", "info"),
+        ("global/hidden.cfd", "global"),
+    ] {
+        let path = repo.path().join("data").join(path);
+        fs::create_dir_all(path.parent().expect("parent")).expect("data directory");
+        fs::write(path, format!("Item {{ {key} {{ value: 2, }} }}\n")).expect("new data");
+    }
+    git(repo.path(), &["add", "--force", "data/staged.cfd"]);
+    fs::write(
+        repo.path().join("data/items.cfd"),
+        "Item { base { value: 3, } }\n",
+    )
+    .expect("tracked data");
+    let project = Project::open_schema_only(Some(repo.path())).expect("project");
+    let session = Runtime::new()
+        .open_read_only_session(project)
+        .expect("session");
+    let diff = session.queries().diff_against_head().expect("diff");
+    assert!(diff.semantic_available, "{:?}", diff.diagnostics);
+    assert_eq!(
+        diff.files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["data/items.cfd", "data/staged.cfd", "data/visible.cfd"],
+    );
+    assert_eq!(
+        diff.records
+            .iter()
+            .map(|record| record.coordinate.key())
+            .collect::<Vec<_>>(),
+        ["base", "staged", "visible"],
+    );
+}
+
+#[test]
+fn reads_packed_heads_in_detached_linked_worktrees() {
+    for object_format in ["sha1", "sha256"] {
+        let repo = tempfile::tempdir().expect("temp repo");
+        let checkout_parent = tempfile::tempdir().expect("worktree parent");
+        let checkout = checkout_parent.path().join("checkout");
+        // 项目路径包含 Unicode 与空格，且仓库对象已打包。
+        let project_path = "游戏 project";
+        write_project(
+            &repo.path().join(project_path),
+            "type Item { value: int; }\n",
+            "Item { base { value: 1, } }\n",
+        );
+        git(
+            repo.path(),
+            &[
+                "init",
+                "--quiet",
+                &format!("--object-format={object_format}"),
+            ],
+        );
+        git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+        git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+        git(repo.path(), &["add", "."]);
+        git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+        git(repo.path(), &["repack", "-ad"]);
+        git(repo.path(), &["prune-packed"]);
+        git(
+            repo.path(),
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                checkout.to_str().expect("UTF-8 checkout"),
+                "HEAD",
+            ],
+        );
+        let project_root = checkout.join(project_path);
+        fs::write(
+            project_root.join("data/items.cfd"),
+            "Item { base { value: 2, } }\n",
+        )
+        .expect("change data");
+        let project = Project::open_schema_only(Some(&project_root)).expect("project");
+        let session = Runtime::new()
+            .open_read_only_session(project)
+            .expect("session");
+        let diff = session.queries().diff_against_head().expect("diff");
+        assert_eq!(
+            diff.head_oid.len(),
+            if object_format == "sha1" { 40 } else { 64 }
+        );
+        assert!(diff.semantic_available, "{:?}", diff.diagnostics);
+        assert_eq!(diff.files.len(), 1);
+        assert_eq!(diff.records.len(), 1);
+        assert!(diff.files[0].patch.contains("-Item { base { value: 1, } }"));
+        assert!(diff.files[0].patch.contains("+Item { base { value: 2, } }"));
+    }
+}
+
+#[test]
+fn reports_git_diagnostic_for_unborn_head() {
+    let repo = tempfile::tempdir().expect("temp repo");
+    write_project(
+        repo.path(),
+        "type Item { value: int; }\n",
+        "Item { base { value: 1, } }\n",
+    );
+    git(repo.path(), &["init", "--quiet"]);
+    let project = Project::open_schema_only(Some(repo.path())).expect("project");
+    let session = Runtime::new()
+        .open_read_only_session(project)
+        .expect("session");
+    let diagnostics = session
+        .queries()
+        .diff_against_head()
+        .expect_err("HEAD is unborn");
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "GIT-DIFF"));
+}
+
+#[test]
+fn compares_absolute_dimension_paths_against_snapshot() {
+    let repo = tempfile::tempdir().expect("repo");
+    write_project(
+        repo.path(),
+        "type Item { @localized name: string; }\n",
+        "one: Item { name: \"Name\" }\n",
+    );
+    let dimensions = repo.path().join("dimensions/language");
+    fs::create_dir_all(&dimensions).expect("dimensions");
+    let overlay = dimensions.join("Item_name.cfd");
+    fs::write(
+        &overlay,
+        "one: __coflow_language_Item_name { zh: \"Before\" }\n",
+    )
+    .expect("overlay");
+    let config = serde_json::json!({
+        "schema": "schema.cft", "data": "data/",
+        "dimensions": {"language": {"variants": ["zh"], "out_dir": coflow_runtime::path_to_slash(&dimensions)}},
+        "codegen": [{"language": "csharp", "dir": "generated"}],
+    });
+    fs::write(
+        repo.path().join("coflow.yaml"),
+        serde_yaml::to_string(&config).expect("yaml"),
+    )
+    .expect("config");
+    git(repo.path(), &["init", "--quiet"]);
+    git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+    git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+    fs::write(
+        &overlay,
+        "one: __coflow_language_Item_name { zh: \"After\" }\n",
+    )
+    .expect("changed overlay");
+    let session = Runtime::new()
+        .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
+        .expect("session");
+    let diff = session.queries().diff_against_head().expect("diff");
+    assert!(diff.semantic_available, "{:?}", diff.diagnostics);
+    assert_eq!(diff.files.len(), 1);
+    assert_eq!(diff.files[0].path, "dimensions/language/Item_name.cfd");
+    assert!(diff.files[0].patch.contains("Before"));
+    assert!(diff.files[0].patch.contains("After"));
+    assert!(!diff.records.is_empty());
+}
+
+#[test]
+fn excludes_sources_outside_repository_with_diagnostics() {
+    let repo = tempfile::tempdir().expect("repo");
+    let external = tempfile::tempdir().expect("external");
+    write_project(
+        repo.path(),
+        "type Item { value: int; }\n",
+        "base: Item { value: 1 }\n",
+    );
+    let external_file = external.path().join("outside.cfd");
+    fs::write(&external_file, "external: Item { value: 2 }\n").expect("external data");
+    let config = serde_json::json!({"schema":"schema.cft", "data":["data/", coflow_runtime::path_to_slash(&external_file)], "codegen":[{"language":"csharp", "dir":"generated"}]});
+    fs::write(
+        repo.path().join("coflow.yaml"),
+        serde_yaml::to_string(&config).expect("yaml"),
+    )
+    .expect("config");
+    git(repo.path(), &["init", "--quiet"]);
+    git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+    git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+    fs::write(
+        repo.path().join("data/items.cfd"),
+        "base: Item { value: 3 }\n",
+    )
+    .expect("update");
+    let session = Runtime::new()
+        .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
+        .expect("session");
+    let diff = session.queries().diff_against_head().expect("diff");
+    assert!(diff
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "GIT-EXTERNAL-SOURCE"));
+    assert_eq!(diff.files.len(), 1);
+    assert_eq!(diff.files[0].path, "data/items.cfd");
+    assert!(diff.files[0].patch.contains("-base: Item { value: 1 }"));
+    assert!(!diff.semantic_available);
+}

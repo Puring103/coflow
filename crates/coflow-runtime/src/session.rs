@@ -257,8 +257,14 @@ impl ProjectSession {
             }
         }
         for info in self.dimensions() {
-            if let Some(out_dir) = info.out_dir.as_ref() {
-                let absolute = self.project.resolve_path(Path::new(out_dir));
+            if let Some(out_dir) = self
+                .project
+                .config()
+                .dimensions
+                .get(&info.name)
+                .and_then(|config| config.out_dir.as_ref())
+            {
+                let absolute = normalize_path(&self.project.resolve_path(out_dir));
                 options.dimension_groups.push(DimensionGroup {
                     display_name: info.display_name.clone(),
                     dir: absolute,
@@ -271,6 +277,11 @@ impl ProjectSession {
     /// File-tree view using caller-supplied dimension groups and source paths.
     #[must_use]
     pub(crate) fn file_tree_with(&self, options: &FileTreeOptions) -> Vec<FileTreeNode> {
+        let dimension_paths = options
+            .dimension_groups
+            .iter()
+            .map(|group| path_to_slash(&group.dir))
+            .collect::<BTreeSet<_>>();
         let mut skip: BTreeSet<String> = BTreeSet::new();
         for group in &options.dimension_groups {
             if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {
@@ -302,7 +313,7 @@ impl ProjectSession {
                     .map(|source| (source.path().as_path(), false, true)),
             )
         {
-            let absolute = self.project.resolve_path(configured);
+            let absolute = normalize_path(&self.project.resolve_path(configured));
             if path_is_same_or_descendant(&absolute, &project_root) {
                 continue;
             }
@@ -313,6 +324,7 @@ impl ProjectSession {
                 &options.in_sources,
                 in_schema,
                 in_data,
+                &dimension_paths,
             ) {
                 tree.push(node);
             }

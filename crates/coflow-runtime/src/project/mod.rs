@@ -30,7 +30,8 @@ pub use config_write::{
 pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{
-    normalize_path, normalized_path_identity, path_is_same_or_descendant, resolve_config_path,
+    canonicalize_path, normalize_path, normalized_path_identity, path_is_same_or_descendant,
+    project_path, resolve_config_path, resolve_existing_or_future_path,
 };
 pub use schema_path_policy::SchemaFile;
 pub use schema_sources::SchemaSource;
@@ -102,7 +103,7 @@ impl Project {
     /// canonicalized, or parsed as YAML.
     pub fn open_schema_only(config_or_dir: Option<&Path>) -> Result<Self, DiagnosticSet> {
         let config_path = resolve_config_path(config_or_dir)?;
-        let config_path = fs::canonicalize(&config_path).map_err(|err| {
+        let config_path = canonicalize_path(&config_path).map_err(|err| {
             diagnostics::file_error(
                 &config_path,
                 "PROJECT-CONFIG-PATH",

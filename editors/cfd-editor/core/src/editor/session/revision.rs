@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -99,7 +99,7 @@ fn resolve_path(project_root: &Path, path: &Path) -> PathBuf {
     } else {
         project_root.join(path)
     };
-    fs::canonicalize(&path).unwrap_or(path)
+    coflow_runtime::normalize_path(&path)
 }
 
 fn content_revision(path: &Path) -> std::io::Result<ContentRevision> {
@@ -119,6 +119,8 @@ fn content_revision(path: &Path) -> std::io::Result<ContentRevision> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
+
+    use std::fs;
 
     use super::*;
 

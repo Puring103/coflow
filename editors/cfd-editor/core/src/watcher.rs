@@ -276,7 +276,7 @@ fn normalize_paths(paths: &[PathBuf]) -> Vec<String> {
     let mut out = paths
         .iter()
         .filter(|path| !is_ignored_path(path))
-        .map(|path| path.display().to_string().replace('\\', "/"))
+        .map(|path| coflow_runtime::path_to_slash(&coflow_runtime::normalize_path(path)))
         .collect::<Vec<_>>();
     out.sort();
     out.dedup();

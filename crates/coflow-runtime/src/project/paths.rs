@@ -1,6 +1,7 @@
 use crate::api::DiagnosticSet;
 use crate::project::diagnostics::plain_error;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 /// Resolves a config file path from an explicit path, directory, or current directory.
@@ -45,11 +46,12 @@ pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, Diag
 }
 
 pub(super) fn resolve_project_relative(root_dir: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
+    let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
         root_dir.join(path)
-    }
+    };
+    normalize_path(&absolute)
 }
 
 fn find_default_config(dir: &Path) -> Result<PathBuf, DiagnosticSet> {
@@ -83,23 +85,72 @@ fn is_yaml_path(path: &Path) -> bool {
 
 #[must_use]
 pub fn normalize_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| {
-        let mut out = PathBuf::new();
-        for component in path.components() {
-            match component {
-                Component::CurDir => {}
-                Component::ParentDir => {
-                    if matches!(out.components().next_back(), Some(Component::Normal(_))) {
-                        out.pop();
-                    } else if !out.has_root() {
-                        out.push(Component::ParentDir.as_os_str());
-                    }
+    resolve_existing_or_future_path(path)
+        .unwrap_or_else(|_| normalize_path_lexically(dunce::simplified(path)))
+}
+
+/// Canonicalize an existing path using the platform's normal path representation.
+///
+/// # Errors
+/// Returns filesystem errors without changing their meaning.
+pub fn canonicalize_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
+/// Resolve an absolute path, including a suffix which has not been created yet.
+///
+/// # Errors
+/// Returns errors when an existing ancestor cannot be inspected or resolved.
+pub fn resolve_existing_or_future_path(path: &Path) -> io::Result<PathBuf> {
+    // 先解析已存在的祖先，再接回缺失后缀，使创建前后和删除后的路径身份一致。
+    let absolute = std::path::absolute(path)?;
+    let mut ancestor = absolute.as_path();
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let mut resolved = canonicalize_path(ancestor)?;
+                for component in missing.iter().rev() {
+                    resolved.push(component);
                 }
-                other => out.push(other.as_os_str()),
+                return Ok(normalize_path_lexically(&resolved));
             }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let component = ancestor.components().next_back().ok_or(error)?;
+                missing.push(component.as_os_str().to_os_string());
+                ancestor = ancestor.parent().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "path has no existing ancestor")
+                })?;
+            }
+            Err(error) => return Err(error),
         }
-        out
-    })
+    }
+}
+
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else if !out.has_root() {
+                    out.push(Component::ParentDir.as_os_str());
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Project-relative display identity, or an absolute identity for external files.
+#[must_use]
+pub fn project_path(root: &Path, path: &Path) -> String {
+    let absolute = resolve_project_relative(root, path);
+    let root = normalize_path(root);
+    crate::path_to_slash(absolute.strip_prefix(&root).unwrap_or(&absolute))
 }
 
 /// Returns a stable identity for ownership comparisons.

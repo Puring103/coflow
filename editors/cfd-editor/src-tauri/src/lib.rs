@@ -210,7 +210,7 @@ fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBun
     {
         return Err(EditorError::other("plugin manifest must be a .json file"));
     }
-    let manifest_path = std::fs::canonicalize(manifest_path)
+    let manifest_path = coflow_runtime::canonicalize_path(manifest_path)
         .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
     let manifest_text = std::fs::read_to_string(&manifest_path)
         .map_err(|error| EditorError::other(format!("failed to read plugin manifest: {error}")))?;
@@ -242,7 +242,7 @@ fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBun
     let plugin_dir = manifest_path
         .parent()
         .ok_or_else(|| EditorError::other("plugin manifest has no parent directory"))?;
-    let entry_path = std::fs::canonicalize(plugin_dir.join(entry))
+    let entry_path = coflow_runtime::canonicalize_path(plugin_dir.join(entry))
         .map_err(|error| EditorError::other(format!("failed to read plugin entry: {error}")))?;
     if !entry_path.starts_with(plugin_dir)
         || entry_path
@@ -307,9 +307,9 @@ fn write_project_plugins(
 }
 
 fn relative_project_path(project_root: &Path, target: &Path) -> Result<PathBuf, EditorError> {
-    let root = std::fs::canonicalize(project_root)
+    let root = coflow_runtime::canonicalize_path(project_root)
         .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
-    let target = std::fs::canonicalize(target).map_err(|error| {
+    let target = coflow_runtime::canonicalize_path(target).map_err(|error| {
         EditorError::other(format!("failed to resolve plugin manifest: {error}"))
     })?;
     let root_parts = root.components().collect::<Vec<_>>();
@@ -341,7 +341,7 @@ fn resolve_project_manifest(project_root: &Path, manifest: &str) -> Result<PathB
             "project plugin manifest must use a relative path",
         ));
     }
-    std::fs::canonicalize(project_root.join(path)).map_err(|error| {
+    coflow_runtime::canonicalize_path(project_root.join(path)).map_err(|error| {
         EditorError::other(format!(
             "failed to resolve project plugin manifest `{manifest}`: {error}"
         ))

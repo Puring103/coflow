@@ -1,7 +1,7 @@
 use crate::data_model::{CfdDiagnostics, LoadedRecordDraft, RecordOrigin};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticSet {
@@ -562,19 +562,13 @@ pub fn source_location_display_path(location: &SourceLocation) -> String {
 
 #[must_use]
 pub fn path_to_slash(path: &Path) -> String {
-    let raw = path
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
-            Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
-            Component::RootDir | Component::CurDir => None,
-            Component::ParentDir => Some("..".to_string()),
-        })
-        .collect::<Vec<_>>()
-        .join("/");
-    raw.strip_prefix(r"\\?\")
-        .or_else(|| raw.strip_prefix("//?/"))
-        .map_or_else(|| raw.clone(), str::to_owned)
+    // 显示转换保留根目录与 UNC 身份，不承担文件定位或路径归属判断。
+    let path = dunce::simplified(path).to_string_lossy();
+    if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.into_owned()
+    }
 }
 
 #[cfg(test)]
