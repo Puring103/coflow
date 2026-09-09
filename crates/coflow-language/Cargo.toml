@@ -1,6 +1,6 @@
 [package]
 name = "coflow-language"
-version = "0.10.4"
+version = "0.10.5"
 edition = "2021"
 description = "Coflow's unified CFT and CFD language facade."
 license = "Apache-2.0"

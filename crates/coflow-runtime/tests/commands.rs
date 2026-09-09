@@ -244,7 +244,7 @@ fn csharp_codegen_applies_namespace_option() {
     coflow_runtime::commands::generate_project_code(&opened).expect("generate namespaced C#");
     let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Metadata.cs"))
         .expect("metadata");
-    assert!(metadata.contains("namespace Game.Config\n{"));
+    assert!(metadata.replace("\r\n", "\n").contains("namespace Game.Config\n{"));
     assert!(metadata.contains("global::Game.Config."));
 }
 
