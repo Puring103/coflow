@@ -54,7 +54,7 @@ public sealed partial class Item : IEquatable<Item>
     public long calculate(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
-            coflow, _coflowId, new CoflowTypeId(1), new CoflowFieldId(3), arg0);
+            coflow, _coflowId, new CoflowTypeId(3), new CoflowFieldId(3), arg0);
     }
 
     internal Item() { }

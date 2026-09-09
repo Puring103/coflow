@@ -60,14 +60,14 @@ public sealed partial class UiText : IEquatable<UiText>
     public long readCount(global::Coflow.Runtime.Coflow coflow)
     {
         return CoflowInvoker.Invoke<long>(
-            coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(4));
+            coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(4));
     }
 
 
     public bool sameTheme(global::Coflow.Runtime.Coflow coflow, global::ThemeValue arg0, global::ThemeValue arg1)
     {
         return CoflowInvoker.Invoke<global::ThemeValue, global::ThemeValue, bool>(
-            coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(5), arg0, arg1);
+            coflow, _coflowId, new CoflowTypeId(7), new CoflowFieldId(5), arg0, arg1);
     }
 
     internal UiText() { }

@@ -37,6 +37,8 @@ var settings = coflow.Singleton<Settings>();
 
 同一 `Coflow` 中的 Module 可以互相引用。`ReplaceModule` 和 `RemoveModule` 修改待编译状态；再次成功调用 `Compile` 后，新状态才会生效。编译失败时继续保留上一次成功发布的状态。
 
+维度 CFD 与基础 CFD 一样通过 `CoflowSource` 加载。成功编译后，维度字段使用 `.Default` 读取基础值、`.For("zh")` 读取指定变体；格式和示例见[本地化与维度](https://puring103.github.io/coflow/docs/reference/10-localization)。
+
 `CoflowOptions` 为每个实例设置执行限制。不传参数时使用默认限制。每次顶层函数调用使用一份新预算；同步 Host 回调再次调用同一实例时与外层调用共享预算。
 
 同一 `Coflow` 中的记录可以跨 Module 引用，并支持前向引用、自引用和引用环。

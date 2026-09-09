@@ -22,6 +22,7 @@ public readonly partial struct ThemeValue : IEquatable<ThemeValue>
     )
     {
         this.value = valueValue;
+        _coflowId = default;
         _coflowInitialized = true;
     }
 

@@ -12,6 +12,13 @@ type Item {
 
 @struct sealed type ThemeValue { value: int; }
 
+type DimensionBase {
+    @localized name: string;
+    @dimension("platform") hint: string;
+}
+
+type DimensionChild : DimensionBase {}
+
 @singleton type UiText {
     @localized welcome: string;
     @dimension("language") weights: [int] = [1, 2];

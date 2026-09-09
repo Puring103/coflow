@@ -2,6 +2,7 @@
 #nullable enable
 using System.Collections.Generic;
 
+
     /// <summary>Values selected explicitly from the language dimension.</summary>
     public readonly struct language<T>
     {
@@ -30,3 +31,30 @@ using System.Collections.Generic;
                 : Default;
     }
 
+    /// <summary>Values selected explicitly from the platform dimension.</summary>
+    public readonly struct platform<T>
+    {
+        private readonly IReadOnlyDictionary<string, T>? _variants;
+        private static readonly IReadOnlyDictionary<string, T> EmptyVariants =
+            new System.Collections.ObjectModel.ReadOnlyDictionary<string, T>(new Dictionary<string, T>());
+        internal IReadOnlyDictionary<string, T> Variants => _variants ?? EmptyVariants;
+        internal platform<T> Import(Coflow.Runtime.CompilerServices.CoflowImportContext context) =>
+            new(context.Import(Default), context.Import(Variants));
+        public T Default { get; }
+        public platform(T defaultValue)
+        {
+            Default = defaultValue;
+            _variants = null;
+        }
+
+        internal platform(T defaultValue, IReadOnlyDictionary<string, T> variants)
+        {
+            Default = defaultValue;
+            _variants = variants;
+        }
+
+        public T For(string variant) =>
+            _variants is not null && _variants.TryGetValue(variant, out var value)
+                ? value
+                : Default;
+    }

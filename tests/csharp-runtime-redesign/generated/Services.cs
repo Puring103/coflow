@@ -29,7 +29,7 @@ public sealed partial class Services : IEquatable<Services>
     public long adjust(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
-            coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(1), arg0);
+            coflow, _coflowId, new CoflowTypeId(4), new CoflowFieldId(1), arg0);
     }
 
     internal Action<long> _coflownotify { get; } = default!;
@@ -38,7 +38,7 @@ public sealed partial class Services : IEquatable<Services>
     public void notify(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         CoflowInvoker.InvokeVoid<long>(
-            coflow, _coflowId, new CoflowTypeId(2), new CoflowFieldId(2), arg0);
+            coflow, _coflowId, new CoflowTypeId(4), new CoflowFieldId(2), arg0);
     }
 
     internal Services() { }

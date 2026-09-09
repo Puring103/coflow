@@ -203,6 +203,20 @@ impl SymbolTable<'_> {
         module_id: &ModuleId,
         span: Span,
     ) -> bool {
+        // 类型、枚举和别名共享类型名称空间，统一保留维度辅助记录前缀。
+        if matches!(
+            kind,
+            SymbolKind::Type | SymbolKind::Enum | SymbolKind::TypeAlias
+        ) && name.split('.').any(|part| part.starts_with("__coflow_"))
+        {
+            self.push_diag(
+                CftErrorCode::ReservedIdentifier,
+                module_id,
+                span,
+                format!("type prefix `__coflow_` is reserved for generated records: `{name}`"),
+            );
+            return false;
+        }
         if let Some(first) = self.symbols.get(name) {
             let diagnostic = CftDiagnostic::error(
                 CftErrorCode::DuplicateGlobalName,

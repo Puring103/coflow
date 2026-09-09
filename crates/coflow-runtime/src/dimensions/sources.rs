@@ -15,6 +15,14 @@ pub struct DimensionField {
 }
 
 impl DimensionField {
+    pub(crate) fn record_type(&self) -> String {
+        coflow_language::cft::dimension_record_type(
+            self.dimension.as_str(),
+            self.source_type.as_str(),
+            self.source_field.as_str(),
+        )
+    }
+
     pub(crate) fn source_file_name(&self) -> String {
         if self.is_singleton {
             format!("{}.cfd", self.source_type)

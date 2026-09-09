@@ -5,6 +5,12 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+/// 维度记录使用完整坐标命名；读写端共享此规则，不拆分名称反推字段。
+#[must_use]
+pub fn dimension_record_type(dimension: &str, source_type: &str, source_field: &str) -> String {
+    format!("__coflow_{dimension}_{source_type}_{source_field}")
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CftDimensionInputs {
     pub(crate) dimensions: BTreeMap<DimensionName, CftDimensionInput>,
@@ -90,11 +96,25 @@ pub(crate) fn build_dimensions(
     inputs: &CftDimensionInputs,
 ) -> Result<BTreeMap<DimensionName, CftDimension>, CftDiagnostics> {
     let mut fields_by_dimension = BTreeMap::new();
+    let mut record_types = BTreeSet::new();
     for schema_type in types.values() {
         for field in &schema_type.own_fields {
             let Some(binding) = &field.dimension else {
                 continue;
             };
+            let record_type = dimension_record_type(
+                binding.dimension.as_str(),
+                field.declaring_type.as_str(),
+                field.name.as_str(),
+            );
+            if !record_types.insert(record_type.clone()) {
+                return Err(CftDiagnostics::one(CftDiagnostic::error(
+                    CftErrorCode::InvalidAnnotationArgument,
+                    schema_type.module.clone(),
+                    field.span,
+                    format!("dimension record type `{record_type}` maps to multiple fields"),
+                )));
+            }
             if inputs.dimension(binding.dimension.as_str()).is_none() {
                 return Err(CftDiagnostics::one(CftDiagnostic::error(
                     CftErrorCode::InvalidAnnotationArgument,

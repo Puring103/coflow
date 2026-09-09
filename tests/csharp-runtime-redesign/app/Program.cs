@@ -5,6 +5,8 @@ var coreSource = File.ReadAllText(Path.Combine(project, "data/core.cfd"));
 var gameplaySource = File.ReadAllText(Path.Combine(project, "data/gameplay.cfd"));
 var coflow = Schema.Create();
 var core = coflow.LoadModule(new CoflowSource("data/core.cfd", coreSource));
+coflow.LoadModule(new CoflowSource("arbitrary-name.cfd",
+    File.ReadAllText(Path.Combine(project, "data/dimensions/language/Item_title.cfd"))));
 var gameplay = coflow.LoadModule(new CoflowSource("data/gameplay.cfd", gameplaySource));
 
 var unbound = coflow.Compile();
@@ -150,14 +152,24 @@ catch (CoflowFaultException error) when (error.InnerException is InvalidOperatio
 var dimensionFlow = Schema.Create();
 dimensionFlow.LoadModule(new CoflowSource("dimensions.cfd", """
     text: UiText { welcome: "Hello", count: 17 }
-    welcome: UiText_welcomeVariants { zh: "Ni hao" }
-    weights: UiText_weightsVariants { zh: [3, 4, 5] }
-    theme: UiText_themeVariants { zh: ThemeValue { value: 9 } }
+    welcome: __coflow_language_UiText_welcome { zh: "Ni hao" }
+    weights: __coflow_language_UiText_weights { zh: [3, 4, 5] }
+    theme: __coflow_language_UiText_theme { zh: ThemeValue { value: 9 } }
+    """));
+dimensionFlow.LoadModule(new CoflowSource("inherited.cfd", """
+    child: DimensionChild { name: "Base name", hint: "Base hint" }
+    child: __coflow_language_DimensionBase_name { zh: "Translated name" }
+    child: __coflow_platform_DimensionBase_hint { mobile: "Tap", desktop: None }
     """));
 var dimensionResult = dimensionFlow.Compile();
 if (!dimensionResult.Success)
     throw new InvalidOperationException(string.Join(Environment.NewLine, dimensionResult.Diagnostics));
 var text = dimensionFlow.Singleton<UiText>().Value;
+var child = dimensionFlow.Table(DimensionChild.Table).Get("child").Value;
+if (child.name.For("zh") != "Translated name" || child.hint.For("mobile") != "Tap" ||
+    child.hint.For("desktop") != "Base hint" ||
+    dimensionFlow.Table(DimensionBase.Table).Count != 1)
+    throw new InvalidOperationException("Inherited fields or independent dimensions were not loaded correctly.");
 if (text.welcome.Default != "Hello" || text.welcome.For("zh") != "Ni hao" ||
     text.welcome.For("en") != "Hello" || text.count != 17 || text.readCount(dimensionFlow) != 17 ||
     !text.weights.For("zh").SequenceEqual(new long[] { 3, 4, 5 }) ||
@@ -166,8 +178,26 @@ if (text.welcome.Default != "Hello" || text.welcome.For("zh") != "Ni hao" ||
     throw new InvalidOperationException("Dimension layout or fallback value is incorrect.");
 if (coflow.Table(Item.Table).Get("first").Value.title.Default != "Item")
     throw new InvalidOperationException("The default-only dimension wrapper was not preserved.");
+if (coflow.Table(Item.Table).Get("first").Value.title.For("zh") != "First translated" ||
+    coflow.Table(Item.Table).Get("first").Value.title.For("en") != "Item")
+    throw new InvalidOperationException("The dimension file did not bind to the ordinary record field.");
 if (!text.sameTheme(dimensionFlow, text.theme.Default, new ThemeValue(5)) ||
     text.sameTheme(dimensionFlow, text.theme.Default, text.theme.For("zh")))
     throw new InvalidOperationException("Struct equality did not compare the field before its identity lane.");
+
+// 无主体记录或错误 singleton 字段不能作为未使用的辅助数据被静默忽略。
+foreach (var invalid in new[] {
+    "missing: __coflow_language_Item_title { zh: \"orphan\" }",
+    "unknown: __coflow_language_UiText_welcome { zh: \"wrong field\" }",
+    "text: UiText { welcome: \"Hello\", count: 17 } welcome: __coflow_language_UiText_welcome { invalid: \"bad variant\" }",
+    "text: UiText { welcome: \"Hello\", count: 17 } weights: __coflow_language_UiText_weights { zh: \"bad value\" }",
+    "text: UiText { welcome: \"Hello\", count: 17 } welcome: UiText_welcomeVariants { zh: \"old format\" }",
+})
+{
+    var invalidFlow = Schema.Create();
+    invalidFlow.LoadModule(new CoflowSource("invalid.cfd", invalid));
+    if (invalidFlow.Compile().Success)
+        throw new InvalidOperationException("An invalid dimension target compiled: " + invalid);
+}
 
 Console.WriteLine("csharp-runtime-redesign-ok");

@@ -88,8 +88,16 @@ pub fn build_project(
                 &mut layout_registrations,
             );
             if let Some(binding) = &field.dimension {
-                let record_type = format!("{}_{}Variants", field.declaring_type, field.name);
-                let registration = format!("runtime.RegisterDimension(\"{record_type}\");");
+                let record_type = coflow_language::cft::dimension_record_type(
+                    binding.dimension.as_str(),
+                    field.declaring_type.as_str(),
+                    field.name.as_str(),
+                );
+                let singleton = view.type_is_singleton(field.declaring_type.as_str())?;
+                let registration = format!(
+                    "runtime.RegisterDimension(\"{record_type}\", \"{}\", \"{}\", {singleton});",
+                    field.declaring_type, field.name
+                );
                 if registered_layouts.insert(registration.clone()) {
                     layout_registrations.push(registration);
                 }

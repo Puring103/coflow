@@ -244,7 +244,9 @@ fn csharp_codegen_applies_namespace_option() {
     coflow_runtime::commands::generate_project_code(&opened).expect("generate namespaced C#");
     let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Metadata.cs"))
         .expect("metadata");
-    assert!(metadata.replace("\r\n", "\n").contains("namespace Game.Config\n{"));
+    assert!(metadata
+        .replace("\r\n", "\n")
+        .contains("namespace Game.Config\n{"));
     assert!(metadata.contains("global::Game.Config."));
 }
 
@@ -346,7 +348,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     fs::write(
         dir.path()
             .join("data/dimensions/language/UiText_welcome.cfd"),
-        "main: UiText { default: \"Hello\", zh: \"你好\" }\n",
+        "main: __coflow_language_UiText_welcome { default: \"Hello\", zh: \"你好\" }\n",
     )
     .expect("dimension CFD");
     fs::write(
@@ -366,7 +368,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
     assert!(generated.contains("Readlanguage("));
     assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
-    assert!(generated.contains("runtime.RegisterDimension(\"UiText_welcomeVariants\");"));
+    assert!(generated.contains("runtime.RegisterDimension(\"__coflow_language_UiText_welcome\""));
     assert!(generated.contains("runtime.RegisterStruct<language<string>>(1, 0, 1,"));
     assert!(generated.contains("runtime.RegisterDictionary<string, string>();"));
     assert!(generated.contains("value.welcome.Import(context)"));
@@ -390,7 +392,7 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
     .expect("base CFD");
     fs::write(
         dir.path().join("data/dimensions/language/UiText.cfd"),
-        "welcome: UiText { zh: \"你好\" }\nfarewell: UiText { zh: \"再见\" }\n",
+        "welcome: __coflow_language_UiText_welcome { zh: \"你好\" }\nfarewell: __coflow_language_UiText_farewell { zh: \"再见\" }\n",
     )
     .expect("dimension CFD");
     fs::write(
@@ -408,10 +410,10 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
     let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
         .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText.cfd"));
-    assert!(generated.contains("\"UiText_welcomeVariants\", \"welcome\", new string[] { \"zh\" }"));
-    assert!(
-        generated.contains("\"UiText_farewellVariants\", \"farewell\", new string[] { \"zh\" }")
-    );
+    assert!(generated
+        .contains("\"__coflow_language_UiText_welcome\", \"welcome\", new string[] { \"zh\" }"));
+    assert!(generated
+        .contains("\"__coflow_language_UiText_farewell\", \"farewell\", new string[] { \"zh\" }"));
 }
 
 #[test]
@@ -490,7 +492,7 @@ fn rust_runtime_rejects_unknown_singleton_dimension_rows_and_variants() {
     .expect("base CFD");
     fs::write(
         dir.path().join("data/dimensions/language/UiText.cfd"),
-        "welcome: UiText { zh: \"你好\", typo_variant: \"错误\" }\nunknown: UiText { zh: \"错误\" }\n",
+        "welcome: __coflow_language_UiText_welcome { zh: \"你好\", typo_variant: \"错误\" }\nunknown: __coflow_language_UiText_welcome { zh: \"错误\" }\n",
     )
     .expect("invalid dimension CFD");
     fs::write(

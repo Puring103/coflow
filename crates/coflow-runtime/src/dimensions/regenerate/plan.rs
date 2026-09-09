@@ -242,7 +242,7 @@ fn dimension_entries(
             .next()
             .map(|(_, record)| crate::api::DimensionSourceEntry {
                 key: field.source_field.to_string(),
-                actual_type: field.source_type.to_string(),
+                actual_type: field.record_type(),
                 default: record
                     .fields()
                     .get(field.source_field.as_str())
@@ -256,7 +256,7 @@ fn dimension_entries(
             .records_assignable_to(schema, &field.source_type)
             .map(|(_, record)| crate::api::DimensionSourceEntry {
                 key: record.key().to_string(),
-                actual_type: field.source_type.to_string(),
+                actual_type: field.record_type(),
                 default: record
                     .fields()
                     .get(field.source_field.as_str())

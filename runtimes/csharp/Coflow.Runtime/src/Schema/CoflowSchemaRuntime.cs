@@ -17,7 +17,7 @@ public sealed class CoflowSchemaRuntime
     private readonly IReadOnlyDictionary<Type, CoflowTypeDescriptor> _typeCodecs;
     private readonly IReadOnlyDictionary<Type, CoflowStructDescriptor> _structCodecs;
     private readonly CoflowLayoutRegistry _layouts;
-    private readonly HashSet<string> _dimensionRecords;
+    private readonly Dictionary<string, (string SourceType, string Field, bool IsSingleton)> _dimensionRecords;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Type Type, bool Relative), Delegate>
         _boundaryWrites = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Type Type, bool Relative), Delegate>
@@ -29,7 +29,8 @@ public sealed class CoflowSchemaRuntime
         Dictionary<Type, CoflowTypeId> types,
         Dictionary<Type, CoflowTypeDescriptor> typeCodecs,
         Dictionary<Type, CoflowStructDescriptor> structCodecs,
-        CoflowLayoutRegistry layouts, HashSet<string> dimensionRecords)
+        CoflowLayoutRegistry layouts,
+        Dictionary<string, (string SourceType, string Field, bool IsSingleton)> dimensionRecords)
     {
         _types = new System.Collections.ObjectModel.ReadOnlyDictionary<Type, CoflowTypeId>(types);
         _typeCodecs = new System.Collections.ObjectModel.ReadOnlyDictionary<Type, CoflowTypeDescriptor>(typeCodecs);
@@ -68,7 +69,32 @@ public sealed class CoflowSchemaRuntime
     internal bool TryGetLayout(Type type, out CoflowValueShape layout) =>
         _layouts.TryGet(type, out layout);
 
-    internal bool IsDimensionRecord(string type) => _dimensionRecords.Contains(type);
+    internal bool IsDimensionRecord(string type) => _dimensionRecords.ContainsKey(type);
+
+    internal void ValidateDimensionRecords(CfdLoadContext context)
+    {
+        // 辅助类型通过 Schema 的完整映射定位主体；不依赖文件路径或名称拆分。
+        foreach (var entry in _dimensionRecords)
+        foreach (var record in context.Records.OfType(entry.Key))
+        {
+            context.WithRecordPath(record, () =>
+            {
+                var target = entry.Value;
+                var valid = target.IsSingleton
+                    ? record.Key == target.Field && context.Records.OfType(target.SourceType).Count == 1
+                    : context.Records.FindAssignable(target.SourceType, record.Key) is not null;
+                if (!valid)
+                    throw new CfdLoadException(new[] { new CfdDiagnostic(
+                        "CFD-DIMENSION-TARGET",
+                        $"dimension record `{entry.Key}::{record.Key}` has no matching target `{target.SourceType}.{target.Field}`",
+                        string.Empty, record.Span) });
+                if (record.GroupType is not null && record.GroupType != entry.Key)
+                    throw new CfdLoadException(new[] { new CfdDiagnostic(
+                        "CFD-RECORD-GROUP-TYPE", "dimension record group must match its auxiliary type",
+                        string.Empty, record.Span) });
+            });
+        }
+    }
 
     internal Action<CoflowExecutionSession, CoflowValueRegister, T> BoundaryWrite<T>(bool relative) =>
         (Action<CoflowExecutionSession, CoflowValueRegister, T>)_boundaryWrites.GetOrAdd(
@@ -87,12 +113,12 @@ public sealed class CoflowSchemaRuntime
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CoflowSchemaRuntimeBuilder
 {
-    private readonly HashSet<string> _dimensionRecords = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string SourceType, string Field, bool IsSingleton)> _dimensionRecords = new(StringComparer.Ordinal);
 
-    public void RegisterDimension(string recordType)
+    public void RegisterDimension(string recordType, string sourceType, string field, bool isSingleton)
     {
         EnsureMutable();
-        _dimensionRecords.Add(recordType);
+        _dimensionRecords.Add(recordType, (sourceType, field, isSingleton));
     }
     private readonly Dictionary<Type, CoflowTypeId> _types = new();
     private readonly Dictionary<Type, CoflowTypeDescriptor> _typeCodecs = new();
@@ -186,7 +212,8 @@ public sealed class CoflowSchemaRuntimeBuilder
             new Dictionary<Type, CoflowTypeId>(_types),
             new Dictionary<Type, CoflowTypeDescriptor>(_typeCodecs),
             new Dictionary<Type, CoflowStructDescriptor>(_structCodecs),
-            _layouts.Clone(), new HashSet<string>(_dimensionRecords, StringComparer.Ordinal));
+            _layouts.Clone(), new Dictionary<string, (string SourceType, string Field, bool IsSingleton)>(
+                _dimensionRecords, StringComparer.Ordinal));
     }
 
     private void RegisterType(Type type, CoflowTypeId typeId)

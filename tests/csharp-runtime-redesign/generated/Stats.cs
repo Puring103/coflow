@@ -20,7 +20,7 @@ public readonly partial struct Stats : IEquatable<Stats>
     public long transform(global::Coflow.Runtime.Coflow coflow, long arg0)
     {
         return CoflowInvoker.Invoke<long, long>(
-            coflow, _coflowId, new CoflowTypeId(3), new CoflowFieldId(1), arg0);
+            coflow, _coflowId, new CoflowTypeId(5), new CoflowFieldId(1), arg0);
     }
 
 
@@ -29,6 +29,7 @@ public readonly partial struct Stats : IEquatable<Stats>
     )
     {
         this.value = valueValue;
+        _coflowId = default;
         _coflowInitialized = true;
     }
 
