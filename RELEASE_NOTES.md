@@ -1,3 +1,11 @@
+# Coflow 0.10.5
+
+## 修复
+
+- 完整修复 C# 命名空间相关测试对 LF 换行符的依赖，确保 Windows CI 的 CRLF checkout 可以通过发布门禁。
+
+---
+
 # Coflow 0.10.4
 
 ## 修复
