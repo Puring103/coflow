@@ -128,10 +128,7 @@ fn configured_dimension_source(
             ),
         )));
     }
-    let display_name = path.strip_prefix(resolver.project.root_dir()).map_or_else(
-        |_| path.display().to_string(),
-        crate::project::path_to_slash,
-    );
+    let display_name = crate::project_path(resolver.project.root_dir(), &path);
     Ok(Some((
         ConfiguredSource {
             location: CfdSourcePath::new(path),

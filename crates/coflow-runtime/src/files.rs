@@ -115,7 +115,11 @@ pub(crate) fn build_external_source_subtree(
     in_sources: &BTreeSet<String>,
     in_schema: bool,
     in_data: bool,
+    skip_dirs: &BTreeSet<String>,
 ) -> Option<FileTreeNode> {
+    if skip_dirs.contains(display_path) {
+        return None;
+    }
     let name = source_path.file_name()?.to_string_lossy().to_string();
     if source_path.is_file() {
         return Some(FileTreeNode {
@@ -138,6 +142,8 @@ pub(crate) fn build_external_source_subtree(
     for entry in walkdir::WalkDir::new(source_path)
         .min_depth(1)
         .into_iter()
+        // 维度目录已有独立分组，外部数据根不能再收录同一批文件。
+        .filter_entry(|entry| !skip_dirs.contains(&path_to_slash(entry.path())))
         .filter_map(Result::ok)
     {
         if !entry.file_type().is_file()

@@ -3,9 +3,8 @@
 //! Combines the `DimensionConfig` declared in `coflow.yaml` with the schema
 //! dimension fields discovered during model build.
 
-use crate::project::{DimensionConfig, Project};
+use crate::project::{normalize_path, path_to_slash, DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use super::sources::DimensionField;
 
@@ -17,8 +16,8 @@ pub struct DimensionInfo {
     /// `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
     pub display_name: String,
     pub variants: Vec<String>,
-    /// Output directory (project-relative path string) for managed dimension
-    /// sources, or `None` when no `out_dir` is configured.
+    /// File-tree path of the managed directory: project-relative inside the
+    /// project, otherwise an external display path; absent without `out_dir`.
     pub out_dir: Option<String>,
     /// Schema fields belonging to this dimension. Wire only the source
     /// type and field; the schema view itself is not part of the editor surface.
@@ -50,12 +49,13 @@ pub(crate) fn dimensions_for_project(
     let mut out = Vec::new();
     for (name, config) in &project.config().dimensions {
         let display_name = resolved_display_name(name, config);
-        let out_dir = config.out_dir.as_ref().map(|p: &PathBuf| {
-            let absolute = project.resolve_path(p);
+        let out_dir = config.out_dir.as_ref().map(|p| {
+            let absolute = normalize_path(&project.resolve_path(p));
             let rel = absolute
                 .strip_prefix(project.root_dir())
                 .unwrap_or(&absolute);
-            rel.to_string_lossy().replace('\\', "/")
+            // 与文件树共用路径标识，避免 Windows 扩展路径前缀使维度分组失配。
+            path_to_slash(rel)
         });
         let info_fields = by_name
             .get(name.as_str())

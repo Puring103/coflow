@@ -64,9 +64,12 @@ impl PreparedCodeRelease {
         }
         let mut staged = Vec::with_capacity(self.outputs.len());
         for output in &self.outputs {
+            if artifact_files_match(&output.files, &output.directory)? {
+                continue;
+            }
             let directory = StagedDirectory::create(&output.directory)
                 .map_err(|error| map_staging_error(&error))?;
-            write_artifacts(directory.staging(), &output.files)
+            write_artifacts(directory.staging(), &output.directory, &output.files)
                 .and_then(|()| preserve_unity_meta(&output.directory, directory.staging()))?;
             staged.push(directory);
         }
@@ -139,7 +142,7 @@ fn validate_outputs(project: &Project, outputs: &[CodeOutput]) -> Result<(), Dia
                 "codegen output exists and is not a directory",
             ));
         }
-        match normalized_existing_or_future_path(&output.directory) {
+        match crate::resolve_existing_or_future_path(&output.directory) {
             Ok(resolved) => {
                 validate_output_scope(project, output, &resolved, &mut diagnostics);
                 resolved_outputs.push((output, resolved));
@@ -180,7 +183,7 @@ fn validate_output_scope(
     resolved_output: &Path,
     diagnostics: &mut DiagnosticSet,
 ) {
-    match normalized_existing_or_future_path(project.root_dir()) {
+    match crate::resolve_existing_or_future_path(project.root_dir()) {
         Ok(root) if root == resolved_output => diagnostics.push(artifact_diagnostic(
             &output.directory,
             "codegen output cannot be the project root",
@@ -234,7 +237,7 @@ fn validate_output_scope(
     );
 
     for (label, path) in protected {
-        match normalized_existing_or_future_path(&path) {
+        match crate::resolve_existing_or_future_path(&path) {
             Ok(protected_path) if paths_overlap(resolved_output, &protected_path) => {
                 diagnostics.push(artifact_diagnostic(
                     &output.directory,
@@ -256,53 +259,6 @@ fn validate_output_scope(
             )),
         }
     }
-}
-
-fn normalized_existing_or_future_path(path: &Path) -> io::Result<PathBuf> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    let absolute = normalize_path_lexically(&absolute);
-    let mut ancestor = absolute.as_path();
-    let mut missing = Vec::new();
-    loop {
-        match fs::symlink_metadata(ancestor) {
-            Ok(_) => {
-                let mut resolved = fs::canonicalize(ancestor)?;
-                for component in missing.iter().rev() {
-                    resolved.push(component);
-                }
-                return Ok(resolved);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let Some(component) = ancestor.file_name() else {
-                    return Err(error);
-                };
-                missing.push(component.to_os_string());
-                let Some(parent) = ancestor.parent() else {
-                    return Err(error);
-                };
-                ancestor = parent;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-fn normalize_path_lexically(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                normalized.pop();
-            }
-            _ => normalized.push(component.as_os_str()),
-        }
-    }
-    normalized
 }
 
 fn paths_overlap(left: &Path, right: &Path) -> bool {
@@ -370,17 +326,40 @@ fn compare_tree(
         let Some(contents) = expected.remove(relative) else {
             return Ok(false);
         };
-        if fs::read(&path).map_err(|error| {
+        let actual = fs::read(&path).map_err(|error| {
             artifact_error(&path, format!("failed to read output entry: {error}"))
-        })? != contents
-        {
+        })?;
+        if !generated_text_matches(&actual, contents) {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-fn write_artifacts(root: &Path, files: &[CodeArtifactFile]) -> Result<(), DiagnosticSet> {
+fn generated_text_matches(actual: &[u8], expected: &[u8]) -> bool {
+    // 只折叠 CRLF 和文件末尾的换行；空格、缩进及正文空行仍参与比较。
+    fn normalized(bytes: &[u8]) -> impl Iterator<Item = u8> + '_ {
+        let end = bytes
+            .iter()
+            .rposition(|byte| !matches!(byte, b'\r' | b'\n'))
+            .map_or(0, |index| index + 1);
+        let bytes = &bytes[..end];
+        bytes
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(move |(index, byte)| {
+                (byte != b'\r' || bytes.get(index + 1) != Some(&b'\n')).then_some(byte)
+            })
+    }
+    normalized(actual).eq(normalized(expected))
+}
+
+fn write_artifacts(
+    root: &Path,
+    original: &Path,
+    files: &[CodeArtifactFile],
+) -> Result<(), DiagnosticSet> {
     for file in files {
         let path = root.join(&file.relative_path);
         if let Some(parent) = path.parent() {
@@ -391,11 +370,16 @@ fn write_artifacts(root: &Path, files: &[CodeArtifactFile]) -> Result<(), Diagno
                 )
             })?;
         }
+        let existing = read_optional_file(&original.join(&file.relative_path))?;
+        let contents = existing
+            .as_deref()
+            .filter(|contents| generated_text_matches(contents, file.contents.as_bytes()))
+            .unwrap_or(file.contents.as_bytes());
         let mut output = fs::File::create(&path).map_err(|error| {
             artifact_error(&path, format!("failed to create artifact: {error}"))
         })?;
         output
-            .write_all(file.contents.as_bytes())
+            .write_all(contents)
             .map_err(|error| artifact_error(&path, format!("failed to write artifact: {error}")))?;
         output
             .sync_all()

@@ -2,7 +2,6 @@ use crate::api::DiagnosticSet;
 use crate::project::diagnostics::file_error;
 use crate::project::path_to_slash;
 use crate::project::paths::resolve_project_relative;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -87,7 +86,7 @@ impl<'a> SchemaPathPolicy<'a> {
     }
 
     pub(super) fn canonicalize(path: &Path) -> Result<PathBuf, DiagnosticSet> {
-        fs::canonicalize(path).map_err(|err| Self::resolve_error(path, err))
+        crate::canonicalize_path(path).map_err(|err| Self::resolve_error(path, err))
     }
 
     pub(super) fn resolve_error(path: &Path, err: impl std::fmt::Display) -> DiagnosticSet {
@@ -123,10 +122,7 @@ impl<'a> SchemaPathPolicy<'a> {
         path: PathBuf,
         canonical_path: PathBuf,
     ) -> SchemaFile {
-        let module_path = canonical_path
-            .strip_prefix(self.root_dir)
-            .unwrap_or(canonical_path.as_path());
-        let module_id = path_to_slash(module_path);
+        let module_id = crate::project_path(self.root_dir, &canonical_path);
         SchemaFile {
             path,
             canonical_path,
@@ -135,6 +131,6 @@ impl<'a> SchemaPathPolicy<'a> {
     }
 
     fn display_path(&self, path: &Path) -> String {
-        path_to_slash(path.strip_prefix(self.root_dir).unwrap_or(path))
+        crate::project_path(self.root_dir, path)
     }
 }

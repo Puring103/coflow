@@ -21,7 +21,6 @@ mod diagnostics;
 mod dimension;
 mod graph;
 mod operations;
-mod path;
 mod revision;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -55,7 +54,6 @@ pub use diagnostics::Diagnostics;
 use build::{
     build_session, diagnostic_messages, session_capabilities_for_file, SessionSnapshotParts,
 };
-use path::strip_unc_prefix;
 use revision::{RevisionCoordinator, RevisionTicket};
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
@@ -376,10 +374,8 @@ impl SessionStore {
         }
         let project_root = session.project_root.clone();
         drop(session);
-        let path = project_root
-            .join(file_path)
-            .canonicalize()
-            .map_err(|error| {
+        let path =
+            coflow_runtime::canonicalize_path(project_root.join(file_path)).map_err(|error| {
                 EditorError::not_found(format!("failed to resolve `{file_path}`: {error}"))
             })?;
         if !path.is_file() {
@@ -742,7 +738,7 @@ fn project_bootstrap(
     ProjectBootstrap {
         session_id,
         revision: session.revisions.current(),
-        project_root: strip_unc_prefix(&session.project_root.display().to_string()),
+        project_root: coflow_runtime::path_to_slash(&session.project_root),
         first_source_file: first_source_file(&snapshot.file_tree),
         file_tree: snapshot.file_tree,
         file_types,

@@ -303,6 +303,42 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
 }
 
 #[test]
+fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
+    let dir = write_project();
+    let project = Project::open(Some(dir.path())).expect("project");
+    coflow_runtime::commands::generate_project_code(&project).expect("generate");
+    let output = dir.path().join("generated/csharp/Coflow.Metadata.cs");
+    let original = fs::read_to_string(&output).expect("generated text");
+    assert!(!original.contains('\r'));
+    assert!(original.ends_with('\n') && !original.ends_with("\n\n"));
+    for text in [
+        original.replace('\n', "\r\n"),
+        original.trim_end_matches('\n').to_string(),
+        format!("{original}\n\n"),
+    ] {
+        fs::write(&output, &text).expect("rewrite endings");
+        assert!(matches!(
+            coflow_runtime::commands::build_project_status(&project).expect("status"),
+            coflow_runtime::commands::CommandOutcome::Success(false)
+        ));
+        coflow_runtime::commands::generate_project_code(&project).expect("generate again");
+        assert_eq!(fs::read_to_string(&output).expect("preserved text"), text);
+        let other = dir.path().join("generated/csharp/Item.cs");
+        fs::write(&other, "changed").expect("change other file");
+        coflow_runtime::commands::generate_project_code(&project).expect("repair other file");
+        assert_eq!(
+            fs::read_to_string(&output).expect("preserved equivalent text"),
+            text
+        );
+    }
+    fs::write(&output, original.replacen('\n', " \n", 1)).expect("trailing space change");
+    assert!(matches!(
+        coflow_runtime::commands::build_project_status(&project).expect("status"),
+        coflow_runtime::commands::CommandOutcome::Success(true)
+    ));
+}
+
+#[test]
 fn codegen_preserves_unity_meta_without_generation_history() {
     let project_dir = write_project();
     let config = project_dir.path().join("coflow.yaml");
@@ -466,7 +502,7 @@ fn rust_runtime_rejects_dimension_record_type_mismatches_like_csharp() {
     else {
         panic!("dimension type diagnostic should point into the overlay CFD");
     };
-    let expected_path = fs::canonicalize(
+    let expected_path = coflow_runtime::canonicalize_path(
         dir.path()
             .join("data/dimensions/language/UiText_welcome.cfd"),
     )

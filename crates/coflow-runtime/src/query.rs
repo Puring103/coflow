@@ -214,14 +214,16 @@ impl<'a> ProjectQueries<'a> {
         self,
         file_path: &str,
     ) -> Option<(DimensionInfo, Vec<crate::DimensionFieldInfo>)> {
-        let normalized_path = file_path.replace('\\', "/");
+        let normalized_path = crate::project_path(
+            self.session.project.root_dir(),
+            std::path::Path::new(file_path),
+        );
         let path = std::path::Path::new(&normalized_path);
         for info in self.dimensions() {
             let Some(out_dir) = info.out_dir.as_ref() else {
                 continue;
             };
-            let out_dir = out_dir.replace('\\', "/");
-            if !normalized_path.starts_with(&format!("{}/", out_dir.trim_end_matches('/'))) {
+            if !path.starts_with(std::path::Path::new(out_dir)) {
                 continue;
             }
             let fields = self

@@ -102,7 +102,7 @@ fn discover_targets(project: &Project) -> Result<Vec<FormatTarget>, DiagnosticSe
             if language_for_path(&path) != Some(Language::Cfd) {
                 continue;
             }
-            let canonical_path = std::fs::canonicalize(&path).map_err(|error| {
+            let canonical_path = coflow_runtime::canonicalize_path(&path).map_err(|error| {
                 cli_file_error(
                     &path,
                     "FORMAT-PATH",

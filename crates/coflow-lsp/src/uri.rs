@@ -40,10 +40,16 @@ pub fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
 }
 
 pub fn path_to_file_uri(path: &Path) -> String {
-    let mut path = path.to_string_lossy().replace('\\', "/");
+    let mut path = coflow_runtime::path_to_slash(path);
+    // URI 使用共享名或盘符表示；文件系统仍保留访问所需的扩展路径前缀。
     if cfg!(windows) {
-        if let Some(stripped) = path.strip_prefix("//?/") {
-            path = stripped.to_string();
+        if let Some(share) = path.strip_prefix("//?/UNC/") {
+            return format!("file://{}", percent_encode_uri_path(share));
+        }
+        if let Some(disk) = path.strip_prefix("//?/") {
+            path = disk.to_string();
+        } else if let Some(share) = path.strip_prefix("//") {
+            return format!("file://{}", percent_encode_uri_path(share));
         }
     }
     if cfg!(windows) && path.len() >= 2 && path.as_bytes()[1] == b':' {
@@ -97,4 +103,24 @@ fn percent_encode_uri_path(value: &str) -> String {
     }
 
     out
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{path_from_file_uri, path_to_file_uri};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn unc_uri_preserves_share_and_escaped_characters() {
+        let uri = "file://server/share/a%20b%23.cft";
+        assert_eq!(path_to_file_uri(Path::new(r"\\server\share\a b#.cft")), uri);
+        assert_eq!(
+            path_to_file_uri(Path::new(r"\\?\UNC\server\share\a b#.cft")),
+            uri
+        );
+        assert_eq!(
+            path_from_file_uri(uri),
+            Some(PathBuf::from(r"\\server\share\a b#.cft"))
+        );
+    }
 }

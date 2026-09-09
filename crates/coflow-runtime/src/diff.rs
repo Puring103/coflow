@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Output};
+
+use gix::bstr::ByteSlice;
+use gix::diff::blob::unified_diff::{ConsumeHunk, ContextSize, DiffLineKind, HunkHeader};
+use gix::diff::blob::{diff_with_slider_heuristics, Algorithm, InternedInput, UnifiedDiff};
 
 use serde::{Deserialize, Serialize};
 
@@ -139,13 +142,18 @@ pub(crate) fn diff_against_head(
 ) -> Result<ProjectDiff, DiagnosticSet> {
     let git = GitProject::open(&session.project)?;
     let head = git.materialize_head()?;
-    let current_sources = session_sources(session);
+    let mut diagnostics = Vec::new();
+    let current_sources = session_sources(session, &git, None, &mut diagnostics);
+    let ignored = git.ignored_paths(current_sources.keys())?;
 
     // HEAD 必须使用提交内自己的 coflow.yaml 与 CFT/CFD，不能套用当前 schema。
     let head_session = Project::open_schema_only(Some(&head.config_path))
+        .and_then(|mut project| {
+            git.rebase_head_inputs(&mut project, head._temp.path())?;
+            Ok(project)
+        })
         .and_then(|project| Runtime::new().open_read_only_session(project));
 
-    let mut diagnostics = Vec::new();
     append_diagnostics(&mut diagnostics, "current", session.diagnostics.as_set());
     let (head_sources, head_records, head_valid) = match head_session {
         Ok(head_session) => {
@@ -156,8 +164,13 @@ pub(crate) fn diff_against_head(
             );
             let valid = head_session.queries().diagnostics().as_set().is_empty();
             (
-                session_sources(&head_session.session),
-                record_states(&head_session.session),
+                session_sources(
+                    &head_session.session,
+                    &git,
+                    Some(head._temp.path()),
+                    &mut diagnostics,
+                ),
+                record_states(&head_session.session, &git, Some(head._temp.path())),
                 valid,
             )
         }
@@ -168,17 +181,17 @@ pub(crate) fn diff_against_head(
     };
 
     let current_valid = session.diagnostics.as_set().is_empty();
-    let files = source_diffs(&git, &head_sources, &current_sources)?;
+    let files = source_diffs(&ignored, &head_sources, &current_sources)?;
     let records = if head_valid && current_valid {
-        let mut current_records = record_states(session);
-        filter_ignored_additions(&git, &head_sources, &mut current_records)?;
+        let mut current_records = record_states(session, &git, None);
+        filter_ignored_additions(&ignored, &head_sources, &mut current_records);
         record_diffs(&head_records, &current_records)
     } else {
         Vec::new()
     };
 
     Ok(ProjectDiff {
-        head_oid: git.head_oid,
+        head_oid: git.head_oid.to_string(),
         target_revision,
         semantic_available: head_valid && current_valid,
         files,
@@ -188,22 +201,14 @@ pub(crate) fn diff_against_head(
 }
 
 fn filter_ignored_additions(
-    git: &GitProject,
+    ignored: &BTreeSet<String>,
     head_sources: &BTreeMap<String, String>,
     records: &mut BTreeMap<RecordCoordinate, RecordState>,
-) -> Result<(), DiagnosticSet> {
-    let paths = records
-        .values()
-        .map(|record| record.snapshot.file_path.clone())
-        .collect::<BTreeSet<_>>();
-    let mut ignored = BTreeSet::new();
-    for path in paths {
-        if !head_sources.contains_key(&path) && git.is_ignored(&path)? {
-            ignored.insert(path);
-        }
-    }
-    records.retain(|_, record| !ignored.contains(&record.snapshot.file_path));
-    Ok(())
+) {
+    records.retain(|_, record| {
+        head_sources.contains_key(&record.snapshot.file_path)
+            || !ignored.contains(&record.snapshot.file_path)
+    });
 }
 
 fn append_diagnostics(
@@ -218,7 +223,12 @@ fn append_diagnostics(
     }));
 }
 
-fn session_sources(session: &ProjectSession) -> BTreeMap<String, String> {
+fn session_sources(
+    session: &ProjectSession,
+    git: &GitProject,
+    snapshot: Option<&Path>,
+    diagnostics: &mut Vec<ProjectDiffDiagnostic>,
+) -> BTreeMap<String, String> {
     let root = session.project.root_dir();
     let mut sources = BTreeMap::new();
     if let Ok(relative) = session.project.config_path().strip_prefix(root) {
@@ -228,22 +238,50 @@ fn session_sources(session: &ProjectSession) -> BTreeMap<String, String> {
         );
     }
     for (_, module) in session.modules.modules() {
-        if let Ok(relative) = module.path().strip_prefix(root) {
-            sources.insert(crate::path_to_slash(relative), module.source().to_string());
-        }
+        sources.insert(
+            crate::project_path(root, module.path()),
+            module.source().to_string(),
+        );
     }
     for (path, source) in session.source_data.sources() {
         sources.insert(path.to_string(), source.to_string());
     }
     sources
+        .into_iter()
+        .filter_map(
+            |(path, source)| match git.diff_path(root, &path, snapshot) {
+                Some(path) => Some((path, source)),
+                None => {
+                    diagnostics.push(ProjectDiffDiagnostic {
+                        endpoint: if snapshot.is_some() {
+                            "head"
+                        } else {
+                            "current"
+                        }
+                        .to_string(),
+                        code: "GIT-EXTERNAL-SOURCE".to_string(),
+                        message: format!("已排除 Git 仓库外的项目文件 `{path}`"),
+                    });
+                    None
+                }
+            },
+        )
+        .collect()
 }
 
-fn record_states(session: &ProjectSession) -> BTreeMap<RecordCoordinate, RecordState> {
+fn record_states(
+    session: &ProjectSession,
+    git: &GitProject,
+    snapshot: Option<&Path>,
+) -> BTreeMap<RecordCoordinate, RecordState> {
     let mut records = BTreeMap::new();
     for (_, record) in session.model.records() {
         let coordinate = record.coordinate();
         let Some(file_path) = session.file_for_record(coordinate.actual_type(), coordinate.key())
         else {
+            continue;
+        };
+        let Some(file_path) = git.diff_path(session.project.root_dir(), file_path, snapshot) else {
             continue;
         };
         let mut values = record
@@ -394,7 +432,7 @@ fn field_diffs(
 }
 
 fn source_diffs(
-    git: &GitProject,
+    ignored: &BTreeSet<String>,
     before: &BTreeMap<String, String>,
     after: &BTreeMap<String, String>,
 ) -> Result<Vec<ProjectFileDiff>, DiagnosticSet> {
@@ -414,7 +452,7 @@ fn source_diffs(
         if old == new {
             continue;
         }
-        if old.is_none() && git.is_ignored(&path)? {
+        if old.is_none() && ignored.contains(&path) {
             continue;
         }
         let change = match (old.as_ref(), new.as_ref()) {
@@ -435,36 +473,62 @@ fn source_diffs(
 }
 
 fn unified_hunks(before: &str, after: &str) -> Result<String, DiagnosticSet> {
-    let temp = tempfile::tempdir()
-        .map_err(|error| git_error(format!("创建 Diff 临时目录失败：{error}")))?;
-    let before_path = temp.path().join("before");
-    let after_path = temp.path().join("after");
-    fs::write(&before_path, before)
-        .and_then(|()| fs::write(&after_path, after))
-        .map_err(|error| git_error(format!("写入 Diff 临时文件失败：{error}")))?;
-    let output = Command::new("git")
-        .args(["diff", "--no-index", "--no-color", "--unified=3", "--"])
-        .arg(&before_path)
-        .arg(&after_path)
-        .output()
-        .map_err(|error| git_error(format!("无法执行 git diff：{error}")))?;
-    if !output.status.success() && output.status.code() != Some(1) {
-        return Err(git_command_error("git diff --no-index", &output));
+    // 直接比较 session 文本，不经过工作区过滤器或外部 diff 驱动。
+    let input = InternedInput::new(before, after);
+    let diff = diff_with_slider_heuristics(Algorithm::Myers, &input);
+    UnifiedDiff::new(
+        &diff,
+        &input,
+        PatchHunks::default(),
+        ContextSize::symmetrical(3),
+    )
+    .consume()
+    .map_err(|error| git_error(format!("生成文本差异失败：{error}")))
+}
+
+#[derive(Default)]
+struct PatchHunks(String);
+
+impl ConsumeHunk for PatchHunks {
+    type Out = String;
+
+    fn consume_hunk(
+        &mut self,
+        header: HunkHeader,
+        lines: &[(DiffLineKind, &[u8])],
+    ) -> std::io::Result<()> {
+        // Unified Diff 的空区间从前一行起算，末行缺少换行时保留显式标记。
+        let before_start = header.before_hunk_start - u32::from(header.before_hunk_len == 0);
+        let after_start = header.after_hunk_start - u32::from(header.after_hunk_len == 0);
+        self.0.push_str(&format!(
+            "@@ -{before_start},{} +{after_start},{} @@\n",
+            header.before_hunk_len, header.after_hunk_len,
+        ));
+        for (kind, bytes) in lines {
+            self.0.push(kind.to_prefix());
+            self.0
+                .push_str(std::str::from_utf8(bytes).map_err(std::io::Error::other)?);
+            if !bytes.ends_with(b"\n") {
+                self.0.push_str("\n\\ No newline at end of file\n");
+            }
+        }
+        Ok(())
     }
-    let patch = String::from_utf8(output.stdout)
-        .map_err(|error| git_error(format!("git diff 输出不是 UTF-8：{error}")))?;
-    Ok(patch
-        .lines()
-        .skip_while(|line| !line.starts_with("@@"))
-        .collect::<Vec<_>>()
-        .join("\n"))
+
+    fn finish(mut self) -> Self::Out {
+        if self.0.ends_with('\n') {
+            self.0.pop();
+        }
+        self.0
+    }
 }
 
 struct GitProject {
+    repo: gix::Repository,
     repo_root: PathBuf,
     project_relative: PathBuf,
     config_relative: PathBuf,
-    head_oid: String,
+    head_oid: gix::ObjectId,
 }
 
 struct HeadMaterialization {
@@ -475,13 +539,16 @@ struct HeadMaterialization {
 
 impl GitProject {
     fn open(project: &Project) -> Result<Self, DiagnosticSet> {
-        let root_output = git_output(project.root_dir(), ["rev-parse", "--show-toplevel"])?;
-        let repo_root_text = utf8_stdout("git rev-parse --show-toplevel", root_output)?;
-        let repo_root = fs::canonicalize(repo_root_text.trim())
+        let repo = gix::discover(project.root_dir())
+            .map_err(|error| git_error(format!("无法打开 Git 仓库：{error}")))?;
+        let workdir = repo
+            .workdir()
+            .ok_or_else(|| git_error("Coflow 项目需要 Git 工作区"))?;
+        let repo_root = crate::canonicalize_path(workdir)
             .map_err(|error| git_error(format!("无法解析 Git 仓库根目录：{error}")))?;
-        let project_root = fs::canonicalize(project.root_dir())
+        let project_root = crate::canonicalize_path(project.root_dir())
             .map_err(|error| git_error(format!("无法解析项目目录：{error}")))?;
-        let config_path = fs::canonicalize(project.config_path())
+        let config_path = crate::canonicalize_path(project.config_path())
             .map_err(|error| git_error(format!("无法解析项目配置：{error}")))?;
         let project_relative = project_root
             .strip_prefix(&repo_root)
@@ -491,13 +558,12 @@ impl GitProject {
             .strip_prefix(&repo_root)
             .map_err(|_| git_error("项目配置不在当前 Git 工作区中"))?
             .to_path_buf();
-        let head_oid = utf8_stdout(
-            "git rev-parse HEAD",
-            git_output(&repo_root, ["rev-parse", "HEAD^{commit}"])?,
-        )?
-        .trim()
-        .to_string();
+        let head_oid = repo
+            .head_commit()
+            .map_err(|error| git_error(format!("无法读取 HEAD 提交：{error}")))?
+            .id;
         Ok(Self {
+            repo,
             repo_root,
             project_relative,
             config_relative,
@@ -506,42 +572,71 @@ impl GitProject {
     }
 
     fn materialize_head(&self) -> Result<HeadMaterialization, DiagnosticSet> {
-        let pathspec = if self.project_relative.as_os_str().is_empty() {
-            ".".to_string()
-        } else {
-            crate::path_to_slash(&self.project_relative)
-        };
-        let output = git_output(
-            &self.repo_root,
-            [
-                "ls-tree",
-                "-r",
-                "-z",
-                "--name-only",
-                &self.head_oid,
-                "--",
-                &pathspec,
-            ],
-        )?;
+        // 固定同一个提交对象，避免查询过程中 HEAD 移动导致快照混用。
+        let tree = self
+            .repo
+            .find_object(self.head_oid)
+            .map_err(|error| git_error(format!("无法读取 HEAD 对象：{error}")))?
+            .peel_to_tree()
+            .map_err(|error| git_error(format!("无法读取 HEAD 文件树：{error}")))?;
+        let entries = tree
+            .traverse()
+            .breadthfirst
+            .files()
+            .map_err(|error| git_error(format!("无法遍历 HEAD 文件树：{error}")))?;
+        let mut roots = vec![self.project_relative.clone()];
+        if let Some(entry) = tree
+            .lookup_entry_by_path(&self.config_relative)
+            .map_err(|error| git_error(format!("无法读取 HEAD 配置入口：{error}")))?
+        {
+            let object = entry
+                .object()
+                .map_err(|error| git_error(format!("无法读取 HEAD 配置：{error}")))?;
+            if let Ok(config) = serde_yaml::from_slice::<crate::ProjectConfig>(&object.data) {
+                let inputs = config
+                    .schema
+                    .paths()
+                    .iter()
+                    .chain(config.data.iter().map(crate::SourceConfig::path))
+                    .chain(
+                        config
+                            .dimensions
+                            .values()
+                            .filter_map(|dimension| dimension.out_dir.as_ref()),
+                    );
+                for input in inputs {
+                    let absolute = crate::normalize_path(
+                        &self.repo_root.join(&self.project_relative).join(input),
+                    );
+                    if let Ok(relative) = absolute.strip_prefix(&self.repo_root) {
+                        roots.push(relative.to_path_buf());
+                    }
+                }
+            }
+        }
         let temp = tempfile::tempdir()
             .map_err(|error| git_error(format!("创建 HEAD 快照目录失败：{error}")))?;
         let mut sources = BTreeMap::new();
-        for raw_path in output
-            .stdout
-            .split(|byte| *byte == 0)
-            .filter(|path| !path.is_empty())
-        {
-            let git_path = std::str::from_utf8(raw_path)
+        for entry in entries {
+            if entry.mode.is_tree() || entry.mode.is_commit() {
+                continue;
+            }
+            let git_path = std::str::from_utf8(entry.filepath.as_ref())
                 .map_err(|error| git_error(format!("Git 路径不是 UTF-8：{error}")))?;
             let relative = safe_git_path(git_path)?;
-            let blob = git_output(
-                &self.repo_root,
-                ["show", &format!("{}:{git_path}", self.head_oid)],
-            )?;
+            if !is_project_text_path(&relative)
+                || !roots.iter().any(|root| relative.starts_with(root))
+            {
+                continue;
+            }
+            let blob = self
+                .repo
+                .find_blob(entry.oid)
+                .map_err(|error| git_error(format!("无法读取 HEAD 文件 `{git_path}`：{error}")))?;
             if is_project_text_path(&relative) {
                 if let (Ok(project_path), Ok(source)) = (
                     relative.strip_prefix(&self.project_relative),
-                    std::str::from_utf8(&blob.stdout),
+                    std::str::from_utf8(&blob.data),
                 ) {
                     sources.insert(crate::path_to_slash(project_path), source.to_string());
                 }
@@ -551,7 +646,7 @@ impl GitProject {
                 fs::create_dir_all(parent)
                     .map_err(|error| git_error(format!("创建 HEAD 快照目录失败：{error}")))?;
             }
-            fs::write(&target, blob.stdout)
+            fs::write(&target, &blob.data)
                 .map_err(|error| git_error(format!("写入 HEAD 快照 `{git_path}` 失败：{error}")))?;
         }
         Ok(HeadMaterialization {
@@ -561,20 +656,86 @@ impl GitProject {
         })
     }
 
-    fn is_ignored(&self, project_path: &str) -> Result<bool, DiagnosticSet> {
-        let repo_path = self.project_relative.join(project_path);
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&self.repo_root)
-            .args(["check-ignore", "--quiet", "--"])
-            .arg(repo_path)
-            .output()
-            .map_err(|error| git_error(format!("无法执行 git check-ignore：{error}")))?;
-        match output.status.code() {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            _ => Err(git_command_error("git check-ignore", &output)),
+    fn ignored_paths<'a>(
+        &self,
+        paths: impl IntoIterator<Item = &'a String>,
+    ) -> Result<BTreeSet<String>, DiagnosticSet> {
+        let index = self
+            .repo
+            .index_or_empty()
+            .map_err(|error| git_error(format!("无法读取 Git 索引：{error}")))?;
+        let mut excludes = self
+            .repo
+            .excludes(&index, None, Default::default())
+            .map_err(|error| git_error(format!("无法读取 Git 忽略规则：{error}")))?;
+        let mut ignored = BTreeSet::new();
+        for path in paths {
+            let absolute = self.repo_root.join(&self.project_relative).join(path);
+            let repo_path = absolute.strip_prefix(&self.repo_root).map_err(|error| {
+                git_error(format!("无法解析 Git 仓库相对路径 `{path}`：{error}"))
+            })?;
+            let git_path = crate::path_to_slash(&repo_path);
+            // 与 check-ignore 一致，索引中已跟踪的文件不受忽略规则影响。
+            if index.entry_by_path(git_path.as_bytes().as_bstr()).is_some() {
+                continue;
+            }
+            if excludes
+                .at_path(&repo_path, None)
+                .map_err(|error| git_error(format!("无法判断 Git 忽略路径 `{path}`：{error}")))?
+                .is_excluded()
+            {
+                ignored.insert(path.clone());
+            }
         }
+        Ok(ignored)
+    }
+
+    fn diff_path(&self, root: &Path, path: &str, snapshot: Option<&Path>) -> Option<String> {
+        let absolute = crate::normalize_path(&root.join(path));
+        let absolute = match snapshot {
+            Some(snapshot) => self.repo_root.join(
+                absolute
+                    .strip_prefix(crate::normalize_path(snapshot))
+                    .ok()?,
+            ),
+            None => absolute,
+        };
+        absolute.strip_prefix(&self.repo_root).ok()?;
+        Some(crate::project_path(
+            &self.repo_root.join(&self.project_relative),
+            &absolute,
+        ))
+    }
+
+    fn rebase_head_inputs(
+        &self,
+        project: &mut Project,
+        snapshot: &Path,
+    ) -> Result<(), DiagnosticSet> {
+        // HEAD 的绝对配置路径必须映射到快照，禁止读取当前工作区或仓库外文件。
+        let rebase = |path: &Path| -> Result<PathBuf, DiagnosticSet> {
+            let absolute =
+                crate::normalize_path(&self.repo_root.join(&self.project_relative).join(path));
+            let relative = absolute.strip_prefix(&self.repo_root).map_err(|_| {
+                git_error(format!(
+                    "HEAD 引用仓库外路径 `{}`，仅提供仓库内源码比较",
+                    path.display()
+                ))
+            })?;
+            Ok(snapshot.join(relative))
+        };
+        for path in &mut project.config.schema.paths {
+            *path = rebase(path)?;
+        }
+        for source in &mut project.config.data {
+            *source = crate::SourceConfig::from_path(rebase(source.path())?);
+        }
+        for dimension in project.config.dimensions.values_mut() {
+            if let Some(path) = &mut dimension.out_dir {
+                *path = rebase(path)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -599,38 +760,43 @@ fn safe_git_path(path: &str) -> Result<PathBuf, DiagnosticSet> {
     Ok(path.to_path_buf())
 }
 
-fn git_output<I, S>(cwd: &Path, args: I) -> Result<Output, DiagnosticSet>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .output()
-        .map_err(|error| git_error(format!("无法执行 Git：{error}")))?;
-    if output.status.success() {
-        Ok(output)
-    } else {
-        Err(git_command_error("git", &output))
-    }
-}
-
-fn utf8_stdout(command: &str, output: Output) -> Result<String, DiagnosticSet> {
-    String::from_utf8(output.stdout)
-        .map_err(|error| git_error(format!("{command} 输出不是 UTF-8：{error}")))
-}
-
-fn git_command_error(command: &str, output: &Output) -> DiagnosticSet {
-    let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    git_error(if message.is_empty() {
-        format!("{command} 执行失败")
-    } else {
-        format!("{command} 执行失败：{message}")
-    })
-}
-
 fn git_error(message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(Diagnostic::error("GIT-DIFF", "GIT", message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unified_hunks;
+
+    #[test]
+    fn unified_hunks_handles_empty_sides_and_missing_newlines() {
+        for (before, after, expected) in [
+            ("", "", ""),
+            ("same\n", "same\n", ""),
+            ("", "added\n", "@@ -0,0 +1,1 @@\n+added"),
+            ("deleted\n", "", "@@ -1,1 +0,0 @@\n-deleted"),
+            (
+                "before",
+                "after",
+                "@@ -1,1 +1,1 @@\n-before\n\\ No newline at end of file\n+after\n\\ No newline at end of file",
+            ),
+            (
+                "same",
+                "same\n",
+                "@@ -1,1 +1,1 @@\n-same\n\\ No newline at end of file\n+same",
+            ),
+        ] {
+            assert_eq!(unified_hunks(before, after).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn unified_hunks_keeps_three_context_lines_and_separates_distant_changes() {
+        let before = "old\n1\n2\n3\n4\n5\n6\n7\n8\n9\nold\n";
+        let after = before.replace("old", "new");
+        assert_eq!(
+            unified_hunks(before, &after).unwrap(),
+            "@@ -1,4 +1,4 @@\n-old\n+new\n 1\n 2\n 3\n@@ -8,4 +8,4 @@\n 7\n 8\n 9\n-old\n+new",
+        );
+    }
 }

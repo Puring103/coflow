@@ -7,7 +7,7 @@ use crate::data_model::{
     CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
     LoadedRecordDraft, RecordOrigin,
 };
-use crate::project::{path_to_slash, Project};
+use crate::project::Project;
 use coflow_language::cft::{CftSchema, RecordKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -874,11 +874,7 @@ fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {
 }
 
 fn display_path_for(project: &Project, source: &CfdSource) -> String {
-    let path = source.location.path();
-    let relative = path
-        .strip_prefix(project.root_dir())
-        .unwrap_or(path.as_path());
-    path_to_slash(relative)
+    crate::project_path(project.root_dir(), source.location.path())
 }
 
 pub(crate) fn logical_locations_from_cfd(

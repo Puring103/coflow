@@ -533,10 +533,7 @@ fn load_cached_data(
 }
 
 fn project_display_path(project: &Project, path: &std::path::Path) -> String {
-    path.strip_prefix(project.root_dir()).map_or_else(
-        |_| path.display().to_string(),
-        crate::project::path_to_slash,
-    )
+    crate::project_path(project.root_dir(), path)
 }
 
 struct DataLoadFailure {

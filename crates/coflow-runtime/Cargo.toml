@@ -1,6 +1,6 @@
 [package]
 name = "coflow-runtime"
-version = "0.10.6"
+version = "0.10.7"
 edition = "2021"
 description = "Shared Coflow project runtime."
 license = "Apache-2.0"
@@ -30,6 +30,8 @@ serde_yaml = "0.9"
 ts-rs = { version = "10", optional = true }
 walkdir = "2"
 tempfile = "3"
+dunce = "1"
+gix = { version = "0.87", default-features = false, features = ["sha1", "sha256", "excludes", "blob-diff"] }
 
 [dev-dependencies]
 coflow-format = { path = "../coflow-format" }

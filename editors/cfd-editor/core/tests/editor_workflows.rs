@@ -55,9 +55,7 @@ fn configured_external_sources_can_be_opened() {
         sessions
             .source_file_path(bootstrap.session_id, &external_data)
             .expect("resolve external data source"),
-        data_path
-            .canonicalize()
-            .expect("canonicalize external data")
+        coflow_runtime::canonicalize_path(&data_path).expect("canonicalize external data")
     );
     let external_schema = coflow_runtime::path_to_slash(
         &schema_path
@@ -68,9 +66,7 @@ fn configured_external_sources_can_be_opened() {
         sessions
             .source_file_path(bootstrap.session_id, &external_schema)
             .expect("resolve external schema source"),
-        schema_path
-            .canonicalize()
-            .expect("canonicalize external schema")
+        coflow_runtime::canonicalize_path(&schema_path).expect("canonicalize external schema")
     );
 
     fs::remove_dir_all(&root).expect("remove external-source project");
@@ -377,8 +373,8 @@ fn repository_projects_open_in_editor() {
 
         let expected_root = config.parent().unwrap().canonicalize().unwrap();
         assert_eq!(
-            snapshot.project_root.replace("\\\\?\\", ""),
-            expected_root.display().to_string().replace("\\\\?\\", "")
+            snapshot.project_root,
+            coflow_runtime::path_to_slash(&expected_root)
         );
         assert!(
             snapshot

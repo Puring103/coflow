@@ -185,7 +185,7 @@ impl DirectoryDiscovery<'_> {
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf, DirectoryDiscoveryError> {
-    fs::canonicalize(path).map_err(|err| {
+    crate::canonicalize_path(path).map_err(|err| {
         DirectoryDiscoveryError::new(
             DirectoryDiscoveryErrorKind::Resolve {
                 path: path.to_path_buf(),

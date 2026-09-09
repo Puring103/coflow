@@ -688,5 +688,10 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
 
 fn render(tera: &Tera, name: &str, context: &Context) -> Result<String, CsharpCodegenError> {
     tera.render(name, context)
+        .map(|text| {
+            // 模板检出的换行格式不影响产物；字符串数据已在渲染前转义。
+            let text = text.replace("\r\n", "\n");
+            format!("{}\n", text.trim_end_matches('\n'))
+        })
         .map_err(|error| CsharpCodegenError::new(format!("failed to render `{name}`: {error:?}")))
 }

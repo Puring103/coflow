@@ -2,7 +2,7 @@ use crate::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
 use coflow_runtime::Project;
 use serde::Serialize;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const DIAGNOSTIC_SEPARATOR: &str = "----------------------------------------";
 
@@ -79,21 +79,16 @@ fn write_message_field(stderr: &mut impl Write, message: &str) -> io::Result<()>
 }
 
 pub(crate) fn display_path(path: &str, root_dir: Option<&Path>) -> String {
-    let cleaned_path = strip_windows_extended_prefix(path);
-    let path = PathBuf::from(&cleaned_path);
+    let path = Path::new(path);
     if let Some(root_dir) = root_dir {
-        let cleaned_root = strip_windows_extended_prefix(&root_dir.display().to_string());
-        let root = PathBuf::from(cleaned_root);
-        if let Ok(relative) = path.strip_prefix(&root) {
-            let value = slash_path(relative);
-            return if value.is_empty() {
-                ".".to_string()
-            } else {
-                value
-            };
-        }
+        let value = coflow_runtime::project_path(root_dir, path);
+        return if value.is_empty() {
+            ".".to_string()
+        } else {
+            value
+        };
     }
-    slash_path(&path)
+    coflow_runtime::path_to_slash(path)
 }
 
 pub(crate) fn project_path(project: &Project, path: &Path) -> String {
@@ -116,12 +111,4 @@ pub(crate) fn relativize_message_paths(message: &str, root_dir: &Path) -> String
     }
     out.push_str(rest);
     out
-}
-
-fn strip_windows_extended_prefix(path: &str) -> String {
-    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
-}
-
-fn slash_path(path: &Path) -> String {
-    path.display().to_string().replace('\\', "/")
 }

@@ -126,16 +126,17 @@ fn resolve_schema_write_target(
         ));
     }
     let requested_absolute = project.resolve_path(requested_path);
-    let requested_canonical = std::fs::canonicalize(&requested_absolute).map_err(|err| {
-        cli_file_error(
-            &requested_absolute,
-            "SCHEMA-WRITE-TARGET",
-            format!(
-                "failed to resolve schema file `{}`: {err}",
-                requested_absolute.display()
-            ),
-        )
-    })?;
+    let requested_canonical =
+        coflow_runtime::canonicalize_path(&requested_absolute).map_err(|err| {
+            cli_file_error(
+                &requested_absolute,
+                "SCHEMA-WRITE-TARGET",
+                format!(
+                    "failed to resolve schema file `{}`: {err}",
+                    requested_absolute.display()
+                ),
+            )
+        })?;
     let schema_files = project.schema_files()?;
     let Some(schema_file) = schema_files
         .into_iter()
