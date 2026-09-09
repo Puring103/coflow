@@ -12,7 +12,7 @@ public readonly partial struct ThemeValue : IEquatable<ThemeValue>
     internal readonly bool _coflowInitialized;
 
 
-    public long Value { get; }
+    public long value { get; }
 
 
 
@@ -21,7 +21,8 @@ public readonly partial struct ThemeValue : IEquatable<ThemeValue>
         long valueValue
     )
     {
-        Value = valueValue;
+        this.value = valueValue;
+        _coflowId = default;
         _coflowInitialized = true;
     }
 
@@ -39,7 +40,7 @@ public readonly partial struct ThemeValue : IEquatable<ThemeValue>
     public override string ToString() => "ThemeValue";
 
     public bool Equals(ThemeValue other) =>
-        System.Collections.Generic.EqualityComparer<long>.Default.Equals(Value, other.Value);
+        System.Collections.Generic.EqualityComparer<long>.Default.Equals(value, other.value);
 
     public override bool Equals(object? obj) =>
         obj is ThemeValue other && Equals(other);
@@ -47,7 +48,7 @@ public readonly partial struct ThemeValue : IEquatable<ThemeValue>
     public override int GetHashCode()
     {
         var hash = new System.HashCode();
-        hash.Add(Value);
+        hash.Add(value);
         return hash.ToHashCode();
     }
 

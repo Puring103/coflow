@@ -38,6 +38,11 @@ impl CfdWriter {
             CftValueType::Option(Box::new(request.schema.source_field.value_type.clone()));
         let mut values = Vec::new();
         let mut diagnostics = DiagnosticSet::empty();
+        let expected_type = coflow_language::cft::dimension_record_type(
+            request.schema.dimension.name.as_str(),
+            request.schema.source_field.declaring_type.as_str(),
+            request.schema.source_field.name.as_str(),
+        );
         for record in ast.records {
             if request.schema.source_type.is_singleton
                 && record.key != request.schema.source_field.name.as_str()
@@ -68,18 +73,14 @@ impl CfdWriter {
                 }
                 continue;
             }
-            if !request
-                .schema
-                .schema
-                .is_assignable(&record.type_name, &request.schema.source_type.name)
-            {
+            if record.type_name != expected_type {
                 diagnostics.push(
                     Diagnostic::error(
                         "CFD-DIMENSION-TYPE",
                         "CFD",
                         format!(
-                            "dimension record type `{}` is not assignable to `{}`",
-                            record.type_name, request.schema.source_type.name
+                            "dimension record type `{}` must be `{}`",
+                            record.type_name, expected_type
                         ),
                     )
                     .with_primary(file_span_label(
@@ -205,7 +206,7 @@ impl CfdWriter {
                 row.variants.remove(request.variant.as_str());
             }
         }
-        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
+        let out = render_dimension_cfd(&rows, &variants);
         self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
@@ -239,7 +240,7 @@ impl CfdWriter {
                 )));
             }
         }
-        let out = render_dimension_cfd(&rows, request.schema.source_type.name.as_str(), &variants);
+        let out = render_dimension_cfd(&rows, &variants);
         self.write_if_changed(path, &out, "CFD-DIMENSION-WRITE")
     }
 
@@ -258,6 +259,21 @@ impl CfdWriter {
         let mut out = String::new();
         for entry in request.entries {
             let row = existing.get(&entry.key);
+            // 构建只更新合法辅助记录，避免把错误字段或旧格式静默改写成有效数据。
+            if let Some(row) = row {
+                if row.actual_type != entry.actual_type {
+                    return Err(DiagnosticSet::one(diag(
+                        "CFD-DIMENSION-TYPE",
+                        format!(
+                            "dimension record `{}` in `{}` has type `{}`, expected `{}`",
+                            entry.key,
+                            path.display(),
+                            row.actual_type,
+                            entry.actual_type
+                        ),
+                    )));
+                }
+            }
             let actual_type = entry.actual_type.as_str();
             let _ = writeln!(out, "{}: {actual_type} {{", entry.key);
             let _ = writeln!(
@@ -302,17 +318,16 @@ fn file_span_label(path: &Path, text: &str, start: usize, end: usize, message: &
 
 #[derive(Debug, Clone, Default)]
 struct DimensionCfdRow {
+    actual_type: String,
     default: String,
     variants: BTreeMap<String, String>,
 }
 
-fn render_dimension_cfd(
-    rows: &BTreeMap<String, DimensionCfdRow>,
-    actual_type: &str,
-    variants: &[String],
-) -> String {
+fn render_dimension_cfd(rows: &BTreeMap<String, DimensionCfdRow>, variants: &[String]) -> String {
     let mut out = String::new();
     for (key, row) in rows {
+        // singleton 文件包含多个字段，各行必须保留自己的辅助记录类型。
+        let actual_type = &row.actual_type;
         let _ = writeln!(out, "{key}: {actual_type} {{");
         let _ = writeln!(
             out,
@@ -374,7 +389,10 @@ impl CfdWriter {
                 ),
             )));
             }
-            let mut row = DimensionCfdRow::default();
+            let mut row = DimensionCfdRow {
+                actual_type: record.type_name,
+                ..DimensionCfdRow::default()
+            };
             for field in record.fields {
                 if field.name == "default" {
                     row.default = raw_span(&text, field.value.span());

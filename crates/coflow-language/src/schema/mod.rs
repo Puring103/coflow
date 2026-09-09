@@ -10,7 +10,9 @@ mod value_type;
 pub use check_builtins::CftCheckBuiltin;
 pub use compiler::{build_schema, build_schema_with_limits};
 pub use declarations::*;
-pub use dimensions::{CftDimensionInput, CftDimensionInputError, CftDimensionInputs};
+pub use dimensions::{
+    dimension_record_type, CftDimensionInput, CftDimensionInputError, CftDimensionInputs,
+};
 pub use names::*;
 use plans::CheckIndex;
 pub use plans::{

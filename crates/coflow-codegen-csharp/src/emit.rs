@@ -195,10 +195,8 @@ pub fn build_csharp_type(
                 .dimension
                 .as_ref()
                 .map(|binding| {
-                    let generated_type = format!(
-                        "{}_{}Variants",
-                        field.declaring_type, field.name
-                    );
+                    let generated_type = coflow_language::cft::dimension_record_type(
+                        binding.dimension.as_str(), field.declaring_type.as_str(), field.name.as_str());
                     let variants = view.dimension_variants(binding.dimension.as_str())?;
                     Ok((
                         csharp_public_type_name(binding.dimension.as_str()),

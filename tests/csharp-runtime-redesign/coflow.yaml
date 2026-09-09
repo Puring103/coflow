@@ -5,6 +5,9 @@ dimensions:
   language:
     variants: [zh, en]
     out_dir: data/dimensions/language
+  platform:
+    variants: [desktop, mobile]
+    out_dir: data/dimensions/platform
 codegen:
   - language: csharp
     dir: generated
