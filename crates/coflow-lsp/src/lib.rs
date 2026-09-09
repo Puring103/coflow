@@ -321,6 +321,31 @@ impl std::fmt::Debug for EmbeddedLsp {
 }
 
 impl EmbeddedLsp {
+    /// Highlights an immutable source snapshot without opening or changing a document.
+    #[must_use]
+    pub fn highlight_source_snapshot(&mut self, path: &std::path::Path, source: &str) -> Value {
+        self.server.core.ensure_build_publications();
+        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("cfd")) {
+            let (ast, diagnostics) = coflow_language::cfd::parse_cfd(source);
+            let mut result = cfd::semantic_tokens(source, &ast, self.server.core.schema());
+            result["x-coflow-syntax-valid"] = json!(diagnostics.is_empty());
+            return result;
+        }
+        // 快照直接解析传入文本，已删除或移出输入集合的 CFT 仍能获得语法着色。
+        let uri = Self::file_uri(path);
+        let build = self.server.core.build();
+        let module_id = build.and_then(|build| build.document_by_uri(&uri))
+            .map_or_else(|| "__snapshot__".to_string(), |document| document.module_id.clone());
+        let ast = coflow_language::cft::syntax::parser::parse_module(
+            &coflow_language::cft::ModuleId::new(module_id.clone()), source,
+        ).ok().map(std::sync::Arc::new);
+        let document = LspDocument { module_id, uri, source: source.into(), ast };
+        json!({
+            "data": semantic_tokens::snapshot_token_data(build, &document),
+            "x-coflow-syntax-valid": document.ast.is_some(),
+        })
+    }
+
     #[must_use]
     pub fn new(project: Project) -> Self {
         Self {

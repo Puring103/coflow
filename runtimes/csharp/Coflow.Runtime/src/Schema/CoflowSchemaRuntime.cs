@@ -80,10 +80,8 @@ public sealed class CoflowSchemaRuntime
             context.WithRecordPath(record, () =>
             {
                 var target = entry.Value;
-                var valid = target.IsSingleton
-                    ? record.Key == target.Field && context.Records.OfType(target.SourceType).Count == 1
-                    : context.Records.FindAssignable(target.SourceType, record.Key) is not null;
-                if (!valid)
+                // 主体缺失的维度记录不参与字段读取；singleton 的字段标识仍须合法。
+                if (target.IsSingleton && record.Key != target.Field)
                     throw new CfdLoadException(new[] { new CfdDiagnostic(
                         "CFD-DIMENSION-TARGET",
                         $"dimension record `{entry.Key}::{record.Key}` has no matching target `{target.SourceType}.{target.Field}`",

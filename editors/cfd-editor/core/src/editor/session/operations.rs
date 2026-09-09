@@ -226,6 +226,28 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
 }
 
 impl SessionStore {
+    pub fn highlight_source_snapshot(
+        &self,
+        id: u32,
+        file_path: &str,
+        source: &str,
+    ) -> Result<LanguageDocumentState, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry.state.write()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let path = session.project_root.join(file_path);
+        // 只分析快照，不同步语言文档，避免 HEAD 覆盖当前草稿。
+        let tokens = session.language_server.highlight_source_snapshot(&path, source);
+        Ok(LanguageDocumentState {
+            diagnostics: Vec::new(),
+            semantic_token_data: tokens.get("data").and_then(Value::as_array)
+                .into_iter().flatten().filter_map(Value::as_u64)
+                .filter_map(|value| u32::try_from(value).ok()).collect(),
+            semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
+            syntax_valid: tokens.get("x-coflow-syntax-valid").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
+
     pub fn read_source_text(&self, id: u32, file_path: &str) -> Result<String, EditorError> {
         let path = self.source_file_path(id, file_path)?;
         std::fs::read_to_string(&path).map_err(|error| {

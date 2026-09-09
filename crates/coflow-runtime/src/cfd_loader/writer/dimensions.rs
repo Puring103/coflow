@@ -370,14 +370,8 @@ impl CfdWriter {
         let mut out = BTreeMap::new();
         for record in ast.records {
             if expected_keys.is_some_and(|keys| !keys.contains(record.key.as_str())) {
-                return Err(DiagnosticSet::one(diag(
-                "CFD-DIMENSION",
-                format!(
-                    "dimension source `{}` contains unmanaged id `{}`; variant records can only edit existing records",
-                    path.display(),
-                    record.key
-                ),
-            )));
+                // 同步按当前主体集合重建，已删除主体的维度记录无需带入输出。
+                continue;
             }
             if out.contains_key(&record.key) {
                 return Err(DiagnosticSet::one(diag(

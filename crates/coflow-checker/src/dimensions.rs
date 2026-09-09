@@ -1,7 +1,7 @@
 use crate::limits::{EvaluationBudget, EvaluationCursor};
 use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 use coflow_model::{
-    CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionFieldLookupError,
+    CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue,
     DimensionValueLookup,
 };
 
@@ -52,10 +52,12 @@ fn attach_dimension_origin(
     else {
         return;
     };
-    label.origin = values
-        .variants
-        .get(variant)
-        .map(|value| value.origin.clone());
+    // 回退基础值时保留基础字段位置，不能把诊断指向维度文件中的 None。
+    if let Some(value) = values.variants.get(variant)
+        .filter(|value| !matches!(value.value, CfdValue::OptionNone))
+    {
+        label.origin = Some(value.origin.clone());
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +68,7 @@ pub(crate) struct CheckProjectionView {
 
 enum ProjectedDimensionField {
     Value(CftValueType),
-    ExplicitNone,
+    Base,
     Error {
         message: String,
         traverse_nested: bool,
@@ -116,18 +118,10 @@ impl CheckProjectionView {
                 Ok(DimensionValueLookup::Value { .. }) => {
                     ProjectedDimensionField::Value(field.value_type.clone())
                 }
-                Ok(DimensionValueLookup::ExplicitNone { .. }) => {
-                    ProjectedDimensionField::ExplicitNone
+                Ok(DimensionValueLookup::ExplicitNone { .. } | DimensionValueLookup::Missing) => {
+                    // 与运行时字段读取一致：未提供翻译时继续校验基础值。
+                    ProjectedDimensionField::Base
                 }
-                Ok(DimensionValueLookup::Missing) => ProjectedDimensionField::Error {
-                    message: dimension_lookup_error_message(
-                        record.actual_type(),
-                        &field.name,
-                        &self.variant,
-                        DimensionFieldLookupError::UnknownVariant,
-                    ),
-                    traverse_nested,
-                },
                 Err(error) => ProjectedDimensionField::Error {
                     message: dimension_lookup_error_message(
                         record.actual_type(),
@@ -154,8 +148,8 @@ impl CheckProjectionView {
         };
         let field_type = match projection {
             ProjectedDimensionField::Value(field_type) => field_type,
-            ProjectedDimensionField::ExplicitNone => {
-                return Err(DimensionVariantAbort::Skipped);
+            ProjectedDimensionField::Base => {
+                return Ok(None);
             }
             ProjectedDimensionField::Error {
                 traverse_nested: true,
@@ -184,9 +178,6 @@ impl CheckProjectionView {
                 message: "dimension overlay value disappeared during check execution".to_string(),
             });
         };
-        if matches!(value, CfdValue::OptionNone) {
-            return Err(DimensionVariantAbort::Skipped);
-        }
         Ok(Some(MaterializedDimensionValue {
             value,
             field_type: Some(field_type),

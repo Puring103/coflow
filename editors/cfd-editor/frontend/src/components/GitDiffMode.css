@@ -23,27 +23,13 @@
 .git-changes-counts .deleted { color: var(--red); }
 .git-changes-counts .modified { color: var(--yellow); }
 .git-changes-list { min-height: 0; flex: 1; overflow: auto; }
-.git-change-group { margin-bottom: 3px; }
-.git-change-item {
-  display: grid;
-  width: 100%;
-  height: 29px;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--fs-xs);
-  text-align: left;
-  cursor: pointer;
-}
-.git-change-item.record { padding-left: 27px; color: var(--text-mute); }
-.git-change-item:hover,
-.git-change-item.selected { background: var(--bg-4); color: var(--text); }
-.git-change-item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-tree-label { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.git-tree-record { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; }
+.git-tree-spacer { width: 24px; flex-shrink: 0; }
+.git-changes-list .git-change-mark { margin-left: auto; padding-right: 8px; }
+.git-table-comparison { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.git-table-filter { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: var(--fs-xs); }
+.git-source-pane > header .error { margin-left: auto; color: var(--red); }
 .git-change-mark { font: 700 11px 'JetBrains Mono', monospace; text-align: center; }
 .git-change-mark.added { color: var(--green); }
 .git-change-mark.deleted { color: var(--red); }

@@ -2716,6 +2716,8 @@ export default function App() {
           )}
           {activePane === 'changes' && (
             <GitDiffSidebar
+              nodes={project?.file_tree ?? []}
+              dimensions={projectDimensions}
               diff={projectDiff}
               loading={projectDiffLoading}
               error={projectDiffError}
@@ -2886,6 +2888,7 @@ export default function App() {
           {gitDiffActive ? (
             <div className="view-container">
               <GitDiffMode
+                sessionId={project!.session_id}
                 diff={projectDiff}
                 loading={projectDiffLoading}
                 error={projectDiffError}

@@ -349,6 +349,10 @@ export async function readSourceText(sessionId: number, filePath: string): Promi
   return invokeCommand<string>('read_source_text', { sessionId, filePath })
 }
 
+export async function highlightSourceSnapshot(sessionId: number, filePath: string, source: string): Promise<LanguageDocumentState> {
+  return invokeCommand<LanguageDocumentState>('highlight_source_snapshot', { sessionId, filePath, source })
+}
+
 export async function syncLanguageDocument(
   sessionId: number,
   filePath: string,

@@ -803,6 +803,18 @@ async fn read_source_text(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn highlight_source_snapshot(
+    session_id: u32,
+    file_path: String,
+    source: String,
+    host: State<'_, EditorHost>,
+) -> Result<LanguageDocumentState, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().highlight_source_snapshot(session_id, &file_path, &source)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn sync_language_document(
     session_id: u32,
     file_path: String,
@@ -1288,6 +1300,7 @@ pub fn run() -> tauri::Result<()> {
             open_source_file,
             read_source_text,
             sync_language_document,
+            highlight_source_snapshot,
             validate_source_text,
             complete_language_document,
             format_language_document,

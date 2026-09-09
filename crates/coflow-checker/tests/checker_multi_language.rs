@@ -76,6 +76,44 @@ fn dimension_projection_reads_the_requested_variant_and_attaches_context() {
 }
 
 #[test]
+fn absent_and_none_variants_validate_the_base_value() {
+    let schema = schema();
+    for base in ["base", ""] {
+        // 覆盖整个维度字段缺失、仅目标变体缺失，以及显式 None。
+        for overlay in [None, Some(("en", LoadedValueDraft::from("other"))), Some(("zh", LoadedValueDraft::OptionNone))] {
+            let mut builder = CfdDataModel::builder(&schema);
+            builder.add_record("item", "Item", [("name", LoadedValueDraft::from(base))]);
+            if let Some((variant, value)) = overlay {
+                builder.add_dimension_value_draft(DimensionValueDraft {
+                    source_type: TypeName::new("Item").unwrap(),
+                    source_key: RecordKey::new("item").unwrap(),
+                    field: FieldName::new("name").unwrap(),
+                    dimension: DimensionName::new("language").unwrap(),
+                    variant: VariantName::new(variant).unwrap(),
+                    value,
+                    origin: RecordOrigin::None,
+                });
+            }
+            let model = builder.build().expect("model");
+            let output = execute_checks(&schema, &model, [CheckTask {
+                statement: item_statement(&schema),
+                target: CheckTarget::Record(record_id_at(&model, 0)),
+                projection: CheckProjection::Dimension {
+                    dimension: DimensionName::new("language").unwrap(),
+                    variant: VariantName::new("zh").unwrap(),
+                },
+            }], CheckLimits::default());
+            if base.is_empty() {
+                assert_eq!(output.results[0].diagnostics.len(), 1);
+                assert_eq!(output.results[0].diagnostics[0].diagnostic.message, "empty item");
+            } else {
+                assert!(output.is_success(), "{output:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn base_projection_does_not_read_dimension_overlay() {
     let schema = schema();
     let model = model(&schema);
