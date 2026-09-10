@@ -769,11 +769,20 @@ impl SessionStore {
             if let Some(cached) = session.ref_target_cache.get(expected_type) {
                 return Ok(cached.clone());
             }
+            let settings = super::read_project_settings(&session.project_root)?;
             let targets: Vec<RefTarget> = session
                 .queries()
                 .ref_targets(expected_type)
                 .into_iter()
                 .map(|target| RefTarget {
+                    short_name: settings.short_name_fields.get(target.coordinate.actual_type.as_str())
+                        .and_then(|field| session.queries()
+                            .record_view(&target.coordinate.actual_type, &target.coordinate.key)
+                            .and_then(|view| match view.record.field(field) {
+                                Some(CfdValue::String(value)) if !value.is_empty() => Some(value.clone()),
+                                Some(CfdValue::FormattedString(value)) if !value.rendered.is_empty() => Some(value.rendered.clone()),
+                                _ => None,
+                            })),
                     coordinate: target.coordinate,
                     file_path: target.file_path,
                 })

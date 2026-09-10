@@ -1,5 +1,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
+import { ShortNameMenuItem } from './ShortNameContext'
+import { shortNameCandidate } from '../state/shortNames'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -495,6 +497,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         <Fragment key={expansionOwner}>
         <CardHeader
           recordKey={recordKey(record)}
+          fields={record.fields}
           actualType={recordActualType(record)}
           filePath={data.file_path}
           onRename={canRename ? async (next) => { await onRenameRecord!(record.coordinate, next) } : undefined}
@@ -577,6 +580,9 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           role="menu"
           onPointerDown={event => event.stopPropagation()}
         >
+          <ShortNameMenuItem actualType={record.coordinate.actual_type}
+            field={shortNameCandidate(record.fields, recordTreeMenu.path)}
+            onClose={() => setRecordTreeMenu(null)} />
           <button
             type="button"
             className="ctx-item"

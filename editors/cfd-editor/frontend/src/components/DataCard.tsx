@@ -68,6 +68,8 @@ import {
 } from '../value/fieldValue'
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
+import { ShortNameContext, useReferenceShortName } from './ShortNameContext'
+import { recordShortName, shortNameLabel } from '../state/shortNames'
 import {
   PluginContributionMount,
   PluginSummaryText,
@@ -88,6 +90,8 @@ export { collectionObjectDraftForAnnotation, dictKeyTemplate } from './DataCard.
 
 export function CardHeader({
   recordKey,
+  shortName,
+  fields,
   actualType,
   filePath,
   onRename,
@@ -96,6 +100,8 @@ export function CardHeader({
   highlight,
 }: {
   recordKey: string
+  shortName?: string
+  fields?: FieldCell[]
   actualType: string
   filePath?: string
   onRename?: (newKey: string) => void
@@ -106,6 +112,8 @@ export function CardHeader({
   highlight?: boolean
 }) {
   const color = typeColor(actualType)
+  const shortNameSettings = useContext(ShortNameContext)
+  const displayName = shortName ?? (fields ? recordShortName(fields, shortNameSettings.fields[actualType]) : undefined)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(recordKey)
   useEffect(() => { if (!editing) setDraft(recordKey) }, [recordKey, editing])
@@ -138,7 +146,7 @@ export function CardHeader({
           onDoubleClick={onRename ? () => setEditing(true) : undefined}
           title={onRename ? '双击重命名' : undefined}
         >
-          {recordKey}
+          {shortNameLabel(recordKey, displayName)}
         </span>
       )}
       <div className="gn-meta">
@@ -205,6 +213,7 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
   const navigation = useEditorNavigation()
+  const shortName = useReferenceShortName(value.kind === 'ref' ? refTargetType : undefined, value.kind === 'ref' ? referenceKeyText(value.value) : '')
   switch (value.kind) {
     case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
@@ -248,7 +257,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
           }}
         >
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{highlightSearchText(refKey, highlightQuery)}</span>
+          <span className="vc-ref-key">{highlightSearchText(shortName ?? refKey, highlightQuery)}</span>
         </span>
       )
     case 'object':
@@ -1605,11 +1614,12 @@ export function RefDirectSelect({
 }) {
   const lookups = useEditorLookups()
   const navigation = useEditorNavigation()
-  const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(() => (
+  const [targets, setTargets] = useState<{ key: string; label: string; shortName: string | null }[] | null>(() => (
     targetType
       ? lookups.cachedRefTargets(targetType)?.map(target => ({
         key: target.coordinate.key,
-        label: target.coordinate.key,
+        label: shortNameLabel(target.coordinate.key, target.short_name),
+        shortName: target.short_name,
       })) ?? null
       : null
   ))
@@ -1630,7 +1640,8 @@ export function RefDirectSelect({
     let alive = true
     setTargets(lookups.cachedRefTargets(targetType)?.map(target => ({
       key: target.coordinate.key,
-      label: target.coordinate.key,
+      label: shortNameLabel(target.coordinate.key, target.short_name),
+      shortName: target.short_name,
     })) ?? null)
     setLoadError(null)
     lookups.loadRefTargets(targetType).then(r => {
@@ -1638,7 +1649,8 @@ export function RefDirectSelect({
       if (r.ok) {
         setTargets(r.value.map(target => ({
           key: target.coordinate.key,
-          label: target.coordinate.key,
+          label: shortNameLabel(target.coordinate.key, target.short_name),
+          shortName: target.short_name,
         })))
       } else {
         setTargets(currentTargets => currentTargets ?? [])
@@ -1676,7 +1688,7 @@ export function RefDirectSelect({
         options={[
           ...(nullable ? [{ value: NULL_SENTINEL }] : []),
           ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
-          ...targets.map(target => ({ value: target.key, label: target.label })),
+          ...targets.map(target => ({ value: target.key, label: target.label, selectedLabel: target.shortName ?? target.key })),
         ]}
         onCommit={commit}
         onExit={onExit}

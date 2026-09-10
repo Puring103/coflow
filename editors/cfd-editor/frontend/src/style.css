@@ -4430,8 +4430,8 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--node-color, var(--accent));
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   background: color-mix(in srgb, var(--node-color, var(--accent)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--node-color, var(--accent)) 30%, transparent);
   border-radius: 3px;

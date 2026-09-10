@@ -189,6 +189,8 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
+  view_order: {},
+  short_name_fields: {},
     views: {},
     default_table_column_widths: {},
     workspace: { tabs: [], active_tab_id: null },

@@ -250,6 +250,7 @@ describe('DataCardCompact complex previews', () => {
       getRefTargets: async () => [{
         coordinate: { actual_type: 'Item', key: 'sword' },
         file_path: 'data/items.cfd',
+        short_name: null,
       }],
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),

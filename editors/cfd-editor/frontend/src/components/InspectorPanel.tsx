@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
+import { ShortNameMenuItem } from './ShortNameContext'
+import { shortNameCandidate } from '../state/shortNames'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
@@ -469,6 +471,7 @@ export function InspectorPanel({
                 <>
                   <CardHeader
                     recordKey={recordKey(record)}
+                    fields={record.fields}
                     actualType={recordActualType(record)}
                     filePath={data.file_path}
                     onRename={canRename && onRenameRecord
@@ -531,6 +534,9 @@ export function InspectorPanel({
           role="menu"
           onPointerDown={event => event.stopPropagation()}
         >
+          <ShortNameMenuItem actualType={record.coordinate.actual_type}
+            field={shortNameCandidate(record.fields, recordTreeMenu.path)}
+            onClose={() => setRecordTreeMenu(null)} />
           <button
             type="button"
             className="ctx-item"

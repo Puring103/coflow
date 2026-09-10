@@ -5,6 +5,14 @@ import type { ViewConfig } from "./ViewConfig";
 
 export type EditorProjectSettings = {
 /**
+ * 每个记录类型唯一的缩略名字符串字段，跨文件生效。
+ */
+short_name_fields: { [key in string]?: string },
+/**
+ * 按文件和类型保存视图标签顺序，包含内置视图和自定义视图的 ID。
+ */
+view_order: { [key in string]?: { [key in string]?: Array<string> } },
+/**
  * Custom views keyed by (filePath, actualType). Default record/table
  * views are implicit and never stored here.
  */

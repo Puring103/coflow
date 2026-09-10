@@ -314,6 +314,42 @@ fn field(name: &str) -> CfdPathSegment {
 }
 
 #[test]
+fn short_names_are_type_scoped_persisted_and_refreshed() {
+    let (root, data_file) = array_project();
+    fs::write(root.join("schema.cft"), "type Item { name: string; title: string = \"\"; count: int = 1; }\n")
+        .expect("write schema");
+    fs::write(&data_file, "sword: Item { name: \"Sword\", title: \"Blade\" }\n").expect("write first file");
+    fs::write(root.join("data/other.cfd"), "shield: Item { name: \"Shield\" }\n").expect("write second file");
+    let store = SessionStore::new().expect("session store");
+    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
+    let id = project.session_id;
+    assert!(store.get_ref_targets(id, "Item").expect("initial targets").iter().all(|target| target.short_name.is_none()));
+    store.set_short_name_field(id, "Item".into(), Some("name".into())).expect("set name");
+    let targets = store.get_ref_targets(id, "Item").expect("named targets");
+    assert_eq!(targets.len(), 2);
+    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Sword")));
+    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Shield")));
+    assert!(store.set_short_name_field(id, "Item".into(), Some("count".into())).is_err());
+    assert!(store.set_short_name_field(id, "Item".into(), Some("missing".into())).is_err());
+    let settings = store.set_short_name_field(id, "Item".into(), Some("title".into())).expect("replace name field");
+    assert_eq!(settings.short_name_fields.len(), 1);
+    assert_eq!(settings.short_name_fields["Item"], "title");
+    let reloaded = store.load_project(&root.join("coflow.yaml")).expect("reopen project");
+    assert_eq!(store.get_project_settings(reloaded.session_id).expect("read saved settings").short_name_fields["Item"], "title");
+    let targets = store.get_ref_targets(id, "Item").expect("renamed targets");
+    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Blade")));
+    assert!(targets.iter().any(|target| target.coordinate.key.as_str() == "shield" && target.short_name.is_none()));
+    // 修改字段值后，引用缓存必须读取新值，且记录 ID 保持不变。
+    let coordinate = RecordCoordinate::try_new("Item", "sword").expect("coordinate");
+    store.write_field(id, &coordinate, &[field("title")], &CfdValue::String("New blade".into())).expect("edit title");
+    assert!(store.get_ref_targets(id, "Item").expect("updated targets").iter()
+        .any(|target| target.coordinate == coordinate && target.short_name.as_deref() == Some("New blade")));
+    store.set_short_name_field(id, "Item".into(), None).expect("clear name field");
+    assert!(store.get_ref_targets(id, "Item").expect("cleared targets").iter().all(|target| target.short_name.is_none()));
+    fs::remove_dir_all(root).expect("remove project");
+}
+
+#[test]
 fn editor_field_write_preserves_a_self_referencing_record() {
     let root = cyclic_reference_project();
     let store = SessionStore::new().expect("create editor session store");

@@ -23,10 +23,24 @@ function refTarget(key: string): RefTarget {
   return {
     coordinate: { actual_type: 'Item', key },
     file_path: 'data/items.cfd',
+    short_name: null,
   }
 }
 
 describe('EditorLookupController', () => {
+  it('refreshes short names after settings change without changing the data revision', async () => {
+    const pending = deferred<RefTarget[]>()
+    const updated = [{ ...refTarget('sword'), short_name: 'Sword' }]
+    const getRefTargets = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(updated)
+    const lookups = new EditorLookupController(backend({ getRefTargets }))
+    lookups.adopt({ sessionId: 1, revision: 1 })
+    const old = lookups.loadRefTargets('Item')
+    lookups.invalidateRefTargets()
+    await expect(lookups.loadRefTargets('Item')).resolves.toEqual({ ok: true, value: updated })
+    pending.resolve([refTarget('sword')])
+    await expect(old).resolves.toEqual({ ok: false, reason: 'superseded' })
+    expect(lookups.cachedRefTargets('Item')).toEqual(updated)
+  })
   it('rejects an old editor generation response without caching it', async () => {
     const oldRequest = deferred<{ name: string, value: bigint, label: string | null, description: string | null }[]>()
     const getEnumVariants = vi.fn()
