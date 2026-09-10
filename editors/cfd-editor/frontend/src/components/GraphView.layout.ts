@@ -3,6 +3,7 @@ import type { GraphEdgeView, GraphNodeView } from '../wire'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { CfdValue } from '../bindings/CfdValue'
 import { NODE_PEEK_FIELDS, countVisibleRows } from './DataCard.geometry'
+import { relationPorts } from './GraphView.relations'
 
 const NODE_WIDTH = 280
 const COLUMN_GAP = 280
@@ -11,6 +12,7 @@ const COMPONENT_GAP = 120
 const COMPACT_ZOOM_THRESHOLD = 0.65
 const HEADER_HEIGHT = 42
 const ROW_HEIGHT = 22
+const EDITABLE_ROW_HEIGHT = 34
 const MORE_BUTTON_HEIGHT = 28
 const VERTICAL_PADDING = 12
 const COMPACT_BODY_MIN_HEIGHT = 168
@@ -40,10 +42,11 @@ export function estimateNodeHeight(
       + (hasMore ? MORE_BUTTON_HEIGHT : 0)
       + VERTICAL_PADDING
   }
-  const rows = countVisibleRows(node.fields, expandedRows)
-  const hasMore = node.fields.length > NODE_PEEK_FIELDS
+  const relations = relationPorts(node.fields).ports
+  const rows = countVisibleRows(node.fields, expandedRows) + relations.filter(port => port.append && !port.readOnly).length
+  const hasMore = relations.length === 0 && node.fields.length > NODE_PEEK_FIELDS
   return HEADER_HEIGHT
-    + rows * ROW_HEIGHT
+    + rows * (relations.length > 0 ? EDITABLE_ROW_HEIGHT : ROW_HEIGHT)
     + (hasMore ? MORE_BUTTON_HEIGHT : 0)
     + VERTICAL_PADDING
 }
@@ -375,11 +378,12 @@ function nodeHeight(
   nodeExpanded: ReadonlyMap<string, boolean>,
   rowExpanded: ReadonlyMap<string, ReadonlySet<string>>,
 ): number {
-  return estimateNodeHeight(
+  // 预留缩略节点的高度，缩放切换不必重排，也不会覆盖相邻节点。
+  return Math.max(COMPACT_BODY_MIN_HEIGHT + VERTICAL_PADDING, estimateNodeHeight(
     node,
     nodeExpanded.get(node.id) ?? false,
     rowExpanded.get(node.id) ?? new Set<string>(),
-  )
+  ))
 }
 
 async function layoutComponent(
@@ -455,4 +459,37 @@ async function layoutComponent(
   }
 
   return runLayout(elkGraph)
+}
+
+// 增量刷新只安置新增节点，已存在节点（包括用户拖动的位置）保持不变。
+export function retainGraphPositions(
+  layout: GraphLayoutResult,
+  retained: ReadonlyMap<string, Position>,
+  expanded: ReadonlyMap<string, boolean>,
+  expandedRows: ReadonlyMap<string, ReadonlySet<string>>,
+  measuredHeights: ReadonlyMap<string, number> = new Map(),
+): Map<string, Position> {
+  if (retained.size === 0) return new Map(layout.positions)
+  const positions = new Map<string, Position>()
+  const nodes = new Map(layout.visibleNodes.map(node => [node.id, node]))
+  const height = (id: string) => measuredHeights.get(id)
+    ?? (nodes.has(id) ? nodeHeight(nodes.get(id)!, expanded, expandedRows) : HEADER_HEIGHT)
+  for (const id of layout.positions.keys()) {
+    const previous = retained.get(id)
+    if (previous) positions.set(id, previous)
+  }
+  for (const [id, suggested] of layout.positions) {
+    if (positions.has(id)) continue
+    const incoming = [...layout.forwardEdges, ...layout.backEdges].find(edge => edge.target === id && positions.has(edge.source))
+    const source = incoming && positions.get(incoming.source)
+    const candidate = source ? { x: source.x + NODE_WIDTH + COLUMN_GAP, y: source.y } : { ...suggested }
+    let collision: [string, Position] | undefined
+    while ((collision = [...positions].find(([otherId, other]) => (
+      Math.abs(other.x - candidate.x) < NODE_WIDTH + ROW_GAP
+      && candidate.y < other.y + height(otherId) + ROW_GAP
+      && candidate.y + height(id) + ROW_GAP > other.y
+    )))) candidate.y = collision[1].y + height(collision[0]) + ROW_GAP
+    positions.set(id, candidate)
+  }
+  return positions
 }
