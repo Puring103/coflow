@@ -295,6 +295,10 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  it once the highlight has been consumed. */
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
+const NodeRelationsCtx = createContext<{
+  expandedPaths: ReadonlySet<string>
+  appendPaths: ReadonlySet<string>
+} | null>(null)
 const HighlightQueryCtx = createContext<string | undefined>(undefined)
 const DiffPathCtx = createContext<ReadonlySet<string> | null>(null)
 const PluginRecordCtx = createContext<{
@@ -1853,6 +1857,9 @@ function ExpandableRow({
 }) {
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
+  const nodeRelations = useContext(NodeRelationsCtx)
+  const fixedExpanded = !!pathKey && !!nodeRelations?.expandedPaths.has(pathKey)
+  const appendAtEnd = value.kind === 'array' && !!nodeRelations?.appendPaths.has(JSON.stringify(fieldPath))
   const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
   const [localExpanded, setLocalExpanded] = useState(shouldAutoExpand)
   const expanded = pathKey && controlledExpansion
@@ -1899,6 +1906,7 @@ function ExpandableRow({
   ), [pluginRecord, pathKey, summaryType, value])
 
   function toggle() {
+    if (fixedExpanded) return
     const next = !expanded
     if (!controlledExpansion) setLocalExpanded(next)
     if (pathKey) onRowToggle?.(pathKey, next)
@@ -1922,7 +1930,7 @@ function ExpandableRow({
         <div className="dc-row-label">
           {leading}
           <span className="dc-fold-arrow">
-            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
+            {!fixedExpanded && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />}
           </span>
           <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
         </div>
@@ -1947,7 +1955,7 @@ function ExpandableRow({
           </div>
         </div>
         <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
-          {onCollectionEdit && (value.kind === 'array' || value.kind === 'dict') && (
+          {onCollectionEdit && !appendAtEnd && (value.kind === 'array' || value.kind === 'dict') && (
             <CollectionAddControl
               container={value}
               depth={depth}
@@ -1973,6 +1981,18 @@ function ExpandableRow({
             onRowToggle={onRowToggle}
             valueAnnotation={valueAnnotation}
           />
+          {appendAtEnd && onCollectionEdit && value.kind === 'array' && (
+            <div className="dc-row dc-row-item" style={inspectorDepthStyle(depth + 1)}>
+              <div className="dc-row-label">{value.value.length + 1}</div>
+              <CollectionAddControl
+                container={value}
+                depth={depth + 1}
+                fieldPath={fieldPath}
+                onCollectionEdit={editCollection}
+                itemAnnotation={annotationItem(valueAnnotation)}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2077,7 +2097,7 @@ function ComplexValueChildren({
             onEdit={onEdit}
             onCollectionEdit={onCollectionEdit}
             fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
-            pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
+            pathKey={pathKey ? `${pathKey}[${dictKeyPathText(key)}]` : `[${dictKeyPathText(key)}]`}
             onRowToggle={onRowToggle}
             declaredType={annotationDeclaredType(annotation)}
             refTargetType={annotationRefTargetType(annotation)}
@@ -2572,6 +2592,7 @@ export function DataCardNode({
   expandedPaths,
   onEdit,
   onCollectionEdit,
+  graphRelations,
 }: {
   fields: FieldCell[]
   actualType: string
@@ -2581,19 +2602,22 @@ export function DataCardNode({
   expandedPaths?: ReadonlySet<string>
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
+  graphRelations?: { expandedPaths: ReadonlySet<string>; appendPaths: ReadonlySet<string> }
 }) {
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
     <div className="dc-node-card">
-      <DataCardExpanded
-        fields={visible}
-        actualType={actualType}
-        onRowToggle={onRowToggle}
-        expandedPaths={expandedPaths}
-        onEdit={onEdit}
-        onCollectionEdit={onCollectionEdit}
-      />
-      {fields.length > NODE_PEEK_FIELDS && (
+      <NodeRelationsCtx.Provider value={graphRelations ?? null}>
+        <DataCardExpanded
+          fields={visible}
+          actualType={actualType}
+          onRowToggle={onRowToggle}
+          expandedPaths={expandedPaths}
+          onEdit={onEdit}
+          onCollectionEdit={onCollectionEdit}
+        />
+      </NodeRelationsCtx.Provider>
+      {!graphRelations && fields.length > NODE_PEEK_FIELDS && (
         <button className="dc-node-more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}
         </button>

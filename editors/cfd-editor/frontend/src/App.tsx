@@ -1700,6 +1700,7 @@ export default function App() {
   useEffect(() => {
     setInspectorSelection(current => {
       if (!current) return current
+      if (router.current?.view === 'graph') return current
       if (!activeFileData || current.filePath !== activeFileData.file_path) return null
       const inActiveType = (coordinate: RecordCoordinate) => activeFileData.records.some(record => (
         sameCoordinate(record.coordinate, coordinate)
@@ -3096,6 +3097,8 @@ export default function App() {
                 {activeViewKind === 'graph' && (
                   activeGraph ? (
                     <GraphView
+                      key={`${currentRoute.file}:${resolvedView?.id ?? currentRoute.viewId}:${activeType}`}
+                      viewKey={`${currentRoute.file}:${currentRoute.viewId}:${activeType}`}
                       graphData={viewFilteredGraph ?? activeGraph}
                       activeType={activeType}
                       enabledFieldsOverride={resolvedView?.kind === 'graph' && !resolvedView.isDefault ? resolvedView.relations : undefined}
@@ -3184,7 +3187,7 @@ export default function App() {
           }}
           focusRequest={inspectorFocusRequest}
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
-          visibleFields={visibleFields}
+          visibleFields={activeViewKind === 'graph' ? undefined : visibleFields}
         />
         </div>
         {project && (

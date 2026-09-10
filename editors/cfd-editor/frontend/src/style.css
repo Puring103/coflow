@@ -4467,6 +4467,10 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   width: 8px !important;
   height: 8px !important;
 }
+/* 连线端口必须高于字段操作区，缩放后仍能准确命中拖动起点。 */
+.graph-node > .react-flow__handle {
+  z-index: 5;
+}
 .react-flow__controls {
   border-radius: var(--radius) !important;
   overflow: hidden;
