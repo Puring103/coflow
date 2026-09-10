@@ -9,6 +9,7 @@ import {
   RESERVED_VIEW_ID_PREFIX,
   groupFilterPredicate,
   newViewId,
+  moveViewTab,
   resolveView,
   viewTabsFor,
   visibleFieldsFor,
@@ -48,6 +49,8 @@ function graphView(over: Partial<ViewConfig> = {}): ViewConfig {
 function settingsWith(views: ViewConfig[]): EditorProjectSettings {
   return {
     views: { [FILE]: { [TYPE]: views } },
+    view_order: {},
+    short_name_fields: {},
     default_table_column_widths: { [FILE]: { [TYPE]: { name: 200 } } },
     record_groups: {},
     workspace: { tabs: [], active_tab_id: null },
@@ -55,6 +58,24 @@ function settingsWith(views: ViewConfig[]): EditorProjectSettings {
 }
 
 describe('viewTabsFor', () => {
+  it('restores mixed built-in/custom order and appends new views', () => {
+    const settings = settingsWith([tableView(), graphView()])
+    settings.view_order = { [FILE]: { [TYPE]: ['v-graph', DEFAULT_SOURCE_VIEW_ID, 'deleted', DEFAULT_TABLE_VIEW_ID] } }
+    expect(viewTabsFor(settings, FILE, TYPE, false, true).map(tab => tab.id)).toEqual([
+      'v-graph', DEFAULT_SOURCE_VIEW_ID, DEFAULT_TABLE_VIEW_ID, DEFAULT_RECORD_VIEW_ID, 'v-table',
+    ])
+    expect(viewTabsFor(settings, FILE, TYPE, true, true).map(tab => tab.id)).toEqual([
+      DEFAULT_SOURCE_VIEW_ID, DEFAULT_RECORD_VIEW_ID,
+    ])
+    expect(viewTabsFor(settings, FILE, TYPE, false, false).map(tab => tab.id)).not.toContain('v-graph')
+  })
+
+  it('moves tabs in both directions and ignores invalid drops', () => {
+    expect(moveViewTab(['a', 'b', 'c'], 'a', 'c', true)).toEqual(['b', 'c', 'a'])
+    expect(moveViewTab(['a', 'b', 'c'], 'c', 'a', false)).toEqual(['c', 'a', 'b'])
+    expect(moveViewTab(['a', 'b'], 'a', 'a', true)).toEqual(['a', 'b'])
+    expect(moveViewTab(['a', 'b'], 'missing', 'a', false)).toEqual(['a', 'b'])
+  })
   it('keeps source available when a CFD file has no valid record type', () => {
     expect(viewTabsFor(null, 'data/invalid.cfd', '', false, false)).toEqual([
       { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },

@@ -7,6 +7,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
+import { useReferenceShortName } from './ShortNameContext'
+import { shortNameLabel } from '../state/shortNames'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -76,6 +78,7 @@ interface NodeData extends Record<string, unknown> {
 function CfdNode({ id, data }: NodeProps) {
   const { graphNode: gn, expanded, outgoingPaths, ports, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
+  const shortName = useReferenceShortName(gn.actual_type, gn.key)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
   const graphRelations = useMemo(() => ports.length > 0 ? {
@@ -180,7 +183,7 @@ function CfdNode({ id, data }: NodeProps) {
       ))}
       {compact ? (
         <div ref={headerRef} className="gn-compact-body">
-          <div className="gn-compact-key">{gn.key}</div>
+          <div className="gn-compact-key">{shortName ?? gn.key}</div>
           {(diagSeverity === 'error' || diagSeverity === 'warning') && (
             <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
           )}
@@ -190,6 +193,7 @@ function CfdNode({ id, data }: NodeProps) {
           <div ref={headerRef}>
             <CardHeader
               recordKey={gn.key}
+              shortName={shortName}
               actualType={gn.actual_type}
               filePath={gn.file_path}
               diagSeverity={diagSeverity}
@@ -815,7 +819,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
             className="dc-input"
             ariaLabel="选择引用目标"
             placeholder="选择引用目标"
-            options={picker.targets.map((target, index) => ({ value: String(index), label: target.coordinate.key,
+            options={picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.key, target.short_name),
               description: `${target.coordinate.actual_type} · ${target.file_path}` }))}
             onCommit={index => {
               const target = picker.targets[Number(index)]

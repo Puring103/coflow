@@ -1,5 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from 'react'
 import { createPortal } from 'react-dom'
+import { ShortNameColumnMenu } from './ShortNameContext'
+import { shortNameCandidate } from '../state/shortNames'
 import {
   useReactTable,
   getCoreRowModel,
@@ -210,6 +212,8 @@ interface TableContextMenu {
 export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
+  const [shortNameMenu, setShortNameMenu] = useState<{ x: number; y: number; field: string } | null>(null)
+  useEffect(() => { setShortNameMenu(null) }, [data.file_path, activeType])
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
@@ -1242,6 +1246,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     return (
                       <th
                         key={h.id}
+                        onContextMenu={event => {
+                          const column = data.columns.find(column => column.name === h.column.id)
+                          const eligible = filtered.length > 0
+                            ? shortNameCandidate(filtered[0].fields, [fieldPathField(h.column.id)]) !== undefined
+                            : column?.type_names.length === 1 && column.type_names[0] === 'string'
+                          if (!activeType || !column || !eligible) return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setShortNameMenu({ x: event.clientX, y: event.clientY, field: column.name })
+                        }}
                         className={h.column.id === 'key' ? 'sticky-key-column' : undefined}
                         style={{ width: h.getSize() }}
                         aria-sort={sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none'}
@@ -1510,6 +1524,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         />
       )}
 
+      {shortNameMenu && activeType && <ShortNameColumnMenu key={`${data.file_path}:${activeType}`}
+        actualType={activeType} field={shortNameMenu.field} x={shortNameMenu.x} y={shortNameMenu.y}
+        onClose={() => setShortNameMenu(null)} />}
       {contextMenu && createPortal(
         <div
           ref={contextMenuRef}

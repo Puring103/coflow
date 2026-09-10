@@ -5,11 +5,13 @@
 ### 1.1 设置文件
 - 目录：`editor-setting/`（文件夹和文件都不带点前缀）
 - 单一版本化文件：`editor.json`。视图、默认表格列宽、记录分组和 workspace 状态在同一文件中读写
-- 文件格式：`{ version: 1, views, default_table_column_widths, record_groups, workspace }`
+- 文件格式：`{ version: 1, views, view_order, short_name_fields, default_table_column_widths, record_groups, workspace }`
 - **旧配置不兼容**：不读取、不迁移 `.coflow/editor.json`；直接采用新格式。用户既有的列宽 / 分组 / `graph_enabled_fields` 全部丢弃，从空配置开始
 - 废弃 `graph_enabled_fields`：新语义"自定义图视图的字段"由 ViewConfig 承载，无对应迁移
 
 ### 1.2 数据结构
+- `short_name_fields`：按记录实际类型保存唯一的缩略名字符串字段，跨文件生效。
+- `view_order`：按 (filePath, actualType) 保存内置和自定义视图标签的顺序。
 - `views`：keyed by (filePath, actualType)，值为自定义视图列表
 - `record_groups`：keyed by (filePath, actualType)，现状保留
 - **列宽并入 ViewConfig**：不再有独立的 `table_column_widths`；每个表格视图（含默认表格视图）的列宽存在各自 ViewConfig 内

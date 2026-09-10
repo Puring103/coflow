@@ -197,6 +197,48 @@ impl SessionStore {
         Ok(root)
     }
 
+    /// 缩略名是编辑器展示设置；只接受类型的字符串字段，不改变记录身份。
+    pub fn set_short_name_field(
+        &self,
+        id: u32,
+        actual_type: String,
+        field: Option<String>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry.state.write()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        if let Some(name) = &field {
+            if !session.queries().schema_type_fields(&actual_type).iter()
+                .any(|(field_name, field_type)| field_name == name && field_type == "string") {
+                return Err(EditorError::other("缩略名必须是记录类型的字符串字段"));
+            }
+        }
+        let mut settings = read_project_settings(&session.project_root)?;
+        if let Some(name) = field {
+            settings.short_name_fields.insert(actual_type, name);
+        } else {
+            settings.short_name_fields.remove(&actual_type);
+        }
+        write_project_settings(&session.project_root, &settings)?;
+        session.ref_target_cache.clear();
+        Ok(settings)
+    }
+
+    /// 只更新指定文件和类型的标签顺序，保留其他编辑器设置。
+    pub fn set_view_order(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        order: Vec<String>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        settings.view_order.entry(file_path).or_default().insert(actual_type, order);
+        write_project_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
     /// Set the column widths of the implicit default table view for a
     /// (filePath, actualType).
     pub fn set_default_table_column_widths(

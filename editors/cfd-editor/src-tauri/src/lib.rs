@@ -674,6 +674,34 @@ async fn set_default_table_column_widths(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn set_short_name_field(
+    session_id: u32,
+    actual_type: String,
+    field: Option<String>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().set_short_name_field(session_id, actual_type, field)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn set_view_order(
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    order: Vec<String>,
+    host: State<'_, EditorHost>,
+) -> Result<EditorProjectSettings, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || {
+        host.sessions().set_view_order(session_id, file_path, actual_type, order)
+    })
+    .await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn set_views(
     session_id: u32,
     file_path: String,
@@ -1290,6 +1318,8 @@ pub fn run() -> tauri::Result<()> {
             get_dimension_file_records,
             set_default_table_column_widths,
             set_views,
+            set_view_order,
+            set_short_name_field,
             set_view_column_widths,
             set_record_groups,
             set_workspace,

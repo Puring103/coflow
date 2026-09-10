@@ -308,6 +308,19 @@ export async function setRecordGroups(
   })
 }
 
+export async function setViewOrder(
+  sessionId: number,
+  filePath: string,
+  actualType: string,
+  order: string[],
+): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_view_order', { sessionId, filePath, actualType, order })
+}
+
+export async function setShortNameField(sessionId: number, actualType: string, field: string | null): Promise<EditorProjectSettings> {
+  return invokeCommand<EditorProjectSettings>('set_short_name_field', { sessionId, actualType, field })
+}
+
 export async function setViews(
   sessionId: number,
   filePath: string,

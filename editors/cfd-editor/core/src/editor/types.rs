@@ -324,6 +324,12 @@ pub struct DimensionFileRow {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct EditorProjectSettings {
+    /// 每个记录类型唯一的缩略名字符串字段，跨文件生效。
+    #[serde(default)]
+    pub short_name_fields: BTreeMap<String, String>,
+    /// 按文件和类型保存视图标签顺序，包含内置视图和自定义视图的 ID。
+    #[serde(default)]
+    pub view_order: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     /// Custom views keyed by (filePath, actualType). Default record/table
     /// views are implicit and never stored here.
     #[serde(default)]
@@ -954,6 +960,7 @@ pub struct GraphEdge {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct RefTarget {
+    pub short_name: Option<String>,
     pub coordinate: RecordCoordinate,
     pub file_path: String,
 }

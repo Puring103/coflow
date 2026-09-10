@@ -51,9 +51,9 @@ function customViews(
 
 /**
  * The view tabs to show for a (file, type).
- * - Singleton types: only the default record view (no list, no table).
- * - Otherwise: default record + default table, then custom views in stored
- *   order. There is no default graph view — graph views are custom-only.
+ * - Singleton types: default record and source views.
+ * - Other types: default record, table, source, and supported custom views.
+ * - Saved tab order applies to both built-in and custom views.
  */
 export function viewTabsFor(
   settings: EditorProjectSettings | null,
@@ -62,14 +62,15 @@ export function viewTabsFor(
   isSingleton: boolean,
   graphSupported: boolean,
 ): ViewTab[] {
+  const order = settings?.view_order[file]?.[type] ?? []
   if (!type) {
     return [{ id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true }]
   }
   if (isSingleton) {
-    return [
+    return orderViewTabs([
       { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
       { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
-    ]
+    ], order)
   }
   const tabs: ViewTab[] = [
     { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
@@ -80,7 +81,20 @@ export function viewTabsFor(
     if (view.kind === 'graph' && !graphSupported) continue
     tabs.push({ id: view.id, name: view.name, kind: view.kind, isDefault: false })
   }
-  return tabs
+  return orderViewTabs(tabs, order)
+}
+
+export function orderViewTabs<T extends { id: string }>(tabs: T[], order: string[]): T[] {
+  const positions = new Map(order.map((id, index) => [id, index]))
+  // 新增视图排在已保存的视图之后；不可用视图不影响其余标签的相对顺序。
+  return [...tabs].sort((a, b) => (positions.get(a.id) ?? order.length) - (positions.get(b.id) ?? order.length))
+}
+
+export function moveViewTab(order: string[], source: string, target: string, after: boolean): string[] {
+  if (source === target || !order.includes(source) || !order.includes(target)) return order
+  const next = order.filter(id => id !== source)
+  next.splice(next.indexOf(target) + (after ? 1 : 0), 0, source)
+  return next
 }
 
 /** Resolve a viewId (default reserved id or custom uuid) to a ResolvedView.

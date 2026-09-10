@@ -11,6 +11,7 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { finishActiveDataEdit } from './state/editSession'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
+import { ShortNameContext } from './components/ShortNameContext'
 import { UpdateControl } from './components/UpdateControl'
 import { HelpDialog } from './components/HelpDialog'
 import { DocumentTabs, GIT_DIFF_TAB_ID, type PluginPageTab } from './components/DocumentTabs'
@@ -23,6 +24,7 @@ import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
 import { useProjectDiff } from './hooks/useProjectDiff'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
+import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
 import {
   PluginContributionMount,
@@ -201,7 +203,29 @@ export default function App() {
     setSettings: setProjectSettings,
     saveRecordGroups,
     saveViews,
+    saveViewOrder,
   } = useProjectSettings(generation, setErrorMsg)
+  const [shortNameSaving, setShortNameSaving] = useState(false)
+  const [shortNameRevision, setShortNameRevision] = useState(0)
+  const saveShortNameField = useCallback(async (actualType: string, field: string | null) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    setShortNameSaving(true)
+    try {
+      const fields = api.isTauri
+        ? (await api.setShortNameField(identity.sessionId, actualType, field)).short_name_fields
+        : { ...projectSettings?.short_name_fields, [actualType]: field ?? undefined }
+      if (generation.currentSession() !== identity.sessionId) return
+      // 设置保存成功后刷新引用缓存，所有展示位置一起切换到新字段。
+      lookups.invalidateRefTargets()
+      setProjectSettings(current => ({ ...(current ?? emptyProjectSettings()), short_name_fields: fields }))
+      setShortNameRevision(revision => revision + 1)
+    } catch (error) {
+      if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存缩略名失败: ${errorMessage(error)}`)
+    } finally {
+      setShortNameSaving(false)
+    }
+  }, [generation, lookups, projectSettings?.short_name_fields, setProjectSettings])
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [buildPending, setBuildPending] = useState(false)
 
@@ -2540,9 +2564,10 @@ export default function App() {
   }
 
   return (
+    <ShortNameContext.Provider value={{ fields: projectSettings?.short_name_fields ?? {}, setField: shortNameSaving ? undefined : saveShortNameField }}>
     <ObjectDraftHost
       lookups={lookups}
-      generationKey={lookupGenerationKey}
+      generationKey={`${lookupGenerationKey}:${shortNameRevision}`}
       sessionId={project?.session_id}
       onOpenReference={openReference}
     >
@@ -2808,7 +2833,13 @@ export default function App() {
               </div>
             ) : activeFileData && (
               <div className="view-tabs-row">
-                <div className="document-view-tabs" role="tablist" aria-label="视图">
+                <ReorderableViewTabs
+                  key={`${activeFile}:${activeType}`}
+                  ids={viewTabs.map(tab => tab.id)}
+                  onReorder={order => {
+                    if (activeFile) saveViewOrder(activeFile, activeType, order)
+                  }}
+                >
                   {viewTabs.map(tab => (
                     <button
                       key={tab.id}
@@ -2837,7 +2868,7 @@ export default function App() {
                       {activePluginView.title}
                     </button>
                   )}
-                </div>
+                </ReorderableViewTabs>
                 {!!activeType && (pluginViews.length > 0 || !isSingletonType) && (
                   <div className="view-tab-add-wrap">
                     <button
@@ -3326,5 +3357,6 @@ export default function App() {
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
     </ObjectDraftHost>
+    </ShortNameContext.Provider>
   )
 }

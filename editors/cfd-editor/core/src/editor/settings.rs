@@ -27,6 +27,10 @@ const RECORD_GROUP_COLORS: &[&str] = &[
 struct SettingsFile {
     version: u8,
     #[serde(default)]
+    short_name_fields: BTreeMap<String, String>,
+    #[serde(default)]
+    view_order: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    #[serde(default)]
     views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
     #[serde(default)]
     default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
@@ -82,6 +86,8 @@ pub(super) fn read_project_settings(
         )));
     }
     Ok(EditorProjectSettings {
+        short_name_fields: settings.short_name_fields,
+        view_order: settings.view_order,
         views: settings.views,
         default_table_column_widths: settings.default_table_column_widths,
         record_groups: settings.record_groups,
@@ -97,6 +103,8 @@ pub(super) fn write_project_settings(
         &settings_path(project_root),
         &SettingsFile {
             version: SETTINGS_VERSION,
+            short_name_fields: settings.short_name_fields.clone(),
+            view_order: settings.view_order.clone(),
             views: settings.views.clone(),
             default_table_column_widths: settings.default_table_column_widths.clone(),
             record_groups: settings.record_groups.clone(),
@@ -313,6 +321,10 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("coflow-editor-settings-{nonce}"));
         let mut settings = EditorProjectSettings::default();
+        settings.view_order.insert(
+            "data/items.cfd".to_string(),
+            BTreeMap::from([("Item".to_string(), vec!["view-1".to_string(), "__default_record".to_string()])]),
+        );
         settings
             .default_table_column_widths
             .entry("data/items.cfd".to_string())
@@ -366,6 +378,7 @@ mod tests {
         let loaded = read_project_settings(&root).expect("read settings");
 
         assert_eq!(loaded.views, settings.views);
+        assert_eq!(loaded.view_order, settings.view_order);
         assert_eq!(
             loaded.default_table_column_widths,
             settings.default_table_column_widths

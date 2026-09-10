@@ -6,4 +6,4 @@ import type { RecordCoordinate } from "./RecordCoordinate";
  * resolved target). Carries the coordinate + the file the record lives
  * in so the front-end can navigate without a follow-up query.
  */
-export type RefTarget = { coordinate: RecordCoordinate, file_path: string, };
+export type RefTarget = { short_name: string | null, coordinate: RecordCoordinate, file_path: string, };

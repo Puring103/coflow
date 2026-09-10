@@ -45,6 +45,10 @@ export class EditorLookupController {
     // Enum metadata and default objects are schema-scoped, so a data mutation
     // does not invalidate them. Reference targets are data-scoped: retain the
     // last successful value for synchronous display, but refresh it on access.
+    this.invalidateRefTargets()
+  }
+
+  invalidateRefTargets(): void {
     this.refEpoch += 1
     for (const key of this.values.keys()) {
       if (key.startsWith('ref:')) this.staleRefs.add(key)

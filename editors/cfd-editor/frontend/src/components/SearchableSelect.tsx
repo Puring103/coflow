@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom'
 export interface SearchableOption {
   value: string
   label?: string
+  selectedLabel?: string
   description?: string
 }
 
@@ -93,7 +94,7 @@ export function SearchableSelect({
     [options, query],
   )
   const selectedOption = options.find(option => option.value === value)
-  const displayValue = selectedOption?.label ?? selectedOption?.value ?? value
+  const displayValue = selectedOption?.selectedLabel ?? selectedOption?.label ?? selectedOption?.value ?? value
   const activeOption = filteredOptions[activeIndex]
   const activeLabel = activeOption?.label ?? activeOption?.value
 
