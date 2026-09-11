@@ -923,3 +923,22 @@ fn function_document_completion_includes_local_variables_and_snippets() {
     assert_eq!(len["insertText"], "len(${1})");
     assert_eq!(len["insertTextFormat"], 2);
 }
+
+#[test]
+fn line_indexed_cfd_range_matches_linear_scan() {
+    // 覆盖多字节字符、CRLF 与空行；行索引路径必须与从文件头扫描的结果一致。
+    let source = "a {\n  name: \"婆 α\",\n}\n\nb { name: \"x\" }\nc {}\n";
+    let line_index = coflow_runtime::LineIndex::new(source);
+    for start in 0..=source.len() {
+        for end in start..=source.len() {
+            if !source.is_char_boundary(start) || !source.is_char_boundary(end) {
+                continue;
+            }
+            assert_eq!(
+                cfd::byte_range_with_index(&line_index, source, start, end),
+                cfd::byte_range(source, start, end),
+                "range mismatch at {start}..{end}"
+            );
+        }
+    }
+}

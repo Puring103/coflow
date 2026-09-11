@@ -69,8 +69,10 @@ pub struct EditorSession {
     pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
     schema_files: HashSet<String>,
     file_type_names: BTreeMap<String, Vec<String>>,
+    file_type_counts: BTreeMap<String, BTreeMap<String, usize>>,
     type_display_names: BTreeMap<(String, String), String>,
     ref_target_cache: HashMap<String, Vec<RefTarget>>,
+    shape_cache: crate::editor::convert::ShapeCache,
     revisions: RevisionCoordinator,
 }
 
@@ -205,11 +207,17 @@ impl SessionStore {
         field: Option<String>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry.state.write()
+        let mut session = entry
+            .state
+            .write()
             .map_err(|_| EditorError::session("session poisoned during settings write"))?;
         if let Some(name) = &field {
-            if !session.queries().schema_type_fields(&actual_type).iter()
-                .any(|(field_name, field_type)| field_name == name && field_type == "string") {
+            if !session
+                .queries()
+                .schema_type_fields(&actual_type)
+                .iter()
+                .any(|(field_name, field_type)| field_name == name && field_type == "string")
+            {
                 return Err(EditorError::other("缩略名必须是记录类型的字符串字段"));
             }
         }
@@ -235,7 +243,9 @@ impl SessionStore {
             return Err(EditorError::other("图节点坐标必须是有限数值"));
         }
         let entry = self.session(id)?;
-        let session = entry.state.write()
+        let session = entry
+            .state
+            .write()
             .map_err(|_| EditorError::session("session poisoned during settings write"))?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_positions.insert(view_key, positions);
@@ -252,7 +262,11 @@ impl SessionStore {
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
         let mut settings = read_project_settings(&project_root)?;
-        settings.view_order.entry(file_path).or_default().insert(actual_type, order);
+        settings
+            .view_order
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, order);
         write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }
@@ -599,7 +613,7 @@ fn snapshot_record_before_delete(
 
 fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRecords {
     let queries = session.queries();
-    let ctx = WireContext::new(queries, &session.diagnostics);
+    let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
     let mut records = Vec::new();
     let mut columns = Vec::<(String, ColumnStats)>::new();
     let mut column_index = BTreeMap::<String, usize>::new();
@@ -768,7 +782,7 @@ fn write_field_in_session(
             field_path,
         )
         .cloned();
-    let ctx = WireContext::new(queries, &session.diagnostics);
+    let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
     Ok(WriteFieldOutcome {
         revision: session.revisions.current(),
         row: record_view_to_row(&view, &ctx),
@@ -811,20 +825,24 @@ fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileType
         .queries()
         .source_files()
         .map(|file_path| {
-            let mut counts = BTreeMap::<String, usize>::new();
-            for view in session.queries().record_views_in_file(file_path) {
-                let type_name = view.coordinate.actual_type.to_string();
-                *counts.entry(type_name).or_default() += 1;
-            }
+            // 类型计数已在 build_session 的单次遍历中算好，这里直接读取。
+            let counts = session.file_type_counts.get(file_path);
             let options = session
                 .file_type_names
                 .get(file_path)
                 .cloned()
-                .unwrap_or_else(|| counts.keys().cloned().collect())
+                .unwrap_or_else(|| {
+                    counts
+                        .map(|by_type| by_type.keys().cloned().collect())
+                        .unwrap_or_default()
+                })
                 .into_iter()
                 .map(|name| FileTypeOption {
                     display_name: session.type_display_name(file_path, &name),
-                    record_count: counts.get(&name).copied().unwrap_or_default(),
+                    record_count: counts
+                        .and_then(|by_type| by_type.get(&name))
+                        .copied()
+                        .unwrap_or_default(),
                     is_singleton: session.queries().type_is_singleton(&name),
                     name,
                 })

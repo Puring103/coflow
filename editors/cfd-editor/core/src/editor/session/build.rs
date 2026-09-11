@@ -15,6 +15,7 @@ pub(super) struct SessionSnapshotParts {
 }
 
 type FileTypeNames = BTreeMap<String, Vec<String>>;
+type FileTypeCounts = BTreeMap<String, BTreeMap<String, usize>>;
 type TypeDisplayNames = BTreeMap<(String, String), String>;
 
 pub(super) fn session_capabilities_for_file(
@@ -53,7 +54,7 @@ pub(super) fn build_session(
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
     let file_tree = engine.queries().file_tree();
-    let (file_type_names, type_display_names) = type_navigation(engine.queries());
+    let (file_type_names, file_type_counts, type_display_names) = type_navigation(engine.queries());
     let diagnostics = diagnostics_from_store(engine.queries(), &project_root);
 
     Ok((
@@ -67,17 +68,23 @@ pub(super) fn build_session(
             language_diagnostics: HashMap::new(),
             schema_files,
             file_type_names,
+            file_type_counts,
             type_display_names,
             ref_target_cache: HashMap::new(),
+            shape_cache: crate::editor::convert::ShapeCache::default(),
             revisions: RevisionCoordinator::initial(),
         },
         SessionSnapshotParts { file_tree },
     ))
 }
 
-fn type_navigation(queries: ProjectQueries<'_>) -> (FileTypeNames, TypeDisplayNames) {
+/// 一次遍历同时产出每个文件的类型列表与类型记录计数，避免加载时对全部记录扫两遍。
+fn type_navigation(
+    queries: ProjectQueries<'_>,
+) -> (FileTypeNames, FileTypeCounts, TypeDisplayNames) {
     let display_names = BTreeMap::new();
     let mut file_type_names = BTreeMap::new();
+    let mut file_type_counts = BTreeMap::new();
     let concrete_types = queries
         .schema_type_names()
         .into_iter()
@@ -86,15 +93,18 @@ fn type_navigation(queries: ProjectQueries<'_>) -> (FileTypeNames, TypeDisplayNa
     for file_path in queries.source_files() {
         let mut type_names = concrete_types.clone();
         let mut type_seen = type_names.iter().cloned().collect::<HashSet<_>>();
+        let mut counts = BTreeMap::<String, usize>::new();
         for view in queries.record_views_in_file(file_path) {
             let type_name = view.coordinate.actual_type.to_string();
             if type_seen.insert(type_name.clone()) {
-                type_names.push(type_name);
+                type_names.push(type_name.clone());
             }
+            *counts.entry(type_name).or_default() += 1;
         }
         file_type_names.insert(file_path.to_string(), type_names);
+        file_type_counts.insert(file_path.to_string(), counts);
     }
-    (file_type_names, display_names)
+    (file_type_names, file_type_counts, display_names)
 }
 
 pub(super) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {

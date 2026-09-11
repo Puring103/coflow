@@ -26,7 +26,8 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     let mut edges: Vec<GraphEdge> = Vec::new();
 
     let starts = start_records(session, file_path);
-    let available_fields = collect_available_fields(session, &starts, max_depth, node_limit);
+    // available_fields 在主 BFS 中顺带收集，避免再跑一遍相同遍历。
+    let mut available_fields: BTreeSet<String> = BTreeSet::new();
     let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
     let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
     for coordinate in &starts {
@@ -38,7 +39,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     }
 
     let queries = session.queries();
-    let ctx = WireContext::new(queries, &session.diagnostics);
+    let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
 
     while let Some((coordinate, depth)) = queue.pop_front() {
         let Some(view) = queries.record_view(&coordinate.actual_type, &coordinate.key) else {
@@ -67,6 +68,9 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         }
 
         for edge in queries.record_references(&coordinate) {
+            if let Some(field) = top_level_field(&edge.path) {
+                available_fields.insert(field.to_string());
+            }
             if !depths.contains_key(&edge.target) && depths.len() >= node_limit {
                 continue;
             }
@@ -86,7 +90,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         revision: session.revisions.current(),
         nodes: nodes.into_values().collect(),
         edges,
-        available_fields,
+        available_fields: available_fields.into_iter().collect(),
     }
 }
 
@@ -99,40 +103,6 @@ fn start_records(session: &EditorSession, file_path: &str) -> Vec<RecordCoordina
             (!session.queries().record_references(&coordinate).is_empty()).then_some(coordinate)
         })
         .collect()
-}
-
-fn collect_available_fields(
-    session: &EditorSession,
-    starts: &[RecordCoordinate],
-    max_depth: usize,
-    node_limit: usize,
-) -> Vec<String> {
-    let mut fields = BTreeSet::new();
-    let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
-    let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
-    for coordinate in starts {
-        if depths.len() >= node_limit {
-            break;
-        }
-        queue.push_back((coordinate.clone(), 0));
-        depths.insert(coordinate.clone(), 0);
-    }
-    while let Some((coordinate, depth)) = queue.pop_front() {
-        if depth >= max_depth {
-            continue;
-        }
-        for edge in session.queries().record_references(&coordinate) {
-            if let Some(field) = top_level_field(&edge.path) {
-                fields.insert(field.to_string());
-            }
-            if depth < max_depth && !depths.contains_key(&edge.target) && depths.len() < node_limit
-            {
-                depths.insert(edge.target.clone(), depth + 1);
-                queue.push_back((edge.target, depth + 1));
-            }
-        }
-    }
-    fields.into_iter().collect()
 }
 
 fn top_level_field(path: &CfdPath) -> Option<&str> {

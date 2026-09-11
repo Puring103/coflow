@@ -1797,6 +1797,24 @@ pub fn byte_range(source: &str, start: usize, end: usize) -> Value {
     })
 }
 
+/// 与 [`byte_range`] 输出一致的 range，但复用预建行索引。
+///
+/// 逐条记录调用 [`byte_range`] 会从文件头重新扫描，在整项目索引时退化为二次
+/// 复杂度；行索引只构建一次。
+pub fn byte_range_with_index(
+    index: &coflow_runtime::LineIndex,
+    source: &str,
+    start: usize,
+    end: usize,
+) -> Value {
+    let s = index.position(source, start);
+    let e = index.position(source, end);
+    json!({
+        "start": { "line": s.line, "character": s.character },
+        "end":   { "line": e.line, "character": e.character },
+    })
+}
+
 fn position_from_byte(source: &str, byte_offset: usize) -> (usize, usize) {
     let target = byte_offset.min(source.len());
     let mut line = 0usize;
@@ -1817,13 +1835,16 @@ fn position_from_byte(source: &str, byte_offset: usize) -> (usize, usize) {
 
 struct TokenCollector<'a> {
     source: &'a str,
+    // 行索引只构建一次；逐 token 从文件头扫描会让语义着色退化成二次复杂度。
+    line_index: coflow_runtime::LineIndex,
     tokens: Vec<(usize, usize, u32, u32)>, // (byte_start, byte_end, token_type, modifiers)
 }
 
 impl<'a> TokenCollector<'a> {
-    const fn new(source: &'a str) -> Self {
+    fn new(source: &'a str) -> Self {
         Self {
             source,
+            line_index: coflow_runtime::LineIndex::new(source),
             tokens: Vec::new(),
         }
     }
@@ -1870,8 +1891,8 @@ impl<'a> TokenCollector<'a> {
                 continue;
             }
             prev_end = end;
-            let (line, character) = position_from_byte(self.source, start);
-            let (_, _end_char) = position_from_byte(self.source, end);
+            let position = self.line_index.position(self.source, start);
+            let (line, character) = (position.line, position.character);
             let length_utf16 = self.source[start..end.min(self.source.len())]
                 .chars()
                 .map(char::len_utf16)

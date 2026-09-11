@@ -1,10 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
-use crate::api::{Diagnostic, DiagnosticSet, Severity, WriterCapabilities};
+use crate::api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity, WriterCapabilities};
 use crate::catalog::CfdSourceCatalog;
+use crate::checks::impact::CheckImpact;
 use crate::data_model::CfdDataModel;
 use crate::data_model::{CfdPathSegment, CfdValue};
+use crate::indexes::SessionIndexBuilder;
+use crate::load::{
+    reload_project_data_from_cache, LoadProjectDataOptions, ReloadProjectDataOptions,
+};
 use crate::project::Project;
 use coflow_language::cft::CftSchema;
 
@@ -545,6 +551,56 @@ pub struct WriteProjectSession {
     revision: u64,
 }
 
+/// 编辑器对未保存草稿做项目级校验所需的只读快照。
+#[derive(Debug, Clone)]
+pub struct SourceValidationContext {
+    project: Project,
+    schema: Arc<CftSchema>,
+    dimension_plan: Arc<crate::dimensions::DimensionRuntimePlan>,
+    source_data: crate::load::SourceDataCache,
+}
+
+impl SourceValidationContext {
+    /// 在当前会话的源缓存上应用文本覆盖并返回项目诊断，不修改任何会话。
+    ///
+    /// 只有被覆盖的文件会被重新解析，其余文件复用缓存；这避免了宿主每次编辑
+    /// 都从磁盘重新加载整个项目。
+    #[must_use]
+    pub fn validate(&self, overrides: &[DataSourceTextOverride]) -> Vec<FlatDiagnostic> {
+        let override_paths = overrides
+            .iter()
+            .map(|source_override| source_override.normalized_path.clone())
+            .collect::<BTreeSet<_>>();
+        let reload_paths = self.source_data.display_paths_for_paths(&override_paths);
+        let mut indexes = SessionIndexBuilder::default();
+        let catalog = CfdSourceCatalog::default();
+        let check_impact = CheckImpact::default();
+        let result = reload_project_data_from_cache(
+            &self.project,
+            &self.schema,
+            &self.dimension_plan,
+            &catalog,
+            &mut indexes,
+            &self.source_data,
+            &reload_paths,
+            ReloadProjectDataOptions {
+                load: LoadProjectDataOptions {
+                    include_implicit_dimension_sources: !self.dimension_plan.is_empty(),
+                    run_checks: true,
+                },
+                refresh_implicit_dimension_sources: false,
+                previous_checks: None,
+                check_impact: &check_impact,
+                source_overrides: overrides,
+            },
+        );
+        match result {
+            Ok(output) => output.diagnostics.flat_diagnostics(),
+            Err(failure) => failure.diagnostics.flat_diagnostics(),
+        }
+    }
+}
+
 impl WriteProjectSession {
     const fn new(session: ProjectSession) -> Self {
         Self {
@@ -615,6 +671,20 @@ impl WriteProjectSession {
     #[must_use]
     pub fn writer_capabilities_for_file(&self, file: &str) -> WriterCapabilities {
         self.queries().writer_capabilities_for_file(file)
+    }
+
+    /// 克隆一份只读校验上下文；克隆只共享 `Arc` 与源缓存，开销很小。
+    ///
+    /// 宿主可先短暂持有会话读锁取得上下文，再释放锁执行 [`SourceValidationContext::validate`]，
+    /// 避免占用会话锁进行长耗时的项目校验。
+    #[must_use]
+    pub fn validation_context(&self) -> SourceValidationContext {
+        SourceValidationContext {
+            project: self.session.project.clone(),
+            schema: Arc::clone(&self.session.schema),
+            dimension_plan: Arc::clone(&self.session.dimension_plan),
+            source_data: self.session.source_data.clone(),
+        }
     }
 
     /// Build a schema-shaped default record value.

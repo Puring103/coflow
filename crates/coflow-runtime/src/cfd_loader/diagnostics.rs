@@ -1,5 +1,6 @@
 use crate::api::{
-    byte_range, map_diagnostics_with_origins, Diagnostic, DiagnosticSet, Label, SourceLocation,
+    byte_range, map_diagnostics_with_origins, Diagnostic, DiagnosticSet, Label, LineIndex,
+    SourceLocation,
 };
 use crate::data_model::{CfdDiagnostics, RecordOrigin, TextSpan};
 use std::error::Error;
@@ -97,8 +98,8 @@ pub struct CfdTextSpan {
     pub end: usize,
 }
 
-pub(super) fn text_span(source: &str, span: CfdTextSpan) -> TextSpan {
-    let range = byte_range(source, span.start, span.end);
+pub(super) fn text_span(line_index: &LineIndex, source: &str, span: CfdTextSpan) -> TextSpan {
+    let range = line_index.range(source, span.start, span.end);
     TextSpan {
         start_line: range.start.line,
         start_character: range.start.character,

@@ -15,7 +15,9 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
-use crate::api::{CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet, LoadedCfdSource};
+use crate::api::{
+    CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet, LineIndex, LoadedCfdSource,
+};
 
 mod diagnostics;
 mod lower;
@@ -80,11 +82,12 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
     let records = parse_cfd_input_records_with_spans(schema, source)?;
     let mut builder = CfdDataModel::builder(schema)
         .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
+    let line_index = LineIndex::new(source);
     let mut origins = Vec::with_capacity(records.len());
     for record in records {
         let origin = RecordOrigin::File {
             path: PathBuf::new(),
-            span: Some(text_span(source, record.span)),
+            span: Some(text_span(&line_index, source, record.span)),
         };
         origins.push(origin.clone());
         builder.add_loaded_record(record.record.with_origin(origin));
@@ -151,10 +154,12 @@ impl CfdLoader {
             },
         );
         let (lowered, lower_errors) = lower_records_partial(ctx.schema, &ast);
+        // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
+        let line_index = LineIndex::new(&contents);
         let records = lowered
             .into_iter()
             .map(|record| {
-                let span = text_span(&contents, record.span);
+                let span = text_span(&line_index, &contents, record.span);
                 record.record.with_origin(RecordOrigin::File {
                     path: file.clone(),
                     span: Some(span),

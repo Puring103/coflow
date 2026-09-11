@@ -589,6 +589,24 @@ impl SourceDataCache {
                 && batch.entry.source.location == entry.source.location
         })
     }
+
+    /// 返回与给定规范化路径匹配的批次 display path。
+    ///
+    /// 用于按“宿主覆盖了哪些文件”精确选择需要重载的批次，其余文件复用缓存。
+    pub(crate) fn display_paths_for_paths(
+        &self,
+        normalized_paths: &BTreeSet<PathBuf>,
+    ) -> BTreeSet<String> {
+        self.batches
+            .iter()
+            .filter(|batch| {
+                normalized_paths.contains(&crate::project::normalize_path(
+                    batch.entry.source.location.path(),
+                ))
+            })
+            .map(|batch| batch.entry.display_path.clone())
+            .collect()
+    }
 }
 
 fn refresh_dimension_source_plans(
@@ -731,23 +749,27 @@ fn build_partial_model(
     records: &[LoadedRecordDraft],
     source_data: &SourceDataCache,
 ) -> Result<PartialModelBuild, LoadDiagnostics> {
-    let mut candidates = records.iter().cloned().enumerate().collect::<Vec<_>>();
+    // 只保留候选下标，成功路径下每条草稿仅克隆一次送入构建器；失败重试时
+    // 按诊断剔除候选，不必先整体克隆一遍记录。
+    let mut candidates = (0..records.len()).collect::<Vec<usize>>();
     let mut diagnostics = DiagnosticSet::empty();
     let mut logical_locations = BTreeMap::new();
 
     loop {
         let candidate_origins = candidates
             .iter()
-            .map(|(_, record)| record.origin.clone())
+            .map(|&index| records[index].origin.clone())
             .collect::<Vec<_>>();
         let candidate_coordinates = candidates
             .iter()
-            .map(|(_, record)| RecordCoordinate::try_new(&record.actual_type, &record.key).ok())
+            .map(|&index| {
+                RecordCoordinate::try_new(&records[index].actual_type, &records[index].key).ok()
+            })
             .collect::<Vec<_>>();
         let mut builder = CfdDataModel::builder(schema)
             .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
-        for (_, record) in &candidates {
-            builder.add_loaded_record(record.clone());
+        for &index in &candidates {
+            builder.add_loaded_record(records[index].clone());
         }
         for batch in &source_data.batches {
             builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());

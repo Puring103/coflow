@@ -29,6 +29,7 @@ import {
   cellNullable,
   cellReadOnly,
   cellRefTargetType,
+  diagnosticDisplayMessage,
   diagnosticRecordTarget,
   diagnosticSeverity,
   errorMessage,
@@ -50,7 +51,6 @@ import {
   plainFieldValueText,
   recordMatchesFullTextSearch,
   recordMatchesSearch,
-  summaryOf as valueSummary,
 } from '../value/fieldValue'
 import { CreateRecordDialog } from './CreateRecordDialog'
 import { ConfirmDialog, TextInputDialog } from './ActionDialog'
@@ -112,13 +112,11 @@ import {
   elementBounds,
   estimateTextWidth,
   fieldCell,
-  findDiagMessage,
   fitsAxis,
   inferredCellType,
   pasteCellFor,
   selectedTopLevelField,
   selectionCellMatrix,
-  severityForCoordinate,
   tableCellKey,
 } from './TableView.support'
 
@@ -278,11 +276,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     [data.records, activeType]
   )
 
-  // Build a (recordKey, topLevelFieldName) → severity index for this file so
-  // table cells can light up red/yellow without recomputing on every render.
-  const cellDiagIndex = useMemo(() => {
-    const m = new Map<string, 'error' | 'warning' | 'info'>()
-    if (!diagnostics) return m
+  // 一次遍历诊断，同时建立单元格严重级别、整行严重级别和单元格消息索引，
+  // 避免渲染时对每个可见单元格反复扫描整个诊断列表。
+  const diagIndex = useMemo(() => {
+    const cells = new Map<string, 'error' | 'warning' | 'info'>()
+    const rows = new Map<string, 'error' | 'warning'>()
+    const messages = new Map<string, string[]>()
+    if (!diagnostics) return { cells, rows, messages }
+    const rank = (s: 'error' | 'warning' | 'info') => s === 'error' ? 3 : s === 'warning' ? 2 : 1
     for (const d of diagnostics) {
       const target = diagnosticRecordTarget(d)
       if (!target || target.file_path !== data.file_path) continue
@@ -290,20 +291,25 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const top = target.kind === 'table_field'
         ? target.field_path.split(/[.[]/, 1)[0]
         : null
-      const coordinates = [target.coordinate]
-      const rank = (s: 'error' | 'warning' | 'info') => s === 'error' ? 3 : s === 'warning' ? 2 : 1
+      const coordKey = coordinateId(target.coordinate)
+      const key = top ? `${coordKey}::${top}` : `${coordKey}::*`
       const severity = diagnosticSeverity(d.severity)
-      for (const coordinate of coordinates) {
-        const coordKey = coordinateId(coordinate)
-        const key = top ? `${coordKey}::${top}` : `${coordKey}::*`
-        const cur = m.get(key)
-        if (!cur || rank(severity) > rank(cur)) m.set(key, severity)
+      const cur = cells.get(key)
+      if (!cur || rank(severity) > rank(cur)) cells.set(key, severity)
+      if (severity === 'error' || severity === 'warning') {
+        const rowCur = rows.get(coordKey)
+        if (rowCur !== 'error') rows.set(coordKey, severity === 'error' ? 'error' : (rowCur ?? 'warning'))
+        if (top) {
+          const list = messages.get(key)
+          if (list) list.push(diagnosticDisplayMessage(d))
+          else messages.set(key, [diagnosticDisplayMessage(d)])
+        }
       }
     }
-    return m
-  }, [diagnostics, data.file_path, data.records])
+    return { cells, rows, messages }
+  }, [diagnostics, data.file_path])
   const recordSeverity = (coordinate: RecordCoordinate): 'error' | 'warning' | null =>
-    severityForCoordinate(diagnostics, data.file_path, coordinate)
+    diagIndex.rows.get(coordinateId(coordinate)) ?? null
 
   const allFieldNames = useMemo(
     () => {
@@ -328,20 +334,28 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const rowPresentationRef = useRef(rowPresentation)
   rowPresentationRef.current = rowPresentation
 
+  // 列的下拉/胶囊类型（ref/enum/bool）只依赖 schema；同一列集合内计算一次，
+  // 供 pill-class 与列宽估算共用，避免两处重复扫描记录。
+  const columnKinds = useMemo(() => {
+    const kinds: Record<string, 'ref' | 'enum' | 'bool' | null> = {}
+    for (const column of data.columns) {
+      if (!column.type_names.includes(activeType)) continue
+      kinds[column.name] = columnDropdownKind(data, column.name, activeType)
+    }
+    return kinds
+  }, [data.file_path, activeType, columnKeySignature(data)])
+
   // Which columns render as pill cells (ref/enum). Freezing this once per
   // column set means the `pill-cell` class on the td stays stable across
   // writes; without it, a briefly-mounted wrapper span (e.g. diagnostics)
   // would flip a :has() rule and shift the whole column's padding.
   const pillColumns = useMemo(() => {
     const set = new Set<string>()
-    for (const column of data.columns) {
-      if (!column.type_names.includes(activeType)) continue
-      if (columnDropdownKind(data, column.name, activeType) !== null) {
-        set.add(column.name)
-      }
+    for (const [name, kind] of Object.entries(columnKinds)) {
+      if (kind !== null) set.add(name)
     }
     return set
-  }, [data.file_path, activeType, columnKeySignature(data)])
+  }, [columnKinds])
 
   // Declared schema type per column, sampled from the first record that
   // carries an annotation for this field. Different records normally
@@ -421,22 +435,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
     for (const column of snapshot.columns) {
       if (!column.type_names.includes(activeType)) continue
-      const kind = columnDropdownKind(snapshot, column.name, activeType)
+      const kind = columnKinds[column.name] ?? null
       const isPill = kind !== null
       const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
       let maxContent = 0
       let hasComplexValue = false
-      let declaredForHeader: string | undefined
+      // 摘要已由后端随行下发（field_summaries），直接测量即可，无需重新格式化每个单元格。
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         const cell = fieldCell(record, column.name)
         if (!cell) continue
         if (isComplexValue(cell.value)) hasComplexValue = true
-        const w = measure(valueSummary(cell.value))
+        const summary = record.field_summaries[column.name] ?? ''
+        const w = measure(summary)
         if (w > maxContent) maxContent = w
-        if (!declaredForHeader) declaredForHeader = cell.annotation?.declared_type ?? undefined
       }
       const summaryWidth = maxContent + chrome
+      const declaredForHeader = columnDeclaredTypes[column.name]
       const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
       const headerLabel = columnDisplay[column.name]?.label ?? column.name
       const headerWidth = measure(headerLabel) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
@@ -446,7 +461,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     return hints
     // Deps intentionally stable: file, active type, column identity/count,
     // and record count. Content edits don't move the layout.
-  }, [data.file_path, activeType, columnKeySignature(data), data.records.length, columnDisplay])
+  }, [data.file_path, activeType, columnKeySignature(data), data.records.length, columnDisplay, columnKinds, columnDeclaredTypes])
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
@@ -459,8 +474,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // as jitter when the ref column's summary width just changed.
   const diagnosticsRef = useRef(diagnostics)
   diagnosticsRef.current = diagnostics
-  const cellDiagIndexRef = useRef(cellDiagIndex)
-  cellDiagIndexRef.current = cellDiagIndex
+  const diagIndexRef = useRef(diagIndex)
+  diagIndexRef.current = diagIndex
   const onWriteFieldRef = useRef(onWriteField)
   onWriteFieldRef.current = onWriteField
   const onRenameRecordRef = useRef(onRenameRecord)
@@ -485,8 +500,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           </span>
         ),
         cell: info => {
-          const filePath = dataForCellsRef.current.file_path
-          const rowSev = severityForCoordinate(diagnosticsRef.current, filePath, info.row.original.coordinate)
+          const rowSev = diagIndexRef.current.rows.get(coordinateId(info.row.original.coordinate)) ?? null
           const badgeClick = onDiagnosticBadgeClickRef.current
           const renameFn = onRenameRecordRef.current
           return (
@@ -547,7 +561,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           cell: ({ row }) => {
             const filePath = dataForCellsRef.current.file_path
             const f = fieldCell(row.original, name)
-            const sev = cellDiagIndexRef.current.get(`${coordinateId(row.original.coordinate)}::${name}`)
+            const sev = diagIndexRef.current.cells.get(`${coordinateId(row.original.coordinate)}::${name}`)
             const badgeClick = onDiagnosticBadgeClickRef.current
             const writeFn = onWriteFieldRef.current
             const cellBadge = (sev === 'error' || sev === 'warning') ? (
@@ -599,7 +613,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             const cellEditable = canEdit && !readOnlyFromSchema
             const title = readOnlyFromSchema
               ? '由源记录决定，不可编辑'
-              : sev ? findDiagMessage(diagnosticsRef.current, filePath, row.original.coordinate, name) : undefined
+              : sev ? diagIndexRef.current.messages.get(`${coordinateId(row.original.coordinate)}::${name}`)?.join('\n') : undefined
             return (
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
                 {f.missing ? (
