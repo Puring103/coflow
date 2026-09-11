@@ -39,6 +39,9 @@ export function projectGraphRows(
     const nodes = graph.nodes.map(node => {
       const row = rowByCoordinate.get(`${node.coordinate.actual_type}\u001f${node.coordinate.key}`)
       if (!row) return node
+      // 乐观编辑和确认回写沿用未变化节点，避免全图重建字段与端口。
+      if (node.fields === row.fields && node.field_diagnostics === row.field_diagnostics
+        && node.diagnostic_severity === row.diagnostic_severity) return node
       return {
         ...node,
         fields: row.fields,

@@ -80,6 +80,29 @@ function dimensionOutcome(
 }
 
 describe('EditorMutationController', () => {
+  it('undoes and redoes node movement through the shared history without a data write', async () => {
+    const fakeBackend = backend(vi.fn())
+    const applyGraphPositions = vi.fn(async () => committed(undefined))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+      applyGraphPositions,
+    }
+    const history = new MutationHistoryController()
+    const controller = new EditorMutationController(fakeBackend, port, history)
+    const oldPositions = { node: [0, 0] as [number, number] }
+    const newPositions = { node: [50, 80] as [number, number] }
+    history.record({ kind: 'graph-layout', revision: 1, viewKey: 'view', oldPositions, newPositions })
+    await controller.undo()
+    expect(applyGraphPositions).toHaveBeenLastCalledWith('view', oldPositions)
+    expect(history.getSnapshot().redo).toHaveLength(1)
+    await controller.redo()
+    expect(applyGraphPositions).toHaveBeenLastCalledWith('view', newPositions)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(fakeBackend.writeField).not.toHaveBeenCalled()
+    expect(port.publish).not.toHaveBeenCalled()
+  })
   it('records a batch field edit as one atomic undo and redo step', async () => {
     const second = { actual_type: 'Item', key: 'shield' }
     const batchOutcome = (

@@ -821,6 +821,7 @@ impl SessionStore {
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
 
+
     pub fn write_fields(
         &self,
         id: u32,

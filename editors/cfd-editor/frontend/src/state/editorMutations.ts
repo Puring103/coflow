@@ -27,6 +27,7 @@ import {
   type MutationPublicationRequest,
   type MutationResult,
   type EditorGenerationIdentity,
+  type GraphPositions,
 } from './editorState'
 
 export interface EditorMutationBackend {
@@ -88,6 +89,7 @@ export interface EditorMutationBackend {
 }
 
 export interface EditorMutationPort {
+  applyGraphPositions?: (viewKey: string, positions: GraphPositions) => Promise<MutationResult<void>>
   currentGeneration: () => EditorGenerationIdentity | null
   publish: (request: MutationPublicationRequest) => Promise<MutationResult<void>>
   fileRecordsForRow?: (
@@ -212,6 +214,7 @@ export class EditorMutationController {
       await this.writeFieldsInternal(filePath, writes, { recordHistory: true })
     })
   }
+
 
   writeFieldBatch(
     filePath: string,
@@ -454,6 +457,9 @@ export class EditorMutationController {
   async undo(): Promise<void> {
     await this.history.undo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
+        if (entry.kind === 'graph-layout') {
+          return this.port.applyGraphPositions?.(entry.viewKey, entry.oldPositions) ?? Promise.resolve(failed())
+        }
         if (entry.kind === 'dimension') {
           return this.writeDimensionValueInternal(
             entry.filePath,
@@ -529,6 +535,9 @@ export class EditorMutationController {
   async redo(): Promise<void> {
     await this.history.redo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
+        if (entry.kind === 'graph-layout') {
+          return this.port.applyGraphPositions?.(entry.viewKey, entry.newPositions) ?? Promise.resolve(failed())
+        }
         if (entry.kind === 'dimension') {
           return this.writeDimensionValueInternal(
             entry.filePath,
@@ -679,6 +688,7 @@ export class EditorMutationController {
       fieldWriteChangesTopology,
     )
   }
+
 
   private writeFieldsInternal(
     filePath: string,

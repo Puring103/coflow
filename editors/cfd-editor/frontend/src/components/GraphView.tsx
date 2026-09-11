@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type MouseEvent as ReactMouseEvent } from 'react'
 import {
-  ReactFlow, Background, Controls, MiniMap,
+  ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
+  BaseEdge, type EdgeProps,
+  ControlButton, getViewportForBounds,
   type Node, type Edge, type ReactFlowInstance,
-  type Connection, applyNodeChanges,
+  type Connection, applyNodeChanges, type NodeChange,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
@@ -15,7 +17,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import type { WriterCapabilities } from '../bindings/WriterCapabilities'
 import {
   graphEdgeView,
-  graphNodeView,
+  coordinateId,
   type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
@@ -27,18 +29,21 @@ import { DiagBadge } from './DiagBadge'
 import { typeColor } from '../utils/typeColor'
 import {
   defaultEnabledFields,
+  estimateNodeHeight,
   estimateHandleOffsets,
   graphEdgeId,
   graphTopologySignature,
   isCompactGraphZoom,
   layoutGraph,
-  retainGraphPositions,
   type GraphLayoutResult,
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from './GraphLayoutWorkerAdapter'
 import { graphCardFields, relationPorts, relationValue, type RelationPort } from './GraphView.relations'
 import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'
+import { Icon } from './Icon'
+import type { GraphPositions } from '../state/editorState'
+import { graphHighlights, reconcileFlowNodes, reconcileGraphViews, sameGraphValue, type GraphFocus } from './GraphView.state'
 import type { RefTarget } from '../bindings/RefTarget'
 import {
   buildRecordDiagnosticIndex,
@@ -75,10 +80,16 @@ interface NodeData extends Record<string, unknown> {
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
 // 关系端口按真实行位置测量，集合展开与异步内容变化后仍准确落在对应元素上。
 
-function CfdNode({ id, data }: NodeProps) {
+function CfdNode(props: NodeProps) {
+  const { graphNode } = props.data as NodeData
+  const shortName = useReferenceShortName(graphNode.actual_type, graphNode.key)
+  return <CfdNodeContent id={props.id} data={props.data} shortName={shortName} />
+}
+
+// 查询 generation 变化只重新解析名称；名称未变时不重新执行卡片字段树。
+const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pick<NodeProps, 'id' | 'data'> & { shortName?: string }) {
   const { graphNode: gn, expanded, outgoingPaths, ports, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
-  const shortName = useReferenceShortName(gn.actual_type, gn.key)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
   const graphRelations = useMemo(() => ports.length > 0 ? {
@@ -88,8 +99,8 @@ function CfdNode({ id, data }: NodeProps) {
 
   const outgoingKey = outgoingPaths.join('|')
   const estimatedHandles = useMemo(
-    () => estimateHandleOffsets(gn, outgoingPaths, expanded, compact),
-    [gn, outgoingKey, expanded, compact],
+    () => estimateHandleOffsets(gn, outgoingPaths, expanded),
+    [gn, outgoingKey, expanded],
   )
   // Per-path Y offsets; estimates exist on first render so React Flow can
   // resolve handles before optional DOM measurement lands.
@@ -141,7 +152,7 @@ function CfdNode({ id, data }: NodeProps) {
     const observer = new ResizeObserver(measure)
     observer.observe(root)
     return () => observer.disconnect()
-  }, [outgoingKey, expanded, rowExpandKey, gn.fields, ports, compact])
+  }, [outgoingKey, expanded, rowExpandKey, gn.fields, ports])
 
   // Tell React Flow to recompute edge paths AFTER our handle Y values land
   // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
@@ -181,15 +192,16 @@ function CfdNode({ id, data }: NodeProps) {
           style={{ top: pathOffsets.get(path) ?? headerCenterY, bottom: 'auto' }}
         />
       ))}
-      {compact ? (
-        <div ref={headerRef} className="gn-compact-body">
+      {compact && (
+        <div className="gn-compact-body">
           <div className="gn-compact-key">{shortName ?? gn.key}</div>
           {(diagSeverity === 'error' || diagSeverity === 'warning') && (
             <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
           )}
         </div>
-      ) : (
-        <>
+      )}
+      {/* 缩略只替换视觉内容，完整卡片仍占据原来的空间，端口坐标不随缩放变化。 */}
+      <div className="gn-detail" style={compact ? { visibility: 'hidden', pointerEvents: 'none' } : undefined} inert={compact}>
           <div ref={headerRef}>
             <CardHeader
               recordKey={gn.key}
@@ -215,14 +227,26 @@ function CfdNode({ id, data }: NodeProps) {
               graphRelations={graphRelations}
             />
           )}
-        </>
-      )}
+      </div>
     </div>
   )
-}
+})
 
-const CfdNodeMemo = memo(CfdNode)
+// 卡片不读取坐标；移动节点只更新外层变换，不重新执行字段树和端口测量。
+const CfdNodeMemo = memo(CfdNode, (previous, next) => previous.id === next.id && previous.data === next.data)
 const nodeTypes = { cfd: CfdNodeMemo }
+
+// Shader Graph 风格：端口先水平伸出一小段，再用一段平滑曲线连接，避免端口附近出现直角重叠。
+function ShaderEdge({ sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps) {
+  const stub = 28
+  const direction = targetX >= sourceX ? 1 : -1
+  const sx = sourceX + direction * stub
+  const tx = targetX - direction * stub
+  const distance = Math.max(24, Math.abs(tx - sx) * 0.45)
+  const path = `M ${sourceX} ${sourceY} L ${sx} ${sourceY} C ${sx + direction * distance} ${sourceY}, ${tx - direction * distance} ${targetY}, ${tx} ${targetY} L ${targetX} ${targetY}`
+  return <BaseEdge path={path} style={style} markerEnd={markerEnd} />
+}
+const edgeTypes = { shader: ShaderEdge }
 
 // ─── Edge handle id (outside component, stable reference) ────────────────────
 
@@ -237,6 +261,8 @@ function edgeHandleId(
 
 interface Props {
   viewKey: string
+  savedPositions?: GraphPositions
+  onSavePositions?: (positions: GraphPositions, recordHistory: boolean) => Promise<void>
   graphData: GraphData
   activeType?: string
   enabledFieldsOverride?: readonly string[]
@@ -269,46 +295,57 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ viewKey, savedPositions, onSavePositions, graphData, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const lookups = useEditorLookups()
+  const previousViews = useRef<GraphNodeView[]>([])
+  const [selectedElement, setSelectedElement] = useState<GraphFocus>(null)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (selectedCoordinate) setSelectedElement({ kind: 'node', id: coordinateId(selectedCoordinate.coordinate) })
+    else setSelectedElement(current => current?.kind === 'node' ? null : current)
+  }, [selectedCoordinate?.file, selectedCoordinate?.coordinate.actual_type, selectedCoordinate?.coordinate.key])
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
-  const graph = useMemo(
+  const sourceGraph = useMemo(
     () => ({
-      nodes: graphData.nodes.map(node => {
-        const view = graphNodeView(node)
-        if (!visibleCardFields) return view
-        // Custom graph view: show only the selected card fields.
-        return { ...view, fields: graphCardFields(view.fields, visibleCardFields) }
-      }),
+      nodes: (previousViews.current = reconcileGraphViews(previousViews.current, graphData.nodes)),
       edges: graphData.edges.map(graphEdgeView),
     }),
-    [graphData, visibleCardFields],
+    [graphData],
   )
-  const topologySignature = useMemo(() => graphTopologySignature(graph), [graph])
+  const topologySignature = useMemo(() => graphTopologySignature(sourceGraph), [sourceGraph])
 
-  const availableFields = useMemo(
-    () => graphData.available_fields.slice().sort(),
-    [graphData.available_fields],
+  const availableFieldsKey = JSON.stringify(graphData.available_fields.slice().sort())
+  const availableFields = useMemo<string[]>(
+    () => JSON.parse(availableFieldsKey),
+    [availableFieldsKey],
   )
 
   const defaultFields = useMemo(
-    () => defaultEnabledFields(graph, availableFields, activeType),
+    () => defaultEnabledFields(sourceGraph, availableFields, activeType),
     [topologySignature, availableFields, activeType],
   )
 
-  const enabledFields = useMemo(
-    () => enabledFieldsOverride === undefined
-      ? new Set(defaultFields)
-      : new Set(enabledFieldsOverride.filter(field => availableFields.includes(field))),
-    [enabledFieldsOverride, defaultFields, availableFields],
-  )
+  const enabledFieldsKey = JSON.stringify((enabledFieldsOverride ?? defaultFields)
+    .filter(field => availableFields.includes(field)).slice().sort())
+  const enabledFields = useMemo<Set<string>>(() => new Set(JSON.parse(enabledFieldsKey)), [enabledFieldsKey])
+
+  const graph = useMemo(() => ({
+    ...sourceGraph,
+    nodes: sourceGraph.nodes.map(node => ({
+      ...node,
+      fields: graphCardFields(node.fields, visibleCardFields, enabledFields),
+    })),
+  }), [sourceGraph, visibleCardFields, enabledFields])
 
 
-  // Expand states lifted here so layout recalcs on any change
+  // 展开状态只改变卡片内容，不重新执行关系布局。
   const [nodeExpandedMap, setNodeExpandedMap] = useState<Map<string, boolean>>(new Map())
   // Per-node set of expanded sub-row paths
   const [nodeRowExpandedMap, setNodeRowExpandedMap] = useState<Map<string, Set<string>>>(new Map())
-  const relations = useMemo(() => new Map(graph.nodes.map(node => [node.id, relationPorts(node.fields)])), [graph.nodes])
+  // 仅为选中的关系生成端口和强制展开路径，其他字段遵守可见性设置。
+  const relations = useMemo(() => new Map(sourceGraph.nodes.map(node => [node.id,
+    relationPorts(node.fields.filter(field => enabledFields.has(field.name))),
+  ])), [sourceGraph.nodes, enabledFields])
   const expandedRows = useMemo(() => new Map(graph.nodes.map(node => [node.id,
     new Set([...(nodeRowExpandedMap.get(node.id) ?? []), ...(relations.get(node.id)?.expanded ?? [])]),
   ])), [graph.nodes, nodeRowExpandedMap, relations])
@@ -342,8 +379,13 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     backEdges: [],
   })
   const [layoutBusy, setLayoutBusy] = useState(false)
+  const [positionSaving, setPositionSaving] = useState(false)
   const [layoutError, setLayoutError] = useState<string | null>(null)
   const retainedPositions = useRef(new Map<string, { x: number; y: number }>())
+  const layoutEpoch = useRef(0)
+  const savePositionsRef = useRef(onSavePositions)
+  savePositionsRef.current = onSavePositions
+  const dragStartPositions = useRef(new Map<string, { x: number; y: number }>())
   const fitted = useRef(false)
   const viewportRef = useRef({ x: 0, y: 0, zoom: 1 })
   useEffect(() => {
@@ -352,8 +394,44 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
   }, [viewKey])
 
   useEffect(() => {
+    if (savedPositions) retainedPositions.current = new Map(Object.entries(savedPositions)
+      .map(([id, [x, y]]) => [id, { x, y }]))
+  }, [savedPositions, viewKey])
+
+  async function persistPositions(next: Map<string, { x: number; y: number }>, recordHistory: boolean) {
+    const serialized: GraphPositions = Object.fromEntries([...next].map(([id, point]) => [id, [point.x, point.y]]))
+    await savePositionsRef.current?.(serialized, recordHistory)
+  }
+
+  async function relayout() {
+    const epoch = ++layoutEpoch.current
+    const previous = new Map(retainedPositions.current)
+    setLayoutBusy(true)
+    setLayoutError(null)
+    try {
+      const next = await layoutGraph(graph, enabledFields, activeType, expandedNodes, expandedRows, runGraphLayoutInWorker)
+      if (epoch !== layoutEpoch.current) return
+      // 明确重新布局时覆盖用户位置；撤销仍可恢复操作前的位置。
+      retainedPositions.current = new Map(next.positions)
+      setLayout(next)
+      requestAnimationFrame(fitGraph)
+      setPositionSaving(true)
+      await persistPositions(next.positions, true)
+    } catch (error) {
+      if (epoch !== layoutEpoch.current) return
+      retainedPositions.current = previous
+      setLayout(current => ({ ...current, positions: previous }))
+      setLayoutError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPositionSaving(false)
+      if (epoch === layoutEpoch.current) setLayoutBusy(false)
+    }
+  }
+
+  useEffect(() => {
     let cancelled = false
-    setLayoutBusy(graph.nodes.length > 0 && enabledFields.size > 0)
+    const epoch = ++layoutEpoch.current
+    setLayoutBusy(retainedPositions.current.size === 0 && graph.nodes.length > 0 && enabledFields.size > 0)
     setLayoutError(null)
     layoutGraph(
       graph,
@@ -362,29 +440,36 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
       expandedNodes,
       expandedRows,
       runGraphLayoutInWorker,
+      retainedPositions.current,
+      new Map(reactFlowRef.current?.getNodes().flatMap(node => node.measured?.height
+        ? [[node.id, node.measured.height] as const] : []) ?? []),
     )
       .then(next => {
-        if (!cancelled) {
-          next.positions = retainGraphPositions(next, retainedPositions.current, expandedNodes, expandedRows,
-            new Map(reactFlowRef.current?.getNodes().flatMap(node => node.measured?.height
-              ? [[node.id, node.measured.height] as const] : []) ?? []))
+        if (!cancelled && epoch === layoutEpoch.current) {
+          const changed = [...next.positions].some(([id, point]) => {
+            const previous = retainedPositions.current.get(id)
+            return !previous || previous.x !== point.x || previous.y !== point.y
+          })
           retainedPositions.current = new Map([...retainedPositions.current, ...next.positions])
           setLayout(next)
           setLayoutBusy(false)
+          if (changed) void persistPositions(retainedPositions.current, false).catch(error => {
+            if (!cancelled) setLayoutError(error instanceof Error ? error.message : String(error))
+          })
         }
       })
       .catch(err => {
         console.error('Failed to layout graph', err)
         if (!cancelled) {
-          setLayout({ positions: new Map(), visibleNodes: [], forwardEdges: [], backEdges: [] })
           setLayoutBusy(false)
           setLayoutError(err instanceof Error ? err.message : String(err))
         }
       })
     return () => {
       cancelled = true
+      if (epoch === layoutEpoch.current) layoutEpoch.current++
     }
-  }, [viewKey, topologySignature, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
+  }, [viewKey, topologySignature, enabledFields, activeType, savedPositions])
 
   const { positions, forwardEdges, backEdges } = layout
   const currentNodeById = useMemo(
@@ -416,9 +501,33 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     return m
   }, [forwardEdges, backEdges, relations])
 
-  const rfNodes: Node[] = useMemo(
+  const nodeActionPort = useRef({ onWriteField, onCollectionEdit, onOpenRecord, onDiagnosticBadgeClick })
+  nodeActionPort.current = { onWriteField, onCollectionEdit, onOpenRecord, onDiagnosticBadgeClick }
+  const nodeActions = useRef(new Map<string, {
+    expand: () => void
+    row: (path: string, expanded: boolean) => void
+    edit: (path: FieldPathSegment[], value: FieldValue) => void
+    collection: (path: FieldPathSegment[], edit: CollectionEdit) => void
+    open: () => void
+    diagnostic: () => void
+  }>())
+
+  const nodeDescriptions: Node[] = useMemo(
     () => (
       visibleNodes.map(n => {
+        const actionKey = JSON.stringify([n.file_path, n.id])
+        let actions = nodeActions.current.get(actionKey)
+        if (!actions) {
+          actions = {
+            expand: () => toggleNodeExpanded(n.id),
+            row: (path, expanded) => handleRowToggle(n.id, path, expanded),
+            edit: (path, value) => { void nodeActionPort.current.onWriteField?.(n.file_path, n.coordinate, path, value) },
+            collection: (path, edit) => { void nodeActionPort.current.onCollectionEdit?.(n.file_path, n.coordinate, path, edit) },
+            open: () => nodeActionPort.current.onOpenRecord(n.file_path, n.coordinate),
+            diagnostic: () => nodeActionPort.current.onDiagnosticBadgeClick?.(n.file_path, n.coordinate, null),
+          }
+          nodeActions.current.set(actionKey, actions)
+        }
         const capability = fileCapabilities?.[n.file_path]
         const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
         const rowExpanded = expandedRows.get(n.id)
@@ -432,47 +541,93 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
               : null,
           },
         ).severity
+        const outgoingPaths = (outgoingPathsByNode.get(n.id) ?? []).filter(path => {
+          const port = relations.get(n.id)?.ports.find(port => port.id === path)
+          return !port?.append || (editable && !!onCollectionEdit && !port.readOnly)
+        })
+        const estimated = estimateHandleOffsets(n, outgoingPaths, expandedNodes.get(n.id) ?? false)
         return {
           id: n.id,
+          selected: selectedNodeIds.has(n.id),
           type: 'cfd',
-          position: positions.get(n.id) ?? { x: 0, y: 0 },
+          initialWidth: 280,
+          initialHeight: estimateNodeHeight(n, expandedNodes.get(n.id) ?? false, rowExpanded ?? new Set()),
+          // 尚未进入屏幕的节点也提供端口几何，使跨越视口的连线可以绘制。
+          handles: [
+            { id: '__in', type: 'target', position: Position.Left, x: -6, y: estimated.headerCenterY - 6, width: 12, height: 12 },
+            ...outgoingPaths.map(path => ({ id: `path-${path}`, type: 'source' as const, position: Position.Right,
+              x: 274, y: (estimated.pathOffsets.get(path) ?? estimated.headerCenterY) - 6, width: 12, height: 12 })),
+          ],
+          position: retainedPositions.current.get(n.id) ?? positions.get(n.id) ?? { x: 0, y: 0 },
           data: {
             graphNode: n,
             expanded: expandedNodes.get(n.id) ?? false,
             ports: relations.get(n.id)?.ports ?? [],
-            outgoingPaths: (outgoingPathsByNode.get(n.id) ?? []).filter(path => {
-              const port = relations.get(n.id)?.ports.find(port => port.id === path)
-              return !port?.append || (editable && !!onCollectionEdit && !port.readOnly)
-            }),
-            compact: compactNodes && (relations.get(n.id)?.ports.length ?? 0) === 0,
+            outgoingPaths,
+            compact: compactNodes,
             rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
             expandedPaths: rowExpanded ?? new Set<string>(),
-            onToggleExpand: () => toggleNodeExpanded(n.id),
-            onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
-            onEdit: editable
-              ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
-              : undefined,
-            onCollectionEdit: editable && onCollectionEdit
-              ? (path: FieldPathSegment[], edit: CollectionEdit) => { onCollectionEdit(n.file_path, n.coordinate, path, edit) }
-              : undefined,
-            onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
-            selected: !!selectedCoordinate
-              && selectedCoordinate.file === n.file_path
-              && selectedCoordinate.coordinate.actual_type === n.coordinate.actual_type
-              && selectedCoordinate.coordinate.key === n.coordinate.key,
+            onToggleExpand: actions.expand,
+            onRowToggle: actions.row,
+            onEdit: editable ? actions.edit : undefined,
+            onCollectionEdit: editable && onCollectionEdit ? actions.collection : undefined,
+            onCtrlClick: actions.open,
+            selected: selectedNodeIds.has(n.id) || (selectedElement?.kind === 'node' && selectedElement.id === n.id),
             diagSeverity: nodeSev,
-            onDiagBadgeClick: onDiagnosticBadgeClick
-              ? () => onDiagnosticBadgeClick(n.file_path, n.coordinate, null)
-              : undefined,
+            onDiagBadgeClick: onDiagnosticBadgeClick ? actions.diagnostic : undefined,
           } satisfies NodeData,
         }
       })
     ),
-    [visibleNodes, positions, expandedNodes, expandedRows, relations, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onCollectionEdit, onOpenRecord, fileCapabilities, selectedCoordinate, diagnosticIndex, onDiagnosticBadgeClick]
+    [visibleNodes, positions, expandedNodes, expandedRows, relations, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onCollectionEdit, fileCapabilities, selectedElement, selectedNodeIds, diagnosticIndex, onDiagnosticBadgeClick]
   )
+  const [rfNodes, setRfNodes] = useState<Node[]>([])
+  useLayoutEffect(() => {
+    setRfNodes(current => reconcileFlowNodes(current, nodeDescriptions))
+  }, [nodeDescriptions])
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    // 不在拖动帧中重建 layout 和所有卡片；只修改变化节点并保留 measured。
+    setRfNodes(current => {
+      const measured = new Set(changes.filter(change => change.type === 'dimensions').map(change => change.id))
+      const occupied = current.filter(node => !changes.some(change => change.type === 'position' && change.id === node.id))
+      const adjusted = changes.map(change => {
+        if (change.type !== 'position' || !change.position) return change
+        let { x, y } = change.position
+        for (const other of occupied) {
+          const ox = other.position.x; const oy = other.position.y
+          const ow = other.measured?.width ?? 280; const oh = other.measured?.height ?? 160
+          if (Math.abs(x - ox - ow) <= 18) x = ox + ow + 24
+          else if (Math.abs(x + 280 - ox) <= 18) x = ox - 304
+          if (Math.abs(y - oy) <= 18) y = oy
+          else if (Math.abs(y + 160 - oy - oh) <= 18) y = oy + oh - 160
+        }
+        return { ...change, position: { x, y } }
+      })
+      for (const change of adjusted) {
+        if (change.type === 'position' && change.position) retainedPositions.current.set(change.id, change.position)
+      }
+      return applyNodeChanges(adjusted, current).map(node => measured.has(node.id) && node.handles
+        ? { ...node, handles: undefined } : node)
+    })
+  }, [])
   const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null)
+  const fitGraph = useCallback(() => {
+    const instance = reactFlowRef.current
+    const container = wrapRef.current
+    if (!instance || !container || !instance.getNodes().length) return
+    // 直接按已知节点边界计算视口，避免等待屏幕外节点测量造成闪烁。
+    void instance.setViewport(getViewportForBounds(
+      instance.getNodesBounds(instance.getNodes()),
+      container.clientWidth,
+      container.clientHeight,
+      0.1,
+      1.2,
+      0.25,
+    ))
+  }, [])
   const dragSource = useRef<{ nodeId: string; portId: string } | null>(null)
   const connectionDone = useRef(false)
+  const reconnectEdgeRef = useRef<Edge | null>(null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [picker, setPicker] = useState<{
     nodeId: string; portId: string; x: number; y: number; targets: RefTarget[]
@@ -531,6 +686,41 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     connectionDone.current = true
     void commitRelation(connection.source, port.id, target)
   }
+
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    // React Flow 默认使用 Delete/Backspace 删除选中的边；删除操作复用字段写入历史，因而可撤销。
+    for (const edge of deleted) {
+      const graphEdge = [...forwardEdges, ...backEdges].find(item => graphEdgeId(
+        forwardEdges.includes(item) ? 'fwd' : 'back', item,
+      ) === edge.id)
+      if (!graphEdge) continue
+      const port = relations.get(graphEdge.source)?.ports.find(item => item.id === graphEdge.field_path)
+      const node = currentNodeById.get(graphEdge.source)
+      if (!port || !node || !editablePort(graphEdge.source, port)) continue
+      const lastPath = port.path[port.path.length - 1]
+      if (lastPath?.kind === 'index') {
+        // 列表项关系的连线对应数组元素，删除边就是删除该元素。
+        void onCollectionEdit?.(node.file_path, node.coordinate, port.path.slice(0, -1), { kind: 'array_remove', index: lastPath.value })
+      } else if (port.append) {
+        continue
+      } else {
+        if (!port.nullable) {
+          // 必填引用不能存在空值；Delete 进入目标选择，确认新目标后原关系才替换。
+          void lookups.loadRefTargets(port.targetType).then(result => {
+            if (!result.ok) { setConnectionError(result.error ?? '加载引用目标失败'); return }
+            const element = wrapRef.current?.querySelector<HTMLElement>(`.graph-node[data-nodeid="${CSS.escape(node.id)}"]`)
+            const rect = element?.getBoundingClientRect()
+            setPicker({ nodeId: graphEdge.source, portId: port.id,
+              x: Math.max(8, Math.min(rect?.right ?? 300, window.innerWidth - 288)),
+              y: Math.max(8, Math.min(rect?.top ?? 80, window.innerHeight - 40)), targets: result.value })
+          })
+        } else {
+          void onWriteField?.(node.file_path, node.coordinate, port.path, { kind: 'option_none' })
+        }
+      }
+    }
+  }, [forwardEdges, backEdges, relations, currentNodeById, onWriteField, onCollectionEdit, fileCapabilities, lookups])
+
   async function endConnection(event: MouseEvent | TouchEvent) {
     const source = dragSource.current
     dragSource.current = null
@@ -552,6 +742,13 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
       if (target) await commitRelation(source.nodeId, source.portId, target)
       else setConnectionError('目标节点类型不兼容')
     } else {
+      const reconnecting = reconnectEdgeRef.current
+      reconnectEdgeRef.current = null
+      if (reconnecting) {
+        // 重连拖到空白处即删除原关系，不在拖动中提前改变数据。
+        onEdgesDelete([reconnecting])
+        return
+      }
       setPicker({ ...source, x: Math.max(8, Math.min(point.clientX, window.innerWidth - 288)),
         y: Math.max(8, Math.min(point.clientY, window.innerHeight - 40)), targets: result.value })
     }
@@ -562,7 +759,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     setPicker(null)
     setConnectionError(null)
     return () => { dragVersion.current++; dragSource.current = null }
-  }, [viewKey, graphData.revision])
+  }, [viewKey, topologySignature])
 
   useEffect(() => {
     if (rfNodes.length === 0 || fitted.current) return
@@ -571,7 +768,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
       fitFrame = requestAnimationFrame(() => {
         const instance = reactFlowRef.current
         if (instance && !fitted.current) {
-          void instance.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+          fitGraph()
           fitted.current = true
         }
       })
@@ -582,6 +779,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     }
   }, [positions, rfNodes.length])
 
+  const previousEdges = useRef<Edge[]>([])
   const rfEdges: Edge[] = useMemo(() => {
     const fwdEdges: Edge[] = forwardEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
@@ -589,20 +787,23 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
         return {
           id: graphEdgeId('fwd', e),
-          reconnectable: editablePort(e.source, sourcePort(e.source, sourceHandle)) ? 'target' : false,
+          selected: selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('fwd', e),
+          reconnectable: true,
           source: e.source,
           target: e.target,
           sourceHandle,
           targetHandle,
           label: compactNodes ? undefined : e.field_path,
-          type: 'bezier',
+          type: 'shader',
           animated: false,
-          className: `rf-edge rf-edge-fwd rf-src-${e.source} rf-tgt-${e.target}`,
-          style: { stroke: 'var(--graph-edge)', strokeWidth: 1.2 },
+          className: 'rf-edge rf-edge-fwd',
+          interactionWidth: 24,
+          style: { stroke: 'var(--graph-edge)', strokeWidth: 2 },
           labelStyle: { fill: 'var(--graph-edge-label)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
           labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 3,
+          pathOptions: { curvature: 0.28 },
         }
       })
 
@@ -610,25 +811,35 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
       .filter(e => positions.has(e.source) && positions.has(e.target))
       .map(e => ({
         id: graphEdgeId('back', e),
-        reconnectable: editablePort(e.source, sourcePort(e.source, `path-${e.field_path}`)) ? 'target' : false,
+        selected: selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('back', e),
+        reconnectable: true,
         source: e.source,
         target: e.target,
         sourceHandle: `path-${e.field_path}`,
         targetHandle: '__in',
         label: compactNodes ? undefined : e.field_path,
-        type: 'bezier',
+        type: 'shader',
         animated: false,
-        className: `rf-edge rf-edge-bk rf-src-${e.source} rf-tgt-${e.target}`,
-        style: { stroke: 'var(--graph-back-edge)', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
+        className: 'rf-edge rf-edge-bk',
+        interactionWidth: 24,
+        style: { stroke: 'var(--graph-back-edge)', strokeWidth: 2, strokeDasharray: '6 3' },
         zIndex: 1,
         labelStyle: { fill: 'var(--graph-back-edge)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
         labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 3,
+        pathOptions: { curvature: 0.28 },
       }))
 
-    return [...fwdEdges, ...bkEdges]
-  }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit])
+    const byId = new Map(previousEdges.current.map(edge => [edge.id, edge]))
+    const next = [...fwdEdges, ...bkEdges].map(edge => {
+      const old = byId.get(edge.id)
+      return old && sameGraphValue(old, edge) ? old : edge
+    })
+    if (next.length === previousEdges.current.length && next.every((edge, index) => edge === previousEdges.current[index])) return previousEdges.current
+    previousEdges.current = next
+    return next
+  }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit, selectedElement])
 
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
@@ -647,63 +858,129 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
     onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
   }, [firstRecordFocusRequest])
 
-  // nodeId → set of nodeIds it is directly connected to
-  const adjacencyRef = useRef<Map<string, Set<string>>>(new Map())
+  const hoveredElement = useRef<GraphFocus>(null)
+  const highlightState = useRef({ edges: rfEdges, selected: selectedElement })
+  highlightState.current = { edges: rfEdges, selected: selectedElement }
+  const applyHighlights = useCallback(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    const { edges, selected } = highlightState.current
+    const focus = graphHighlights(edges, selected, hoveredElement.current)
+    const active = !!selected || !!hoveredElement.current
+    wrap.classList.toggle('is-hovering', active)
+    wrap.querySelectorAll<HTMLElement>('.graph-node').forEach(element => {
+      const highlighted = focus.nodes.has(element.dataset.nodeid ?? '')
+      element.classList.toggle('hover-highlight', active && highlighted)
+      element.classList.toggle('hover-dim', active && !highlighted)
+    })
+    wrap.querySelectorAll<SVGGElement>('.react-flow__edge').forEach(element => {
+      const highlighted = focus.edges.has(element.dataset.id ?? '')
+      element.classList.toggle('hover-highlight', active && highlighted)
+      element.classList.toggle('hover-dim', active && !highlighted)
+    })
+  }, [])
+  useLayoutEffect(applyHighlights, [rfEdges, selectedElement, rfNodes, applyHighlights])
   useEffect(() => {
-    const adj = new Map<string, Set<string>>()
-    for (const e of [...forwardEdges, ...backEdges]) {
-      if (!adj.has(e.source)) adj.set(e.source, new Set())
-      if (!adj.has(e.target)) adj.set(e.target, new Set())
-      adj.get(e.source)!.add(e.target)
-      adj.get(e.target)!.add(e.source)
-    }
-    adjacencyRef.current = adj
-  }, [forwardEdges, backEdges])
-
+    const wrap = wrapRef.current
+    if (!wrap) return
+    // 可视区域裁剪重新挂载元素后补齐高亮，不用修改节点数据触发整图渲染。
+    let frame = 0
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(applyHighlights)
+    })
+    observer.observe(wrap, { childList: true, subtree: true })
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [applyHighlights])
   const onNodeMouseEnter = useCallback((_: unknown, node: Node) => {
-    const wrap = wrapRef.current
-    if (!wrap) return
-    const hovId = node.id
-    const neighbors = adjacencyRef.current.get(hovId) ?? new Set<string>()
-
-    wrap.classList.add('is-hovering')
-
-    // Highlight hovered node + neighbors
-    wrap.querySelectorAll<HTMLElement>('.graph-node').forEach(el => {
-      const nid = el.dataset.nodeid
-      if (nid === hovId || neighbors.has(nid ?? '')) {
-        el.classList.add('hover-highlight')
-      } else {
-        el.classList.add('hover-dim')
-      }
-    })
-
-    // Highlight connected edges, dim others
-    wrap.querySelectorAll<SVGGElement>('.react-flow__edge').forEach(el => {
-      const cls = el.classList
-      const isSrc = cls.contains(`rf-src-${hovId}`)
-      const isTgt = cls.contains(`rf-tgt-${hovId}`)
-      if (isSrc || isTgt) {
-        el.classList.add('hover-highlight')
-      } else {
-        el.classList.add('hover-dim')
-      }
-    })
-  }, [])
-
+    hoveredElement.current = { kind: 'node', id: node.id }
+    applyHighlights()
+  }, [applyHighlights])
   const onNodeMouseLeave = useCallback(() => {
-    const wrap = wrapRef.current
-    if (!wrap) return
-    wrap.classList.remove('is-hovering')
-    wrap.querySelectorAll('.hover-highlight, .hover-dim').forEach(el => {
-      el.classList.remove('hover-highlight', 'hover-dim')
-    })
-  }, [])
+    hoveredElement.current = null
+    applyHighlights()
+  }, [applyHighlights])
 
   const handleViewportChange = useCallback((viewport: { x: number; y: number; zoom: number }) => {
     viewportRef.current = viewport
     const next = isCompactGraphZoom(viewport.zoom)
     setZoomCompactNodes(prev => prev === next ? prev : next)
+  }, [])
+  const boxSelectRef = useRef<{ x: number; y: number } | null>(null)
+  const [boxSelect, setBoxSelect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const onPaneMouseDown = useCallback((event: ReactMouseEvent) => {
+    if (event.button !== 2) return
+    event.preventDefault()
+    boxSelectRef.current = { x: event.clientX, y: event.clientY }
+    const move = (moveEvent: MouseEvent) => {
+      const start = boxSelectRef.current
+      if (!start) return
+      const left = Math.min(start.x, moveEvent.clientX); const right = Math.max(start.x, moveEvent.clientX)
+      const top = Math.min(start.y, moveEvent.clientY); const bottom = Math.max(start.y, moveEvent.clientY)
+      setBoxSelect({ x: left, y: top, width: right - left, height: bottom - top })
+      const selected = new Set<string>()
+      wrapRef.current?.querySelectorAll<HTMLElement>('.react-flow__node').forEach(element => {
+        const rect = element.getBoundingClientRect()
+        const overlap = Math.max(0, Math.min(rect.right, right) - Math.max(rect.left, left))
+          * Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top))
+        if (overlap >= rect.width * rect.height * 0.2) {
+          const id = element.dataset.id
+          if (id) selected.add(id)
+        }
+      })
+      setSelectedNodeIds(selected)
+    }
+    const up = () => { boxSelectRef.current = null; setBoxSelect(null); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }, [])
+  useEffect(() => {
+    const root = wrapRef.current
+    if (!root) return
+    const down = (event: PointerEvent) => {
+      if (event.button !== 2) return
+      event.preventDefault()
+      event.stopPropagation()
+      boxSelectRef.current = { x: event.clientX, y: event.clientY }
+      const move = (moveEvent: PointerEvent) => {
+        const start = boxSelectRef.current
+        if (!start) return
+        const left = Math.min(start.x, moveEvent.clientX); const right = Math.max(start.x, moveEvent.clientX)
+        const top = Math.min(start.y, moveEvent.clientY); const bottom = Math.max(start.y, moveEvent.clientY)
+        setBoxSelect({ x: left, y: top, width: right - left, height: bottom - top })
+        const selected = new Set<string>()
+        root.querySelectorAll<HTMLElement>('.react-flow__node').forEach(element => {
+          const rect = element.getBoundingClientRect()
+          const overlap = Math.max(0, Math.min(rect.right, right) - Math.max(rect.left, left))
+            * Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top))
+          if (overlap >= rect.width * rect.height * 0.2 && element.dataset.id) selected.add(element.dataset.id)
+        })
+        setSelectedNodeIds(selected)
+      }
+      const up = () => {
+        boxSelectRef.current = null
+        setBoxSelect(null)
+        window.removeEventListener('pointermove', move, true)
+        window.removeEventListener('pointerup', up, true)
+        window.removeEventListener('mousemove', move as unknown as EventListener, true)
+        window.removeEventListener('mouseup', up, true)
+      }
+      window.addEventListener('pointermove', move, true)
+      window.addEventListener('pointerup', up, true)
+      window.addEventListener('mousemove', move as unknown as EventListener, true)
+      window.addEventListener('mouseup', up, true)
+    }
+    const captureDown = (event: PointerEvent) => {
+      if (root.contains(event.target as globalThis.Node)) down(event)
+    }
+    window.addEventListener('pointerdown', captureDown, true)
+    const mouseDown = (event: MouseEvent) => {
+      if (event.button === 2 && (event.target as Element)?.closest?.('.graph-view-wrap') === root) down(event as unknown as PointerEvent)
+    }
+    window.addEventListener('mousedown', mouseDown, true)
+    return () => {
+      window.removeEventListener('pointerdown', captureDown, true)
+      window.removeEventListener('mousedown', mouseDown, true)
+    }
   }, [])
 
   return (
@@ -711,6 +988,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
       className="graph-view-wrap"
       ref={wrapRef}
       tabIndex={0}
+      onMouseDown={onPaneMouseDown}
       onKeyDown={event => {
         if (event.target !== event.currentTarget) return
         if (event.key === 'ArrowLeft') {
@@ -730,6 +1008,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
           }
         }
       }}
+      onContextMenu={event => event.preventDefault()}
     >
       <div className="graph-view">
         {rfNodes.length === 0 ? (
@@ -749,41 +1028,75 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
             defaultViewport={viewportRef.current}
             edges={rfEdges}
             nodeTypes={nodeTypes}
-            onNodesChange={changes => {
-              const moved = applyNodeChanges(changes, rfNodes)
-              for (const change of changes) {
-                if (change.type !== 'position' || !change.position) continue
-                retainedPositions.current.set(change.id, change.position)
-              }
-              if (changes.some(change => change.type === 'position')) {
-                setLayout(current => ({ ...current, positions: new Map(moved.map(node => [node.id, node.position])) }))
-              }
+            edgeTypes={edgeTypes}
+            nodesDraggable={!layoutBusy && !positionSaving}
+            onlyRenderVisibleElements
+            onNodeDragStart={(_event, node) => {
+              dragStartPositions.current = new Map(retainedPositions.current)
+              setSelectedElement({ kind: 'node', id: node.id })
             }}
+            onNodeDragStop={() => {
+              const previous = dragStartPositions.current
+              const next = new Map(retainedPositions.current)
+              if (![...next].some(([id, point]) => {
+                const before = previous.get(id)
+                return !before || before.x !== point.x || before.y !== point.y
+              })) return
+              setPositionSaving(true)
+              void persistPositions(next, true).catch(error => {
+                retainedPositions.current = previous
+                setLayout(current => ({ ...current, positions: new Map(previous) }))
+                setLayoutError(error instanceof Error ? error.message : String(error))
+              }).finally(() => setPositionSaving(false))
+            }}
+            onNodesChange={onNodesChange}
             isValidConnection={validConnection}
             onConnectStart={(_event, params) => beginConnection(params.nodeId, params.handleId)}
             onConnect={connect}
+            onEdgesDelete={onEdgesDelete}
             onConnectEnd={event => { void endConnection(event) }}
             edgesReconnectable
-            onReconnectStart={(_event, edge) => beginConnection(edge.source, edge.sourceHandle ?? null)}
+            edgesFocusable
+            elementsSelectable
+            deleteKeyCode={["Backspace", "Delete"]}
+            onReconnectStart={(_event, edge) => { reconnectEdgeRef.current = edge; beginConnection(edge.source, edge.sourceHandle ?? null) }}
             onReconnect={(_edge, connection) => connect(connection)}
             onReconnectEnd={event => { void endConnection(event) }}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
+            onEdgeMouseEnter={(_event, edge) => { hoveredElement.current = { kind: 'edge', id: edge.id }; applyHighlights() }}
+            onEdgeMouseLeave={onNodeMouseLeave}
+            onEdgeClick={(event, edge) => { event.stopPropagation(); setSelectedElement({ kind: 'edge', id: edge.id }) }}
             onNodeClick={(e, node) => {
               // Ctrl/Cmd+click jumps to the record view (handled in CfdNode).
               // Plain click opens the side inspector.
               if (e.ctrlKey || e.metaKey) return
+              // 字段控件自行处理编辑，冒泡选择会触发侧栏提交并打断输入。
+              if ((e.target as Element).closest('input, textarea, select, button, a, [contenteditable="true"], .nodrag')) return
+              if (selectedElement?.kind === 'node' && selectedElement.id === node.id) return
+              setSelectedNodeIds(new Set())
+              setBoxSelect(null)
+              setSelectedElement({ kind: 'node', id: node.id })
               if (!onSelectRecord) return
               const gn = (node.data as NodeData).graphNode
               onSelectRecord(gn.file_path, gn.coordinate)
             }}
-            onPaneClick={() => { setPicker(null); onClearSelection?.() }}
+            onPaneClick={() => { setPicker(null); setSelectedElement(null); setSelectedNodeIds(new Set()); setBoxSelect(null); onClearSelection?.() }}
+            onPaneContextMenu={event => event.preventDefault()}
             onViewportChange={handleViewportChange}
+            selectionMode={SelectionMode.Full}
+            selectNodesOnDrag
+            connectionLineType={ConnectionLineType.Bezier}
+            reconnectRadius={28}
+            // 左键恢复平移；右键拖动框选节点。
+            panOnDrag={[0]}
+            selectionOnDrag={false}
+            selectionKeyCode={null}
             onInit={instance => {
               reactFlowRef.current = instance
               requestAnimationFrame(() => {
                 if (!fitted.current) {
-                  void instance.fitView({ padding: 0.25, minZoom: 0.2, maxZoom: 1.2 })
+                  fitGraph()
                   fitted.current = true
                 }
               })
@@ -793,7 +1106,15 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
             maxZoom={2}
           >
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
-            <Controls showInteractive={false} />
+            <Controls showInteractive={false}>
+              <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
+                <Icon name="frame" size={16} />
+              </ControlButton>
+              <ControlButton onClick={() => { void relayout() }} disabled={layoutBusy || positionSaving}
+                title="重新布局（重置节点位置）" aria-label="重新布局">
+                <Icon name="refresh" size={16} />
+              </ControlButton>
+            </Controls>
             <MiniMap
               style={{ width: 88, height: 60 }}
               nodeColor={n => {
@@ -811,6 +1132,9 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
           </>
         )}
       </div>
+      {boxSelect && <div className="graph-selection-box" style={{
+        left: boxSelect.x, top: boxSelect.y, width: boxSelect.width, height: boxSelect.height,
+      }} />}
       {picker && (
         <div className="nodrag nopan" style={{ position: 'fixed', left: picker.x, top: picker.y, width: 280, maxWidth: 'calc(100vw - 16px)', zIndex: 1000 }}>
           <SearchableSelect
@@ -829,7 +1153,7 @@ export function GraphView({ viewKey, graphData, activeType, enabledFieldsOverrid
           />
         </div>
       )}
-      {connectionError && <div role="alert" className="graph-hint">{connectionError}</div>}
+      {(connectionError || layoutError) && <div role="alert" className="graph-hint">{connectionError ?? layoutError}</div>}
     </div>
   )
 }

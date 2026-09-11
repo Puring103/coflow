@@ -324,6 +324,9 @@ pub struct DimensionFileRow {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct EditorProjectSettings {
+    /// 按图视图身份保存节点坐标，独立于数据版本，重新打开项目时恢复。
+    #[serde(default)]
+    pub graph_positions: BTreeMap<String, BTreeMap<String, [f64; 2]>>,
     /// 每个记录类型唯一的缩略名字符串字段，跨文件生效。
     #[serde(default)]
     pub short_name_fields: BTreeMap<String, String>,

@@ -26,7 +26,11 @@ export function useTableCellRangeDrag(options: Options) {
     const field = cell.dataset.field
     if (!coordinateId || !field) return
     const native = target.closest('input, select, textarea, button, a, [contenteditable="true"]')
-    optionsRef.current.onSelectCell(coordinateId, field, event.shiftKey ? 'range' : 'replace')
+    // 同一单元格内继续操作编辑器时保留焦点，仅切换选择才结束编辑。
+    const activeCell = document.activeElement?.closest('[data-table-value-cell="true"]')
+    if (activeCell !== cell || event.shiftKey) {
+      optionsRef.current.onSelectCell(coordinateId, field, event.shiftKey ? 'range' : 'replace')
+    }
     if (native) return
 
     const startX = event.clientX

@@ -350,6 +350,24 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
 }
 
 #[test]
+fn graph_positions_persist_per_view_without_changing_data_revision() {
+    let (root, _) = array_project();
+    let store = SessionStore::new().expect("session store");
+    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
+    let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
+    store.set_graph_positions(project.session_id, "first-view".into(), positions.clone()).expect("save positions");
+    store.set_graph_positions(project.session_id, "second-view".into(), BTreeMap::new()).expect("save second view");
+    assert!(store.set_graph_positions(project.session_id, "first-view".into(),
+        BTreeMap::from([("Item::one".to_string(), [f64::NAN, 0.0])])).is_err());
+    assert_eq!(store.get_file_records(project.session_id, "data/05-arrays.cfd").expect("read records").revision, project.revision);
+    let reopened = store.load_project(&root.join("coflow.yaml")).expect("reopen project");
+    let settings = store.get_project_settings(reopened.session_id).expect("read positions");
+    assert_eq!(settings.graph_positions["first-view"], positions);
+    assert!(settings.graph_positions["second-view"].is_empty());
+    fs::remove_dir_all(root).expect("remove project");
+}
+
+#[test]
 fn editor_field_write_preserves_a_self_referencing_record() {
     let root = cyclic_reference_project();
     let store = SessionStore::new().expect("create editor session store");

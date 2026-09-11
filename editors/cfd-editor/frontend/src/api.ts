@@ -212,6 +212,14 @@ export async function setDefaultTableColumnWidths(
   })
 }
 
+export async function setGraphPositions(
+  sessionId: number,
+  viewKey: string,
+  positions: Record<string, [number, number]>,
+): Promise<void> {
+  return invokeCommand<void>('set_graph_positions', { sessionId, viewKey, positions })
+}
+
 export async function setViewColumnWidths(
   sessionId: number,
   filePath: string,

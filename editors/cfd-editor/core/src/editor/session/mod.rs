@@ -224,6 +224,24 @@ impl SessionStore {
         Ok(settings)
     }
 
+    /// 图节点坐标只属于编辑器设置，不推进配置数据版本。
+    pub fn set_graph_positions(
+        &self,
+        id: u32,
+        view_key: String,
+        positions: BTreeMap<String, [f64; 2]>,
+    ) -> Result<(), EditorError> {
+        if positions.values().flatten().any(|value| !value.is_finite()) {
+            return Err(EditorError::other("图节点坐标必须是有限数值"));
+        }
+        let entry = self.session(id)?;
+        let session = entry.state.write()
+            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        let mut settings = read_project_settings(&session.project_root)?;
+        settings.graph_positions.insert(view_key, positions);
+        write_project_settings(&session.project_root, &settings)
+    }
+
     /// 只更新指定文件和类型的标签顺序，保留其他编辑器设置。
     pub fn set_view_order(
         &self,

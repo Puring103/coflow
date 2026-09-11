@@ -122,6 +122,8 @@ export function ObjectDraftDialog({
         aria-modal="true"
         aria-label={title}
         onMouseDown={e => e.stopPropagation()}
+        // 弹窗内的点击不能触发表格清空选择，否则会强制关闭正在使用的下拉框。
+        onClick={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Escape') onClose() }}
       >
         <header className="create-record-card-header" style={{ '--node-color': typeColorValue } as CSSProperties}>

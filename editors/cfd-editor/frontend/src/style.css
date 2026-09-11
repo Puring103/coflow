@@ -2131,9 +2131,17 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   opacity: 0.5;
   cursor: default;
 }
-.data-table td > .cell-edit-wrap > .dc-input {
+.data-table td .cell-edit-wrap .dc-input,
+.data-table td .cell-edit-wrap .rich-text-input,
+.data-table td .cell-edit-wrap .vc-str,
+.data-table td .cell-edit-wrap .rich-text-string {
+  display: block;
   width: 100%;
   max-width: none;
+}
+.data-table td .cell-edit-wrap .dc-input-flat {
+  margin: 0;
+  box-sizing: border-box;
 }
 /* Ref / enum pill cells: drop the td padding so the pill fills the cell
  * edge-to-edge. The `.pill-cell` class is set by the cell renderer up-front
@@ -4277,7 +4285,7 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 
 .graph-hint {
   position: absolute;
-  left: 12px;
+  left: 64px;
   bottom: 12px;
   z-index: 4;
   padding: 4px 9px;
@@ -4320,18 +4328,16 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   box-shadow: 0 0 0 2px var(--accent), 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 .graph-node.compact {
-  display: flex;
-  align-items: stretch;
-  border-top-width: 4px;
+  position: relative;
 }
 .gn-compact-body {
-  min-height: 168px;
+  position: absolute;
+  inset: 0;
   width: 100%;
   display: grid;
   place-items: center;
   padding: 12px 14px;
   background: var(--bg-3);
-  position: relative;
 }
 .gn-compact-key {
   max-width: 100%;
@@ -4367,6 +4373,13 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 .graph-view-wrap.is-hovering .react-flow__edge.hover-highlight .react-flow__edge-path {
   stroke: var(--graph-edge-highlight) !important;
   stroke-width: 2 !important;
+}
+.graph-selection-box {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .gn-header {
@@ -4458,18 +4471,34 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   font-style: italic;
 }
 
-.react-flow__edge-path { stroke: var(--text-mute); stroke-width: 1.2; }
-.react-flow__edge.selected .react-flow__edge-path { stroke: var(--text); }
+.react-flow__edge-path {
+  pointer-events: stroke !important;
+  stroke: var(--graph-edge) !important;
+  stroke-width: 2.5 !important;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--graph-edge) 70%, transparent));
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--graph-edge-highlight) !important;
+  stroke-width: 4 !important;
+  filter: drop-shadow(0 0 4px var(--graph-edge-highlight));
+}
 .react-flow__edge-text { fill: var(--text-dim); font-size: 9px !important; }
 .react-flow__handle {
   background: var(--border-strong) !important;
   border: 2px solid var(--bg-2) !important;
-  width: 8px !important;
-  height: 8px !important;
+  width: 14px !important;
+  height: 14px !important;
 }
 /* 连线端口必须高于字段操作区，缩放后仍能准确命中拖动起点。 */
 .graph-node > .react-flow__handle {
   z-index: 5;
+  pointer-events: all !important;
+  cursor: crosshair;
+}
+.graph-node.hover-highlight > .react-flow__handle,
+.graph-node.selected > .react-flow__handle {
+  background: var(--graph-edge-highlight) !important;
+  box-shadow: 0 0 0 3px var(--graph-edge-highlight), 0 0 12px var(--graph-edge-highlight);
 }
 .react-flow__controls {
   border-radius: var(--radius) !important;
