@@ -316,36 +316,94 @@ fn field(name: &str) -> CfdPathSegment {
 #[test]
 fn short_names_are_type_scoped_persisted_and_refreshed() {
     let (root, data_file) = array_project();
-    fs::write(root.join("schema.cft"), "type Item { name: string; title: string = \"\"; count: int = 1; }\n")
-        .expect("write schema");
-    fs::write(&data_file, "sword: Item { name: \"Sword\", title: \"Blade\" }\n").expect("write first file");
-    fs::write(root.join("data/other.cfd"), "shield: Item { name: \"Shield\" }\n").expect("write second file");
+    fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; title: string = \"\"; count: int = 1; }\n",
+    )
+    .expect("write schema");
+    fs::write(
+        &data_file,
+        "sword: Item { name: \"Sword\", title: \"Blade\" }\n",
+    )
+    .expect("write first file");
+    fs::write(
+        root.join("data/other.cfd"),
+        "shield: Item { name: \"Shield\" }\n",
+    )
+    .expect("write second file");
     let store = SessionStore::new().expect("session store");
-    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
+    let project = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
     let id = project.session_id;
-    assert!(store.get_ref_targets(id, "Item").expect("initial targets").iter().all(|target| target.short_name.is_none()));
-    store.set_short_name_field(id, "Item".into(), Some("name".into())).expect("set name");
+    assert!(store
+        .get_ref_targets(id, "Item")
+        .expect("initial targets")
+        .iter()
+        .all(|target| target.short_name.is_none()));
+    store
+        .set_short_name_field(id, "Item".into(), Some("name".into()))
+        .expect("set name");
     let targets = store.get_ref_targets(id, "Item").expect("named targets");
     assert_eq!(targets.len(), 2);
-    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Sword")));
-    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Shield")));
-    assert!(store.set_short_name_field(id, "Item".into(), Some("count".into())).is_err());
-    assert!(store.set_short_name_field(id, "Item".into(), Some("missing".into())).is_err());
-    let settings = store.set_short_name_field(id, "Item".into(), Some("title".into())).expect("replace name field");
+    assert!(targets
+        .iter()
+        .any(|target| target.short_name.as_deref() == Some("Sword")));
+    assert!(targets
+        .iter()
+        .any(|target| target.short_name.as_deref() == Some("Shield")));
+    assert!(store
+        .set_short_name_field(id, "Item".into(), Some("count".into()))
+        .is_err());
+    assert!(store
+        .set_short_name_field(id, "Item".into(), Some("missing".into()))
+        .is_err());
+    let settings = store
+        .set_short_name_field(id, "Item".into(), Some("title".into()))
+        .expect("replace name field");
     assert_eq!(settings.short_name_fields.len(), 1);
     assert_eq!(settings.short_name_fields["Item"], "title");
-    let reloaded = store.load_project(&root.join("coflow.yaml")).expect("reopen project");
-    assert_eq!(store.get_project_settings(reloaded.session_id).expect("read saved settings").short_name_fields["Item"], "title");
+    let reloaded = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("reopen project");
+    assert_eq!(
+        store
+            .get_project_settings(reloaded.session_id)
+            .expect("read saved settings")
+            .short_name_fields["Item"],
+        "title"
+    );
     let targets = store.get_ref_targets(id, "Item").expect("renamed targets");
-    assert!(targets.iter().any(|target| target.short_name.as_deref() == Some("Blade")));
-    assert!(targets.iter().any(|target| target.coordinate.key.as_str() == "shield" && target.short_name.is_none()));
+    assert!(targets
+        .iter()
+        .any(|target| target.short_name.as_deref() == Some("Blade")));
+    assert!(targets
+        .iter()
+        .any(|target| target.coordinate.key.as_str() == "shield" && target.short_name.is_none()));
     // 修改字段值后，引用缓存必须读取新值，且记录 ID 保持不变。
     let coordinate = RecordCoordinate::try_new("Item", "sword").expect("coordinate");
-    store.write_field(id, &coordinate, &[field("title")], &CfdValue::String("New blade".into())).expect("edit title");
-    assert!(store.get_ref_targets(id, "Item").expect("updated targets").iter()
-        .any(|target| target.coordinate == coordinate && target.short_name.as_deref() == Some("New blade")));
-    store.set_short_name_field(id, "Item".into(), None).expect("clear name field");
-    assert!(store.get_ref_targets(id, "Item").expect("cleared targets").iter().all(|target| target.short_name.is_none()));
+    store
+        .write_field(
+            id,
+            &coordinate,
+            &[field("title")],
+            &CfdValue::String("New blade".into()),
+        )
+        .expect("edit title");
+    assert!(store
+        .get_ref_targets(id, "Item")
+        .expect("updated targets")
+        .iter()
+        .any(|target| target.coordinate == coordinate
+            && target.short_name.as_deref() == Some("New blade")));
+    store
+        .set_short_name_field(id, "Item".into(), None)
+        .expect("clear name field");
+    assert!(store
+        .get_ref_targets(id, "Item")
+        .expect("cleared targets")
+        .iter()
+        .all(|target| target.short_name.is_none()));
     fs::remove_dir_all(root).expect("remove project");
 }
 
@@ -353,15 +411,36 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
 fn graph_positions_persist_per_view_without_changing_data_revision() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("session store");
-    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
+    let project = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
     let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
-    store.set_graph_positions(project.session_id, "first-view".into(), positions.clone()).expect("save positions");
-    store.set_graph_positions(project.session_id, "second-view".into(), BTreeMap::new()).expect("save second view");
-    assert!(store.set_graph_positions(project.session_id, "first-view".into(),
-        BTreeMap::from([("Item::one".to_string(), [f64::NAN, 0.0])])).is_err());
-    assert_eq!(store.get_file_records(project.session_id, "data/05-arrays.cfd").expect("read records").revision, project.revision);
-    let reopened = store.load_project(&root.join("coflow.yaml")).expect("reopen project");
-    let settings = store.get_project_settings(reopened.session_id).expect("read positions");
+    store
+        .set_graph_positions(project.session_id, "first-view".into(), positions.clone())
+        .expect("save positions");
+    store
+        .set_graph_positions(project.session_id, "second-view".into(), BTreeMap::new())
+        .expect("save second view");
+    assert!(store
+        .set_graph_positions(
+            project.session_id,
+            "first-view".into(),
+            BTreeMap::from([("Item::one".to_string(), [f64::NAN, 0.0])])
+        )
+        .is_err());
+    assert_eq!(
+        store
+            .get_file_records(project.session_id, "data/05-arrays.cfd")
+            .expect("read records")
+            .revision,
+        project.revision
+    );
+    let reopened = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("reopen project");
+    let settings = store
+        .get_project_settings(reopened.session_id)
+        .expect("read positions");
     assert_eq!(settings.graph_positions["first-view"], positions);
     assert!(settings.graph_positions["second-view"].is_empty());
     fs::remove_dir_all(root).expect("remove project");
@@ -866,18 +945,37 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
 fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sources() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create session store");
-    let project = store.load_project(&root.join("coflow.yaml")).expect("load project");
-    let source = store.read_source_text(project.session_id, "schema.cft").expect("read schema");
-    let live = store.sync_language_document(project.session_id, "schema.cft", &source, 1).expect("open live schema");
+    let project = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let source = store
+        .read_source_text(project.session_id, "schema.cft")
+        .expect("read schema");
+    let live = store
+        .sync_language_document(project.session_id, "schema.cft", &source, 1)
+        .expect("open live schema");
     for path in ["schema.cft", "deleted.cft"] {
-        let tokens = store.highlight_source_snapshot(project.session_id, path, "type Old { value: int; }\n").expect("highlight CFT snapshot");
+        let tokens = store
+            .highlight_source_snapshot(project.session_id, path, "type Old { value: int; }\n")
+            .expect("highlight CFT snapshot");
         assert!(!tokens.semantic_token_data.is_empty(), "{path}");
     }
-    let tokens = store.highlight_source_snapshot(project.session_id, "data/deleted.cfd", "old: Old { value: 1 }\n").expect("highlight deleted CFD snapshot");
+    let tokens = store
+        .highlight_source_snapshot(
+            project.session_id,
+            "data/deleted.cfd",
+            "old: Old { value: 1 }\n",
+        )
+        .expect("highlight deleted CFD snapshot");
     assert!(!tokens.semantic_token_data.is_empty());
-    let current = store.sync_language_document(project.session_id, "schema.cft", &source, 2).expect("read live language state");
+    let current = store
+        .sync_language_document(project.session_id, "schema.cft", &source, 2)
+        .expect("read live language state");
     assert_eq!(live.semantic_token_data, current.semantic_token_data);
-    assert_eq!(fs::read_to_string(root.join("schema.cft")).expect("read disk"), source);
+    assert_eq!(
+        fs::read_to_string(root.join("schema.cft")).expect("read disk"),
+        source
+    );
     fs::remove_dir_all(root).expect("remove project");
 }
 

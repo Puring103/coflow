@@ -31,11 +31,10 @@ impl Config {
     fn from_env() -> Self {
         let files = env_usize("PERF_FILES", 5);
         let records = env_usize("PERF_RECORDS", 1000);
-        let project_root = std::env::var_os("PERF_PROJECT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::temp_dir().join(format!("coflow-perf-{}", std::process::id()))
-            });
+        let project_root = std::env::var_os("PERF_PROJECT").map_or_else(
+            || std::env::temp_dir().join(format!("coflow-perf-{}", std::process::id())),
+            PathBuf::from,
+        );
         let keep = std::env::var_os("PERF_KEEP").is_some();
         Self {
             files,
@@ -141,10 +140,10 @@ fn main() {
         graph.edges.len()
     );
 
-    if !config.keep {
-        fs::remove_dir_all(&config.project_root).expect("remove perf project");
-    } else {
+    if config.keep {
         println!("kept project at {}", config.project_root.display());
+    } else {
+        fs::remove_dir_all(&config.project_root).expect("remove perf project");
     }
 }
 
@@ -304,7 +303,7 @@ fn generate_data_file(config: &Config, file_index: usize) -> String {
         writeln!(text, "  description: \"Entity {global} description\",")
             .expect("write description");
         writeln!(text, "  weight: {}.5,", global % 100).expect("write weight");
-        writeln!(text, "  enabled: {},", global % 2 == 0).expect("write enabled");
+        writeln!(text, "  enabled: {},", global.is_multiple_of(2)).expect("write enabled");
         writeln!(
             text,
             "  bonus: Stats {{ health: {}, speed: 2.0 }},",

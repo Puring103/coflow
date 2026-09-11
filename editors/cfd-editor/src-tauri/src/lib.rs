@@ -664,7 +664,11 @@ async fn set_graph_positions(
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().set_graph_positions(session_id, view_key, positions)).await
+    run_blocking(move || {
+        host.sessions()
+            .set_graph_positions(session_id, view_key, positions)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -693,7 +697,11 @@ async fn set_short_name_field(
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().set_short_name_field(session_id, actual_type, field)).await
+    run_blocking(move || {
+        host.sessions()
+            .set_short_name_field(session_id, actual_type, field)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -707,7 +715,8 @@ async fn set_view_order(
 ) -> Result<EditorProjectSettings, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || {
-        host.sessions().set_view_order(session_id, file_path, actual_type, order)
+        host.sessions()
+            .set_view_order(session_id, file_path, actual_type, order)
     })
     .await
 }
@@ -850,7 +859,11 @@ async fn highlight_source_snapshot(
     host: State<'_, EditorHost>,
 ) -> Result<LanguageDocumentState, EditorError> {
     let host = host.inner().clone();
-    run_blocking(move || host.sessions().highlight_source_snapshot(session_id, &file_path, &source)).await
+    run_blocking(move || {
+        host.sessions()
+            .highlight_source_snapshot(session_id, &file_path, &source)
+    })
+    .await
 }
 
 #[allow(clippy::needless_pass_by_value)]
