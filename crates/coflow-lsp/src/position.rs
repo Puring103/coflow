@@ -1,4 +1,5 @@
 use coflow_language::source::Span;
+use coflow_runtime::LineIndex;
 use serde_json::Value;
 
 use super::diagnostics::lsp_range;
@@ -19,13 +20,36 @@ impl LspPosition {
 }
 
 pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> Value {
-    let start = position_from_byte(source, start);
-    let end = position_from_byte(source, end);
+    let index = LineIndex::new(source);
+    byte_range_indexed(&index, source, start, end)
+}
+
+/// 复用调用方预建的 [`LineIndex`]，避免逐符号从文件头重新扫描。
+pub(crate) fn byte_range_indexed(index: &LineIndex, source: &str, start: usize, end: usize) -> Value {
+    let start = position_from_byte_indexed(index, source, start);
+    let end = position_from_byte_indexed(index, source, end);
     lsp_range(start.line, start.character, end.line, end.character)
 }
 
 pub(crate) fn range_from_span(source: &str, span: Span) -> Value {
-    byte_range(source, span.start, span.end.max(span.start + 1))
+    let index = LineIndex::new(source);
+    range_from_span_indexed(&index, source, span)
+}
+
+pub(crate) fn range_from_span_indexed(index: &LineIndex, source: &str, span: Span) -> Value {
+    byte_range_indexed(index, source, span.start, span.end.max(span.start + 1))
+}
+
+pub(crate) fn position_from_byte_indexed(
+    index: &LineIndex,
+    source: &str,
+    byte_offset: usize,
+) -> LspPosition {
+    let position = index.position(source, byte_offset);
+    LspPosition {
+        line: position.line,
+        character: position.character,
+    }
 }
 
 pub(crate) fn byte_offset_from_position(source: &str, position: LspPosition) -> usize {
@@ -48,6 +72,7 @@ pub(crate) fn byte_offset_from_position(source: &str, position: LspPosition) -> 
     source.len()
 }
 
+#[cfg(test)]
 pub(crate) fn position_from_byte(source: &str, byte_offset: usize) -> LspPosition {
     let target = byte_offset.min(source.len());
     let mut line = 0;

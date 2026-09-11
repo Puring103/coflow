@@ -1,10 +1,10 @@
 use super::super::diagnostics::lsp_range;
 use super::super::document_symbols::document_symbols;
 use super::super::semantic_tokens::{
-    comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
-    semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
-    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR, SEM_PROPERTY,
-    SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    byte_spans_to_raw_tokens, comment_start_in_line, encode_semantic_tokens, push_semantic_span,
+    push_semantic_span_plain, semantic_raw_tokens, semantic_token_data, RawSemanticToken,
+    MOD_DECLARATION, MOD_PATH, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR,
+    SEM_PROPERTY, SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::super::text::{is_after_line_comment, is_inside_string};
 use super::super::uri::{hex_value, percent_decode};
@@ -20,13 +20,15 @@ fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {
 
     push_semantic_span_plain(source, Span::new(1, 1), SEM_TYPE, &mut tokens);
     push_semantic_span_plain(source, Span::new(1, 4), SEM_TYPE, &mut tokens);
-    assert!(tokens.is_empty());
+    // 空跨度在收集时丢弃，跨行跨度在换算为行列位置时丢弃。
+    assert!(byte_spans_to_raw_tokens(source, tokens).is_empty());
 
+    let mut tokens = Vec::new();
     push_semantic_span_plain(source, Span::new(0, 2), SEM_TYPE, &mut tokens);
     push_semantic_span_plain(source, Span::new(1, 2), SEM_PROPERTY, &mut tokens);
     push_semantic_span_plain(source, Span::new(3, 5), SEM_STRING, &mut tokens);
 
-    let encoded = encode_semantic_tokens(tokens);
+    let encoded = encode_semantic_tokens(byte_spans_to_raw_tokens(source, tokens));
 
     assert_eq!(
         encoded,
@@ -60,7 +62,7 @@ fn encoded_semantic_tokens_preserve_modifiers() {
         &mut tokens,
     );
 
-    let encoded = encode_semantic_tokens(tokens);
+    let encoded = encode_semantic_tokens(byte_spans_to_raw_tokens(source, tokens));
 
     assert_eq!(
         encoded,

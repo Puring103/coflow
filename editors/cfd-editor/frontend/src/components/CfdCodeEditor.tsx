@@ -2,7 +2,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, co
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language'
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint'
-import { Annotation, ChangeSet, Compartment, EditorState, StateEffect, StateField, Transaction, type ChangeSpec } from '@codemirror/state'
+import { Annotation, ChangeSet, Compartment, EditorState, StateEffect, StateField, Transaction, type ChangeSpec, type Range } from '@codemirror/state'
 import {
   crosshairCursor,
   drawSelection,
@@ -14,7 +14,9 @@ import {
   lineNumbers,
   rectangularSelection,
   Decoration,
+  ViewPlugin,
   type DecorationSet,
+  type ViewUpdate,
 } from '@codemirror/view'
 import { useEffect, useRef } from 'react'
 
@@ -33,6 +35,67 @@ interface SemanticTokenUpdate {
   tokens: readonly CodeSemanticToken[]
   replace: boolean
 }
+
+// 用户可见范围内的即时词法着色：LSP 语义 token 到达前先给出基础高亮，
+// 到达后由 `cm-lsp-token-*` 覆盖细化。只依赖词法，不涉及 schema 或项目状态。
+const BASE_HIGHLIGHT_KEYWORDS = new Set([
+  'type', 'enum', 'const', 'abstract', 'sealed', 'check', 'when', 'all', 'any', 'none',
+  'in', 'is', 'true', 'false', 'fn', 'var', 'return', 'if', 'else', 'match', 'for',
+  'while', 'break', 'continue',
+])
+const BASE_HIGHLIGHT_TYPES = new Set(['int', 'float', 'bool', 'string', 'Option', 'Result', 'Some', 'Ok', 'Err'])
+const BASE_HIGHLIGHT_PATTERN =
+  /@[A-Za-z_][A-Za-z0-9_]*|"(?:\\.|[^"\\])*"|#[^\n]*|\b\d[\w.]*\b|[A-Za-z_][A-Za-z0-9_]*|[+\-*/%=<>!&|^~?:.]+/g
+
+function baseHighlightClass(match: string, line: string, index: number): string | null {
+  if (match.startsWith('@')) return 'decorator'
+  if (match.startsWith('"')) return 'string'
+  if (match.startsWith('#')) return 'comment'
+  if (/^\d/.test(match)) return 'number'
+  if (/^[A-Za-z_]/.test(match)) {
+    if (BASE_HIGHLIGHT_KEYWORDS.has(match)) return 'keyword'
+    if (BASE_HIGHLIGHT_TYPES.has(match) || /^[A-Z]/.test(match)) return 'type'
+    let next = index + match.length
+    while (next < line.length && (line[next] === ' ' || line[next] === '\t')) next += 1
+    return line[next] === '(' ? 'function' : null
+  }
+  return 'operator'
+}
+
+function buildBaseHighlight(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = []
+  for (const { from, to } of view.visibleRanges) {
+    const firstLine = view.state.doc.lineAt(from).number
+    const lastLine = view.state.doc.lineAt(to).number
+    for (let lineNumber = firstLine; lineNumber <= lastLine; lineNumber += 1) {
+      const line = view.state.doc.line(lineNumber)
+      const text = line.text
+      BASE_HIGHLIGHT_PATTERN.lastIndex = 0
+      for (let match = BASE_HIGHLIGHT_PATTERN.exec(text); match; match = BASE_HIGHLIGHT_PATTERN.exec(text)) {
+        const tokenClass = baseHighlightClass(match[0], text, match.index)
+        if (tokenClass) {
+          const start = line.from + match.index
+          ranges.push(Decoration.mark({
+            class: `cm-lsp-token cm-lsp-token-${tokenClass}`,
+          }).range(start, start + match[0].length))
+        }
+      }
+    }
+  }
+  return Decoration.set(ranges, true)
+}
+
+const baseHighlightPlugin = ViewPlugin.fromClass(class {
+  decorations: DecorationSet
+  constructor(view: EditorView) {
+    this.decorations = buildBaseHighlight(view)
+  }
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.viewportChanged) {
+      this.decorations = buildBaseHighlight(update.view)
+    }
+  }
+}, { decorations: plugin => plugin.decorations })
 
 const setSemanticTokens = StateEffect.define<SemanticTokenUpdate>()
 const setLineDecorations = StateEffect.define<readonly CodeLineDecoration[]>()
@@ -226,6 +289,7 @@ export function CfdCodeEditor({
           rectangularSelection(),
           crosshairCursor(),
           highlightActiveLine(),
+          baseHighlightPlugin,
           semanticTokenField,
           lineDecorationField,
           editableRangeField,

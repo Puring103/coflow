@@ -1789,12 +1789,7 @@ fn fmt_value_type(ty: &CftValueType) -> String {
 }
 
 pub fn byte_range(source: &str, start: usize, end: usize) -> Value {
-    let s = position_from_byte(source, start);
-    let e = position_from_byte(source, end);
-    json!({
-        "start": { "line": s.0, "character": s.1 },
-        "end":   { "line": e.0, "character": e.1 },
-    })
+    super::position::byte_range(source, start, end)
 }
 
 /// 与 [`byte_range`] 输出一致的 range，但复用预建行索引。
@@ -1807,30 +1802,7 @@ pub fn byte_range_with_index(
     start: usize,
     end: usize,
 ) -> Value {
-    let s = index.position(source, start);
-    let e = index.position(source, end);
-    json!({
-        "start": { "line": s.line, "character": s.character },
-        "end":   { "line": e.line, "character": e.character },
-    })
-}
-
-fn position_from_byte(source: &str, byte_offset: usize) -> (usize, usize) {
-    let target = byte_offset.min(source.len());
-    let mut line = 0usize;
-    let mut character = 0usize;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    (line, character)
+    super::position::byte_range_indexed(index, source, start, end)
 }
 
 struct TokenCollector<'a> {
