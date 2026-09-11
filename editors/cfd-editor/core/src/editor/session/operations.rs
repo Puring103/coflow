@@ -233,18 +233,30 @@ impl SessionStore {
         source: &str,
     ) -> Result<LanguageDocumentState, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry.state.write()
+        let mut session = entry
+            .state
+            .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
         let path = session.project_root.join(file_path);
         // 只分析快照，不同步语言文档，避免 HEAD 覆盖当前草稿。
-        let tokens = session.language_server.highlight_source_snapshot(&path, source);
+        let tokens = session
+            .language_server
+            .highlight_source_snapshot(&path, source);
         Ok(LanguageDocumentState {
             diagnostics: Vec::new(),
-            semantic_token_data: tokens.get("data").and_then(Value::as_array)
-                .into_iter().flatten().filter_map(Value::as_u64)
-                .filter_map(|value| u32::try_from(value).ok()).collect(),
+            semantic_token_data: tokens
+                .get("data")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .filter_map(|value| u32::try_from(value).ok())
+                .collect(),
             semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
-            syntax_valid: tokens.get("x-coflow-syntax-valid").and_then(Value::as_bool).unwrap_or(false),
+            syntax_valid: tokens
+                .get("x-coflow-syntax-valid")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
     }
 
@@ -474,14 +486,21 @@ impl SessionStore {
         source: &str,
     ) -> Result<Vec<FlatDiagnostic>, EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let yaml_path = self.project_action_context(id)?;
-        let project =
-            Project::open_schema_only(Some(&yaml_path)).map_err(api_diagnostics_to_editor_error)?;
+        let normalized_path = coflow_runtime::normalize_path(&path);
         if has_extension(file_path, "cft") {
+            // CFT 覆盖需要重建 schema，只借用会话里的 Project，不必重新打开磁盘配置。
+            let entry = self.session(id)?;
+            let project = {
+                let session = entry
+                    .state
+                    .read()
+                    .map_err(|_| EditorError::session("session poisoned"))?;
+                session.engine.project().clone()
+            };
             let mut schema_runtime = ProjectRuntime::new(project);
             let source_override = SchemaTextOverride {
                 requested_module: None,
-                normalized_path: coflow_runtime::normalize_path(&path),
+                normalized_path,
                 source: source.to_string(),
             };
             return match schema_runtime.refresh_with_overrides(&[source_override]) {
@@ -489,19 +508,21 @@ impl SessionStore {
                 Err(diagnostics) => Ok(diagnostics.flat_diagnostics()),
             };
         }
+        // CFD 覆盖复用会话源缓存：只重解析当前文件，落地与 LSP 共用的项目级诊断。
+        let context = {
+            let entry = self.session(id)?;
+            let session = entry
+                .state
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            session.engine.validation_context()
+        };
         let source_override = DataSourceTextOverride {
-            normalized_path: path,
+            normalized_path,
             source: source.to_string(),
             deleted: false,
         };
-        let runtime = Runtime::new();
-        let diagnostics = match runtime
-            .open_read_only_session_with_source_overrides(project, &[source_override])
-        {
-            Ok(session) => session.queries().diagnostics().flat_diagnostics(),
-            Err(diagnostics) => diagnostics.flat_diagnostics(),
-        };
-        Ok(diagnostics)
+        Ok(context.validate(&[source_override]))
     }
 
     pub fn write_source_text(
@@ -652,7 +673,7 @@ impl SessionStore {
                 "schema type `{type_name}` not found"
             )));
         }
-        let ctx = WireContext::new(queries, &session.diagnostics);
+        let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
         Ok(queries
             .source_files()
             .flat_map(|file| queries.record_views_in_file(file))
@@ -687,7 +708,11 @@ impl SessionStore {
             .engine
             .create_record_draft(actual_type)
             .map_err(api_diagnostics_to_editor_error)?;
-        let ctx = WireContext::new(session.queries(), &session.diagnostics);
+        let ctx = WireContext::new(
+            session.queries(),
+            &session.diagnostics,
+            &session.shape_cache,
+        );
         let wire = create_record_draft_to_wire(&draft, &ctx);
         drop(session);
         Ok(wire)
@@ -775,14 +800,25 @@ impl SessionStore {
                 .ref_targets(expected_type)
                 .into_iter()
                 .map(|target| RefTarget {
-                    short_name: settings.short_name_fields.get(target.coordinate.actual_type.as_str())
-                        .and_then(|field| session.queries()
-                            .record_view(&target.coordinate.actual_type, &target.coordinate.key)
-                            .and_then(|view| match view.record.field(field) {
-                                Some(CfdValue::String(value)) if !value.is_empty() => Some(value.clone()),
-                                Some(CfdValue::FormattedString(value)) if !value.rendered.is_empty() => Some(value.rendered.clone()),
-                                _ => None,
-                            })),
+                    short_name: settings
+                        .short_name_fields
+                        .get(target.coordinate.actual_type.as_str())
+                        .and_then(|field| {
+                            session
+                                .queries()
+                                .record_view(&target.coordinate.actual_type, &target.coordinate.key)
+                                .and_then(|view| match view.record.field(field) {
+                                    Some(CfdValue::String(value)) if !value.is_empty() => {
+                                        Some(value.clone())
+                                    }
+                                    Some(CfdValue::FormattedString(value))
+                                        if !value.rendered.is_empty() =>
+                                    {
+                                        Some(value.rendered.clone())
+                                    }
+                                    _ => None,
+                                })
+                        }),
                     coordinate: target.coordinate,
                     file_path: target.file_path,
                 })
@@ -820,7 +856,6 @@ impl SessionStore {
             .map_err(|_| EditorError::session("session poisoned"))?;
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
-
 
     pub fn write_fields(
         &self,
@@ -1045,7 +1080,11 @@ impl SessionStore {
                     renamed.actual_type, renamed.key
                 ))
             })?;
-        let ctx = WireContext::new(session.queries(), &session.diagnostics);
+        let ctx = WireContext::new(
+            session.queries(),
+            &session.diagnostics,
+            &session.shape_cache,
+        );
         let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
             revision: session.revisions.current(),

@@ -9,24 +9,68 @@ use coflow_runtime::{
     dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
 };
 use coflow_runtime::{CfdRecord, CfdValue};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Arc, RwLock};
 
 use crate::editor::session::Diagnostics;
 use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow};
+
+/// 按 `(实际类型, 字段名)` 缓存 schema 派生的 [`FieldShapeInfo`]。
+///
+/// `field_shape` 只依赖 schema：同一项目代际内形状不变。表格、图谱与记录视图
+/// 会针对每条记录的每个字段重复请求它，缓存后把 `记录数 × 字段数` 的形状重建
+/// 降到一次/字段。
+#[derive(Debug, Default)]
+pub struct ShapeCache {
+    inner: RwLock<HashMap<(String, String), Option<Arc<FieldShapeInfo>>>>,
+}
+
+impl ShapeCache {
+    /// 查询字段形状，命中缓存时返回共享句柄；未命中时构建并写入。
+    #[must_use]
+    pub fn get(
+        &self,
+        queries: ProjectQueries<'_>,
+        actual_type: &str,
+        field_name: &str,
+    ) -> Option<Arc<FieldShapeInfo>> {
+        let key = (actual_type.to_string(), field_name.to_string());
+        if let Ok(cache) = self.inner.read() {
+            if let Some(cached) = cache.get(&key) {
+                return cached.clone();
+            }
+        }
+        let shape = queries.field_shape(actual_type, field_name).map(Arc::new);
+        if let Ok(mut cache) = self.inner.write() {
+            cache.insert(key, shape.clone());
+        }
+        shape
+    }
+}
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub queries: ProjectQueries<'a>,
     pub diagnostics: &'a Diagnostics,
+    pub shapes: &'a ShapeCache,
 }
 
 impl<'a> WireContext<'a> {
     #[must_use]
-    pub const fn new(queries: ProjectQueries<'a>, diagnostics: &'a Diagnostics) -> Self {
+    pub const fn new(
+        queries: ProjectQueries<'a>,
+        diagnostics: &'a Diagnostics,
+        shapes: &'a ShapeCache,
+    ) -> Self {
         Self {
             queries,
             diagnostics,
+            shapes,
         }
+    }
+
+    fn field_shape(&self, actual_type: &str, field_name: &str) -> Option<Arc<FieldShapeInfo>> {
+        self.shapes.get(self.queries, actual_type, field_name)
     }
 }
 
@@ -165,8 +209,8 @@ fn build_annotation(
     value: &CfdValue,
     ctx: &WireContext<'_>,
 ) -> Option<FieldAnnotation> {
-    let declared_shape = ctx.queries.field_shape(host.actual_type(), field_name);
-    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
+    let declared_shape = ctx.field_shape(host.actual_type(), field_name);
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_deref());
     // Synthesized dimension records expose a `default` slot that mirrors the
     // source record's value. Writing into it isn't blocked at the engine
     // layer, but the editor renders it as read-only to steer users to the
@@ -185,8 +229,8 @@ pub fn annotation_for_draft_field(
     value: &CfdValue,
     ctx: &WireContext<'_>,
 ) -> Option<FieldAnnotation> {
-    let declared_shape = ctx.queries.field_shape(actual_type, field_name);
-    let annotation = annotation_for_value(value, ctx, declared_shape.as_ref());
+    let declared_shape = ctx.field_shape(actual_type, field_name);
+    let annotation = annotation_for_value(value, ctx, declared_shape.as_deref());
     if annotation.is_empty() {
         None
     } else {
@@ -256,8 +300,8 @@ fn annotation_for_value(
             annotation.object_type = Some(object.actual_type().to_string());
             annotation.field_order = ctx.queries.type_field_names(object.actual_type());
             for (name, child) in object.fields() {
-                let child_shape = ctx.queries.field_shape(object.actual_type(), name.as_str());
-                let child_annotation = annotation_for_value(child, ctx, child_shape.as_ref());
+                let child_shape = ctx.field_shape(object.actual_type(), name.as_str());
+                let child_annotation = annotation_for_value(child, ctx, child_shape.as_deref());
                 if !child_annotation.is_empty() {
                     annotation
                         .children
@@ -270,7 +314,7 @@ fn annotation_for_value(
                 if object.field(name).is_some() || annotation.children.contains_key(name) {
                     continue;
                 }
-                if let Some(shape) = ctx.queries.field_shape(object.actual_type(), name) {
+                if let Some(shape) = ctx.field_shape(object.actual_type(), name) {
                     annotation
                         .children
                         .insert(name.clone(), annotation_template(&shape));

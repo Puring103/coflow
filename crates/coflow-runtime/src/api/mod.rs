@@ -26,7 +26,7 @@ pub(crate) mod writer;
 pub use diagnostics::{
     byte_position, byte_range, map_diagnostics_with_origins, origins_of, path_to_slash,
     source_location_display_path, Diagnostic, DiagnosticContext, DiagnosticSet, DiagnosticTarget,
-    FlatDiagnostic, Label, Severity, SourceLocation, TextPosition, TextRange,
+    FlatDiagnostic, Label, LineIndex, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub(crate) use operations::{
     DimensionSourceEntry, DimensionSourceLoadRequest, DimensionSourceLoadResult,

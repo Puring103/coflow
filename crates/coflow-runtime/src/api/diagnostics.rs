@@ -546,6 +546,57 @@ pub fn byte_position(source: &str, byte_offset: usize) -> TextPosition {
     TextPosition { line, character }
 }
 
+/// 单次扫描构建的行首索引，用于把字节偏移转成行列位置。
+///
+/// [`byte_position`] 每次都从源码开头扫描，逐条记录调用会退化成
+/// `记录数 × 文件长度` 的二次复杂度。加载器为每个源文件构建一次索引后，
+/// 单条记录的位置换算只与记录自身跨度相关。
+#[derive(Debug, Clone)]
+pub struct LineIndex {
+    line_starts: Vec<usize>,
+}
+
+impl LineIndex {
+    #[must_use]
+    pub fn new(source: &str) -> Self {
+        let mut line_starts = Vec::with_capacity(source.len() / 32 + 1);
+        line_starts.push(0);
+        for (index, ch) in source.char_indices() {
+            if ch == '\n' {
+                line_starts.push(index + 1);
+            }
+        }
+        Self { line_starts }
+    }
+
+    #[must_use]
+    pub fn position(&self, source: &str, byte_offset: usize) -> TextPosition {
+        let target = byte_offset.min(source.len());
+        let line = match self.line_starts.binary_search(&target) {
+            Ok(index) => index,
+            Err(index) => index.saturating_sub(1),
+        };
+        let line_start = self.line_starts[line];
+        // 记录跨度来自解析器，通常是字符边界；非边界偏移回退到逐字符扫描，
+        // 保持与 [`byte_position`] 完全一致的行为。
+        let Some(slice) = source.get(line_start..target) else {
+            return byte_position(source, target);
+        };
+        TextPosition {
+            line,
+            character: slice.encode_utf16().count(),
+        }
+    }
+
+    #[must_use]
+    pub fn range(&self, source: &str, start: usize, end: usize) -> TextRange {
+        TextRange {
+            start: self.position(source, start),
+            end: self.position(source, end.max(start.saturating_add(1))),
+        }
+    }
+}
+
 #[must_use]
 pub fn byte_range(source: &str, start: usize, end: usize) -> TextRange {
     TextRange::from_byte_offsets(source, start, end)
@@ -575,7 +626,36 @@ pub fn path_to_slash(path: &Path) -> String {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{Diagnostic, DiagnosticContext};
+    use super::{byte_position, Diagnostic, DiagnosticContext, LineIndex, TextRange};
+
+    #[test]
+    fn line_index_matches_linear_scan_for_every_boundary() {
+        // 覆盖纯 ASCII、多字节字符与 CRLF；索引路径必须与逐字符扫描逐点一致。
+        let source = "alpha\n婆 beta\r\ngamma\n\nδelta 尾巴";
+        let index = LineIndex::new(source);
+        for offset in 0..=source.len() {
+            if !source.is_char_boundary(offset) {
+                continue;
+            }
+            assert_eq!(
+                index.position(source, offset),
+                byte_position(source, offset),
+                "position mismatch at {offset}"
+            );
+        }
+        for start in 0..=source.len() {
+            for end in start..=source.len() {
+                if !source.is_char_boundary(start) || !source.is_char_boundary(end) {
+                    continue;
+                }
+                assert_eq!(
+                    index.range(source, start, end),
+                    TextRange::from_byte_offsets(source, start, end),
+                    "range mismatch at {start}..{end}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds() {

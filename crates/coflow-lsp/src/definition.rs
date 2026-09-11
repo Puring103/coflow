@@ -22,8 +22,14 @@ impl CfdDefinitionIndex {
     ) -> Self {
         let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
         for (uri, text, ast) in documents {
+            let line_index = coflow_runtime::LineIndex::new(text);
             for record in &ast.records {
-                let range = cfd::byte_range(text, record.key_span.start, record.key_span.end);
+                let range = cfd::byte_range_with_index(
+                    &line_index,
+                    text,
+                    record.key_span.start,
+                    record.key_span.end,
+                );
                 records
                     .entry(record.type_name.clone())
                     .or_default()
