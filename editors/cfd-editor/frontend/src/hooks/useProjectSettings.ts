@@ -8,6 +8,7 @@ import * as api from '../api'
 
 export function emptyProjectSettings(): EditorProjectSettings {
   return {
+    graph_positions: {},
     views: {},
     view_order: {},
     short_name_fields: {},

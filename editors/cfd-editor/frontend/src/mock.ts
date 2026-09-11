@@ -189,6 +189,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
+  graph_positions: {},
   view_order: {},
   short_name_fields: {},
     views: {},

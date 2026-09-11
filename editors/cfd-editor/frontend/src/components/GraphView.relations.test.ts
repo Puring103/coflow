@@ -53,10 +53,23 @@ describe('graph relation ports', () => {
     expect(ports[0].id).toBe(`links[${dictKeyPathText(key)}]`)
   })
 
-  it('keeps empty relation fields visible under a custom card field filter', () => {
+  it('applies visibility to relation fields without changing their ports', () => {
     const fields = [field({ kind: 'string', value: 'name' }, annotation(), 'name'),
       field({ kind: 'array', value: [] }, annotation({ item_annotation: ref }))]
-    expect(graphCardFields(fields, new Set()).map(field => field.name)).toEqual(['links'])
+    expect(graphCardFields(fields, new Set(), new Set())).toEqual([])
+    expect(graphCardFields(fields, new Set(['name']), new Set()).map(field => field.name)).toEqual(['name'])
+    expect(relationPorts(fields).ports.map(port => port.id)).toEqual(['links[+]'])
+  })
+
+  it('retains selected relation list rows while excluding other hidden fields', () => {
+    const fields = [field({ kind: 'string', value: 'name' }, annotation(), 'name'),
+      field({ kind: 'array', value: [{ kind: 'ref', value: 'A' }, { kind: 'ref', value: 'B' }] },
+        annotation({ item_annotation: ref })),
+      field({ kind: 'ref', value: 'C' }, ref, 'other')]
+    const shown = graphCardFields(fields, new Set(), new Set(['links']))
+    expect(shown.map(field => field.name)).toEqual(['links'])
+    expect(relationPorts(shown).ports.map(port => port.id)).toEqual(['links[0]', 'links[1]', 'links[+]'])
+    expect(relationPorts(shown).expanded).toEqual(new Set(['links']))
   })
 
   it('preserves optional wrappers and distinguishes required missing references', () => {

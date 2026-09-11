@@ -5,6 +5,10 @@ import type { ViewConfig } from "./ViewConfig";
 
 export type EditorProjectSettings = {
 /**
+ * 按图视图身份保存节点坐标，独立于数据版本，重新打开项目时恢复。
+ */
+graph_positions: { [key in string]?: { [key in string]?: [number, number] } },
+/**
  * 每个记录类型唯一的缩略名字符串字段，跨文件生效。
  */
 short_name_fields: { [key in string]?: string },

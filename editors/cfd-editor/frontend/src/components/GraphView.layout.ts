@@ -1,7 +1,5 @@
 import type { ElkNode } from 'elkjs/lib/elk-api'
 import type { GraphEdgeView, GraphNodeView } from '../wire'
-import type { FieldCell } from '../bindings/FieldCell'
-import type { CfdValue } from '../bindings/CfdValue'
 import { NODE_PEEK_FIELDS, countVisibleRows } from './DataCard.geometry'
 import { relationPorts } from './GraphView.relations'
 
@@ -15,7 +13,6 @@ const ROW_HEIGHT = 22
 const EDITABLE_ROW_HEIGHT = 34
 const MORE_BUTTON_HEIGHT = 28
 const VERTICAL_PADDING = 12
-const COMPACT_BODY_MIN_HEIGHT = 168
 
 type Position = { x: number; y: number }
 
@@ -55,16 +52,13 @@ export function estimateHandleOffsets(
   node: GraphNodeView,
   outgoingPaths: string[],
   expanded: boolean,
-  compact: boolean,
 ): { headerCenterY: number; pathOffsets: Map<string, number> } {
-  const headerCenterY = compact ? COMPACT_BODY_MIN_HEIGHT / 2 : HEADER_HEIGHT / 2
+  const headerCenterY = HEADER_HEIGHT / 2
   const pathOffsets = new Map<string, number>()
   for (const path of outgoingPaths) {
     pathOffsets.set(
       path,
-      compact
-        ? headerCenterY
-        : estimateTopLevelRowCenter(node, topLevelField(path), expanded) ?? headerCenterY,
+      estimateTopLevelRowCenter(node, topLevelField(path), expanded) ?? headerCenterY,
     )
   }
   return { headerCenterY, pathOffsets }
@@ -122,29 +116,12 @@ export function graphTopologySignature(graph: {
       node.file_path,
       node.in_focus_file ? '1' : '0',
       node.is_collapsed ? '1' : '0',
-      node.fields.map(fieldLayoutShape).join(','),
     ].join(':'))
     .sort()
   const edges = graph.edges
     .map(edge => `${edge.source}>${edge.target}:${edge.field_path}`)
     .sort()
   return `${nodes.join('|')}\u001e${edges.join('|')}`
-}
-
-function fieldLayoutShape(field: FieldCell): string {
-  return `${field.name}=${valueLayoutShape(field.value)}`
-}
-
-function valueLayoutShape(value: CfdValue): string {
-  if (value.kind === 'object') {
-    return `object(${Object.entries(value.value.fields)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, field]) => `${name}:${field ? valueLayoutShape(field) : 'missing'}`)
-      .join(',')})`
-  }
-  if (value.kind === 'array') return `array(${value.value.map(valueLayoutShape).join(',')})`
-  if (value.kind === 'dict') return `dict(${value.value.map(([, item]) => valueLayoutShape(item)).join(',')})`
-  return 'scalar'
 }
 
 export async function layoutGraph(
@@ -154,6 +131,8 @@ export async function layoutGraph(
   nodeExpanded: ReadonlyMap<string, boolean>,
   rowExpanded: ReadonlyMap<string, ReadonlySet<string>>,
   runLayout: GraphLayoutRunner,
+  savedPositions?: ReadonlyMap<string, Position>,
+  measuredHeights?: ReadonlyMap<string, number>,
 ): Promise<GraphLayoutResult> {
   let activeEdges = graph.edges.filter(edge => enabledFields.has(topLevelField(edge.field_path)))
   const touched = new Set<string>()
@@ -183,6 +162,13 @@ export async function layoutGraph(
   const backEdges = activeEdges.filter(
     edge => backEdgeKeys.has(backEdgeKey(edge.source, edge.target)),
   )
+  // 已保存的视图只补齐新节点，关系变化不调用布局引擎。
+  if (savedPositions?.size) {
+    const result = { visibleNodes, forwardEdges, backEdges,
+      positions: new Map(visibleNodes.map(node => [node.id, { x: 0, y: 0 }])) }
+    result.positions = retainGraphPositions(result, savedPositions, nodeExpanded, rowExpanded, measuredHeights)
+    return result
+  }
   const nodeById = new Map(visibleNodes.map(node => [node.id, node]))
   const forcedRoots = sameTypeRoots(visibleNodes, forwardEdges, nodeById, activeType)
   const components = connectedComponents(visibleNodes.map(node => node.id), activeEdges)
@@ -378,12 +364,12 @@ function nodeHeight(
   nodeExpanded: ReadonlyMap<string, boolean>,
   rowExpanded: ReadonlyMap<string, ReadonlySet<string>>,
 ): number {
-  // 预留缩略节点的高度，缩放切换不必重排，也不会覆盖相邻节点。
-  return Math.max(COMPACT_BODY_MIN_HEIGHT + VERTICAL_PADDING, estimateNodeHeight(
+  // 缩略覆盖层沿用完整卡片尺寸，不额外改变布局高度。
+  return estimateNodeHeight(
     node,
     nodeExpanded.get(node.id) ?? false,
     rowExpanded.get(node.id) ?? new Set<string>(),
-  ))
+  )
 }
 
 async function layoutComponent(
@@ -410,7 +396,8 @@ async function layoutComponent(
       'elk.layered.spacing.nodeNodeBetweenLayers': `${COLUMN_GAP}`,
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      // 自动布局统一以上边缘对齐，减少同层节点的锯齿状偏移。
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'TOP',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       'elk.portConstraints': 'FIXED_ORDER',
       'elk.edgeRouting': 'SPLINES',

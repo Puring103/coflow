@@ -57,9 +57,14 @@ export function relationPorts(fields: FieldCell[]): { ports: RelationPort[]; exp
   return { ports, expanded }
 }
 
-export function graphCardFields(fields: FieldCell[], visible: ReadonlySet<string> | undefined): FieldCell[] {
+export function graphCardFields(
+  fields: FieldCell[],
+  visible: ReadonlySet<string> | undefined,
+  enabledRelations: ReadonlySet<string>,
+): FieldCell[] {
   if (!visible) return fields
-  return fields.filter(field => visible.has(field.name) || relationPorts([field]).ports.length > 0)
+  // 当前选中的关系字段必须保留实体行，列表项连线才能锚定到对应元素。
+  return fields.filter(field => visible.has(field.name) || enabledRelations.has(field.name))
 }
 
 export function relationValue(port: RelationPort, key: string): FieldValue {

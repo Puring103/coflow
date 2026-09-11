@@ -60,6 +60,7 @@ export function useReferenceShortName(targetType: string | undefined, key: strin
     })
     return () => { active = false }
   }, [lookups, targetType, key])
-  if (resolved?.lookups === lookups && resolved?.type === targetType && resolved?.key === key) return resolved.name
+  // 同一会话刷新期间保留旧名称，避免每次字段保存都先回退为 key 再闪回名称。
+  if (resolved?.lookups?.sessionId === lookups?.sessionId && resolved?.type === targetType && resolved?.key === key) return resolved.name
   return targetType ? lookups?.cachedRefTargets(targetType)?.find(target => target.coordinate.key === key)?.short_name ?? undefined : undefined
 }

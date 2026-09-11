@@ -1457,10 +1457,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             // Runs before native selects open, so the inspector
                             // follows the cell even when its editor consumes click.
                             e.stopPropagation()
+                            const containsEditor = e.currentTarget.contains(document.activeElement)
                             if (!isNativeEditorTarget(e.target, false)) {
-                              tableScrollRef.current?.focus({ preventScroll: true })
+                              if (containsEditor) e.preventDefault()
+                              else tableScrollRef.current?.focus({ preventScroll: true })
                             }
-                            if (!fieldPath) {
+                            if (!fieldPath && !containsEditor) {
                               const mode: RecordSelectionMode = e.shiftKey
                                 ? 'range'
                                 : (e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
@@ -1834,7 +1836,7 @@ function EditableCellBuiltIn({
       <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CellTextEditor
           value={shownValue as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
-          onCommit={next => { commitValue!(next); setEditing(false) }}
+          onCommit={next => commitValue!(next)}
           onCancel={() => setEditing(false)}
         />
       </div>
@@ -1843,11 +1845,12 @@ function EditableCellBuiltIn({
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
-      onDoubleClick={canEdit ? (e: React.MouseEvent) => {
+      onClick={canEdit ? (e: React.MouseEvent) => {
+        if (e.shiftKey || e.ctrlKey || e.metaKey) return
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={canEdit ? '双击编辑' : undefined}
+      title={canEdit ? '单击编辑' : undefined}
     >
       <DataCardCompact
         value={shownValue}
@@ -1886,7 +1889,7 @@ function CellTextEditor({
   function commit() {
     const next = parseFieldValueText(value, text)
     if (next) onCommit(next)
-    else onCancel()
+    else setText(plainFieldValueText(value))
   }
   if (value.kind === 'string' || value.kind === 'formatted_string') {
     return (
@@ -1896,13 +1899,13 @@ function CellTextEditor({
         rows={1}
         autoFocus
         onValueChange={setText}
-        onBlur={commit}
+        onBlur={() => { commit(); onCancel() }}
         onKeyDown={event => {
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault()
-            event.currentTarget.blur()
+            commit()
           }
-          if (event.key === 'Escape') onCancel()
+          if (event.key === 'Escape') setText(plainFieldValueText(value))
         }}
       />
     )
@@ -1915,10 +1918,10 @@ function CellTextEditor({
       value={text}
       autoFocus
       onChange={e => setText(e.target.value)}
-      onBlur={commit}
+      onBlur={() => { commit(); onCancel() }}
       onKeyDown={e => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        if (e.key === 'Escape') onCancel()
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') setText(String(value.value))
       }}
     />
   )
@@ -1942,7 +1945,6 @@ function EditableKeyCell({
   const commit = () => {
     const next = draft.trim()
     if (next && next !== value && onCommit) onCommit(next)
-    setEditing(false)
   }
 
   if (editing && editable) {
@@ -1952,12 +1954,11 @@ function EditableKeyCell({
         value={draft}
         autoFocus
         onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => { commit(); setEditing(false) }}
         onKeyDown={e => {
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') {
             setDraft(value)
-            setEditing(false)
           }
         }}
         onClick={e => e.stopPropagation()}
@@ -1969,11 +1970,12 @@ function EditableKeyCell({
   return (
     <span
       className={`cell-key${editable ? ' editable' : ''}`}
-      onDoubleClick={editable ? e => {
+      onClick={editable ? e => {
+        if (e.shiftKey || e.ctrlKey || e.metaKey) return
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={editable ? '双击重命名 Key' : undefined}
+      title={editable ? '单击重命名 Key' : undefined}
     >
       {highlightSearchText(value, highlightQuery)}
     </span>

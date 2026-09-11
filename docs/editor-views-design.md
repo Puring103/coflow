@@ -5,7 +5,7 @@
 ### 1.1 设置文件
 - 目录：`editor-setting/`（文件夹和文件都不带点前缀）
 - 单一版本化文件：`editor.json`。视图、默认表格列宽、记录分组和 workspace 状态在同一文件中读写
-- 文件格式：`{ version: 1, views, view_order, short_name_fields, default_table_column_widths, record_groups, workspace }`
+- 文件格式：`{ version: 1, views, view_order, short_name_fields, default_table_column_widths, graph_positions, record_groups, workspace }`
 - **旧配置不兼容**：不读取、不迁移 `.coflow/editor.json`；直接采用新格式。用户既有的列宽 / 分组 / `graph_enabled_fields` 全部丢弃，从空配置开始
 - 废弃 `graph_enabled_fields`：新语义"自定义图视图的字段"由 ViewConfig 承载，无对应迁移
 
@@ -30,6 +30,14 @@
 ### 1.3 视图配置的 key
 - 沿用 (filePath, actualType) 双层 key，与 workspace tab id 一致
 - 同一 type 名出现在多个 .cfd 文件时视图独立
+
+### 1.3.1 图节点位置
+- `graph_positions` 按 `JSON.stringify([filePath, viewId, actualType])` 保存独立图视图；每个节点 ID 对应 `[x, y]` 坐标。
+- 首次没有保存位置时运行布局引擎，并保存结果。重新打开视图或项目时恢复坐标。
+- 普通字段编辑原位更新卡片；关系变化更新节点和连线，已有节点保持坐标，新节点放到空闲区域。
+- 工具栏的“重新布局”按钮采用刷新图标，重新计算当前图并覆盖保存的位置。
+- 一次节点拖动或手动重新布局作为一条编辑器历史记录，统一支持撤销和重做；初始布局和新增节点安置不新增历史步骤。
+- 坐标保存不推进配置数据版本，不触发项目重载。缩略模式保留完整卡片尺寸和列表项端口位置。
 
 ### 1.4 路由模型（Route / viewId）
 现状 `Route` 只有 `view: 'table' | 'record' | 'graph'` 三种固定值，无法表达"同一 table 视图下的多个自定义实例"。改造为携带 `viewId`：

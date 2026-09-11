@@ -657,6 +657,18 @@ async fn get_dimension_file_records(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn set_graph_positions(
+    session_id: u32,
+    view_key: String,
+    positions: BTreeMap<String, [f64; 2]>,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().set_graph_positions(session_id, view_key, positions)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn set_default_table_column_widths(
     session_id: u32,
     file_path: String,
@@ -1317,6 +1329,7 @@ pub fn run() -> tauri::Result<()> {
             get_project_dimensions,
             get_dimension_file_records,
             set_default_table_column_widths,
+            set_graph_positions,
             set_views,
             set_view_order,
             set_short_name_field,

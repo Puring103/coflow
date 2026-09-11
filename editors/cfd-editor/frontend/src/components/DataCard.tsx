@@ -1623,6 +1623,7 @@ export function RefDirectSelect({
       })) ?? null
       : null
   ))
+  const targetsIdentity = useRef({ sessionId: lookups.sessionId, targetType })
   const [loadError, setLoadError] = useState<string | null>(null)
   const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
   const selectedValue = value.kind === 'option_none' ? NULL_SENTINEL : currentKey
@@ -1638,11 +1639,16 @@ export function RefDirectSelect({
       return
     }
     let alive = true
-    setTargets(lookups.cachedRefTargets(targetType)?.map(target => ({
+    const sameTarget = targetsIdentity.current.sessionId === lookups.sessionId
+      && targetsIdentity.current.targetType === targetType
+    targetsIdentity.current = { sessionId: lookups.sessionId, targetType }
+    // 同一引用域刷新时保留已有选项和输入控件，异步结果到达后原位更新。
+    const cachedTargets = lookups.cachedRefTargets(targetType)?.map(target => ({
       key: target.coordinate.key,
       label: shortNameLabel(target.coordinate.key, target.short_name),
       shortName: target.short_name,
-    })) ?? null)
+    }))
+    setTargets(current => cachedTargets ?? (sameTarget ? current : null))
     setLoadError(null)
     lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return

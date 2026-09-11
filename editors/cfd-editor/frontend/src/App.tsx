@@ -88,6 +88,9 @@ import {
   MutationHistoryController,
   publishMutationGeneration,
   ProjectGenerationController,
+  committed, failed, superseded,
+  type GraphPositions,
+  type MutationResult,
   type MutationPublicationRequest,
 } from './state/editorState'
 import {
@@ -205,6 +208,44 @@ export default function App() {
     saveViews,
     saveViewOrder,
   } = useProjectSettings(generation, setErrorMsg)
+  const graphSettingsRef = useRef(projectSettings)
+  graphSettingsRef.current = projectSettings
+
+  const applyGraphPositions = useCallback(async (viewKey: string, positions: GraphPositions): Promise<MutationResult<void>> => {
+    const identity = generation.currentIdentity()
+    if (!identity) return superseded()
+    try {
+      if (api.isTauri) await api.setGraphPositions(identity.sessionId, viewKey, positions)
+      if (generation.currentIdentity()?.sessionId !== identity.sessionId) return superseded()
+      const base = graphSettingsRef.current ?? emptyProjectSettings()
+      graphSettingsRef.current = { ...base, graph_positions: { ...base.graph_positions, [viewKey]: positions } }
+      setProjectSettings(current => {
+        const base = current ?? emptyProjectSettings()
+        return { ...base, graph_positions: { ...base.graph_positions, [viewKey]: positions } }
+      })
+      return committed(undefined)
+    } catch (error) {
+      setErrorMsg(`保存图节点位置失败：${errorMessage(error)}`)
+      return failed()
+    }
+  }, [generation, setProjectSettings])
+
+  const saveGraphPositions = useCallback((viewKey: string, positions: GraphPositions, recordHistory: boolean) => {
+    const identity = generation.currentIdentity()
+    const epoch = history.currentEpoch()
+    return history.serialize(async () => {
+      if (!identity || generation.currentIdentity()?.sessionId !== identity.sessionId || history.currentEpoch() !== epoch) return
+      const oldPositions = (graphSettingsRef.current?.graph_positions[viewKey] ?? {}) as GraphPositions
+      const next = structuredClone(positions)
+      const result = await applyGraphPositions(viewKey, next)
+      if (result.status === 'failed') throw new Error('保存图节点位置失败')
+      if (result.status === 'committed' && recordHistory) {
+        history.record({ kind: 'graph-layout', viewKey,
+          revision: generation.currentIdentity()!.revision,
+          oldPositions: structuredClone(oldPositions), newPositions: next })
+      }
+    })
+  }, [generation, history, applyGraphPositions])
   const [shortNameSaving, setShortNameSaving] = useState(false)
   const [shortNameRevision, setShortNameRevision] = useState(0)
   const saveShortNameField = useCallback(async (actualType: string, field: string | null) => {
@@ -1246,6 +1287,7 @@ export default function App() {
   }, [generation])
 
   const mutationPort = useMemo<EditorMutationPort>(() => ({
+    applyGraphPositions,
     currentGeneration: () => api.isTauri ? generation.currentIdentity() : null,
     publish: publishMutation,
     fileRecordsForRow,
@@ -1271,7 +1313,7 @@ export default function App() {
       reportSessionError(sessionId, prefix, error, expectedRevision)
     },
     optimisticWriteField,
-  }), [commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
+  }), [applyGraphPositions, commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
   const mutations = useMemo(
     () => new EditorMutationController(api, mutationPort, history),
     [history, mutationPort],
@@ -1359,6 +1401,7 @@ export default function App() {
     },
     [mutations],
   )
+
 
   const editCollection = useCallback(
     async (
@@ -3129,7 +3172,10 @@ export default function App() {
                   activeGraph ? (
                     <GraphView
                       key={`${currentRoute.file}:${resolvedView?.id ?? currentRoute.viewId}:${activeType}`}
-                      viewKey={`${currentRoute.file}:${currentRoute.viewId}:${activeType}`}
+                      viewKey={JSON.stringify([currentRoute.file, currentRoute.viewId, activeType])}
+                      savedPositions={projectSettings?.graph_positions[JSON.stringify([currentRoute.file, currentRoute.viewId, activeType])] as GraphPositions | undefined}
+                      onSavePositions={(positions, recordHistory) => saveGraphPositions(
+                        JSON.stringify([currentRoute.file, currentRoute.viewId, activeType]), positions, recordHistory)}
                       graphData={viewFilteredGraph ?? activeGraph}
                       activeType={activeType}
                       enabledFieldsOverride={resolvedView?.kind === 'graph' && !resolvedView.isDefault ? resolvedView.relations : undefined}

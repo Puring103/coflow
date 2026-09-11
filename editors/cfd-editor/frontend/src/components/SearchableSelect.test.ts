@@ -12,6 +12,12 @@ const options: SearchableOption[] = [
 ]
 
 describe('filterSearchableOptions', () => {
+  it('matches configured short names as well as record keys', () => {
+    const choices = [{ value: 'weapon_001', label: 'Item.weapon_001', selectedLabel: '铁剑' }]
+    expect(filterSearchableOptions(choices, '铁剑')).toEqual(choices)
+    expect(filterSearchableOptions(choices, 'weapon')).toEqual(choices)
+    expect(filterSearchableOptions(choices, '铁剑 001')).toEqual(choices)
+  })
   it('matches labels and values without case sensitivity', () => {
     expect(filterSearchableOptions(options, 'SWORD')).toEqual([options[0]])
     expect(filterSearchableOptions(options, 'rare')).toEqual([options[2]])

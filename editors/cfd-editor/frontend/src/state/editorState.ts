@@ -147,7 +147,17 @@ export async function publishMutationGeneration(
   return committed(undefined)
 }
 
-export type EditEntry = FieldEditEntry | BatchFieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry | ReorderEditEntry
+export type GraphPositions = Record<string, [number, number]>
+
+export interface GraphLayoutEditEntry {
+  kind: 'graph-layout'
+  revision: number
+  viewKey: string
+  oldPositions: GraphPositions
+  newPositions: GraphPositions
+}
+
+export type EditEntry = FieldEditEntry | BatchFieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry | ReorderEditEntry | GraphLayoutEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
@@ -327,6 +337,7 @@ function rebindEntry(
   oldCoordinate: RecordCoordinate,
   newCoordinate: RecordCoordinate,
 ): EditEntry {
+  if (entry.kind === 'graph-layout') return entry
   if (entry.kind === 'batch-field') {
     return {
       ...entry,

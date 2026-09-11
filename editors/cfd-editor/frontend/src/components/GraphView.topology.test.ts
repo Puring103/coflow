@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { GraphNodeView } from '../wire'
-import { graphTopologySignature, retainGraphPositions, type GraphLayoutResult } from './GraphView.layout'
+import { graphTopologySignature, layoutGraph, retainGraphPositions, type GraphLayoutResult } from './GraphView.layout'
 
 function node(value: string): GraphNodeView {
   return {
@@ -28,6 +28,15 @@ describe('graph topology signature', () => {
       .toBe(graphTopologySignature({ nodes: [node('new')], edges: [] }))
   })
 
+  it('ignores field visibility and non-reference collection changes', () => {
+    const original = node('old')
+    const changed = { ...original, fields: [{ ...original.fields[0],
+      value: { kind: 'array' as const, value: [{ kind: 'string' as const, value: 'new' }] } }] }
+    const signature = graphTopologySignature({ nodes: [original], edges: [] })
+    expect(graphTopologySignature({ nodes: [changed], edges: [] })).toBe(signature)
+    expect(graphTopologySignature({ nodes: [{ ...original, fields: [] }], edges: [] })).toBe(signature)
+  })
+
   it('changes when reference edges change', () => {
     const graph = { nodes: [node('same')], edges: [] }
     expect(graphTopologySignature(graph)).not.toBe(graphTopologySignature({
@@ -47,6 +56,21 @@ describe('graph topology signature', () => {
 })
 
 describe('graph refresh positions', () => {
+  it('restores saved positions and places new nodes without running the layout engine', async () => {
+    const a = node('a')
+    const b = { ...node('b'), id: 'Item::two' }
+    const c = { ...node('c'), id: 'Item::three' }
+    const edge = (target: GraphNodeView) => ({ source: a.id, target: target.id, field_path: 'next',
+      raw: { source: a.coordinate, target: target.coordinate, field_path: 'next' } })
+    const saved = new Map([[a.id, { x: -500, y: 200 }], [b.id, { x: 60, y: 200 }]])
+    const engine = vi.fn()
+    const result = await layoutGraph({ nodes: [a, b, c], edges: [edge(b), edge(c)] },
+      new Set(['next']), undefined, new Map(), new Map(), engine, saved)
+    expect(engine).not.toHaveBeenCalled()
+    expect(result.positions.get(a.id)).toEqual(saved.get(a.id))
+    expect(result.positions.get(b.id)).toEqual(saved.get(b.id))
+    expect(result.positions.get(c.id)!.y).toBeGreaterThan(saved.get(b.id)!.y)
+  })
   it('retains dragged coordinates and places new targets below measured occupied nodes', () => {
     const a = node('a')
     const b = { ...node('b'), id: 'Item::two' }
