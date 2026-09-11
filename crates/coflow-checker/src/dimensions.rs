@@ -1,8 +1,7 @@
 use crate::limits::{EvaluationBudget, EvaluationCursor};
 use coflow_language::cft::{CftSchema, CftValueType, DimensionName, VariantName};
 use coflow_model::{
-    CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue,
-    DimensionValueLookup,
+    CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdRecordId, CfdValue, DimensionValueLookup,
 };
 
 use crate::diagnostics::dimension_lookup_error_message;
@@ -53,7 +52,9 @@ fn attach_dimension_origin(
         return;
     };
     // 回退基础值时保留基础字段位置，不能把诊断指向维度文件中的 None。
-    if let Some(value) = values.variants.get(variant)
+    if let Some(value) = values
+        .variants
+        .get(variant)
         .filter(|value| !matches!(value.value, CfdValue::OptionNone))
     {
         label.origin = Some(value.origin.clone());

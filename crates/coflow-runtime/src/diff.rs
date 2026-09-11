@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -149,7 +150,7 @@ pub(crate) fn diff_against_head(
     // HEAD 必须使用提交内自己的 coflow.yaml 与 CFT/CFD，不能套用当前 schema。
     let head_session = Project::open_schema_only(Some(&head.config_path))
         .and_then(|mut project| {
-            git.rebase_head_inputs(&mut project, head._temp.path())?;
+            git.rebase_head_inputs(&mut project, head.temp.path())?;
             Ok(project)
         })
         .and_then(|project| Runtime::new().open_read_only_session(project));
@@ -167,10 +168,10 @@ pub(crate) fn diff_against_head(
                 session_sources(
                     &head_session.session,
                     &git,
-                    Some(head._temp.path()),
+                    Some(head.temp.path()),
                     &mut diagnostics,
                 ),
-                record_states(&head_session.session, &git, Some(head._temp.path())),
+                record_states(&head_session.session, &git, Some(head.temp.path())),
                 valid,
             )
         }
@@ -248,10 +249,9 @@ fn session_sources(
     }
     sources
         .into_iter()
-        .filter_map(
-            |(path, source)| match git.diff_path(root, &path, snapshot) {
-                Some(path) => Some((path, source)),
-                None => {
+        .filter_map(|(path, source)| {
+            git.diff_path(root, &path, snapshot).map_or_else(
+                || {
                     diagnostics.push(ProjectDiffDiagnostic {
                         endpoint: if snapshot.is_some() {
                             "head"
@@ -263,9 +263,10 @@ fn session_sources(
                         message: format!("已排除 Git 仓库外的项目文件 `{path}`"),
                     });
                     None
-                }
-            },
-        )
+                },
+                |path| Some((path, source)),
+            )
+        })
         .collect()
 }
 
@@ -298,7 +299,7 @@ fn record_states(
             }
         }
         let snapshot = ProjectRecordSnapshot {
-            file_path: file_path.to_string(),
+            file_path: file_path.clone(),
             values: values
                 .iter()
                 .map(|(path, value)| ProjectDiffValue {
@@ -500,10 +501,12 @@ impl ConsumeHunk for PatchHunks {
         // Unified Diff 的空区间从前一行起算，末行缺少换行时保留显式标记。
         let before_start = header.before_hunk_start - u32::from(header.before_hunk_len == 0);
         let after_start = header.after_hunk_start - u32::from(header.after_hunk_len == 0);
-        self.0.push_str(&format!(
-            "@@ -{before_start},{} +{after_start},{} @@\n",
+        writeln!(
+            self.0,
+            "@@ -{before_start},{} +{after_start},{} @@",
             header.before_hunk_len, header.after_hunk_len,
-        ));
+        )
+        .map_err(std::io::Error::other)?;
         for (kind, bytes) in lines {
             self.0.push(kind.to_prefix());
             self.0
@@ -532,7 +535,7 @@ struct GitProject {
 }
 
 struct HeadMaterialization {
-    _temp: tempfile::TempDir,
+    temp: tempfile::TempDir,
     config_path: PathBuf,
     sources: BTreeMap<String, String>,
 }
@@ -651,7 +654,7 @@ impl GitProject {
         }
         Ok(HeadMaterialization {
             config_path: temp.path().join(&self.config_relative),
-            _temp: temp,
+            temp,
             sources,
         })
     }
@@ -666,7 +669,11 @@ impl GitProject {
             .map_err(|error| git_error(format!("无法读取 Git 索引：{error}")))?;
         let mut excludes = self
             .repo
-            .excludes(&index, None, Default::default())
+            .excludes(
+                &index,
+                None,
+                gix::worktree::stack::state::ignore::Source::default(),
+            )
             .map_err(|error| git_error(format!("无法读取 Git 忽略规则：{error}")))?;
         let mut ignored = BTreeSet::new();
         for path in paths {
@@ -674,13 +681,13 @@ impl GitProject {
             let repo_path = absolute.strip_prefix(&self.repo_root).map_err(|error| {
                 git_error(format!("无法解析 Git 仓库相对路径 `{path}`：{error}"))
             })?;
-            let git_path = crate::path_to_slash(&repo_path);
+            let git_path = crate::path_to_slash(repo_path);
             // 与 check-ignore 一致，索引中已跟踪的文件不受忽略规则影响。
             if index.entry_by_path(git_path.as_bytes().as_bstr()).is_some() {
                 continue;
             }
             if excludes
-                .at_path(&repo_path, None)
+                .at_path(repo_path, None)
                 .map_err(|error| git_error(format!("无法判断 Git 忽略路径 `{path}`：{error}")))?
                 .is_excluded()
             {
@@ -766,6 +773,8 @@ fn git_error(message: impl Into<String>) -> DiagnosticSet {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::unified_hunks;
 
     #[test]

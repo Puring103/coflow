@@ -20,9 +20,11 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 /// `field_shape` 只依赖 schema：同一项目代际内形状不变。表格、图谱与记录视图
 /// 会针对每条记录的每个字段重复请求它，缓存后把 `记录数 × 字段数` 的形状重建
 /// 降到一次/字段。
+type ShapeCacheMap = HashMap<(String, String), Option<Arc<FieldShapeInfo>>>;
+
 #[derive(Debug, Default)]
 pub struct ShapeCache {
-    inner: RwLock<HashMap<(String, String), Option<Arc<FieldShapeInfo>>>>,
+    inner: RwLock<ShapeCacheMap>,
 }
 
 impl ShapeCache {

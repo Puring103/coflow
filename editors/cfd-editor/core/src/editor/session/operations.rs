@@ -226,6 +226,7 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
 }
 
 impl SessionStore {
+    #[allow(clippy::significant_drop_tightening)]
     pub fn highlight_source_snapshot(
         &self,
         id: u32,

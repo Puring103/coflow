@@ -200,6 +200,7 @@ impl SessionStore {
     }
 
     /// 缩略名是编辑器展示设置；只接受类型的字符串字段，不改变记录身份。
+    #[allow(clippy::significant_drop_tightening)]
     pub fn set_short_name_field(
         &self,
         id: u32,

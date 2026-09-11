@@ -25,7 +25,12 @@ pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> Value {
 }
 
 /// 复用调用方预建的 [`LineIndex`]，避免逐符号从文件头重新扫描。
-pub(crate) fn byte_range_indexed(index: &LineIndex, source: &str, start: usize, end: usize) -> Value {
+pub(crate) fn byte_range_indexed(
+    index: &LineIndex,
+    source: &str,
+    start: usize,
+    end: usize,
+) -> Value {
     let start = position_from_byte_indexed(index, source, start);
     let end = position_from_byte_indexed(index, source, end);
     lsp_range(start.line, start.character, end.line, end.character)

@@ -23,20 +23,28 @@
       {
         "file_path": "data/04-functions.cfd",
         "type_name": "RuleSet",
-        "view_id": "__default_source",
-        "view_kind": "source"
+        "view_id": "__default_record",
+        "view_kind": "record",
+        "coordinate": {
+          "actual_type": "RuleSet",
+          "key": "rules"
+        }
       },
       {
         "file_path": "data/05-ui.cfd",
         "type_name": "UiText",
-        "view_id": "__default_source",
-        "view_kind": "source"
+        "view_id": "__default_record",
+        "view_kind": "record",
+        "coordinate": {
+          "actual_type": "UiText",
+          "key": "UiText"
+        }
       },
       {
         "file_path": "data/03-quests.cfd",
         "type_name": "Quest",
-        "view_id": "__default_record",
-        "view_kind": "record",
+        "view_id": "__default_source",
+        "view_kind": "source",
         "coordinate": {
           "actual_type": "Quest",
           "key": "introduction"

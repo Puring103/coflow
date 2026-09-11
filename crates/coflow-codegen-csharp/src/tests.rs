@@ -703,9 +703,10 @@ fn namespace_qualifies_references_without_changing_source_names() {
     let schema = build_schema(&modules, &dimensions).expect("schema");
     let files = generate_csharp_cfd_with_variants(&schema, BTreeMap::new(), None, "Game.Config")
         .expect("generate namespaced code");
-    assert!(files
-        .iter()
-        .all(|file| file.contents.replace("\r\n", "\n").contains("namespace Game.Config\n{")));
+    assert!(files.iter().all(|file| file
+        .contents
+        .replace("\r\n", "\n")
+        .contains("namespace Game.Config\n{")));
     let output = all(&files);
     assert!(output.contains("typeof(global::Game.Config.Item)"));
     assert!(output.contains("global::Game.Config.Rarity.Common"));

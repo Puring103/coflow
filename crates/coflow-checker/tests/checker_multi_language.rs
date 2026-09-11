@@ -80,7 +80,11 @@ fn absent_and_none_variants_validate_the_base_value() {
     let schema = schema();
     for base in ["base", ""] {
         // 覆盖整个维度字段缺失、仅目标变体缺失，以及显式 None。
-        for overlay in [None, Some(("en", LoadedValueDraft::from("other"))), Some(("zh", LoadedValueDraft::OptionNone))] {
+        for overlay in [
+            None,
+            Some(("en", LoadedValueDraft::from("other"))),
+            Some(("zh", LoadedValueDraft::OptionNone)),
+        ] {
             let mut builder = CfdDataModel::builder(&schema);
             builder.add_record("item", "Item", [("name", LoadedValueDraft::from(base))]);
             if let Some((variant, value)) = overlay {
@@ -95,17 +99,25 @@ fn absent_and_none_variants_validate_the_base_value() {
                 });
             }
             let model = builder.build().expect("model");
-            let output = execute_checks(&schema, &model, [CheckTask {
-                statement: item_statement(&schema),
-                target: CheckTarget::Record(record_id_at(&model, 0)),
-                projection: CheckProjection::Dimension {
-                    dimension: DimensionName::new("language").unwrap(),
-                    variant: VariantName::new("zh").unwrap(),
-                },
-            }], CheckLimits::default());
+            let output = execute_checks(
+                &schema,
+                &model,
+                [CheckTask {
+                    statement: item_statement(&schema),
+                    target: CheckTarget::Record(record_id_at(&model, 0)),
+                    projection: CheckProjection::Dimension {
+                        dimension: DimensionName::new("language").unwrap(),
+                        variant: VariantName::new("zh").unwrap(),
+                    },
+                }],
+                CheckLimits::default(),
+            );
             if base.is_empty() {
                 assert_eq!(output.results[0].diagnostics.len(), 1);
-                assert_eq!(output.results[0].diagnostics[0].diagnostic.message, "empty item");
+                assert_eq!(
+                    output.results[0].diagnostics[0].diagnostic.message,
+                    "empty item"
+                );
             } else {
                 assert!(output.is_success(), "{output:?}");
             }

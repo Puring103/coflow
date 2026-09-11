@@ -331,7 +331,10 @@ mod tests {
         );
         settings.view_order.insert(
             "data/items.cfd".to_string(),
-            BTreeMap::from([("Item".to_string(), vec!["view-1".to_string(), "__default_record".to_string()])]),
+            BTreeMap::from([(
+                "Item".to_string(),
+                vec!["view-1".to_string(), "__default_record".to_string()],
+            )]),
         );
         settings
             .default_table_column_widths

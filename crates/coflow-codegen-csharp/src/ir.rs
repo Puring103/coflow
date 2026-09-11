@@ -77,55 +77,7 @@ pub fn build_project(
         })
         .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
 
-    let mut layout_registrations = Vec::new();
-    let mut registered_layouts = BTreeSet::new();
-    for schema_type in schema.all_types() {
-        for field in schema_type.all_fields() {
-            collect_layout_registrations(
-                &field.value_type,
-                &view,
-                &mut registered_layouts,
-                &mut layout_registrations,
-            );
-            if let Some(binding) = &field.dimension {
-                let record_type = coflow_language::cft::dimension_record_type(
-                    binding.dimension.as_str(),
-                    field.declaring_type.as_str(),
-                    field.name.as_str(),
-                );
-                let singleton = view.type_is_singleton(field.declaring_type.as_str())?;
-                let registration = format!(
-                    "runtime.RegisterDimension(\"{record_type}\", \"{}\", \"{}\", {singleton});",
-                    field.declaring_type, field.name
-                );
-                if registered_layouts.insert(registration.clone()) {
-                    layout_registrations.push(registration);
-                }
-                let inner = csharp_type(&field.value_type, &view);
-                let wrapper = format!("{}<{inner}>", csharp_type_name(binding.dimension.as_str()));
-                if registered_layouts.insert(wrapper.clone()) {
-                    let dictionary = format!("IReadOnlyDictionary<string, {inner}>");
-                    if registered_layouts.insert(dictionary.clone()) {
-                        layout_registrations
-                            .push(format!("runtime.RegisterDictionary<string, {inner}>();"));
-                    }
-                    let width =
-                        crate::emit::field_layout_widths(field, &view, &mut BTreeSet::new())?;
-                    layout_registrations.push(format!(
-                        "runtime.RegisterStruct<{wrapper}>({}, {}, {},\n            static (ref CoflowValueWriter writer, {wrapper} value) => {{ writer.Write(value.Default); writer.Write(value.Variants); }},\n            static (ref CoflowValueReader reader) => new {wrapper}(reader.Read<{inner}>(), reader.Read<{dictionary}>()));",
-                        width.0, width.1, width.2));
-                }
-            }
-        }
-    }
-    for constant in schema.all_consts() {
-        collect_layout_registrations(
-            &constant.value_type,
-            &view,
-            &mut registered_layouts,
-            &mut layout_registrations,
-        );
-    }
+    let layout_registrations = build_layout_registrations(schema, &view)?;
 
     Ok(CsharpProject {
         namespace: namespace.to_string(),
@@ -136,6 +88,77 @@ pub fn build_project(
         constants,
         layout_registrations,
     })
+}
+
+fn build_layout_registrations(
+    schema: &CftSchema,
+    view: &CsharpLoweringPlan<'_>,
+) -> Result<Vec<String>, CsharpCodegenError> {
+    let mut registrations = Vec::new();
+    let mut registered = BTreeSet::new();
+    for schema_type in schema.all_types() {
+        for field in schema_type.all_fields() {
+            collect_layout_registrations(
+                &field.value_type,
+                view,
+                &mut registered,
+                &mut registrations,
+            );
+            if let Some(binding) = &field.dimension {
+                collect_dimension_registration(
+                    field,
+                    binding,
+                    view,
+                    &mut registered,
+                    &mut registrations,
+                )?;
+            }
+        }
+    }
+    for constant in schema.all_consts() {
+        collect_layout_registrations(
+            &constant.value_type,
+            view,
+            &mut registered,
+            &mut registrations,
+        );
+    }
+    Ok(registrations)
+}
+
+fn collect_dimension_registration(
+    field: &coflow_language::cft::CftField,
+    binding: &coflow_language::cft::CftFieldDimension,
+    view: &CsharpLoweringPlan<'_>,
+    registered: &mut BTreeSet<String>,
+    output: &mut Vec<String>,
+) -> Result<(), CsharpCodegenError> {
+    let record_type = coflow_language::cft::dimension_record_type(
+        binding.dimension.as_str(),
+        field.declaring_type.as_str(),
+        field.name.as_str(),
+    );
+    let singleton = view.type_is_singleton(field.declaring_type.as_str())?;
+    let registration = format!(
+        "runtime.RegisterDimension(\"{record_type}\", \"{}\", \"{}\", {singleton});",
+        field.declaring_type, field.name
+    );
+    if registered.insert(registration.clone()) {
+        output.push(registration);
+    }
+    let inner = csharp_type(&field.value_type, view);
+    let wrapper = format!("{}<{inner}>", csharp_type_name(binding.dimension.as_str()));
+    if registered.insert(wrapper.clone()) {
+        let dictionary = format!("IReadOnlyDictionary<string, {inner}>");
+        if registered.insert(dictionary.clone()) {
+            output.push(format!("runtime.RegisterDictionary<string, {inner}>();"));
+        }
+        let width = crate::emit::field_layout_widths(field, view, &mut BTreeSet::new())?;
+        output.push(format!(
+            "runtime.RegisterStruct<{wrapper}>({}, {}, {},\n            static (ref CoflowValueWriter writer, {wrapper} value) => {{ writer.Write(value.Default); writer.Write(value.Variants); }},\n            static (ref CoflowValueReader reader) => new {wrapper}(reader.Read<{inner}>(), reader.Read<{dictionary}>()));",
+            width.0, width.1, width.2));
+    }
+    Ok(())
 }
 
 fn collect_layout_registrations(
