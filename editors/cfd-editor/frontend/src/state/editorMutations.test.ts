@@ -4,6 +4,8 @@ import type { FileRecords } from '../bindings/FileRecords'
 import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
 import type { BatchWriteFieldOutcome } from '../bindings/BatchWriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
+import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
+import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
 import { committed, MutationHistoryController, superseded } from './editorState'
 import {
   EditorMutationController,
@@ -60,6 +62,22 @@ const dimensionCoordinate = {
   path: [],
 }
 
+function recordsOutcome(revision: number) {
+  return {
+    revision,
+    file_records: {
+      revision,
+      file_path: 'data/items.cfd',
+      type_names: ['Item'],
+      columns: [],
+      records: [],
+      capabilities: {} as never,
+    },
+    diagnostics: [],
+    affected_files: ['data/items.cfd'],
+  }
+}
+
 function dimensionOutcome(
   revision: number,
   oldValue: string | null,
@@ -102,6 +120,75 @@ describe('EditorMutationController', () => {
     expect(history.getSnapshot().undo).toHaveLength(1)
     expect(fakeBackend.writeField).not.toHaveBeenCalled()
     expect(port.publish).not.toHaveBeenCalled()
+  })
+
+  it('undoes a record insert by deleting it and redoes by inserting again', async () => {
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.insertRecord = vi.fn(async () => recordsOutcome(2) as InsertRecordOutcome)
+    fakeBackend.deleteRecord = vi.fn(async () => ({ ...recordsOutcome(3), deleted_snapshot: null }) as DeleteRecordOutcome)
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    const fields = { kind: 'object' as const, value: { actual_type: 'Item', fields: {} } }
+
+    await mutations.insertRecord('data/items.cfd', 'sword', 'Item', fields)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+
+    await mutations.undo()
+    expect(fakeBackend.deleteRecord).toHaveBeenCalledWith(1, coordinate)
+    expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(history.getSnapshot().redo).toHaveLength(1)
+
+    await mutations.redo()
+    expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+  })
+
+  it('collapses a batched insert and relation write into one undo step', async () => {
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.insertRecord = vi.fn(async () => recordsOutcome(2) as InsertRecordOutcome)
+    fakeBackend.writeField = vi.fn(async () => writeOutcome(3, 'old', 'new'))
+    fakeBackend.deleteRecord = vi.fn(async () => ({ ...recordsOutcome(4), deleted_snapshot: null }) as DeleteRecordOutcome)
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    const fields = { kind: 'object' as const, value: { actual_type: 'Item', fields: {} } }
+
+    await mutations.withHistoryBatch(async () => {
+      await mutations.insertRecord('data/items.cfd', 'sword', 'Item', fields)
+      await mutations.writeField('data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' })
+    })
+
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch')
+
+    await mutations.undo()
+    // 反向：先恢复引用，再删除记录。
+    expect(fakeBackend.writeField).toHaveBeenLastCalledWith(
+      1, coordinate, fieldPath, { kind: 'string', value: 'old' },
+    )
+    expect(fakeBackend.deleteRecord).toHaveBeenCalledWith(1, coordinate)
+    expect(history.getSnapshot().undo).toHaveLength(0)
+
+    await mutations.redo()
+    expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
+    expect(history.getSnapshot().undo).toHaveLength(1)
   })
   it('records a batch field edit as one atomic undo and redo step', async () => {
     const second = { actual_type: 'Item', key: 'shield' }

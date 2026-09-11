@@ -48,8 +48,8 @@
 
   /* Graph view */
   --graph-bg-grid: #1c3531;
-  --graph-edge: #46645e;
-  --graph-edge-label: #829991;
+  --graph-edge: #5f9b8e;
+  --graph-edge-label: #9dbdb3;
   --graph-edge-label-bg: #0f1c1a;
   --graph-back-edge: var(--red);
   --graph-edge-highlight: #63c5bb;
@@ -95,8 +95,8 @@
   --code-selection: #b8d9e8;
 
   --graph-bg-grid: #dce8e1;
-  --graph-edge: #91a9a1;
-  --graph-edge-label: #60756f;
+  --graph-edge: #5f857b;
+  --graph-edge-label: #4c6b62;
   --graph-edge-label-bg: #ffffff;
   --graph-back-edge: var(--red);
   --graph-edge-highlight: #24837c;
@@ -4374,12 +4374,28 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   stroke: var(--graph-edge-highlight) !important;
   stroke-width: 2 !important;
 }
+/* 拖动中的真实框选范围（屏幕坐标）。 */
 .graph-selection-box {
   position: fixed;
   z-index: 20;
   pointer-events: none;
   border: 1px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* 选中节点的包围盒：置于节点层之下，只有节点外的边框区域可拖动整组。 */
+.graph-selection-bbox {
+  position: absolute;
+  z-index: -1;
+  pointer-events: auto;
+  border: 1.5px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  cursor: move;
+}
+/* 线体拖动热区：透明加粗路径，按下后转发给最近的重连锚点。 */
+.graph-edge-drag {
+  pointer-events: stroke;
+  cursor: grab;
 }
 
 .gn-header {
@@ -4474,26 +4490,29 @@ input.dc-pill-select.dc-pill-select-enum:focus {
 .react-flow__edge-path {
   pointer-events: stroke !important;
   stroke: var(--graph-edge) !important;
-  stroke-width: 2.5 !important;
-  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--graph-edge) 70%, transparent));
+  stroke-width: 3 !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--graph-edge) 85%, transparent));
 }
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--graph-edge-highlight) !important;
-  stroke-width: 4 !important;
-  filter: drop-shadow(0 0 4px var(--graph-edge-highlight));
+  stroke-width: 4.5 !important;
+  filter: drop-shadow(0 0 6px var(--graph-edge-highlight));
 }
 .react-flow__edge-text { fill: var(--text-dim); font-size: 9px !important; }
 .react-flow__handle {
   background: var(--border-strong) !important;
   border: 2px solid var(--bg-2) !important;
-  width: 14px !important;
-  height: 14px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 /* 连线端口必须高于字段操作区，缩放后仍能准确命中拖动起点。 */
 .graph-node > .react-flow__handle {
   z-index: 5;
   pointer-events: all !important;
   cursor: crosshair;
+  background: var(--graph-edge) !important;
+  border: 2px solid var(--bg-1) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--graph-edge) 60%, transparent);
 }
 .graph-node.hover-highlight > .react-flow__handle,
 .graph-node.selected > .react-flow__handle {

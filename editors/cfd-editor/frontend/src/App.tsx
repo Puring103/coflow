@@ -1568,6 +1568,12 @@ export default function App() {
     await mutations.redo()
   }, [mutations])
 
+  // 图视图“新建节点+建立引用”走同一条历史记录，一次撤销整体回退。
+  const runHistoryBatch = useCallback(
+    (operation: () => Promise<void>) => mutations.withHistoryBatch(operation),
+    [mutations],
+  )
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -3159,6 +3165,9 @@ export default function App() {
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
+                    onDeleteRecords={(coordinates) => deleteRecords(currentRoute.file, coordinates)}
+                    onMoveRecord={(coordinate, targetIndex) =>
+                      moveRecord(currentRoute.file, coordinate, targetIndex)}
                     onDiagnosticBadgeClick={(coordinate, fieldPath) =>
                       focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
                     }
@@ -3177,6 +3186,7 @@ export default function App() {
                       onSavePositions={(positions, recordHistory) => saveGraphPositions(
                         JSON.stringify([currentRoute.file, currentRoute.viewId, activeType]), positions, recordHistory)}
                       graphData={viewFilteredGraph ?? activeGraph}
+                      filePath={currentRoute.file}
                       activeType={activeType}
                       enabledFieldsOverride={resolvedView?.kind === 'graph' && !resolvedView.isDefault ? resolvedView.relations : undefined}
                       visibleCardFields={visibleFields}
@@ -3191,6 +3201,14 @@ export default function App() {
                       onDiagnosticBadgeClick={(file, coordinate, fieldPath) =>
                         focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
                       }
+                      onCreateRecordDraft={tableOnCreateRecordDraft}
+                      onInsertRecord={(recordKey, actualType, fields) =>
+                        insertRecord(currentRoute.file, recordKey, actualType, fields)}
+                      recordGroups={recordGroups}
+                      onDropRecordIntoGroup={dropRecordIntoGroup}
+                      onRenameRecord={renameRecord}
+                      onDeleteRecord={(file, coordinate) => deleteRecords(file, [coordinate])}
+                      runHistoryBatch={runHistoryBatch}
                       onExitLeft={focusFileTree}
                       onExitUp={focusDocumentSearch}
                       onExitRight={focusInspector}

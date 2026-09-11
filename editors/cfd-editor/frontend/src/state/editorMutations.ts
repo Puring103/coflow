@@ -24,6 +24,8 @@ import {
   failed,
   MutationHistoryController,
   superseded,
+  type BatchEditEntry,
+  type EditEntry,
   type MutationPublicationRequest,
   type MutationResult,
   type EditorGenerationIdentity,
@@ -454,8 +456,23 @@ export class EditorMutationController {
     ))
   }
 
+  /** 把一次用户操作中的多条写入合并为单步撤销/重做。 */
+  async withHistoryBatch<T>(operation: () => Promise<T>): Promise<T> {
+    this.history.beginBatch()
+    try {
+      return await operation()
+    } finally {
+      this.history.endBatch()
+    }
+  }
+
   async undo(): Promise<void> {
-    await this.history.undo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
+    await this.history.undo(entry => this.undoEntry(entry))
+  }
+
+  private async undoEntry(entry: EditEntry): Promise<MutationResult<unknown>> {
+    if (entry.kind === 'batch') return this.runBatch(entry, 'undo')
+    return this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
         if (entry.kind === 'graph-layout') {
           return this.port.applyGraphPositions?.(entry.viewKey, entry.oldPositions) ?? Promise.resolve(failed())
@@ -529,11 +546,16 @@ export class EditorMutationController {
           { recordHistory: false },
         )
       },
-    ))
+    )
   }
 
   async redo(): Promise<void> {
-    await this.history.redo(entry => this.executeWithPendingFieldReplay<MutationResult<unknown>>(
+    await this.history.redo(entry => this.redoEntry(entry))
+  }
+
+  private async redoEntry(entry: EditEntry): Promise<MutationResult<unknown>> {
+    if (entry.kind === 'batch') return this.runBatch(entry, 'redo')
+    return this.executeWithPendingFieldReplay<MutationResult<unknown>>(
       () => {
         if (entry.kind === 'graph-layout') {
           return this.port.applyGraphPositions?.(entry.viewKey, entry.newPositions) ?? Promise.resolve(failed())
@@ -607,7 +629,17 @@ export class EditorMutationController {
           { recordHistory: false },
         )
       },
-    ))
+    )
+  }
+
+  private async runBatch(entry: BatchEditEntry, direction: 'undo' | 'redo'): Promise<MutationResult<unknown>> {
+    const entries = direction === 'undo' ? [...entry.entries].reverse() : entry.entries
+    let result: MutationResult<unknown> = committed(undefined)
+    for (const sub of entries) {
+      result = direction === 'undo' ? await this.undoEntry(sub) : await this.redoEntry(sub)
+      if (result.status !== 'committed') break
+    }
+    return result
   }
 
   private enqueueMutation<T>(supersededValue: T, operation: () => Promise<T>): Promise<T> {

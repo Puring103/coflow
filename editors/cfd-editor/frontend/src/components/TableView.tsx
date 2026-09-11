@@ -1,5 +1,5 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useEffect, useMemo, useRef, memo } from 'react'
+
 import { ShortNameColumnMenu } from './ShortNameContext'
 import { shortNameCandidate } from '../state/shortNames'
 import {
@@ -101,8 +101,9 @@ import {
   shouldExpandSinglePasteTarget,
 } from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
+import { RecordContextMenu } from './RecordContextMenu'
 import { FunctionEditorButton } from './FunctionBodyDialog'
-import { fitViewportPosition } from '../utils/floatingPosition'
+
 import { isNativeEditorTarget } from '../utils/dom'
 import {
   boundedPasteMatrix,
@@ -202,11 +203,8 @@ type TableDisplayItem =
 interface TableContextMenu {
   anchorX: number
   anchorY: number
-  x: number
-  y: number
   row: RecordRow
   records: RecordCoordinate[]
-  showGroupTargets: boolean
 }
 
 export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
@@ -229,7 +227,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [scrollWidthFloor, setScrollWidthFloor] = useState<number | null>(null)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
-  const contextMenuRef = useRef<HTMLDivElement>(null)
   const columnSizingRef = useRef(columnSizing)
   const columnResizeRef = useRef<{
     pointerId: number
@@ -876,49 +873,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, displayItems.length, allFieldNames.join('\u001f')])
 
-  // Close context menu on Escape.
-  useEffect(() => {
-    if (!contextMenu) return
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextMenu(null) }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [contextMenu])
-
   const contextMenuCanAddToGroup = contextMenu !== null && (
     ((recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup)
     || (contextMenu.records.length > 1 && !!onCreateGroup)
   )
-
-  useLayoutEffect(() => {
-    if (!contextMenu) return
-    const fitMenu = () => {
-      const menu = contextMenuRef.current
-      if (!menu) return
-      const rect = menu.getBoundingClientRect()
-      const next = fitViewportPosition(
-        { x: contextMenu.anchorX, y: contextMenu.anchorY },
-        { width: rect.width, height: rect.height },
-        { width: window.innerWidth, height: window.innerHeight },
-      )
-      setContextMenu(current => {
-        if (!current || current.anchorX !== contextMenu.anchorX || current.anchorY !== contextMenu.anchorY) {
-          return current
-        }
-        return current.x === next.x && current.y === next.y
-          ? current
-          : { ...current, x: next.x, y: next.y }
-      })
-    }
-    fitMenu()
-    window.addEventListener('resize', fitMenu)
-    return () => window.removeEventListener('resize', fitMenu)
-  }, [
-    contextMenu?.anchorX,
-    contextMenu?.anchorY,
-    contextMenu?.showGroupTargets,
-    contextMenuCanAddToGroup,
-    recordGroups?.length,
-  ])
 
   return (
     <div
@@ -1406,11 +1364,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       setContextMenu({
                         anchorX: e.clientX,
                         anchorY: e.clientY,
-                        x: e.clientX,
-                        y: e.clientY,
                         row: row.original,
                         records,
-                        showGroupTargets: false,
                       })
                     }}
                   >
@@ -1529,122 +1484,48 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       {shortNameMenu && activeType && <ShortNameColumnMenu key={`${data.file_path}:${activeType}`}
         actualType={activeType} field={shortNameMenu.field} x={shortNameMenu.x} y={shortNameMenu.y}
         onClose={() => setShortNameMenu(null)} />}
-      {contextMenu && createPortal(
-        <div
-          ref={contextMenuRef}
-          className="context-menu table-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={e => e.stopPropagation()}
-          role="menu"
-        >
-          <div className="ctx-item" role="menuitem" onClick={() => { onOpenRecord(contextMenu.row.coordinate); setContextMenu(null) }}>
-            <Icon name="record" size={13} aria-hidden />
-            跳转到记录视图
-          </div>
-          {contextMenuCanAddToGroup && (<>
-            <div className="ctx-sep" />
-            <button
-              type="button"
-              className="ctx-item"
-              role="menuitem"
-              aria-expanded={contextMenu.showGroupTargets}
-              onClick={() => setContextMenu(current => current
-                ? { ...current, showGroupTargets: !current.showGroupTargets }
-                : null)}
-            >
-              <Icon name="plus" size={13} aria-hidden />
-              添加到分组
-              <span className="ctx-item-tail">
-                {contextMenu.records.length > 1 && <span>{contextMenu.records.length} 条</span>}
-                <Icon name={contextMenu.showGroupTargets ? 'chevron-down' : 'chevron-right'} size={12} aria-hidden />
-              </span>
-            </button>
-            {contextMenu.showGroupTargets && (
-              <div className="ctx-group-targets" role="group" aria-label="选择分组">
-                {contextMenu.records.length > 1 && onCreateGroup && (
-                  <button
-                    type="button"
-                    className="ctx-item ctx-group-target"
-                    role="menuitem"
-                    onClick={() => {
-                      const records = contextMenu.records
-                      setContextMenu(null)
-                      onCreateGroup(records)
-                    }}
-                  >
-                    <Icon name="plus" size={13} aria-hidden />
-                    新建分组
-                  </button>
-                )}
-                {onDropRecordIntoGroup && recordGroups?.map(group => {
-                  const alreadyInGroup = contextMenu.records.every(coordinate => (
-                    group.records.some(member => sameCoordinate(member, coordinate))
-                  ))
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      className="ctx-item ctx-group-target"
-                      role="menuitem"
-                      disabled={alreadyInGroup}
-                      title={alreadyInGroup ? '所选记录已在此分组中' : undefined}
-                      onClick={() => {
-                        const records = contextMenu.records
-                        setContextMenu(null)
-                        onDropRecordIntoGroup(records, group.id)
-                      }}
-                    >
-                      <span
-                        className={`ctx-group-color${group.color ? ' has-color' : ''}`}
-                        style={recordGroupColorStyle(group.color)}
-                        aria-hidden
-                      />
-                      <span className="ctx-group-name">{group.name}</span>
-                      <span className="ctx-shortcut">{group.records.length}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </>)}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_edit_key && onRenameRecord && (
-            <div className="ctx-item" role="menuitem" onClick={() => {
-              const key = recordKey(contextMenu.row)
-              const coordinate = contextMenu.row.coordinate
-              setContextMenu(null)
-              setRecordAction({ kind: 'rename', coordinate, key })
-            }}>
-              <Icon name="edit" size={13} aria-hidden />
-              重命名 Key
-            </div>
-          )}
-          {contextMenu.records.length === 1 && !readOnly && data.capabilities.can_insert_record && data.capabilities.can_reorder_records && onInsertRecord && onCreateRecordDraft && onMoveRecord && (
-            <div className="ctx-item" role="menuitem" onClick={() => {
-              setInsertAfterRow(contextMenu.row)
-              setShowNewRecord(true)
-              setContextMenu(null)
-            }}>
-              <Icon name="plus" size={13} aria-hidden />
-              在下方插入记录
-            </div>
-          )}
-          {!readOnly && data.capabilities.can_delete_record && onDeleteRecords && (
-            <div className="ctx-item ctx-danger" role="menuitem" onClick={() => {
-              const records = contextMenu.records
-              const prompt = records.length === 1
-                ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
-                : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
-              setContextMenu(null)
-              setRecordAction({ kind: 'delete', records, message: prompt })
-            }}>
-              <Icon name="close" size={13} aria-hidden />
-              {contextMenu.records.length === 1
-                ? '删除记录'
-                : `删除 ${contextMenu.records.length} 条记录`}
-            </div>
-          )}
-        </div>,
-        document.body,
+      {contextMenu && (
+        <RecordContextMenu
+          request={{
+            anchorX: contextMenu.anchorX,
+            anchorY: contextMenu.anchorY,
+            filePath: data.file_path,
+            coordinates: contextMenu.records,
+            primaryKey: recordKey(contextMenu.row),
+          }}
+          groups={recordGroups}
+          showOpenRecord={!!onOpenRecord}
+          canRename={contextMenu.records.length === 1 && !readOnly
+            && data.capabilities.can_edit_key && !!onRenameRecord}
+          canInsertBelow={contextMenu.records.length === 1 && !readOnly
+            && data.capabilities.can_insert_record && data.capabilities.can_reorder_records
+            && !!onInsertRecord && !!onCreateRecordDraft && !!onMoveRecord}
+          canDelete={!readOnly && data.capabilities.can_delete_record && !!onDeleteRecords}
+          canAddToGroup={contextMenuCanAddToGroup}
+          canCreateGroup={contextMenu.records.length > 1 && !!onCreateGroup}
+          onOpenRecord={onOpenRecord ? () => onOpenRecord(contextMenu.row.coordinate) : undefined}
+          onRename={() => {
+            setRecordAction({
+              kind: 'rename',
+              coordinate: contextMenu.row.coordinate,
+              key: recordKey(contextMenu.row),
+            })
+          }}
+          onInsertBelow={() => {
+            setInsertAfterRow(contextMenu.row)
+            setShowNewRecord(true)
+          }}
+          onDelete={() => {
+            const records = contextMenu.records
+            const prompt = records.length === 1
+              ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
+              : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
+            setRecordAction({ kind: 'delete', records, message: prompt })
+          }}
+          onCreateGroup={onCreateGroup}
+          onAddToGroup={onDropRecordIntoGroup}
+          onClose={() => setContextMenu(null)}
+        />
       )}
       {recordAction?.kind === 'rename' && onRenameRecord && (
         <TextInputDialog

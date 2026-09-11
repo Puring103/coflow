@@ -19,6 +19,8 @@ import {
 } from '../wire'
 import { DataCardExpanded, CardHeader } from './DataCard'
 import { CreateRecordDialog } from './CreateRecordDialog'
+import { RecordContextMenu, type RecordContextMenuRequest } from './RecordContextMenu'
+import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -89,6 +91,8 @@ interface Props {
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
+  onDeleteRecords?: (coordinates: readonly RecordCoordinate[]) => Promise<void>
+  onMoveRecord?: (coordinate: RecordCoordinate, targetIndex: number) => Promise<void>
   /** Click on a corner badge — either the CardHeader (fieldPath = null) or
    *  a field row (top-level fieldPath). Forwarded up to App so the
    *  diagnostics panel can focus the matching item. */
@@ -100,7 +104,7 @@ interface Props {
   diffChangedPaths?: ReadonlySet<string>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -113,6 +117,13 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     path: FieldPathSegment[]
     editable: boolean
   } | null>(null)
+  const [recordMenu, setRecordMenu] = useState<RecordContextMenuRequest | null>(null)
+  const [recordMenuAction, setRecordMenuAction] = useState<
+    | { kind: 'rename' }
+    | { kind: 'delete' }
+    | null
+  >(null)
+  const [insertAfterRecord, setInsertAfterRecord] = useState(false)
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
@@ -451,19 +462,33 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         onKeyDown={batchRecords ? undefined : recordKeyboard.onKeyDown}
         onContextMenu={event => {
           if (batchRecords) return
-          const row = (event.target as HTMLElement).closest<HTMLElement>('.dc-row[data-field-path-wire]')
-          if (!row || !mainRef.current?.contains(row)) return
-          const path = parseWireFieldPath(row.dataset.fieldPathWire)
-          if (!path) return
+          const target = event.target as HTMLElement
+          const row = target.closest<HTMLElement>('.dc-row[data-field-path-wire]')
+          if (row && mainRef.current?.contains(row)) {
+            const path = parseWireFieldPath(row.dataset.fieldPathWire)
+            if (!path) return
+            event.preventDefault()
+            event.stopPropagation()
+            setSelectedActionPathWire(null)
+            onSelectValue?.(record.coordinate, path)
+            setRecordTreeMenu({
+              x: event.clientX,
+              y: event.clientY,
+              path,
+              editable: row.dataset.keyboardEditable === 'true',
+            })
+            return
+          }
+          // 卡片空白/表头右键弹出记录菜单；字段行保留上面的字段复制/粘贴菜单。
+          if (!mainRef.current?.contains(target)) return
           event.preventDefault()
           event.stopPropagation()
-          setSelectedActionPathWire(null)
-          onSelectValue?.(record.coordinate, path)
-          setRecordTreeMenu({
-            x: event.clientX,
-            y: event.clientY,
-            path,
-            editable: row.dataset.keyboardEditable === 'true',
+          setRecordMenu({
+            anchorX: event.clientX,
+            anchorY: event.clientY,
+            filePath: data.file_path,
+            coordinates: [record.coordinate],
+            primaryKey: recordKey(record),
           })
         }}
         onMouseDownCapture={e => {
@@ -637,8 +662,56 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           typeOptions={data.type_names}
           existingKeys={data.records.map(r => r.coordinate.key)}
           onCreateRecordDraft={onCreateRecordDraft}
-          onInsertRecord={onInsertRecord}
-          onClose={() => setShowNewRecord(false)}
+          onInsertRecord={async (key, type, fields) => {
+            await onInsertRecord(key, type, fields)
+            if (insertAfterRecord && onMoveRecord) {
+              await onMoveRecord({ actual_type: type, key }, record.container_index + 1)
+            }
+          }}
+          onClose={() => { setShowNewRecord(false); setInsertAfterRecord(false) }}
+        />
+      )}
+      {recordMenu && (
+        <RecordContextMenu
+          request={recordMenu}
+          groups={recordGroups}
+          showOpenRecord
+          canRename={!readOnly && data.capabilities.can_edit_key && !!onRenameRecord}
+          canInsertBelow={canCreate && !!onMoveRecord}
+          canDelete={!readOnly && data.capabilities.can_delete_record && !!onDeleteRecords}
+          canAddToGroup={(recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup}
+          onOpenRecord={() => onOpenRecord(record.coordinate)}
+          onRename={() => setRecordMenuAction({ kind: 'rename' })}
+          onInsertBelow={() => { setInsertAfterRecord(true); setShowNewRecord(true) }}
+          onDelete={() => setRecordMenuAction({ kind: 'delete' })}
+          onAddToGroup={onDropRecordIntoGroup}
+          onClose={() => setRecordMenu(null)}
+        />
+      )}
+      {recordMenuAction?.kind === 'rename' && onRenameRecord && (
+        <TextInputDialog
+          title="重命名 Key"
+          message="输入新的记录 Key"
+          initialValue={recordKey(record)}
+          confirmLabel="重命名"
+          onClose={() => setRecordMenuAction(null)}
+          onConfirm={async next => {
+            if (next !== recordKey(record)) await onRenameRecord(record.coordinate, next)
+            setRecordMenuAction(null)
+          }}
+        />
+      )}
+      {recordMenuAction?.kind === 'delete' && onDeleteRecords && (
+        <ConfirmDialog
+          title="删除记录"
+          message={`确认删除记录 ${recordKey(record)}？此操作不可撤销。`}
+          confirmLabel="删除"
+          danger
+          onClose={() => setRecordMenuAction(null)}
+          onConfirm={async () => {
+            await onDeleteRecords([record.coordinate])
+            setRecordMenuAction(null)
+          }}
         />
       )}
     </div>
