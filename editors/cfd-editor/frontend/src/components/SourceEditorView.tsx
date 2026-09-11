@@ -61,6 +61,8 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   const validationRequest = useRef(0)
   const loadedKey = useRef<string | null>(null)
   const immediateLanguageSource = useRef<string | null>(null)
+  // 文档刚读取完成时立即请求一次语义着色，不等待编辑去抖；后续编辑仍去抖。
+  const pendingInitialSync = useRef(false)
   const dirty = source !== base
   const editorDiagnostics = useMemo(() => [
     ...codeMirrorDiagnostics(source, diagnostics),
@@ -90,6 +92,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       setSource(draft?.base === text ? draft.text : text)
       setDocumentUpdate(null)
       loadedKey.current = key
+      pendingInitialSync.current = true
       if (draft?.base !== text) drafts.delete(key)
     }).catch(cause => {
       if (alive) setError(errorMessage(cause))
@@ -114,6 +117,8 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       setReplaceSemanticTokens(true)
       return
     }
+    const immediate = pendingInitialSync.current
+    pendingInitialSync.current = false
     const timer = window.setTimeout(() => {
       const version = ++languageVersion.current
       api.syncLanguageDocument(sessionId, filePath, source, version).then(next => {
@@ -128,7 +133,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
           setError(errorMessage(cause))
         }
       })
-    }, 180)
+    }, immediate ? 0 : 180)
     return () => window.clearTimeout(timer)
   }, [filePath, loading, sessionId, source])
 

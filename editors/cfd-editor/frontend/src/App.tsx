@@ -160,6 +160,11 @@ import './style.css'
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
+// 共享空数组，避免每次渲染产生新引用而让下游 useMemo 失效。
+const EMPTY_RECORD_GROUPS: never[] = []
+// graphSupported 只依赖文件内容代际；来回切文件时复用，避免重复全量扫描。
+const GRAPH_SUPPORT_CACHE = new Map<string, boolean>()
+const GRAPH_SUPPORT_CACHE_LIMIT = 128
 export default function App() {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
@@ -1692,7 +1697,7 @@ export default function App() {
       return next
     })
   }, [activeDimensionData, activeWorkspaceTabId, dimensionView])
-  const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? []
+  const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? EMPTY_RECORD_GROUPS
   const activeTypeOption = useMemo(
     () => project?.file_types[activeFile ?? '']?.find(option => option.name === activeType) ?? null,
     [project?.file_types, activeFile, activeType],
@@ -1707,11 +1712,13 @@ export default function App() {
     : currentRoute && isSingletonType && currentRoute.view !== 'source'
     ? 'record'
     : currentRoute?.view
-  const activeRecordCoordinate = currentRoute?.view === 'record'
-    ? currentRoute.coordinate
-    : activeFileData?.records.find(record => (
-      !activeType || recordActualType(record) === activeType
-    ))?.coordinate ?? null
+  const activeRecordCoordinate = useMemo(() => (
+    currentRoute?.view === 'record'
+      ? currentRoute.coordinate
+      : activeFileData?.records.find(record => (
+        !activeType || recordActualType(record) === activeType
+      ))?.coordinate ?? null
+  ), [currentRoute, activeFileData, activeType])
   const pluginSelection = useMemo(() => {
     if (!inspectorSelection) return null
     if (inspectorSelection.kind === 'record') {
@@ -1960,7 +1967,16 @@ export default function App() {
   // and browser mocks may contain refs without derived annotation metadata.
   const graphSupported = useMemo(() => {
     if (!activeFileData) return false
-    return recordsSupportGraph(activeFileData.records)
+    const key = `${activeFileData.file_path}\u001f${activeFileData.revision}`
+    const cached = GRAPH_SUPPORT_CACHE.get(key)
+    if (cached !== undefined) return cached
+    const value = recordsSupportGraph(activeFileData.records)
+    GRAPH_SUPPORT_CACHE.set(key, value)
+    if (GRAPH_SUPPORT_CACHE.size > GRAPH_SUPPORT_CACHE_LIMIT) {
+      const oldest = GRAPH_SUPPORT_CACHE.keys().next().value
+      if (oldest !== undefined) GRAPH_SUPPORT_CACHE.delete(oldest)
+    }
+    return value
   }, [activeFileData])
   // View tabs (default + custom) for the active (file, type).
   const viewTabs = useMemo(
@@ -1991,15 +2007,15 @@ export default function App() {
   }, [activeFileData, resolvedView, recordGroups])
   const pluginViewContext = useMemo<PluginViewContext | null>(() => {
     if (!project || !activeFileData || !activeFile || !activeType || !activePluginView) return null
-    const records: PluginRecordData[] = activeFileData.records
-      .filter(row => recordActualType(row) === activeType)
-      .map(row => ({
-        filePath: activeFile,
-        coordinate: { ...row.coordinate },
-        ...(activePluginView.includeFieldValues === false
-          ? {}
-          : { fields: structuredClone(row.fields) }),
-      }))
+    const filtered = activeFileData.records.filter(row => recordActualType(row) === activeType)
+    const includeFieldValues = activePluginView.includeFieldValues !== false
+    // 一次克隆整批字段，比逐记录 structuredClone 少一次次调用开销，同时保持插件隔离。
+    const clonedFields = includeFieldValues ? structuredClone(filtered.map(row => row.fields)) : []
+    const records: PluginRecordData[] = filtered.map((row, index) => ({
+      filePath: activeFile,
+      coordinate: { ...row.coordinate },
+      ...(includeFieldValues ? { fields: clonedFields[index] } : {}),
+    }))
     return {
       identity: { sessionId: project.session_id, revision: project.revision },
       filePath: activeFile,

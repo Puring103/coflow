@@ -7,7 +7,6 @@ use coflow_language::cft::syntax::CheckVisitor;
 use coflow_language::cft::ModuleId;
 use coflow_language::source::Span;
 
-use super::position::position_from_byte;
 use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
@@ -59,25 +58,32 @@ pub(crate) struct RawSemanticToken {
     pub(crate) token_modifiers: u32,
 }
 
+/// 收集阶段的字节跨度 token。
+///
+/// 逐 token 立即换算行列位置需要从文件头扫描，整体会退化成二次复杂度；这里先
+/// 存字节跨度，最后用一次行索引统一换算。
+#[derive(Clone, Copy)]
+pub(crate) struct ByteSpanToken {
+    start: usize,
+    end: usize,
+    token_type: u32,
+    token_modifiers: u32,
+}
+
 pub(crate) fn push_semantic_span(
     source: &str,
     span: Span,
     token_type: u32,
     token_modifiers: u32,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
-    if span.end <= span.start {
+    let end = span.end.min(source.len());
+    if end <= span.start {
         return;
     }
-    let start = position_from_byte(source, span.start);
-    let end = position_from_byte(source, span.end);
-    if start.line != end.line || end.character <= start.character {
-        return;
-    }
-    tokens.push(RawSemanticToken {
-        line: start.line,
-        character: start.character,
-        length: end.character - start.character,
+    tokens.push(ByteSpanToken {
+        start: span.start,
+        end,
         token_type,
         token_modifiers,
     });
@@ -87,7 +93,7 @@ pub(crate) fn push_semantic_span_plain(
     source: &str,
     span: Span,
     token_type: u32,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     push_semantic_span(source, span, token_type, 0, tokens);
 }
@@ -97,7 +103,7 @@ pub(crate) fn push_multiline_semantic_span(
     span: Span,
     token_type: u32,
     token_modifiers: u32,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     let mut start = span.start;
     for line in source[span.start..span.end.min(source.len())].split_inclusive('\n') {
@@ -154,7 +160,33 @@ fn usize_to_u32_saturating(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-pub(crate) fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<RawSemanticToken>) {
+/// 用一次行索引把字节跨度换算成行列 token，跨行或空跨度的 token 在此丢弃。
+pub(crate) fn byte_spans_to_raw_tokens(
+    source: &str,
+    mut tokens: Vec<ByteSpanToken>,
+) -> Vec<RawSemanticToken> {
+    tokens.sort_by_key(|token| (token.start, token.end));
+    let index = coflow_runtime::LineIndex::new(source);
+    tokens
+        .into_iter()
+        .filter_map(|token| {
+            let start = index.position(source, token.start);
+            let end = index.position(source, token.end);
+            if start.line != end.line || end.character <= start.character {
+                return None;
+            }
+            Some(RawSemanticToken {
+                line: start.line,
+                character: start.character,
+                length: end.character - start.character,
+                token_type: token.token_type,
+                token_modifiers: token.token_modifiers,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<ByteSpanToken>) {
     let mut line_start = 0;
     for line in source.split_inclusive('\n') {
         if let Some(comment_start) = comment_start_in_line(line) {
@@ -195,14 +227,17 @@ pub(crate) fn semantic_raw_tokens(
     build: &LspBuild,
     document: &LspDocument,
 ) -> Vec<RawSemanticToken> {
-    snapshot_raw_tokens(Some(build), document)
+    byte_spans_to_raw_tokens(&document.source, snapshot_byte_spans(Some(build), document))
 }
 
 pub(crate) fn snapshot_token_data(build: Option<&LspBuild>, document: &LspDocument) -> Vec<u32> {
-    encode_semantic_tokens(snapshot_raw_tokens(build, document))
+    encode_semantic_tokens(byte_spans_to_raw_tokens(
+        &document.source,
+        snapshot_byte_spans(build, document),
+    ))
 }
 
-fn snapshot_raw_tokens(build: Option<&LspBuild>, document: &LspDocument) -> Vec<RawSemanticToken> {
+fn snapshot_byte_spans(build: Option<&LspBuild>, document: &LspDocument) -> Vec<ByteSpanToken> {
     let mut tokens = Vec::new();
     add_comment_semantic_tokens(&document.source, &mut tokens);
     if let Ok(lexed) = lex(&ModuleId::new(document.module_id.clone()), &document.source) {
@@ -220,7 +255,7 @@ fn add_lex_semantic_token(
     source: &str,
     kind: &TokenKind,
     span: Span,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     let token_type = match kind {
         TokenKind::Const
@@ -285,7 +320,7 @@ fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
     ast: &coflow_language::cft::syntax::ast::ModuleAst,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     for annotation in &ast.dangling_annotations {
         add_annotation_semantic(document, annotation, tokens);
@@ -415,7 +450,7 @@ fn add_ast_semantic_tokens(
 fn add_annotation_semantic(
     document: &LspDocument,
     annotation: &Annotation,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     push_semantic_span_plain(
         &document.source,
@@ -445,7 +480,7 @@ fn add_value_type_semantic(
     build: &LspBuild,
     document: &LspDocument,
     ty: &TypeRef,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     match &ty.kind {
         TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::Bool | TypeRefKind::String => {
@@ -507,7 +542,7 @@ fn add_value_type_semantic(
 fn add_default_expr_semantic(
     document: &LspDocument,
     expr: &DefaultExpr,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     match &expr.kind {
         DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
@@ -619,7 +654,7 @@ fn add_check_stmt_semantic(
     build: &LspBuild,
     document: &LspDocument,
     stmt: &CheckStmt,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) {
     let mut visitor = CheckSemanticVisitor {
         build,
@@ -633,7 +668,7 @@ fn add_check_stmt_semantic(
 struct CheckSemanticVisitor<'a> {
     build: &'a LspBuild,
     document: &'a LspDocument,
-    tokens: &'a mut Vec<RawSemanticToken>,
+    tokens: &'a mut Vec<ByteSpanToken>,
 }
 
 impl CheckVisitor for CheckSemanticVisitor<'_> {
@@ -667,7 +702,7 @@ fn classify_check_expr(
     build: &LspBuild,
     document: &LspDocument,
     expr: &CheckExpr,
-    tokens: &mut Vec<RawSemanticToken>,
+    tokens: &mut Vec<ByteSpanToken>,
 ) -> bool {
     match &expr.kind {
         CheckExprKind::Int(_) | CheckExprKind::Float(_) => {

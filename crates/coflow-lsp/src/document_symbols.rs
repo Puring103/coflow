@@ -1,8 +1,10 @@
 use coflow_language::cft::syntax::ast::Item;
 use coflow_language::source::Span;
+use coflow_runtime::LineIndex;
 use serde_json::{json, Value};
 
-use super::{position::range_from_span, LspDocument};
+use super::position::range_from_span_indexed;
+use super::LspDocument;
 
 const SYMBOL_KIND_CLASS: u8 = 5;
 const SYMBOL_KIND_FIELD: u8 = 8;
@@ -15,10 +17,13 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
     let Some(ast) = &document.ast else {
         return Vec::new();
     };
+    // 行索引构建一次，供所有符号换算使用，避免每个字段从文件头扫描。
+    let index = LineIndex::new(&document.source);
     let mut symbols = Vec::new();
     for item in &ast.items {
         match item {
             Item::Const(constant) => symbols.push(document_symbol_item(
+                &index,
                 &document.source,
                 &constant.name,
                 SYMBOL_KIND_CONSTANT,
@@ -32,6 +37,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     .iter()
                     .map(|variant| {
                         document_symbol_item(
+                            &index,
                             &document.source,
                             &variant.name,
                             SYMBOL_KIND_ENUM_MEMBER,
@@ -42,6 +48,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     })
                     .collect::<Vec<_>>();
                 symbols.push(document_symbol_item(
+                    &index,
                     &document.source,
                     &enum_def.name,
                     SYMBOL_KIND_ENUM,
@@ -56,6 +63,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     .iter()
                     .map(|field| {
                         document_symbol_item(
+                            &index,
                             &document.source,
                             &field.name,
                             SYMBOL_KIND_FIELD,
@@ -66,6 +74,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     })
                     .collect::<Vec<_>>();
                 symbols.push(document_symbol_item(
+                    &index,
                     &document.source,
                     &ty.name,
                     SYMBOL_KIND_CLASS,
@@ -75,6 +84,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                 ));
             }
             Item::TypeAlias(alias) => symbols.push(document_symbol_item(
+                &index,
                 &document.source,
                 &alias.name,
                 SYMBOL_KIND_CLASS,
@@ -83,6 +93,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                 &[],
             )),
             Item::Check(check) => symbols.push(document_symbol_item(
+                &index,
                 &document.source,
                 &check.name,
                 SYMBOL_KIND_FUNCTION,
@@ -96,6 +107,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
 }
 
 fn document_symbol_item(
+    index: &LineIndex,
     source: &str,
     name: &str,
     kind: u8,
@@ -106,8 +118,8 @@ fn document_symbol_item(
     json!({
         "name": name,
         "kind": kind,
-        "range": range_from_span(source, span),
-        "selectionRange": range_from_span(source, name_span),
+        "range": range_from_span_indexed(index, source, span),
+        "selectionRange": range_from_span_indexed(index, source, name_span),
         "children": children
     })
 }

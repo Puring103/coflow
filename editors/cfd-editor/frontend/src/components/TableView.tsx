@@ -120,6 +120,35 @@ import {
   tableCellKey,
 } from './TableView.support'
 
+// 列准备结果只由 schema/注解决定，跨组件挂载复用可让来回切文件接近零成本。
+// 结构键包含文件、活动类型、列名集合、记录数与文件类型集合，避免跨项目误命中。
+const COLUMN_PREP_CACHE = new Map<string, unknown>()
+const COLUMN_PREP_CACHE_LIMIT = 64
+
+function columnPrepKey(kind: string, data: FileRecords, activeType: string, extra = ''): string {
+  return [
+    kind,
+    data.file_path,
+    activeType,
+    columnKeySignature(data),
+    data.records.length,
+    data.type_names.join(','),
+    extra,
+  ].join('\u001f')
+}
+
+function cachedColumnPrep<T>(key: string, compute: () => T): T {
+  const cached = COLUMN_PREP_CACHE.get(key)
+  if (cached !== undefined) return cached as T
+  const value = compute()
+  COLUMN_PREP_CACHE.set(key, value)
+  if (COLUMN_PREP_CACHE.size > COLUMN_PREP_CACHE_LIMIT) {
+    const oldest = COLUMN_PREP_CACHE.keys().next().value
+    if (oldest !== undefined) COLUMN_PREP_CACHE.delete(oldest)
+  }
+  return value
+}
+
 interface Props {
   data: FileRecords
   activeType: string
@@ -336,14 +365,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   // 列的下拉/胶囊类型（ref/enum/bool）只依赖 schema；同一列集合内计算一次，
   // 供 pill-class 与列宽估算共用，避免两处重复扫描记录。
-  const columnKinds = useMemo(() => {
-    const kinds: Record<string, 'ref' | 'enum' | 'bool' | null> = {}
-    for (const column of data.columns) {
-      if (!column.type_names.includes(activeType)) continue
-      kinds[column.name] = columnDropdownKind(data, column.name, activeType)
-    }
-    return kinds
-  }, [data.file_path, activeType, columnKeySignature(data)])
+  const columnKinds = useMemo(
+    () => cachedColumnPrep(columnPrepKey('kinds', data, activeType), () => {
+      const kinds: Record<string, 'ref' | 'enum' | 'bool' | null> = {}
+      for (const column of data.columns) {
+        if (!column.type_names.includes(activeType)) continue
+        kinds[column.name] = columnDropdownKind(data, column.name, activeType)
+      }
+      return kinds
+    }),
+    [data, activeType],
+  )
 
   // Which columns render as pill cells (ref/enum). Freezing this once per
   // column set means the `pill-cell` class on the td stays stable across
@@ -366,43 +398,53 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // replay column sizes and briefly flash the row layout. Freezing on the
   // structural signature (file + active type + column set) keeps the
   // memo stable across writes.
-  const columnDeclaredTypes = useMemo(() => {
-    const map: Record<string, string> = {}
-    const snapshot = dataForCellsRef.current
-    for (const name of allFieldNames) {
-      for (const record of snapshot.records) {
-        if (recordActualType(record) !== activeType) continue
-        const cell = fieldCell(record, name)
-        const declared = cell?.annotation?.declared_type ?? inferredCellType(cell)
-        if (declared) { map[name] = declared; break }
-      }
-    }
-    return map
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.file_path, activeType, columnKeySignature(data)])
+  const columnDeclaredTypes = useMemo(
+    () => cachedColumnPrep(
+      columnPrepKey('declaredTypes', data, activeType, allFieldNames.join(',')),
+      () => {
+        const map: Record<string, string> = {}
+        const snapshot = dataForCellsRef.current
+        for (const name of allFieldNames) {
+          for (const record of snapshot.records) {
+            if (recordActualType(record) !== activeType) continue
+            const cell = fieldCell(record, name)
+            const declared = cell?.annotation?.declared_type ?? inferredCellType(cell)
+            if (declared) { map[name] = declared; break }
+          }
+        }
+        return map
+      },
+    ),
+    [data, activeType, allFieldNames],
+  )
 
   // Display metadata follows the same structural lifetime as declared types:
   // the schema owns it, while record values only carry it to the table.
-  const columnDisplay = useMemo(() => {
-    const map: Record<string, { label?: string, description?: string }> = {}
-    const snapshot = dataForCellsRef.current
-    for (const name of allFieldNames) {
-      for (const record of snapshot.records) {
-        if (recordActualType(record) !== activeType) continue
-        const annotation = fieldCell(record, name)?.annotation
-        if (!annotation) continue
-        if (annotation.label || annotation.description) {
-          map[name] = {
-            label: annotation.label ?? undefined,
-            description: annotation.description ?? undefined,
+  const columnDisplay = useMemo(
+    () => cachedColumnPrep(
+      columnPrepKey('display', data, activeType, allFieldNames.join(',')),
+      () => {
+        const map: Record<string, { label?: string, description?: string }> = {}
+        const snapshot = dataForCellsRef.current
+        for (const name of allFieldNames) {
+          for (const record of snapshot.records) {
+            if (recordActualType(record) !== activeType) continue
+            const annotation = fieldCell(record, name)?.annotation
+            if (!annotation) continue
+            if (annotation.label || annotation.description) {
+              map[name] = {
+                label: annotation.label ?? undefined,
+                description: annotation.description ?? undefined,
+              }
+              break
+            }
           }
-          break
         }
-      }
-    }
-    return map
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.file_path, activeType, columnKeySignature(data)])
+        return map
+      },
+    ),
+    [data, activeType, allFieldNames],
+  )
 
   // Compute column widths once per (file, activeType, column set) and freeze
   // them for the session. Recomputing on every `data.records` update meant a
@@ -410,58 +452,61 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // and snap the whole column to a new width — visible as jitter. Editing a
   // value shouldn't reflow the layout; the user can drag-resize if a newly
   // added cell needs more room.
-  const columnSizeHints = useMemo(() => {
-    const snapshot = dataForCellsRef.current
-    const measure = (text: string) => estimateTextWidth(text, false)
-    const measureMono = (text: string) => estimateTextWidth(text, true)
-    // Chrome around the content per cell type.
-    const PILL_CHROME = 46
-    const REF_PREFIX = 14
-    const PLAIN_CHROME = 24
-    const BADGE_ROOM = 16 // reserve space for the corner diag badge
-    const MIN = 90
-    // Only value columns are capped, so a rogue 5000-char string doesn't
-    // stretch its column across the whole viewport. The user can still drag
-    // wider. Key column is never capped — keys must render in full.
-    const VALUE_MAX = 600
-    // Key column: measure the longest key so it never truncates unless the
-    // user shrinks it manually. No cap.
-    let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
-    for (const record of snapshot.records) {
-      if (recordActualType(record) !== activeType) continue
-      keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
-    }
-    const KEY_MAX = 500
-    const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
-    for (const column of snapshot.columns) {
-      if (!column.type_names.includes(activeType)) continue
-      const kind = columnKinds[column.name] ?? null
-      const isPill = kind !== null
-      const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
-      let maxContent = 0
-      let hasComplexValue = false
-      // 摘要已由后端随行下发（field_summaries），直接测量即可，无需重新格式化每个单元格。
+  const columnSizeHints = useMemo(
+    () => cachedColumnPrep(columnPrepKey('sizeHints', data, activeType, allFieldNames.join(',')), () => {
+      const snapshot = dataForCellsRef.current
+      const measure = (text: string) => estimateTextWidth(text, false)
+      const measureMono = (text: string) => estimateTextWidth(text, true)
+      // Chrome around the content per cell type.
+      const PILL_CHROME = 46
+      const REF_PREFIX = 14
+      const PLAIN_CHROME = 24
+      const BADGE_ROOM = 16 // reserve space for the corner diag badge
+      const MIN = 90
+      // Only value columns are capped, so a rogue 5000-char string doesn't
+      // stretch its column across the whole viewport. The user can still drag
+      // wider. Key column is never capped — keys must render in full.
+      const VALUE_MAX = 600
+      // Key column: measure the longest key so it never truncates unless the
+      // user shrinks it manually. No cap.
+      let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
-        const cell = fieldCell(record, column.name)
-        if (!cell) continue
-        if (isComplexValue(cell.value)) hasComplexValue = true
-        const summary = record.field_summaries[column.name] ?? ''
-        const w = measure(summary)
-        if (w > maxContent) maxContent = w
+        keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
       }
-      const summaryWidth = maxContent + chrome
-      const declaredForHeader = columnDeclaredTypes[column.name]
-      const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
-      const headerLabel = columnDisplay[column.name]?.label ?? column.name
-      const headerWidth = measure(headerLabel) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
-      const minimumWidth = hasComplexValue ? 300 : MIN
-      hints[column.name] = Math.min(VALUE_MAX, Math.max(minimumWidth, Math.ceil(Math.max(summaryWidth, headerWidth))))
-    }
-    return hints
+      const KEY_MAX = 500
+      const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
+      for (const column of snapshot.columns) {
+        if (!column.type_names.includes(activeType)) continue
+        const kind = columnKinds[column.name] ?? null
+        const isPill = kind !== null
+        const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
+        let maxContent = 0
+        let hasComplexValue = false
+        // 摘要已由后端随行下发（field_summaries），直接测量即可，无需重新格式化每个单元格。
+        for (const record of snapshot.records) {
+          if (recordActualType(record) !== activeType) continue
+          const cell = fieldCell(record, column.name)
+          if (!cell) continue
+          if (isComplexValue(cell.value)) hasComplexValue = true
+          const summary = record.field_summaries[column.name] ?? ''
+          const w = measure(summary)
+          if (w > maxContent) maxContent = w
+        }
+        const summaryWidth = maxContent + chrome
+        const declaredForHeader = columnDeclaredTypes[column.name]
+        const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
+        const headerLabel = columnDisplay[column.name]?.label ?? column.name
+        const headerWidth = measure(headerLabel) + PLAIN_CHROME + 12 /* sort caret */ + typeChipWidth
+        const minimumWidth = hasComplexValue ? 300 : MIN
+        hints[column.name] = Math.min(VALUE_MAX, Math.max(minimumWidth, Math.ceil(Math.max(summaryWidth, headerWidth))))
+      }
+      return hints
+    }),
     // Deps intentionally stable: file, active type, column identity/count,
     // and record count. Content edits don't move the layout.
-  }, [data.file_path, activeType, columnKeySignature(data), data.records.length, columnDisplay, columnKinds, columnDeclaredTypes])
+    [data, activeType, columnDisplay, columnKinds, columnDeclaredTypes],
+  )
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
