@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
   BaseEdge, type EdgeProps,
-  ControlButton, getViewportForBounds,
+  ControlButton, getViewportForBounds, ViewportPortal,
   type Node, type Edge, type ReactFlowInstance,
   type Connection, applyNodeChanges, type NodeChange,
 } from '@xyflow/react'
@@ -43,7 +43,15 @@ import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'
 import { Icon } from './Icon'
 import type { GraphPositions } from '../state/editorState'
-import { graphHighlights, reconcileFlowNodes, reconcileGraphViews, sameGraphValue, type GraphFocus } from './GraphView.state'
+import {
+  graphHighlights, polylineIntersectsRect, reconcileFlowNodes, reconcileGraphViews,
+  sameGraphValue, selectedNodeBounds, type GraphFocus, type GraphRect,
+} from './GraphView.state'
+import { CreateRecordDialog } from './CreateRecordDialog'
+import { RecordContextMenu } from './RecordContextMenu'
+import { ConfirmDialog, TextInputDialog } from './ActionDialog'
+import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
+import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { RefTarget } from '../bindings/RefTarget'
 import {
   buildRecordDiagnosticIndex,
@@ -237,16 +245,55 @@ const CfdNodeMemo = memo(CfdNode, (previous, next) => previous.id === next.id &&
 const nodeTypes = { cfd: CfdNodeMemo }
 
 // Shader Graph 风格：端口先水平伸出一小段，再用一段平滑曲线连接，避免端口附近出现直角重叠。
-function ShaderEdge({ sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps) {
+function ShaderEdge({ id, sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps) {
   const stub = 28
   const direction = targetX >= sourceX ? 1 : -1
   const sx = sourceX + direction * stub
   const tx = targetX - direction * stub
   const distance = Math.max(24, Math.abs(tx - sx) * 0.45)
   const path = `M ${sourceX} ${sourceY} L ${sx} ${sourceY} C ${sx + direction * distance} ${sourceY}, ${tx - direction * distance} ${targetY}, ${tx} ${targetY} L ${targetX} ${targetY}`
-  return <BaseEdge path={path} style={style} markerEnd={markerEnd} />
+  // 线体拖动：找到离按下点较近的重连锚点，把原生事件转发给它，复用 React Flow 的重连流程。
+  const beginBodyDrag = (event: ReactMouseEvent<SVGPathElement>) => {
+    if (event.button !== 0) return
+    const group = event.currentTarget.closest('.react-flow__edge')
+    if (!group) return
+    const anchors = Array.from(group.querySelectorAll<SVGCircleElement>('.react-flow__edgeupdater'))
+    let nearest: SVGCircleElement | null = null
+    let nearestDistance = Infinity
+    for (const anchor of anchors) {
+      const rect = anchor.getBoundingClientRect()
+      const dx = rect.left + rect.width / 2 - event.clientX
+      const dy = rect.top + rect.height / 2 - event.clientY
+      const squared = dx * dx + dy * dy
+      if (squared < nearestDistance) { nearestDistance = squared; nearest = anchor }
+    }
+    if (!nearest) return
+    event.preventDefault()
+    event.stopPropagation()
+    nearest.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, cancelable: true, view: window,
+      clientX: event.clientX, clientY: event.clientY, button: 0,
+    }))
+  }
+  return (
+    <>
+      <BaseEdge path={path} style={style} markerEnd={markerEnd} id={id} />
+      <path
+        d={path}
+        className="graph-edge-drag"
+        fill="none"
+        stroke="transparent"
+        strokeWidth={22}
+        onMouseDown={beginBodyDrag}
+      />
+    </>
+  )
 }
 const edgeTypes = { shader: ShaderEdge }
+
+// 拖线到空白处的下拉列表固定首项：先创建记录，再建立引用。
+const NEW_TARGET_OPTION = '__new_target__'
+
 
 // ─── Edge handle id (outside component, stable reference) ────────────────────
 
@@ -264,6 +311,8 @@ interface Props {
   savedPositions?: GraphPositions
   onSavePositions?: (positions: GraphPositions, recordHistory: boolean) => Promise<void>
   graphData: GraphData
+  /** 图视图所属文件，用于在空白处新建节点时决定写入位置。 */
+  filePath: string
   activeType?: string
   enabledFieldsOverride?: readonly string[]
   /** Custom graph view: restrict node card fields to this set (undefined = all). */
@@ -288,6 +337,16 @@ interface Props {
   onDiagnosticBadgeClick?: (
     file: string, coordinate: RecordCoordinate, fieldPath: string | null,
   ) => void
+  /** 空白处新建节点时的字段草稿与插入通道，复用记录创建对话框。 */
+  onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
+  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  /** 节点右键共用记录菜单所需的数据与操作。 */
+  recordGroups?: readonly EditorRecordGroup[]
+  onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
+  onRenameRecord?: (filePath: string, coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
+  onDeleteRecord?: (filePath: string, coordinate: RecordCoordinate) => Promise<void>
+  /** 将“新建节点 + 建立引用”合并成单步撤销。 */
+  runHistoryBatch?: (operation: () => Promise<void>) => Promise<void>
   onExitLeft?: () => void
   onExitUp?: () => void
   onExitRight?: () => void
@@ -295,11 +354,13 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ viewKey, savedPositions, onSavePositions, graphData, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ viewKey, savedPositions, onSavePositions, graphData, filePath, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onCreateRecordDraft, onInsertRecord, recordGroups, onDropRecordIntoGroup, onRenameRecord, onDeleteRecord, runHistoryBatch, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const lookups = useEditorLookups()
   const previousViews = useRef<GraphNodeView[]>([])
   const [selectedElement, setSelectedElement] = useState<GraphFocus>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  // 框选连线允许批量选择；删除时逐条复用现有字段/集合写入历史。
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     if (selectedCoordinate) setSelectedElement({ kind: 'node', id: coordinateId(selectedCoordinate.coordinate) })
     else setSelectedElement(current => current?.kind === 'node' ? null : current)
@@ -549,6 +610,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
         return {
           id: n.id,
           selected: selectedNodeIds.has(n.id),
+          // 节点代表记录，Delete 只应删除连线，不能把节点从画布移除。
+          deletable: false,
           type: 'cfd',
           initialWidth: 280,
           initialHeight: estimateNodeHeight(n, expandedNodes.get(n.id) ?? false, rowExpanded ?? new Set()),
@@ -628,10 +691,29 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
   const dragSource = useRef<{ nodeId: string; portId: string } | null>(null)
   const connectionDone = useRef(false)
   const reconnectEdgeRef = useRef<Edge | null>(null)
+  // 重连开始时 React Flow 会同步再触发一次 onConnectStart，用一次性标记跳过它。
+  const reconnectStartRef = useRef(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [picker, setPicker] = useState<{
     nodeId: string; portId: string; x: number; y: number; targets: RefTarget[]
+    targetType: string
+    /** 空白处落点的 flow 坐标；仅拖线到空白时存在，用于“新建节点”落位。 */
+    flowPosition: { x: number; y: number } | null
   } | null>(null)
+  // 选择“新建节点”后暂停连接，待记录创建完成再连线并落位。
+  const [newTarget, setNewTarget] = useState<{
+    nodeId: string; portId: string; targetType: string
+    flowPosition: { x: number; y: number }
+  } | null>(null)
+  // 节点右键共用菜单及其后续对话框。
+  const [nodeMenu, setNodeMenu] = useState<{
+    anchorX: number; anchorY: number; filePath: string; coordinate: RecordCoordinate
+  } | null>(null)
+  const [nodeMenuAction, setNodeMenuAction] = useState<
+    | { kind: 'rename'; filePath: string; coordinate: RecordCoordinate }
+    | { kind: 'delete'; filePath: string; coordinate: RecordCoordinate }
+    | null
+  >(null)
   const dragVersion = useRef(0)
 
   function sourcePort(nodeId: string, handle: string | null | undefined) {
@@ -648,6 +730,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     connectionDone.current = false
     dragSource.current = null
     setPicker(null)
+    setNewTarget(null)
     setConnectionError(null)
     if (!nodeId) return
     const port = sourcePort(nodeId, handle)
@@ -684,11 +767,19 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     const target = compatibleTarget(connection.target, lookups.cachedRefTargets(port.targetType) ?? [])
     if (!target || !editablePort(connection.source, port)) return
     connectionDone.current = true
+    const reconnecting = reconnectEdgeRef.current
+    // 拖动起点是把引用搬到新起点：先建立新引用，再清掉旧起点的引用，避免残留成重复边。
+    if (reconnecting
+      && (connection.source !== reconnecting.source || connection.sourceHandle !== reconnecting.sourceHandle)) {
+      onEdgesDelete([reconnecting])
+    }
     void commitRelation(connection.source, port.id, target)
   }
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     // React Flow 默认使用 Delete/Backspace 删除选中的边；删除操作复用字段写入历史，因而可撤销。
+    setSelectedEdgeIds(new Set())
+    const arrayRemovals: { file: string; coordinate: RecordCoordinate; path: FieldPathSegment[]; index: number }[] = []
     for (const edge of deleted) {
       const graphEdge = [...forwardEdges, ...backEdges].find(item => graphEdgeId(
         forwardEdges.includes(item) ? 'fwd' : 'back', item,
@@ -699,25 +790,29 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
       if (!port || !node || !editablePort(graphEdge.source, port)) continue
       const lastPath = port.path[port.path.length - 1]
       if (lastPath?.kind === 'index') {
-        // 列表项关系的连线对应数组元素，删除边就是删除该元素。
-        void onCollectionEdit?.(node.file_path, node.coordinate, port.path.slice(0, -1), { kind: 'array_remove', index: lastPath.value })
+        // 列表项关系的连线对应数组元素；批量删除时按索引降序执行，避免删除后索引位移。
+        arrayRemovals.push({ file: node.file_path, coordinate: node.coordinate,
+          path: port.path.slice(0, -1), index: lastPath.value })
       } else if (port.append) {
         continue
+      } else if (!port.nullable) {
+        // 必填引用不能存在空值；Delete 进入目标选择，确认新目标后原关系才替换。
+        void lookups.loadRefTargets(port.targetType).then(result => {
+          if (!result.ok) { setConnectionError(result.error ?? '加载引用目标失败'); return }
+          const element = wrapRef.current?.querySelector<HTMLElement>(`.graph-node[data-nodeid="${CSS.escape(node.id)}"]`)
+          const rect = element?.getBoundingClientRect()
+          setPicker({ nodeId: graphEdge.source, portId: port.id,
+            x: Math.max(8, Math.min(rect?.right ?? 300, window.innerWidth - 288)),
+            y: Math.max(8, Math.min(rect?.top ?? 80, window.innerHeight - 40)), targets: result.value,
+            targetType: port.targetType, flowPosition: null })
+        })
       } else {
-        if (!port.nullable) {
-          // 必填引用不能存在空值；Delete 进入目标选择，确认新目标后原关系才替换。
-          void lookups.loadRefTargets(port.targetType).then(result => {
-            if (!result.ok) { setConnectionError(result.error ?? '加载引用目标失败'); return }
-            const element = wrapRef.current?.querySelector<HTMLElement>(`.graph-node[data-nodeid="${CSS.escape(node.id)}"]`)
-            const rect = element?.getBoundingClientRect()
-            setPicker({ nodeId: graphEdge.source, portId: port.id,
-              x: Math.max(8, Math.min(rect?.right ?? 300, window.innerWidth - 288)),
-              y: Math.max(8, Math.min(rect?.top ?? 80, window.innerHeight - 40)), targets: result.value })
-          })
-        } else {
-          void onWriteField?.(node.file_path, node.coordinate, port.path, { kind: 'option_none' })
-        }
+        void onWriteField?.(node.file_path, node.coordinate, port.path, { kind: 'option_none' })
       }
+    }
+    arrayRemovals.sort((a, b) => b.index - a.index)
+    for (const removal of arrayRemovals) {
+      void onCollectionEdit?.(removal.file, removal.coordinate, removal.path, { kind: 'array_remove', index: removal.index })
     }
   }, [forwardEdges, backEdges, relations, currentNodeById, onWriteField, onCollectionEdit, fileCapabilities, lookups])
 
@@ -749,15 +844,23 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
         onEdgesDelete([reconnecting])
         return
       }
-      setPicker({ ...source, x: Math.max(8, Math.min(point.clientX, window.innerWidth - 288)),
-        y: Math.max(8, Math.min(point.clientY, window.innerHeight - 40)), targets: result.value })
+      const flowPosition = reactFlowRef.current?.screenToFlowPosition({
+        x: point.clientX, y: point.clientY,
+      }) ?? null
+      setPicker({ nodeId: source.nodeId, portId: source.portId,
+        x: Math.max(8, Math.min(point.clientX, window.innerWidth - 288)),
+        y: Math.max(8, Math.min(point.clientY, window.innerHeight - 40)), targets: result.value,
+        targetType: port.targetType, flowPosition })
     }
   }
 
   useEffect(() => {
     dragVersion.current++
     setPicker(null)
+    setNewTarget(null)
+    setNodeMenu(null)
     setConnectionError(null)
+    setSelectedEdgeIds(new Set())
     return () => { dragVersion.current++; dragSource.current = null }
   }, [viewKey, topologySignature])
 
@@ -787,7 +890,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
         return {
           id: graphEdgeId('fwd', e),
-          selected: selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('fwd', e),
+          selected: selectedEdgeIds.has(graphEdgeId('fwd', e))
+            || (selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('fwd', e)),
           reconnectable: true,
           source: e.source,
           target: e.target,
@@ -811,7 +915,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
       .filter(e => positions.has(e.source) && positions.has(e.target))
       .map(e => ({
         id: graphEdgeId('back', e),
-        selected: selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('back', e),
+        selected: selectedEdgeIds.has(graphEdgeId('back', e))
+          || (selectedElement?.kind === 'edge' && selectedElement.id === graphEdgeId('back', e)),
         reconnectable: true,
         source: e.source,
         target: e.target,
@@ -839,7 +944,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     if (next.length === previousEdges.current.length && next.every((edge, index) => edge === previousEdges.current[index])) return previousEdges.current
     previousEdges.current = next
     return next
-  }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit, selectedElement])
+  }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit, selectedElement, selectedEdgeIds])
 
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
@@ -907,75 +1012,78 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     setZoomCompactNodes(prev => prev === next ? prev : next)
   }, [])
   const boxSelectRef = useRef<{ x: number; y: number } | null>(null)
+  // 拖动中显示真实框选范围，结束后收起为选中节点包围盒。
   const [boxSelect, setBoxSelect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
-  const onPaneMouseDown = useCallback((event: ReactMouseEvent) => {
-    if (event.button !== 2) return
-    event.preventDefault()
-    boxSelectRef.current = { x: event.clientX, y: event.clientY }
-    const move = (moveEvent: MouseEvent) => {
-      const start = boxSelectRef.current
-      if (!start) return
-      const left = Math.min(start.x, moveEvent.clientX); const right = Math.max(start.x, moveEvent.clientX)
-      const top = Math.min(start.y, moveEvent.clientY); const bottom = Math.max(start.y, moveEvent.clientY)
-      setBoxSelect({ x: left, y: top, width: right - left, height: bottom - top })
-      const selected = new Set<string>()
-      wrapRef.current?.querySelectorAll<HTMLElement>('.react-flow__node').forEach(element => {
-        const rect = element.getBoundingClientRect()
-        const overlap = Math.max(0, Math.min(rect.right, right) - Math.max(rect.left, left))
-          * Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top))
-        if (overlap >= rect.width * rect.height * 0.2) {
-          const id = element.dataset.id
-          if (id) selected.add(id)
-        }
-      })
-      setSelectedNodeIds(selected)
-    }
-    const up = () => { boxSelectRef.current = null; setBoxSelect(null); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
-  }, [])
+  // 右键拖动框选：节点用重叠面积判定，连线用曲线采样判定。
   useEffect(() => {
     const root = wrapRef.current
     if (!root) return
-    const down = (event: PointerEvent) => {
+    const pathIntersectsRect = (path: SVGPathElement, rect: GraphRect): boolean => {
+      const bounds = path.getBoundingClientRect()
+      if (bounds.right < rect.left || bounds.left > rect.right
+        || bounds.bottom < rect.top || bounds.top > rect.bottom) return false
+      const total = path.getTotalLength()
+      const matrix = path.getScreenCTM()
+      if (!total || !matrix) return false
+      const samples: { x: number; y: number }[] = []
+      const step = Math.max(4, total / 160)
+      for (let length = 0; length <= total + step / 2; length += step) {
+        const point = path.getPointAtLength(Math.min(length, total))
+        const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix)
+        samples.push({ x: screen.x, y: screen.y })
+      }
+      return polylineIntersectsRect(samples, rect)
+    }
+    const updateSelection = (left: number, top: number, right: number, bottom: number) => {
+      const rect: GraphRect = { left, top, right, bottom }
+      const nextNodes = new Set<string>()
+      root.querySelectorAll<HTMLElement>('.react-flow__node').forEach(element => {
+        const bounds = element.getBoundingClientRect()
+        const overlap = Math.max(0, Math.min(bounds.right, right) - Math.max(bounds.left, left))
+          * Math.max(0, Math.min(bounds.bottom, bottom) - Math.max(bounds.top, top))
+        if (overlap >= bounds.width * bounds.height * 0.2 && element.dataset.id) nextNodes.add(element.dataset.id)
+      })
+      const nextEdges = new Set<string>()
+      root.querySelectorAll<SVGGElement>('.react-flow__edge').forEach(element => {
+        const path = element.querySelector<SVGPathElement>('.react-flow__edge-path')
+        if (path && element.dataset.id && pathIntersectsRect(path, rect)) nextEdges.add(element.dataset.id)
+      })
+      setSelectedNodeIds(nextNodes)
+      setSelectedEdgeIds(nextEdges)
+    }
+    const down = (event: PointerEvent | MouseEvent) => {
       if (event.button !== 2) return
+      // pointer 与 mouse 事件在部分环境同时到达，第二次直接忽略。
+      if (boxSelectRef.current) return
       event.preventDefault()
       event.stopPropagation()
       boxSelectRef.current = { x: event.clientX, y: event.clientY }
       const move = (moveEvent: PointerEvent) => {
         const start = boxSelectRef.current
         if (!start) return
-        const left = Math.min(start.x, moveEvent.clientX); const right = Math.max(start.x, moveEvent.clientX)
-        const top = Math.min(start.y, moveEvent.clientY); const bottom = Math.max(start.y, moveEvent.clientY)
+        const left = Math.min(start.x, moveEvent.clientX)
+        const top = Math.min(start.y, moveEvent.clientY)
+        const right = Math.max(start.x, moveEvent.clientX)
+        const bottom = Math.max(start.y, moveEvent.clientY)
         setBoxSelect({ x: left, y: top, width: right - left, height: bottom - top })
-        const selected = new Set<string>()
-        root.querySelectorAll<HTMLElement>('.react-flow__node').forEach(element => {
-          const rect = element.getBoundingClientRect()
-          const overlap = Math.max(0, Math.min(rect.right, right) - Math.max(rect.left, left))
-            * Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top))
-          if (overlap >= rect.width * rect.height * 0.2 && element.dataset.id) selected.add(element.dataset.id)
-        })
-        setSelectedNodeIds(selected)
+        updateSelection(left, top, right, bottom)
       }
       const up = () => {
         boxSelectRef.current = null
         setBoxSelect(null)
         window.removeEventListener('pointermove', move, true)
         window.removeEventListener('pointerup', up, true)
-        window.removeEventListener('mousemove', move as unknown as EventListener, true)
-        window.removeEventListener('mouseup', up, true)
       }
       window.addEventListener('pointermove', move, true)
       window.addEventListener('pointerup', up, true)
-      window.addEventListener('mousemove', move as unknown as EventListener, true)
-      window.addEventListener('mouseup', up, true)
     }
     const captureDown = (event: PointerEvent) => {
       if (root.contains(event.target as globalThis.Node)) down(event)
     }
-    window.addEventListener('pointerdown', captureDown, true)
     const mouseDown = (event: MouseEvent) => {
-      if (event.button === 2 && (event.target as Element)?.closest?.('.graph-view-wrap') === root) down(event as unknown as PointerEvent)
+      if ((event.target as Element)?.closest?.('.graph-view-wrap') === root) down(event)
     }
+    window.addEventListener('pointerdown', captureDown, true)
     window.addEventListener('mousedown', mouseDown, true)
     return () => {
       window.removeEventListener('pointerdown', captureDown, true)
@@ -983,12 +1091,73 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     }
   }, [])
 
+  // 框选后显示选中节点的包围盒；初始拖拽中一旦有节点入选即出现。
+  const selectionBounds = useMemo(
+    () => selectedNodeIds.size > 0
+      ? selectedNodeBounds(rfNodes, selectedNodeIds, { width: 280, height: 160 })
+      : null,
+    [rfNodes, selectedNodeIds],
+  )
+  // 拖动包围盒即整组移动选中节点，落点按 flow 坐标换算，避免受缩放影响。
+  const beginGroupDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || selectedNodeIds.size === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const instance = reactFlowRef.current
+    if (!instance) return
+    // 以当前渲染中的坐标为准，保证刚布局完还没落盘的节点也能整组移动。
+    const start = new Map<string, { x: number; y: number }>()
+    for (const node of rfNodes) {
+      if (selectedNodeIds.has(node.id)) start.set(node.id, { ...node.position })
+    }
+    if (start.size === 0) return
+    const startFlow = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const move = (moveEvent: PointerEvent) => {
+      const flow = reactFlowRef.current?.screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY })
+      if (!flow) return
+      const dx = flow.x - startFlow.x
+      const dy = flow.y - startFlow.y
+      for (const [id, base] of start) retainedPositions.current.set(id, { x: base.x + dx, y: base.y + dy })
+      setRfNodes(current => current.map(node => {
+        const base = start.get(node.id)
+        return base ? { ...node, position: { x: base.x + dx, y: base.y + dy } } : node
+      }))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      const changed = [...start].some(([id, base]) => {
+        const now = retainedPositions.current.get(id)
+        return !now || now.x !== base.x || now.y !== base.y
+      })
+      if (!changed) return
+      setPositionSaving(true)
+      void persistPositions(new Map(retainedPositions.current), true).catch(error => {
+        for (const [id, base] of start) retainedPositions.current.set(id, base)
+        setRfNodes(current => current.map(node => {
+          const base = start.get(node.id)
+          return base ? { ...node, position: { ...base } } : node
+        }))
+        setLayoutError(error instanceof Error ? error.message : String(error))
+      }).finally(() => setPositionSaving(false))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // 新建节点时做重复 Key 提示；以后端校验为准，这里只覆盖图里已有的同类型记录。
+  const existingTargetKeys = useMemo(
+    () => newTarget
+      ? graphData.nodes.filter(node => node.coordinate.actual_type === newTarget.targetType).map(node => node.coordinate.key)
+      : [],
+    [graphData.nodes, newTarget],
+  )
+
   return (
     <div
       className="graph-view-wrap"
       ref={wrapRef}
       tabIndex={0}
-      onMouseDown={onPaneMouseDown}
       onKeyDown={event => {
         if (event.target !== event.currentTarget) return
         if (event.key === 'ArrowLeft') {
@@ -1051,7 +1220,15 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             }}
             onNodesChange={onNodesChange}
             isValidConnection={validConnection}
-            onConnectStart={(_event, params) => beginConnection(params.nodeId, params.handleId)}
+            // 重连时 React Flow 会先触发 onReconnectStart，再触发 onConnectStart；
+            // 后者会用固定端覆盖拖动源，必须跳过，否则端点拖不动。
+            onConnectStart={(_event, params) => {
+              if (reconnectStartRef.current) {
+                reconnectStartRef.current = false
+                return
+              }
+              beginConnection(params.nodeId, params.handleId)
+            }}
             onConnect={connect}
             onEdgesDelete={onEdgesDelete}
             onConnectEnd={event => { void endConnection(event) }}
@@ -1059,14 +1236,26 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             edgesFocusable
             elementsSelectable
             deleteKeyCode={["Backspace", "Delete"]}
-            onReconnectStart={(_event, edge) => { reconnectEdgeRef.current = edge; beginConnection(edge.source, edge.sourceHandle ?? null) }}
+            onReconnectStart={(_event, edge) => {
+              reconnectEdgeRef.current = edge
+              reconnectStartRef.current = true
+              beginConnection(edge.source, edge.sourceHandle ?? null)
+            }}
             onReconnect={(_edge, connection) => connect(connection)}
-            onReconnectEnd={event => { void endConnection(event) }}
+            onReconnectEnd={event => {
+              void endConnection(event)
+              reconnectEdgeRef.current = null
+              reconnectStartRef.current = false
+            }}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
             onEdgeMouseEnter={(_event, edge) => { hoveredElement.current = { kind: 'edge', id: edge.id }; applyHighlights() }}
             onEdgeMouseLeave={onNodeMouseLeave}
-            onEdgeClick={(event, edge) => { event.stopPropagation(); setSelectedElement({ kind: 'edge', id: edge.id }) }}
+            onEdgeClick={(event, edge) => {
+              event.stopPropagation()
+              setSelectedEdgeIds(new Set())
+              setSelectedElement({ kind: 'edge', id: edge.id })
+            }}
             onNodeClick={(e, node) => {
               // Ctrl/Cmd+click jumps to the record view (handled in CfdNode).
               // Plain click opens the side inspector.
@@ -1075,13 +1264,28 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
               if ((e.target as Element).closest('input, textarea, select, button, a, [contenteditable="true"], .nodrag')) return
               if (selectedElement?.kind === 'node' && selectedElement.id === node.id) return
               setSelectedNodeIds(new Set())
-              setBoxSelect(null)
+              setSelectedEdgeIds(new Set())
               setSelectedElement({ kind: 'node', id: node.id })
               if (!onSelectRecord) return
               const gn = (node.data as NodeData).graphNode
               onSelectRecord(gn.file_path, gn.coordinate)
             }}
-            onPaneClick={() => { setPicker(null); setSelectedElement(null); setSelectedNodeIds(new Set()); setBoxSelect(null); onClearSelection?.() }}
+            onNodeContextMenu={(event, node) => {
+              event.preventDefault()
+              const gn = (node.data as NodeData).graphNode
+              setNodeMenu({
+                anchorX: event.clientX, anchorY: event.clientY,
+                filePath: gn.file_path, coordinate: gn.coordinate,
+              })
+            }}
+            onPaneClick={() => {
+              setPicker(null)
+              setNodeMenu(null)
+              setSelectedElement(null)
+              setSelectedNodeIds(new Set())
+              setSelectedEdgeIds(new Set())
+              onClearSelection?.()
+            }}
             onPaneContextMenu={event => event.preventDefault()}
             onViewportChange={handleViewportChange}
             selectionMode={SelectionMode.Full}
@@ -1125,6 +1329,23 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
               pannable
               zoomable
             />
+            {/* 选中节点的持久包围盒：渲染在 viewport 内，随平移缩放自动贴合并可作为整组拖动手柄。 */}
+            <ViewportPortal>
+              {!boxSelect && selectionBounds && (
+                <div
+                  className="graph-selection-bbox nodrag nopan"
+                  data-testid="graph-selection-bbox"
+                  style={{
+                    left: selectionBounds.left - 16,
+                    top: selectionBounds.top - 16,
+                    width: selectionBounds.right - selectionBounds.left + 32,
+                    height: selectionBounds.bottom - selectionBounds.top + 32,
+                  }}
+                  onPointerDown={beginGroupDrag}
+                  onClick={event => event.stopPropagation()}
+                />
+              )}
+            </ViewportPortal>
           </ReactFlow>
           {!connectionError && <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
             点击节点查看 · Ctrl+点击跳转
@@ -1143,15 +1364,106 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             className="dc-input"
             ariaLabel="选择引用目标"
             placeholder="选择引用目标"
-            options={picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.key, target.short_name),
-              description: `${target.coordinate.actual_type} · ${target.file_path}` }))}
-            onCommit={index => {
-              const target = picker.targets[Number(index)]
+            options={[
+              // 仅拖线到空白且具备记录创建通道时才提供“新建节点”，删除后补齐目标不改变落点语义。
+              ...(picker.flowPosition && onCreateRecordDraft && onInsertRecord
+                ? [{ value: NEW_TARGET_OPTION, label: '＋ 新建节点', description: `新建 ${picker.targetType} 并连接` }]
+                : []),
+              ...picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.key, target.short_name),
+                description: `${target.coordinate.actual_type} · ${target.file_path}` })),
+            ]}
+            onCommit={value => {
+              if (value === NEW_TARGET_OPTION && picker.flowPosition) {
+                setNewTarget({
+                  nodeId: picker.nodeId, portId: picker.portId,
+                  targetType: picker.targetType, flowPosition: picker.flowPosition,
+                })
+                setPicker(null)
+                return
+              }
+              const target = picker.targets[Number(value)]
               if (target) void commitRelation(picker.nodeId, picker.portId, target)
             }}
             onExit={() => setPicker(null)}
           />
         </div>
+      )}
+      {newTarget && onCreateRecordDraft && onInsertRecord && (
+        <CreateRecordDialog
+          actualType={newTarget.targetType}
+          typeOptions={[]}
+          existingKeys={existingTargetKeys}
+          onCreateRecordDraft={onCreateRecordDraft}
+          onInsertRecord={async (recordKey, actualType, fields) => {
+            const create = async () => {
+              await onInsertRecord(recordKey, actualType, fields)
+              // 记录新节点坐标，布局刷新后即可落在拖放位置。
+              retainedPositions.current.set(coordinateId({ actual_type: actualType, key: recordKey }), newTarget.flowPosition)
+              setNewTarget(null)
+              await commitRelation(newTarget.nodeId, newTarget.portId, {
+                short_name: null,
+                file_path: filePath,
+                coordinate: { actual_type: actualType, key: recordKey },
+              })
+            }
+            // 创建记录与建立引用合并成一步，Ctrl+Z 一次即可整体撤回。
+            await (runHistoryBatch ? runHistoryBatch(create) : create())
+          }}
+          onClose={() => setNewTarget(null)}
+        />
+      )}
+      {nodeMenu && (
+        <RecordContextMenu
+          request={{
+            anchorX: nodeMenu.anchorX,
+            anchorY: nodeMenu.anchorY,
+            filePath: nodeMenu.filePath,
+            coordinates: [nodeMenu.coordinate],
+            primaryKey: nodeMenu.coordinate.key,
+          }}
+          groups={recordGroups}
+          showOpenRecord
+          canRename={!!onRenameRecord && (fileCapabilities?.[nodeMenu.filePath]?.can_edit_key ?? false)}
+          canDelete={!!onDeleteRecord && (fileCapabilities?.[nodeMenu.filePath]?.can_delete_record ?? false)}
+          canAddToGroup={(recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup}
+          onOpenRecord={() => onOpenRecord(nodeMenu.filePath, nodeMenu.coordinate)}
+          onRename={() => setNodeMenuAction({
+            kind: 'rename', filePath: nodeMenu.filePath, coordinate: nodeMenu.coordinate,
+          })}
+          onDelete={() => setNodeMenuAction({
+            kind: 'delete', filePath: nodeMenu.filePath, coordinate: nodeMenu.coordinate,
+          })}
+          onAddToGroup={onDropRecordIntoGroup}
+          onClose={() => setNodeMenu(null)}
+        />
+      )}
+      {nodeMenuAction?.kind === 'rename' && onRenameRecord && (
+        <TextInputDialog
+          title="重命名 Key"
+          message="输入新的记录 Key"
+          initialValue={nodeMenuAction.coordinate.key}
+          confirmLabel="重命名"
+          onClose={() => setNodeMenuAction(null)}
+          onConfirm={async next => {
+            if (next !== nodeMenuAction.coordinate.key) {
+              await onRenameRecord(nodeMenuAction.filePath, nodeMenuAction.coordinate, next)
+            }
+            setNodeMenuAction(null)
+          }}
+        />
+      )}
+      {nodeMenuAction?.kind === 'delete' && onDeleteRecord && (
+        <ConfirmDialog
+          title="删除记录"
+          message={`确认删除记录 ${nodeMenuAction.coordinate.key}？此操作不可撤销。`}
+          confirmLabel="删除"
+          danger
+          onClose={() => setNodeMenuAction(null)}
+          onConfirm={async () => {
+            await onDeleteRecord(nodeMenuAction.filePath, nodeMenuAction.coordinate)
+            setNodeMenuAction(null)
+          }}
+        />
       )}
       {(connectionError || layoutError) && <div role="alert" className="graph-hint">{connectionError ?? layoutError}</div>}
     </div>

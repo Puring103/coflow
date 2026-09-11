@@ -157,7 +157,14 @@ export interface GraphLayoutEditEntry {
   newPositions: GraphPositions
 }
 
-export type EditEntry = FieldEditEntry | BatchFieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry | ReorderEditEntry | GraphLayoutEditEntry
+/** 把一次用户操作中的多条写入合并为单步撤销/重做。 */
+export interface BatchEditEntry {
+  kind: 'batch'
+  revision: number
+  entries: EditEntry[]
+}
+
+export type EditEntry = FieldEditEntry | BatchFieldEditEntry | DimensionEditEntry | InsertEditEntry | DeleteEditEntry | ReorderEditEntry | GraphLayoutEditEntry | BatchEditEntry
 
 export interface FieldEditEntry {
   kind: 'field'
@@ -245,6 +252,8 @@ export class MutationHistoryController {
   private readonly listeners = new Set<() => void>()
   private queue: Promise<void> = Promise.resolve()
   private epoch = 0
+  private batchDepth = 0
+  private batchEntries: EditEntry[] = []
 
   getSnapshot = (): MutationHistorySnapshot => this.snapshot
 
@@ -255,6 +264,8 @@ export class MutationHistoryController {
 
   clear(): void {
     this.epoch += 1
+    this.batchDepth = 0
+    this.batchEntries = []
     this.publish(EMPTY_HISTORY)
   }
 
@@ -262,7 +273,35 @@ export class MutationHistoryController {
     return this.epoch
   }
 
+  /** 开始收集多条写入，作为后续单步撤销/重做。 */
+  beginBatch(): void {
+    this.batchDepth += 1
+  }
+
+  endBatch(): void {
+    if (this.batchDepth === 0) return
+    this.batchDepth -= 1
+    if (this.batchDepth > 0) return
+    const entries = this.batchEntries
+    this.batchEntries = []
+    if (entries.length === 0) return
+    if (entries.length === 1) {
+      this.recordDirect(entries[0])
+      return
+    }
+    const revision = entries.reduce((max, entry) => Math.max(max, entry.revision), 0)
+    this.recordDirect({ kind: 'batch', revision, entries })
+  }
+
   record(entry: EditEntry): void {
+    if (this.batchDepth > 0) {
+      this.batchEntries.push(entry)
+      return
+    }
+    this.recordDirect(entry)
+  }
+
+  private recordDirect(entry: EditEntry): void {
     const undo = [...this.snapshot.undo, entry]
     undo.sort((left, right) => left.revision - right.revision)
     this.publish({ undo, redo: [], busy: this.snapshot.busy })
@@ -338,6 +377,12 @@ function rebindEntry(
   newCoordinate: RecordCoordinate,
 ): EditEntry {
   if (entry.kind === 'graph-layout') return entry
+  if (entry.kind === 'batch') {
+    return {
+      ...entry,
+      entries: entry.entries.map(sub => rebindEntry(sub, oldCoordinate, newCoordinate)),
+    }
+  }
   if (entry.kind === 'batch-field') {
     return {
       ...entry,
