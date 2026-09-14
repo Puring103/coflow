@@ -85,7 +85,6 @@ export interface EditorMutationBackend {
     sessionId: number,
     coordinate: RecordCoordinate,
     destinationFile: string,
-    destinationSheet: string | null,
     targetIndex: number,
   ) => Promise<ReorderRecordsOutcome>
 }
@@ -924,7 +923,6 @@ export class EditorMutationController {
         sessionId,
         coordinate,
         destinationFile,
-        null,
         targetIndex,
       ),
       outcome => outcome.file_records,

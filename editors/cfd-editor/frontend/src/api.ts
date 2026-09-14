@@ -41,6 +41,7 @@ import type { LanguagePosition } from './bindings/LanguagePosition'
 import type { LanguageRange } from './bindings/LanguageRange'
 import type { LanguageTextEdit } from './bindings/LanguageTextEdit'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
+import { commands } from './bindings/commands'
 
 export type {
   FunctionDocumentState,
@@ -359,7 +360,7 @@ export async function buildProject(sessionId: number): Promise<string> {
 }
 
 export async function buildProjectStatus(sessionId: number): Promise<boolean> {
-  return invokeCommand<boolean>('build_project_status', { sessionId })
+  return commands.buildProjectStatus(sessionId)
 }
 
 export async function openSourceFile(sessionId: number, filePath: string): Promise<void> {
@@ -601,14 +602,12 @@ export async function transferRecord(
   sessionId: number,
   coordinate: RecordCoordinate,
   destinationFile: string,
-  destinationSheet: string | null,
   targetIndex: number,
 ): Promise<ReorderRecordsOutcome> {
   return invokeCommand<ReorderRecordsOutcome>('transfer_record', {
     sessionId,
     coordinate,
     destinationFile,
-    destinationSheet,
     targetIndex,
   })
 }

@@ -5,10 +5,18 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 mod plugin_manifest;
+mod typed_commands;
 
 /// Compatibility re-export for generated TypeScript binding tests and host consumers.
 pub mod editor {
     pub use cfd_editor_core::editor::*;
+}
+
+#[cfg(feature = "ts-export")]
+pub fn export_typed_command_bindings() -> Result<(), specta_typescript::Error> {
+    typed_commands::export_bindings(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/bindings/commands.ts"),
+    )
 }
 
 use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
@@ -560,15 +568,7 @@ async fn add_project_input(
     path: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    let kind = match kind.as_str() {
-        "schema" => coflow_runtime::ProjectInputKind::Schema,
-        "data" => coflow_runtime::ProjectInputKind::Data,
-        _ => {
-            return Err(EditorError::other(
-                "project input kind must be schema or data",
-            ))
-        }
-    };
+    let kind = project_input_kind(&kind)?;
     let host = host.inner().clone();
     run_blocking(move || {
         host.sessions()
@@ -802,16 +802,6 @@ async fn build_project(
 ) -> Result<String, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().build_project(session_id)).await
-}
-
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-async fn build_project_status(
-    session_id: u32,
-    host: State<'_, EditorHost>,
-) -> Result<bool, EditorError> {
-    let host = host.inner().clone();
-    run_blocking(move || host.sessions().build_project_status(session_id)).await
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1322,6 +1312,7 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(typed_commands::init())
         .setup(|app| {
             let events = Arc::new(TauriEditorEventSink {
                 app: app.handle().clone(),
@@ -1351,7 +1342,6 @@ pub fn run() -> tauri::Result<()> {
             set_workspace,
             check_project,
             build_project,
-            build_project_status,
             get_project_diff,
             open_source_file,
             read_source_text,
