@@ -55,7 +55,6 @@ import {
   MOCK_EDITOR_SETTINGS,
 } from './mock'
 import * as api from './api'
-import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { FileRecords } from './bindings/FileRecords'
@@ -194,7 +193,7 @@ export default function App() {
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
-  const [projectDimensions, setProjectDimensions] = useState<DimensionInfo[]>([])
+  const projectDimensions = project?.dimensions ?? []
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const fileDataCacheRef = useRef(fileDataCache)
@@ -585,7 +584,6 @@ export default function App() {
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
       setProjectSettings(MOCK_EDITOR_SETTINGS)
-      setProjectDimensions(MOCK_PROJECT.dimensions)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       installWorkspace(MOCK_PROJECT, MOCK_EDITOR_SETTINGS)
     }
@@ -614,7 +612,6 @@ export default function App() {
       setFileDataCache({})
       setGraphCache({})
       setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
-      setProjectDimensions(bootstrap.dimensions)
       setWorkspaceTabs([])
       workspaceTabsRef.current = []
       pluginDefaultPendingTabsRef.current.clear()
@@ -738,7 +735,6 @@ export default function App() {
       if (!generation.acceptSnapshot(bootstrap)) return
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       const dimensions = bootstrap.dimensions
-      setProjectDimensions(dimensions)
       const current = router.current
       const sourceFiles = collectSourceFiles(bootstrap)
       const keepFile = current && sourceFiles.includes(current.file)
