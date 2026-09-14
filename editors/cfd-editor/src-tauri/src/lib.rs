@@ -5,18 +5,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 mod plugin_manifest;
-mod typed_commands;
 
 /// Compatibility re-export for generated TypeScript binding tests and host consumers.
 pub mod editor {
     pub use cfd_editor_core::editor::*;
-}
-
-#[cfg(feature = "ts-export")]
-pub fn export_typed_command_bindings() -> Result<(), specta_typescript::Error> {
-    typed_commands::export_bindings(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/bindings/commands.ts"),
-    )
 }
 
 use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
@@ -62,7 +54,9 @@ const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
 
 #[derive(Debug, Clone, Serialize)]
-struct FrontendPluginBundle {
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
+pub struct FrontendPluginBundle {
     manifest_path: String,
     id: String,
     name: String,
@@ -74,14 +68,18 @@ struct FrontendPluginBundle {
 }
 
 #[derive(Debug, Default, Serialize)]
-struct FrontendPlugins {
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(rename = "FrontendPluginState", export, export_to = "../frontend/src/bindings/"))]
+pub struct FrontendPlugins {
     plugins: Vec<FrontendPluginBundle>,
     errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
 #[serde(rename_all = "snake_case")]
-enum PluginScope {
+pub enum PluginScope {
     Global,
     Project,
 }
@@ -97,7 +95,9 @@ struct ProjectPluginsFile {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct ProjectPluginDefaults {
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
+pub struct ProjectPluginDefaults {
     #[serde(default)]
     views: BTreeMap<String, String>,
     #[serde(default)]
@@ -105,7 +105,9 @@ struct ProjectPluginDefaults {
 }
 
 #[derive(Debug, Serialize)]
-struct ProjectFrontendPlugins {
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(rename = "FrontendPluginProjectState", export, export_to = "../frontend/src/bindings/"))]
+pub struct ProjectFrontendPlugins {
     plugins: Vec<FrontendPluginBundle>,
     defaults: ProjectPluginDefaults,
     errors: Vec<String>,
@@ -806,6 +808,16 @@ async fn build_project(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+async fn build_project_status(
+    session_id: u32,
+    host: State<'_, EditorHost>,
+) -> Result<bool, EditorError> {
+    let host = host.inner().clone();
+    run_blocking(move || host.sessions().build_project_status(session_id)).await
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 async fn get_project_diff(
     session_id: u32,
     host: State<'_, EditorHost>,
@@ -1312,7 +1324,6 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(typed_commands::init())
         .setup(|app| {
             let events = Arc::new(TauriEditorEventSink {
                 app: app.handle().clone(),
@@ -1342,6 +1353,7 @@ pub fn run() -> tauri::Result<()> {
             set_workspace,
             check_project,
             build_project,
+            build_project_status,
             get_project_diff,
             open_source_file,
             read_source_text,

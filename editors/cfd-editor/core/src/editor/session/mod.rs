@@ -695,35 +695,34 @@ fn record_container_index(session: &EditorSession, coordinate: &RecordCoordinate
     let file = session
         .queries()
         .file_for_record(&coordinate.actual_type, &coordinate.key)?;
-    let views = session
-        .queries()
-        .record_views_in_file(file)
-        .collect::<Vec<_>>();
-    let target = views.iter().find(|view| view.coordinate == *coordinate)?;
-    let container = record_container_key(target.origin);
-    views
-        .iter()
-        .filter(|view| record_container_key(view.origin) == container)
-        .position(|view| view.coordinate == *coordinate)
+    record_index_in_file(session, file, coordinate, false)
 }
 
 fn record_type_index(session: &EditorSession, coordinate: &RecordCoordinate) -> Option<usize> {
     let file = session
         .queries()
         .file_for_record(&coordinate.actual_type, &coordinate.key)?;
-    let views = session
-        .queries()
-        .record_views_in_file(file)
-        .collect::<Vec<_>>();
-    let target = views.iter().find(|view| view.coordinate == *coordinate)?;
-    let container = record_container_key(target.origin);
-    views
-        .iter()
-        .filter(|view| {
-            view.coordinate.actual_type == coordinate.actual_type
-                && record_container_key(view.origin) == container
-        })
-        .position(|view| view.coordinate == *coordinate)
+    record_index_in_file(session, file, coordinate, true)
+}
+
+fn record_index_in_file(
+    session: &EditorSession,
+    file: &str,
+    coordinate: &RecordCoordinate,
+    same_type: bool,
+) -> Option<usize> {
+    let mut index = 0;
+    for view in session.queries().record_views_in_file(file) {
+        // 查询已经限定文件，同容器比较无需再构造临时字符串。
+        if same_type && view.coordinate.actual_type != coordinate.actual_type {
+            continue;
+        }
+        if view.coordinate == *coordinate {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
 }
 
 fn record_container_key(origin: &RecordOrigin) -> String {

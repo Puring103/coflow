@@ -43,6 +43,8 @@ struct ProjectWatcher {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(rename = "ProjectReloadedEvent", export, export_to = "../../frontend/src/bindings/"))]
 pub struct ProjectReloadedPayload {
     pub session_id: u32,
     pub changed_paths: Vec<String>,
@@ -51,6 +53,8 @@ pub struct ProjectReloadedPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-export", ts(rename = "ProjectWatchErrorEvent", export, export_to = "../../frontend/src/bindings/"))]
 pub struct ProjectWatchErrorPayload {
     pub session_id: u32,
     pub message: String,

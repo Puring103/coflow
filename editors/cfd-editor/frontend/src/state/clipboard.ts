@@ -1,10 +1,9 @@
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
-import type { CfdDictKey } from '../bindings/CfdDictKey'
 import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
-import { fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
+import { dictKeyPathText, fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
 import type { CellAnchor } from './editorSelection'
 import { sameFieldValue } from './fieldProjection'
 
@@ -423,14 +422,4 @@ export function shouldExpandSinglePasteTarget(
 ): boolean {
   const hasMultipleSourceCells = source.length > 1 || (source[0]?.length ?? 0) > 1
   return hasMultipleSourceCells && !isComplex(target.annotation)
-}
-
-function dictKeyPathText(key: CfdDictKey): string {
-  if (key.kind === 'int') return String(key.value)
-  if (key.kind === 'enum') {
-    return key.value.variant
-      ? `${key.value.enum_name}.${key.value.variant}`
-      : `${key.value.enum_name}(${key.value.value})`
-  }
-  return JSON.stringify(key.value)
 }
