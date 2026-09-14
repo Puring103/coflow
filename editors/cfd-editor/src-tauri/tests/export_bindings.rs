@@ -60,6 +60,7 @@ fn export_bindings() {
     export_with_retry::<t::GraphEdge>("GraphEdge");
     export_with_retry::<t::RefTarget>("RefTarget");
     normalize_generated_bindings();
+    cfd_editor_lib::export_typed_command_bindings().expect("export typed command bindings");
 }
 
 #[cfg(feature = "ts-export")]
