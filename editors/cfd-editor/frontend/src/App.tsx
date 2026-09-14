@@ -124,6 +124,7 @@ import {
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
 import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
+import { reachableGraph } from './state/graphFilter'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_SOURCE_VIEW_ID,
@@ -1971,29 +1972,7 @@ export default function App() {
   const viewFilteredGraph = useMemo(() => {
     if (!activeGraph || !resolvedView || !resolvedView.groupFilter) return activeGraph
     const predicate = groupFilterPredicate(resolvedView, recordGroups)
-    const coordKey = (c: { actual_type: string; key: string }) => `${c.actual_type}${c.key}`
-    const keep = new Set<string>()
-    for (const node of activeGraph.nodes) {
-      if (predicate(node.coordinate)) keep.add(coordKey(node.coordinate))
-    }
-    // Expand along edges until no new reachable target is added.
-    let grew = true
-    while (grew) {
-      grew = false
-      for (const edge of activeGraph.edges) {
-        if (keep.has(coordKey(edge.source)) && !keep.has(coordKey(edge.target))) {
-          keep.add(coordKey(edge.target))
-          grew = true
-        }
-      }
-    }
-    return {
-      ...activeGraph,
-      nodes: activeGraph.nodes.filter(node => keep.has(coordKey(node.coordinate))),
-      edges: activeGraph.edges.filter(
-        edge => keep.has(coordKey(edge.source)) && keep.has(coordKey(edge.target)),
-      ),
-    }
+    return reachableGraph(activeGraph, predicate)
   }, [activeGraph, resolvedView, recordGroups])
   // Choices offered by the view editor dialog.
   const viewEditorFields = useMemo(

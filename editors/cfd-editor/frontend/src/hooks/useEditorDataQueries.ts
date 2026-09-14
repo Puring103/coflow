@@ -5,6 +5,7 @@ import type { ProjectGenerationController } from '../state/editorState'
 import { dimensionForFile, graphCacheKey } from '../state/appSupport'
 import * as api from '../api'
 import { MOCK_DIMENSION_FILE_RECORDS, MOCK_GRAPH } from '../mock'
+import { editorQueryKeys } from '../queryKeys'
 
 export interface EditorDataRoute {
   file: string
@@ -33,17 +34,17 @@ export function useEditorDataQueries(
   }
 
   const fileQuery = useQuery({
-    queryKey: ['file-records', sessionId, revision, file],
+    queryKey: editorQueryKeys.fileRecords(sessionId, revision, file),
     enabled: isDataFile && api.isTauri,
     queryFn: async () => validateRevision(await api.getFileRecords(sessionId, file)),
   })
   const dimensionQuery = useQuery({
-    queryKey: ['dimension-records', sessionId, revision, file],
+    queryKey: editorQueryKeys.dimensionRecords(sessionId, revision, file),
     enabled: !!project && !!route && !!dimension && api.isTauri,
     queryFn: async () => validateRevision(await api.getDimensionFileRecords(sessionId, file)),
   })
   const graphQuery = useQuery({
-    queryKey: ['graph', sessionId, revision, file, graphDepth, graphLimit],
+    queryKey: editorQueryKeys.graph(sessionId, revision, file, graphDepth, graphLimit),
     enabled: !!project && route?.view === 'graph' && api.isTauri,
     queryFn: async () => validateRevision(await api.getGraph(sessionId, file, {
       depth: graphDepth,

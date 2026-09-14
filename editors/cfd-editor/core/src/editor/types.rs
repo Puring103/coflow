@@ -300,7 +300,10 @@ pub struct FunctionDocumentState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DimensionFileRecords {
     pub revision: u32,
     pub file_path: String,
@@ -312,7 +315,10 @@ pub struct DimensionFileRecords {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DimensionFileRow {
     pub coordinate: RecordCoordinate,
     pub field: String,

@@ -26,7 +26,9 @@ mod revision;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path as StdPath;
 use std::path::PathBuf as StdPathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use coflow_runtime::{CfdValue, RecordOrigin};
 use coflow_runtime::{
@@ -150,10 +152,7 @@ impl SessionStore {
 
     pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectBootstrap, EditorError> {
         let (session, snapshot_partial) = build_session(yaml_path)?;
-        let mut inner = self
-            .inner
-            .write()
-            .map_err(|_| EditorError::session("session store poisoned"))?;
+        let mut inner = self.inner.write();
         inner.next_id = inner.next_id.checked_add(1).unwrap_or(1);
         let id = inner.next_id;
         let bootstrap = project_bootstrap(id, &session, snapshot_partial);
@@ -169,10 +168,7 @@ impl SessionStore {
 
     pub fn get_project_settings(&self, id: u32) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during settings read"))?;
+        let session = entry.state.read();
         read_project_settings(&session.project_root)
     }
 
@@ -181,21 +177,13 @@ impl SessionStore {
         id: u32,
     ) -> Result<Vec<coflow_runtime::DimensionInfo>, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         Ok(session.queries().dimensions())
     }
 
     pub fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
-        let root = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during settings write"))?
-            .project_root
-            .clone();
+        let root = entry.state.read().project_root.clone();
         Ok(root)
     }
 
@@ -208,10 +196,7 @@ impl SessionStore {
         field: Option<String>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        let mut session = entry.state.write();
         if let Some(name) = &field {
             if !session
                 .queries()
@@ -244,10 +229,7 @@ impl SessionStore {
             return Err(EditorError::other("图节点坐标必须是有限数值"));
         }
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned during settings write"))?;
+        let session = entry.state.write();
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_positions.insert(view_key, positions);
         write_project_settings(&session.project_root, &settings)
@@ -424,10 +406,7 @@ impl SessionStore {
 
     pub fn project_diff(&self, id: u32) -> Result<coflow_runtime::ProjectDiff, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during project diff"))?;
+        let session = entry.state.read();
         session
             .queries()
             .diff_against_head()
@@ -436,10 +415,7 @@ impl SessionStore {
 
     pub fn source_file_path(&self, id: u32, file_path: &str) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during source path lookup"))?;
+        let session = entry.state.read();
         if !session.queries().has_source_file(file_path)
             && !session.schema_files.contains(file_path)
         {
@@ -463,12 +439,7 @@ impl SessionStore {
 
     fn project_action_context(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
-        let yaml_path = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned during project action"))?
-            .yaml_path
-            .clone();
+        let yaml_path = entry.state.read().yaml_path.clone();
         Ok(yaml_path)
     }
 
@@ -523,10 +494,7 @@ impl SessionStore {
     ) -> Result<(Arc<SessionEntry>, ReloadCandidate), EditorError> {
         let entry = self.session(id)?;
         let (yaml_path, base_revision) = {
-            let session = entry
-                .state
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
+            let session = entry.state.read();
             (session.yaml_path.clone(), session.revisions.begin_reload())
         };
         let (session, snapshot) = build_session(&yaml_path)?;
@@ -545,10 +513,7 @@ impl SessionStore {
         entry: &SessionEntry,
         mut candidate: ReloadCandidate,
     ) -> Result<Option<ProjectBootstrap>, EditorError> {
-        let mut state = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut state = entry.state.write();
         let Some(revisions) = state.revisions.commit_reload(candidate.base_revision) else {
             return Ok(None);
         };
@@ -565,29 +530,19 @@ impl SessionStore {
         paths: &[std::path::PathBuf],
     ) -> Result<bool, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         Ok(session
             .revisions
             .has_external_change(&session.project_root, paths))
     }
 
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {
-        self.inner
-            .write()
-            .map_err(|_| EditorError::session("session store poisoned"))?
-            .sessions
-            .remove(&id);
+        self.inner.write().sessions.remove(&id);
         Ok(())
     }
 
     fn session(&self, id: u32) -> Result<Arc<SessionEntry>, EditorError> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|_| EditorError::session("session store poisoned"))?;
+        let inner = self.inner.read();
         inner
             .sessions
             .get(&id)

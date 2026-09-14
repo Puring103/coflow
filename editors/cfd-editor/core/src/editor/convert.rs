@@ -10,7 +10,9 @@ use coflow_runtime::{
 };
 use coflow_runtime::{CfdRecord, CfdValue};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use crate::editor::session::Diagnostics;
 use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow};
@@ -37,15 +39,11 @@ impl ShapeCache {
         field_name: &str,
     ) -> Option<Arc<FieldShapeInfo>> {
         let key = (actual_type.to_string(), field_name.to_string());
-        if let Ok(cache) = self.inner.read() {
-            if let Some(cached) = cache.get(&key) {
-                return cached.clone();
-            }
+        if let Some(cached) = self.inner.read().get(&key) {
+            return cached.clone();
         }
         let shape = queries.field_shape(actual_type, field_name).map(Arc::new);
-        if let Ok(mut cache) = self.inner.write() {
-            cache.insert(key, shape.clone());
-        }
+        self.inner.write().insert(key, shape.clone());
         shape
     }
 }

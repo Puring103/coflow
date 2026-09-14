@@ -429,6 +429,7 @@ dependencies = [
  "coflow-lsp",
  "coflow-runtime",
  "notify",
+ "parking_lot",
  "serde",
  "serde_json",
  "sha2 0.10.9",

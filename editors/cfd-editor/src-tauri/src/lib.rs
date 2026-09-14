@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
+mod events;
 mod plugin_manifest;
 
 /// Compatibility re-export for generated TypeScript binding tests and host consumers.
@@ -11,7 +12,7 @@ pub mod editor {
     pub use cfd_editor_core::editor::*;
 }
 
-use cfd_editor_core::{EditorEvent, EditorEventSink, EditorHost};
+use cfd_editor_core::EditorHost;
 use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
 use coflow_runtime::{
     DimensionInfo, DimensionValueCoordinate, DimensionValueView, ProjectDiff, RecordCoordinate,
@@ -27,35 +28,19 @@ use editor::{
 };
 use plugin_manifest::PluginManifest;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
-const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
-const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
-
-#[derive(Debug, Clone)]
-struct TauriEditorEventSink {
-    app: AppHandle,
-}
-
-impl EditorEventSink for TauriEditorEventSink {
-    fn emit(&self, event: EditorEvent) {
-        match event {
-            EditorEvent::ProjectReloaded(payload) => {
-                let _ = self.app.emit(PROJECT_RELOADED_EVENT, payload);
-            }
-            EditorEvent::ProjectWatchError(payload) => {
-                let _ = self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload);
-            }
-        }
-    }
-}
+use events::TauriEditorEventSink;
 
 const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../frontend/src/bindings/")
+)]
 pub struct FrontendPluginBundle {
     manifest_path: String,
     id: String,
@@ -69,7 +54,14 @@ pub struct FrontendPluginBundle {
 
 #[derive(Debug, Default, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(rename = "FrontendPluginState", export, export_to = "../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        rename = "FrontendPluginState",
+        export,
+        export_to = "../frontend/src/bindings/"
+    )
+)]
 pub struct FrontendPlugins {
     plugins: Vec<FrontendPluginBundle>,
     errors: Vec<String>,
@@ -77,7 +69,10 @@ pub struct FrontendPlugins {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../frontend/src/bindings/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginScope {
     Global,
@@ -96,7 +91,10 @@ struct ProjectPluginsFile {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../frontend/src/bindings/")
+)]
 pub struct ProjectPluginDefaults {
     #[serde(default)]
     views: BTreeMap<String, String>,
@@ -106,7 +104,14 @@ pub struct ProjectPluginDefaults {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-export", ts(rename = "FrontendPluginProjectState", export, export_to = "../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        rename = "FrontendPluginProjectState",
+        export,
+        export_to = "../frontend/src/bindings/"
+    )
+)]
 pub struct ProjectFrontendPlugins {
     plugins: Vec<FrontendPluginBundle>,
     defaults: ProjectPluginDefaults,
@@ -1325,9 +1330,7 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let events = Arc::new(TauriEditorEventSink {
-                app: app.handle().clone(),
-            });
+            let events = Arc::new(TauriEditorEventSink::new(app.handle().clone()));
             let host = EditorHost::new(events).map_err(|err| err.to_string())?;
             app.manage(host);
             Ok(())

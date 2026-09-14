@@ -6,6 +6,7 @@ import { type GitDiffSelection } from '../components/GitDiffMode'
 import { errorMessage } from '../wire'
 import type { ProjectGenerationController } from '../state/editorState'
 import * as api from '../api'
+import { editorQueryKeys } from '../queryKeys'
 
 export function useProjectDiff(
   project: ProjectBootstrap | null,
@@ -17,7 +18,7 @@ export function useProjectDiff(
   const [selection, setSelection] = useState<GitDiffSelection>({ filePath: null, coordinate: null })
   const visible = sidebarVisible || active
   const query = useQuery({
-    queryKey: ['project-diff', project?.session_id, project?.revision],
+    queryKey: editorQueryKeys.projectDiff(project?.session_id, project?.revision),
     enabled: visible && api.isTauri && project !== null,
     queryFn: async (): Promise<ProjectDiff> => {
       if (!project) throw new Error('请先打开项目')
