@@ -5,7 +5,6 @@ import { test } from 'vitest'
 import {
   defaultEnabledFields,
   estimateNodeHeight,
-  isCompactGraphZoom,
   layoutGraph,
 } from './GraphView.layout'
 
@@ -81,12 +80,6 @@ function crossingCount(edges, positions) {
   }
   return count
 }
-
-test('uses compact graph nodes when zoomed far out', () => {
-  assert.equal(isCompactGraphZoom(0.64), true)
-  assert.equal(isCompactGraphZoom(0.65), false)
-  assert.equal(isCompactGraphZoom(0.9), false)
-})
 
 test('compact mode keeps the same estimated card height', () => {
   const node = graphNode('A', [

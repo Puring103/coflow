@@ -9,6 +9,10 @@ export type EditorProjectSettings = {
  */
 graph_positions: { [key in string]?: { [key in string]?: [number, number] } },
 /**
+ * 按图视图身份保存缩略/完整模式，独立于数据版本；缺省视为缩略模式。
+ */
+graph_compact_modes: { [key in string]?: boolean },
+/**
  * 每个记录类型唯一的缩略名字符串字段，跨文件生效。
  */
 short_name_fields: { [key in string]?: string },

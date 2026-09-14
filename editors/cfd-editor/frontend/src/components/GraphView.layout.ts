@@ -3,7 +3,6 @@ import type { GraphEdgeView, GraphNodeView } from '../wire'
 import { topLevelFieldName } from '../wire/paths'
 import {
   COLUMN_GAP,
-  COMPACT_ZOOM_THRESHOLD,
   COMPONENT_GAP,
   EDITABLE_ROW_HEIGHT,
   HEADER_HEIGHT,
@@ -76,10 +75,6 @@ export function sameOffsetMap(
   if (left.size !== right.size) return false
   for (const [key, value] of right) if (left.get(key) !== value) return false
   return true
-}
-
-export function isCompactGraphZoom(zoom: number): boolean {
-  return zoom < COMPACT_ZOOM_THRESHOLD
 }
 
 export function topLevelField(path: string): string {
@@ -340,11 +335,13 @@ async function layoutComponent(
       'elk.direction': 'RIGHT',
       'elk.spacing.nodeNode': `${ROW_GAP}`,
       'elk.layered.spacing.nodeNodeBetweenLayers': `${COLUMN_GAP}`,
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      // 自动布局统一以上边缘对齐，减少同层节点的锯齿状偏移。
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'TOP',
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      // 中线层扫描 + 更高搜索强度，优先减少连线交叉。
+      'elk.layered.crossingMinimization.strategy': 'MEDIAN_LAYER_SWEEP',
+      'elk.layered.thoroughness': '24',
+      // 网络单纯形最小化边总长，减少中段交叉与绕行。
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      // 不强制保留输入顺序，让交叉最小化自由重排。
+      'elk.layered.considerModelOrder.strategy': 'NONE',
       'elk.portConstraints': 'FIXED_ORDER',
       'elk.edgeRouting': 'SPLINES',
     },

@@ -62,6 +62,7 @@ pub fn run() -> tauri::Result<()> {
             get_dimension_file_records,
             set_default_table_column_widths,
             set_graph_positions,
+            set_graph_compact_mode,
             set_views,
             set_view_order,
             set_short_name_field,

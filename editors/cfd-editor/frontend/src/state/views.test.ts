@@ -49,6 +49,7 @@ function graphView(over: Partial<ViewConfig> = {}): ViewConfig {
 function settingsWith(views: ViewConfig[]): EditorProjectSettings {
   return {
     graph_positions: {},
+    graph_compact_modes: {},
     views: { [FILE]: { [TYPE]: views } },
     view_order: {},
     short_name_fields: {},

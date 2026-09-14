@@ -55,6 +55,8 @@ export function ViewEditorDialog({
   const dragStateRef = useRef<{ field: string; startY: number; moved: boolean } | null>(null)
 
   const trimmedName = name.trim()
+  // 没有可用关系就无法建立图视图，创建时直接隐藏该选项；编辑既有图视图时保留。
+  const graphAvailable = availableRelations.length > 0 || initial?.kind === 'graph'
   const relationSet = useMemo(() => new Set(relations), [relations])
   // Graph views: fields exclude already-selected relations (a relation renders
   // as an edge, not a card field). Preserves the persistent drag order.
@@ -173,18 +175,20 @@ export function ViewEditorDialog({
           <div className="view-editor-field">
             <span>视图类型</span>
             <div className="view-kind-choice">
-              {(['table', 'graph'] as const).map(k => (
-                <button
-                  key={k}
-                  className={`btn ${kind === k ? 'btn-primary' : 'btn-outlined'}`}
-                  onClick={() => setKind(k)}
-                  disabled={!!initial}
-                  title={initial ? '已创建的视图不可更改类型' : undefined}
-                >
-                  <Icon name={k} size={13} aria-hidden />
-                  {k === 'table' ? '表格视图' : '图视图'}
-                </button>
-              ))}
+              {(['table', 'graph'] as const)
+                .filter(k => k === 'table' || graphAvailable)
+                .map(k => (
+                  <button
+                    key={k}
+                    className={`btn ${kind === k ? 'btn-primary' : 'btn-outlined'}`}
+                    onClick={() => setKind(k)}
+                    disabled={!!initial}
+                    title={initial ? '已创建的视图不可更改类型' : undefined}
+                  >
+                    <Icon name={k} size={13} aria-hidden />
+                    {k === 'table' ? '表格视图' : '图视图'}
+                  </button>
+                ))}
             </div>
           </div>
 

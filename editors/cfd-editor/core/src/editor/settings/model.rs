@@ -26,6 +26,8 @@ pub(crate) struct SettingsFile {
     #[serde(default)]
     pub(crate) graph_positions: BTreeMap<String, BTreeMap<String, [f64; 2]>>,
     #[serde(default)]
+    pub(crate) graph_compact_modes: BTreeMap<String, bool>,
+    #[serde(default)]
     pub(crate) short_name_fields: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) view_order: BTreeMap<String, BTreeMap<String, Vec<String>>>,
@@ -45,6 +47,7 @@ impl From<&EditorProjectSettings> for SettingsFile {
         Self {
             version: SETTINGS_VERSION,
             graph_positions: settings.graph_positions.clone(),
+            graph_compact_modes: settings.graph_compact_modes.clone(),
             short_name_fields: settings.short_name_fields.clone(),
             view_order: settings.view_order.clone(),
             views: settings.views.clone(),
@@ -59,6 +62,7 @@ impl From<SettingsFile> for EditorProjectSettings {
     fn from(file: SettingsFile) -> Self {
         Self {
             graph_positions: file.graph_positions,
+            graph_compact_modes: file.graph_compact_modes,
             short_name_fields: file.short_name_fields,
             view_order: file.view_order,
             views: file.views,

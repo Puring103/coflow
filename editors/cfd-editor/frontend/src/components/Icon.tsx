@@ -9,13 +9,13 @@ interface IconProps {
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
     | 'sparkles' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
-    | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash' | 'frame'
+    | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash'
+    | 'layout' | 'overview' | 'center'
   size?: number
   className?: string
 }
 
 const PATHS: Record<IconProps['name'], string> = {
-  'frame':         'M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5',
   'folder':        'M3 5a2 2 0 012-2h3.586a1 1 0 01.707.293l1.414 1.414A1 1 0 0011.414 5H17a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V5z',
   'file':          'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5',
   'file-cfd':      'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5M9 14h6M9 17h4',
@@ -61,6 +61,12 @@ const PATHS: Record<IconProps['name'], string> = {
   'git-branch':    'M6 3a3 3 0 100 6 3 3 0 000-6zM18 15a3 3 0 100 6 3 3 0 000-6zM6 9v3a6 6 0 006 6h3M18 15V6',
   'save':          'M5 3h12l2 2v16H5zM8 3v6h8V3M8 21v-7h8v7',
   'trash':         'M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6',
+  // 自动布局：树状层级（父节点连两个子节点）。
+  'layout':        'M9 3h6v4H9zM4 17h5v4H4zM15 17h5v4h-5zM12 7v5M6.5 17v-5h11v5',
+  // 缩略/完整模式：眼睛（概览）。
+  'overview':      'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6zM12 15a3 3 0 100-6 3 3 0 000 6z',
+  // 回正：四角箭头指向中心（缩放到整张图）。
+  'center':        'M3 3l6 6M5 9h4V5M21 3l-6 6M19 9h-4v-4M3 21l6-6M5 15h4v4M21 21l-6-6M19 15h-4v4',
 }
 
 export function Icon({ name, size = 14, className }: IconProps) {

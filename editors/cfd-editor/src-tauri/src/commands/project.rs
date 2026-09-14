@@ -142,6 +142,20 @@ pub(crate) async fn set_graph_positions(
 }
 
 #[tauri::command]
+pub(crate) async fn set_graph_compact_mode(
+    session_id: u32,
+    view_key: String,
+    compact: bool,
+    host: State<'_, EditorHost>,
+) -> Result<(), EditorError> {
+    run_host_command(host, move |host| {
+        host.sessions()
+            .set_graph_compact_mode(session_id, view_key, compact)
+    })
+    .await
+}
+
+#[tauri::command]
 pub(crate) async fn set_default_table_column_widths(
     session_id: u32,
     file_path: String,

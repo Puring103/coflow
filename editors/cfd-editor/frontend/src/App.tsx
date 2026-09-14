@@ -259,6 +259,31 @@ export default function App() {
       }
     })
   }, [generation, history, applyGraphPositions])
+
+  // 图视图缩略/完整模式是纯展示偏好，直接落盘，不进入撤销历史。
+  const saveGraphCompactMode = useCallback(async (viewKey: string, compact: boolean) => {
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    // 先乐观更新本地设置，按钮切换即时生效。
+    const base = graphSettingsRef.current ?? emptyProjectSettings()
+    graphSettingsRef.current = {
+      ...base,
+      graph_compact_modes: { ...base.graph_compact_modes, [viewKey]: compact },
+    }
+    setProjectSettings(current => {
+      const base = current ?? emptyProjectSettings()
+      return { ...base, graph_compact_modes: { ...base.graph_compact_modes, [viewKey]: compact } }
+    })
+    if (!api.isTauri) return
+    try {
+      await api.setGraphCompactMode(identity.sessionId, viewKey, compact)
+    } catch (error) {
+      if (generation.currentSession() === identity.sessionId) {
+        setErrorMsg(`保存图视图模式失败：${errorMessage(error)}`)
+      }
+    }
+  }, [generation, setProjectSettings])
+
   const [shortNameSaving, setShortNameSaving] = useState(false)
   const [shortNameRevision, setShortNameRevision] = useState(0)
   const saveShortNameField = useCallback(async (actualType: string, field: string | null) => {
@@ -2634,6 +2659,7 @@ export default function App() {
             <GitDiffSidebar
               nodes={project?.file_tree ?? []}
               dimensions={projectDimensions}
+              fileTypes={project?.file_types ?? {}}
               diff={projectDiff}
               loading={projectDiffLoading}
               error={projectDiffError}
@@ -2811,6 +2837,7 @@ export default function App() {
             <div className="view-container">
               <GitDiffMode
                 sessionId={project!.session_id}
+                fileTypes={project?.file_types ?? {}}
                 diff={projectDiff}
                 loading={projectDiffLoading}
                 error={projectDiffError}
@@ -3026,6 +3053,10 @@ export default function App() {
                       savedPositions={projectSettings?.graph_positions[graphViewKey(currentRoute.file, currentRoute.viewId, activeType)] as GraphPositions | undefined}
                       onSavePositions={(positions, recordHistory) => saveGraphPositions(
                         graphViewKey(currentRoute.file, currentRoute.viewId, activeType), positions, recordHistory)}
+                      savedCompact={projectSettings?.graph_compact_modes[graphViewKey(currentRoute.file, currentRoute.viewId, activeType)]}
+                      onSaveCompact={compact => {
+                        void saveGraphCompactMode(graphViewKey(currentRoute.file, currentRoute.viewId, activeType), compact)
+                      }}
                       graphData={viewFilteredGraph ?? activeGraph}
                       filePath={currentRoute.file}
                       activeType={activeType}
