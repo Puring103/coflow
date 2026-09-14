@@ -21,6 +21,8 @@ import { useEditorDataQueries } from './hooks/useEditorDataQueries'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
 import { useProjectWatcher } from './hooks/useProjectWatcher'
 import { useEditorProjections } from './hooks/useEditorProjections'
+import { useWorkspacePersistence } from './hooks/useWorkspacePersistence'
+import { useMutationPublication } from './hooks/useMutationPublication'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
 import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
@@ -81,12 +83,10 @@ import { isNativeEditorTarget } from './utils/dom'
 import { EditorLookupController } from './state/editorLookups'
 import {
   MutationHistoryController,
-  publishMutationGeneration,
   ProjectGenerationController,
   committed, failed, superseded,
   type GraphPositions,
   type MutationResult,
-  type MutationPublicationRequest,
 } from './state/editorState'
 import {
   EditorMutationController,
@@ -139,7 +139,6 @@ import {
   sanitizeProjectWorkspace,
   workspaceTabId,
   workspaceTabWithView,
-  workspaceToWire,
   type WorkspaceTab,
 } from './state/workspaceTabs'
 import coflowLogo from '../../../../assets/coflow-logo.svg'
@@ -312,7 +311,6 @@ export default function App() {
   const [activePluginPageKey, setActivePluginPageKey] = useState<string | null>(null)
   const workspaceTabsRef = useRef(workspaceTabs)
   const pluginDefaultPendingTabsRef = useRef(new Set<string>())
-  const workspaceSaveChainRef = useRef<Promise<void>>(Promise.resolve())
   const [workspaceReadySessionId, setWorkspaceReadySessionId] = useState<number | null>(null)
   workspaceTabsRef.current = workspaceTabs
   const closePluginPageTab = useCallback((key: string) => {
@@ -676,39 +674,15 @@ export default function App() {
     setErrorMsg(`${prefix}: ${errorMessage(err)}`)
   }, [generation])
 
-  useEffect(() => {
-    if (
-      !api.isTauri
-      || !project
-      || workspaceReadySessionId !== project.session_id
-    ) return
-    const sessionId = project.session_id
-    const workspace = workspaceToWire(workspaceTabs, activeWorkspaceTabId)
-    const timer = window.setTimeout(() => {
-      workspaceSaveChainRef.current = workspaceSaveChainRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          if (generation.currentSession() !== sessionId) return
-          const saved = await api.setWorkspace(sessionId, workspace)
-          if (generation.currentSession() !== sessionId) return
-          setProjectSettings(current => current
-            ? { ...current, workspace: saved.workspace }
-            : current)
-        })
-        .catch(error => {
-          if (generation.currentSession() === sessionId) {
-            setErrorMsg(`保存工作区状态失败: ${errorMessage(error)}`)
-          }
-        })
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [
-    activeWorkspaceTabId,
+  useWorkspacePersistence({
+    project,
+    readySessionId: workspaceReadySessionId,
+    tabs: workspaceTabs,
+    activeTabId: activeWorkspaceTabId,
     generation,
-    project?.session_id,
-    workspaceReadySessionId,
-    workspaceTabs,
-  ])
+    setSettings: setProjectSettings,
+    setError: setErrorMsg,
+  })
 
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
@@ -825,48 +799,15 @@ export default function App() {
     return true
   }, [generation, lookups])
 
-  const publishMutation = useCallback((request: MutationPublicationRequest) => (
-    publishMutationGeneration({
-      acceptRevision: commitProjectRevision,
-      isCurrent: (sessionId, revision) => generation.isCurrent(sessionId, revision),
-      getFileRecords: api.getFileRecords,
-      publishFileRecords: records => {
-        const identity = generation.currentIdentity()
-        if (identity) {
-          for (const [file, fileRecords] of records) {
-            queryClient.setQueryData(
-              editorQueryKeys.fileRecords(identity.sessionId, identity.revision, file),
-              fileRecords,
-            )
-          }
-        }
-        setFileDataCache(current => {
-          const next = { ...current }
-          for (const [file, fileRecords] of records) next[file] = fileRecords
-          return next
-        })
-      },
-      publishGraphProjection: (revision, records, topologyChanged) => {
-        if (topologyChanged) return
-        const next = projectGraphRows(
-            graphCacheRef.current,
-            revision,
-            records.flatMap(file => file.records),
-          )
-        setGraphCache(next)
-        const identity = generation.currentIdentity()
-        if (identity?.revision === revision) {
-          for (const recordsForFile of records) {
-            const graph = next[graphCacheKey(recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT)]
-            if (graph) queryClient.setQueryData(
-              editorQueryKeys.graph(identity.sessionId, revision, recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT),
-              graph,
-            )
-          }
-        }
-      },
-    }, request)
-  ), [commitProjectRevision, generation])
+  const publishMutation = useMutationPublication({
+    generation,
+    graphDepth: GRAPH_DEPTH,
+    graphLimit: GRAPH_LIMIT,
+    graphCacheRef,
+    setFiles: setFileDataCache,
+    setGraphs: setGraphCache,
+    acceptRevision: commitProjectRevision,
+  })
 
   const reportWatchError = useCallback((message: string) => {
     setErrorMsg(`监听项目变更失败: ${message}`)
