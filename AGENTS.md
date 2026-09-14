@@ -57,7 +57,7 @@ version being published; `X.Y.0` starts a new release note, and later `X.Y.Z` pa
 patch changes to that same series note. Do not retain release notes from an earlier `X.Y` series.
 
 Updater key setup, release assets, and installer behavior are documented in
-`docs/releasing.md`.
+`docs/old/releasing.md`.
 
 The skill reference sync copies public website reference docs into synced files under
 `skills/*/references/*.md`. Synced files intentionally have no file header; source mappings live in
@@ -91,7 +91,7 @@ Keep README focused on user-facing installation, features, configuration, and us
 internal architecture notes, development workflow, repository checks, and specification indexes
 in this file or in `docs/`.
 
-Internal language and C# Runtime design lives under `docs/language-design/` and is split by responsibility:
+Internal language and C# Runtime design lives under `docs/old/language-design/` and is split by responsibility:
 
 - `01-language-design.zh-CN.md`: base language semantics.
 - `02-api-runtime-design.zh-CN.md`: generated API, loading, modules, tables, and Host boundaries.
