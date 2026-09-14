@@ -38,6 +38,14 @@ export async function setGraphPositions(
   return invokeCommand<void>('set_graph_positions', { sessionId, viewKey, positions })
 }
 
+export async function setGraphCompactMode(
+  sessionId: number,
+  viewKey: string,
+  compact: boolean,
+): Promise<void> {
+  return invokeCommand<void>('set_graph_compact_mode', { sessionId, viewKey, compact })
+}
+
 export async function setViewColumnWidths(
   sessionId: number,
   filePath: string,

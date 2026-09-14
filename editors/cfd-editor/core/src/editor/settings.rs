@@ -49,6 +49,9 @@ mod tests {
             "items-view".to_string(),
             BTreeMap::from([("Item::a".to_string(), [-240.5, 360.25])]),
         );
+        settings
+            .graph_compact_modes
+            .insert("items-view".to_string(), false);
         settings.view_order.insert(
             "data/items.cfd".to_string(),
             BTreeMap::from([(
@@ -110,6 +113,7 @@ mod tests {
 
         assert_eq!(loaded.views, settings.views);
         assert_eq!(loaded.graph_positions, settings.graph_positions);
+        assert_eq!(loaded.graph_compact_modes, settings.graph_compact_modes);
         assert_eq!(loaded.view_order, settings.view_order);
         assert_eq!(
             loaded.default_table_column_widths,

@@ -24,16 +24,17 @@ import {
   type GraphNodeView,
 } from '../wire'
 import { isEditableCapabilities, isEditableFile } from '../utils/editable'
-import { DataCardNode, CardHeader } from './DataCard'
+import { DataCardNode } from './DataCard'
 import { DiagBadge } from './DiagBadge'
 import { typeColor } from '../utils/typeColor'
+import { shaderEdgePath } from './GraphView.edges'
+import { boundsOf, getHelperLines, unionBounds, type AlignBounds, type HelperLines } from './GraphView.alignment'
 import {
   defaultEnabledFields,
   estimateNodeHeight,
   estimateHandleOffsets,
   graphEdgeId,
   graphTopologySignature,
-  isCompactGraphZoom,
   layoutGraph,
   type GraphLayoutResult,
 } from './GraphView.layout'
@@ -87,6 +88,81 @@ interface NodeData extends Record<string, unknown> {
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
 // 关系端口按真实行位置测量，集合展开与异步内容变化后仍准确落在对应元素上。
+
+/** 缩略标签的基准字号与下限：从较大字号开始按可用空间自适应缩小。 */
+const COMPACT_MAX_FONT = 52
+const COMPACT_MIN_FONT = 14
+
+// 缩略模式下完整的 Key/缩略名尽量填满节点；长名称逐级缩小避免被裁掉。
+function CompactNodeLabel({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState(COMPACT_MAX_FONT)
+  useLayoutEffect(() => {
+    const label = ref.current
+    if (!label) return
+    // 文字实际占位由 Range 测量，不受 flex 居中导致的 scroll 尺寸失真影响。
+    const textBounds = () => {
+      const range = document.createRange()
+      range.selectNodeContents(label)
+      return range.getBoundingClientRect()
+    }
+    const fit = () => {
+      const box = label.getBoundingClientRect()
+      let low = COMPACT_MIN_FONT
+      let high = COMPACT_MAX_FONT
+      let best = COMPACT_MIN_FONT
+      for (let step = 0; step < 8; step++) {
+        const mid = (low + high) / 2
+        label.style.fontSize = `${mid}px`
+        const bounds = textBounds()
+        if (bounds.width <= box.width + 1 && bounds.height <= box.height + 1) {
+          best = mid
+          low = mid
+        } else {
+          high = mid
+        }
+      }
+      label.style.fontSize = `${best}px`
+      setSize(best)
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(label)
+    return () => observer.disconnect()
+  }, [text])
+  return <div ref={ref} className="gn-compact-key" style={{ fontSize: size }}>{text}</div>
+}
+
+// 图节点头部与 Inspector 的头部结构不同：上方是 ID/缩略名，下方是类型小字。
+function GraphNodeHeader({
+  recordKey,
+  shortName,
+  actualType,
+  diagSeverity,
+  onDiagBadgeClick,
+}: {
+  recordKey: string
+  shortName?: string
+  actualType: string
+  diagSeverity?: 'error' | 'warning' | null
+  onDiagBadgeClick?: () => void
+}) {
+  return (
+    <div
+      className="gn-header gn-graph-header"
+      style={{ '--node-color': typeColor(actualType) } as React.CSSProperties}
+    >
+      <div className="gn-color-bar" />
+      <div className="gn-graph-heading">
+        <span className="gn-key" title={recordKey}>{shortNameLabel(recordKey, shortName)}</span>
+        <span className="gn-type">{actualType}</span>
+      </div>
+      {(diagSeverity === 'error' || diagSeverity === 'warning') && (
+        <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
+      )}
+    </div>
+  )
+}
 
 function CfdNode(props: NodeProps) {
   const { graphNode } = props.data as NodeData
@@ -202,7 +278,8 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       ))}
       {compact && (
         <div className="gn-compact-body">
-          <div className="gn-compact-key">{shortName ?? gn.key}</div>
+          {/* 缩略模式只显示缩略名或 ID，不显示“缩略名(ID)”。 */}
+          <CompactNodeLabel text={shortName ?? gn.key} />
           {(diagSeverity === 'error' || diagSeverity === 'warning') && (
             <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
           )}
@@ -211,11 +288,10 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       {/* 缩略只替换视觉内容，完整卡片仍占据原来的空间，端口坐标不随缩放变化。 */}
       <div className="gn-detail" style={compact ? { visibility: 'hidden', pointerEvents: 'none' } : undefined} inert={compact}>
           <div ref={headerRef}>
-            <CardHeader
+            <GraphNodeHeader
               recordKey={gn.key}
               shortName={shortName}
               actualType={gn.actual_type}
-              filePath={gn.file_path}
               diagSeverity={diagSeverity}
               onDiagBadgeClick={onDiagBadgeClick}
             />
@@ -244,14 +320,13 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
 const CfdNodeMemo = memo(CfdNode, (previous, next) => previous.id === next.id && previous.data === next.data)
 const nodeTypes = { cfd: CfdNodeMemo }
 
-// Shader Graph 风格：端口先水平伸出一小段，再用一段平滑曲线连接，避免端口附近出现直角重叠。
+// Shader Graph 风格：端口先水平伸出一小段，再斜直线连接到目标端口前的短段；
+// 折点按角度自适应圆角，避免锐角尖点。
 function ShaderEdge({ id, sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps) {
-  const stub = 28
-  const direction = targetX >= sourceX ? 1 : -1
-  const sx = sourceX + direction * stub
-  const tx = targetX - direction * stub
-  const distance = Math.max(24, Math.abs(tx - sx) * 0.45)
-  const path = `M ${sourceX} ${sourceY} L ${sx} ${sourceY} C ${sx + direction * distance} ${sourceY}, ${tx - direction * distance} ${targetY}, ${tx} ${targetY} L ${targetX} ${targetY}`
+  const path = shaderEdgePath(
+    { x: sourceX, y: sourceY },
+    { x: targetX, y: targetY },
+  )
   // 线体拖动：找到离按下点较近的重连锚点，把原生事件转发给它，复用 React Flow 的重连流程。
   const beginBodyDrag = (event: ReactMouseEvent<SVGPathElement>) => {
     if (event.button !== 0) return
@@ -294,6 +369,14 @@ const edgeTypes = { shader: ShaderEdge }
 // 拖线到空白处的下拉列表固定首项：先创建记录，再建立引用。
 const NEW_TARGET_OPTION = '__new_target__'
 
+/** 节点拖动对齐吸附阈值（flow 坐标像素）。 */
+const ALIGN_THRESHOLD = 6
+const NO_HELPER_LINES: HelperLines = {}
+
+function sameHelperLines(left: HelperLines, right: HelperLines): boolean {
+  return left.horizontal === right.horizontal && left.vertical === right.vertical
+}
+
 
 // ─── Edge handle id (outside component, stable reference) ────────────────────
 
@@ -310,6 +393,9 @@ interface Props {
   viewKey: string
   savedPositions?: GraphPositions
   onSavePositions?: (positions: GraphPositions, recordHistory: boolean) => Promise<void>
+  /** 缩略/完整模式按图视图持久化；缺省为缩略模式。 */
+  savedCompact?: boolean
+  onSaveCompact?: (compact: boolean) => void
   graphData: GraphData
   /** 图视图所属文件，用于在空白处新建节点时决定写入位置。 */
   filePath: string
@@ -354,7 +440,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ viewKey, savedPositions, onSavePositions, graphData, filePath, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onCreateRecordDraft, onInsertRecord, recordGroups, onDropRecordIntoGroup, onRenameRecord, onDeleteRecord, runHistoryBatch, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompact, onSaveCompact, graphData, filePath, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onCreateRecordDraft, onInsertRecord, recordGroups, onDropRecordIntoGroup, onRenameRecord, onDeleteRecord, runHistoryBatch, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const lookups = useEditorLookups()
   const previousViews = useRef<GraphNodeView[]>([])
   const [selectedElement, setSelectedElement] = useState<GraphFocus>(null)
@@ -365,7 +451,6 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     if (selectedCoordinate) setSelectedElement({ kind: 'node', id: coordinateId(selectedCoordinate.coordinate) })
     else setSelectedElement(current => current?.kind === 'node' ? null : current)
   }, [selectedCoordinate?.file, selectedCoordinate?.coordinate.actual_type, selectedCoordinate?.coordinate.key])
-  const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const sourceGraph = useMemo(
     () => ({
       nodes: (previousViews.current = reconcileGraphViews(previousViews.current, graphData.nodes)),
@@ -548,7 +633,11 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     ),
     [graph.nodes, diagnostics],
   )
-  const compactNodes = zoomCompactNodes
+  // 缩略/完整模式完全由用户手动切换并持久化，不再随缩放自动切换。
+  const compactNodes = savedCompact ?? true
+  const toggleCompactNodes = useCallback(() => {
+    onSaveCompact?.(!compactNodes)
+  }, [onSaveCompact, compactNodes])
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
   const outgoingPathsByNode = useMemo(() => {
@@ -645,27 +734,62 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     [visibleNodes, positions, expandedNodes, expandedRows, relations, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onCollectionEdit, fileCapabilities, selectedElement, selectedNodeIds, diagnosticIndex, onDiagnosticBadgeClick]
   )
   const [rfNodes, setRfNodes] = useState<Node[]>([])
+  const rfNodesRef = useRef<Node[]>([])
+  rfNodesRef.current = rfNodes
+  // 当前视口对应的 flow 坐标范围；对齐吸附只与屏幕内节点进行。
+  const visibleFlowRef = useRef<{ left: number; top: number; right: number; bottom: number } | null>(null)
+  // 拖动时显示的对齐参考线（flow 坐标）。
+  const [helperLines, setHelperLines] = useState<HelperLines>(NO_HELPER_LINES)
   useLayoutEffect(() => {
     setRfNodes(current => reconcileFlowNodes(current, nodeDescriptions))
   }, [nodeDescriptions])
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    // 不在拖动帧中重建 layout 和所有卡片；只修改变化节点并保留 measured。
+    // 拖动帧只修改变化节点并保留 measured；同时按附近节点做对齐吸附。
+    type PositionChange = Extract<NodeChange, { type: 'position' }>
+    const nodes = rfNodesRef.current
+    const positionChanges = changes.filter(
+      (change): change is PositionChange => change.type === 'position' && !!change.position,
+    )
+    let adjusted = changes
+    if (positionChanges.length > 0) {
+      // 以首个变化节点的提议位置构造吸附对象；其余节点跟随同一位移，保持整组相对关系。
+      const movingIds = new Set(positionChanges.map(change => change.id))
+      const primary = positionChanges[0]
+      const primaryNode = nodes.find(node => node.id === primary.id)
+      const width = primaryNode?.measured?.width ?? 280
+      const height = primaryNode?.measured?.height ?? 160
+      const moving = {
+        left: primary.position!.x,
+        right: primary.position!.x + width,
+        top: primary.position!.y,
+        bottom: primary.position!.y + height,
+        width,
+        height,
+      }
+      const viewport = visibleFlowRef.current
+      const others = nodes
+        .filter(node => !movingIds.has(node.id))
+        .map(boundsOf)
+        .filter(bounds => !viewport
+          || (bounds.right >= viewport.left && bounds.left <= viewport.right
+            && bounds.bottom >= viewport.top && bounds.top <= viewport.bottom))
+      const { snapPosition, horizontal, vertical } = getHelperLines(moving, others, ALIGN_THRESHOLD)
+      const dx = snapPosition.x === undefined ? 0 : snapPosition.x - moving.left
+      const dy = snapPosition.y === undefined ? 0 : snapPosition.y - moving.top
+      if (dx !== 0 || dy !== 0) {
+        adjusted = changes.map(change => change.type === 'position' && change.position
+          ? { ...change, position: { x: change.position.x + dx, y: change.position.y + dy } }
+          : change)
+      }
+      // 拖动结束后用同一套吸附回写最终位置，避免松手瞬间跳回未吸附的位置。
+      const dragEnding = positionChanges.some(change => change.dragging === false)
+      const nextLines: HelperLines = dragEnding || (horizontal === undefined && vertical === undefined)
+        ? NO_HELPER_LINES
+        : { horizontal, vertical }
+      setHelperLines(prev => sameHelperLines(prev, nextLines) ? prev : nextLines)
+    }
     setRfNodes(current => {
-      const measured = new Set(changes.filter(change => change.type === 'dimensions').map(change => change.id))
-      const occupied = current.filter(node => !changes.some(change => change.type === 'position' && change.id === node.id))
-      const adjusted = changes.map(change => {
-        if (change.type !== 'position' || !change.position) return change
-        let { x, y } = change.position
-        for (const other of occupied) {
-          const ox = other.position.x; const oy = other.position.y
-          const ow = other.measured?.width ?? 280; const oh = other.measured?.height ?? 160
-          if (Math.abs(x - ox - ow) <= 18) x = ox + ow + 24
-          else if (Math.abs(x + 280 - ox) <= 18) x = ox - 304
-          if (Math.abs(y - oy) <= 18) y = oy
-          else if (Math.abs(y + 160 - oy - oh) <= 18) y = oy + oh - 160
-        }
-        return { ...change, position: { x, y } }
-      })
+      const measured = new Set(adjusted.filter(change => change.type === 'dimensions').map(change => change.id))
       for (const change of adjusted) {
         if (change.type === 'position' && change.position) retainedPositions.current.set(change.id, change.position)
       }
@@ -861,6 +985,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     setNodeMenu(null)
     setConnectionError(null)
     setSelectedEdgeIds(new Set())
+    setHelperLines(NO_HELPER_LINES)
     return () => { dragVersion.current++; dragSource.current = null }
   }, [viewKey, topologySignature])
 
@@ -902,12 +1027,11 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
           animated: false,
           className: 'rf-edge rf-edge-fwd',
           interactionWidth: 24,
-          style: { stroke: 'var(--graph-edge)', strokeWidth: 2 },
+          style: { stroke: 'var(--graph-edge)', strokeWidth: 3.5 },
           labelStyle: { fill: 'var(--graph-edge-label)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
           labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 3,
-          pathOptions: { curvature: 0.28 },
         }
       })
 
@@ -927,13 +1051,12 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
         animated: false,
         className: 'rf-edge rf-edge-bk',
         interactionWidth: 24,
-        style: { stroke: 'var(--graph-back-edge)', strokeWidth: 2, strokeDasharray: '6 3' },
+        style: { stroke: 'var(--graph-back-edge)', strokeWidth: 3.5, strokeDasharray: '6 3' },
         zIndex: 1,
         labelStyle: { fill: 'var(--graph-back-edge)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
         labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 3,
-        pathOptions: { curvature: 0.28 },
       }))
 
     const byId = new Map(previousEdges.current.map(edge => [edge.id, edge]))
@@ -1006,12 +1129,23 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     applyHighlights()
   }, [applyHighlights])
 
+  // 只记录视口用于重挂载时的默认视口，不再据此自动切换缩略模式。
   const handleViewportChange = useCallback((viewport: { x: number; y: number; zoom: number }) => {
     viewportRef.current = viewport
-    const next = isCompactGraphZoom(viewport.zoom)
-    setZoomCompactNodes(prev => prev === next ? prev : next)
+    // 同步换算屏幕对应的 flow 范围，供拖动对齐时筛选屏幕内节点。
+    const container = wrapRef.current
+    visibleFlowRef.current = container
+      ? {
+          left: -viewport.x / viewport.zoom,
+          top: -viewport.y / viewport.zoom,
+          right: (container.clientWidth - viewport.x) / viewport.zoom,
+          bottom: (container.clientHeight - viewport.y) / viewport.zoom,
+        }
+      : null
   }, [])
   const boxSelectRef = useRef<{ x: number; y: number } | null>(null)
+  // 右键框选发生过拖动时，抑制随后落在节点上的 contextmenu，避免误弹节点菜单。
+  const suppressNodeContextMenu = useRef(false)
   // 拖动中显示真实框选范围，结束后收起为选中节点包围盒。
   const [boxSelect, setBoxSelect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   // 右键拖动框选：节点用重叠面积判定，连线用曲线采样判定。
@@ -1057,10 +1191,15 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
       if (boxSelectRef.current) return
       event.preventDefault()
       event.stopPropagation()
+      // 新的右键拖动开始时先复位，只有真正拖动过才抑制节点菜单。
+      suppressNodeContextMenu.current = false
       boxSelectRef.current = { x: event.clientX, y: event.clientY }
       const move = (moveEvent: PointerEvent) => {
         const start = boxSelectRef.current
         if (!start) return
+        if (Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y) > 4) {
+          suppressNodeContextMenu.current = true
+        }
         const left = Math.min(start.x, moveEvent.clientX)
         const top = Math.min(start.y, moveEvent.clientY)
         const right = Math.max(start.x, moveEvent.clientX)
@@ -1098,6 +1237,14 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
       : null,
     [rfNodes, selectedNodeIds],
   )
+  // 对齐参考线需要覆盖整张图，用节点包围盒外扩一段作为绘制范围。
+  const guideBounds = useMemo(() => {
+    if (helperLines.horizontal === undefined && helperLines.vertical === undefined) return null
+    const all = unionBounds(rfNodes.map(boundsOf))
+    if (!all) return null
+    const pad = 240
+    return { left: all.left - pad, top: all.top - pad, right: all.right + pad, bottom: all.bottom + pad }
+  }, [helperLines, rfNodes])
   // 拖动包围盒即整组移动选中节点，落点按 flow 坐标换算，避免受缩放影响。
   const beginGroupDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || selectedNodeIds.size === 0) return
@@ -1107,16 +1254,39 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     if (!instance) return
     // 以当前渲染中的坐标为准，保证刚布局完还没落盘的节点也能整组移动。
     const start = new Map<string, { x: number; y: number }>()
+    const startBounds: AlignBounds[] = []
     for (const node of rfNodes) {
-      if (selectedNodeIds.has(node.id)) start.set(node.id, { ...node.position })
+      if (!selectedNodeIds.has(node.id)) continue
+      start.set(node.id, { ...node.position })
+      startBounds.push(boundsOf(node))
     }
     if (start.size === 0) return
     const startFlow = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
     const move = (moveEvent: PointerEvent) => {
       const flow = reactFlowRef.current?.screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY })
       if (!flow) return
-      const dx = flow.x - startFlow.x
-      const dy = flow.y - startFlow.y
+      let dx = flow.x - startFlow.x
+      let dy = flow.y - startFlow.y
+      // 整组按包围盒对齐附近节点，参考线同样随拖动更新。
+      const moving = unionBounds(startBounds.map(bounds => ({
+        ...bounds, left: bounds.left + dx, right: bounds.right + dx,
+        top: bounds.top + dy, bottom: bounds.bottom + dy,
+      })))
+      if (moving) {
+        const viewport = visibleFlowRef.current
+        const others = rfNodes
+          .filter(node => !start.has(node.id))
+          .map(boundsOf)
+          .filter(bounds => !viewport
+            || (bounds.right >= viewport.left && bounds.left <= viewport.right
+              && bounds.bottom >= viewport.top && bounds.top <= viewport.bottom))
+        const { snapPosition, horizontal, vertical } = getHelperLines(moving, others, ALIGN_THRESHOLD)
+        if (snapPosition.x !== undefined) dx += snapPosition.x - moving.left
+        if (snapPosition.y !== undefined) dy += snapPosition.y - moving.top
+        const nextLines: HelperLines = horizontal === undefined && vertical === undefined
+          ? NO_HELPER_LINES : { horizontal, vertical }
+        setHelperLines(prev => sameHelperLines(prev, nextLines) ? prev : nextLines)
+      }
       for (const [id, base] of start) retainedPositions.current.set(id, { x: base.x + dx, y: base.y + dy })
       setRfNodes(current => current.map(node => {
         const base = start.get(node.id)
@@ -1126,6 +1296,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      setHelperLines(NO_HELPER_LINES)
       const changed = [...start].some(([id, base]) => {
         const now = retainedPositions.current.get(id)
         return !now || now.x !== base.x || now.y !== base.y
@@ -1205,6 +1376,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
               setSelectedElement({ kind: 'node', id: node.id })
             }}
             onNodeDragStop={() => {
+              setHelperLines(NO_HELPER_LINES)
               const previous = dragStartPositions.current
               const next = new Map(retainedPositions.current)
               if (![...next].some(([id, point]) => {
@@ -1272,6 +1444,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             }}
             onNodeContextMenu={(event, node) => {
               event.preventDefault()
+              // 右键框选拖动结束后落点若在节点上，不得弹出节点菜单。
+              if (suppressNodeContextMenu.current) return
               const gn = (node.data as NodeData).graphNode
               setNodeMenu({
                 anchorX: event.clientX, anchorY: event.clientY,
@@ -1290,7 +1464,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             onViewportChange={handleViewportChange}
             selectionMode={SelectionMode.Full}
             selectNodesOnDrag
-            connectionLineType={ConnectionLineType.Bezier}
+            connectionLineType={ConnectionLineType.Straight}
             reconnectRadius={28}
             // 左键恢复平移；右键拖动框选节点。
             panOnDrag={[0]}
@@ -1310,13 +1484,18 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
             maxZoom={2}
           >
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
-            <Controls showInteractive={false}>
-              <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
-                <Icon name="frame" size={16} />
-              </ControlButton>
+            {/* 左下角只保留自动布局、回正、缩略/完整模式切换三个按钮。 */}
+            <Controls showZoom={false} showFitView={false} showInteractive={false}>
               <ControlButton onClick={() => { void relayout() }} disabled={layoutBusy || positionSaving}
-                title="重新布局（重置节点位置）" aria-label="重新布局">
-                <Icon name="refresh" size={16} />
+                title="自动布局（重置节点位置）" aria-label="自动布局">
+                <Icon name="layout" size={16} />
+              </ControlButton>
+              <ControlButton onClick={fitGraph} title="回正（显示整张图）" aria-label="回正">
+                <Icon name="center" size={16} />
+              </ControlButton>
+              <ControlButton onClick={toggleCompactNodes}
+                title={compactNodes ? '切换到完整模式' : '切换到缩略模式'} aria-label="切换显示模式">
+                <Icon name="overview" size={16} />
               </ControlButton>
             </Controls>
             <MiniMap
@@ -1329,8 +1508,20 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, graphData,
               pannable
               zoomable
             />
-            {/* 选中节点的持久包围盒：渲染在 viewport 内，随平移缩放自动贴合并可作为整组拖动手柄。 */}
+            {/* 拖动对齐参考线与选中包围盒：渲染在 viewport 内，随平移缩放自动贴合。 */}
             <ViewportPortal>
+              {guideBounds && helperLines.vertical !== undefined && (
+                <div
+                  className="graph-align-guide graph-align-guide-v"
+                  style={{ left: helperLines.vertical, top: guideBounds.top, height: guideBounds.bottom - guideBounds.top }}
+                />
+              )}
+              {guideBounds && helperLines.horizontal !== undefined && (
+                <div
+                  className="graph-align-guide graph-align-guide-h"
+                  style={{ top: helperLines.horizontal, left: guideBounds.left, width: guideBounds.right - guideBounds.left }}
+                />
+              )}
               {!boxSelect && selectionBounds && (
                 <div
                   className="graph-selection-bbox nodrag nopan"

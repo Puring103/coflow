@@ -3,7 +3,6 @@ export const NODE_WIDTH = 280
 export const COLUMN_GAP = 280
 export const ROW_GAP = 90
 export const COMPONENT_GAP = 120
-export const COMPACT_ZOOM_THRESHOLD = 0.65
 export const HEADER_HEIGHT = 42
 export const ROW_HEIGHT = 22
 export const EDITABLE_ROW_HEIGHT = 34
