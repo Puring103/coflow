@@ -1,4 +1,8 @@
-#![allow(clippy::multiple_crate_versions, clippy::unreachable)]
+#![allow(
+    clippy::multiple_crate_versions,
+    clippy::needless_pass_by_value,
+    clippy::unreachable
+)]
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -134,7 +138,6 @@ const fn default_plugin_enabled() -> bool {
     true
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn install_frontend_plugin(
     manifest_path: String,
@@ -152,13 +155,11 @@ async fn list_frontend_plugins(app: AppHandle) -> Result<FrontendPlugins, Editor
     run_blocking(move || list_frontend_plugin_bundles(&app)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn uninstall_frontend_plugin(id: String, app: AppHandle) -> Result<(), EditorError> {
     run_blocking(move || uninstall_frontend_plugin_bundle(&id, &app)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn install_project_frontend_plugin(
     session_id: u32,
@@ -187,7 +188,6 @@ async fn list_project_frontend_plugins(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn uninstall_project_frontend_plugin(
     session_id: u32,
@@ -202,7 +202,6 @@ async fn uninstall_project_frontend_plugin(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_project_frontend_plugin_enabled(
     session_id: u32,
@@ -530,7 +529,6 @@ fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), Edi
     Ok(())
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn load_project(
     yaml_path: String,
@@ -540,7 +538,6 @@ async fn load_project(
     run_blocking(move || host.load_project(&PathBuf::from(yaml_path))).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn init_project(
     dir: String,
@@ -550,14 +547,12 @@ async fn init_project(
     run_blocking(move || host.init_project(&PathBuf::from(dir))).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn close_session(session_id: u32, host: State<'_, EditorHost>) -> Result<(), EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.close_session(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn reload_session(
     session_id: u32,
@@ -567,7 +562,6 @@ async fn reload_session(
     run_blocking(move || host.reload_session(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn add_project_input(
     session_id: u32,
@@ -594,7 +588,6 @@ fn project_input_kind(kind: &str) -> Result<coflow_runtime::ProjectInputKind, Ed
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn create_project_file(
     session_id: u32,
@@ -612,7 +605,6 @@ async fn create_project_file(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn delete_project_entry(
     session_id: u32,
@@ -627,7 +619,6 @@ async fn delete_project_entry(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_project_settings(
     session_id: u32,
@@ -637,7 +628,6 @@ async fn get_project_settings(
     run_blocking(move || host.sessions().get_project_settings(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_project_dimensions(
     session_id: u32,
@@ -647,7 +637,6 @@ async fn get_project_dimensions(
     run_blocking(move || host.sessions().get_project_dimensions(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_dimension_file_records(
     session_id: u32,
@@ -662,7 +651,6 @@ async fn get_dimension_file_records(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_graph_positions(
     session_id: u32,
@@ -678,7 +666,6 @@ async fn set_graph_positions(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_default_table_column_widths(
     session_id: u32,
@@ -695,7 +682,6 @@ async fn set_default_table_column_widths(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_short_name_field(
     session_id: u32,
@@ -711,7 +697,6 @@ async fn set_short_name_field(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_view_order(
     session_id: u32,
@@ -728,7 +713,6 @@ async fn set_view_order(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_views(
     session_id: u32,
@@ -745,7 +729,6 @@ async fn set_views(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_view_column_widths(
     session_id: u32,
@@ -763,7 +746,6 @@ async fn set_view_column_widths(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_record_groups(
     session_id: u32,
@@ -780,7 +762,6 @@ async fn set_record_groups(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn set_workspace(
     session_id: u32,
@@ -791,7 +772,6 @@ async fn set_workspace(
     run_blocking(move || host.sessions().set_workspace(session_id, workspace)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn check_project(
     session_id: u32,
@@ -801,7 +781,6 @@ async fn check_project(
     run_blocking(move || host.sessions().check_project(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn build_project(
     session_id: u32,
@@ -811,7 +790,6 @@ async fn build_project(
     run_blocking(move || host.sessions().build_project(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn build_project_status(
     session_id: u32,
@@ -821,7 +799,6 @@ async fn build_project_status(
     run_blocking(move || host.sessions().build_project_status(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_project_diff(
     session_id: u32,
@@ -831,7 +808,6 @@ async fn get_project_diff(
     run_blocking(move || host.sessions().project_diff(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn open_source_file(
     session_id: u32,
@@ -846,7 +822,6 @@ async fn open_source_file(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn read_source_text(
     session_id: u32,
@@ -857,7 +832,6 @@ async fn read_source_text(
     run_blocking(move || host.sessions().read_source_text(session_id, &file_path)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn highlight_source_snapshot(
     session_id: u32,
@@ -873,7 +847,6 @@ async fn highlight_source_snapshot(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn sync_language_document(
     session_id: u32,
@@ -890,7 +863,6 @@ async fn sync_language_document(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn validate_source_text(
     session_id: u32,
@@ -906,7 +878,6 @@ async fn validate_source_text(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn complete_language_document(
     session_id: u32,
@@ -924,7 +895,6 @@ async fn complete_language_document(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn format_language_document(
     session_id: u32,
@@ -941,7 +911,6 @@ async fn format_language_document(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn close_language_document(
     session_id: u32,
@@ -956,7 +925,6 @@ async fn close_language_document(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn function_document(
     session_id: u32,
@@ -972,7 +940,6 @@ async fn function_document(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn write_source_text(
     session_id: u32,
@@ -988,7 +955,6 @@ async fn write_source_text(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_file_records(
     session_id: u32,
@@ -999,7 +965,6 @@ async fn get_file_records(
     run_blocking(move || host.sessions().get_file_records(session_id, &file_path)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn search_records(
     session_id: u32,
@@ -1025,7 +990,6 @@ async fn get_plugin_schema(
     run_blocking(move || host.sessions().get_plugin_schema(session_id)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_plugin_records_by_type(
     session_id: u32,
@@ -1040,7 +1004,6 @@ async fn get_plugin_records_by_type(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_graph(
     session_id: u32,
@@ -1063,7 +1026,6 @@ async fn get_graph(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_enum_variants(
     session_id: u32,
@@ -1074,7 +1036,6 @@ async fn get_enum_variants(
     run_blocking(move || host.sessions().get_enum_variants(session_id, &enum_name)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_ref_targets(
     session_id: u32,
@@ -1085,7 +1046,6 @@ async fn get_ref_targets(
     run_blocking(move || host.sessions().get_ref_targets(session_id, &target_type)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn make_default_object(
     session_id: u32,
@@ -1096,7 +1056,6 @@ async fn make_default_object(
     run_blocking(move || host.sessions().make_default_object(session_id, &type_name)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn create_record_draft(
     session_id: u32,
@@ -1111,7 +1070,6 @@ async fn create_record_draft(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn render_cell_text(
     session_id: u32,
@@ -1127,7 +1085,6 @@ async fn render_cell_text(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn parse_cell_text(
     session_id: u32,
@@ -1144,7 +1101,6 @@ async fn parse_cell_text(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn write_field(
     session_id: u32,
@@ -1161,7 +1117,6 @@ async fn write_field(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn write_fields(
     session_id: u32,
@@ -1172,7 +1127,6 @@ async fn write_fields(
     run_blocking(move || host.sessions().write_fields(session_id, &writes)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn get_dimension_value(
     session_id: u32,
@@ -1183,7 +1137,6 @@ async fn get_dimension_value(
     run_blocking(move || host.sessions().get_dimension_value(session_id, &coordinate)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn write_dimension_value(
     session_id: u32,
@@ -1200,7 +1153,6 @@ async fn write_dimension_value(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn edit_collection(
     session_id: u32,
@@ -1217,7 +1169,6 @@ async fn edit_collection(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn insert_record(
     session_id: u32,
@@ -1235,7 +1186,6 @@ async fn insert_record(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn rename_record_key(
     session_id: u32,
@@ -1251,7 +1201,6 @@ async fn rename_record_key(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn delete_record(
     session_id: u32,
@@ -1262,7 +1211,6 @@ async fn delete_record(
     run_blocking(move || host.sessions().delete_record(session_id, &coordinate)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn swap_records(
     session_id: u32,
@@ -1274,7 +1222,6 @@ async fn swap_records(
     run_blocking(move || host.sessions().swap_records(session_id, &first, &second)).await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn move_record(
     session_id: u32,
@@ -1290,7 +1237,6 @@ async fn move_record(
     .await
 }
 
-#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 async fn transfer_record(
     session_id: u32,

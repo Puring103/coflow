@@ -152,6 +152,7 @@ import coflowLogo from '../../../../assets/coflow-logo.svg'
 import {
   collectSourceFiles,
   definedColumnWidths,
+  dimensionForFile,
   graphCacheKey,
   graphViewKey,
   onToolbarKeyDown,
@@ -193,15 +194,12 @@ export default function App() {
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
-  const [dimensionFileCache, setDimensionFileCache] = useState<Record<string, api.DimensionFileRecords>>({})
   const [projectDimensions, setProjectDimensions] = useState<DimensionInfo[]>([])
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const fileDataCacheRef = useRef(fileDataCache)
-  const dimensionFileCacheRef = useRef(dimensionFileCache)
   const graphCacheRef = useRef(graphCache)
   fileDataCacheRef.current = fileDataCache
-  dimensionFileCacheRef.current = dimensionFileCache
   graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
   const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
@@ -614,7 +612,6 @@ export default function App() {
         return bootstrap
       })
       setFileDataCache({})
-      setDimensionFileCache({})
       setGraphCache({})
       setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
       setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
@@ -747,6 +744,16 @@ export default function App() {
     async (bootstrap: ProjectBootstrap) => {
       if (!generation.acceptSnapshot(bootstrap)) return
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
+      let dimensions = projectDimensions
+      if (api.isTauri) {
+        try {
+          dimensions = await api.getProjectDimensions(bootstrap.session_id)
+          if (!generation.isCurrent(bootstrap.session_id, bootstrap.revision)) return
+          setProjectDimensions(dimensions)
+        } catch (error) {
+          reportSessionError(bootstrap.session_id, '刷新维度配置失败', error, bootstrap.revision)
+        }
+      }
       const current = router.current
       const sourceFiles = collectSourceFiles(bootstrap)
       const keepFile = current && sourceFiles.includes(current.file)
@@ -772,6 +779,11 @@ export default function App() {
           return next
         })
         navigateWorkspaceTab(tab)
+        return
+      }
+      if (dimensionForFile(dimensions, nextFile)) {
+        setProject(bootstrap)
+        router.replace(current)
         return
       }
       try {
@@ -810,7 +822,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, router],
+    [generation, history, lookups, navigateWorkspaceTab, projectDimensions, reportSessionError, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -944,11 +956,6 @@ export default function App() {
     const records = dataQueries.fileQuery.data
     if (records) setFileDataCache(cache => ({ ...cache, [dataQueries.file]: records }))
   }, [dataQueries.file, dataQueries.fileQuery.data])
-
-  useEffect(() => {
-    const records = dataQueries.dimensionQuery.data ?? dataQueries.mockDimension
-    if (records) setDimensionFileCache(cache => ({ ...cache, [dataQueries.file]: records }))
-  }, [dataQueries.dimensionQuery.data, dataQueries.file, dataQueries.mockDimension])
 
   useEffect(() => {
     const graph = dataQueries.graphQuery.data ?? dataQueries.mockGraph
@@ -1309,28 +1316,22 @@ export default function App() {
       path: [],
     }
     const updateCache = (value: DimensionValueState, revision: number) => {
-      const current = dimensionFileCacheRef.current[data.file_path]
-      if (!current) return
-      const updated = {
-        ...dimensionFileCacheRef.current,
-        [data.file_path]: {
-          ...current,
+      const identity = generation.currentIdentity()
+      if (identity?.revision !== revision) return
+      queryClient.setQueryData<api.DimensionFileRecords>(
+        editorQueryKeys.dimensionRecords(identity.sessionId, revision, data.file_path),
+        current => {
+          const base = current ?? data
+          return {
+          ...base,
           revision,
-          rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
+          rows: base.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
             && currentRow.field === row.field
             ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
             : currentRow),
+          }
         },
-      }
-      dimensionFileCacheRef.current = updated
-      setDimensionFileCache(updated)
-      const identity = generation.currentIdentity()
-      if (identity?.revision === revision) {
-        queryClient.setQueryData(
-          editorQueryKeys.dimensionRecords(identity.sessionId, revision, data.file_path),
-          updated[data.file_path],
-        )
-      }
+      )
     }
     if (!api.isTauri) {
       updateCache(next, data.revision)
@@ -1632,7 +1633,9 @@ export default function App() {
     })
   }, [currentRoute, pluginRegistry.views, pluginsReady, project?.file_types, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
-  const activeDimensionData = activeFile ? dimensionFileCache[activeFile] : null
+  const activeDimensionData = activeFile
+    ? dataQueries.dimensionQuery.data ?? dataQueries.mockDimension ?? null
+    : null
   useEffect(() => {
     if (!activeDimensionData || !activeWorkspaceTabId) return
     setWorkspaceTabs(current => {
