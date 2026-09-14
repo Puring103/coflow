@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
@@ -56,6 +56,30 @@ function withViews(
   }
 }
 
+function persistLatestSettings(
+  sequenceRef: MutableRefObject<number>,
+  generation: ProjectGenerationController,
+  setSettings: Dispatch<SetStateAction<EditorProjectSettings | null>>,
+  setError: Dispatch<SetStateAction<string | null>>,
+  errorPrefix: string,
+  request: (sessionId: number) => Promise<EditorProjectSettings>,
+): void {
+  const sequence = ++sequenceRef.current
+  const identity = generation.currentIdentity()
+  if (!api.isTauri || !identity) return
+  request(identity.sessionId)
+    .then(next => {
+      if (generation.currentSession() === identity.sessionId && sequenceRef.current === sequence) {
+        setSettings(next)
+      }
+    })
+    .catch(error => {
+      if (generation.currentSession() === identity.sessionId) {
+        setError(`${errorPrefix}: ${errorMessage(error)}`)
+      }
+    })
+}
+
 export function useProjectSettings(
   generation: ProjectGenerationController,
   setError: Dispatch<SetStateAction<string | null>>,
@@ -92,23 +116,11 @@ export function useProjectSettings(
     actualType: string,
     groups: EditorRecordGroup[],
   ) => {
-    const sequence = ++recordGroupSaveSequence.current
     setSettings(current => withRecordGroups(current, filePath, actualType, groups))
-    if (!api.isTauri) return
-    const identity = generation.currentIdentity()
-    if (!identity) return
-    api.setRecordGroups(identity.sessionId, filePath, actualType, groups)
-      .then(next => {
-        if (generation.currentSession() === identity.sessionId
-          && recordGroupSaveSequence.current === sequence) {
-          setSettings(next)
-        }
-      })
-      .catch(error => {
-        if (generation.currentSession() === identity.sessionId) {
-          setError(`保存记录分组失败: ${errorMessage(error)}`)
-        }
-      })
+    persistLatestSettings(
+      recordGroupSaveSequence, generation, setSettings, setError, '保存记录分组失败',
+      sessionId => api.setRecordGroups(sessionId, filePath, actualType, groups),
+    )
   }, [generation, setError])
 
   const saveViews = useCallback((
@@ -116,23 +128,11 @@ export function useProjectSettings(
     actualType: string,
     views: ViewConfig[],
   ) => {
-    const sequence = ++viewsSaveSequence.current
     setSettings(current => withViews(current, filePath, actualType, views))
-    if (!api.isTauri) return
-    const identity = generation.currentIdentity()
-    if (!identity) return
-    api.setViews(identity.sessionId, filePath, actualType, views)
-      .then(next => {
-        if (generation.currentSession() === identity.sessionId
-          && viewsSaveSequence.current === sequence) {
-          setSettings(next)
-        }
-      })
-      .catch(error => {
-        if (generation.currentSession() === identity.sessionId) {
-          setError(`保存视图失败: ${errorMessage(error)}`)
-        }
-      })
+    persistLatestSettings(
+      viewsSaveSequence, generation, setSettings, setError, '保存视图失败',
+      sessionId => api.setViews(sessionId, filePath, actualType, views),
+    )
   }, [generation, setError])
 
   return { settings, setSettings, saveRecordGroups, saveViews, saveViewOrder }
