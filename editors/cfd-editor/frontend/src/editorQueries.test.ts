@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { FileRecords } from './bindings/FileRecords'
-import { fetchFileRecords, removeSessionQueries } from './editorQueries'
+import { fetchFileRecords, removeSessionQueries, validateQueryRevision } from './editorQueries'
 import { editorQueryKeys } from './queryKeys'
 
 const records = (revision: number): FileRecords => ({
@@ -40,5 +40,10 @@ describe('editor queries', () => {
     await expect(fetchFileRecords(client, 7, 3, 'data.cfd', async () => records(4)))
       .rejects.toThrow('期望 3，收到 4')
     expect(client.getQueryData(editorQueryKeys.fileRecords(7, 3, 'data.cfd'))).toBeUndefined()
+  })
+
+  it('uses one revision validator for every query response', () => {
+    expect(validateQueryRevision(records(3), 3)).toEqual(records(3))
+    expect(() => validateQueryRevision(records(4), 3)).toThrow('期望 3，收到 4')
   })
 })

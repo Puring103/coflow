@@ -16,6 +16,8 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
   const settings = usePluginSettings()
   const restored = useRef(false)
   const loadSequence = useRef(0)
+  const projectSessionRef = useRef(project?.session_id)
+  projectSessionRef.current = project?.session_id
   const globalBundles = useRef<api.FrontendPluginBundle[]>([])
   const globalErrors = useRef<string[]>([])
   const [globalReady, setGlobalReady] = useState(!api.isTauri)
@@ -66,7 +68,11 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
     })
   }, [globalReady, project?.session_id])
 
-  const reloadPlugins = useCallback(async () => {
+  const reloadPlugins = useCallback(async (): Promise<boolean> => {
+    const sequence = ++loadSequence.current
+    const sessionId = project?.session_id
+    const isCurrent = () => loadSequence.current === sequence
+      && projectSessionRef.current === sessionId
     setReady(false)
     try {
       const state = project
@@ -76,12 +82,15 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
             errors: [],
             defaults: { views: {}, presentations: {} },
           }
+      if (!isCurrent()) return false
       setPluginProjectDefaults(state.defaults)
       const activationErrors = await replaceFrontendPlugins(builtInPlugins, [...globalBundles.current, ...state.plugins])
+      if (!isCurrent()) return false
       const errors = [...globalErrors.current, ...state.errors, ...activationErrors]
       setError(errors.length > 0 ? `部分插件未加载：${errors.join('; ')}` : null)
+      return true
     } finally {
-      setReady(true)
+      if (isCurrent()) setReady(true)
     }
   }, [project])
 
@@ -96,8 +105,7 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
     setError(null)
     try {
       const bundle = await api.installProjectFrontendPlugin(project.session_id, manifestPath)
-      await reloadPlugins()
-      setFrontendPluginEnabled(bundle.id, true)
+      if (await reloadPlugins()) setFrontendPluginEnabled(bundle.id, true)
     } catch (cause) {
       setError(`加载插件失败：${errorMessage(cause)}`)
     } finally {

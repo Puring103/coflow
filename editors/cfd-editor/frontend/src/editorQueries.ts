@@ -2,6 +2,16 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { FileRecords } from './bindings/FileRecords'
 import { editorQueryKeys } from './queryKeys'
 
+export function validateQueryRevision<T extends { revision: number }>(
+  value: T,
+  expectedRevision: number,
+): T {
+  if (value.revision !== expectedRevision) {
+    throw new Error(`数据版本不匹配：期望 ${expectedRevision}，收到 ${value.revision}`)
+  }
+  return value
+}
+
 export function fetchFileRecords(
   client: QueryClient,
   sessionId: number,
@@ -12,11 +22,7 @@ export function fetchFileRecords(
   return client.fetchQuery({
     queryKey: editorQueryKeys.fileRecords(sessionId, revision, filePath),
     queryFn: async () => {
-      const records = await load()
-      if (records.revision !== revision) {
-        throw new Error(`文件数据版本不匹配：期望 ${revision}，收到 ${records.revision}`)
-      }
-      return records
+      return validateQueryRevision(await load(), revision)
     },
   })
 }
