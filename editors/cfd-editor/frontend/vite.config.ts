@@ -15,5 +15,21 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-query': ['@tanstack/react-query'],
+          'vendor-graph': ['@xyflow/react'],
+          'vendor-code-editor': [
+            '@codemirror/autocomplete',
+            '@codemirror/commands',
+            '@codemirror/language',
+            '@codemirror/lint',
+            '@codemirror/state',
+            '@codemirror/view',
+          ],
+        },
+      },
+    },
   },
 })

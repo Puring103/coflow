@@ -1,14 +1,13 @@
 import type { FieldCell } from '../bindings/FieldCell'
-import type { CfdDictKey } from '../bindings/CfdDictKey'
 import type { RecordRow } from '../bindings/RecordRow'
-import { cellDeclaredType, cellReadOnly, type FieldValue } from '../wire'
+import { cellDeclaredType, cellReadOnly } from '../wire'
+import { sameFieldValue } from './fieldProjection'
 
 export interface BatchFieldProjection {
   cell: FieldCell
   state: 'same' | 'mixed'
   editable: boolean
 }
-
 export interface BatchCellProjection {
   cell: FieldCell
   state: 'same' | 'mixed'
@@ -24,7 +23,7 @@ export function projectBatchCells(cells: readonly FieldCell[]): BatchCellProject
   if (cells.some(cell => cellDeclaredType(cell) !== type || annotationKey(cell) !== annotation)) return null
   return {
     cell: first,
-    state: cells.every(cell => fieldValuesEqual(cell.value, first.value)) ? 'same' : 'mixed',
+    state: cells.every(cell => sameFieldValue(cell.value, first.value)) ? 'same' : 'mixed',
     editable: cells.every(cell => !cellReadOnly(cell)),
   }
 }
@@ -46,62 +45,8 @@ export function projectBatchRecordFields(records: readonly RecordRow[]): BatchFi
     if (present.some(item => cellDeclaredType(item) !== declaredType)) return []
     return [{
       cell,
-      state: present.every(item => fieldValuesEqual(item.value, cell.value)) ? 'same' : 'mixed',
+      state: present.every(item => sameFieldValue(item.value, cell.value)) ? 'same' : 'mixed',
       editable: present.every(item => !cellReadOnly(item)),
     }]
   })
-}
-
-export function fieldValuesEqual(left: FieldValue, right: FieldValue): boolean {
-  if (left.kind !== right.kind) return false
-  switch (left.kind) {
-    case 'option_none': return true
-    case 'option_some': return right.kind === 'option_some' && fieldValuesEqual(left.value, right.value)
-    case 'result_ok': return right.kind === 'result_ok' && fieldValuesEqual(left.value, right.value)
-    case 'result_err': return right.kind === 'result_err' && fieldValuesEqual(left.value, right.value)
-    case 'bool': return right.kind === 'bool' && left.value === right.value
-    case 'int': return right.kind === 'int' && left.value === right.value
-    case 'float': return right.kind === 'float' && left.value === right.value
-    case 'string': return right.kind === 'string' && left.value === right.value
-    case 'formatted_string': return right.kind === 'formatted_string'
-      && left.value.source === right.value.source
-      && left.value.rendered === right.value.rendered
-    case 'function': return right.kind === 'function' && left.value.source === right.value.source
-    case 'enum': return right.kind === 'enum'
-      && left.value.enum_name === right.value.enum_name
-      && left.value.variant === right.value.variant
-      && left.value.value === right.value.value
-    case 'ref': return right.kind === 'ref' && left.value === right.value
-    case 'object': {
-      if (right.kind !== 'object' || left.value.actual_type !== right.value.actual_type) return false
-      const leftEntries = Object.entries(left.value.fields)
-      const rightEntries = Object.entries(right.value.fields)
-      return leftEntries.length === rightEntries.length && leftEntries.every(([name, value]) => {
-        const other = right.value.fields[name]
-        return value === undefined || value === null
-          ? other === undefined || other === null
-          : !!other && fieldValuesEqual(value, other)
-      })
-    }
-    case 'array': return right.kind === 'array'
-      && left.value.length === right.value.length
-      && left.value.every((value, index) => fieldValuesEqual(value, right.value[index]))
-    case 'dict': return right.kind === 'dict'
-      && left.value.length === right.value.length
-      && left.value.every(([key, value], index) => {
-        const other = right.value[index]
-        return !!other && dictKeysEqual(key, other[0]) && fieldValuesEqual(value, other[1])
-      })
-  }
-}
-
-function dictKeysEqual(left: CfdDictKey, right: CfdDictKey): boolean {
-  if (left.kind !== right.kind) return false
-  if (left.kind === 'enum' && right.kind === 'enum') {
-    return left.value.enum_name === right.value.enum_name
-      && left.value.variant === right.value.variant
-      && left.value.value === right.value.value
-  }
-  if (left.kind === 'string' && right.kind === 'string') return left.value === right.value
-  return left.kind === 'int' && right.kind === 'int' && left.value === right.value
 }

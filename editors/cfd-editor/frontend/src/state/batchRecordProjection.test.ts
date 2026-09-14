@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { RecordRow } from '../bindings/RecordRow'
-import { fieldValuesEqual, projectBatchCells, projectBatchRecordFields } from './batchRecordProjection'
+import { projectBatchCells, projectBatchRecordFields } from './batchRecordProjection'
+import { sameFieldValue } from './fieldProjection'
 
 const cell = (name: string, value: FieldCell['value'], declaredType = 'string'): FieldCell => ({
   name,
@@ -50,7 +51,7 @@ describe('batch record projection', () => {
   it('compares nested values without serializing bigint values', () => {
     const left = { kind: 'array' as const, value: [{ kind: 'int' as const, value: 2n }] }
     const right = { kind: 'array' as const, value: [{ kind: 'int' as const, value: 2n }] }
-    expect(fieldValuesEqual(left, right)).toBe(true)
+    expect(sameFieldValue(left, right)).toBe(true)
   })
 
   it('omits fields missing from any record or using incompatible declarations', () => {

@@ -149,6 +149,7 @@ import {
   definedColumnWidths,
   dimensionForFile,
   graphCacheKey,
+  graphViewKey,
   onToolbarKeyDown,
   projectGraphRows,
   projectYamlPath,
@@ -3197,10 +3198,10 @@ export default function App() {
                   activeGraph ? (
                     <GraphView
                       key={`${currentRoute.file}:${resolvedView?.id ?? currentRoute.viewId}:${activeType}`}
-                      viewKey={JSON.stringify([currentRoute.file, currentRoute.viewId, activeType])}
-                      savedPositions={projectSettings?.graph_positions[JSON.stringify([currentRoute.file, currentRoute.viewId, activeType])] as GraphPositions | undefined}
+                      viewKey={graphViewKey(currentRoute.file, currentRoute.viewId, activeType)}
+                      savedPositions={projectSettings?.graph_positions[graphViewKey(currentRoute.file, currentRoute.viewId, activeType)] as GraphPositions | undefined}
                       onSavePositions={(positions, recordHistory) => saveGraphPositions(
-                        JSON.stringify([currentRoute.file, currentRoute.viewId, activeType]), positions, recordHistory)}
+                        graphViewKey(currentRoute.file, currentRoute.viewId, activeType), positions, recordHistory)}
                       graphData={viewFilteredGraph ?? activeGraph}
                       filePath={currentRoute.file}
                       activeType={activeType}
