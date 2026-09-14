@@ -29,6 +29,8 @@
 .git-changes-list .git-change-mark { margin-left: auto; padding-right: 8px; }
 .git-table-comparison { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
 .git-table-filter { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: var(--fs-xs); }
+/* 记录/表格视图共用的字段过滤开关，位于 diff 工具栏。 */
+.git-diff-changed-only { display: flex; align-items: center; gap: 6px; color: var(--text-mute); font-size: var(--fs-xs); white-space: nowrap; }
 .git-source-pane > header .error { margin-left: auto; color: var(--red); }
 .git-change-mark { font: 700 11px 'JetBrains Mono', monospace; text-align: center; }
 .git-change-mark.added { color: var(--green); }
@@ -36,6 +38,81 @@
 .git-change-mark.modified { color: var(--yellow); }
 
 .git-diff-mode { background: var(--bg-1); }
+
+/* 只读但可选中——覆盖全局 user-select:none，单元格与记录文本均可选取复制。 */
+.git-diff-selectable .table-view,
+.git-diff-selectable .record-view,
+.git-diff-selectable .git-record-list,
+.git-diff-selectable .git-source-pane {
+  user-select: text;
+}
+.git-diff-selectable .table-view .table-row td,
+.git-diff-selectable .record-view .dc-row,
+.git-diff-selectable .git-record-list-item {
+  user-select: text;
+}
+
+/* 记录视图左侧变化记录列表 + 右侧 HEAD/当前对比。 */
+.git-record-diff {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+.git-record-list {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.git-record-list-search { padding: 8px; border-bottom: 1px solid var(--border); }
+.git-record-list-search input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: inherit;
+  font-size: var(--fs-xs);
+}
+.git-record-list-items { min-height: 0; flex: 1; overflow: auto; padding: 4px; }
+.git-record-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.git-record-list-item:hover { background: var(--bg-3); }
+.git-record-list-item.selected { background: var(--accent-soft); }
+.git-record-list-item .tree-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 表格 diff 三色——新增/删除整行绿/红（整行皆为变化）；修改行仅 Key 头部与真正变化的单元格着色，其余单元格保持中性。 */
+.table-view-comparison .table-row.table-diff-added td {
+  background: color-mix(in srgb, var(--green) 26%, var(--bg-1));
+}
+.table-view-comparison .table-row.table-diff-deleted td {
+  background: color-mix(in srgb, var(--red) 26%, var(--bg-1));
+}
+.table-view-comparison .table-row.table-diff-modified td:first-child {
+  background: color-mix(in srgb, var(--yellow) 22%, var(--bg-1));
+}
 .git-diff-mode-toolbar {
   display: grid;
   min-height: 42px;
@@ -98,24 +175,23 @@
 }
 .git-record-pane.missing > div,
 .git-source-missing { display: grid; min-height: 0; place-items: center; }
-.git-record-comparison.added .git-record-pane:last-child { box-shadow: inset 3px 0 var(--green); }
-.git-record-comparison.deleted .git-record-pane:first-child { box-shadow: inset 3px 0 var(--red); }
-.git-record-comparison.modified .git-record-pane { box-shadow: inset 3px 0 var(--yellow); }
+.git-record-comparison.added .git-record-pane:last-child { box-shadow: inset 4px 0 var(--green); }
+.git-record-comparison.deleted .git-record-pane:first-child { box-shadow: inset 4px 0 var(--red); }
+.git-record-comparison.modified .git-record-pane { box-shadow: inset 4px 0 var(--yellow); }
 .git-record-pane .record-view { min-height: 0; }
 .git-record-pane .rv-main { min-width: 0; }
-.dc-row-diff-modified { background: color-mix(in srgb, var(--yellow) 12%, transparent); }
+.dc-row-diff-modified { background: color-mix(in srgb, var(--yellow) 30%, transparent); }
 
-.table-view-comparison .table-row.table-diff-added td {
-  background: color-mix(in srgb, var(--green) 7%, var(--bg-1));
+.table-view-comparison .table-row.table-diff-added td:first-child { box-shadow: inset 4px 0 var(--green); }
+.table-view-comparison .table-row.table-diff-deleted td:first-child { box-shadow: inset 4px 0 var(--red); }
+.table-view-comparison .table-row.table-diff-modified td:first-child { box-shadow: inset 4px 0 var(--yellow); }
+/* 每条变化记录为一组，组首行顶部加粗分隔线；表格首行除外，避免与表头底边重叠。 */
+.table-view-comparison tbody tr.table-diff-group-start:not(:first-child) td {
+  border-top: 2px solid var(--border-strong);
 }
-.table-view-comparison .table-row.table-diff-deleted td {
-  background: color-mix(in srgb, var(--red) 7%, var(--bg-1));
-}
-.table-view-comparison .table-row.table-diff-added td:first-child { box-shadow: inset 3px 0 var(--green); }
-.table-view-comparison .table-row.table-diff-deleted td:first-child { box-shadow: inset 3px 0 var(--red); }
-.table-view-comparison .table-row.table-diff-modified td:first-child { box-shadow: inset 3px 0 var(--yellow); }
 .table-view-comparison .table-row .table-diff-cell-modified {
-  background: color-mix(in srgb, var(--yellow) 12%, var(--bg-1));
+  background: color-mix(in srgb, var(--yellow) 38%, var(--bg-1));
+  font-weight: 600;
 }
 .table-comparison-version { font: 600 11px 'JetBrains Mono', monospace; }
 .table-comparison-version.added { color: var(--green); }

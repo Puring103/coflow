@@ -15,7 +15,7 @@ export function useProjectDiff(
 ) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(false)
-  const [selection, setSelection] = useState<GitDiffSelection>({ filePath: null, coordinate: null })
+  const [selection, setSelection] = useState<GitDiffSelection>({ filePath: null, typeName: null, coordinate: null })
   const visible = sidebarVisible || active
   const query = useQuery({
     queryKey: editorQueryKeys.projectDiff(project?.session_id, project?.revision),
@@ -38,7 +38,7 @@ export function useProjectDiff(
   useEffect(() => {
     const next = query.data
     if (!next) {
-      if (!project) setSelection({ filePath: null, coordinate: null })
+      if (!project) setSelection({ filePath: null, typeName: null, coordinate: null })
       return
     }
     setSelection(current => {
@@ -52,9 +52,11 @@ export function useProjectDiff(
       ))
       if (current.filePath && paths.has(current.filePath) && coordinateStillExists) return current
       const record = next.records[0]
-      return record
-        ? { filePath: record.after?.file_path ?? record.before?.file_path ?? null, coordinate: record.coordinate }
-        : { filePath: next.files[0]?.path ?? null, coordinate: null }
+      if (record) {
+        const filePath = record.after?.file_path ?? record.before?.file_path ?? null
+        return { filePath, typeName: record.coordinate.actual_type, coordinate: record.coordinate }
+      }
+      return { filePath: next.files[0]?.path ?? null, typeName: null, coordinate: null }
     })
   }, [project, query.data])
 

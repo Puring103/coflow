@@ -102,12 +102,15 @@ interface Props {
   firstRecordFocusRequest?: number
   onFirstRecordFocusConsumed?: (request: number) => void
   diffChangedPaths?: ReadonlySet<string>
+  /** Diff 模式预展开路径：挂载时即展开，之后用户可自由折叠。 */
+  initialExpandedPaths?: ReadonlySet<string>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths, initialExpandedPaths }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
+  // initialExpandedPaths 仅作为初始展开（如 diff 预展开修改路径），后续折叠状态由内部维护。
   const [expandedByRecord, setExpandedByRecord] = useState<ExpandedPathMap>(() => new Map())
   const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
   const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
@@ -153,6 +156,31 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     : null
 
   useEffect(() => setSelectedActionPathWire(null), [expansionOwner])
+  const initialPathsKey = useMemo(
+    () => initialExpandedPaths ? [...initialExpandedPaths].sort().join('') : '',
+    [initialExpandedPaths],
+  )
+  useEffect(() => {
+    // diff 预展开修改路径，仅在记录或预展开集合变化时合并一次；用户后续手动折叠不受干扰。
+    if (!initialExpandedPaths || initialExpandedPaths.size === 0) return
+    const wanted = initialExpandedPaths
+    setExpandedByRecord(current => {
+      const currentPaths = current.get(expansionOwner)
+      let changed = currentPaths === undefined
+      const nextPaths = new Set(currentPaths ?? [])
+      for (const path of wanted) {
+        if (!nextPaths.has(path)) {
+          nextPaths.add(path)
+          changed = true
+        }
+      }
+      if (!changed) return current
+      const next = new Map(current)
+      next.set(expansionOwner, nextPaths)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expansionOwner, initialPathsKey])
 
   // Record-level highlight burns off after the header flashes — the child
   // DataCardExpanded only clears the highlight for field-level jumps.

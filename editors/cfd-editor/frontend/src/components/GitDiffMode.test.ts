@@ -1,20 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectDiff } from '../bindings/ProjectDiff'
-import { buildDiffTree, changedTableColumns, GitDiffMode, hasProjectDiffChanges, projectTable, sourceLineDecorations } from './GitDiffMode'
+import { ancestorPathKeys, buildDiffTree, changedTableColumns, GitDiffMode, GitDiffSidebar, hasProjectDiffChanges, projectTable, sourceLineDecorations } from './GitDiffMode'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { buildFileTreeGroups } from './FileTree'
 
 const emptyDiff: ProjectDiff = { head_oid: 'abc', target_revision: 0, semantic_available: true, files: [], records: [], diagnostics: [] }
+const fileTypes = { 'data/items.cfd': [{ name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false }] }
 
 describe('Git Diff available views and tree', () => {
   it('hides semantic views for a selected source-only file even when another file has records', () => {
     const diff: ProjectDiff = { ...emptyDiff, files: [{ path: 'schema.cft', change: 'modified', before: '', after: '', patch: '' }], records: [{ coordinate: { actual_type: 'Item', key: 'one' }, change: 'added', after: { file_path: 'data/items.cfd', values: [] }, fields: [] }] }
-    const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, loading: false, error: null, selection: { filePath: 'schema.cft', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
+    const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes, loading: false, error: null, selection: { filePath: 'schema.cft', typeName: null, coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
     expect(html).not.toContain('>记录</button>')
     expect(html).not.toContain('>表格</button>')
     expect(html).toContain('aria-selected="true"')
     expect(html).toContain('源码</button>')
+  })
+
+  it('shows record and source views for singleton types without a table view', () => {
+    const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', key: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
+    const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true }] }
+    const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes: singletonTypes, loading: false, error: null, selection: { filePath: 'data/settings.cfd', typeName: 'Settings', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
+    expect(html).toContain('>记录</button>')
+    expect(html).not.toContain('>表格</button>')
+    expect(html).toContain('>源码</button>')
   })
 
   it('restores deleted paths and preserves the main tree dimension grouping', () => {
@@ -23,6 +33,85 @@ describe('Git Diff available views and tree', () => {
     expect(groups[0].nodes[0].children[0].path).toBe('schema/old.cft')
     expect(groups[1].nodes[0].children[0].children[0].path).toBe('data/nested/old.cfd')
     expect(groups[2].nodes[0].path).toBe('generated/lang/old.cfd')
+  })
+
+  it('keeps only changed files in the file tree', () => {
+    const tree = buildDiffTree(
+      { ...emptyDiff, files: [{ path: 'data/changed.cfd', change: 'modified', before: 'a', after: 'b', patch: '' }] },
+      [
+        { name: 'changed.cfd', path: 'data/changed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+        { name: 'same.cfd', path: 'data/same.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+      ],
+    )
+    expect(tree.map(node => node.path)).toEqual(['data/changed.cfd'])
+  })
+
+  it('renders multi-type files without changed records as a selectable single row', () => {
+    // 本地化生成文件等多类型但无语义记录变化的文件，必须可点击选中。
+    const diff: ProjectDiff = {
+      ...emptyDiff,
+      files: [{ path: 'dimensions/language/Item_name.cfd', change: 'modified', before: 'a', after: 'b', patch: '' }],
+      records: [],
+    }
+    const nodes = [
+      { name: 'Item_name.cfd', path: 'dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+    ]
+    const multiTypes = {
+      'dimensions/language/Item_name.cfd': [
+        { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
+        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false },
+      ],
+    }
+    const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
+      diff,
+      nodes,
+      dimensions: [{ name: 'language', display_name: '本地化', out_dir: 'dimensions/language', variants: [], fields: [] }],
+      fileTypes: multiTypes,
+      loading: false,
+      error: null,
+      selection: { filePath: null, typeName: null, coordinate: null },
+      onSelectionChange() {},
+      onRefresh() {},
+    }))
+    expect(html).toContain('data-file-path="dimensions/language/Item_name.cfd"')
+    expect(html).not.toContain('tree-file-parent')
+  })
+
+  it('renders a single row without a dropdown when only one type changed', () => {
+    // 多类型文件中仅一个类型有变化时，直接单行选中该类型，无需展开。
+    const diff: ProjectDiff = {
+      ...emptyDiff,
+      files: [],
+      records: [{
+        coordinate: { actual_type: 'Item', key: 'one' },
+        change: 'modified',
+        before: { file_path: 'data/mixed.cfd', values: [] },
+        after: { file_path: 'data/mixed.cfd', values: [] },
+        fields: [],
+      }],
+    }
+    const nodes = [
+      { name: 'mixed.cfd', path: 'data/mixed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+    ]
+    const mixedTypes = {
+      'data/mixed.cfd': [
+        { name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false },
+        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false },
+      ],
+    }
+    const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
+      diff,
+      nodes,
+      dimensions: [],
+      fileTypes: mixedTypes,
+      loading: false,
+      error: null,
+      selection: { filePath: null, typeName: null, coordinate: null },
+      onSelectionChange() {},
+      onRefresh() {},
+    }))
+    expect(html).not.toContain('tree-file-parent')
+    expect(html).toContain('data-type-name="Item"')
   })
 })
 
@@ -70,7 +159,7 @@ describe('Git Diff source projection', () => {
 })
 
 describe('Git Diff table projection', () => {
-  it('projects a modified record into adjacent HEAD and current rows', () => {
+  it('projects a modified record into before and after rows in order', () => {
     const diff: ProjectDiff = {
       head_oid: 'abc',
       target_revision: 4,
@@ -90,8 +179,17 @@ describe('Git Diff table projection', () => {
 
     expect(projected.data.records).toHaveLength(2)
     expect(projected.data.records.map(row => projected.presentations.get(row)?.version)).toEqual(['HEAD', '当前'])
+    expect(projected.data.records.map(row => projected.presentations.get(row)?.groupStart)).toEqual([true, undefined])
     expect(new Set(projected.data.records.map(row => projected.presentations.get(row)?.id)).size).toBe(2)
     expect(projected.presentations.get(projected.data.records[0])?.changedFields).toEqual(new Set(['level']))
+    expect(projected.presentations.get(projected.data.records[1])?.changedFields).toEqual(new Set(['level']))
+  })
+
+  it('expands ancestor paths of changed fields for record auto-expansion', () => {
+    expect(ancestorPathKeys(new Set(['level']))).toEqual(new Set())
+    expect(ancestorPathKeys(new Set(['nested.value', 'Desc[language=en]', 'a.b[0].c']))).toEqual(
+      new Set(['nested', 'Desc', 'a', 'a.b', 'a.b[0]']),
+    )
   })
 
   it('filters unchanged columns and keeps nested changes and all added or deleted fields', () => {

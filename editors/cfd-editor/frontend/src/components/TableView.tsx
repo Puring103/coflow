@@ -216,6 +216,8 @@ export interface TableRowPresentation {
   version: 'HEAD' | '当前'
   change: 'added' | 'deleted' | 'modified'
   changedFields: ReadonlySet<string>
+  /** Diff 分组首行（每条记录一组的首行），用于渲染组间分隔线。 */
+  groupStart?: boolean
 }
 
 const ROW_H = 30
@@ -1402,7 +1404,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     data-coordinate-id={coordinateId(row.original.coordinate)}
                     data-record-drop-kind="record"
                     ref={rowVirtualizer.measureElement}
-                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}${comparison ? ` table-diff-row table-diff-${comparison.change}` : ''}`}
+                    className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}${comparison ? ` table-diff-row table-diff-${comparison.change}${comparison.groupStart ? ' table-diff-group-start' : ''}` : ''}`}
                     data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
                     style={recordGroupColorStyle(item.group?.color)}
                     onContextMenu={e => {
