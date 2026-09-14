@@ -23,6 +23,7 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
 import { useProjectDiff } from './hooks/useProjectDiff'
+import { useEditorDataQueries } from './hooks/useEditorDataQueries'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
 import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
@@ -50,7 +51,6 @@ import {
   MOCK_PROJECT,
   MOCK_FILE_RECORDS,
   MOCK_GRAPH,
-  MOCK_DIMENSION_FILE_RECORDS,
   MOCK_EDITOR_SETTINGS,
 } from './mock'
 import * as api from './api'
@@ -147,7 +147,6 @@ import coflowLogo from '../../../../assets/coflow-logo.svg'
 import {
   collectSourceFiles,
   definedColumnWidths,
-  dimensionForFile,
   graphCacheKey,
   graphViewKey,
   onToolbarKeyDown,
@@ -198,7 +197,6 @@ export default function App() {
   fileDataCacheRef.current = fileDataCache
   graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
-  const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
   const [fileActionDialog, setFileActionDialog] = useState<
     | { kind: 'create'; parentPath: string; sourceKind: 'schema' | 'data' }
@@ -288,6 +286,14 @@ export default function App() {
   } | null>(null)
 
   const router = useRouter()
+  const dataQueries = useEditorDataQueries(
+    project,
+    projectDimensions,
+    router.current,
+    generation,
+    GRAPH_DEPTH,
+    GRAPH_LIMIT,
+  )
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
@@ -905,99 +911,33 @@ export default function App() {
     }
   }, [adoptSnapshot, generation])
 
-  // Lazy-load file records when navigated to
+  // React Query 负责读取去重和竞态；本地缓存继续承载乐观编辑投影。
   useEffect(() => {
-    if (!project || !router.current) return
-    const file = router.current.file
-    if (file.endsWith('.cft')) return
-    if (dimensionForFile(projectDimensions, file)) return
-    if (fileDataCache[file]?.revision === project.revision) return
-    if (!api.isTauri) return // mock branch already populated
-    const sessionId = project.session_id
-    const revision = project.revision
-    const request = generation.captureRequest()
-    setLoadingFile(file)
-    api
-      .getFileRecords(sessionId, file)
-      .then(records => {
-        if (
-          !generation.isCurrent(sessionId, revision) ||
-          records.revision !== revision
-        ) return
-        setFileDataCache(c => ({ ...c, [file]: records }))
-      })
-      .catch(err => {
-        if (generation.isRequestCurrent(request)) {
-          reportSessionError(sessionId, '读取文件失败', err)
-        }
-      })
-      .finally(() => {
-        if (generation.isRequestCurrent(request)) setLoadingFile(null)
-      })
-  }, [generation, project, projectDimensions, router.current, fileDataCache, reportSessionError])
+    const records = dataQueries.fileQuery.data
+    if (records) setFileDataCache(cache => ({ ...cache, [dataQueries.file]: records }))
+  }, [dataQueries.file, dataQueries.fileQuery.data])
 
   useEffect(() => {
-    if (!project || !router.current) return
-    const file = router.current.file
-    if (!dimensionForFile(projectDimensions, file)) return
-    if (dimensionFileCache[file]?.revision === project.revision) return
-    if (!api.isTauri) {
-      const mock = MOCK_DIMENSION_FILE_RECORDS[file]
-      if (mock) setDimensionFileCache(cache => ({ ...cache, [file]: mock }))
-      return
-    }
-    const sessionId = project.session_id
-    const revision = project.revision
-    const request = generation.captureRequest()
-    setLoadingFile(file)
-    api.getDimensionFileRecords(sessionId, file)
-      .then(records => {
-        if (!generation.isCurrent(sessionId, revision) || records.revision !== revision) return
-        setDimensionFileCache(cache => ({ ...cache, [file]: records }))
-      })
-      .catch(error => {
-        if (generation.isRequestCurrent(request)) {
-          reportSessionError(sessionId, '读取维度文件失败', error)
-        }
-      })
-      .finally(() => {
-        if (generation.isRequestCurrent(request)) setLoadingFile(null)
-      })
-  }, [dimensionFileCache, generation, project, projectDimensions, reportSessionError, router.current])
+    const records = dataQueries.dimensionQuery.data ?? dataQueries.mockDimension
+    if (records) setDimensionFileCache(cache => ({ ...cache, [dataQueries.file]: records }))
+  }, [dataQueries.dimensionQuery.data, dataQueries.file, dataQueries.mockDimension])
 
-  // Lazy-load graph when switching to graph view
   useEffect(() => {
-    if (!project || router.current?.view !== 'graph') return
-    const file = router.current.file
-    const key = graphCacheKey(file, GRAPH_DEPTH, GRAPH_LIMIT)
-    if (graphCache[key]?.revision === project.revision) return
-    if (!api.isTauri) {
-      setGraphCache(c => ({ ...c, [key]: MOCK_GRAPH }))
-      return
-    }
-    let cancelled = false
-    const sessionId = project.session_id
-    const revision = project.revision
-    const request = generation.captureRequest()
-    api
-      .getGraph(sessionId, file, {
-        depth: GRAPH_DEPTH,
-        limit: GRAPH_LIMIT,
-      })
-      .then(g => {
-        if (
-          !cancelled &&
-          generation.isCurrent(sessionId, revision) &&
-          g.revision === revision
-        ) setGraphCache(c => ({ ...c, [key]: g }))
-      })
-      .catch(err => {
-        if (!cancelled && generation.isRequestCurrent(request)) {
-          reportSessionError(sessionId, '读取图谱失败', err)
-        }
-      })
-    return () => { cancelled = true }
-  }, [generation, project, router.current, graphCache, reportSessionError])
+    const graph = dataQueries.graphQuery.data ?? dataQueries.mockGraph
+    if (graph) setGraphCache(cache => ({ ...cache, [dataQueries.graphKey]: graph }))
+  }, [dataQueries.graphKey, dataQueries.graphQuery.data, dataQueries.mockGraph])
+
+  useEffect(() => {
+    if (!project) return
+    const failure = dataQueries.fileQuery.error
+      ? ['读取文件失败', dataQueries.fileQuery.error] as const
+      : dataQueries.dimensionQuery.error
+        ? ['读取维度文件失败', dataQueries.dimensionQuery.error] as const
+        : dataQueries.graphQuery.error
+          ? ['读取图谱失败', dataQueries.graphQuery.error] as const
+          : null
+    if (failure) reportSessionError(project.session_id, failure[0], failure[1])
+  }, [dataQueries.dimensionQuery.error, dataQueries.fileQuery.error, dataQueries.graphQuery.error, project, reportSessionError])
 
   // Auto-collapse inspector when switching to record view; restore for table/graph.
   useEffect(() => {
@@ -3248,9 +3188,9 @@ export default function App() {
                 )}
               </div>
             </>
-          ) : loadingFile ? (
+          ) : dataQueries.fileQuery.isFetching || dataQueries.dimensionQuery.isFetching ? (
             <div className="content-empty">
-              <div className="content-empty-title">加载 {loadingFile} 中…</div>
+              <div className="content-empty-title">加载 {dataQueries.file} 中…</div>
             </div>
           ) : (
             <div className="content-empty">

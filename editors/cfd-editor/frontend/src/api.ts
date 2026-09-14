@@ -40,8 +40,14 @@ import type { LanguageFormattingResult } from './bindings/LanguageFormattingResu
 import type { LanguagePosition } from './bindings/LanguagePosition'
 import type { LanguageRange } from './bindings/LanguageRange'
 import type { LanguageTextEdit } from './bindings/LanguageTextEdit'
+import type { DimensionFileRecords } from './bindings/DimensionFileRecords'
+import type { DimensionFileRow } from './bindings/DimensionFileRow'
+import type { FrontendPluginBundle } from './bindings/FrontendPluginBundle'
+import type { FrontendPluginProjectState } from './bindings/FrontendPluginProjectState'
+import type { FrontendPluginState } from './bindings/FrontendPluginState'
+import type { ProjectReloadedEvent } from './bindings/ProjectReloadedEvent'
+import type { ProjectWatchErrorEvent } from './bindings/ProjectWatchErrorEvent'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
-import { commands } from './bindings/commands'
 
 export type {
   FunctionDocumentState,
@@ -52,21 +58,16 @@ export type {
   LanguagePosition,
   LanguageRange,
   LanguageTextEdit,
+  DimensionFileRecords,
+  DimensionFileRow,
+  FrontendPluginBundle,
+  FrontendPluginProjectState,
+  FrontendPluginState,
+  ProjectReloadedEvent,
+  ProjectWatchErrorEvent,
 }
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-
-export interface ProjectReloadedEvent {
-  session_id: number
-  changed_paths: string[]
-  revision: number
-  diagnostics: FlatDiagnostic[]
-}
-
-export interface ProjectWatchErrorEvent {
-  session_id: number
-  message: string
-}
 
 export async function pickProjectYaml(): Promise<string | null> {
   if (!isTauri) {
@@ -167,23 +168,6 @@ export async function closeSession(sessionId: number): Promise<void> {
   return invokeCommand('close_session', { sessionId })
 }
 
-export interface DimensionFileRow {
-  coordinate: RecordCoordinate
-  field: string
-  owner_file_path: string
-  default_value: FieldValue
-  values: Record<string, DimensionValueState | undefined>
-}
-
-export interface DimensionFileRecords {
-  revision: number
-  file_path: string
-  dimension: string
-  display_name: string
-  variants: string[]
-  rows: DimensionFileRow[]
-}
-
 export async function getProjectSettings(sessionId: number): Promise<EditorProjectSettings> {
   return invokeCommand<EditorProjectSettings>('get_project_settings', { sessionId })
 }
@@ -237,33 +221,8 @@ export async function setViewColumnWidths(
   })
 }
 
-export interface FrontendPluginBundle {
-  manifest_path: string
-  id: string
-  name: string
-  description: string
-  version: string
-  source: string
-  scope: 'global' | 'project'
-  enabled: boolean
-}
-
 export async function getProjectDiff(sessionId: number): Promise<ProjectDiff> {
   return invokeCommand<ProjectDiff>('get_project_diff', { sessionId })
-}
-
-export interface FrontendPluginState {
-  plugins: FrontendPluginBundle[]
-  errors: string[]
-}
-
-export interface FrontendPluginProjectState {
-  plugins: FrontendPluginBundle[]
-  errors: string[]
-  defaults: {
-    views: Record<string, string | undefined>
-    presentations: Record<string, Partial<Record<'cell' | 'inspector' | 'summary', string>> | undefined>
-  }
 }
 
 export async function pickFrontendPluginManifest(): Promise<string | null> {
@@ -360,7 +319,7 @@ export async function buildProject(sessionId: number): Promise<string> {
 }
 
 export async function buildProjectStatus(sessionId: number): Promise<boolean> {
-  return commands.buildProjectStatus(sessionId)
+  return invokeCommand<boolean>('build_project_status', { sessionId })
 }
 
 export async function openSourceFile(sessionId: number, filePath: string): Promise<void> {

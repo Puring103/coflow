@@ -35,6 +35,8 @@ fn export_bindings() {
     export_with_retry::<t::LanguageCompletion>("LanguageCompletion");
     export_with_retry::<t::FunctionDocumentState>("FunctionDocumentState");
     export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");
+    export_with_retry::<t::DimensionFileRecords>("DimensionFileRecords");
+    export_with_retry::<t::DimensionFileRow>("DimensionFileRow");
     export_with_retry::<t::EditorRecordGroup>("EditorRecordGroup");
     export_with_retry::<t::ViewConfig>("ViewConfig");
     export_with_retry::<t::ViewKind>("ViewKind");
@@ -59,8 +61,13 @@ fn export_bindings() {
     export_with_retry::<t::GraphNode>("GraphNode");
     export_with_retry::<t::GraphEdge>("GraphEdge");
     export_with_retry::<t::RefTarget>("RefTarget");
+    export_with_retry::<cfd_editor_core::ProjectReloadedPayload>("ProjectReloadedEvent");
+    export_with_retry::<cfd_editor_core::ProjectWatchErrorPayload>("ProjectWatchErrorEvent");
+    export_with_retry::<cfd_editor_lib::FrontendPluginBundle>("FrontendPluginBundle");
+    export_with_retry::<cfd_editor_lib::FrontendPlugins>("FrontendPluginState");
+    export_with_retry::<cfd_editor_lib::ProjectPluginDefaults>("ProjectPluginDefaults");
+    export_with_retry::<cfd_editor_lib::ProjectFrontendPlugins>("FrontendPluginProjectState");
     normalize_generated_bindings();
-    cfd_editor_lib::export_typed_command_bindings().expect("export typed command bindings");
 }
 
 #[cfg(feature = "ts-export")]
