@@ -169,12 +169,13 @@ function fullTextOf(value: FieldValue): string {
       ...Object.entries(value.value.fields).flatMap(([name, child]) => child ? [name, fullTextOf(child)] : [name]),
     ].join(' ')
     case 'array': return value.value.map(fullTextOf).join(' ')
-    case 'dict': return value.value.map(([key, child]) => `${dictKeyText(key)} ${fullTextOf(child)}`).join(' ')
+    case 'dict': return value.value.map(([key, child]) => `${dictKeyShortLabel(key)} ${fullTextOf(child)}`).join(' ')
     default: return ''
   }
 }
 
-function dictKeyText(key: DictKey): string {
+/** 字典键短标签（仅搜索显示用）；CFD 文本身份用 `wire.dictKeyPathText`，两者语义不同。 */
+export function dictKeyShortLabel(key: DictKey): string {
   switch (key.kind) {
     case 'string': return key.value
     case 'int': return String(key.value)

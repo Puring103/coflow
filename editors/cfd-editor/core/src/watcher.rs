@@ -14,6 +14,10 @@ use crate::editor::{EditorError, ProjectBootstrap, SessionStore};
 
 const DEBOUNCE: Duration = Duration::from_millis(350);
 
+/// 前端监听的 Tauri 事件名。核心定义一次，主机层与前端只引用此处。
+pub const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
+pub const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum EditorEvent {

@@ -31,6 +31,7 @@ import {
   type EditorGenerationIdentity,
   type GraphPositions,
 } from './editorState'
+import { replayBatch, replayEntry, type ReplayDriver } from './mutations/historyReplay'
 
 export interface EditorMutationBackend {
   writeFields: (
@@ -469,82 +470,34 @@ export class EditorMutationController {
     await this.history.undo(entry => this.undoEntry(entry))
   }
 
+  private replayDriver(): ReplayDriver {
+    return {
+      applyGraphPositions: (viewKey, positions) =>
+        this.port.applyGraphPositions?.(viewKey, positions),
+      writeDimensionValue: (filePath, coordinate, expectedValue, newValue) =>
+        this.writeDimensionValueInternal(filePath, coordinate, expectedValue, newValue, { recordHistory: false }),
+      writeField: (filePath, coordinate, fieldPath, newValue) =>
+        this.writeFieldInternal(filePath, coordinate, fieldPath, newValue, { recordHistory: false }),
+      writeFields: (filePath, writes) =>
+        this.writeFieldsInternal(filePath, writes, { recordHistory: false }),
+      deleteRecord: (filePath, coordinate) =>
+        this.deleteRecordInternal(filePath, coordinate, { recordHistory: false }),
+      insertRecord: (filePath, recordKey, actualType, fields) =>
+        this.insertRecordInternal(filePath, recordKey, actualType, fields, { recordHistory: false }),
+      swapRecords: (filePath, first, second) =>
+        this.swapRecordsInternal(filePath, first, second, { recordHistory: false }),
+      moveRecord: (filePath, coordinate, targetIndex) =>
+        this.moveRecordInternal(filePath, coordinate, targetIndex, { recordHistory: false }),
+      transferRecord: (sourceFile, destinationFile, coordinate, targetIndex) =>
+        this.transferRecordInternal(sourceFile, destinationFile, coordinate, targetIndex, { recordHistory: false }),
+    }
+  }
+
   private async undoEntry(entry: EditEntry): Promise<MutationResult<unknown>> {
     if (entry.kind === 'batch') return this.runBatch(entry, 'undo')
+    const driver = this.replayDriver()
     return this.executeWithPendingFieldReplay<MutationResult<unknown>>(
-      () => {
-        if (entry.kind === 'graph-layout') {
-          return this.port.applyGraphPositions?.(entry.viewKey, entry.oldPositions) ?? Promise.resolve(failed())
-        }
-        if (entry.kind === 'dimension') {
-          return this.writeDimensionValueInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.newValue,
-            entry.oldValue,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'field') {
-          return this.writeFieldInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.fieldPath,
-            entry.oldValue,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'batch-field') {
-          return this.writeFieldsInternal(
-            entry.edits[0]?.filePath ?? '',
-            entry.edits.map(edit => ({
-              coordinate: edit.coordinate,
-              field_path: edit.fieldPath,
-              new_value: cloneValue(edit.oldValue),
-            })),
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'insert') {
-          return this.deleteRecordInternal(
-            entry.filePath,
-            entry.coordinate,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'swap-records') {
-          return this.swapRecordsInternal(
-            entry.filePath,
-            entry.first,
-            entry.second,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'move-record') {
-          return this.moveRecordInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.oldIndex,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'transfer-record') {
-          return this.transferRecordInternal(
-            entry.destinationFile,
-            entry.filePath,
-            entry.coordinate,
-            entry.sourceIndex,
-            { recordHistory: false },
-          )
-        }
-        return this.insertRecordInternal(
-          entry.filePath,
-          entry.coordinate.key,
-          entry.coordinate.actual_type,
-          entry.snapshot,
-          { recordHistory: false },
-        )
-      },
+      () => replayEntry(driver, entry, 'undo'),
     )
   }
 
@@ -554,91 +507,16 @@ export class EditorMutationController {
 
   private async redoEntry(entry: EditEntry): Promise<MutationResult<unknown>> {
     if (entry.kind === 'batch') return this.runBatch(entry, 'redo')
+    const driver = this.replayDriver()
     return this.executeWithPendingFieldReplay<MutationResult<unknown>>(
-      () => {
-        if (entry.kind === 'graph-layout') {
-          return this.port.applyGraphPositions?.(entry.viewKey, entry.newPositions) ?? Promise.resolve(failed())
-        }
-        if (entry.kind === 'dimension') {
-          return this.writeDimensionValueInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.oldValue,
-            entry.newValue,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'field') {
-          return this.writeFieldInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.fieldPath,
-            entry.newValue,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'batch-field') {
-          return this.writeFieldsInternal(
-            entry.edits[0]?.filePath ?? '',
-            entry.edits.map(edit => ({
-              coordinate: edit.coordinate,
-              field_path: edit.fieldPath,
-              new_value: cloneValue(edit.newValue),
-            })),
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'insert') {
-          return this.insertRecordInternal(
-            entry.filePath,
-            entry.coordinate.key,
-            entry.coordinate.actual_type,
-            entry.fields,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'swap-records') {
-          return this.swapRecordsInternal(
-            entry.filePath,
-            entry.first,
-            entry.second,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'move-record') {
-          return this.moveRecordInternal(
-            entry.filePath,
-            entry.coordinate,
-            entry.newIndex,
-            { recordHistory: false },
-          )
-        }
-        if (entry.kind === 'transfer-record') {
-          return this.transferRecordInternal(
-            entry.filePath,
-            entry.destinationFile,
-            entry.coordinate,
-            entry.targetIndex,
-            { recordHistory: false },
-          )
-        }
-        return this.deleteRecordInternal(
-          entry.filePath,
-          entry.coordinate,
-          { recordHistory: false },
-        )
-      },
+      () => replayEntry(driver, entry, 'redo'),
     )
   }
 
   private async runBatch(entry: BatchEditEntry, direction: 'undo' | 'redo'): Promise<MutationResult<unknown>> {
-    const entries = direction === 'undo' ? [...entry.entries].reverse() : entry.entries
-    let result: MutationResult<unknown> = committed(undefined)
-    for (const sub of entries) {
-      result = direction === 'undo' ? await this.undoEntry(sub) : await this.redoEntry(sub)
-      if (result.status !== 'committed') break
-    }
-    return result
+    return replayBatch(entry, direction, sub => (
+      direction === 'undo' ? this.undoEntry(sub) : this.redoEntry(sub)
+    ))
   }
 
   private enqueueMutation<T>(supersededValue: T, operation: () => Promise<T>): Promise<T> {

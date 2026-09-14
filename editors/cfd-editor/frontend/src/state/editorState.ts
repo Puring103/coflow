@@ -5,6 +5,9 @@ import type { FileRecords } from '../bindings/FileRecords'
 import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
 import { sameCoordinate, type FieldPathSegment, type FieldValue } from '../wire'
+import type { GenerationIdentity } from './core-identity'
+
+export type { GenerationIdentity } from './core-identity'
 
 export type MutationResult<T = void> =
   | { status: 'committed'; value: T }
@@ -15,10 +18,7 @@ export const committed = <T>(value: T): MutationResult<T> => ({ status: 'committ
 export const superseded = (): MutationResult<never> => ({ status: 'superseded' })
 export const failed = (): MutationResult<never> => ({ status: 'failed' })
 
-export interface EditorGenerationIdentity {
-  sessionId: number
-  revision: number
-}
+export interface EditorGenerationIdentity extends GenerationIdentity {}
 
 export class ProjectGenerationController {
   private sessionId: number | null = null
@@ -147,6 +147,7 @@ export async function publishMutationGeneration(
   return committed(undefined)
 }
 
+/** 图坐标单视图类型：与后端 `EditorProjectSettings['graph_positions'][string]` 同形，写入时由后端校验。 */
 export type GraphPositions = Record<string, [number, number]>
 
 export interface GraphLayoutEditEntry {

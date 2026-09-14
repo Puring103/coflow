@@ -1,22 +1,27 @@
 import type { ElkNode } from 'elkjs/lib/elk-api'
 import type { GraphEdgeView, GraphNodeView } from '../wire'
+import { topLevelFieldName } from '../wire/paths'
+import {
+  COLUMN_GAP,
+  COMPACT_ZOOM_THRESHOLD,
+  COMPONENT_GAP,
+  EDITABLE_ROW_HEIGHT,
+  HEADER_HEIGHT,
+  MORE_BUTTON_HEIGHT,
+  NODE_WIDTH,
+  ROW_GAP,
+  ROW_HEIGHT,
+  VERTICAL_PADDING,
+  type Position,
+} from '../graph/metrics'
+import type { GraphLayoutRunner } from '../graph/layoutRunner'
+import { bfsReachable, connectedComponents as topologyComponents, detectBackEdges as topologyBackEdges } from '../graph/topology'
+import { retainGraphPositions as retainPositionsImpl } from '../graph/retainPositions'
 import { NODE_PEEK_FIELDS, countVisibleRows } from './DataCard.geometry'
 import { relationPorts } from './GraphView.relations'
 
-const NODE_WIDTH = 280
-const COLUMN_GAP = 280
-const ROW_GAP = 90
-const COMPONENT_GAP = 120
-const COMPACT_ZOOM_THRESHOLD = 0.65
-const HEADER_HEIGHT = 42
-const ROW_HEIGHT = 22
-const EDITABLE_ROW_HEIGHT = 34
-const MORE_BUTTON_HEIGHT = 28
-const VERTICAL_PADDING = 12
-
-type Position = { x: number; y: number }
-
-export type GraphLayoutRunner = (graph: ElkNode) => Promise<Map<string, Position>>
+export type { Position }
+export type { GraphLayoutRunner } from '../graph/layoutRunner'
 
 export interface GraphLayoutResult {
   positions: Map<string, Position>
@@ -78,7 +83,7 @@ export function isCompactGraphZoom(zoom: number): boolean {
 }
 
 export function topLevelField(path: string): string {
-  return path.match(/^[^.[]+/)?.[0] ?? path
+  return topLevelFieldName(path)
 }
 
 export function defaultEnabledFields(
@@ -233,23 +238,7 @@ function estimateTopLevelRowCenter(
 }
 
 function reachableNodes(roots: string[], edges: GraphEdgeView[]): Set<string> {
-  const outgoing = new Map<string, string[]>()
-  for (const edge of edges) {
-    const targets = outgoing.get(edge.source) ?? []
-    targets.push(edge.target)
-    outgoing.set(edge.source, targets)
-  }
-  const reachable = new Set(roots)
-  const queue = [...roots]
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    for (const target of outgoing.get(current) ?? []) {
-      if (reachable.has(target)) continue
-      reachable.add(target)
-      queue.push(target)
-    }
-  }
-  return reachable
+  return bfsReachable(roots, edges)
 }
 
 function sameTypeRoots(
@@ -285,57 +274,14 @@ function connectedComponents(
   nodeIds: string[],
   edges: { source: string; target: string }[],
 ): string[][] {
-  const adjacency = new Map<string, Set<string>>()
-  for (const id of nodeIds) adjacency.set(id, new Set())
-  for (const edge of edges) {
-    adjacency.get(edge.source)?.add(edge.target)
-    adjacency.get(edge.target)?.add(edge.source)
-  }
-  const visited = new Set<string>()
-  const components: string[][] = []
-  for (const id of nodeIds) {
-    if (visited.has(id)) continue
-    const component: string[] = []
-    const queue = [id]
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      if (visited.has(current)) continue
-      visited.add(current)
-      component.push(current)
-      for (const neighbor of adjacency.get(current) ?? []) {
-        if (!visited.has(neighbor)) queue.push(neighbor)
-      }
-    }
-    components.push(component)
-  }
-  return components
+  return topologyComponents(nodeIds, edges)
 }
 
 function detectBackEdges(
   nodes: { id: string }[],
   edges: { source: string; target: string }[],
 ): Set<string> {
-  const adjacency = new Map<string, string[]>()
-  for (const node of nodes) adjacency.set(node.id, [])
-  for (const edge of edges) adjacency.get(edge.source)?.push(edge.target)
-  const state = new Map<string, 'white' | 'gray' | 'black'>()
-  for (const node of nodes) state.set(node.id, 'white')
-  const backEdges = new Set<string>()
-
-  function visit(id: string) {
-    state.set(id, 'gray')
-    for (const target of adjacency.get(id) ?? []) {
-      if (state.get(target) === 'gray') {
-        backEdges.add(backEdgeKey(id, target))
-      } else if (state.get(target) === 'white') {
-        visit(target)
-      }
-    }
-    state.set(id, 'black')
-  }
-
-  for (const node of nodes) if (state.get(node.id) === 'white') visit(node.id)
-  return backEdges
+  return topologyBackEdges(nodes, edges)
 }
 
 function backEdgeKey(source: string, target: string): string {
@@ -456,27 +402,9 @@ export function retainGraphPositions(
   expandedRows: ReadonlyMap<string, ReadonlySet<string>>,
   measuredHeights: ReadonlyMap<string, number> = new Map(),
 ): Map<string, Position> {
-  if (retained.size === 0) return new Map(layout.positions)
-  const positions = new Map<string, Position>()
   const nodes = new Map(layout.visibleNodes.map(node => [node.id, node]))
-  const height = (id: string) => measuredHeights.get(id)
+  // 缺失实测高度时直接用估计值并注明，不在热循环内分支。
+  const heightOf = (id: string): number => measuredHeights.get(id)
     ?? (nodes.has(id) ? nodeHeight(nodes.get(id)!, expanded, expandedRows) : HEADER_HEIGHT)
-  for (const id of layout.positions.keys()) {
-    const previous = retained.get(id)
-    if (previous) positions.set(id, previous)
-  }
-  for (const [id, suggested] of layout.positions) {
-    if (positions.has(id)) continue
-    const incoming = [...layout.forwardEdges, ...layout.backEdges].find(edge => edge.target === id && positions.has(edge.source))
-    const source = incoming && positions.get(incoming.source)
-    const candidate = source ? { x: source.x + NODE_WIDTH + COLUMN_GAP, y: source.y } : { ...suggested }
-    let collision: [string, Position] | undefined
-    while ((collision = [...positions].find(([otherId, other]) => (
-      Math.abs(other.x - candidate.x) < NODE_WIDTH + ROW_GAP
-      && candidate.y < other.y + height(otherId) + ROW_GAP
-      && candidate.y + height(id) + ROW_GAP > other.y
-    )))) candidate.y = collision[1].y + height(collision[0]) + ROW_GAP
-    positions.set(id, candidate)
-  }
-  return positions
+  return retainPositionsImpl(layout, retained, heightOf)
 }

@@ -1,8 +1,7 @@
-use cfd_editor_core::{EditorEvent, EditorEventSink};
+use cfd_editor_core::{
+    EditorEvent, EditorEventSink, PROJECT_RELOADED_EVENT, PROJECT_WATCH_ERROR_EVENT,
+};
 use tauri::{AppHandle, Emitter};
-
-const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
-const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
 
 #[derive(Debug, Clone)]
 pub struct TauriEditorEventSink {

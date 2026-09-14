@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 mod commands;
 mod events;
+mod open;
 mod plugin_manifest;
 mod plugins;
 
