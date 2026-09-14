@@ -128,6 +128,7 @@ pub struct ProjectBootstrap {
     pub file_tree: Vec<FileTreeNode>,
     #[serde(default)]
     pub file_types: BTreeMap<String, Vec<FileTypeOption>>,
+    pub dimensions: Vec<coflow_runtime::DimensionInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_source_file: Option<String>,
     pub diagnostics: Vec<FlatDiagnostic>,

@@ -18,6 +18,7 @@ fn export_bindings() {
     export_with_retry::<coflow_runtime::FileTreeNode>("FileTreeNode");
     export_with_retry::<coflow_runtime::DimensionValueCoordinate>("DimensionValueCoordinate");
     export_with_retry::<coflow_runtime::DimensionValueView>("DimensionValueView");
+    export_with_retry::<coflow_runtime::DimensionInfo>("DimensionInfo");
     export_with_retry::<coflow_runtime::CreateFieldSource>("CreateFieldSource");
     export_with_retry::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
     export_with_retry::<coflow_runtime::ProjectDiff>("ProjectDiff tree");

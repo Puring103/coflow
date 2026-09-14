@@ -18,9 +18,7 @@ pub mod editor {
 
 use cfd_editor_core::EditorHost;
 use coflow_runtime::{CfdPathSegment, CfdValue, FlatDiagnostic};
-use coflow_runtime::{
-    DimensionInfo, DimensionValueCoordinate, DimensionValueView, ProjectDiff, RecordCoordinate,
-};
+use coflow_runtime::{DimensionValueCoordinate, DimensionValueView, ProjectDiff, RecordCoordinate};
 use editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, DimensionFileRecords, EditorError, EditorProjectSettings,
@@ -626,15 +624,6 @@ async fn get_project_settings(
 ) -> Result<EditorProjectSettings, EditorError> {
     let host = host.inner().clone();
     run_blocking(move || host.sessions().get_project_settings(session_id)).await
-}
-
-#[tauri::command]
-async fn get_project_dimensions(
-    session_id: u32,
-    host: State<'_, EditorHost>,
-) -> Result<Vec<DimensionInfo>, EditorError> {
-    let host = host.inner().clone();
-    run_blocking(move || host.sessions().get_project_dimensions(session_id)).await
 }
 
 #[tauri::command]
@@ -1290,7 +1279,6 @@ pub fn run() -> tauri::Result<()> {
             create_project_file,
             delete_project_entry,
             get_project_settings,
-            get_project_dimensions,
             get_dimension_file_records,
             set_default_table_column_widths,
             set_graph_positions,
