@@ -868,19 +868,10 @@ impl SessionStore {
             .state
             .write()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let mut seen = Vec::<(RecordCoordinate, Vec<coflow_runtime::CfdPathSegment>)>::new();
+        let mut seen = std::collections::HashSet::new();
         let targets = writes
             .iter()
-            .filter(|write| {
-                if seen.iter().any(|(coordinate, path)| {
-                    coordinate == &write.coordinate && path == &write.field_path
-                }) {
-                    false
-                } else {
-                    seen.push((write.coordinate.clone(), write.field_path.clone()));
-                    true
-                }
-            })
+            .filter(|write| seen.insert((write.coordinate.clone(), write.field_path.clone())))
             .filter_map(|write| {
                 let old_value = session
                     .queries()

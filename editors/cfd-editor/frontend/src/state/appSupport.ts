@@ -21,6 +21,10 @@ export function graphCacheKey(filePath: string, depth: number, limit: number): s
   return `${filePath}::${depth}::${limit}`
 }
 
+export function graphViewKey(filePath: string, viewId: string, actualType: string): string {
+  return JSON.stringify([filePath, viewId, actualType])
+}
+
 export function projectGraphRows(
   cache: Record<string, GraphData>,
   revision: number,

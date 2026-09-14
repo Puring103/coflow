@@ -6,7 +6,7 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import { fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
 import type { CellAnchor } from './editorSelection'
-import { fieldValuesEqual } from './batchRecordProjection'
+import { sameFieldValue } from './fieldProjection'
 
 export async function serializeCfdCellMatrix(
   rows: readonly (readonly CellAnchor[])[],
@@ -232,7 +232,7 @@ export async function planPaste(
         continue
       }
       const value = await parseForCell(cell, text, context, errors)
-      if (value && !fieldValuesEqual(value, cell.value)) writes.push(write(cell, value))
+      if (value && !sameFieldValue(value, cell.value)) writes.push(write(cell, value))
     }
   }
   return errors.length > 0 ? { ok: false, errors } : { ok: true, writes }
@@ -257,7 +257,7 @@ async function planComplex(
     value = await parseDirect(cell, source[0]?.[0] ?? '', context, errors)
   }
   return value && errors.length === 0
-    ? { ok: true, writes: fieldValuesEqual(value, cell.value) ? [] : [write(cell, value)] }
+    ? { ok: true, writes: sameFieldValue(value, cell.value) ? [] : [write(cell, value)] }
     : { ok: false, errors }
 }
 
