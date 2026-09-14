@@ -234,10 +234,7 @@ impl SessionStore {
         source: &str,
     ) -> Result<LanguageDocumentState, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let path = session.project_root.join(file_path);
         // 只分析快照，不同步语言文档，避免 HEAD 覆盖当前草稿。
         let tokens = session
@@ -278,10 +275,7 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let mut notifications =
             synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (tokens, emitted) = session
@@ -330,10 +324,7 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (result, _) = session
             .language_server
@@ -360,10 +351,7 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (result, _) = session
             .language_server
@@ -388,10 +376,7 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         if session.language_documents.remove(&uri) {
             session.language_diagnostics.remove(&uri);
             session
@@ -413,10 +398,7 @@ impl SessionStore {
         body: Option<&str>,
     ) -> Result<FunctionDocumentState, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let (result, _) = session
             .language_server
             .request(
@@ -492,10 +474,7 @@ impl SessionStore {
             // CFT 覆盖需要重建 schema，只借用会话里的 Project，不必重新打开磁盘配置。
             let entry = self.session(id)?;
             let project = {
-                let session = entry
-                    .state
-                    .read()
-                    .map_err(|_| EditorError::session("session poisoned"))?;
+                let session = entry.state.read();
                 session.engine.project().clone()
             };
             let mut schema_runtime = ProjectRuntime::new(project);
@@ -512,10 +491,7 @@ impl SessionStore {
         // CFD 覆盖复用会话源缓存：只重解析当前文件，落地与 LSP 共用的项目级诊断。
         let context = {
             let entry = self.session(id)?;
-            let session = entry
-                .state
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
+            let session = entry.state.read();
             session.engine.validation_context()
         };
         let source_override = DataSourceTextOverride {
@@ -573,10 +549,7 @@ impl SessionStore {
                 EditorError::write(format!("failed to write {}: {error}", path.display()))
             })?;
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned after source write"))?;
+        let mut session = entry.state.write();
         session.commit_internal_write(&[file_path.to_string()]);
         drop(session);
         self.reload_session(id)
@@ -585,9 +558,7 @@ impl SessionStore {
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = session_lock.read();
         Ok(file_records_for_session(&session, file_path))
     }
 
@@ -600,10 +571,7 @@ impl SessionStore {
         limit: usize,
     ) -> Result<ProjectSearchResults, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         let results = session.queries().search_records(&RecordSearchOptions {
             pattern: query.to_string(),
             mode: match mode {
@@ -635,10 +603,7 @@ impl SessionStore {
     #[allow(clippy::significant_drop_tightening)]
     pub fn get_plugin_schema(&self, id: u32) -> Result<Vec<PluginSchemaType>, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         let queries = session.queries();
         Ok(queries
             .schema_type_names()
@@ -664,10 +629,7 @@ impl SessionStore {
         type_name: &str,
     ) -> Result<Vec<RecordRow>, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         let queries = session.queries();
         if !queries.schema_has_type(type_name) {
             return Err(EditorError::not_found(format!(
@@ -686,9 +648,7 @@ impl SessionStore {
     pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<CfdValue, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = session_lock.read();
         session
             .engine
             .default_record_value(type_name, DefaultMaterialization::EditableShape)
@@ -702,9 +662,7 @@ impl SessionStore {
     ) -> Result<CreateRecordDraft, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = session_lock.read();
         let draft = session
             .engine
             .create_record_draft(actual_type)
@@ -726,10 +684,7 @@ impl SessionStore {
         field_path: &[coflow_runtime::CfdPathSegment],
     ) -> Result<String, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         session
             .engine
             .render_cell_text(coordinate, field_path)
@@ -744,10 +699,7 @@ impl SessionStore {
         text: &str,
     ) -> Result<CfdValue, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         session
             .engine
             .parse_cell_text(coordinate, field_path, text)
@@ -761,9 +713,7 @@ impl SessionStore {
     ) -> Result<Vec<crate::editor::types::EnumVariantOption>, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = session_lock.read();
         Ok(session
             .queries()
             .enum_variant_options(enum_name)
@@ -789,9 +739,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let targets = {
-            let mut session = session_lock
-                .write()
-                .map_err(|_| EditorError::session("session poisoned"))?;
+            let mut session = session_lock.write();
             if let Some(cached) = session.ref_target_cache.get(expected_type) {
                 return Ok(cached.clone());
             }
@@ -835,9 +783,7 @@ impl SessionStore {
     pub fn get_graph(&self, id: u32, query: &GraphQuery) -> Result<GraphData, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = session_lock.read();
         Ok(graph::build_graph(&session, query))
     }
 
@@ -851,10 +797,7 @@ impl SessionStore {
         new_value: &CfdValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
 
@@ -864,10 +807,7 @@ impl SessionStore {
         writes: &[BatchWriteFieldInput],
     ) -> Result<BatchWriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let mut seen = std::collections::HashSet::new();
         let targets = writes
             .iter()
@@ -944,10 +884,7 @@ impl SessionStore {
         edit: CollectionEdit,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let current = session
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.key, field_path)
@@ -1003,9 +940,7 @@ impl SessionStore {
             .map(|(name, value)| (name.to_string(), value))
             .collect();
 
-        let mut session = session_lock
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = session_lock.write();
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
@@ -1038,9 +973,7 @@ impl SessionStore {
     ) -> Result<RenameRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let mut session = session_lock
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = session_lock.write();
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
@@ -1094,9 +1027,7 @@ impl SessionStore {
     ) -> Result<DeleteRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let mut session = session_lock
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = session_lock.write();
         let deleted_snapshot = snapshot_record_before_delete(&session, coordinate);
         let file_path = deleted_snapshot
             .as_ref()
@@ -1142,10 +1073,7 @@ impl SessionStore {
         second: &RecordCoordinate,
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let file_path = reorder_file_path(&session, first)?;
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
@@ -1177,10 +1105,7 @@ impl SessionStore {
         target_index: usize,
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let file_path = reorder_file_path(&session, coordinate)?;
         let old_index = record_container_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
@@ -1219,10 +1144,7 @@ impl SessionStore {
         target_index: usize,
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let source_file = reorder_file_path(&session, coordinate)?;
         let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(

@@ -16,10 +16,7 @@ impl SessionStore {
         file_path: &str,
     ) -> Result<DimensionFileRecords, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         let queries = session.queries();
         let normalized_path = file_path.replace('\\', "/");
         let (dimension, fields) = queries
@@ -86,10 +83,7 @@ impl SessionStore {
         coordinate: &DimensionValueCoordinate,
     ) -> Result<DimensionValueView, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         session
             .queries()
             .dimension_value(coordinate)
@@ -104,10 +98,7 @@ impl SessionStore {
         new_value: &DimensionValueState,
     ) -> Result<WriteDimensionValueOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let expected = match expected_value {
             DimensionValueState::Missing => DimensionValueExpectation::Missing,
             DimensionValueState::Value(value) => {
