@@ -2,7 +2,6 @@
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
-import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
@@ -26,7 +25,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   requires_full_refresh_after_write: true,
 }
 
-export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = {
+export const MOCK_PROJECT: ProjectBootstrap = {
   session_id: 1,
   revision: 1,
   project_root: '(mock project)',

@@ -614,7 +614,7 @@ export default function App() {
       setFileDataCache({})
       setGraphCache({})
       setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
-      setProjectDimensions(api.isTauri ? [] : MOCK_PROJECT.dimensions)
+      setProjectDimensions(bootstrap.dimensions)
       setWorkspaceTabs([])
       workspaceTabsRef.current = []
       pluginDefaultPendingTabsRef.current.clear()
@@ -636,13 +636,6 @@ export default function App() {
             const settings = emptyProjectSettings()
             setProjectSettings(settings)
             installWorkspace(bootstrap, settings)
-          }
-        })
-        api.getProjectDimensions(bootstrap.session_id).then(dimensions => {
-          if (generation.currentSession() === bootstrap.session_id) setProjectDimensions(dimensions)
-        }).catch(err => {
-          if (generation.currentSession() === bootstrap.session_id) {
-            setErrorMsg(`读取维度配置失败: ${errorMessage(err)}`)
           }
         })
       } else {
@@ -744,16 +737,8 @@ export default function App() {
     async (bootstrap: ProjectBootstrap) => {
       if (!generation.acceptSnapshot(bootstrap)) return
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
-      let dimensions = projectDimensions
-      if (api.isTauri) {
-        try {
-          dimensions = await api.getProjectDimensions(bootstrap.session_id)
-          if (!generation.isCurrent(bootstrap.session_id, bootstrap.revision)) return
-          setProjectDimensions(dimensions)
-        } catch (error) {
-          reportSessionError(bootstrap.session_id, '刷新维度配置失败', error, bootstrap.revision)
-        }
-      }
+      const dimensions = bootstrap.dimensions
+      setProjectDimensions(dimensions)
       const current = router.current
       const sourceFiles = collectSourceFiles(bootstrap)
       const keepFile = current && sourceFiles.includes(current.file)
@@ -822,7 +807,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, lookups, navigateWorkspaceTab, projectDimensions, reportSessionError, router],
+    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, router],
   )
 
   const commitProjectRevision = useCallback((

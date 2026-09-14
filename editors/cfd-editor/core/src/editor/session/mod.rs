@@ -172,15 +172,6 @@ impl SessionStore {
         read_project_settings(&session.project_root)
     }
 
-    pub fn get_project_dimensions(
-        &self,
-        id: u32,
-    ) -> Result<Vec<coflow_runtime::DimensionInfo>, EditorError> {
-        let entry = self.session(id)?;
-        let session = entry.state.read();
-        Ok(session.queries().dimensions())
-    }
-
     pub fn project_root_for(&self, id: u32) -> Result<StdPathBuf, EditorError> {
         let entry = self.session(id)?;
         let root = entry.state.read().project_root.clone();
@@ -764,6 +755,8 @@ fn project_bootstrap(
     snapshot: SessionSnapshotParts,
 ) -> ProjectBootstrap {
     let file_types = snapshot_file_types(session);
+    // 维度元数据与文件树、revision 属于同一份原子快照，避免前端二次读取时跨版本。
+    let dimensions = session.queries().dimensions();
     ProjectBootstrap {
         session_id,
         revision: session.revisions.current(),
@@ -771,6 +764,7 @@ fn project_bootstrap(
         first_source_file: first_source_file(&snapshot.file_tree),
         file_tree: snapshot.file_tree,
         file_types,
+        dimensions,
         diagnostics: session.diagnostics.to_wire(),
     }
 }

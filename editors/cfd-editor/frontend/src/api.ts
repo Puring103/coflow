@@ -8,7 +8,6 @@ import type { CollectionEdit } from './bindings/CollectionEdit'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
 import type { DimensionValueCoordinate } from './bindings/DimensionValueCoordinate'
-import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { DimensionValueState } from './bindings/DimensionValueState'
 import type { DimensionValueView } from './bindings/DimensionValueView'
 import type { FileRecords } from './bindings/FileRecords'
@@ -170,10 +169,6 @@ export async function closeSession(sessionId: number): Promise<void> {
 
 export async function getProjectSettings(sessionId: number): Promise<EditorProjectSettings> {
   return invokeCommand<EditorProjectSettings>('get_project_settings', { sessionId })
-}
-
-export async function getProjectDimensions(sessionId: number): Promise<DimensionInfo[]> {
-  return invokeCommand<DimensionInfo[]>('get_project_dimensions', { sessionId })
 }
 
 export async function getDimensionFileRecords(

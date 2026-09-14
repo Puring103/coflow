@@ -6,9 +6,17 @@
 use crate::project::{normalize_path, path_to_slash, DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ts-export")]
+use ts_rs::TS;
+
 use super::sources::DimensionField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DimensionInfo {
     /// Stable dimension name from `coflow.yaml` (e.g. `"language"`).
     pub name: String,
@@ -25,6 +33,11 @@ pub struct DimensionInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DimensionFieldInfo {
     pub source_type: String,
     pub source_field: String,
