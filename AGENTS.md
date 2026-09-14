@@ -52,6 +52,10 @@ dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks
 Major and minor releases must not be packaged or released while any full-gate command fails.
 Version/tag validation, artifact builds, signing, and publication remain required for all releases.
 
+`RELEASE_NOTES.md` only contains the current `X.Y` release series. Its first heading must match the
+version being published; `X.Y.0` starts a new release note, and later `X.Y.Z` patch releases add all
+patch changes to that same series note. Do not retain release notes from an earlier `X.Y` series.
+
 Updater key setup, release assets, and installer behavior are documented in
 `docs/releasing.md`.
 

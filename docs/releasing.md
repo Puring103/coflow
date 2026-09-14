@@ -89,6 +89,14 @@ than a plain archive, so it is updated by re-running that installer;
 `self-update` reports the platform as unsupported there.
 
 Release tags must match the root Cargo package version exactly (`vX.Y.Z`).
+`RELEASE_NOTES.md` contains all user-visible changes for the current `X.Y`
+release series through the version being published. A series-opening `X.Y.0`
+release starts a new file, and each `X.Y.Z` patch updates that same series note
+with its additional changes. The file starts with `# Coflow X.Y.Z` for the
+version being published and does not include notes from earlier release series.
+The release workflow validates this scope before building release artifacts and
+uses the same content for the GitHub Release and updater manifest.
+
 Patch releases (`Z > 0`, such as `0.10.3`) use the same gate as normal development:
 `cargo check --workspace` and `cargo test --workspace`.
 Major and minor releases (`X.Y.0`, such as `0.10.0` or `1.0.0`) require the full

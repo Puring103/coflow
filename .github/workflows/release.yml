@@ -31,6 +31,30 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
             throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
           }
+          # 发布说明只保留当前主次版本系列，并以正在发布的版本作为首个标题。
+          $releaseHeadings = @(
+            Select-String -Path RELEASE_NOTES.md -Pattern '^# Coflow (\d+)\.(\d+)\.(\d+)$' |
+              ForEach-Object { $_.Matches[0] }
+          )
+          if ($releaseHeadings.Count -eq 0) {
+            throw "RELEASE_NOTES.md must start with # Coflow $version"
+          }
+          $firstLine = Get-Content -Path RELEASE_NOTES.md -TotalCount 1
+          if ($firstLine -ne "# Coflow $version") {
+            throw "RELEASE_NOTES.md must start with # Coflow $version"
+          }
+          $firstReleaseVersion = $releaseHeadings[0].Groups[1..3].Value -join "."
+          if ($firstReleaseVersion -ne $version) {
+            throw "RELEASE_NOTES.md starts with $firstReleaseVersion instead of $version"
+          }
+          $currentSeries = $releaseHeadings[0].Groups[1..2].Value -join "."
+          $historicalHeading = $releaseHeadings | Where-Object {
+            ($_.Groups[1..2].Value -join ".") -ne $currentSeries
+          } | Select-Object -First 1
+          if ($historicalHeading) {
+            $historicalVersion = $historicalHeading.Groups[1..3].Value -join "."
+            throw "RELEASE_NOTES.md contains historical version $historicalVersion outside $currentSeries.x"
+          }
           "full=$($full.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Host "Release $version uses $(if ($full) { 'full' } else { 'standard' }) gate"
 
