@@ -7,7 +7,9 @@ use crate::editor::types::{
     DimensionFileRecords, DimensionFileRow, EditorError, WriteDimensionValueOutcome,
 };
 
-use super::{finalize_mutation, SessionStore};
+use super::SessionStore;
+use super::mutation_apply::finalize_mutation;
+use super::errors::api_diagnostics_to_editor_error;
 
 impl SessionStore {
     pub fn get_dimension_file_records(
@@ -123,7 +125,7 @@ impl SessionStore {
                 ops: vec![op],
             },
         )
-        .map_err(super::api_diagnostics_to_editor_error)?;
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "write dimension value failed")?;
         let new_value = session
             .queries()

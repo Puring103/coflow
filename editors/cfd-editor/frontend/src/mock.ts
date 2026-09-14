@@ -6,6 +6,7 @@ import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import type { DimensionFileRecords } from './api'
+import { summaryOf } from './value/fieldValue'
 import {
   boolValue,
   enumValue,
@@ -289,7 +290,7 @@ function row(
   const field_summaries: Record<string, string> = {}
   fields.forEach((field, index) => {
     field_index[field.name] = index
-    field_summaries[field.name] = mockSummary(field.value)
+    field_summaries[field.name] = summaryOf(field.value)
   })
   return {
     coordinate: { actual_type: actualType, key },
@@ -321,26 +322,6 @@ function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
       type_names: Array.from(column.type_names),
       max_summary_len: column.max_summary_len,
     })),
-  }
-}
-
-function mockSummary(value: FieldValue): string {
-  switch (value.kind) {
-    case 'option_none': return '-'
-    case 'option_some': return mockSummary(value.value)
-    case 'result_ok': return `Ok(${mockSummary(value.value)})`
-    case 'result_err': return `Err(${mockSummary(value.value)})`
-    case 'bool': return value.value ? 'true' : 'false'
-    case 'int':
-    case 'float': return String(value.value)
-    case 'string': return value.value
-    case 'formatted_string': return value.value.rendered
-    case 'function': return value.value.source
-    case 'enum': return value.value.variant ?? String(value.value.value)
-    case 'ref': return value.value
-    case 'object': return value.value.actual_type
-    case 'array': return value.value.length ? `array[${value.value.length}]` : '[]'
-    case 'dict': return value.value.length ? `dict(${value.value.length})` : '{}'
   }
 }
 

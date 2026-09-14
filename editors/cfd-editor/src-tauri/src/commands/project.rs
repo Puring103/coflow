@@ -7,7 +7,11 @@ use cfd_editor_core::EditorHost;
 use tauri::State;
 
 use super::run_host_command;
-use crate::editor::*;
+use crate::editor::{
+    DimensionFileRecords, EditorError, EditorProjectSettings, EditorRecordGroup,
+    EditorWorkspaceState, ProjectBootstrap, ViewConfig,
+};
+use crate::open::open_path;
 use coflow_runtime::ProjectDiff;
 
 #[tauri::command]
@@ -282,31 +286,7 @@ pub(crate) async fn open_source_file(
 ) -> Result<(), EditorError> {
     run_host_command(host, move |host| {
         let path = host.sessions().source_file_path(session_id, &file_path)?;
-        open_with_default_application(&path)
+        open_path(&path)
     })
     .await
-}
-
-fn open_with_default_application(path: &Path) -> Result<(), EditorError> {
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = std::process::Command::new("rundll32.exe");
-        command.arg("url.dll,FileProtocolHandler").arg(path);
-        command
-    };
-    #[cfg(target_os = "macos")]
-    let mut command = {
-        let mut command = std::process::Command::new("open");
-        command.arg(path);
-        command
-    };
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut command = {
-        let mut command = std::process::Command::new("xdg-open");
-        command.arg(path);
-        command
-    };
-    command.spawn().map(|_| ()).map_err(|error| {
-        EditorError::other(format!("failed to open `{}`: {error}", path.display()))
-    })
 }
