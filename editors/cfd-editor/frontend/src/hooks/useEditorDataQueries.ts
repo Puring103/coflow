@@ -6,6 +6,7 @@ import { dimensionForFile, graphCacheKey } from '../state/appSupport'
 import * as api from '../api'
 import { MOCK_DIMENSION_FILE_RECORDS, MOCK_GRAPH } from '../mock'
 import { editorQueryKeys } from '../queryKeys'
+import { validateQueryRevision } from '../editorQueries'
 
 export interface EditorDataRoute {
   file: string
@@ -27,10 +28,8 @@ export function useEditorDataQueries(
   const isDataFile = !!project && !!route && !file.endsWith('.cft') && !dimension
 
   const validateRevision = <T extends { revision: number }>(value: T): T => {
-    if (!generation.isCurrent(sessionId, revision) || value.revision !== revision) {
-      throw new Error('项目已刷新')
-    }
-    return value
+    if (!generation.isCurrent(sessionId, revision)) throw new Error('项目已刷新')
+    return validateQueryRevision(value, revision)
   }
 
   const fileQuery = useQuery({

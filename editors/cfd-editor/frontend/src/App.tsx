@@ -1,11 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
 import { CreateRecordDialog } from './components/CreateRecordDialog'
 import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
-import { TableView } from './components/TableView'
-import { RecordView } from './components/RecordView'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
-import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
 import { finishActiveDataEdit } from './state/editSession'
@@ -16,15 +13,14 @@ import { UpdateControl } from './components/UpdateControl'
 import { HelpDialog } from './components/HelpDialog'
 import { DocumentTabs, GIT_DIFF_TAB_ID, type PluginPageTab } from './components/DocumentTabs'
 import { ActivityBar, type ActivePane } from './components/ActivityBar'
-import { DimensionTableView } from './components/DimensionTableView'
-import { SourceEditorView } from './components/SourceEditorView'
-import { GitDiffMode, GitDiffSidebar } from './components/GitDiffMode'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
 import { useProjectDiff } from './hooks/useProjectDiff'
 import { useEditorDataQueries } from './hooks/useEditorDataQueries'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
+import { useProjectWatcher } from './hooks/useProjectWatcher'
+import { useEditorProjections } from './hooks/useEditorProjections'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
 import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
@@ -63,7 +59,6 @@ import type { DiagnosticTarget } from './bindings/DiagnosticTarget'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { ViewConfig } from './bindings/ViewConfig'
 import type { CreateRecordDraft } from './bindings/CreateRecordDraft'
-import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
@@ -163,6 +158,14 @@ import {
 } from './state/appSupport'
 import './style.css'
 
+const GraphView = lazy(() => import('./components/GraphView').then(module => ({ default: module.GraphView })))
+const SourceEditorView = lazy(() => import('./components/SourceEditorView').then(module => ({ default: module.SourceEditorView })))
+const TableView = lazy(() => import('./components/TableView').then(module => ({ default: module.TableView })))
+const RecordView = lazy(() => import('./components/RecordView').then(module => ({ default: module.RecordView })))
+const DimensionTableView = lazy(() => import('./components/DimensionTableView').then(module => ({ default: module.DimensionTableView })))
+const GitDiffMode = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffMode })))
+const GitDiffSidebar = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffSidebar })))
+
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 // 共享空数组，避免每次渲染产生新引用而让下游 useMemo 失效。
@@ -192,14 +195,17 @@ export default function App() {
   const [lookups] = useState(() => new EditorLookupController(api))
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
-  const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
+  const {
+    files: fileDataCache,
+    graphs: graphCache,
+    filesRef: fileDataCacheRef,
+    graphsRef: graphCacheRef,
+    setFiles: setFileDataCache,
+    setGraphs: setGraphCache,
+    reset: resetProjections,
+  } = useEditorProjections()
   const projectDimensions = project?.dimensions ?? []
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
-  const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
-  const fileDataCacheRef = useRef(fileDataCache)
-  const graphCacheRef = useRef(graphCache)
-  fileDataCacheRef.current = fileDataCache
-  graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
   const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
   const [fileActionDialog, setFileActionDialog] = useState<
@@ -609,8 +615,7 @@ export default function App() {
         }
         return bootstrap
       })
-      setFileDataCache({})
-      setGraphCache({})
+      resetProjections()
       setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
       setWorkspaceTabs([])
       workspaceTabsRef.current = []
@@ -639,7 +644,7 @@ export default function App() {
         installWorkspace(bootstrap, MOCK_EDITOR_SETTINGS)
       }
     },
-    [generation, history, installWorkspace, lookups, router]
+    [generation, history, installWorkspace, lookups, resetProjections, router]
   )
 
   useEffect(() => {
@@ -743,8 +748,7 @@ export default function App() {
       setHighlightField(null)
       if (!nextFile) {
         setProject(bootstrap)
-        setFileDataCache({})
-        setGraphCache({})
+        resetProjections()
         return
       }
       if (!current || !keepFile) {
@@ -803,7 +807,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, router],
+    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, resetProjections, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -820,11 +824,6 @@ export default function App() {
     ))
     return true
   }, [generation, lookups])
-
-  const handleSourceSaved = useCallback(
-    async (bootstrap: ProjectBootstrap) => refreshFromBootstrap(bootstrap),
-    [refreshFromBootstrap],
-  )
 
   const publishMutation = useCallback((request: MutationPublicationRequest) => (
     publishMutationGeneration({
@@ -844,7 +843,6 @@ export default function App() {
         setFileDataCache(current => {
           const next = { ...current }
           for (const [file, fileRecords] of records) next[file] = fileRecords
-          fileDataCacheRef.current = next
           return next
         })
       },
@@ -855,7 +853,6 @@ export default function App() {
             revision,
             records.flatMap(file => file.records),
           )
-        graphCacheRef.current = next
         setGraphCache(next)
         const identity = generation.currentIdentity()
         if (identity?.revision === revision) {
@@ -871,42 +868,16 @@ export default function App() {
     }, request)
   ), [commitProjectRevision, generation])
 
-  useEffect(() => {
-    if (!api.isTauri || !project) return
-    const sessionId = project.session_id
-    let disposed = false
-    let unlistenChanged: (() => void) | null = null
-    let unlistenError: (() => void) | null = null
-    const isCurrent = () => !disposed && generation.currentSession() === sessionId
-    api.onProjectReloaded(event => {
-      if (!isCurrent() || event.session_id !== sessionId) return
-      api.reloadSession(sessionId).then(bootstrap => {
-        if (!isCurrent()) return
-        return refreshFromBootstrap(bootstrap)
-      }).catch(err => {
-        if (isCurrent()) reportSessionError(sessionId, '刷新项目失败', err)
-      })
-    }).then(unlisten => {
-      if (!isCurrent()) unlisten()
-      else unlistenChanged = unlisten
-    }).catch(err => {
-      if (isCurrent()) reportSessionError(sessionId, '监听项目变更失败', err)
-    })
-    api.onProjectWatchError(event => {
-      if (!isCurrent() || event.session_id !== sessionId) return
-      setErrorMsg(`监听项目变更失败: ${event.message}`)
-    }).then(unlisten => {
-      if (!isCurrent()) unlisten()
-      else unlistenError = unlisten
-    }).catch(err => {
-      if (isCurrent()) reportSessionError(sessionId, '监听项目变更失败', err)
-    })
-    return () => {
-      disposed = true
-      unlistenChanged?.()
-      unlistenError?.()
-    }
-  }, [generation, project?.session_id, refreshFromBootstrap, reportSessionError])
+  const reportWatchError = useCallback((message: string) => {
+    setErrorMsg(`监听项目变更失败: ${message}`)
+  }, [])
+  useProjectWatcher({
+    project,
+    generation,
+    refresh: refreshFromBootstrap,
+    reportError: reportSessionError,
+    reportWatchError,
+  })
 
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
   // project (mirrors `coflow init`), and open it. The same back-end call
@@ -1206,14 +1177,12 @@ export default function App() {
       appliedIdentity = identity
       oldValue = projection.oldValue
       const projectedCache = { ...fileDataCacheRef.current, [filePath]: projection.records }
-      fileDataCacheRef.current = projectedCache
       setFileDataCache(projectedCache)
       const projectedGraphs = projectGraphRows(
         graphCacheRef.current,
         current.revision,
         [projection.row],
       )
-      graphCacheRef.current = projectedGraphs
       setGraphCache(projectedGraphs)
       return { changed: true, row: projection.row }
     }
@@ -1234,14 +1203,12 @@ export default function App() {
         const rollback = projectFieldValue(latest, coordinate, fieldPath, oldValue)
         if (!rollback.changed || !rollback.row) return
         const nextCache = { ...fileDataCacheRef.current, [filePath]: rollback.records }
-        fileDataCacheRef.current = nextCache
         setFileDataCache(nextCache)
         const nextGraphs = projectGraphRows(
           graphCacheRef.current,
           latest.revision,
           [rollback.row],
         )
-        graphCacheRef.current = nextGraphs
         setGraphCache(nextGraphs)
         appliedIdentity = null
       },
@@ -2546,6 +2513,7 @@ export default function App() {
 
   return (
     <ShortNameContext.Provider value={{ fields: projectSettings?.short_name_fields ?? {}, setField: shortNameSaving ? undefined : saveShortNameField }}>
+    <Suspense fallback={<div className="content-empty"><div className="content-empty-title">加载视图中…</div></div>}>
     <ObjectDraftHost
       lookups={lookups}
       generationKey={`${lookupGenerationKey}:${shortNameRevision}`}
@@ -2927,7 +2895,7 @@ export default function App() {
                 revision={project.revision}
                 filePath={currentRoute.file}
                 readOnly={false}
-                onSaved={handleSourceSaved}
+                onSaved={refreshFromBootstrap}
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
             </div>
@@ -3157,7 +3125,7 @@ export default function App() {
                     revision={project.revision}
                     filePath={currentRoute.file}
                     readOnly={readOnly}
-                    onSaved={handleSourceSaved}
+                    onSaved={refreshFromBootstrap}
                     focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
                   />
                 )}
@@ -3353,6 +3321,7 @@ export default function App() {
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
     </ObjectDraftHost>
+    </Suspense>
     </ShortNameContext.Provider>
   )
 }
