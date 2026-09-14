@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 const STORAGE_KEY = 'cfd-editor-sidebar-w'
 const clampWidth = (width: number) => Math.min(480, Math.max(160, width))
@@ -11,17 +11,21 @@ export function useSidebarWidth(defaultWidth = 220) {
     } catch { return defaultWidth }
   })
   const [dragging, setDragging] = useState(false)
+  const widthRef = useRef(width)
+  const dragCleanupRef = useRef<(() => void) | null>(null)
+  widthRef.current = width
 
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-w', `${width}px`)
   }, [width])
 
+  useEffect(() => () => dragCleanupRef.current?.(), [])
+
   const resizeBy = useCallback((delta: number) => {
-    setWidth(current => {
-      const next = clampWidth(current + delta)
-      try { localStorage.setItem(STORAGE_KEY, String(next)) } catch { /* WebView 存储不可用 */ }
-      return next
-    })
+    const next = clampWidth(widthRef.current + delta)
+    widthRef.current = next
+    setWidth(next)
+    try { localStorage.setItem(STORAGE_KEY, String(next)) } catch { /* WebView 存储不可用 */ }
   }, [])
 
   const onSplitterMouseDown = useCallback((event: ReactMouseEvent) => {
@@ -32,14 +36,21 @@ export function useSidebarWidth(defaultWidth = 220) {
     let finalWidth = startWidth
     const onMove = (moveEvent: MouseEvent) => {
       finalWidth = clampWidth(startWidth + moveEvent.clientX - startX)
+      widthRef.current = finalWidth
       setWidth(finalWidth)
     }
-    const onUp = () => {
-      setDragging(false)
+    const cleanup = () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      dragCleanupRef.current = null
+    }
+    const onUp = () => {
+      cleanup()
+      setDragging(false)
       try { localStorage.setItem(STORAGE_KEY, String(finalWidth)) } catch { /* WebView 存储不可用 */ }
     }
+    dragCleanupRef.current?.()
+    dragCleanupRef.current = cleanup
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }, [width])

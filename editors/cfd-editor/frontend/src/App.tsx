@@ -128,6 +128,7 @@ import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
 import { reachableGraph } from './state/graphFilter'
 import { queryClient } from './queryClient'
 import { editorQueryKeys } from './queryKeys'
+import { fetchFileRecords, removeSessionQueries } from './editorQueries'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_SOURCE_VIEW_ID,
@@ -600,7 +601,7 @@ export default function App() {
     (bootstrap: ProjectBootstrap) => {
       const previousSession = generation.adopt(bootstrap)
       if (previousSession !== null && previousSession !== bootstrap.session_id) {
-        queryClient.removeQueries({ predicate: query => query.queryKey[1] === previousSession })
+        removeSessionQueries(queryClient, previousSession)
       }
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       setProject(prev => {
@@ -775,14 +776,10 @@ export default function App() {
       }
       try {
         const fileRecords = api.isTauri
-          ? await queryClient.fetchQuery({
-              queryKey: editorQueryKeys.fileRecords(
-                bootstrap.session_id,
-                bootstrap.revision,
-                nextFile,
-              ),
-              queryFn: () => api.getFileRecords(bootstrap.session_id, nextFile),
-            })
+          ? await fetchFileRecords(
+              queryClient, bootstrap.session_id, bootstrap.revision, nextFile,
+              () => api.getFileRecords(bootstrap.session_id, nextFile),
+            )
           : null
         if (
           !generation.isCurrent(bootstrap.session_id, bootstrap.revision) ||
@@ -860,31 +857,23 @@ export default function App() {
       },
       publishGraphProjection: (revision, records, topologyChanged) => {
         if (topologyChanged) return
-        setGraphCache(current => {
-          const next = projectGraphRows(
-            current,
+        const next = projectGraphRows(
+            graphCacheRef.current,
             revision,
             records.flatMap(file => file.records),
           )
-          graphCacheRef.current = next
-          const identity = generation.currentIdentity()
-          if (identity?.revision === revision) {
-            for (const recordsForFile of records) {
-              const graph = next[graphCacheKey(recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT)]
-              if (graph) queryClient.setQueryData(
-                editorQueryKeys.graph(
-                  identity.sessionId,
-                  revision,
-                  recordsForFile.file_path,
-                  GRAPH_DEPTH,
-                  GRAPH_LIMIT,
-                ),
-                graph,
-              )
-            }
+        graphCacheRef.current = next
+        setGraphCache(next)
+        const identity = generation.currentIdentity()
+        if (identity?.revision === revision) {
+          for (const recordsForFile of records) {
+            const graph = next[graphCacheKey(recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT)]
+            if (graph) queryClient.setQueryData(
+              editorQueryKeys.graph(identity.sessionId, revision, recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT),
+              graph,
+            )
           }
-          return next
-        })
+        }
       },
     }, request)
   ), [commitProjectRevision, generation])
@@ -1323,16 +1312,16 @@ export default function App() {
       const current = dimensionFileCacheRef.current[data.file_path]
       if (!current) return
       const updated = {
-          ...dimensionFileCacheRef.current,
-          [data.file_path]: {
-            ...current,
-            revision,
-            rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
-              && currentRow.field === row.field
-              ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
-              : currentRow),
-          },
-        }
+        ...dimensionFileCacheRef.current,
+        [data.file_path]: {
+          ...current,
+          revision,
+          rows: current.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
+            && currentRow.field === row.field
+            ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
+            : currentRow),
+        },
+      }
       dimensionFileCacheRef.current = updated
       setDimensionFileCache(updated)
       const identity = generation.currentIdentity()
@@ -1447,7 +1436,13 @@ export default function App() {
       getSchema: api.getPluginSchema,
       getRecordsByType: api.getPluginRecordsByType,
       getFileRecords: async (sessionId, filePath) => {
-        if (api.isTauri) return api.getFileRecords(sessionId, filePath)
+        if (api.isTauri) {
+          const identity = generation.currentIdentity()
+          if (!identity || identity.sessionId !== sessionId) throw new Error('当前项目会话已变更')
+          return fetchFileRecords(queryClient, sessionId, identity.revision, filePath, () => (
+            api.getFileRecords(sessionId, filePath)
+          ))
+        }
         const records = fileDataCacheRef.current[filePath]
         if (!records) throw new Error(`找不到文件 ${filePath}`)
         return records
@@ -2281,7 +2276,9 @@ export default function App() {
     try {
       const data = fileDataCache[filePath]?.revision === identity.revision
         ? fileDataCache[filePath]
-        : await api.getFileRecords(identity.sessionId, filePath)
+        : await fetchFileRecords(queryClient, identity.sessionId, identity.revision, filePath, () => (
+            api.getFileRecords(identity.sessionId, filePath)
+          ))
       if (!generation.isCurrent(identity.sessionId, identity.revision)) return
       openFile(filePath, actualType)
       setTreeRecordDraft({ filePath, actualType: actualType || data.type_names[0] || '', data })
