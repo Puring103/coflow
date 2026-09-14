@@ -24,6 +24,7 @@ import { useTheme } from './hooks/useTheme'
 import { useFrontendPlugins } from './hooks/useFrontendPlugins'
 import { useProjectDiff } from './hooks/useProjectDiff'
 import { useEditorDataQueries } from './hooks/useEditorDataQueries'
+import { useSidebarWidth } from './hooks/useSidebarWidth'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
 import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
@@ -125,6 +126,8 @@ import {
 } from './state/manualRecordGroups'
 import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
 import { reachableGraph } from './state/graphFilter'
+import { queryClient } from './queryClient'
+import { editorQueryKeys } from './queryKeys'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_SOURCE_VIEW_ID,
@@ -194,8 +197,10 @@ export default function App() {
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const fileDataCacheRef = useRef(fileDataCache)
+  const dimensionFileCacheRef = useRef(dimensionFileCache)
   const graphCacheRef = useRef(graphCache)
   fileDataCacheRef.current = fileDataCache
+  dimensionFileCacheRef.current = dimensionFileCache
   graphCacheRef.current = graphCache
   const [showHelp, setShowHelp] = useState(false)
   const [treeRecordDraft, setTreeRecordDraft] = useState<{ filePath: string; actualType: string; data: FileRecords } | null>(null)
@@ -469,13 +474,11 @@ export default function App() {
     }
   }, [viewMenu])
 
-  // Resizable sidebar width, persisted to localStorage.
-  const [sidebarW, setSidebarW] = useState<number>(() => {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cfd-editor-sidebar-w') : null
-    const n = raw ? parseInt(raw, 10) : NaN
-    return Number.isFinite(n) ? Math.min(480, Math.max(160, n)) : 220
-  })
-  const [splitterDragging, setSplitterDragging] = useState(false)
+  const {
+    dragging: splitterDragging,
+    resizeBy: resizeSidebar,
+    onSplitterMouseDown,
+  } = useSidebarWidth()
 
   // Right-side inspector panel: table cells select one value, while the Key
   // column and graph nodes select the whole record.
@@ -595,7 +598,10 @@ export default function App() {
   // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
     (bootstrap: ProjectBootstrap) => {
-      generation.adopt(bootstrap)
+      const previousSession = generation.adopt(bootstrap)
+      if (previousSession !== null && previousSession !== bootstrap.session_id) {
+        queryClient.removeQueries({ predicate: query => query.queryKey[1] === previousSession })
+      }
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
@@ -769,7 +775,14 @@ export default function App() {
       }
       try {
         const fileRecords = api.isTauri
-          ? await api.getFileRecords(bootstrap.session_id, nextFile)
+          ? await queryClient.fetchQuery({
+              queryKey: editorQueryKeys.fileRecords(
+                bootstrap.session_id,
+                bootstrap.revision,
+                nextFile,
+              ),
+              queryFn: () => api.getFileRecords(bootstrap.session_id, nextFile),
+            })
           : null
         if (
           !generation.isCurrent(bootstrap.session_id, bootstrap.revision) ||
@@ -829,6 +842,15 @@ export default function App() {
       isCurrent: (sessionId, revision) => generation.isCurrent(sessionId, revision),
       getFileRecords: api.getFileRecords,
       publishFileRecords: records => {
+        const identity = generation.currentIdentity()
+        if (identity) {
+          for (const [file, fileRecords] of records) {
+            queryClient.setQueryData(
+              editorQueryKeys.fileRecords(identity.sessionId, identity.revision, file),
+              fileRecords,
+            )
+          }
+        }
         setFileDataCache(current => {
           const next = { ...current }
           for (const [file, fileRecords] of records) next[file] = fileRecords
@@ -845,6 +867,22 @@ export default function App() {
             records.flatMap(file => file.records),
           )
           graphCacheRef.current = next
+          const identity = generation.currentIdentity()
+          if (identity?.revision === revision) {
+            for (const recordsForFile of records) {
+              const graph = next[graphCacheKey(recordsForFile.file_path, GRAPH_DEPTH, GRAPH_LIMIT)]
+              if (graph) queryClient.setQueryData(
+                editorQueryKeys.graph(
+                  identity.sessionId,
+                  revision,
+                  recordsForFile.file_path,
+                  GRAPH_DEPTH,
+                  GRAPH_LIMIT,
+                ),
+                graph,
+              )
+            }
+          }
           return next
         })
       },
@@ -1282,11 +1320,10 @@ export default function App() {
       path: [],
     }
     const updateCache = (value: DimensionValueState, revision: number) => {
-      setDimensionFileCache(cache => {
-        const current = cache[data.file_path]
-        if (!current) return cache
-        return {
-          ...cache,
+      const current = dimensionFileCacheRef.current[data.file_path]
+      if (!current) return
+      const updated = {
+          ...dimensionFileCacheRef.current,
           [data.file_path]: {
             ...current,
             revision,
@@ -1296,7 +1333,15 @@ export default function App() {
               : currentRow),
           },
         }
-      })
+      dimensionFileCacheRef.current = updated
+      setDimensionFileCache(updated)
+      const identity = generation.currentIdentity()
+      if (identity?.revision === revision) {
+        queryClient.setQueryData(
+          editorQueryKeys.dimensionRecords(identity.sessionId, revision, data.file_path),
+          updated[data.file_path],
+        )
+      }
     }
     if (!api.isTauri) {
       updateCache(next, data.revision)
@@ -1311,36 +1356,6 @@ export default function App() {
     if (!result) return
     updateCache(result, generation.currentIdentity()?.revision ?? data.revision)
   }, [generation, mutations])
-
-  // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
-  // track the pointer X and clamp the new width to [160, 480]. Persist on
-  // release. We use window listeners (not React state per move) so the drag
-  // is smooth and doesn't re-render the whole tree on each pixel.
-  const onSplitterMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setSplitterDragging(true)
-    const startX = e.clientX
-    const startW = sidebarW
-    const onMove = (ev: MouseEvent) => {
-      const next = Math.min(480, Math.max(160, startW + (ev.clientX - startX)))
-      setSidebarW(next)
-      document.documentElement.style.setProperty('--sidebar-w', `${next}px`)
-    }
-    const onUp = () => {
-      setSplitterDragging(false)
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      try { localStorage.setItem('cfd-editor-sidebar-w', String(sidebarW)) } catch { /* quota */ }
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [sidebarW])
-
-  // Apply the persisted width on mount and keep it in sync with keyboard
-  // adjustments (the mouse-drag path sets the CSS var directly for speed).
-  useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-w', `${sidebarW}px`)
-  }, [sidebarW])
 
   const writeField = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
@@ -2760,8 +2775,8 @@ export default function App() {
           aria-label="调整侧栏宽度"
           tabIndex={0}
           onKeyDown={e => {
-            if (e.key === 'ArrowLeft') setSidebarW(w => Math.max(160, w - 16))
-            if (e.key === 'ArrowRight') setSidebarW(w => Math.min(480, w + 16))
+            if (e.key === 'ArrowLeft') resizeSidebar(-16)
+            if (e.key === 'ArrowRight') resizeSidebar(16)
           }}
         />
 
