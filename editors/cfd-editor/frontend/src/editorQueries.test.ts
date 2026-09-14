@@ -34,4 +34,11 @@ describe('editor queries', () => {
     expect(client.getQueryData(editorQueryKeys.fileRecords(7, 1, 'a.cfd'))).toBeUndefined()
     expect(client.getQueryData(editorQueryKeys.fileRecords(8, 7, 'b.cfd'))).toBeDefined()
   })
+
+  it('does not cache a response from another revision', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    await expect(fetchFileRecords(client, 7, 3, 'data.cfd', async () => records(4)))
+      .rejects.toThrow('期望 3，收到 4')
+    expect(client.getQueryData(editorQueryKeys.fileRecords(7, 3, 'data.cfd'))).toBeUndefined()
+  })
 })

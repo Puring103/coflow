@@ -32,7 +32,7 @@ export function useSidebarWidth(defaultWidth = 220) {
     event.preventDefault()
     setDragging(true)
     const startX = event.clientX
-    const startWidth = width
+    const startWidth = widthRef.current
     let finalWidth = startWidth
     const onMove = (moveEvent: MouseEvent) => {
       finalWidth = clampWidth(startWidth + moveEvent.clientX - startX)
@@ -53,7 +53,7 @@ export function useSidebarWidth(defaultWidth = 220) {
     dragCleanupRef.current = cleanup
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-  }, [width])
+  }, [])
 
   return { width, dragging, resizeBy, onSplitterMouseDown }
 }

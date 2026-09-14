@@ -11,7 +11,13 @@ export function fetchFileRecords(
 ): Promise<FileRecords> {
   return client.fetchQuery({
     queryKey: editorQueryKeys.fileRecords(sessionId, revision, filePath),
-    queryFn: load,
+    queryFn: async () => {
+      const records = await load()
+      if (records.revision !== revision) {
+        throw new Error(`文件数据版本不匹配：期望 ${revision}，收到 ${records.revision}`)
+      }
+      return records
+    },
   })
 }
 
