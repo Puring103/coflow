@@ -8,7 +8,7 @@ use crate::data_model::{
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
-use coflow_language::cft::{CftSchema, RecordKey};
+use coflow_core::schema::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -240,7 +240,7 @@ pub(crate) fn load_project_data(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: coflow_checker::CheckExecutionStats::default(),
+            statistics: coflow_core::check::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);
@@ -296,11 +296,6 @@ pub(crate) fn reload_project_data_from_cache(
     }
 
     let mut diagnostics = DiagnosticSet::empty();
-    let ordinary_records = source_data
-        .batches
-        .iter()
-        .flat_map(|batch| batch.records.iter().cloned())
-        .collect::<Vec<_>>();
     let reload_indexes = source_data
         .batches
         .iter()
@@ -313,35 +308,10 @@ pub(crate) fn reload_project_data_from_cache(
         .collect::<Vec<_>>();
     statistics.sources_reloaded = reload_indexes.len();
 
-    let mut validated_dimension_sources = BTreeSet::new();
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
         if let Some(field) = &batch.dimension_field {
-            let source_fields = if field.is_singleton {
-                dimension_plan
-                    .fields()
-                    .iter()
-                    .filter(|candidate| {
-                        candidate.is_singleton
-                            && candidate.dimension == field.dimension
-                            && candidate.source_type == field.source_type
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            } else {
-                vec![field.clone()]
-            };
-            let validate_singleton_shape =
-                validated_dimension_sources.insert(batch.entry.display_path.clone());
-            match load_dimension_batch(
-                schema,
-                catalog,
-                &batch.entry.source,
-                field,
-                &source_fields,
-                validate_singleton_shape,
-                &ordinary_records,
-            ) {
+            match load_dimension_batch(schema, catalog, &batch.entry.source, field) {
                 Ok(loaded) => {
                     batch.source = loaded.source;
                     batch.dimension_values = loaded.values.into();
@@ -473,16 +443,8 @@ fn load_resolved_dimension_source(
         .files
         .add_source_file(entry.display_path.clone(), source_id);
     let fields = resolved.fields;
-    for (index, field) in fields.iter().enumerate() {
-        match load_dimension_batch(
-            schema,
-            catalog,
-            &source,
-            field,
-            &fields,
-            index == 0,
-            &state.records,
-        ) {
+    for field in &fields {
+        match load_dimension_batch(schema, catalog, &source, field) {
             Ok(loaded) => state.source_data.batches.push(CachedSourceBatch {
                 entry: entry.clone(),
                 source: loaded.source,
@@ -501,9 +463,6 @@ fn load_dimension_batch(
     catalog: &CfdSourceCatalog,
     source: &CfdSource,
     field: &dimensions::DimensionField,
-    source_fields: &[dimensions::DimensionField],
-    validate_singleton_shape: bool,
-    records: &[LoadedRecordDraft],
 ) -> Result<crate::api::DimensionSourceLoadResult, DiagnosticSet> {
     let manager = catalog.dimension_source_manager();
     let source_type = schema.resolve_type(&field.source_type).ok_or_else(|| {
@@ -526,12 +485,7 @@ fn load_dimension_batch(
             field.dimension
         ))
     })?;
-    let singleton_source_fields = source_fields
-        .iter()
-        .filter(|field| field.is_singleton)
-        .map(|field| field.source_field.clone())
-        .collect::<Vec<_>>();
-    let mut loaded = manager.load_dimension_source(&DimensionSourceLoadRequest {
+    manager.load_dimension_source(&DimensionSourceLoadRequest {
         source,
         schema: DimensionSourceSchema {
             schema,
@@ -539,24 +493,7 @@ fn load_dimension_batch(
             source_type,
             source_field,
         },
-        singleton_source_fields: &singleton_source_fields,
-        validate_singleton_shape,
-    })?;
-    if field.is_singleton {
-        let Some(key) = records
-            .iter()
-            .find(|record| schema.is_assignable(&record.actual_type, &field.source_type))
-            .and_then(|record| RecordKey::new(record.key.clone()).ok())
-        else {
-            // singleton 主体缺失时，其维度残留与普通记录一样静默忽略。
-            loaded.values.clear();
-            return Ok(loaded);
-        };
-        for value in &mut loaded.values {
-            value.source_key = key.clone();
-        }
-    }
-    Ok(loaded)
+    })
 }
 
 fn push_loaded_records(
@@ -722,7 +659,7 @@ fn build_output_from_cache(
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
             state: CheckDiagnosticStore::default(),
-            statistics: coflow_checker::CheckExecutionStats::default(),
+            statistics: coflow_core::check::CheckExecutionStats::default(),
         }
     };
     record_model_work(&mut statistics, draft_record_count, &model, &check);

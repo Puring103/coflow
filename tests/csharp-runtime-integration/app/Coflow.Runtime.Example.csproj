@@ -10,4 +10,5 @@
     <Compile Include="../generated/**/*.cs" />
     <ProjectReference Include="../../../runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj" />
   </ItemGroup>
+  <Import Project="../../../runtimes/csharp/Directory.Build.targets" />
 </Project>

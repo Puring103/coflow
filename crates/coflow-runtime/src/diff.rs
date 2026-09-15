@@ -370,18 +370,15 @@ fn record_states(
 fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
     match value {
         CfdValue::Function(function) => CfdValue::Function(crate::CfdFunction {
+            constant_origin: None,
             source: normalized_line_endings(&function.source),
         }),
         CfdValue::FormattedString(value) => CfdValue::FormattedString(crate::CfdFormattedString {
+            constant_origin: None,
             source: normalized_line_endings(&value.source),
-            rendered: normalized_line_endings(&value.rendered),
         }),
         CfdValue::OptionSome(value) => {
             CfdValue::OptionSome(Box::new(normalized_semantic_value(value)))
-        }
-        CfdValue::ResultOk(value) => CfdValue::ResultOk(Box::new(normalized_semantic_value(value))),
-        CfdValue::ResultErr(value) => {
-            CfdValue::ResultErr(Box::new(normalized_semantic_value(value)))
         }
         CfdValue::Object(object) => {
             let mut normalized = object.as_ref().clone();

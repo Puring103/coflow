@@ -271,7 +271,7 @@ describe('DataCardCompact complex previews', () => {
           variant: 'input',
         }),
         createElement(RefDirectSelect, {
-          value: { kind: 'ref', value: '&Item.sword' },
+          value: { kind: 'ref', value: '&Item::sword' },
           targetType: 'Item',
           onCommit: () => {},
           variant: 'input',
@@ -758,7 +758,7 @@ describe('missing field repair', () => {
 describe('Option value controls', () => {
   const annotation: FieldAnnotation = {
     enum_int_value: null,
-    declared_type: 'Option<int>',
+    declared_type: 'int?',
     ref_target_type: null,
     enum_type: null,
     enum_is_flag: false,
@@ -800,36 +800,4 @@ describe('Option value controls', () => {
     expect(html).not.toContain('aria-label="创建值"')
   })
 
-  it('renders controls for each nested Option layer', () => {
-    const nestedAnnotation = {
-      ...annotation,
-      declared_type: 'Option<Option<int>>',
-    }
-    const renderNested = (value: FieldValue) => renderToStaticMarkup(createElement(
-      ObjectDraftHost,
-      {
-        lookups: {} as never,
-        generationKey: 'test',
-        onOpenReference: () => {},
-        children: createElement(DataCardExpanded, {
-          fields: [{ name: 'value', value, missing: false, annotation: nestedAnnotation }],
-          onEdit: () => {},
-        }),
-      },
-    ))
-
-    const someNone = renderNested({
-      kind: 'option_some',
-      value: { kind: 'option_none' },
-    })
-    expect(someNone.match(/aria-label="清除为 None"/g)).toHaveLength(1)
-    expect(someNone.match(/aria-label="创建值"/g)).toHaveLength(1)
-
-    const someSome = renderNested({
-      kind: 'option_some',
-      value: { kind: 'option_some', value: { kind: 'int', value: 1n } },
-    })
-    expect(someSome.match(/aria-label="清除为 None"/g)).toHaveLength(2)
-    expect(someSome).not.toContain('aria-label="创建值"')
-  })
 })

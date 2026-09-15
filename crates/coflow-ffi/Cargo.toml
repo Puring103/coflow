@@ -1,0 +1,22 @@
+[package]
+name = "coflow-ffi"
+version = "0.11.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = []
+cft-compiler = ["coflow-core/cft-compiler"]
+
+[dependencies]
+coflow-core = { path = "../coflow-core", default-features = false }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[dev-dependencies]
+coflow-core = { path = "../coflow-core", features = ["cft-compiler"] }

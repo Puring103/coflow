@@ -1,4 +1,2 @@
-Item {
-  é { "显示名称": "中文", value: "line\ntext" }
-  𐐀key { value: "quoted \"text\"" }
-}
+é: Item { "显示名称": "中文", value: "line\ntext" }
+𐐀key: Item { value: "quoted \"text\"" }

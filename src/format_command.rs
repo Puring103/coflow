@@ -192,7 +192,7 @@ mod tests {
         .expect("config");
         fs::write(
             dir.path().join("schema/main.cft"),
-            "type Item{name:string;}",
+            "table Item{name:string;}",
         )
         .expect("schema");
         fs::write(
@@ -211,7 +211,7 @@ mod tests {
         assert!(run(Some(dir.path()), false).expect("format project"));
         assert_eq!(
             fs::read_to_string(dir.path().join("schema/main.cft")).expect("read schema"),
-            "type Item {\n  name: string;\n}\n"
+            "table Item {\n  name: string;\n}\n"
         );
         assert_eq!(
             fs::read_to_string(dir.path().join("data/items.cfd")).expect("read data"),
@@ -236,12 +236,12 @@ mod tests {
         )
         .expect("config");
         let schema = dir.path().join("schema.cft");
-        fs::write(&schema, "type Item{name:string;}").expect("schema");
+        fs::write(&schema, "table Item{name:string;}").expect("schema");
 
         assert!(!run(Some(dir.path()), true).expect("check format"));
         assert_eq!(
             fs::read_to_string(schema).expect("read schema"),
-            "type Item{name:string;}"
+            "table Item{name:string;}"
         );
     }
 }

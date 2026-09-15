@@ -8,7 +8,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::cft::{
+use coflow_core::schema::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
 use coflow_runtime::SourceLocation;
@@ -49,10 +49,10 @@ fn project_global_names_resolve_types_enums_dict_keys_and_references() -> TestRe
         (
             "items.cft",
             r#"
-type Item {
+table Item {
   rarity: Rarity;
   weights: {Rarity: int};
-  backup: Option<&Item> = None;
+  backup: Item? = None;
 }
 "#,
         ),
@@ -61,16 +61,14 @@ type Item {
     let records = parse_cfd_input_records(
         &schema,
         r#"
-Item {
-  sword {
-    rarity: Rarity::Rare,
-    weights: { Rarity::Common: 1 },
-  }
-  shield {
-    rarity: Rarity::Common,
-    weights: { Rarity::Rare: 2 },
-    backup: &Item::sword,
-  }
+sword: Item {
+  rarity: Rarity::Rare,
+  weights: { Rarity::Common: 1 },
+}
+shield: Item {
+  rarity: Rarity::Common,
+  weights: { Rarity::Rare: 2 },
+  backup: &Item::sword,
 }
 "#,
     )?;
@@ -80,19 +78,19 @@ Item {
     assert_eq!(
         records[1].fields.get("backup"),
         Some(&LoadedValueDraft::OptionSome(Box::new(
-            LoadedValueDraft::record_ref("sword")
+            LoadedValueDraft::record_ref("Item::sword")
         )))
     );
     Ok(())
 }
 
 #[test]
-fn cfd_rejects_removed_namespace_and_use_headers() {
-    let schema = compile_schema("type Item {}");
+fn cfd_resolves_use_but_rejects_namespace_headers() {
+    let schema = compile_schema("table Item {}");
 
-    let unknown = parse_cfd_input_records(&schema, "use missing::Item; Item { value {} }")
+    let unknown = parse_cfd_input_records(&schema, "use missing::Item;  value: Item {}")
         .expect_err("use is not syntax");
-    assert_has_text_code(&unknown, CfdTextErrorCode::Syntax);
+    assert_has_text_code(&unknown, CfdTextErrorCode::UnknownType);
 
     let conflict = parse_cfd_input_records(&schema, "namespace game; Item { value {} }")
         .expect_err("namespace is not syntax");
@@ -103,7 +101,7 @@ fn cfd_rejects_removed_namespace_and_use_headers() {
 fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
         "#,
@@ -130,36 +128,17 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
 }
 
 #[test]
-fn nested_option_tags_survive_loading() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                nested: Option<Option<int>>;
-            }
-        "#,
-    );
-    let model = load_cfd_model(
-        &schema,
-        r#"
-            item: Item {
-                nested: Some(None),
-            }
-        "#,
-    )?;
-    let item_id = model
-        .lookup_assignable(&schema, "Item", "item")
-        .expect("item record");
-    let item = model.record(item_id).expect("item record");
-    assert_eq!(
-        item.field("nested"),
-        Some(&CfdValue::OptionSome(Box::new(CfdValue::OptionNone)))
-    );
-    Ok(())
+fn nested_optional_declarations_are_rejected() {
+    let modules = parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        "table Item { nested: int??; }",
+    )]);
+    assert!(build_schema(&modules, &CftDimensionInputs::default()).is_err());
 }
 
 #[test]
 fn string_fields_require_quotes() {
-    let schema = compile_schema("type Item { name: string; }");
+    let schema = compile_schema("table Item { name: string; }");
     let error = parse_cfd_input_records(&schema, "item: Item { name: sword, }")
         .expect_err("bare strings must be rejected");
 
@@ -175,7 +154,7 @@ fn string_fields_require_quotes() {
 
 #[test]
 fn bool_fields_accept_only_lowercase_cfd_literals() {
-    let schema = compile_schema("type Item { enabled: bool; }");
+    let schema = compile_schema("table Item { enabled: bool; }");
     for value in ["TRUE", "True", "FALSE", "False", "1", "0", "yes", "no"] {
         let source = format!("item: Item {{ enabled: {value}, }}");
         let error = parse_cfd_input_records(&schema, &source)
@@ -185,12 +164,12 @@ fn bool_fields_accept_only_lowercase_cfd_literals() {
 }
 
 #[test]
-fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestResult {
+fn templates_preserve_source_without_evaluating_record_reads() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common, Rare, }
-            type Stats { hp: int; }
-            type Item {
+            data Stats { hp: int; }
+            table Item {
                 name: string;
                 enabled: bool;
                 price: float;
@@ -198,9 +177,9 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
                 stats: Stats;
                 tags: [string];
             }
-            type Holder {
-                item: &Item;
-                message: string;
+            table Holder {
+                item: Item;
+                message: fstring;
             }
         "#,
     );
@@ -210,16 +189,16 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
             enabled: true,
             price: 12.5,
             rarity: Rare,
-            stats: { hp: 30 },
+            stats: Stats { hp: 30 },
             tags: ["weapon", "melee"],
         }
         holder: Holder {
-            item: &sword,
-            message: "<b>{&Item::sword.name}</b> {&Item::sword.enabled} {&Item::sword.price} {&Item::sword.rarity} {&Item::sword.stats} {&Item::sword.tags}",
+            item: &Item::sword,
+            message: f"<b>{&Item::sword.name}</b> {&Item::sword.enabled} {&Item::sword.price} {&Item::sword.rarity} {&Item::sword.stats} {&Item::sword.tags}",
         }
     "#;
 
-    let model = load_cfd_model(&schema, source)?;
+    let model = load_cfd_model(&schema, &source)?;
     let holder = model
         .record(
             model
@@ -230,23 +209,21 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
     let CfdValue::FormattedString(message) = holder.field("message").expect("message") else {
         panic!("expected formatted string");
     };
-    assert!(message.source.starts_with("\"<b>"));
-    assert_eq!(
-        message.rendered,
-        "<b>Iron Sword</b> true 12.5 Rare Stats{hp: 30} [\"weapon\", \"melee\"]"
-    );
+    assert!(message.source.starts_with("f\"<b>"));
+    assert!(message.source.contains("{&Item::sword.name}"));
     Ok(())
 }
 
 #[test]
-fn formatted_strings_follow_record_reference_fields() -> TestResult {
-    let schema =
-        compile_schema("type Item { name: string; } type Holder { item: &Item; message: string; }");
+fn ordinary_strings_keep_braces_literal() -> TestResult {
+    let schema = compile_schema(
+        "table Item { name: string; } table Holder { item: Item; message: string; }",
+    );
     let model = load_cfd_model(
         &schema,
         r#"
             sword: Item { name: "Iron Sword" }
-            holder: Holder { item: &sword, message: "{item.name}" }
+            holder: Holder { item: &Item::sword, message: "{item.name}" }
         "#,
     )?;
     let holder = model
@@ -258,14 +235,14 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
         .expect("holder record");
     assert!(matches!(
         holder.field("message"),
-        Some(CfdValue::FormattedString(value)) if value.rendered == "Iron Sword"
+        Some(CfdValue::String(value)) if value == "{item.name}"
     ));
     Ok(())
 }
 
 #[test]
-fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> TestResult {
-    let schema = compile_schema("type Item { name: string; message: string; }");
+fn ordinary_strings_do_not_resolve_reference_expressions() -> TestResult {
+    let schema = compile_schema("table Item { name: string; message: string; }");
     let model = load_cfd_model(
         &schema,
         r#"
@@ -278,7 +255,7 @@ fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> Test
         .expect("shield record");
     assert!(matches!(
         shield.field("message"),
-        Some(CfdValue::FormattedString(value)) if value.rendered == "Iron Sword"
+        Some(CfdValue::String(value)) if value == "{&sword.name}"
     ));
     Ok(())
 }
@@ -287,9 +264,9 @@ fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> Test
 fn ref_type_fields_parse_key_only_refs() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder {
-                item: &Item;
+            table Item { name: string; }
+            table Holder {
+                item: Item;
             }
         "#,
     );
@@ -300,14 +277,14 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
             sword: Item { name: "Iron Sword" }
 
             holder: Holder {
-                item: &sword,
+                item: &Item::sword,
             }
         "#,
     )?;
 
     assert_eq!(
         records[1].fields.get("item"),
-        Some(&LoadedValueDraft::record_ref("sword"))
+        Some(&LoadedValueDraft::record_ref("Item::sword"))
     );
 
     let model = load_cfd_model(
@@ -315,7 +292,7 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
         r#"
             sword: Item { name: "Iron Sword" }
             holder: Holder {
-                item: &sword,
+                item: &Item::sword,
             }
         "#,
     )?;
@@ -339,7 +316,7 @@ fn flag_enum_fields_accept_expressions_and_integer_masks() -> TestResult {
     let schema = compile_schema(
         r#"
             @flag enum Access { Empty = 0, Read = 1, Write = 2, Execute = 4, Admin = 8 }
-            type User { access: Access; }
+            table User { access: Access; }
         "#,
     );
     let records = parse_cfd_input_records(
@@ -377,7 +354,7 @@ fn flag_enum_fields_reject_invalid_operands_and_non_flag_expressions() {
         r#"
             @flag enum Access { Read = 1, Write = 2 }
             enum Rarity { Common, Rare }
-            type User { access: Access; rarity: Rarity; }
+            table User { access: Access; rarity: Rarity; }
         "#,
     );
     for source in [
@@ -396,8 +373,8 @@ fn flag_enum_fields_reject_invalid_operands_and_non_flag_expressions() {
 fn cfd_rejects_invalid_reference_syntax_and_bare_object_keys() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder { item: &Item; }
+            table Item { name: string; }
+            table Holder { item: Item; }
         "#,
     );
 
@@ -433,20 +410,18 @@ fn cfd_rejects_invalid_reference_syntax_and_bare_object_keys() {
 }
 
 #[test]
-fn grouped_records_expand_to_records_of_the_same_type() -> TestResult {
+fn standalone_records_keep_source_order() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
+            table Item { name: string; }
         "#,
     );
 
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            Item {
-                sword { name: "Sword" }
-                shield { name: "Shield" }
-            }
+                          sword: Item { name: "Sword" }
+              shield: Item { name: "Shield" }
         "#,
     )?;
 
@@ -459,21 +434,19 @@ fn grouped_records_expand_to_records_of_the_same_type() -> TestResult {
 }
 
 #[test]
-fn grouped_record_commas_are_optional() -> TestResult {
+fn standalone_records_allow_trailing_field_commas() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
+            table Item { name: string; }
         "#,
     );
 
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            Item {
-                sword { name: "Sword" },
-                shield { name: "Shield" }
-                bow { name: "Bow" },
-            }
+                          sword: Item { name: "Sword" }
+              shield: Item { name: "Shield" }
+              bow: Item { name: "Bow" }
         "#,
     )?;
 
@@ -492,7 +465,7 @@ fn grouped_record_commas_are_optional() -> TestResult {
 fn cfd_rejects_slash_slash_comments() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
+            table Item { name: string; }
         "#,
     );
 
@@ -512,29 +485,25 @@ fn cfd_rejects_slash_slash_comments() {
 fn schema_free_ast_matches_loader_record_coordinates_for_supported_syntax() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
                 tags: [string] = [];
             }
-            abstract type Reward {}
-            type ItemReward : Reward { item: &Item; count: int; }
-            type CurrencyReward : Reward { amount: int; }
+            abstract table Reward {}
+            table ItemReward : Reward { item: Item; count: int; }
+            table CurrencyReward : Reward { amount: int; }
         "#,
     );
     let source = r#"
         # group commas are optional
-        Item {
-            sword { name: "Sword", tags: ["weapon", "melee"] }
-            shield { name: "Shield", tags: ["armor"], },
-        }
+                  sword: Item { name: "Sword", tags: ["weapon", "melee"] }
+          shield: Item { name: "Shield", tags: ["armor"], }
 
-        Reward {
-            item_reward: ItemReward {
-                item: &sword,
-                count: 1,
-            }
-            coin_reward: CurrencyReward { amount: 50 },
-        }
+                  item_reward: ItemReward {
+              item: &Item::sword,
+              count: 1,
+          }
+          coin_reward: CurrencyReward { amount: 50 }
     "#;
 
     let loader_records = parse_cfd_input_records(&schema, source)?;
@@ -558,13 +527,13 @@ fn schema_free_ast_matches_loader_record_coordinates_for_supported_syntax() -> T
 }
 
 #[test]
-fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
+fn standalone_polymorphic_records_keep_concrete_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            abstract type Reward {}
-            type CurrencyReward : Reward { amount: int; }
-            type ItemReward : Reward { item: &Item; count: int; }
+            table Item { name: string; }
+            abstract table Reward {}
+            table CurrencyReward : Reward { amount: int; }
+            table ItemReward : Reward { item: Item; count: int; }
         "#,
     );
 
@@ -573,10 +542,8 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
         r#"
             sword: Item { name: "Sword" }
 
-            Reward {
-                coin: CurrencyReward { amount: 100 }
-                item: ItemReward { item: &sword, count: 1 }
-            }
+                          coin: CurrencyReward { amount: 100 }
+              item: ItemReward { item: &Item::sword, count: 1 }
         "#,
     )?;
 
@@ -601,11 +568,11 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
 fn cfd_enforces_ref_and_inline_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
+            table Item { name: string; } data ItemData { name: string; }
 
-            type Holder {
-                ref_item: &Item;
-                inline_item: Item;
+            table Holder {
+                ref_item: Item;
+                inline_item: ItemData;
             }
         "#,
     );
@@ -615,8 +582,8 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
         r#"
             sword: Item { name: "Sword" }
             holder: Holder {
-                ref_item: &sword,
-                inline_item: { name: "Inline" },
+                ref_item: &Item::sword,
+                inline_item: ItemData { name: "Inline" },
             }
         "#,
     )?;
@@ -627,7 +594,7 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
             sword: Item { name: "Sword" }
             holder: Holder {
                 ref_item: { name: "Bad" },
-                inline_item: { name: "Inline" },
+                inline_item: ItemData { name: "Inline" },
             }
         "#,
     )
@@ -641,7 +608,7 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
 fn cfd_rejects_reserved_id_fields() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
         "#,
@@ -668,10 +635,8 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
     let model = load_cfd_model(
         &schema,
         r#"
-Node {
-  a { next: Some(&b) }
-  b { next: Some(&a) }
-}
+a: Node { next: Some(&b) }
+b: Node { next: Some(&a) }
 "#,
     )?;
 
@@ -718,12 +683,12 @@ fn cfd_rejects_invalid_record_reference_forms() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
-            type Item { name: string; }
-            type Tables {
+            data Item { name: string; }
+            table Tables {
                 by_name: {string: Item};
                 by_element: {Element: Item};
             }
-            type Holder {
+            table Holder {
                 named: Item;
                 elemental: Item;
             }
@@ -752,11 +717,11 @@ fn cfd_rejects_invalid_record_reference_in_scalar_field() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
-            type Tables {
+            table Tables {
                 resistances: {Element: float};
                 labels: {string: string};
             }
-            type Holder {
+            table Holder {
                 fire_resistance: float;
                 label: string;
             }
@@ -783,7 +748,7 @@ fn cfd_rejects_invalid_record_reference_in_scalar_field() {
 fn cfd_rejects_check_blocks_as_data_syntax() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
         "#,
@@ -805,7 +770,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 
 #[test]
 fn direct_model_errors_keep_record_text_spans() -> TestResult {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let err = load_cfd_model(&schema, "first: Item { value: 1 }\n\nsecond: Item {\n}\n")
         .expect_err("second record is missing value");
     let CfdTextLoadError::DataModel {
@@ -840,63 +805,63 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
     let cases = [
         (
             CfdTextErrorCode::Syntax,
-            "type Item { name: string; }",
+            "table Item { name: string; }",
             r#"sword Item { name: "Sword" }"#,
             r#"sword: Item { name: "Sword" }"#,
         ),
         (
             CfdTextErrorCode::UnknownType,
-            "type Item { name: string; }",
+            "table Item { name: string; }",
             r#"sword: Missing { name: "Sword" }"#,
             r#"sword: Item { name: "Sword" }"#,
         ),
         (
             CfdTextErrorCode::AbstractObjectType,
-            "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+            "abstract table Reward {} table CoinReward : Reward { amount: int; }",
             r#"reward: Reward {}"#,
             r#"reward: CoinReward { amount: 1 }"#,
         ),
         (
             CfdTextErrorCode::ObjectTypeMismatch,
-            "abstract type Reward {} type CoinReward : Reward { amount: int; } type Item { name: string; }",
-            r#"Reward { bad: Item { name: "Sword" } }"#,
-            r#"Reward { coin: CoinReward { amount: 1 } }"#,
+            "abstract data Reward {} data CoinReward : Reward { amount: int; } data Item { name: string; } table Holder { value: Reward; }",
+            r#"holder: Holder { value: Item { name: "Sword" } }"#,
+            r#"holder: Holder { value: CoinReward { amount: 1 } }"#,
         ),
         (
             CfdTextErrorCode::UnknownField,
-            "type Item { name: string; }",
+            "table Item { name: string; }",
             r#"sword: Item { missing: "Sword" }"#,
             r#"sword: Item { name: "Sword" }"#,
         ),
         (
             CfdTextErrorCode::DuplicateField,
-            "type Item { name: string; }",
+            "table Item { name: string; }",
             r#"sword: Item { name: "Sword", name: "Blade" }"#,
             r#"sword: Item { name: "Sword" }"#,
         ),
         (
             CfdTextErrorCode::ReservedIdField,
-            "type Item { name: string; }",
+            "table Item { name: string; }",
             r#"sword: Item { id: "sword", name: "Sword" }"#,
             r#"sword: Item { name: "Sword" }"#,
         ),
         (
             CfdTextErrorCode::TypeMismatch,
-            "type Item { level: int; }",
+            "table Item { level: int; }",
             r#"sword: Item { level: "high" }"#,
             r#"sword: Item { level: 3 }"#,
         ),
         (
             CfdTextErrorCode::InvalidEnumVariant,
-            "enum Rarity { Common, Rare, } type Item { rarity: Rarity; }",
+            "enum Rarity { Common, Rare, } table Item { rarity: Rarity; }",
             r#"sword: Item { rarity: Missing }"#,
             r#"sword: Item { rarity: Rarity::Rare }"#,
         ),
         (
             CfdTextErrorCode::Syntax,
-            "type Item { name: string; } type Holder { item: &Item; }",
+            "table Item { name: string; } table Holder { item: Item; }",
             r#"sword: Item { name: "Sword" } holder: Holder { item: sword }"#,
-            r#"sword: Item { name: "Sword" } holder: Holder { item: &sword }"#,
+            r#"sword: Item { name: "Sword" } holder: Holder { item: &Item::sword }"#,
         ),
     ];
 
@@ -916,7 +881,7 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
 fn lowering_collects_independent_errors_across_fields_and_records() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 count: int;
                 enabled: bool;
             }
@@ -1010,21 +975,21 @@ fn showcase_files_load_together() -> TestResult {
 fn function_values_are_retained_and_signature_checked() -> TestResult {
     let schema = compile_schema(
         r#"
-type Rule {
-  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string>;
+table Rule {
+  apply: fn(value: int, callback: fn(int) -> int) -> int?;
   factories: [fn(int) -> int];
 }
 "#,
     );
     let source = r#"
 item: Rule {
-  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string> {
+  apply: fn(value: int, callback: fn(int) -> int) -> int? {
     Ok(callback(value))
   },
   factories: [fn(value: int) -> int { value + 1 }],
 }
 "#;
-    let model = load_cfd_model(&schema, source)?;
+    let model = load_cfd_model(&schema, &source)?;
     let record_id = model
         .record_by_type_key("Rule", "item")
         .expect("function record");
@@ -1039,9 +1004,9 @@ item: Rule {
     assert!(matches!(factories.as_slice(), [CfdValue::Function(_)]));
 
     for invalid in [
-        "item: Rule { apply: fn(value: float, callback: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+        "item: Rule { apply: fn(value: float, callback: fn(int) -> int) -> int? { Ok(1) }, factories: [] }",
         "item: Rule { apply: fn(value: int, callback: fn(int) -> int) -> int { 1 }, factories: [] }",
-        "item: Rule { apply: fn(value: int, value: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
+        "item: Rule { apply: fn(value: int, value: fn(int) -> int) -> int? { Ok(1) }, factories: [] }",
     ] {
         let error = load_cfd_model(&schema, invalid).expect_err("invalid function signature");
         assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
@@ -1053,15 +1018,15 @@ item: Rule {
 fn cft_formatted_string_and_function_defaults_materialize_as_cfd_values() -> TestResult {
     let schema = compile_schema(
         r#"
-type Rule {
+table Rule {
   name: string;
-  label: string = "rule {name}";
+  label: fstring = f"rule {self.name}";
   apply: fn(value: int) -> int = fn(value: int) -> int { value + 1 };
   effect: Effect = Damage { amount: 2 };
   permissions: Permission = Permission::Read | Permission::Write;
 }
-abstract type Effect { amount: int; }
-type Damage: Effect {}
+abstract data Effect { amount: int; }
+data Damage: Effect {}
 @flag enum Permission { Read = 1, Write = 2 }
 "#,
     );
@@ -1072,7 +1037,7 @@ type Damage: Effect {}
     let record = model.record(record_id).expect("defaulted function value");
     assert!(matches!(
         record.field("label"),
-        Some(CfdValue::FormattedString(value)) if value.rendered == "rule primary"
+        Some(CfdValue::FormattedString(value)) if value.source == r#"f"rule {self.name}""#
     ));
     assert!(matches!(
         record.field("apply"),

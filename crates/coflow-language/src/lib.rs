@@ -1,9 +1,5 @@
-//! Unified CFT/CFD language implementation.
-//!
-//! CFT schema compilation and CFD syntax parsing intentionally remain separate
-//! modules, but share one crate so spans, structural limits and diagnostics do
-//! not cross a crate boundary. CFD parsing is schema-free and can be used by
-//! editor hosts before a schema is available.
+//! CFT/CFD 共享词法、语法树、源码位置与结构限制。
+//! 声明编译和语义契约由 coflow-core 持有，CFD 语法解析不依赖契约。
 
 #![cfg_attr(
     not(test),
@@ -27,17 +23,15 @@
 pub mod diagnostics;
 pub mod lexical;
 mod module;
-mod schema;
 mod syntax;
 
 pub mod cfd;
 pub mod limits;
 pub mod source;
 
-/// CFT syntax, modules, schema compilation, and semantic declarations.
+/// CFT syntax and source modules.
 pub mod cft {
     pub use crate::module::*;
-    pub use crate::schema::*;
 
     /// Produces the lossless token stream consumed by source tooling.
     #[must_use]
@@ -51,13 +45,5 @@ pub mod cft {
 }
 
 // crate 内部仍使用短名称；对外 API 只通过职责命名空间发布。
-#[allow(clippy::wildcard_imports)]
-pub(crate) use diagnostics::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use lexical::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use module::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use schema::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use source::*;

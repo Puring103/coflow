@@ -1,8 +1,6 @@
 use super::super::CfdSyntaxDiagnostic;
 use super::Parser;
-use crate::lexical::{
-    decode_simple_escape, scan_number_literal, scan_string_literal, scan_trivia, StringLiteralError,
-};
+use crate::lexical::{scan_number_literal, scan_string_literal, scan_trivia, StringLiteralError};
 use crate::Span;
 
 pub(super) struct Token {
@@ -24,18 +22,8 @@ impl Parser<'_> {
         self.parse_name_token(label)
     }
 
-    pub(super) fn parse_name(&mut self, label: &str) -> Result<String, CfdSyntaxDiagnostic> {
-        self.parse_name_token(label).map(|t| t.text)
-    }
-
     pub(super) fn parse_type_name(&mut self, label: &str) -> Result<String, CfdSyntaxDiagnostic> {
         let token = self.parse_name_token(label)?;
-        if token.text.contains("::") {
-            return Err(CfdSyntaxDiagnostic {
-                message: format!("{label} must be a single identifier"),
-                span: token.span,
-            });
-        }
         Ok(token.text)
     }
 
@@ -146,29 +134,12 @@ impl Parser<'_> {
             });
         }
 
-        let mut out = String::new();
-        let mut offset = start + 1;
-        let content_end = scan.end - 1;
-        while offset < content_end {
-            let Some(ch) = self.source[offset..].chars().next() else {
-                break;
-            };
-            if ch == '\\' {
-                offset += 1;
-                let Some(escaped) = self.source[offset..].chars().next() else {
-                    break;
-                };
-                let Some(decoded) = decode_simple_escape(escaped) else {
-                    break;
-                };
-                out.push(decoded);
-                offset += escaped.len_utf8();
-            } else {
-                out.push(ch);
-                offset += ch.len_utf8();
+        crate::lexical::decode_string(&self.source[start..self.pos]).map_err(|error| {
+            CfdSyntaxDiagnostic {
+                message: error.message,
+                span: Span::new(start, self.pos),
             }
-        }
-        Ok(out)
+        })
     }
 
     pub(super) fn skip_ws_and_comments(&mut self) {

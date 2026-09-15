@@ -2,10 +2,13 @@
 
 mod trivia;
 
+pub use trivia::{
+    decode_string, parse_float_literal, scan_template, validate_formatted_string_literal,
+    validate_number_literal, LiteralError,
+};
 pub(crate) use trivia::{
-    decode_simple_escape, scan_balanced_delimiter, scan_number_literal, scan_string_literal,
-    scan_trivia, validate_formatted_string_literal, validate_number_literal, DelimiterNesting,
-    NumberLiteralError, StringLiteralError,
+    scan_balanced_delimiter, scan_number_literal, scan_string_literal, scan_trivia,
+    DelimiterNesting, NumberLiteralError, StringLiteralError,
 };
 pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
 
@@ -77,62 +80,41 @@ fn identifier_issue(name: &str) -> Option<IdentifierIssue> {
 pub fn is_cft_reserved_identifier(name: &str) -> bool {
     matches!(
         name,
-        "_" | "id"
-            | "Id"
-            | "ID"
-            | "const"
+        "type"
+            | "table"
+            | "singleton"
+            | "data"
             | "enum"
-            | "type"
             | "abstract"
             | "sealed"
+            | "const"
             | "check"
-            | "when"
-            | "all"
-            | "any"
-            | "none"
+            | "namespace"
+            | "use"
+            | "fn"
+            | "var"
+            | "return"
+            | "if"
+            | "else"
+            | "for"
+            | "while"
+            | "break"
+            | "continue"
             | "in"
             | "is"
             | "true"
             | "false"
-            | "null"
+            | "None"
+            | "Some"
+            | "inf"
             | "int"
             | "float"
             | "bool"
             | "string"
-            | "len"
-            | "contains"
-            | "isUnique"
-            | "min"
-            | "max"
-            | "sum"
-            | "keys"
-            | "values"
-            | "matches"
-            | "if"
-            | "else"
-            | "match"
-            | "case"
-            | "for"
-            | "while"
-            | "let"
-            | "module"
-            | "import"
-            | "export"
-            | "from"
-            | "fn"
-            | "var"
-            | "return"
-            | "break"
-            | "continue"
-            | "Host"
-            | "None"
-            | "Some"
-            | "Ok"
-            | "Err"
-            | "Option"
-            | "Result"
-            | "alert"
-            | "records"
+            | "fstring"
+            | "self"
+            | "id"
+            | "_"
     )
 }
 
@@ -153,12 +135,31 @@ mod tests {
     #[test]
     fn rejects_all_target_language_reserved_identifiers() {
         for name in [
-            "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
-            "None", "Some", "Ok", "Err", "Option", "Result", "Host", "alert", "records",
+            "fn",
+            "var",
+            "return",
+            "if",
+            "else",
+            "for",
+            "while",
+            "break",
+            "continue",
+            "None",
+            "Some",
+            "namespace",
+            "use",
+            "self",
+            "id",
+            "inf",
+            "table",
+            "data",
+            "singleton",
         ] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }
-        for name in ["namespace", "use", "as"] {
+        for name in [
+            "as", "match", "Ok", "Err", "Option", "Result", "Host", "alert", "records",
+        ] {
             assert!(
                 is_cft_identifier(name),
                 "`{name}` is an ordinary identifier"

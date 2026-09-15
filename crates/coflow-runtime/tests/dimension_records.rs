@@ -10,10 +10,10 @@ use std::fs;
 fn orphan_dimension_records_are_ignored_and_cleaned_on_build() {
     for singleton in [false, true] {
         let dir = tempfile::tempdir().expect("project");
-        let annotation = if singleton { "@singleton " } else { "" };
+        let declaration = if singleton { "singleton" } else { "table" };
         fs::write(
             dir.path().join("schema.cft"),
-            format!("{annotation}type Item {{ @localized title: string; }}\n"),
+            format!("{declaration} Item {{ @localized title: string; }}\n"),
         )
         .expect("schema");
         fs::write(
@@ -27,14 +27,14 @@ fn orphan_dimension_records_are_ignored_and_cleaned_on_build() {
         .expect("base");
         fs::create_dir_all(dir.path().join("dimensions/language")).expect("dimension directory");
         let path = dir.path().join(if singleton {
-            "dimensions/language/Item.cfd"
+            "dimensions/language/Item_title.cfd"
         } else {
             "dimensions/language/Item_title.cfd"
         });
-        let key = if singleton { "title" } else { "removed" };
-        let mut source = format!("{key}: __coflow_language_Item_title {{ zh: \"旧文本\" }}\n");
+        let key = if singleton { "Item" } else { "removed" };
+        let mut source = format!("{key}: Item_title_language {{ zh: \"旧文本\" }}\n");
         if !singleton {
-            source.push_str("kept: __coflow_language_Item_title { zh: \"保留翻译\" }\n");
+            source.push_str("kept: Item_title_language { zh: \"保留翻译\" }\n");
         }
         fs::write(&path, &source).expect("orphan dimension");
         fs::write(dir.path().join("coflow.yaml"), "schema: schema.cft\ndata: base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated\n").expect("config");
@@ -71,12 +71,12 @@ fn generated_singleton_records_keep_field_types_through_mutation_and_reload() {
     let dir = tempfile::tempdir().expect("project");
     fs::write(
         dir.path().join("schema.cft"),
-        "@singleton type UiText { @localized title: string; @localized description: string; }",
+        "singleton UiText { @localized title: string; @localized description: string; }",
     )
     .expect("schema");
     fs::write(
         dir.path().join("base.cfd"),
-        "ui: UiText { title: \"Title\", description: \"Description\" }",
+        "UiText: UiText { title: \"Title\", description: \"Description\" }",
     )
     .expect("base");
     fs::write(dir.path().join("coflow.yaml"),
@@ -88,11 +88,16 @@ fn generated_singleton_records_keep_field_types_through_mutation_and_reload() {
     let mut session = runtime
         .open_write_session(Project::open(Some(dir.path())).expect("project"))
         .expect("session");
-    let path = dir.path().join("dimensions/language/UiText.cfd");
     for field in ["title", "description"] {
+        let path = dir
+            .path()
+            .join(format!("dimensions/language/UiText_{field}.cfd"));
         let body = fs::read_to_string(&path).expect("generated file");
         assert!(
-            body.contains(&format!("{field}: __coflow_language_UiText_{field}")),
+            body.contains(&format!(
+                "UiText: {}",
+                coflow_core::schema::dimension_record_type("language", "UiText", field)
+            )),
             "{body}"
         );
         let report = coflow_runtime::commands::apply_project_mutation(
@@ -102,7 +107,7 @@ fn generated_singleton_records_keep_field_types_through_mutation_and_reload() {
                 ops: vec![MutationOp::SetDimensionValue {
                     coordinate: DimensionValueCoordinate {
                         actual_type: "UiText".try_into().expect("type"),
-                        record_key: "ui".try_into().expect("key"),
+                        record_key: "UiText".try_into().expect("key"),
                         field: field.try_into().expect("field"),
                         dimension: "language".try_into().expect("dimension"),
                         variant: "zh".try_into().expect("variant"),
@@ -118,10 +123,16 @@ fn generated_singleton_records_keep_field_types_through_mutation_and_reload() {
         .expect("mutation");
         assert!(report.write_ok && report.check_ok, "{report:?}");
     }
-    let body = fs::read_to_string(&path).expect("updated file");
     for field in ["title", "description"] {
+        let path = dir
+            .path()
+            .join(format!("dimensions/language/UiText_{field}.cfd"));
+        let body = fs::read_to_string(&path).expect("updated file");
         assert!(
-            body.contains(&format!("{field}: __coflow_language_UiText_{field}")),
+            body.contains(&format!(
+                "UiText: {}",
+                coflow_core::schema::dimension_record_type("language", "UiText", field)
+            )),
             "{body}"
         );
         assert!(
@@ -141,13 +152,13 @@ fn old_and_wrong_field_dimension_types_are_rejected() {
     for record_type in [
         "Item",
         "Item_titleVariants",
-        "__coflow_language_Item_description",
-        "__coflow_platform_Item_title",
+        "Item_description_language",
+        "Item_title_platform",
     ] {
         let dir = tempfile::tempdir().expect("project");
         fs::write(
             dir.path().join("schema.cft"),
-            "type Item { @localized title: string; }",
+            "table Item { @localized title: string; }",
         )
         .expect("schema");
         fs::write(
@@ -185,9 +196,10 @@ fn old_and_wrong_field_dimension_types_are_rejected() {
             Err(diagnostics) => diagnostics,
         };
         assert!(
-            diagnostics.diagnostics.iter().any(|diagnostic| diagnostic
-                .message
-                .contains("expected `__coflow_language_Item_title`")),
+            diagnostics
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "DIM-SOURCE-006"),
             "build accepted {record_type}: {diagnostics:?}"
         );
         assert_eq!(
@@ -202,7 +214,7 @@ fn old_and_wrong_field_dimension_types_are_rejected() {
 fn inherited_dimension_records_keep_declaring_type_when_renamed() {
     let dir = tempfile::tempdir().expect("project");
     fs::write(dir.path().join("schema.cft"),
-        "type Base { @localized name: string; @dimension(\"platform\") hint: string; } type Child : Base {}")
+        "table Base { @localized name: string; @dimension(\"platform\") hint: string; } table Child : Base {}")
         .expect("schema");
     fs::write(
         dir.path().join("base.cfd"),
@@ -239,7 +251,10 @@ fn inherited_dimension_records_keep_declaring_type_when_renamed() {
         )
         .expect("dimension file");
         assert!(
-            body.contains(&format!("renamed: __coflow_{dimension}_Base_{field}")),
+            body.contains(&format!(
+                "renamed: {}",
+                coflow_core::schema::dimension_record_type(dimension, "Base", field)
+            )),
             "{body}"
         );
         assert!(!body.contains("one:"), "{body}");

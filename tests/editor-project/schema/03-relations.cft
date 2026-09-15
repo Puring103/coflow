@@ -1,23 +1,23 @@
-abstract type Effect {
+abstract data Effect {
   label: string;
-  duration: Option<float> = None;
+  duration: float? = None;
 }
 
-sealed type DamageEffect : Effect {
+sealed data DamageEffect : Effect {
   element: Element;
   amount: int;
 }
 
-sealed type HealEffect : Effect {
+sealed data HealEffect : Effect {
   amount: int;
 }
 
-sealed type CompositeEffect : Effect {
+sealed data CompositeEffect : Effect {
   effects: [Effect];
 }
 
 @idAsEnum(EntityId)
-type Entity {
+table Entity {
   @label("显示名称")
   name: string;
 
@@ -30,8 +30,8 @@ type Entity {
 
   primaryEffect: Effect;
   alternateEffects: [Effect] = [];
-  parent: Option<&Entity> = None;
-  related: [&Entity] = [];
+  parent: Entity? = None;
+  related: [Entity] = [];
 
   check {
     level > 0: "实体 {id} 的等级必须大于 0";
@@ -43,22 +43,22 @@ type Entity {
   }
 }
 
-type RewardEntry {
-  reward: &Entity;
+data RewardEntry {
+  reward: Entity;
   count: int;
 }
 
-type QuestStep {
+data QuestStep {
   title: string;
-  targets: [&Entity];
+  targets: [Entity];
   rewards: [RewardEntry];
-  next: Option<&Quest> = None;
+  next: Quest? = None;
 }
 
-type Quest {
+table Quest {
   displayId: Identifier;
   title: string;
-  prerequisite: Option<&Quest> = None;
+  prerequisite: Quest? = None;
   steps: [QuestStep];
   rewardGroups: {string: [RewardEntry]} = {};
 

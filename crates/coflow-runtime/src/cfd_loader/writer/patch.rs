@@ -1,8 +1,8 @@
 use crate::api::{DiagnosticSet, WriteCellRequest, WriteFieldPathSegment};
 use crate::data_model::CfdValue;
+use coflow_core::schema::CftSchema;
 use coflow_language::cfd::ast::CfdRecord as AstRecord;
 use coflow_language::cfd::CfdAst;
-use coflow_language::cft::CftSchema;
 use coflow_language::source::Span;
 use std::collections::BTreeMap;
 
@@ -138,9 +138,7 @@ fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue
 fn value_starts_object(value: &CfdValue) -> bool {
     match value {
         CfdValue::Object(_) => true,
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            value_starts_object(inner)
-        }
+        CfdValue::OptionSome(inner) => value_starts_object(inner),
         _ => false,
     }
 }
@@ -364,34 +362,12 @@ pub(super) fn reorder_record_spans(
                             "record span is outside the source document",
                         ))
                     })?;
-                let fragment = if record_container(slot) == record_container(moved) {
-                    fragment.to_string()
-                } else {
-                    explicit_record_fragment(fragment, moved)?
-                };
+                let fragment = fragment.to_string();
                 Ok((slot.span, fragment))
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
     replace_spans(source, &replacements)
-}
-
-fn record_container(record: &AstRecord) -> Option<usize> {
-    record.group_type.as_ref().map(|(_, span)| span.start)
-}
-
-fn explicit_record_fragment(fragment: &str, record: &AstRecord) -> Result<String, DiagnosticSet> {
-    if record.type_span.start >= record.span.start {
-        return Ok(fragment.to_string());
-    }
-    let insert_at = record.key_span.end.saturating_sub(record.span.start);
-    let Some((prefix, suffix)) = fragment.get(..insert_at).zip(fragment.get(insert_at..)) else {
-        return Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            "record key span is outside the record fragment",
-        )));
-    };
-    Ok(format!("{prefix}: {}{suffix}", record.type_name))
 }
 
 fn find_closing_brace(source: &str, near: usize) -> Result<usize, DiagnosticSet> {

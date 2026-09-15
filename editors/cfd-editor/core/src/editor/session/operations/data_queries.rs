@@ -2,11 +2,11 @@
 //!
 //! 全部为读锁下的纯派生逻辑；引用目标带会话级缓存。
 
+use super::super::errors::api_diagnostics_to_editor_error;
 use super::super::{
     graph, mutation_apply::create_record_draft_to_wire, row_build::file_records_for_session,
     SessionStore,
 };
-use super::super::errors::api_diagnostics_to_editor_error;
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::settings::read_project_settings;
 use crate::editor::types::{
@@ -232,9 +232,9 @@ impl SessionStore {
                                         Some(value.clone())
                                     }
                                     Some(CfdValue::FormattedString(value))
-                                        if !value.rendered.is_empty() =>
+                                        if !value.source.is_empty() =>
                                     {
-                                        Some(value.rendered.clone())
+                                        Some(value.source.clone())
                                     }
                                     _ => None,
                                 })
@@ -257,5 +257,4 @@ impl SessionStore {
         let session = session_lock.read();
         Ok(graph::build_graph(&session, query))
     }
-
 }

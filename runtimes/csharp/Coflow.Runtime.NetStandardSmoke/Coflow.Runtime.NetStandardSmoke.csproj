@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs" Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
     <ProjectReference Include="../Coflow.Runtime/Coflow.Runtime.csproj"
                       SetTargetFramework="TargetFramework=netstandard2.1" />
   </ItemGroup>

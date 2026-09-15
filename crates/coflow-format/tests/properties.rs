@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used)]
 
+use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 use coflow_format::{format_cfd, format_cft};
 use coflow_language::cfd::parse_cfd;
-use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 use coflow_language::lexical::{tokenize_lossless, LosslessTokenKind};
 
 fn semantic_tokens(source: &str) -> Vec<&str> {
@@ -25,8 +25,8 @@ fn comments(source: &str) -> Vec<&str> {
 fn formatting_preserves_non_trivia_tokens_and_comments() {
     for (source, formatted) in [
         (
-            "type 变量 { value: Result<Option<int>, string>; # CFT 注释\n}",
-            format_cft("type 变量 { value: Result<Option<int>, string>; # CFT 注释\n}"),
+            "type 变量 { value: Result<int?, string>; # CFT 注释\n}",
+            format_cft("type 变量 { value: Result<int?, string>; # CFT 注释\n}"),
         ),
         (
             "记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }",
@@ -41,7 +41,7 @@ fn formatting_preserves_non_trivia_tokens_and_comments() {
 #[test]
 fn malformed_sources_format_stably() {
     for source in [
-        "type Item { value: Result<\nint,\n",
+        "table Item { value: Result<\nint,\n",
         "check Rules { all item in records(Item) { item.value >",
         "item: Item { values: [Other { value: \"unterminated",
         "item: Item { callback: fn(value: int) -> int { if value > 0 { value }",
@@ -55,14 +55,14 @@ fn malformed_sources_format_stably() {
 
 #[test]
 fn valid_sources_parse_before_and_after_formatting() {
-    let cft = "type Item { name: string; items: [int]; count: int; check { count > 0; } }";
+    let cft = "table Item { name: string; items: [int]; count: int; check { count > 0; } }";
     let before_modules = parse_modules([CftFile::from_source(ModuleId::from("main"), cft)]);
     let before = build_schema(&before_modules, &CftDimensionInputs::default()).expect("schema");
     let formatted_cft = format_cft(cft);
     let after_modules =
         parse_modules([CftFile::from_source(ModuleId::from("main"), formatted_cft)]);
     let after = build_schema(&after_modules, &CftDimensionInputs::default()).expect("schema");
-    let shape = |schema: &coflow_language::cft::CftSchema| {
+    let shape = |schema: &coflow_core::schema::CftSchema| {
         schema
             .all_types()
             .map(|ty| {

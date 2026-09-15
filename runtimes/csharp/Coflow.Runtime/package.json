@@ -1,0 +1,7 @@
+{
+  "name": "com.coflow.runtime",
+  "version": "0.11.0",
+  "displayName": "Coflow Runtime",
+  "description": "Coflow Rust runtime bindings for Unity and IL2CPP.",
+  "unity": "2022.1"
+}

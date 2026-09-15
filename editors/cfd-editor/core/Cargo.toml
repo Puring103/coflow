@@ -26,3 +26,4 @@ ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]
 coflow-language = { path = "../../../crates/coflow-language" }
+coflow-core = { path = "../../../crates/coflow-core" }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::data_model::RecordCoordinate;
 use crate::project::Project;
-use coflow_language::cft::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
+use coflow_core::schema::{BucketName, CftSchema, DimensionName, FieldName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DimensionField {
@@ -16,7 +16,7 @@ pub struct DimensionField {
 
 impl DimensionField {
     pub(crate) fn record_type(&self) -> String {
-        coflow_language::cft::dimension_record_type(
+        coflow_core::schema::dimension_record_type(
             self.dimension.as_str(),
             self.source_type.as_str(),
             self.source_field.as_str(),
@@ -24,25 +24,20 @@ impl DimensionField {
     }
 
     pub(crate) fn source_file_name(&self) -> String {
-        if self.is_singleton {
-            format!("{}.cfd", self.source_type)
-        } else {
-            format!("{}_{}.cfd", self.bucket, self.source_field)
-        }
+        format!(
+            "{}_{}.cfd",
+            self.bucket.to_string().replace("::", "_"),
+            self.source_field
+        )
     }
 
     pub(crate) fn matches_source_path(&self, path: &Path) -> bool {
         let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
             return false;
         };
-        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            return false;
-        };
-        if self.is_singleton {
-            extension == "cfd" && stem == self.source_type.as_str()
-        } else {
-            extension == "cfd" && stem == format!("{}_{}", self.bucket, self.source_field)
-        }
+        extension == "cfd"
+            && path.file_name().and_then(|name| name.to_str())
+                == Some(self.source_file_name().as_str())
     }
 }
 
@@ -146,7 +141,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use crate::data_model::RecordCoordinate;
-    use coflow_language::cft::{BucketName, DimensionName, FieldName, TypeName};
+    use coflow_core::schema::{BucketName, DimensionName, FieldName, TypeName};
 
     use super::{DimensionField, DimensionRuntimePlan};
 
@@ -167,20 +162,20 @@ mod tests {
             is_singleton: true,
             ..regular
         };
-        assert!(singleton.matches_source_path(std::path::Path::new("Item.cfd")));
-        assert!(!singleton.matches_source_path(std::path::Path::new("Item_name.cfd")));
+        assert!(!singleton.matches_source_path(std::path::Path::new("Item.cfd")));
+        assert!(singleton.matches_source_path(std::path::Path::new("Item_name.cfd")));
     }
 
     #[test]
     fn changed_record_types_select_only_assignable_dimension_fields() {
-        let modules = coflow_language::cft::parse_modules([coflow_language::cft::CftFile::new(
-            coflow_language::cft::ModuleId::from("test.cft"),
+        let modules = coflow_core::schema::parse_modules([coflow_core::schema::CftFile::new(
+            coflow_core::schema::ModuleId::from("test.cft"),
             "test.cft".into(),
-            "type Base { value: int; } type Child: Base {} type Other { value: int; }",
+            "table Base { value: int; } table Child: Base {} table Other { value: int; }",
         )]);
-        let schema = coflow_language::cft::build_schema(
+        let schema = coflow_core::schema::build_schema(
             &modules,
-            &coflow_language::cft::CftDimensionInputs::default(),
+            &coflow_core::schema::CftDimensionInputs::default(),
         )
         .expect("schema");
         let dimension = DimensionName::new("language").expect("dimension");

@@ -7,13 +7,13 @@ use super::super::semantic_tokens::{
 };
 use super::common::*;
 use super::*;
-use coflow_language::cft::syntax::ast::Item;
-use coflow_language::cft::CftValueType;
+use coflow_core::schema::syntax::ast::Item;
+use coflow_core::schema::CftValueType;
 
 #[test]
 fn hover_and_definition_ignore_comment_and_string_words() {
-    let source = "type Monster { key: string; }\n\
-type Item {\n\
+    let source = "data Monster { key: string; }\n\
+table Item {\n\
   note: string = \"Monster\";\n\
   # Monster\n\
   target: Monster;\n\
@@ -42,9 +42,9 @@ type Item {\n\
 #[test]
 fn hover_and_definition_cover_symbol_resolution_boundaries() {
     let source = "const LIMIT: int = 5;\n\
-type Target { key: string; value: int; }\n\
+data Target { key: string; value: int; }\n\
 enum Kind { One = 1, Two = 2, }\n\
-type Item {\n\
+table Item {\n\
   kind: Kind = Kind::One;\n\
   target: Target;\n\
   count: int = LIMIT;\n\
@@ -59,7 +59,7 @@ type Item {\n\
     let document = first_document(&build);
 
     let hover_cases = [
-        (position_inside(source, "type Target", "type", 1), "Define"),
+        (position_inside(source, "data Target", "data", 1), "Declare"),
         (
             position_inside(source, "Kind::Two", "Two", 1),
             "enum variant",
@@ -116,7 +116,7 @@ type Item {\n\
 #[test]
 fn completion_scope_uses_boundary_offsets_and_missing_ast_as_top_level() {
     let source = "enum Kind { One = 1, }\n\
-type Item {\n\
+table Item {\n\
   key: string;\n\
   check { key != \"\"; }\n\
 }\n";
@@ -141,7 +141,7 @@ type Item {\n\
         .expect("type");
     let check = type_def.check.as_ref().expect("check");
     let (_invalid_cleanup, invalid_build) =
-        test_lsp_build("lsp-completion-scope-invalid", "type Broken { $");
+        test_lsp_build("lsp-completion-scope-invalid", "table Broken { $");
     let no_ast_document = first_document(&invalid_build);
 
     assert_eq!(
@@ -179,7 +179,7 @@ fn incomplete_definitions_keep_contextual_completion_scopes() {
     for (name, source, expected_scope, expected_label) in [
         (
             "type",
-            "type Broken {\n  ",
+            "table Broken {\n  ",
             CompletionScope::TypeBody,
             "field",
         ),
@@ -193,13 +193,13 @@ fn incomplete_definitions_keep_contextual_completion_scopes() {
             "check",
             "check Broken {\n  ",
             CompletionScope::CheckBlock,
-            "when",
+            "if",
         ),
         (
             "type-check",
-            "type Broken {\n  check {\n    ",
+            "table Broken {\n  check {\n    ",
             CompletionScope::CheckBlock,
-            "all",
+            "for",
         ),
     ] {
         let (_cleanup, build) = test_lsp_build(&format!("lsp-incomplete-{name}"), source);
@@ -231,14 +231,14 @@ fn named_top_level_check_uses_check_completion_scope() {
     );
     let labels = completion_labels(top_level_completion_items(""));
     assert!(labels.iter().any(|label| label == "check"));
-    assert!(!labels.iter().any(|label| label == "namespace"));
-    assert!(!labels.iter().any(|label| label == "use"));
+    assert!(labels.iter().any(|label| label == "namespace"));
+    assert!(labels.iter().any(|label| label == "use"));
 }
 
 #[test]
 fn records_query_completes_types_and_resolves_hover_and_definition() {
-    let source = "type Item { value: int; check { value > 0; } }\n\
-type Reward { amount: int; }\n\
+    let source = "table Item { value: int; check { value > 0; } }\n\
+table Reward { amount: int; }\n\
 check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
     let (_cleanup, build) = test_lsp_build("lsp-records-query", source);
     let document = first_document(&build);
@@ -280,8 +280,8 @@ check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
 
 #[test]
 fn completion_items_suppress_trivia_and_restrict_predicate_context() {
-    let source = "type Target { key: string; }\n\
-type Item {\n\
+    let source = "data Target { key: string; }\n\
+table Item {\n\
   key: string;\n\
   target: Target;\n\
   note: string = \"tar\";\n\
@@ -313,18 +313,18 @@ type Item {\n\
 fn completion_items_cover_context_filters_and_default_boundaries() {
     let source = "const LIMIT: int = 5;\n\
 const NAME: string = \"boss\";\n\
-const OUTCOME: Result<int, string> = Ok(1);\n\
+const OUTCOME: int? = Some(1);\n\
 enum Kind { One = 1, Two = 2, }\n\
-type Target { key: string; value: int; }\n\
-type Item {\n\
+data Target { key: string; value: int; }\n\
+table Item {\n\
   enabled: bool = true;\n\
   kind: Kind = Kind::One;\n\
-  maybe: Option<int> = None;\n\
+  maybe: int? = None;\n\
   xs: [int] = [];\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
   other: Target;\n\
-  check { all value, index in xs { value > LIMIT && index >= 0; } }\n\
+  check { for value in xs { value > LIMIT; } }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
     let document = first_document(&build);
@@ -333,7 +333,7 @@ type Item {\n\
     assert!(top_labels.contains(&"@struct".to_string()));
     assert!(top_labels.contains(&"@idAsEnum".to_string()));
     assert!(top_labels.contains(&"@Host".to_string()));
-    assert!(top_labels.contains(&"@singleton".to_string()));
+    assert!(!top_labels.contains(&"@singleton".to_string()));
     assert!(top_labels.contains(&"@label".to_string()));
     assert!(!top_labels.contains(&"@id".to_string()));
     assert!(!top_labels.contains(&"@ref".to_string()));
@@ -359,7 +359,7 @@ type Item {\n\
 
     assert_eq!(
         completion_labels(top_level_completion_items("abstract ")),
-        vec!["type".to_string()]
+        vec!["table".to_string(), "data".to_string()]
     );
     let top_level_items = top_level_completion_items("");
     let type_item = top_level_items
@@ -367,10 +367,7 @@ type Item {\n\
         .find(|item| item["label"] == "type")
         .expect("type completion");
     assert_eq!(type_item["insertTextFormat"], 2);
-    assert_eq!(
-        type_item["insertText"],
-        "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"
-    );
+    assert_eq!(type_item["insertText"], "type ${1:Name} = ${2:int};");
 
     let value_type_position = position_from_byte(
         source,
@@ -415,7 +412,7 @@ type Item {\n\
 
     let option_position = position_from_byte(
         source,
-        source.find("maybe: Option<int> = None").expect("Option") + "maybe: Option<int> = ".len(),
+        source.find("maybe: int? = None").expect("Option") + "maybe: int? = ".len(),
     );
     let option_labels = completion_labels(completion_items(&build, document, &option_position));
     assert!(option_labels.contains(&"None".to_string()));
@@ -426,13 +423,13 @@ type Item {\n\
     let result_position = position_from_byte(
         source,
         source
-            .find("const OUTCOME: Result<int, string> = Ok(1)")
-            .expect("Result")
-            + "const OUTCOME: Result<int, string> = ".len(),
+            .find("const OUTCOME: int? = Some(1)")
+            .expect("optional constant")
+            + "const OUTCOME: int? = ".len(),
     );
     let result_labels = completion_labels(completion_items(&build, document, &result_position));
-    assert!(result_labels.contains(&"Ok".to_string()));
-    assert!(result_labels.contains(&"Err".to_string()));
+    assert!(result_labels.contains(&"Some".to_string()));
+    assert!(result_labels.contains(&"None".to_string()));
     assert!(!result_labels.contains(&"LIMIT".to_string()));
 
     let array_position = position_from_byte(
@@ -460,8 +457,8 @@ type Item {\n\
         check_offset,
     ));
     assert!(check_labels.contains(&"id".to_string()));
-    assert!(check_labels.contains(&"value".to_string()));
-    assert!(check_labels.contains(&"index".to_string()));
+    // 程序体未编译，补全只使用已建立的声明信息。
+    assert!(!check_labels.contains(&"value".to_string()));
     assert!(check_labels.contains(&"target".to_string()));
     assert!(check_labels.contains(&"LIMIT".to_string()));
     assert!(!check_labels.contains(&"len".to_string()));
@@ -514,10 +511,7 @@ type Item {\n\
     };
     assert_eq!(insert_text("len"), Some("len()"));
     assert_eq!(insert_text("contains"), Some("contains(${1:value})"));
-    assert_eq!(
-        insert_text("approxEqual"),
-        Some("approxEqual(${1:value}, ${2:value})")
-    );
+    assert_eq!(insert_text("approxEqual"), None);
 
     let filtered_method_labels = completion_labels(function_completion_items_for_type(
         &CftValueType::Array(Box::new(CftValueType::Int)),
@@ -555,9 +549,9 @@ type Item {\n\
 fn completion_covers_const_alias_inheritance_and_annotation_arguments() {
     let source = "enum Kind {}\n\
 @idAsEnum(Kind)\n\
-type Entity { key: string; }\n\
-sealed type Closed { value: int; }\n\
-type Child : Entity { value: int; }\n\
+table Entity { key: string; }\n\
+sealed data Closed { value: int; }\n\
+table Child : Entity { value: int; }\n\
 type Alias = Entity;\n\
 const LIMIT: int = 1;\n";
     let (_cleanup, build) = test_lsp_build("lsp-cft-declaration-completion", source);
@@ -581,7 +575,8 @@ const LIMIT: int = 1;\n";
     assert!(alias_types.contains(&"string".to_string()));
     assert!(alias_types.contains(&"Entity".to_string()));
 
-    let parent_offset = source.find("type Child : Entity").expect("parent") + "type Child : ".len();
+    let parent_offset =
+        source.find("table Child : Entity").expect("parent") + "table Child : ".len();
     let parents = completion_labels(completion_items(
         &build,
         document,
@@ -602,8 +597,8 @@ const LIMIT: int = 1;\n";
 
 #[test]
 fn scope_type_helpers_return_none_for_invalid_or_non_object_chains() {
-    let source = "type Target { key: string; value: int; }\n\
-type Holder {\n\
+    let source = "data Target { key: string; value: int; }\n\
+table Holder {\n\
   key: string;\n\
   target: Target;\n\
   count: int;\n\
@@ -665,7 +660,7 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
 
 #[test]
 fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
-    let source = "type Rule {\n\
+    let source = "table Rule {\n\
   apply: fn(value: int) -> int = fn(input: int) -> int {\n\
     var total = input + 1;\n\
     total\n\
@@ -727,7 +722,7 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
 
 #[test]
 fn formatter_returns_independent_local_text_edits() {
-    let source = "type Item {\nname:string;\n  unchanged: string;\nvalue:int;\n}\n";
+    let source = "table Item {\nname:string;\n  unchanged: string;\nvalue:int;\n}\n";
     let formatted = format_cft(source);
     let edits = formatting_edits(source, &formatted);
 

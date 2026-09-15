@@ -140,7 +140,7 @@ export function inferredCellType(cell: RecordRow['fields'][number] | undefined):
   if (value.kind === 'array') return 'array'
   if (value.kind === 'dict') return 'dict'
   if (value.kind === 'option_none') return 'None'
-  if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
+  if (value.kind === 'option_some') {
     return inferredCellType({ ...cell, value: value.value })
   }
   return value.kind

@@ -11,5 +11,5 @@ workspace = true
 
 [dependencies]
 regex = "1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 unicode-ident = "1"

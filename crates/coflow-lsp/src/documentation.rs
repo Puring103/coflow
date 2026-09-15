@@ -1,32 +1,31 @@
-use coflow_language::cft::syntax::ast::Annotation;
+use coflow_core::schema::syntax::ast::Annotation;
 
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),
     ("enum", "Define an enum."),
-    ("type", "Define a schema type."),
+    ("type", "Define a type alias."),
+    ("table", "Declare a record type."),
+    ("singleton", "Declare a singleton record."),
+    ("data", "Declare an inline data type."),
+    ("namespace", "Declare this file namespace."),
+    ("use", "Import a qualified declaration."),
     ("abstract", "Mark a type as non-instantiable."),
     ("sealed", "Prevent a type from being inherited."),
     ("check", "Start a validation block inside a type."),
-    ("when", "Run nested checks only when the condition is true."),
-    ("all", "Require every collection item to pass."),
-    ("any", "Require at least one collection item to pass."),
-    ("none", "Require no collection item to pass."),
-    ("in", "Bind a quantifier variable to a collection."),
+    ("if", "Evaluate a conditional branch."),
+    ("for", "Iterate over a collection."),
+    ("in", "Select the loop collection."),
     ("is", "Check the runtime object type."),
 ];
 
 pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
-    ("int", "64-bit integer."),
-    ("float", "64-bit floating point number."),
+    ("int", "32-bit integer."),
+    ("float", "32-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
     (
-        "Option",
-        "Optional value written as `None` or `Some(value)`.",
-    ),
-    (
-        "Result",
-        "Success or error value written as `Ok(value)` or `Err(error)`.",
+        "fstring",
+        "Dynamic text template originating from an f literal.",
     ),
     ("fn", "Function type written as `fn(parameters) -> result`."),
 ];
@@ -37,17 +36,15 @@ pub(crate) const LITERALS: &[(&str, &str)] =
 pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
     ("None", "Option without a value."),
     ("Some", "Construct an Option containing a value."),
-    ("Ok", "Construct a successful Result value."),
-    ("Err", "Construct a failed Result value."),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
     "records",
-    "`records(Type)` returns all top-level records assignable to the static object type, in stable type/key order. Available only in named top-level checks.",
+    "`records(Type)` returns all top-level records assignable to the static object type, in stable type/key order.",
 )];
 
 pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'static str)> {
-    coflow_language::cft::CftCheckBuiltin::ALL
+    coflow_core::schema::CftCheckBuiltin::ALL
         .into_iter()
         .map(|builtin| (builtin.name(), builtin.documentation()))
 }
@@ -57,7 +54,7 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         label: "@struct",
         insert_text: "@struct",
         detail: "type annotation",
-        documentation: "Generate a value type. The target must be a sealed type.",
+        documentation: "Generate a value type. The target must be sealed data without inheritance.",
     },
     AnnotationCompletion {
         label: "@flag",
@@ -70,12 +67,6 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
         documentation: "Fill an empty enum placeholder from this type's record keys.",
-    },
-    AnnotationCompletion {
-        label: "@singleton",
-        insert_text: "@singleton",
-        detail: "type annotation",
-        documentation: "Declare a type with one singleton record.",
     },
     AnnotationCompletion {
         label: "@Host",

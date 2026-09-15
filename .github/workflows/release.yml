@@ -102,7 +102,13 @@ jobs:
 
       - name: Build all C# runtime targets
         if: steps.gate.outputs.full == 'true'
-        run: dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+        shell: pwsh
+        run: |
+          cargo build -p coflow-ffi --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo run -- codegen tests/csharp-runtime-integration
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
 
       - name: Consume the netstandard2.1 C# runtime
         if: steps.gate.outputs.full == 'true'

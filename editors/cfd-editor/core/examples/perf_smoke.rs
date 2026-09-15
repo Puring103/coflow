@@ -211,13 +211,13 @@ codegen:
 
 const SCHEMA: &str = "\
 @struct
-sealed type Vec2 {
+sealed data Vec2 {
   x: float = 0.0;
   y: float = 0.0;
 }
 
 @struct
-sealed type Stats {
+sealed data Stats {
   health: int = 100;
   speed: float = 1.0;
   resistances: {string: float} = {};
@@ -229,33 +229,33 @@ enum Rarity {
   Epic,
 }
 
-type Entity {
+table Entity {
   name: string;
   level: int = 1;
   rarity: Rarity = Common;
   tags: [string] = [];
   position: Vec2 = Vec2 {};
   stats: Stats = Stats {};
-  related: [&Entity] = [];
-  parent: Option<&Entity> = None;
+  related: [Entity] = [];
+  parent: Entity? = None;
   notes: {string: string} = {};
   description: string;
   weight: float = 1.0;
   enabled: bool = true;
   bonus: Stats = Stats {};
-  optionalBonus: Option<Stats> = None;
+  optionalBonus: Stats? = None;
   history: [Stats] = [];
   lookup: {string: Stats} = {};
   matrix: [[int]] = [];
   rating: Rarity = Rare;
-  secondaryParent: Option<&Entity> = None;
+  secondaryParent: Entity? = None;
   flags: [string] = [];
 }
 
-type Item {
+table Item {
   name: string;
   value: int = 0;
-  owner: &Entity;
+  owner: Entity;
   tags: [string] = [];
   stats: Stats = Stats {};
 }

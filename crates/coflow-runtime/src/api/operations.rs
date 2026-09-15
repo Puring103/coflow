@@ -1,11 +1,10 @@
 use crate::data_model::{CfdValue, DimensionValueDraft};
 use crate::CfdSource;
-use coflow_language::cft::{
-    CftDimension, CftField, CftSchema, CftType, FieldName, RecordKey, VariantName,
-};
+use coflow_core::schema::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
 use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct DimensionSourceRequest<'a> {
+    pub schema: &'a CftSchema,
     pub source: &'a CfdSource,
     pub entries: &'a [DimensionSourceEntry],
     pub variants: &'a [String],
@@ -23,8 +22,6 @@ pub struct DimensionSourceSchema<'a> {
 pub struct DimensionSourceLoadRequest<'a> {
     pub source: &'a CfdSource,
     pub schema: DimensionSourceSchema<'a>,
-    pub singleton_source_fields: &'a [FieldName],
-    pub validate_singleton_shape: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

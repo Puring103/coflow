@@ -60,9 +60,8 @@ use protocol::{
 use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde_json::{json, Value};
 pub(crate) use state::{
-    current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain,
-    enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
-    type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
+    current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain, field_by_chain,
+    field_by_type, type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
 use std::collections::VecDeque;
 use std::io::Cursor as EmbeddedCursor;
@@ -343,8 +342,8 @@ impl EmbeddedLsp {
                 || "__snapshot__".to_string(),
                 |document| document.module_id.clone(),
             );
-        let ast = coflow_language::cft::syntax::parser::parse_module(
-            &coflow_language::cft::ModuleId::new(module_id.clone()),
+        let ast = coflow_core::schema::syntax::parser::parse_module(
+            &coflow_core::schema::ModuleId::new(module_id.clone()),
             source,
         )
         .ok()

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs" Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
     <ProjectReference Include="../Coflow.Runtime/Coflow.Runtime.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="coverlet.msbuild" Version="6.0.4">

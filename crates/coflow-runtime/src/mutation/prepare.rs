@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::api::DiagnosticSet;
 use crate::api::WriteFieldPathSegment;
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
-use coflow_language::cft::{CftValueType, RecordKey};
+use coflow_core::schema::{CftValueType, RecordKey};
 
 use crate::write_rules;
 use crate::writes;
@@ -475,7 +475,7 @@ pub(super) fn rename_prepared_field_references(
 }
 
 fn rename_pending_value_references(
-    schema: &coflow_language::cft::CftSchema,
+    schema: &coflow_core::schema::CftSchema,
     target_actual_type: &str,
     expected: &CftValueType,
     value: &mut CfdValue,
@@ -488,26 +488,6 @@ fn rename_pending_value_references(
                 schema,
                 target_actual_type,
                 inner,
-                value,
-                old_key,
-                new_key,
-            );
-        }
-        (CftValueType::Result(ok, _), CfdValue::ResultOk(value)) => {
-            rename_pending_value_references(
-                schema,
-                target_actual_type,
-                ok,
-                value,
-                old_key,
-                new_key,
-            );
-        }
-        (CftValueType::Result(_, error), CfdValue::ResultErr(value)) => {
-            rename_pending_value_references(
-                schema,
-                target_actual_type,
-                error,
                 value,
                 old_key,
                 new_key,
@@ -594,9 +574,7 @@ pub(super) fn set_nested_value(
         return Ok(());
     };
     match current {
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            return set_nested_value(inner, path, value)
-        }
+        CfdValue::OptionSome(inner) => return set_nested_value(inner, path, value),
         CfdValue::OptionNone => {
             return Err(one_path_error(
                 "cannot write a nested path through an empty option",

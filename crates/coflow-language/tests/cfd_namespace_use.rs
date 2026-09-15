@@ -1,39 +1,32 @@
 use coflow_language::cfd::parse_cfd;
 
 #[test]
-fn namespace_and_use_are_not_cfd_syntax() {
+fn imports_and_qualified_record_types_parse() {
     for source in [
-        "namespace game; Item { item {} }",
-        "use common::Item; Item { item {} }",
-        "use common::Item as Imported; Item { item {} }",
+        "use common::Item; item: Item {}",
+        "item: common::Item { target: &common::Item::other }",
     ] {
-        let (_, diagnostics) = parse_cfd(source);
-        assert!(!diagnostics.is_empty(), "source should fail: {source}");
+        let (ast, diagnostics) = parse_cfd(source);
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        assert_eq!(ast.records.len(), 1);
     }
 }
 
 #[test]
-fn cfd_type_names_are_short_and_static_paths_remain_valid() {
+fn grouped_records_and_import_aliases_are_rejected() {
     for source in [
-        "group::Item { item {} }",
-        "item: group::Item {}",
-        "Item { item { nested: group::Nested {} } }",
-        "Item { item { target: &group::Item::other } }",
-        "Item { item { label: \"{&group::Item::other.name}\" } }",
+        "namespace game; item: Item {}",
+        "Item { item {} }",
+        "use common::Item as Imported; item: Imported {}",
     ] {
         let (_, diagnostics) = parse_cfd(source);
-        assert!(!diagnostics.is_empty(), "source should fail: {source}");
+        assert!(!diagnostics.is_empty(), "{source}");
     }
-
-    let (ast, diagnostics) =
-        parse_cfd("Item { item { rarity: Quality::Good, target: &Item::other } other {} }");
-    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
-    assert_eq!(ast.records.len(), 2);
 }
 
 #[test]
 fn cfd_names_and_record_keys_use_unicode_xid_rules() {
-    let (ast, diagnostics) = parse_cfd("\u{88C5}\u{5907} { \u{957F}\u{5251}\u{0301} {} }");
+    let (ast, diagnostics) = parse_cfd("长剑́: 装备 {}");
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
-    assert_eq!(ast.records[0].key, "\u{957F}\u{5251}\u{0301}");
+    assert_eq!(ast.records[0].key, "长剑́");
 }

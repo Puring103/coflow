@@ -2,9 +2,8 @@ mod tokens;
 
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexical::{
-    decode_simple_escape, is_identifier_continue, is_identifier_start, scan_number_literal,
-    scan_string_literal, scan_trivia, tokenize_lossless, LosslessTokenKind, NumberLiteralError,
-    StringLiteralError,
+    is_identifier_continue, is_identifier_start, scan_number_literal, scan_string_literal,
+    scan_trivia, NumberLiteralError, StringLiteralError,
 };
 use crate::module::ModuleId;
 use crate::source::Span;
@@ -23,10 +22,8 @@ pub fn lex(module: &ModuleId, source: &str) -> Result<Vec<Token>, CftDiagnostics
 struct Lexer<'a> {
     module: &'a ModuleId,
     source: &'a str,
-    bytes: &'a [u8],
     pos: usize,
     end: usize,
-    allow_formatted_strings: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -34,21 +31,8 @@ impl<'a> Lexer<'a> {
         Self {
             module,
             source,
-            bytes: source.as_bytes(),
             pos: 0,
             end: source.len(),
-            allow_formatted_strings: true,
-        }
-    }
-
-    fn fragment(&self, start: usize, end: usize) -> Self {
-        Self {
-            module: self.module,
-            source: self.source,
-            bytes: self.bytes,
-            pos: start,
-            end,
-            allow_formatted_strings: false,
         }
     }
 
@@ -64,19 +48,31 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if ch == 'f' && self.source[self.pos..self.end].starts_with("f\"") {
-                return Err(self.err(
-                    CftErrorCode::UnexpectedCharacter,
-                    Span::new(self.pos, self.pos + 1),
-                    "formatted strings use ordinary quotes; remove the `f` prefix",
-                ));
-            }
-            if ch == '"' && self.allow_formatted_strings && self.string_contains_braces()? {
-                self.lex_formatted_string(&mut tokens)?;
+                let start = self.pos;
+                self.pos = crate::lexical::scan_template(self.source, start).map_err(|error| {
+                    self.err(
+                        CftErrorCode::InvalidStringEscape,
+                        Span::new(start, self.end),
+                        error.message,
+                    )
+                })?;
+                tokens.push(Token {
+                    kind: TokenKind::FormattedStringStart,
+                    span: Span::new(start, start + 2),
+                });
+                tokens.push(Token {
+                    kind: TokenKind::FormattedStringEnd,
+                    span: Span::new(self.pos - 1, self.pos),
+                });
                 continue;
             }
 
             let start = self.pos;
             let kind = match ch {
+                '?' => {
+                    self.pos += 1;
+                    TokenKind::Question
+                }
                 '@' => {
                     self.pos += 1;
                     TokenKind::At
@@ -257,15 +253,15 @@ impl<'a> Lexer<'a> {
             "const" => TokenKind::Const,
             "enum" => TokenKind::Enum,
             "type" => TokenKind::Type,
+            "table" => TokenKind::Table,
+            "singleton" => TokenKind::Singleton,
+            "data" => TokenKind::Data,
             "abstract" => TokenKind::Abstract,
             "sealed" => TokenKind::Sealed,
             "check" => TokenKind::Check,
-            "when" => TokenKind::When,
-            "all" => TokenKind::All,
-            "any" => TokenKind::Any,
-            "none" => TokenKind::None,
             "in" => TokenKind::In,
             "is" => TokenKind::Is,
+            "inf" => TokenKind::Float(f64::INFINITY),
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             text => TokenKind::Ident(text.to_string()),
@@ -279,6 +275,7 @@ impl<'a> Lexer<'a> {
             let message = match error {
                 NumberLiteralError::FractionDigitsMissing
                 | NumberLiteralError::ExponentDigitsMissing => "invalid float literal",
+                NumberLiteralError::InvalidSeparator => "invalid numeric separator",
             };
             return Err(self.err(
                 CftErrorCode::InvalidFloatLiteral,
@@ -287,7 +284,8 @@ impl<'a> Lexer<'a> {
             ));
         }
 
-        let raw = &self.source[start..scan.raw_end];
+        let normalized = self.source[start..scan.raw_end].replace('_', "");
+        let raw = normalized.as_str();
         if scan.is_float {
             self.lex_float(raw, start)
         } else if let Ok(value) = raw.parse::<i64>() {
@@ -307,21 +305,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_float(&self, raw: &str, start: usize) -> Result<TokenKind, CftDiagnostics> {
-        let Ok(value) = raw.parse::<f64>() else {
+        let Ok(value) = raw.parse::<f32>() else {
             return Err(self.err(
                 CftErrorCode::InvalidFloatLiteral,
                 Span::new(start, self.pos),
                 "invalid float literal",
             ));
         };
-        if !value.is_finite() {
-            return Err(self.err(
-                CftErrorCode::InvalidFloatLiteral,
-                Span::new(start, self.pos),
-                "float literal must be finite",
-            ));
-        }
-        Ok(TokenKind::Float(value))
+        Ok(TokenKind::Float(f64::from(value)))
     }
 
     fn lex_string(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {
@@ -342,213 +333,15 @@ impl<'a> Lexer<'a> {
             });
         }
 
-        let mut out = String::new();
-        let mut offset = start + 1;
-        let content_end = scan.end - 1;
-        while offset < content_end {
-            let Some(ch) = self.source[offset..].chars().next() else {
-                break;
-            };
-            match ch {
-                '\\' => {
-                    offset += 1;
-                    let Some(escaped) = self.source[offset..].chars().next() else {
-                        break;
-                    };
-                    let Some(decoded) = decode_simple_escape(escaped) else {
-                        break;
-                    };
-                    out.push(decoded);
-                    offset += escaped.len_utf8();
-                }
-                '{' if self.source[offset..content_end].starts_with("{{") => {
-                    out.push('{');
-                    offset += 2;
-                }
-                '}' if self.source[offset..content_end].starts_with("}}") => {
-                    out.push('}');
-                    offset += 2;
-                }
-                _ => {
-                    out.push(ch);
-                    offset += ch.len_utf8();
-                }
-            }
-        }
-        Ok(TokenKind::String(out))
-    }
-
-    #[allow(clippy::too_many_lines)]
-    fn lex_formatted_string(&mut self, tokens: &mut Vec<Token>) -> Result<(), CftDiagnostics> {
-        let start = self.pos;
-        self.pos += 1;
-        tokens.push(Token {
-            kind: TokenKind::FormattedStringStart,
-            span: Span::new(start, self.pos),
-        });
-        let mut text = String::new();
-        let mut text_start = self.pos;
-        while self.pos < self.end {
-            let Some(ch) = self.source[self.pos..].chars().next() else {
-                break;
-            };
-            match ch {
-                '"' => {
-                    Self::push_formatted_text(tokens, &mut text, text_start, self.pos);
-                    let quote = self.pos;
-                    self.pos += 1;
-                    tokens.push(Token {
-                        kind: TokenKind::FormattedStringEnd,
-                        span: Span::new(quote, self.pos),
-                    });
-                    return Ok(());
-                }
-                '{' if self.starts_with("{{") => {
-                    text.push('{');
-                    self.pos += 2;
-                }
-                '}' if self.starts_with("}}") => {
-                    text.push('}');
-                    self.pos += 2;
-                }
-                '{' => {
-                    Self::push_formatted_text(tokens, &mut text, text_start, self.pos);
-                    let opener = self.pos;
-                    self.pos += 1;
-                    tokens.push(Token {
-                        kind: TokenKind::FormattedStringExprStart,
-                        span: Span::new(opener, self.pos),
-                    });
-                    let expr_start = self.pos;
-                    let expr_end = self.find_formatted_expr_end(expr_start)?;
-                    if expr_start == expr_end {
-                        return Err(self.err(
-                            CftErrorCode::InvalidCheckStatement,
-                            Span::new(opener, expr_end + 1),
-                            "formatted string interpolation cannot be empty",
-                        ));
-                    }
-                    let mut expression_tokens = self.fragment(expr_start, expr_end).lex()?;
-                    let _ = expression_tokens.pop();
-                    tokens.extend(expression_tokens);
-                    tokens.push(Token {
-                        kind: TokenKind::FormattedStringExprEnd,
-                        span: Span::new(expr_end, expr_end + 1),
-                    });
-                    self.pos = expr_end + 1;
-                    text_start = self.pos;
-                }
-                '}' => {
-                    return Err(self.err(
-                        CftErrorCode::UnexpectedCharacter,
-                        Span::new(self.pos, self.pos + 1),
-                        "literal `}` in a formatted string must be written as `}}`",
-                    ));
-                }
-                '\\' => {
-                    let escape_start = self.pos;
-                    self.pos += 1;
-                    let Some(escaped) = self.bytes.get(self.pos).copied() else {
-                        break;
-                    };
-                    let Some(value) = decode_simple_escape(char::from(escaped)) else {
-                        return Err(self.err(
-                            CftErrorCode::InvalidStringEscape,
-                            Span::new(escape_start, self.pos + 1),
-                            "invalid string escape",
-                        ));
-                    };
-                    text.push(value);
-                    self.pos += 1;
-                }
-                '\n' | '\r' => {
-                    return Err(self.err(
-                        CftErrorCode::UnterminatedString,
-                        Span::new(start, self.pos),
-                        "unterminated formatted string literal",
-                    ));
-                }
-                _ => {
-                    text.push(ch);
-                    self.pos += ch.len_utf8();
-                }
-            }
-        }
-        Err(self.err(
-            CftErrorCode::UnterminatedString,
-            Span::new(start, self.end),
-            "unterminated formatted string literal",
-        ))
-    }
-
-    fn string_contains_braces(&self) -> Result<bool, CftDiagnostics> {
-        let start = self.pos;
-        let scan = scan_string_literal(self.source, start, self.end, true);
-        match scan.error {
-            None | Some(StringLiteralError::InvalidEscape { .. }) => Ok(scan.contains_format_brace),
-            Some(StringLiteralError::Unterminated { end }) => Err(self.err(
-                CftErrorCode::UnterminatedString,
-                Span::new(start, end),
-                "unterminated string literal",
-            )),
-        }
-    }
-
-    fn push_formatted_text(tokens: &mut Vec<Token>, text: &mut String, start: usize, end: usize) {
-        if text.is_empty() {
-            return;
-        }
-        tokens.push(Token {
-            kind: TokenKind::FormattedStringText(std::mem::take(text)),
-            span: Span::new(start, end),
-        });
-    }
-
-    fn find_formatted_expr_end(&self, start: usize) -> Result<usize, CftDiagnostics> {
-        let mut brace_depth = 0_usize;
-        let fragment = &self.source[start..self.end];
-        for token in tokenize_lossless(fragment) {
-            match token.kind {
-                LosslessTokenKind::String => {
-                    let scan =
-                        scan_string_literal(fragment, token.span.start, fragment.len(), true);
-                    if matches!(scan.error, Some(StringLiteralError::Unterminated { .. })) {
-                        let end = start + scan.end;
-                        return Err(self.err(
-                            CftErrorCode::UnterminatedString,
-                            Span::new(start, end),
-                            "unterminated string in formatted interpolation",
-                        ));
-                    }
-                }
-                LosslessTokenKind::Comment | LosslessTokenKind::Newline => {
-                    let token_start = start + token.span.start;
-                    return Err(self.err(
-                        CftErrorCode::InvalidCheckStatement,
-                        Span::new(token_start, start + token.span.end),
-                        "formatted string interpolation must stay on one line and cannot contain comments",
-                    ));
-                }
-                LosslessTokenKind::Symbol => {
-                    for (offset, ch) in token.text(fragment).char_indices() {
-                        match ch {
-                            '{' => brace_depth += 1,
-                            '}' if brace_depth == 0 => {
-                                return Ok(start + token.span.start + offset);
-                            }
-                            '}' => brace_depth -= 1,
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        Err(self.err(
-            CftErrorCode::UnterminatedString,
-            Span::new(start.saturating_sub(1), self.end),
-            "unterminated formatted string interpolation",
-        ))
+        crate::lexical::decode_string(&self.source[start..self.pos])
+            .map(TokenKind::String)
+            .map_err(|error| {
+                self.err(
+                    CftErrorCode::InvalidStringEscape,
+                    Span::new(start, self.pos),
+                    error.message,
+                )
+            })
     }
 
     fn starts_with(&self, text: &str) -> bool {

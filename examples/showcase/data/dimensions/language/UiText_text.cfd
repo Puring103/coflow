@@ -1,11 +1,11 @@
 # Feature: language variants overlay the base UiText.text field.
 
-welcome: __coflow_language_UiText_text {
+welcome: UiText_text_language {
   en: "Welcome",
   zh: "欢迎",
 }
 
-goodbye: __coflow_language_UiText_text {
+goodbye: UiText_text_language {
   en: "Goodbye",
   zh: "再见",
 }

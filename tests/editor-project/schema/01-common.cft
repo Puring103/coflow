@@ -28,4 +28,4 @@ type IntegerTransform = fn(value: int) -> int;
 
 const DEFAULT_LEVEL: int = 1;
 
-const DEFAULT_TAGS = ["fixture", "editable"];
+const DEFAULT_TAGS: [string] = ["fixture", "editable"];

@@ -458,7 +458,7 @@ impl CfdWriter {
         record_key: &str,
         actual_type: &str,
         field_path: &[crate::api::WriteFieldPathSegment],
-        schema: &coflow_language::cft::CftSchema,
+        schema: &coflow_core::schema::CftSchema,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = origin else {
             return Err(DiagnosticSet::one(diag(

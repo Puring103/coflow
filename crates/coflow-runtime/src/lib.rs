@@ -19,9 +19,6 @@ mod api;
 mod artifacts;
 mod catalog;
 mod cfd_loader;
-#[cfg(feature = "internal-check-bench")]
-#[doc(hidden)]
-pub mod check_benchmark_support;
 mod checks;
 pub mod commands;
 pub use coflow_codegen as codegen;
@@ -52,24 +49,23 @@ pub use cfd_loader::{
     load_cfd_model, parse_cfd_input_records, CfdTextDiagnostic, CfdTextDiagnostics,
     CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-pub use coflow_checker::{
+pub use coflow_core as data_model;
+pub use coflow_core::cell_value;
+pub use coflow_core::check::{
     execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
-    CheckOutput, CheckProjection, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,
+    CheckOutput, CheckSchemaLocation,
 };
-pub use coflow_model as data_model;
-pub use coflow_model::cell_value;
-pub use coflow_model::serde_i64;
-pub use coflow_model::{
+pub use coflow_core::serde_i64;
+pub use coflow_core::{
     validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
     CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
     CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel, CfdModelBuildOutput, CfdModelBuilder,
     CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable,
     CfdValue, CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
-    LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
-    LoadedFunction, LoadedRecordDraft, LoadedValueDraft, MappedDiagnostic, MappedLabel,
-    PendingInsertRef, RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan,
-    ValueValidationMode, ValueValidationRequest,
+    LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction, LoadedRecordDraft, LoadedValueDraft,
+    MappedDiagnostic, MappedLabel, PendingInsertRef, RecordCoordinate, RecordOrigin, RefEdge,
+    RefSite, TextSpan, ValueValidationMode, ValueValidationRequest,
 };
 pub use diff::{
     ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,
@@ -81,7 +77,7 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 pub use project::*;
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+pub use coflow_core::schema::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,

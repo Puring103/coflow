@@ -5,7 +5,7 @@ export function recordShortName(fields: FieldCell[], field: string | undefined):
   const cell = fields.find(cell => cell.name === field)
   if (!cell || cell.missing) return undefined
   const value = cell.value
-  const text = value.kind === 'string' ? value.value : value.kind === 'formatted_string' ? value.value.rendered : undefined
+  const text = value.kind === 'string' ? value.value : undefined
   return text || undefined
 }
 

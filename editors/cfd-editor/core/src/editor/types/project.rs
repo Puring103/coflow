@@ -1,6 +1,6 @@
 //! project wire types.
-use coflow_runtime::{FileTreeNode, RecordCoordinate};
 use coflow_runtime::FlatDiagnostic;
+use coflow_runtime::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(feature = "ts-export")]

@@ -4,14 +4,14 @@
 use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
-use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE};
+use super::super::semantic_tokens::{MOD_DECLARATION, SEM_RECORD_KEY, SEM_STRING, SEM_VARIABLE};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
-    let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -60,7 +60,7 @@ fn cfd_definition_request_returns_schema_field_location() {
 
 #[test]
 fn cfd_requests_ignore_uppercase_cfd_extension() {
-    let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-uppercase-cfd-extension", schema_source);
     let cfd_path = project.root_dir().join("data.CFD");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -106,8 +106,8 @@ fn cfd_requests_ignore_uppercase_cfd_extension() {
 
 #[test]
 fn cfd_definition_request_resolves_record_keys_across_project_sources() {
-    let schema_source = "type Item { key: string; }\n\
-type Holder { key: string; item: Item; }\n";
+    let schema_source = "data Item { key: string; }\n\
+table Holder { key: string; item: Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-cross-file-key-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -190,9 +190,9 @@ type Holder { key: string; item: Item; }\n";
 
 #[test]
 fn cfd_definition_index_uses_actual_type_and_dirty_overlay() {
-    let schema_source = "type Item {}\n\
-type Skill {}\n\
-type Holder { item: &Item; }\n";
+    let schema_source = "data Item {}\n\
+table Skill {}\n\
+table Holder { item: Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-typed-definition-index", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -242,9 +242,9 @@ type Holder { item: &Item; }\n";
 
 #[test]
 fn cfd_definition_request_returns_null_for_invalid_record_references() {
-    let schema_source = "type Stats {\n  hp: int;\n}\n\
-type Monster {\n  key: string;\n  stats: Stats;\n}\n\
-type Holder {\n  key: string;\n  hp: int;\n}\n";
+    let schema_source = "data Stats {\n  hp: int;\n}\n\
+table Monster {\n  key: string;\n  stats: Stats;\n}\n\
+table Holder {\n  key: string;\n  hp: int;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-path-field-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -283,8 +283,8 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
 
 #[test]
 fn cfd_definition_request_resolves_each_nested_object_field() {
-    let schema_source = "type Stats {\n  hp: int;\n}\n\
-type Monster {\n  key: string;\n  stats: Stats;\n}\n";
+    let schema_source = "data Stats {\n  hp: int;\n}\n\
+table Monster {\n  key: string;\n  stats: Stats;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-nested-field-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -419,78 +419,25 @@ fn cfd_function_semantic_tokens_follow_unicode_xid_boundaries() {
 }
 
 #[test]
-fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
-    let schema_source = "type Product { name: string; }\n";
-    let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
-    let cfd_path = project.root_dir().join("data.cfd");
-    let cfd_uri = path_to_file_uri(&cfd_path);
-    let source = "Product {\n    notebook { name: \"Notebook\", }\n    asd\n    test { name: \"Test\", }\n}\n";
-    let mut server = LspServer::new(project, Vec::new());
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": {
-                    "uri": cfd_uri,
-                    "version": 1,
-                    "text": source,
-                }
-            }
-        }))
-        .expect("open dirty cfd document");
-
-    server.writer.clear();
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "id": 41,
-            "method": "textDocument/semanticTokens/full",
-            "params": { "textDocument": { "uri": cfd_uri } }
-        }))
-        .expect("semantic token request");
-    let semantic_result = written_messages(&server.writer)[0]["result"].clone();
-    assert_eq!(semantic_result["x-coflow-syntax-valid"], true);
-    let tokens = decode_semantic_tokens(source, &semantic_result["data"]);
-    assert!(
-        tokens.contains(&DecodedSemanticToken {
-            text: "asd".to_string(),
-            token_type: SEM_RECORD_KEY,
-            modifiers: MOD_DECLARATION | MOD_RECORD,
-        }),
-        "{tokens:?}"
-    );
-
-    server.writer.clear();
-    let position = position_from_byte(source, source.find("asd").expect("asd") + 3);
-    server
-        .handle_message(&json!({
-            "jsonrpc": "2.0",
-            "id": 42,
-            "method": "textDocument/completion",
-            "params": {
-                "textDocument": { "uri": cfd_uri },
-                "position": { "line": position.line, "character": position.character }
-            }
-        }))
-        .expect("completion request");
-    let completion_result = written_messages(&server.writer)[0]["result"].clone();
-    assert_eq!(completion_result[0]["label"], "asd");
-    assert_eq!(
-        completion_result[0]["insertText"],
-        "asd {\n  name: ${1:\"value\"},\n}"
-    );
-    assert_eq!(completion_result[0]["detail"], "new Product record");
+fn incomplete_standalone_record_keeps_its_identity_token() {
+    let source = "notebook: Product { name: \"Notebook\" }\nasd: Product {";
+    let (ast, diagnostics) = parse_cfd(source);
+    assert!(!diagnostics.is_empty());
+    let result = cfd::semantic_tokens(source, &ast, None);
+    let tokens = decode_semantic_tokens(source, &result["data"]);
+    assert!(tokens
+        .iter()
+        .any(|token| token.text == "asd" && token.token_type == SEM_RECORD_KEY));
 }
 
 #[test]
 fn incomplete_group_record_field_completion_uses_record_schema_context() {
-    let schema_source = "type Product { name: string; price: int; enabled: bool; }\n\
-type Unrelated { payload: string; }\n";
+    let schema_source = "table Product { name: string; price: int; enabled: bool; }\n\
+table Unrelated { payload: string; }\n";
     let (_cleanup, project) = test_project("lsp-cfd-dirty-group-field", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
-    let source = "Product {\n    make {\n        name: \"Draft\",\n        p\n    }\n}\n";
+    let source = "  make: Product {\n      name: \"Draft\",\n      p\n  }\n";
     let mut server = LspServer::new(project, Vec::new());
     server
         .handle_message(&json!({
@@ -532,7 +479,7 @@ type Unrelated { payload: string; }\n";
 #[test]
 fn cfd_value_completion_uses_schema_type_and_function_body_context() {
     let schema_source = "enum Rarity { Common, Rare, }\n\
-type Settings {\n\
+table Settings {\n\
   enabled: bool;\n\
   rarity: Rarity;\n\
   compute: fn(value: int) -> int;\n\
@@ -578,10 +525,10 @@ type Settings {\n\
 
 #[test]
 fn cfd_formatted_strings_highlight_and_complete_record_fields() {
-    let schema_source = "type Message { amount: int; enabled: Option<bool>; label: string; }\n";
+    let schema_source = "table Message { amount: int; enabled: bool?; label: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-string", schema_source);
     let schema = build.schema().expect("compiled schema");
-    let source = r#"message: Message { amount: 7, enabled: true, label: "amount={amount}" }"#;
+    let source = r#"message: Message { amount: 7, enabled: true, label: f"amount={amount}" }"#;
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
@@ -589,8 +536,8 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
     assert!(
         tokens.contains(&DecodedSemanticToken {
-            text: "{amount}".to_string(),
-            token_type: SEM_VARIABLE,
+            text: r#"f"amount={amount}""#.to_string(),
+            token_type: SEM_STRING,
             modifiers: 0,
         }),
         "{tokens:?}"
@@ -619,11 +566,11 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
 
 #[test]
 fn cfd_formatted_string_completion_includes_nested_paths() {
-    let schema_source = "type Details { count: int; }\n\
-type Message { details: Details; label: string; }\n";
+    let schema_source = "data Details { count: int; }\n\
+table Message { details: Details; label: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-nested", schema_source);
     let schema = build.schema().expect("compiled schema");
-    let source = r#"message: Message { details: { count: 1 }, label: "{det}" }"#;
+    let source = r#"message: Message { details: Details { count: 1 }, label: f"{det}" }"#;
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     let offset = source.find("{det}").expect("formatted path") + "{det".len();
@@ -636,10 +583,10 @@ type Message { details: Details; label: string; }\n";
 
 #[test]
 fn cfd_formatted_string_completion_supports_record_reference_syntax() {
-    let schema_source = "type DefaultSettings { visible: bool; title: string; }\n";
+    let schema_source = "table DefaultSettings { visible: bool; title: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-record-ref", schema_source);
     let schema = build.schema().expect("compiled schema");
-    let source = r#"standard: DefaultSettings { visible: true, title: "{&standard.visible}" }"#;
+    let source = r#"standard: DefaultSettings { visible: true, title: f"{&standard.visible}" }"#;
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
@@ -666,9 +613,10 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
         .iter()
         .any(|item| item["label"] == "&standard"));
 
-    let incomplete_source = r#"standard: DefaultSettings { visible: true, title: "{&standard.}" }"#;
+    let incomplete_source =
+        r#"standard: DefaultSettings { visible: true, title: f"{&standard.}" }"#;
     let (incomplete_ast, incomplete_diagnostics) = parse_cfd(incomplete_source);
-    assert!(!incomplete_diagnostics.is_empty());
+    assert!(incomplete_diagnostics.is_empty());
     let incomplete_offset = incomplete_source
         .find("&standard.")
         .expect("incomplete reference")
@@ -689,8 +637,8 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
     assert!(
         tokens.contains(&DecodedSemanticToken {
-            text: "{&standard.visible}".to_string(),
-            token_type: SEM_VARIABLE,
+            text: r#"f"{&standard.visible}""#.to_string(),
+            token_type: SEM_STRING,
             modifiers: 0,
         }),
         "{tokens:?}"
@@ -699,8 +647,8 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
 
 #[test]
 fn cfd_completion_recurses_through_arrays_and_inline_objects() {
-    let schema_source = "type Child { enabled: bool; label: string = \"default\"; }\n\
-type Root { children: [Child]; child: Child; }\n";
+    let schema_source = "data Child { enabled: bool; label: string = \"default\"; }\n\
+table Root { children: [Child]; child: Child; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-nested-completion", schema_source);
     let schema = build.schema().expect("compiled schema");
 
@@ -726,7 +674,7 @@ type Root { children: [Child]; child: Child; }\n";
 
 #[test]
 fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
-    let schema_source = "type Product { name: string; enabled: bool = true; }\n";
+    let schema_source = "table Product { name: string; enabled: bool = true; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-record-snippet", schema_source);
     let schema = build.schema().expect("compiled schema");
     let (ast, diagnostics) = parse_cfd("");
@@ -749,7 +697,7 @@ fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
 #[test]
 fn cfd_flag_completion_excludes_variants_already_in_an_incomplete_expression() {
     let schema_source = "@flag enum Access { Read = 1, Write = 2, Execute = 4, }\n\
-type Settings { access: Access; }\n";
+table Settings { access: Access; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-flag-completion", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = "settings: Settings { access: Read |  }";
@@ -837,7 +785,7 @@ fn cfd_definition_field_name_extracts_record_field_at_offset() {
 
 #[test]
 fn cfd_schema_field_definition_location_finds_field_name_span() {
-    let source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, build) = test_lsp_build("cfd-schema-field-goto-def", source);
 
     let result = cft_schema_field_definition_location(&build, "Item", "damage")
@@ -853,7 +801,7 @@ fn cfd_schema_field_definition_location_finds_field_name_span() {
 fn cfd_goto_def_continues_past_unparseable_document() {
     // Build an LspBuild with two modules; one has a syntax error.
     // cft_type_definition_location should still find the type in the good module.
-    let cft_source = "type GoodType { level: int; }\n";
+    let cft_source = "table GoodType { level: int; }\n";
     let (_cleanup, build) = test_lsp_build("cfd-goto-def", cft_source);
     // GoodType is defined — should find it.
     let result = cft_type_definition_location(&build, "GoodType");
@@ -895,7 +843,7 @@ fn function_document_uses_cfd_parser_and_lsp_tokens() {
 }
 
 #[test]
-fn function_document_rebuilds_source_and_reports_body_errors() {
+fn function_document_preserves_body_without_compilation() {
     let source = "fn(value: int) -> int { value }";
     let result = cfd::function_document(&json!({
         "source": source,
@@ -905,7 +853,7 @@ fn function_document_rebuilds_source_and_reports_body_errors() {
     assert_eq!(result["source"], "fn(value: int) -> int { var broken = ; }");
     assert!(result["diagnostics"]
         .as_array()
-        .is_some_and(|diagnostics| !diagnostics.is_empty()));
+        .is_some_and(|diagnostics| diagnostics.is_empty()));
 }
 
 #[test]
@@ -916,18 +864,13 @@ fn function_document_completion_includes_local_variables_and_snippets() {
     assert!(completions
         .iter()
         .any(|item| { item["label"] == "total" && item["detail"] == "local variable" }));
-    let len = completions
-        .iter()
-        .find(|item| item["label"] == "len")
-        .expect("builtin completion");
-    assert_eq!(len["insertText"], "len(${1})");
-    assert_eq!(len["insertTextFormat"], 2);
+    assert!(!completions.iter().any(|item| item["label"] == "len"));
 }
 
 #[test]
 fn line_indexed_cfd_range_matches_linear_scan() {
     // 覆盖多字节字符、CRLF 与空行；行索引路径必须与从文件头扫描的结果一致。
-    let source = "a {\n  name: \"婆 α\",\n}\n\nb { name: \"x\" }\nc {}\n";
+    let source = "a {\n  name: \"婆 α\",\n}\n\nb { name: \"x\" }\n\n";
     let line_index = coflow_runtime::LineIndex::new(source);
     for start in 0..=source.len() {
         for end in start..=source.len() {

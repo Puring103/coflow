@@ -173,7 +173,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create temp directory");
         let path = root.join("schema.cft");
-        fs::write(&path, "type Item {}\n").expect("write internal source");
+        fs::write(&path, "table Item {}\n").expect("write internal source");
 
         let mut coordinator = RevisionCoordinator::initial();
         coordinator.commit_internal_write(&root, [path.as_path()]);

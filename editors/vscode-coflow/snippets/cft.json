@@ -1,12 +1,23 @@
 {
+  "namespace": {
+    "prefix": "namespace",
+    "body": "namespace ${1:name};",
+    "description": "Declare this file's namespace."
+  },
   "const": {
     "prefix": "const",
-    "body": ["const ${1:NAME}: ${2:int} = ${3:value};"],
+    "body": [
+      "const ${1:NAME}: ${2:int} = ${3:value};"
+    ],
     "description": "Define a compile-time CFT constant."
   },
   "enum": {
     "prefix": "enum",
-    "body": ["enum ${1:Name} {", "\t${2:Variant},", "}"],
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:Variant},",
+      "}"
+    ],
     "description": "Define a CFT enum."
   },
   "flag enum": {
@@ -22,72 +33,127 @@
   },
   "type": {
     "prefix": "type",
-    "body": ["type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
-    "description": "Define a CFT type."
+    "body": "type ${1:Name} = ${2:string};",
+    "description": "Define a type alias."
   },
   "abstract type": {
     "prefix": "abstract",
-    "body": ["abstract type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "body": [
+      "abstract table ${1:Name} {",
+      "\t${2:field}: ${3:string};",
+      "}"
+    ],
     "description": "Define an abstract CFT type."
   },
   "sealed type": {
     "prefix": "sealed",
-    "body": ["sealed type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "body": [
+      "sealed data ${1:Name} {",
+      "\t${2:field}: ${3:string};",
+      "}"
+    ],
     "description": "Define a sealed CFT type."
   },
   "check block": {
     "prefix": "check",
-    "body": ["check {", "\t${1:condition};", "}"],
+    "body": [
+      "check {",
+      "\t${1:condition};",
+      "}"
+    ],
     "description": "Define a check block."
-  },
-  "when block": {
-    "prefix": "when",
-    "body": ["when ${1:condition} {", "\t${2:condition};", "}"],
-    "description": "Define a conditional check block."
-  },
-  "all quantifier": {
-    "prefix": "all",
-    "body": ["all ${1:item} in ${2:items} {", "\t${3:condition};", "}"],
-    "description": "Define an all quantifier check."
-  },
-  "any quantifier": {
-    "prefix": "any",
-    "body": ["any ${1:item} in ${2:items} {", "\t${3:condition};", "}"],
-    "description": "Define an any quantifier check."
-  },
-  "none quantifier": {
-    "prefix": "none",
-    "body": ["none ${1:item} in ${2:items} {", "\t${3:condition};", "}"],
-    "description": "Define a none quantifier check."
   },
   "localized annotation": {
     "prefix": "@localized",
-    "body": ["@localized"],
+    "body": [
+      "@localized"
+    ],
     "description": "Mark a field as language-localized."
   },
   "dimension annotation": {
     "prefix": "@dimension",
-    "body": ["@dimension(\"${1:name}\")"],
+    "body": [
+      "@dimension(\"${1:name}\")"
+    ],
     "description": "Bind a field to a configured dimension."
   },
   "host singleton": {
     "prefix": "@Host",
-    "body": ["@Host", "@singleton", "type ${1:HostServices} {", "\t${2:call}: fn(${3:value}: ${4:int}) -> ${5:int};", "}"],
+    "body": [
+      "@Host",
+      "singleton ${1:HostServices} {",
+      "\t${2:call}: fn(${3:value}: ${4:int}) -> ${5:int};",
+      "}"
+    ],
     "description": "Define a host-provided singleton interface."
   },
   "optional field": {
     "prefix": "option",
-    "body": ["${1:field}: Option<${2:string}> = None;"],
-    "description": "Define an Option field with a None default."
-  },
-  "result field": {
-    "prefix": "result",
-    "body": ["${1:field}: Result<${2:string}, ${3:string}>;"],
-    "description": "Define a Result field."
+    "body": [
+      "${1:field}: ${2:string}? = None;"
+    ],
+    "description": "Define an optional field."
   },
   "function field": {
     "prefix": "fn",
-    "body": ["${1:field}: fn(${2:value}: ${3:int}) -> ${4:int};"],
+    "body": [
+      "${1:field}: fn(${2:value}: ${3:int}) -> ${4:int};"
+    ],
     "description": "Define a function-typed field."
+  },
+  "table": {
+    "prefix": "table",
+    "body": [
+      "table ${1:Name} {",
+      "\t${2:field}: ${3:string};",
+      "}"
+    ],
+    "description": "Define a CFT table."
+  },
+  "singleton": {
+    "prefix": "singleton",
+    "body": [
+      "singleton ${1:Name} {",
+      "\t${2:field}: ${3:string};",
+      "}"
+    ],
+    "description": "Define a CFT singleton."
+  },
+  "data": {
+    "prefix": "data",
+    "body": [
+      "data ${1:Name} {",
+      "\t${2:field}: ${3:string};",
+      "}"
+    ],
+    "description": "Define a CFT data."
+  },
+  "for loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:item} in ${2:items} {",
+      "\t${3:expression};",
+      "}"
+    ],
+    "description": "Iterate over a collection."
+  },
+  "if block": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t${2:expression};",
+      "}"
+    ],
+    "description": "Conditional block."
+  },
+  "use": {
+    "prefix": "use",
+    "body": "use ${1:namespace}::${2:Name};",
+    "description": "Import a declaration."
+  },
+  "fstring": {
+    "prefix": "fstring",
+    "body": "f\"${1:text} {${2:self.name}}\"",
+    "description": "Formatted string template."
   }
 }

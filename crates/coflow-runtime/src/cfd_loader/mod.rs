@@ -20,11 +20,11 @@ use crate::api::{
 };
 
 mod diagnostics;
-mod lower;
+use coflow_core::loading::lower;
 mod writer;
 use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use coflow_core::schema::CftSchema;
 use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
-use coflow_language::cft::CftSchema;
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
@@ -196,18 +196,16 @@ mod tests {
 
     use std::fs;
 
-    use coflow_language::cft::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-    };
+    use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 
     use super::CfdLoader;
     use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
     use crate::{map_diagnostics_with_origins, origins_of, CfdDataModel, SourceLocation};
 
-    fn schema() -> coflow_language::cft::CftSchema {
+    fn schema() -> coflow_core::schema::CftSchema {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "type Item { value: int; }",
+            "table Item { value: int; }",
         )]);
         build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
     }

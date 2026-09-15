@@ -282,10 +282,7 @@ fn joinable_colon_prefix(source: &str) -> bool {
     if prefix.starts_with('"') && prefix.ends_with('"') {
         return true;
     }
-    prefix.split("::").all(is_identifier)
-        || ["type ", "abstract type ", "sealed type "]
-            .iter()
-            .any(|start| prefix.starts_with(start))
+    prefix.split("::").all(is_identifier) || is_type_header(prefix)
 }
 
 fn split_array_object_header(source: &str) -> Option<(&str, &str)> {
@@ -487,12 +484,11 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
         FormatLanguage::Cft => {
             if prefix.starts_with("enum ") {
                 BraceKind::Enum
-            } else if prefix.starts_with("type ")
-                || prefix.starts_with("abstract type ")
-                || prefix.starts_with("sealed type ")
+            } else if is_type_header(prefix)
                 || prefix == "check"
                 || prefix.starts_with("check ")
-                || prefix.starts_with("when ")
+                || prefix.starts_with("for ")
+                || prefix.starts_with("while ")
                 || prefix.starts_with("all ")
                 || prefix.starts_with("any ")
                 || prefix.starts_with("none ")
@@ -595,9 +591,8 @@ fn last_output_line_is_annotation(output: &str) -> bool {
 
 fn is_definition_start(line: &str) -> bool {
     let line = line.trim_start();
-    line.starts_with("type ")
-        || line.starts_with("abstract type ")
-        || line.starts_with("sealed type ")
+    is_type_header(line)
+        || line.starts_with("type ")
         || line.starts_with("enum ")
         || line.starts_with("const ")
         || line.starts_with("check ")
@@ -838,9 +833,13 @@ fn is_generic_open(output: &str) -> bool {
 
 fn is_type_header(line: &str) -> bool {
     let line = line.trim_start();
-    line.starts_with("type ")
-        || line.starts_with("abstract type ")
-        || line.starts_with("sealed type ")
+    let line = line
+        .strip_prefix("abstract ")
+        .or_else(|| line.strip_prefix("sealed "))
+        .unwrap_or(line);
+    ["table ", "singleton ", "data "]
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
 }
 
 fn push_pending_space(output: &mut String, pending_space: &mut bool) {

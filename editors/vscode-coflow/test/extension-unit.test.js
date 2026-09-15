@@ -171,7 +171,7 @@ async function main() {
     ),
     "CFT TextMate grammar must not include old typed reference rules"
   );
-  for (const syntax of ["Option", "Result", "fn", "None", "Some", "Ok", "Err"]) {
+  for (const syntax of ["table", "singleton", "data", "fstring", "fn", "None", "Some", "namespace", "use"]) {
     assert(
       JSON.stringify(cftGrammar).includes(syntax),
       `CFT TextMate grammar should include migrated syntax: ${syntax}`
@@ -190,7 +190,7 @@ async function main() {
   assert.strictEqual(cfdGrammar.repository["comment-slash"], undefined);
   assert(JSON.stringify(cfdGrammar.repository.comments).includes("number-sign"));
   assert(cfdGrammar.repository.function, "CFD TextMate grammar should include function values");
-  for (const syntax of ["Option", "Result", "fn", "match", "Some", "Ok", "Err"]) {
+  for (const syntax of ["fstring", "fn", "for", "Some", "use"]) {
     assert(
       JSON.stringify(cfdGrammar).includes(syntax),
       `CFD TextMate grammar should include migrated syntax: ${syntax}`
@@ -198,7 +198,7 @@ async function main() {
   }
   assert(!JSON.stringify(cfdGrammar).includes("module-declarations"));
   assert(!JSON.stringify(cfdGrammar).includes("keyword.control.namespace"));
-  assert(!JSON.stringify(cfdGrammar).includes("keyword.control.import"));
+  assert(JSON.stringify(cfdGrammar).includes("keyword.control.import"));
   assert(
     cfdGrammar.repository.references.patterns[0].match.includes("::"),
     "CFD references should support explicit Type::key paths"
@@ -216,14 +216,14 @@ async function main() {
   const cfdSnippets = JSON.parse(
     fs.readFileSync(path.join(__dirname, "..", "snippets", "cfd.json"), "utf8")
   );
-  for (const snippet of ["optional field", "result field", "function field"]) {
+  for (const snippet of ["optional field", "function field", "table", "singleton", "data", "fstring", "namespace", "use"]) {
     assert(cftSnippets[snippet], `CFT snippets should include ${snippet}`);
   }
-  for (const snippet of ["Some", "Ok", "Err", "Function"]) {
+  for (const snippet of ["Some", "Function", "Inline data", "fstring", "use"]) {
     assert(cfdSnippets[snippet], `CFD snippets should include ${snippet}`);
   }
-  assert.strictEqual(cftSnippets.namespace, undefined);
-  assert.strictEqual(cftSnippets.use, undefined);
+  assert.strictEqual(cftSnippets["result field"], undefined);
+  assert.strictEqual(cfdSnippets["Group block"], undefined);
   assert.strictEqual(cfdSnippets.Namespace, undefined);
   assert.strictEqual(cfdSnippets.Use, undefined);
 

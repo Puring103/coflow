@@ -174,33 +174,7 @@ impl Parser<'_> {
                 "expected function literal",
             );
         }
-        let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
-        let body_start = opener.end;
-        let mut depth = 1_usize;
-        let mut end = opener.end;
-        while depth > 0 {
-            let token = self.peek().clone();
-            match token.kind {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => depth -= 1,
-                TokenKind::Eof => {
-                    return self.err(CftErrorCode::UnexpectedEof, "unterminated function body");
-                }
-                _ => {}
-            }
-            end = self.bump().span.end;
-        }
-        let body_end = end.saturating_sub(1);
-        if let Err(error) = crate::cfd::validate_function_body(&self.source[body_start..body_end]) {
-            return self.err_at(
-                CftErrorCode::InvalidDefaultExpression,
-                Span::new(
-                    body_start + error.offset,
-                    (body_start + error.offset + 1).min(body_end),
-                ),
-                error.message,
-            );
-        }
+        let end = self.capture_function_body()?.end;
         let span = Span::new(start, end);
         let source = self.source[start..end].to_string();
         let signature_depth = signature.depth;
@@ -215,18 +189,30 @@ impl Parser<'_> {
         })
     }
 
+    /// 此阶段只保留函数源码，不检查函数体语义。
+    pub(super) fn capture_function_body(&mut self) -> Result<Span, CftDiagnostics> {
+        let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let mut depth = 1usize;
+        let mut end = opener.end;
+        while depth > 0 {
+            match self.peek().kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => depth -= 1,
+                TokenKind::Eof => {
+                    return self.err(CftErrorCode::UnexpectedEof, "unterminated function body")
+                }
+                _ => {}
+            }
+            end = self.bump().span.end;
+        }
+        Ok(Span::new(opener.start, end))
+    }
+
     fn parse_record_reference_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let start = self
             .expect_simple(&TokenKind::Amp, CftErrorCode::ExpectedToken)?
             .start;
         let path = self.expect_name_path()?;
-        if path.segments.len() != 2 {
-            return self.err_at(
-                CftErrorCode::InvalidDefaultExpression,
-                path.span,
-                "record reference must use `Type::key`",
-            );
-        }
         let span = Span::new(start, path.span.end);
         self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
             kind: DefaultExprKind::RecordReference(path),
@@ -294,7 +280,7 @@ impl Parser<'_> {
                 }
             });
         }
-        if matches!(first.name.as_str(), "Some" | "Ok" | "Err") {
+        if first.name == "Some" {
             self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
             let inner_span = self.peek().span;
             let inner = self.nested(StructureKind::DefaultValue, inner_span, |parser| {
@@ -305,13 +291,7 @@ impl Parser<'_> {
                 .end;
             let span = Span::new(first.span.start, end);
             let depth = inner.depth;
-            let kind = if first.name == "Some" {
-                DefaultExprKind::OptionSome(Box::new(inner.value))
-            } else if first.name == "Ok" {
-                DefaultExprKind::ResultOk(Box::new(inner.value))
-            } else {
-                DefaultExprKind::ResultErr(Box::new(inner.value))
-            };
+            let kind = DefaultExprKind::OptionSome(Box::new(inner.value));
             return self.node(StructureKind::DefaultValue, first.span, [depth], || {
                 DefaultExpr { kind, span }
             });

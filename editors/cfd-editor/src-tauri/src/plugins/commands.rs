@@ -1,12 +1,17 @@
 //! Plugin tauri commands (thin adapter).
 
-use std::path::PathBuf;
-use cfd_editor_core::EditorHost;
-use tauri::{AppHandle, State};
+use super::manifest::{FrontendPluginBundle, FrontendPlugins, ProjectFrontendPlugins};
+use super::store::{
+    install_frontend_plugin_bundle, install_project_frontend_plugin_bundle,
+    list_frontend_plugin_bundles, project_frontend_plugins, read_project_plugins,
+    remove_project_frontend_plugin, uninstall_frontend_plugin_bundle,
+    update_project_frontend_plugin_enabled,
+};
 use crate::commands::{run_blocking, run_host_command};
 use crate::editor::EditorError;
-use super::manifest::{FrontendPluginBundle, FrontendPlugins, ProjectFrontendPlugins};
-use super::store::{install_frontend_plugin_bundle, install_project_frontend_plugin_bundle, list_frontend_plugin_bundles, project_frontend_plugins, read_project_plugins, remove_project_frontend_plugin, uninstall_frontend_plugin_bundle, update_project_frontend_plugin_enabled};
+use cfd_editor_core::EditorHost;
+use std::path::PathBuf;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub(crate) async fn install_frontend_plugin(
@@ -85,4 +90,3 @@ pub(crate) async fn set_project_frontend_plugin_enabled(
     })
     .await
 }
-

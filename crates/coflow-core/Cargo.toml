@@ -1,0 +1,28 @@
+[package]
+name = "coflow-core"
+version = "0.11.0"
+edition = "2021"
+description = "Coflow contracts, declaration compilation, immutable data and runtime boundaries."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["cft-compiler"]
+cft-compiler = []
+ts-export = ["dep:ts-rs"]
+
+[dependencies]
+coflow-diagnostics = { path = "../coflow-diagnostics" }
+coflow-language = { path = "../coflow-language" }
+serde = { version = "1", features = ["derive", "rc"] }
+ts-rs = { version = "10", optional = true }
+unicode-ident = "1"
+regex = "1"
+bincode = "1.3"
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }

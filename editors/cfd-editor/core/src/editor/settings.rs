@@ -19,14 +19,17 @@ pub(crate) use sanitize::{
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use coflow_language::cft::{RecordKey, TypeName};
+    use coflow_core::schema::{RecordKey, TypeName};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{sanitized_column_widths, sanitized_record_groups, sanitized_views};
-    use super::{read_project_settings, write_project_settings};
     use super::model::MIN_COLUMN_WIDTH;
     use super::model::SETTINGS_FILE;
-    use crate::editor::types::{EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab, ViewConfig, ViewKind};
+    use super::{read_project_settings, write_project_settings};
+    use super::{sanitized_column_widths, sanitized_record_groups, sanitized_views};
+    use crate::editor::types::{
+        EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab,
+        ViewConfig, ViewKind,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 

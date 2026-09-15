@@ -1,4 +1,4 @@
-use coflow_language::cft::syntax::ast::Item;
+use coflow_core::schema::syntax::ast::Item;
 use coflow_language::source::Span;
 use coflow_runtime::LineIndex;
 use serde_json::{json, Value};

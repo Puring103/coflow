@@ -75,6 +75,16 @@ pub struct CftModuleSet {
 }
 
 impl CftModuleSet {
+    /// 语义层在独立副本中解析名称，原始源码树继续供编辑器使用。
+    pub fn map_asts(&self, mut map: impl FnMut(&ModuleId, &mut ModuleAst)) -> Self {
+        let mut result = self.clone();
+        for (id, module) in &mut result.modules {
+            if let Some(ast) = &mut module.ast {
+                map(id, Arc::make_mut(ast));
+            }
+        }
+        result
+    }
     #[must_use]
     pub fn diagnostics(&self) -> &CftDiagnostics {
         &self.diagnostics

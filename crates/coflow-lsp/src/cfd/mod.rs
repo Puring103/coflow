@@ -9,12 +9,12 @@
 mod definition;
 pub use definition::{definition_field_name, definition_ref_target, definition_type_name};
 
+use coflow_core::schema::{CftSchema, CftValueType};
 use coflow_language::cfd::{
-    parse_cfd, tokenize_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdFormatSegment, CfdFunction,
-    CfdRecord, CfdSyntaxDiagnostic, CfdValue, CFD_FUNCTION_BUILTINS, CFD_FUNCTION_KEYWORDS,
+    parse_cfd, tokenize_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdFunction, CfdRecord,
+    CfdSyntaxDiagnostic, CfdValue, CFD_FUNCTION_BUILTINS, CFD_FUNCTION_KEYWORDS,
     CFD_FUNCTION_TYPES,
 };
-use coflow_language::cft::{CftSchema, CftValueType};
 use coflow_language::lexical::{is_identifier_continue, LosslessTokenKind};
 use coflow_language::source::Span;
 use serde_json::{json, Value};
@@ -351,14 +351,6 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             c.add_plain(Span::new(span.start, span.start + 4), SEM_KEYWORD);
             collect_value_tokens(value, c);
         }
-        CfdValue::ResultOk(value, span) => {
-            c.add_plain(Span::new(span.start, span.start + 2), SEM_KEYWORD);
-            collect_value_tokens(value, c);
-        }
-        CfdValue::ResultErr(value, span) => {
-            c.add_plain(Span::new(span.start, span.start + 3), SEM_KEYWORD);
-            collect_value_tokens(value, c);
-        }
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {
                 c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
@@ -387,26 +379,7 @@ fn collect_formatted_string_tokens(
     value: &coflow_language::cfd::CfdFormattedString,
     collector: &mut TokenCollector<'_>,
 ) {
-    let mut cursor = value.span.start;
-    for reference in value.segments.iter().filter_map(|segment| match segment {
-        CfdFormatSegment::Reference(reference)
-            if reference.span.start >= value.span.start
-                && reference.span.end <= value.span.end
-                && reference.span.start < reference.span.end =>
-        {
-            Some(reference)
-        }
-        _ => None,
-    }) {
-        if reference.span.start > cursor {
-            collector.add_multiline_plain(Span::new(cursor, reference.span.start), SEM_STRING);
-        }
-        collector.add_plain(reference.span, SEM_VARIABLE);
-        cursor = reference.span.end;
-    }
-    if cursor < value.span.end {
-        collector.add_multiline_plain(Span::new(cursor, value.span.end), SEM_STRING);
-    }
+    collector.add_multiline_plain(value.span, SEM_STRING);
 }
 
 fn collect_bit_expr_tokens(expr: &CfdBitExpr, c: &mut TokenCollector<'_>) {
@@ -904,6 +877,7 @@ fn formatted_string_completion(
 fn formatted_reference_prefix_at(source: &str, offset: usize) -> Option<(usize, &str)> {
     let end = offset.min(source.len());
     let mut in_string = false;
+    let mut is_template = false;
     let mut escaped = false;
     let mut reference_start = None;
     for (index, character) in source[..end].char_indices() {
@@ -916,11 +890,14 @@ fn formatted_reference_prefix_at(source: &str, offset: usize) -> Option<(usize, 
             continue;
         }
         if character == '"' {
+            if !in_string {
+                is_template = index > 0 && source.as_bytes()[index - 1] == b'f';
+            }
             in_string = !in_string;
             reference_start = None;
             continue;
         }
-        if !in_string {
+        if !in_string || !is_template {
             continue;
         }
         match character {
@@ -1098,12 +1075,6 @@ fn completion_context_in_value<'a>(
         (CfdValue::OptionSome(inner_value, _), CftValueType::Option(inner)) => {
             completion_context_in_value(inner_value, schema, inner, offset)
         }
-        (CfdValue::ResultOk(inner_value, _), CftValueType::Result(ok, _)) => {
-            completion_context_in_value(inner_value, schema, ok, offset)
-        }
-        (CfdValue::ResultErr(inner_value, _), CftValueType::Result(_, error)) => {
-            completion_context_in_value(inner_value, schema, error, offset)
-        }
         (CfdValue::Block(block), CftValueType::Dict(_, value_type)) => {
             for field in &block.fields {
                 if offset >= field.name_span.end && offset <= field.span.end {
@@ -1180,22 +1151,6 @@ fn value_completion_items(
             items.extend(value_completion_items(schema, inner, build));
             items
         }
-        CftValueType::Result(ok, error) => vec![
-            json!({
-                "label": "Ok",
-                "kind": 3,
-                "detail": format!("Ok({})", ok.display_label()),
-                "insertText": format!("Ok(${{1:{}}})", value_placeholder(ok)),
-                "insertTextFormat": 2,
-            }),
-            json!({
-                "label": "Err",
-                "kind": 3,
-                "detail": format!("Err({})", error.display_label()),
-                "insertText": format!("Err(${{1:{}}})", value_placeholder(error)),
-                "insertTextFormat": 2,
-            }),
-        ],
         CftValueType::Function(parameters, result) => {
             let parameters = parameters
                 .iter()
@@ -1236,7 +1191,9 @@ fn value_completion_items(
         CftValueType::Unit => {
             vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
         }
-        CftValueType::Int | CftValueType::Float | CftValueType::String => Vec::new(),
+        CftValueType::Int | CftValueType::Float | CftValueType::String | CftValueType::FString => {
+            Vec::new()
+        }
         CftValueType::RecordRef(name) => {
             record_reference_completion_items(schema, name, build, true)
         }
@@ -1446,12 +1403,12 @@ fn value_placeholder(value_type: &CftValueType) -> String {
         CftValueType::Float => "0.0".to_string(),
         CftValueType::Bool => "true".to_string(),
         CftValueType::String => "\"value\"".to_string(),
+        CftValueType::FString => "f\"value\"".to_string(),
         CftValueType::Enum(name) => name.to_string(),
         CftValueType::RecordRef(_) => "&key".to_string(),
         CftValueType::Array(_) => "[]".to_string(),
         CftValueType::Dict(_, _) | CftValueType::Object(_) => "{}".to_string(),
         CftValueType::Option(_) => "None".to_string(),
-        CftValueType::Result(_, _) => "Ok(value)".to_string(),
         CftValueType::Function(_, _) => "fn() {}".to_string(),
         CftValueType::Unit => "()".to_string(),
     }
@@ -1773,9 +1730,7 @@ fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
         CfdValue::Array(values, _) => values
             .iter()
             .find_map(|value| function_in_value(value, offset)),
-        CfdValue::OptionSome(value, _)
-        | CfdValue::ResultOk(value, _)
-        | CfdValue::ResultErr(value, _) => function_in_value(value, offset),
+        CfdValue::OptionSome(value, _) => function_in_value(value, offset),
         _ => None,
     }
 }

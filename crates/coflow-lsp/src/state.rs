@@ -1,6 +1,5 @@
-use coflow_language::cft::syntax::ast::{CheckExpr, CheckStmt, Item, NameRef};
-use coflow_language::cft::syntax::CheckVisitor;
-use coflow_language::cft::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
+use coflow_core::schema::syntax::ast::Item;
+use coflow_core::schema::{CftEnum, CftEnumVariant, CftField, CftType, CftValueType, ModuleId};
 use coflow_runtime::normalize_path;
 use coflow_runtime::ProjectSchemaSession;
 use std::collections::BTreeMap;
@@ -22,7 +21,7 @@ pub(crate) struct LspDocument {
     pub(crate) module_id: String,
     pub(crate) uri: String,
     pub(crate) source: Arc<str>,
-    pub(crate) ast: Option<Arc<coflow_language::cft::syntax::ast::ModuleAst>>,
+    pub(crate) ast: Option<Arc<coflow_core::schema::syntax::ast::ModuleAst>>,
 }
 
 impl LspDocument {
@@ -30,7 +29,7 @@ impl LspDocument {
         &self.source
     }
 
-    pub(crate) fn ast(&self) -> Option<&coflow_language::cft::syntax::ast::ModuleAst> {
+    pub(crate) fn ast(&self) -> Option<&coflow_core::schema::syntax::ast::ModuleAst> {
         self.ast.as_deref()
     }
 }
@@ -75,7 +74,7 @@ impl LspBuild {
         self
     }
 
-    pub(crate) fn schema(&self) -> Option<&coflow_language::cft::CftSchema> {
+    pub(crate) fn schema(&self) -> Option<&coflow_core::schema::CftSchema> {
         self.schema.schema()
     }
 
@@ -106,7 +105,7 @@ pub(crate) fn current_type_at<'a>(
 pub(crate) fn current_field_at(
     document: &LspDocument,
     offset: usize,
-) -> Option<&coflow_language::cft::syntax::ast::FieldDef> {
+) -> Option<&coflow_core::schema::syntax::ast::FieldDef> {
     let ast = document.ast()?;
     for item in &ast.items {
         if let Item::Type(ty) = item {
@@ -221,11 +220,6 @@ pub(crate) fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
         || ast_enum_name_exists(build, enum_name)
 }
 
-pub(crate) fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_name: &str) -> bool {
-    enum_variant_by_chain(build, &[enum_name.to_string(), variant_name.to_string()]).is_some()
-        || definition::ast_enum_variant_location(build, enum_name, variant_name).is_some()
-}
-
 fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build.documents.values().any(|document| {
         document.ast().is_some_and(|ast| {
@@ -234,57 +228,4 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
                 .any(|item| matches!(item, Item::Enum(enum_def) if enum_def.name == enum_name))
         })
     })
-}
-
-pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> Vec<String> {
-    struct BindingVisitor {
-        offset: usize,
-        bindings: Vec<String>,
-    }
-
-    impl CheckVisitor for BindingVisitor {
-        type Error = std::convert::Infallible;
-
-        fn visit_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
-            let span = stmt.span();
-            if span.start <= self.offset && self.offset <= span.end {
-                self.walk_stmt(stmt)?;
-            }
-            Ok(())
-        }
-
-        fn visit_expr(&mut self, _expr: &CheckExpr) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn enter_quantifier_body(&mut self, bindings: &[NameRef]) -> Result<(), Self::Error> {
-            self.bindings
-                .extend(bindings.iter().map(|binding| binding.name.clone()));
-            Ok(())
-        }
-    }
-
-    let mut visitor = BindingVisitor {
-        offset,
-        bindings: Vec::new(),
-    };
-    let Some(ast) = document.ast() else {
-        return visitor.bindings;
-    };
-    for item in &ast.items {
-        match item {
-            Item::Type(ty) => {
-                if let Some(check) = &ty.check {
-                    let result = visitor.visit_block(check);
-                    debug_assert!(result.is_ok());
-                }
-            }
-            Item::Check(check) => {
-                let result = visitor.visit_block(&check.block);
-                debug_assert!(result.is_ok());
-            }
-            Item::Const(_) | Item::Enum(_) | Item::TypeAlias(_) => {}
-        }
-    }
-    visitor.bindings
 }

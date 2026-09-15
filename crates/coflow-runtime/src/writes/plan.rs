@@ -280,7 +280,7 @@ fn prepare_transfer_record(
             "WRITE-TRANSFER-INDEX",
             "WRITE",
             format!(
-                "target index {target_index} is outside destination type length {}",
+                "target index {target_index} is outside destination table length {}",
                 order.len()
             ),
         )));

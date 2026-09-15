@@ -12,7 +12,7 @@ use crate::load::{
     reload_project_data_from_cache, LoadProjectDataOptions, ReloadProjectDataOptions,
 };
 use crate::project::Project;
-use coflow_language::cft::CftSchema;
+use coflow_core::schema::CftSchema;
 
 use crate::project_schema::{
     open_project_schema_attempt, open_project_schema_session, SchemaTextOverride,
@@ -180,7 +180,7 @@ mod project_runtime_tests {
     fn reverting_to_published_schema_discards_failed_attempt() {
         let root = tempfile::tempdir().expect("temp project");
         let schema_path = root.path().join("schema.cft");
-        fs::write(&schema_path, "type Item { value: int; }\n").expect("write schema");
+        fs::write(&schema_path, "table Item { value: int; }\n").expect("write schema");
         fs::write(
             root.path().join("coflow.yaml"),
             "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
@@ -194,7 +194,7 @@ mod project_runtime_tests {
             .refresh_with_overrides(&[SchemaTextOverride {
                 requested_module: None,
                 normalized_path: normalize_path(&schema_path),
-                source: "type Item { value: Missing; }\n".to_string(),
+                source: "table Item { value: Missing; }\n".to_string(),
             }])
             .is_err());
         assert!(runtime
@@ -213,7 +213,7 @@ mod project_runtime_tests {
         fs::create_dir_all(root.path().join("data")).expect("create data");
         fs::write(
             root.path().join("schema.cft"),
-            "type Item { name: string; value: int; }\n",
+            "table Item { name: string; value: int; }\n",
         )
         .expect("write schema");
         fs::write(
@@ -230,10 +230,8 @@ mod project_runtime_tests {
         fs::write(
             root.path().join("data/items.cfd"),
             concat!(
-                "Item {\n",
-                "  broken { name: 42, value: 1, extra: true, }\n",
-                "  valid { name: \"Valid\", value: 2, }\n",
-                "}\n",
+                "broken: Item { name: 42, value: 1, extra: true, }\n",
+                "valid: Item { name: \"Valid\", value: 2, }\n",
             ),
         )
         .expect("write data");
@@ -264,7 +262,7 @@ mod project_runtime_tests {
         fs::create_dir_all(root.path().join("data")).expect("create data");
         fs::write(
             root.path().join("schema.cft"),
-            "type Item { value: int; }\n",
+            "table Item { value: int; }\n",
         )
         .expect("write schema");
         fs::write(
@@ -281,11 +279,9 @@ mod project_runtime_tests {
         fs::write(
             root.path().join("data/items.cfd"),
             concat!(
-                "Item {\n",
-                "  duplicate { value: 1, }\n",
-                "  duplicate { value: 2, }\n",
-                "  survivor { value: 3, }\n",
-                "}\n",
+                "duplicate: Item { value: 1, }\n",
+                "duplicate: Item { value: 2, }\n",
+                "survivor: Item { value: 3, }\n",
             ),
         )
         .expect("write data");

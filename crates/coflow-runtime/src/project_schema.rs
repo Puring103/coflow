@@ -1,7 +1,7 @@
 use crate::api::{Diagnostic, DiagnosticSet};
 use crate::project::{normalize_path, Project};
-use coflow_language::cft::syntax::parser::CftParseOptions;
-use coflow_language::cft::{
+use coflow_core::schema::syntax::parser::CftParseOptions;
+use coflow_core::schema::{
     build_schema_with_limits, parse_modules_with_options, CftDimensionInputs, CftFile,
     CftModuleSet, CftSchema, ModuleId,
 };

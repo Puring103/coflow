@@ -1,13 +1,16 @@
 //! Project/global plugin persistence.
 
+use super::manifest::valid_plugin_id;
+use super::manifest::{
+    FrontendPluginBundle, FrontendPlugins, PluginScope, ProjectFrontendPlugins,
+    ProjectPluginDefaults,
+};
+use crate::editor::EditorError;
+use crate::plugin_manifest::PluginManifest;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use crate::editor::EditorError;
-use super::manifest::{FrontendPluginBundle, FrontendPlugins, PluginScope, ProjectFrontendPlugins, ProjectPluginDefaults};
-use super::manifest::valid_plugin_id;
-use crate::plugin_manifest::PluginManifest;
 
 const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
@@ -37,7 +40,6 @@ pub(crate) struct ProjectPluginEntry {
 const fn default_plugin_enabled() -> bool {
     true
 }
-
 
 pub(crate) fn project_plugins_path(project_root: &Path) -> PathBuf {
     project_root
@@ -78,7 +80,10 @@ pub(crate) fn write_project_plugins(
         .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
 }
 
-pub(crate) fn relative_project_path(project_root: &Path, target: &Path) -> Result<PathBuf, EditorError> {
+pub(crate) fn relative_project_path(
+    project_root: &Path,
+    target: &Path,
+) -> Result<PathBuf, EditorError> {
     let root = coflow_runtime::canonicalize_path(project_root)
         .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
     let target = coflow_runtime::canonicalize_path(target).map_err(|error| {
@@ -106,7 +111,10 @@ pub(crate) fn relative_project_path(project_root: &Path, target: &Path) -> Resul
     Ok(relative)
 }
 
-pub(crate) fn resolve_project_manifest(project_root: &Path, manifest: &str) -> Result<PathBuf, EditorError> {
+pub(crate) fn resolve_project_manifest(
+    project_root: &Path,
+    manifest: &str,
+) -> Result<PathBuf, EditorError> {
     let path = Path::new(manifest);
     if path.is_absolute() {
         return Err(EditorError::other(
@@ -177,7 +185,10 @@ pub(crate) fn project_frontend_plugins(
     }
 }
 
-pub(crate) fn remove_project_frontend_plugin(project_root: &Path, id: &str) -> Result<(), EditorError> {
+pub(crate) fn remove_project_frontend_plugin(
+    project_root: &Path,
+    id: &str,
+) -> Result<(), EditorError> {
     let mut config = read_project_plugins(project_root)?;
     let before = config.plugins.len();
     config.plugins.retain(|entry| entry.id != id);
@@ -213,7 +224,6 @@ pub(crate) fn plugin_data_dir(app: &AppHandle) -> Result<PathBuf, EditorError> {
         })
 }
 
-
 pub(crate) fn install_frontend_plugin_bundle(
     manifest_path: &Path,
     app: &AppHandle,
@@ -243,7 +253,9 @@ pub(crate) fn install_frontend_plugin_bundle(
     super::manifest::load_frontend_plugin_bundle(&plugin_dir.join("plugin.json"))
 }
 
-pub(crate) fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<FrontendPlugins, EditorError> {
+pub(crate) fn list_frontend_plugin_bundles(
+    app: &AppHandle,
+) -> Result<FrontendPlugins, EditorError> {
     let root = plugin_data_dir(app)?;
     if !root.exists() {
         return Ok(FrontendPlugins::default());
@@ -269,7 +281,10 @@ pub(crate) fn list_frontend_plugin_bundles(app: &AppHandle) -> Result<FrontendPl
     Ok(FrontendPlugins { plugins, errors })
 }
 
-pub(crate) fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Result<(), EditorError> {
+pub(crate) fn uninstall_frontend_plugin_bundle(
+    id: &str,
+    app: &AppHandle,
+) -> Result<(), EditorError> {
     if !valid_plugin_id(id) {
         return Err(EditorError::other("invalid plugin id"));
     }
@@ -281,14 +296,16 @@ pub(crate) fn uninstall_frontend_plugin_bundle(id: &str, app: &AppHandle) -> Res
     Ok(())
 }
 
-
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod frontend_plugin_tests {
     use std::fs;
 
-    use super::{install_project_frontend_plugin_bundle, project_frontend_plugins, read_project_plugins, resolve_project_manifest};
     use super::super::manifest::{load_frontend_plugin_bundle, PluginScope};
+    use super::{
+        install_project_frontend_plugin_bundle, project_frontend_plugins, read_project_plugins,
+        resolve_project_manifest,
+    };
 
     fn temp_plugin_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(

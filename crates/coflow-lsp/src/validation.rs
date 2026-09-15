@@ -1,8 +1,8 @@
 mod snapshot;
 mod worker;
 
+use coflow_core::schema::CftSchema;
 use coflow_language::cfd::CfdAst;
-use coflow_language::cft::CftSchema;
 use coflow_runtime::DiagnosticSet;
 use coflow_runtime::{normalize_path, Project};
 use serde_json::Value;

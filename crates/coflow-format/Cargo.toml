@@ -11,3 +11,4 @@ workspace = true
 
 [dependencies]
 coflow-language = { path = "../coflow-language" }
+coflow-core = { path = "../coflow-core" }

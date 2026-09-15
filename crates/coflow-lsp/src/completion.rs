@@ -1,9 +1,9 @@
 // `${1:name}` 是 LSP snippet 占位符，不是 Rust 格式化参数。
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use coflow_language::cft::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
-use coflow_language::cft::syntax::lexer::{lex, TokenKind};
-use coflow_language::cft::{CftCheckBuiltin, CftConstValue, ModuleId};
+use coflow_core::schema::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
+use coflow_core::schema::syntax::lexer::{lex, TokenKind};
+use coflow_core::schema::{CftCheckBuiltin, CftConstValue, ModuleId};
 use serde_json::{json, Map, Value};
 
 use super::documentation::{
@@ -12,13 +12,12 @@ use super::documentation::{
 use super::position::{byte_offset_from_position, LspPosition};
 use super::{
     current_field_at, current_type_at, is_ident_continue, is_trivia_position, last_ident,
-    line_prefix_at, parse_dotted_ident_chain, previous_char, quantifier_bindings_at,
-    type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
+    line_prefix_at, parse_dotted_ident_chain, previous_char, type_name_of_schema_ref,
+    type_of_chain, LspBuild, LspDocument,
 };
 
 const COMPLETION_KIND_FUNCTION: u8 = 3;
 const COMPLETION_KIND_FIELD: u8 = 5;
-const COMPLETION_KIND_VARIABLE: u8 = 6;
 const COMPLETION_KIND_CLASS: u8 = 7;
 const COMPLETION_KIND_PROPERTY: u8 = 10;
 const COMPLETION_KIND_ENUM: u8 = 13;
@@ -119,25 +118,38 @@ pub(crate) fn completion_items(
 
 pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     if top_level_needs_type_keyword(line_prefix) {
-        return keyword_snippet_completion_item(
-            "type",
-            "type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
-        )
-        .into_iter()
-        .collect();
+        return ["table", "data"]
+            .into_iter()
+            .filter_map(|kind| {
+                keyword_snippet_completion_item(
+                    kind,
+                    &format!(
+                        "{kind} \u{24}{{1:Name}} {{\n\t\u{24}{{2:field}}: \u{24}{{3:string}};\n}}"
+                    ),
+                )
+            })
+            .collect();
     }
 
     [
         ("const", "const ${1:NAME}: ${2:int} = ${3:value};"),
         ("enum", "enum ${1:Name} {\n\t${2:Variant},\n}"),
-        ("type", "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        ("table", "table ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        ("data", "data ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        (
+            "singleton",
+            "singleton ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+        ),
+        ("type", "type ${1:Name} = ${2:int};"),
+        ("namespace", "namespace ${1:name};"),
+        ("use", "use ${1:namespace}::${2:Name};"),
         (
             "abstract",
-            "abstract type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+            "abstract table ${1:Name} {\n\t${2:field}: ${3:string};\n}",
         ),
         (
             "sealed",
-            "sealed type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+            "sealed data ${1:Name} {\n\t${2:field}: ${3:string};\n}",
         ),
         ("check", "check ${1:Name} {\n\t${2:condition};\n}"),
     ]
@@ -209,15 +221,6 @@ pub(crate) fn check_expression_completion_items(
         ));
     }
 
-    for binding in quantifier_bindings_at(document, offset) {
-        items.push(completion_item(
-            &binding,
-            COMPLETION_KIND_VARIABLE,
-            "CFT quantifier binding",
-            None,
-        ));
-    }
-
     items
 }
 
@@ -256,7 +259,7 @@ fn function_completion_items() -> Vec<Value> {
 }
 
 pub(crate) fn function_completion_items_for_type(
-    receiver: &coflow_language::cft::CftValueType,
+    receiver: &coflow_core::schema::CftValueType,
 ) -> Vec<Value> {
     CftCheckBuiltin::ALL
         .into_iter()
@@ -288,7 +291,7 @@ fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
 
 fn builtin_supports_receiver(
     builtin: CftCheckBuiltin,
-    receiver: &coflow_language::cft::CftValueType,
+    receiver: &coflow_core::schema::CftValueType,
 ) -> bool {
     use CftCheckBuiltin::{
         Abs, ApproxEqual, Contains, ContainsKey, ContainsValue, EndsWith, Intersects, IsBlank,
@@ -323,14 +326,15 @@ enum TypeRefLike {
     Other,
 }
 
-impl<'a> From<&'a coflow_language::cft::CftValueType> for TypeRefLike {
-    fn from(value: &'a coflow_language::cft::CftValueType) -> Self {
+impl<'a> From<&'a coflow_core::schema::CftValueType> for TypeRefLike {
+    fn from(value: &'a coflow_core::schema::CftValueType) -> Self {
         match value {
-            coflow_language::cft::CftValueType::Int => Self::Int,
-            coflow_language::cft::CftValueType::Float => Self::Float,
-            coflow_language::cft::CftValueType::String => Self::String,
-            coflow_language::cft::CftValueType::Array(_) => Self::Array,
-            coflow_language::cft::CftValueType::Dict(_, _) => Self::Dict,
+            coflow_core::schema::CftValueType::Int => Self::Int,
+            coflow_core::schema::CftValueType::Float => Self::Float,
+            coflow_core::schema::CftValueType::String
+            | coflow_core::schema::CftValueType::FString => Self::String,
+            coflow_core::schema::CftValueType::Array(_) => Self::Array,
+            coflow_core::schema::CftValueType::Dict(_, _) => Self::Dict,
             _ => Self::Other,
         }
     }
@@ -338,16 +342,11 @@ impl<'a> From<&'a coflow_language::cft::CftValueType> for TypeRefLike {
 
 fn check_structure_completion_items() -> Vec<Value> {
     [
-        ("when", "when ${1:condition} {\n\t${2:condition};\n}"),
-        ("all", "all ${1:item} in ${2:items} {\n\t${3:condition};\n}"),
-        ("any", "any ${1:item} in ${2:items} {\n\t${3:condition};\n}"),
-        (
-            "none",
-            "none ${1:item} in ${2:items} {\n\t${3:condition};\n}",
-        ),
+        ("if", "if ${1:condition} {\n\t${2}\n}"),
+        ("for", "for ${1:item} in ${2:items} {\n\t${3}\n}"),
     ]
     .into_iter()
-    .filter_map(|(label, insert_text)| keyword_snippet_completion_item(label, insert_text))
+    .filter_map(|(label, source)| keyword_snippet_completion_item(label, source))
     .collect()
 }
 
@@ -392,7 +391,7 @@ fn const_value_completion_items_for_context(
 
 fn field_default_completion_items(
     build: &LspBuild,
-    field: Option<&coflow_language::cft::syntax::ast::FieldDef>,
+    field: Option<&coflow_core::schema::syntax::ast::FieldDef>,
 ) -> Vec<Value> {
     let mut items = Vec::new();
     let Some(field) = field else {
@@ -409,7 +408,11 @@ fn field_default_completion_items(
 fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
     match &ty.kind {
         TypeRefKind::Bool => items.extend(literal_completion_items()),
-        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String | TypeRefKind::Unit => {}
+        TypeRefKind::Int
+        | TypeRefKind::Float
+        | TypeRefKind::String
+        | TypeRefKind::FString
+        | TypeRefKind::Unit => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -456,20 +459,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Option containing a value.",
             ));
         }
-        TypeRefKind::Result(_, _) => {
-            items.push(snippet_completion_item(
-                "Ok",
-                "Ok(${1:value})",
-                "CFT Result constructor",
-                "Successful Result value.",
-            ));
-            items.push(snippet_completion_item(
-                "Err",
-                "Err(${1:error})",
-                "CFT Result constructor",
-                "Failed Result value.",
-            ));
-        }
         TypeRefKind::Function(parameters, result) => {
             let mut next_tab = 1;
             let arguments = parameters
@@ -499,7 +488,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Define the default implementation for this function field.",
             ));
         }
-        TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
 
@@ -559,8 +547,6 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
     for (label, documentation) in PRIMITIVE_TYPES {
         let insert_text = match *label {
-            "Option" => Some("Option<${1:string}>"),
-            "Result" => Some("Result<${1:string}, ${2:string}>"),
             "fn" => Some("fn(${1:value}: ${2:int}) -> ${3:int}"),
             _ => None,
         };
@@ -685,16 +671,13 @@ fn type_ref_source(ty: &TypeRef) -> String {
         TypeRefKind::Float => "float".to_string(),
         TypeRefKind::Bool => "bool".to_string(),
         TypeRefKind::String => "string".to_string(),
+        TypeRefKind::FString => "fstring".to_string(),
         TypeRefKind::Named(name) => name.clone(),
-        TypeRefKind::Ref(inner) => format!("&{}", type_ref_source(inner)),
         TypeRefKind::Array(inner) => format!("[{}]", type_ref_source(inner)),
         TypeRefKind::Dict(key, value) => {
             format!("{{{}: {}}}", type_ref_source(key), type_ref_source(value))
         }
-        TypeRefKind::Option(inner) => format!("Option<{}>", type_ref_source(inner)),
-        TypeRefKind::Result(ok, err) => {
-            format!("Result<{}, {}>", type_ref_source(ok), type_ref_source(err))
-        }
+        TypeRefKind::Option(inner) => format!("{}?", type_ref_source(inner)),
         TypeRefKind::Function(parameters, result) => {
             let parameters = parameters
                 .iter()
@@ -715,15 +698,23 @@ fn type_ref_source(ty: &TypeRef) -> String {
 }
 
 fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
-    let current_name = line_prefix
-        .split_once("type")
-        .and_then(|(_, suffix)| suffix.split_whitespace().next());
+    let words = line_prefix.split_whitespace().collect::<Vec<_>>();
+    let declaration = words
+        .iter()
+        .position(|word| matches!(*word, "table" | "data" | "singleton"));
+    let current_name = declaration
+        .and_then(|index| words.get(index + 1).copied())
+        .map(|name| name.trim_end_matches(':'));
+    let is_data = declaration.is_some_and(|index| words[index] == "data");
     let Some(schema) = build.schema() else {
         return named_type_completion_items(build);
     };
     schema
         .all_types()
         .filter(|candidate| !candidate.is_sealed)
+        .filter(|candidate| {
+            (candidate.kind == coflow_core::schema::syntax::ast::TypeKind::Data) == is_data
+        })
         .filter(|candidate| current_name != Some(candidate.name.as_str()))
         .filter(|candidate| {
             current_name.is_none_or(|current| !type_descends_from(schema, &candidate.name, current))
@@ -740,7 +731,7 @@ fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec
 }
 
 fn type_descends_from(
-    schema: &coflow_language::cft::CftSchema,
+    schema: &coflow_core::schema::CftSchema,
     candidate: &str,
     ancestor: &str,
 ) -> bool {
@@ -861,12 +852,6 @@ fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
         (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
             const_value_assignable_to_type(value, inner)
         }
-        (TypeRefKind::Result(ok, _), CftConstValue::ResultOk(value)) => {
-            const_value_assignable_to_type(value, ok)
-        }
-        (TypeRefKind::Result(_, error), CftConstValue::ResultErr(value)) => {
-            const_value_assignable_to_type(value, error)
-        }
         _ => false,
     }
 }
@@ -943,7 +928,7 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match scope {
         CompletionScope::TopLevel => matches!(
             label,
-            "@struct" | "@flag" | "@idAsEnum" | "@singleton" | "@Host" | "@label" | "@description"
+            "@struct" | "@flag" | "@idAsEnum" | "@Host" | "@label" | "@description"
         ),
         CompletionScope::TypeBody => matches!(
             label,
@@ -1000,7 +985,9 @@ fn inferred_completion_scope(document: &LspDocument, offset: usize) -> Option<Co
     for token in tokens {
         let current = *scopes.last()?;
         match token.kind {
-            TokenKind::Type if current == CompletionScope::TopLevel => {
+            TokenKind::Table | TokenKind::Singleton | TokenKind::Data
+                if current == CompletionScope::TopLevel =>
+            {
                 pending = Some(PendingBody::Type);
             }
             TokenKind::Enum if current == CompletionScope::TopLevel => {
@@ -1038,7 +1025,7 @@ fn inferred_completion_scope(document: &LspDocument, offset: usize) -> Option<Co
 }
 
 fn check_block_contains(
-    check: Option<&coflow_language::cft::syntax::ast::CheckBlock>,
+    check: Option<&coflow_core::schema::syntax::ast::CheckBlock>,
     offset: usize,
 ) -> bool {
     check.is_some_and(|check| check.span.start <= offset && offset <= check.span.end)
@@ -1069,7 +1056,9 @@ pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
         return false;
     };
     let before_colon = &line_prefix[..colon];
-    before_colon.contains("type")
+    before_colon
+        .split_whitespace()
+        .any(|word| matches!(word, "table" | "singleton" | "data"))
 }
 
 pub(crate) fn is_value_typeerence_context(line_prefix: &str) -> bool {
@@ -1205,7 +1194,7 @@ fn enum_variants_from_source(document: &LspDocument, enum_name: &str) -> Vec<Str
 }
 
 const fn skip_annotation_tokens(
-    tokens: &[coflow_language::cft::syntax::lexer::Token],
+    tokens: &[coflow_core::schema::syntax::lexer::Token],
     index: &mut usize,
 ) {
     *index += 1;

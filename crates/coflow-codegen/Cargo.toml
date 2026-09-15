@@ -11,5 +11,5 @@ workspace = true
 
 [dependencies]
 coflow-language = { path = "../coflow-language" }
-coflow-model = { path = "../coflow-model" }
+coflow-core = { path = "../coflow-core" }
 serde_json = { version = "1", features = ["preserve_order"] }
