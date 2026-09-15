@@ -2,205 +2,132 @@
 
 > 状态：语言设计
 >
-> 范围：CFD 的记录、字段、值和引用语法。
+> 范围：记录、结构化字段值、引用和函数实现。
 
-CFD 是项目唯一的数据输入格式。解析器先生成带 source span 的无 schema 语法树，再依据 CFT 契约完成
-类型转换、默认值、继承、引用、维度覆盖和业务 check。
-
-## 1. 文件结构
+## 1. 文件与记录
 
 ```text
-cfd-file    := { record-decl }
+cfd-file := { use-decl } { record-decl }
 record-decl := record-key ":" qualified-name "{" [ field-list ] "}"
-field-list  := field { "," field } [ "," ]
-field       := identifier ":" value
-```
-
-```cfd
-sword: Item {
-  name: "Fire Sword",
-  rarity: Rare,
-  tags: [weapon, fire],
-}
-```
-
-## 2. 顶层记录
-
-每个记录由 record key、实际 type 和字段块组成：
-
-```cfd
-sword: Item {
-  name: "Sword",
-}
-```
-
-```cfd
-shield: Equipment {
-  name: "Shield",
-}
-```
-
-```cfd
-hit: DamageEffect {
-  label: "Hit",
-  amount: 10,
-}
-```
-
-- 类型引用使用与 CFT 相同的命名空间解析规则，允许短名或完整限定名。
-- record key 使用普通标识符，必须是其查询类型域中唯一的非保留标识符；命名空间不改变 record key。
-
-## 3. 字段与省略
-
-```text
+record-key := identifier
+field-list := field { "," field } [ "," ]
 field := identifier ":" value
 ```
 
-- 字段顺序不改变 schema 语义，但来源顺序和 source identity 会稳定保留。
-- 字段值只能是结构化字面量：scalar、字符串、enum、集合、内联对象、引用、`None` 和格式化字符串；完整文法见 [03-类型与值](./03-类型与值.md) §9。
-- 普通数据字段不包含表达式、算术、控制流或函数调用。
-- 省略字段时，使用 CFT 默认值。
-- 没有默认值的必填字段不能省略。
-- CFD 不能声明 type、默认值或 check。
+CFD 可以导入名称，不声明 namespace、类型、字段默认值或 check。
+record key 是非保留标识符，在所属查询类型域内唯一。类型名使用完整限定名或显式导入的短名。
 
 ```cfd
-starter: Item {
-  name: "Starter",
-  enabled: true,
+use game::Item;
+
+sword: Item {
+  name: "Sword",
+  price: 100,
 }
 ```
 
-## 4. scalar 与字符串
+字段顺序不改变类型规则；来源顺序和源码位置保持稳定。
+加载时完成类型检查、默认值补齐、函数编译和引用链接。check 由调用方单独选择执行。
 
-```text
-scalar := int-literal | float-literal | "true" | "false" | enum-variant
-```
+## 2. 字段值
 
-```cfd
-count: 10,
-ratio: 0.25,
-enabled: true,
-name: "line 1\nline 2",
-rarity: Rare,
-```
-
-- bool 只接受小写 `true`、`false`。
-- 字符串使用双引号，支持 `\"`、`\\`、`\n`、`\r`、`\t`。
-
-## 5. flag enum 位表达式
-
-`@flag` enum 可用 `|`、`^`、`&` 和括号组成位表达式：
-
-```text
-bit-expr := bit-term { ( "|" | "^" | "&" ) bit-term }
-bit-term := enum-variant | "(" bit-expr ")"
-```
+值文法见[类型与值](./03-类型与值.md)。
+普通数据使用数字、布尔、字符串、enum、集合、对象、记录引用和 None。
+函数值与 fstring 可以出现在各自类型允许的位置。
 
 ```cfd
-permissions: Read | Write,
-mask: (Read | Write) & Execute,
-```
-
-## 6. 数组、字典与内联对象
-
-```text
-array := "[" [ value { "," value } [ "," ] ] "]"
-dict  := "{" [ dict-entry { "," dict-entry } [ "," ] ] "}"
-block := qualified-name "{" [ field-list ] "}"
-```
-
-```cfd
-tags: [weapon, rare],
-weights: {
-  Fire: 10,
-  Ice: 5,
-},
-stats: Stats {
-  hp: 100,
-  speed: 1.5,
-},
-effect: DamageEffect {
-  amount: 20,
-},
-```
-
-- `{ ... }` 总是字典字面量；内联对象必须写类型名 `TypeName { ... }`。
-- 抽象父 type 字段必须写具体子 type，即 `ConcreteType { ... }`。
-- 数组保留顺序，字典 key 必须符合声明的 key 类型且不能重复。
-
-## 7. 可选值
-
-```text
-optional-value := "None" | value
-```
-
-可选类型的规范写法是 `None` 或裸存在值：
-
-```cfd
-subtitle: None,
-owner: &sword,
-label: "present",
-```
-
-- 省略字段时使用 CFT 默认值。
-- 显式 `None` 表示明确为空，即使字段默认值不是 `None`。
-- 没有默认值的可选字段省略时为 `None`。
-- 结构化 writer 写回裸值。
-
-## 8. 记录引用
-
-```text
-reference := "&" [ qualified-name "::" ] record-key
-```
-
-```cfd
-owner: &sword,
-fallback: &Item::default_item,
-```
-
-- `&key` 根据字段声明的 `&Type` 解析；需要显式写出目标类型时可写 `&Type::key`。
-- `&key` 在声明的 `&Type` 及其子类型的记录域内查找；唯一匹配才有效，多个匹配报引用歧义并要求写 `&Type::key`。
-- 引用可跨 CFD 文件，也允许自引用和跨记录循环。
-- 目标必须存在，且实际 type 可赋给声明的引用类型。
-- 引用不是字符串，不能使用引号。
-
-## 9. 格式化字符串
-
-```text
-formatted-string := '"' { string-char | escape | "{{" | "}}" | "{" field-path "}" } '"'
-field-path       := [ qualified-name "::" ] [ record-key "." ] identifier { "." identifier }
-```
-
-```cfd
-label: "{name} x {count}",
-remote_label: "{&sword.name}",
-typed: "{&Item::sword.name}",
-literal: "{{not interpolation}}",
-```
-
-插值引用形式为 `{field}`、`{&key.field}` 或 `{&Type::key.field}`；`{{` 和 `}}` 表示字面花括号。
-解析完成后根据记录和字段路径求值，同时保留原始 source。
-
-## 10. 函数值
-
-```text
-function := "fn" "(" [ param { "," param } [ "," ] ] ")" "->" type block
-```
-
-```cfd
-calculator: Calculator {
-  classify: fn(value: int) -> string {
-    if value >= 10 {
-      "large"
-    } else {
-      "small"
-    }
+item: Item {
+  name: "Sword",
+  label: f"名称：{self.name}",
+  price: 100,
+  tags: ["weapon", "fire"],
+  next: None,
+  total: fn(count: int) -> int {
+    self.price * count
   },
 }
 ```
 
-- 函数签名必须与 CFT 字段类型一致。
-- CFD 不声明字段类型，函数值的完整签名是其参数名与形状的唯一来源，因此必须写签名；CFT 的 `=>` 能省略签名是因为字段类型已给出签名。
-- 函数字段可以在 CFT 中声明默认实现，CFD 中的显式值覆盖它。
-- `@Host` 服务函数由宿主配置，CFD 不能实现；CFT 可声明默认实现，被宿主绑定覆盖。
-- 函数体是受静态类型约束的表达式语言，见 [06-函数与表达式](./06-函数与表达式.md)。
+- 省略字段时使用默认值；无默认值的可选字段为 None，其余字段必填。
+- 显式 None 表示可选字段为空。
+- 字段和字典 key 不能重复。
+- fstring 只接受 `f"..."`，不能写普通字符串替代。
+- 普通数据位置不执行任意表达式；函数体和 fstring 插值使用完整表达式。
+
+## 3. 集合与对象
+
+```cfd
+tags: ["weapon", "rare"],
+weights: { "fire": 10, "ice": 5 },
+stats: Stats { hp: 100, speed: 1.5 },
+effect: DamageEffect { label: "Hit", amount: 20 },
+```
+
+数组保留元素顺序，字典保留键值项在原始 CFD 中的声明顺序。
+使用 CFT 默认值或常量字典时保留其原始 CFT 声明顺序，加载器不重新排序。
+`{ ... }` 是字典；内联对象必须写 `TypeName { ... }`。
+抽象类型位置必须提供具体子类型。
+
+集合中的函数不受额外位置限制。读取 fstring 元素时计算文本，获取集合本身不计算元素。
+
+## 4. enum 与 flag
+
+enum 使用变体名或限定名。flag 支持 `&`、`^`、`|` 和括号，
+优先级为 `&` 高于 `^` 高于 `|`，与函数表达式一致。
+
+```cfd
+permissions: Permission::Read | Permission::Write,
+```
+
+操作数必须属于同一个 flag 类型。
+
+## 5. 记录引用
+
+```text
+reference-value := "&" [ qualified-name "::" ] record-key
+```
+
+- `&key` 表示本类型记录；引用其他类型时写 `&Type::key`。
+- 不按目标字段类型猜测其他记录类型，也不进行全项目短 key 搜索。
+- 没有本类型上下文的位置使用带类型写法。
+- 显式类型采用普通名称解析规则。
+- 目标记录必须存在，实际类型必须可赋给引用字段的目标类型。
+- 引用可以跨文件、自引用或形成跨记录循环。
+- 引用不是字符串，不能加引号。
+
+```cfd
+sword: Item {
+  name: "Sword",
+  next: &shield,
+  owner: &Character::hero,
+}
+```
+
+记录引用在普通函数和插值表达式中也使用相同写法。
+继承查询与 key 唯一性使用统一的类型域，不另建插值专用查找规则。
+
+## 6. fstring 与函数
+
+```cfd
+item: Item {
+  name: "Sword",
+  label: f"名称：{self.name}",
+  total: fn(count: int) -> int {
+    self.price * count
+  },
+  price: 100,
+}
+```
+
+普通字符串中的花括号只是文本。
+fstring 的插值支持参数、局部变量、常量、只读 self、记录引用及函数调用。
+源码保存原始模板；读取时得到本次计算的 string。
+
+CFD 函数必须写完整签名并为所有参数命名，与 CFT 声明匹配。
+它只替代对应对象的函数实现，不修改契约代码。
+
+## 7. 维度数据
+
+维度数据也是 CFD 普通记录，使用系统生成的类型。
+加载器建立业务记录与维度记录之间的引用。变体字段为 None 时回退基础值。
+具体结构见[维度](./09-维度.md)。
