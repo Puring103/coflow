@@ -2,205 +2,108 @@
 
 > 状态：语言设计
 >
-> 范围：CFT `check` 的声明、执行语义、`Check.require` 和诊断边界。
+> 范围：可选检查、函数调用和检查报告。
 
-`check` 是 CFT 契约中的专用校验结构，使用与 CFD 函数一致的函数体语法。它不能被 CFD 覆盖、返回、
-保存或作为回调传递。check 执行适用规则、收集结构化诊断，并在一条规则失败后继续执行相互独立的失败
-条件。
+## 1. 检查入口
 
-## 1. 声明
-
-```text
-check-block := "check" [ identifier ] "{" function-body "}"
-check-decl  := "check" identifier "{" function-body "}"
-```
-
-```cft
-type Monster {
-  level: int;
-  tags: [string] = [];
-
-  check {
-    require(1 <= level <= 100, "等级必须在 1 到 100 之间");
-    require(tags.isUnique(), "标签不能重复");
-  }
-}
-```
-
-```cft
-type Inventory {
-  items: [int] = [];
-
-  check itemsValid {
-    for item in items {
-      require(item >= 0, "物品数量不能为负");
-    }
-  }
-}
-```
-
-```cft
-check ItemIntegrity {
-  require(records(Item).len() > 0, "项目中至少需要一个物品");
-}
-```
-
-- type 内的 `check` 必须位于该类型的所有字段之后，一个类型只能有一个 `check` 块，可带可选名称。
-- `check` 的名称只用于诊断和工具展示，不能作为调用目标。
-- 顶层命名 check 用于跨记录规则。
-- 父类型的规则也会应用到子类型实例，并按继承链从根类型到实际类型依次执行。
-- check 不接受参数、不返回值，也不能相互调用。
-- 普通函数不能调用 check；check 不能调用普通函数。
-- 应用 Host 外部服务不可从 check 访问。
-
-## 2. `Check.require`
+check 是特殊函数，使用普通函数的表达式、局部变量、控制流和执行机制。
+它只在调用方要求检查时执行；不执行 check 也能正常使用 Runtime。
+检查不通过或执行出错只产生报告，不改变 Runtime 的可用状态。
 
 ```text
-require-call := "require" "(" expression "," expression ")"
+check-block := "check" [ identifier ] block
+check-decl := "check" identifier block
 ```
 
+- 类型 check 位于字段之后，一个类型最多一个匿名 check，也可以有多个命名 check。
+- 字段与命名 check 在同一类型及其继承链中禁止同名。
+- 父类型 check 同样用于子类型，按父到子执行。
+- 类型 check 检查对象内容，包括记录内容和内联对象；使用只读 self 访问字段。
+- check 名称用于选择检查和定位报告，不是普通调用目标。
+- check 不接受用户参数、不返回业务值，也不能被 CFD 覆盖或作为值传递。
+- check 本体不能使用 return 或可选传播；它调用的普通函数遵循自身返回规则。
+
+## 2. require
+
+`require` 来自 `Coflow::Check`，使用前导入或写全限定名。
+语法是 `require(condition, message)`，结果为 unit。
+
 ```cft
-use std::Check::require;
+use Coflow::Check::require;
 
-type Monster {
-  level: int;
-  damage: int;
+type Item {
+  price: int;
 
-  check {
-    require(level > 0, "等级必须大于 0");
-    require(damage >= 0, "怪物 {id} 的伤害不能为负数");
+  check priceValid {
+    require(self.price >= 0, f"价格不能为负：{self.price}");
   }
 }
 ```
 
-- 返回 `()`。
-- 使用前需要 `use std::Check::require;`。
-- `condition` 为 `true` 时不产生诊断；为 `false` 时记录诊断并继续执行后续语句。
-- `message` 只在条件失败时求值。
-- `message` 是字符串表达式，可包含格式化字符串插值。
-- `require` 失败不提供后续解包或类型收窄保证。
-- 普通内置函数遵循正常参数求值规则；短路运算和类型判断仍是语言结构。
+- condition 必须为 bool。
+- condition 为 false 时记录诊断，然后继续当前 check。
+- message 必须产生 string，只在条件失败时求值。
+- require 失败不提供类型收窄或可选解包保证。
+- require 是具有延迟消息参数的检查内建，不作为普通函数值传递。
+- require 用于 check 及其内部校验回调；普通函数通过返回值表达结果。
 
-## 3. 可用值
+## 3. 调用普通函数
 
-check 表达式可以读取：
-
-- 当前对象及继承字段、虚拟 `id`。
-- `const` 常量、enum 值。
-- 已解析引用对象的字段。
-- 函数体内的局部变量和 `for` 绑定。
+check 可以调用任何函数，包括 CFD 实现、回调和 Host 函数。
+需要记录的函数通过参数显式接收记录，不隐式继承 check 的当前对象。
 
 ```cft
-const MAX_LEVEL: int = 100;
+use Coflow::Check::require;
+use Coflow::Check::records;
 
-type Monster {
-  level: int;
-  next: &Monster? = None;
-
-  check {
-    require(level <= MAX_LEVEL, "等级不能超过 {MAX_LEVEL}");
-    if next is Some(monster) {
-      require(monster.level >= level, "后继怪物等级不能更低");
-    }
-  }
+type Item {
+  price: int;
 }
-```
 
-## 4. 控制流与集合遍历
+const validPrice: fn(item: Item) -> bool =
+  fn(item: Item) -> bool { item.price >= 0 };
 
-check 体使用函数体的 `if`、`match`、`while`、`for` 和局部变量。
-
-```cft
-const MAX_TOTAL: int = 1000;
-
-type Reward {
-  rewards: [RewardItem] = [];
-
-  check {
-    var total = 0;
-    for reward in rewards {
-      require(reward.count > 0, "奖励数量必须为正");
-      total += reward.count;
-    }
-    require(total <= MAX_TOTAL, "奖励总量不能超过上限");
-  }
-}
-```
-
-```text
-for-stmt := "for" identifier [ "," identifier ] "in" expression block
-```
-
-- range `for` 按整数顺序迭代。
-- list `for` 按稳定整数顺序读取元素。
-- dictionary `for` 使用只读集合的稳定枚举快照。
-- 双绑定的顺序固定为 `(索引或 key, 值)`；list 允许单绑定表示元素，dictionary 必须双绑定，range 单绑定表示索引。
-- 一条 `require` 失败不会中断后续独立规则。
-- 循环和高阶集合操作受执行预算约束。
-
-```cft
-type Loot {
-  resistances: {string: float} = {};
-
-  check {
-    for element, value in resistances {
-      require(0.0 <= value && value <= 1.0, "{element} 的抗性必须在 0 到 1 之间");
-    }
-  }
-}
-```
-
-## 5. 顶层 check 与 `records(Type)`
-
-```text
-records-call := "records" "(" qualified-name ")"
-```
-
-```cft
-check ItemIntegrity {
-  require(records(Item).len() > 0, "项目中至少需要一个物品");
-
+check ItemPrices {
   for item in records(Item) {
-    require(item.price > 0, "物品 {item.id} 的价格必须大于 0");
+    require(validPrice(item), f"物品 {item.id} 的价格无效");
   }
 }
 ```
 
-- 顶层作用域没有隐式当前记录，不能使用裸字段或虚拟 `id`。
-- `Type` 必须是静态 object type。
-- `records(Base)` 包含实际类型为 `Base` 及其派生类型的所有顶层记录，不包含内联 object。
-- 结果按 `(actual_type, record_key)` 稳定排序。
-- 该结构只能用于顶层 check。
+调用普通函数字段时，其 self 仍然是该函数所属对象。
+Host 函数可以产生外部副作用；检查入口不会改变这种正常调用行为。
 
-## 6. 自动规则
+## 4. records 与遍历
 
-- check 自动处理类型规则、继承链规则和跨记录规则。
-- 宿主参数、Host 返回值和临时构造值只进行类型及边界验证，不自动触发全量业务 check。
-- 校验能力由 check 限定：check 只能使用 `require`、`records`、控制流、运算符和内建集合方法（高阶内建的回调是内联 lambda）；不能调用普通函数或其他 check。
-- 应用 Host 外部服务不可从 check 访问。
-- 校验失败是诊断，不是返回值。
+`records(Type)` 来自 `Coflow::Check`，只用于顶层 check。
 
-```cft
-type CurrencyReward : Reward {
-  amount: int;
+- Type 是静态对象类型。
+- 返回 `[&Type]`，包含该类型及子类型的顶层记录，不包含内联对象。
+- 按实际类型限定名、record key 稳定排序。
+- 引用上的 id 是 string。依赖记录身份的规则写在顶层 check 中。
+- 数组单绑定读取元素，双绑定读取索引和值；字典必须双绑定，按原始 CFT/CFD 声明顺序读取 key 和 value。
 
-  check {
-    require(amount > 0, "奖励金额必须为正");
-  }
-}
+维度值通过显式选择或维度遍历内建检查。
+一条 check 不会因为读取了维度字段而自动切换变体、重复执行。
 
-check RewardIntegrity {
-  for reward in records(Reward) {
-    require(reward is CurrencyReward, "奖励必须是已知类型");
-  }
-}
-```
+## 5. 执行错误和预算
 
-## 7. 诊断
+check 按语句顺序执行，局部变量与普通函数一致，不按根语句分别调度。
 
-- check 失败产生结构化诊断，保留错误码、严重级别、数据与 schema 位置、related locations 和上下文。
-- 诊断可以由 `require` 的自定义消息描述，但不覆盖求值错误。
-- 一条规则失败后，check 继续执行其他独立根语句，以便一次性报告多个问题。
-- 每个根语句是独立执行单元；函数体内的嵌套语句不会脱离其根语句单独调度。
+| 情况 | 行为 |
+| --- | --- |
+| require 条件为 false | 记录问题，继续当前 check |
+| 条件、消息或被调用函数发生执行错误 | 记录错误，结束当前 check，继续其他 check |
+| 本次检查的总预算耗尽 | 停止检查，报告未完成 |
+| 检查结束 | 返回报告，Runtime 继续可用 |
 
-全部诊断和 fault 条件见 [11-错误与诊断](./11-错误与诊断.md)。
+一次检查及其直接调用、间接调用、fstring 读取和 Host 同步重入共用检查预算。
+检查预算独立于后续普通调用。预算不能强行终止正在阻塞的 Host 函数。
+
+## 6. 报告
+
+报告包含规则名称、错误码、消息、数据与 CFT 位置及相关调用位置。
+require 的消息不覆盖计算本身的错误。
+
+每次请求检查都实际执行所选 check，不使用增量 check，也不复用过去的检查结果。
+解析和编译结果可以复用；检查结果不作为运行时数据有效性的前置条件。

@@ -2,83 +2,70 @@
 
 > 状态：语言设计
 >
-> 范围：CFT 的顶层声明、字段、默认值、继承、注解和函数字段。
-
-CFT 定义配置数据的静态结构与校验规则。CFT 文件只包含 schema，不包含 CFD 记录。命名空间规则见
-[08-命名空间](./08-命名空间.md)，check 规则见 [07-Check校验](./07-Check校验.md)。
+> 范围：类型、枚举、字段、默认值、注解和 check 声明。
 
 ## 1. 文件结构
 
 ```text
-cft-file       := [ namespace-decl ] { use-decl } { declaration }
-namespace-decl := "namespace" qualified-name ";"
-use-decl       := "use" qualified-name ";"
-qualified-name := identifier { "::" identifier }
-declaration    := { annotation } ( enum-decl | type-decl | alias-decl | const-decl | check-decl )
-annotation     := "@" identifier [ "(" [ annotation-arg { "," annotation-arg } [ "," ] ] ")" ]
+cft-file := [ namespace-decl ] { use-decl } { declaration }
+declaration := { annotation } (enum-decl | type-decl | alias-decl | const-decl | check-decl)
+alias-decl := "type" identifier "=" type ";"
+const-decl := "const" identifier ":" type "=" value ";"
+annotation := "@" identifier [ "(" [ annotation-arg { "," annotation-arg } [ "," ] ] ")" ]
+annotation-arg := string-literal | qualified-name
 ```
 
-```cft
-namespace game::combat;
+CFT 声明类型与规则，不保存 CFD 记录。
+命名空间和导入见[命名空间](./08-命名空间.md)。
 
-use std::Check::require;
-
-enum Rarity {
-  Common,
-  Rare = 10,
-}
-
-type Item {
-  name: string;
-  rarity: Rarity = Common;
-  tags: [string] = [];
-
-  check {
-    require(name != "", "名称不能为空");
-  }
-}
-```
-
-## 2. enum
+## 2. enum 与 flag
 
 ```text
 enum-decl := "enum" identifier "{" [ variant { "," variant } [ "," ] ] "}"
-variant   := identifier [ "=" int-literal ]
+variant := { annotation } identifier [ "=" int-literal ]
 ```
 
-enum 变体以逗号分隔，可显式指定非负 `i32` 值，enum 值不允许为负。
+普通 enum 使用非负 i32 值。未指定时从 0 开始，按前一个值加一分配。
+变体名和值均不能重复，自动分配越界时报错。不同 enum 互不兼容。
 
-- 普通 enum 未指定值时，从 `0` 开始按前一个值 `+1` 分配。
-- `@flag` enum 未指定值时总是取下一个未使用的 2 的幂（`1、2、4、…`）；显式 `= 0` 声明零值变体；非零
-  显式值必须是 2 的幂且不重复。
-- `@flag` 的底层值是 `i32`，只使用 bit 0..30，最多 31 个标志。
+`@flag` 使用完整的 32 位无符号位模式：
 
-```cft
-enum Element {
-  Neutral = 0,
-  Fire,
-  Ice,
-}
-```
-
-`@flag` 修饰的 enum 除零值外只接受 2 的幂：
+- 允许 bit 0—31，最多 32 个标志。
+- 非零变体值必须是单独一个位；显式 0 可以声明零值变体。
+- 自动分配取下一个未使用的 2 的幂。
+- 位运算只作用于同一个 flag 类型；结果仍为该类型。
+- `~` 只翻转该类型已经声明的标志位。
+- 构造值不能包含未声明的位。
 
 ```cft
 @flag
 enum Permission {
   Read = 1,
   Write = 2,
-  Execute = 4,
+  High = 2147483648,
 }
 ```
+
+最高位通过变体声明和 flag 位运算使用，不改变普通 int 的范围。
 
 ## 3. type 与继承
 
 ```text
 type-decl := [ "abstract" | "sealed" ] "type" identifier [ ":" qualified-name ]
              "{" { member } "}"
-member    := field-decl | check-block
+member := field-decl | check-block
 ```
+
+- 普通类型可用于顶层记录和内联对象。
+- abstract 在记录、默认值和函数体中都不能直接构造；使用其具体子类型。
+- sealed 类型不能继续派生。
+- 每个类型最多有一个直接父类型，继承关系不能成环。
+- 子类型继承父字段和 check，不能重新声明父字段，也不能修改其声明类型或默认值。
+- 同一类型及其继承链中，字段和命名 check 共用成员名称，禁止同名。
+- 父子 check 都保留，按父到子执行。每个类型最多有一个匿名 check。
+- `@struct` 只能用于 sealed 类型，不参与继承；字段类型不受额外限制。
+- 递归字段必须经过可选类型或记录引用，直接或间接的必填对象递归禁止；数组和字典本身不能打断递归。
+- 默认值展开必须有限，可选递归也不能形成无限默认值物化。
 
 ```cft
 abstract type Effect {
@@ -89,23 +76,6 @@ sealed type DamageEffect : Effect {
   amount: int;
 }
 
-type EffectBundle {
-  primary: Effect;
-  source: &Effect;
-}
-```
-
-- 普通 type 既可作为顶层记录类型，也可作为字段中的内联对象。
-- `abstract` type 不能直接创建顶层记录，可通过基类字段保存具体子类型。
-- `sealed` type 不允许继续派生。
-- enum 与 `@struct` type 都不参与继承；`@struct` 只能修饰 `sealed` type。
-- 一个 type 最多有一个直接父 type；派生 type 继承父 type 的字段和 check。
-- object 可以通过可选类型、数组、字典或记录引用递归包含自身；直接或间接的必填 object 包含环在
-  schema 检查时报错。
-
-`@struct` 修饰 `sealed` type，生成值类型：
-
-```cft
 @struct
 sealed type Point {
   x: int;
@@ -113,181 +83,92 @@ sealed type Point {
 }
 ```
 
-## 4. 字段
+## 4. 字段与默认值
 
 ```text
-field-decl := { annotation } identifier ":" type [ "=" value ] ";"
+field-decl := { annotation } identifier ":" type [ "=" value | "=>" block ] ";"
 ```
 
-字段语法为 `name: Type;` 或 `name: Type = default;`。没有默认值的字段必须由 CFD 提供；有默认值
-的字段在 CFD 省略时由构建阶段补齐。
-
-字段的取值优先级：
-
-| CFD 状态 | 结果 |
-| --- | --- |
-| 提供值 | 使用提供的值 |
-| 省略且有默认值 | 使用 CFT 默认值 |
-| 省略且无默认值且字段可选 | `None` |
-| 省略且无默认值且字段必填 | 缺少必填字段错误 |
-| 显式 `None` | 明确为空，即使默认值不是 `None` |
+提供字段值时使用该值；省略时使用默认值；没有默认值的可选字段为 None，其余字段必填。
+显式 None 只适用于可选字段。普通值和 fstring 的差别见[类型与值](./03-类型与值.md)。
 
 ```cft
-type Stats {
-  hp: int = 100;
-  title: string = "Unknown";
-  label: string = "HP: {hp}";
-  enabled: bool = true;
-  rarity: Rarity = Common;
-  permissions: Permission = Permission::Read | Permission::Write;
+type Item {
+  name: string = "Unknown";
+  label: fstring = f"名称：{self.name}";
+  price: int = 10;
   tags: [string] = [];
-  attrs: {string: int} = { "attack": 10 };
-  next: Item? = None;
-  offset: int = -5;
-  owner: &Item = &default_item;
-  effect: Effect = DamageEffect { label: "default", amount: 10 };
+  next: &Item? = None;
+
+  total: fn(count: int) -> int => {
+    self.price * count
+  };
 }
 ```
 
-- 默认值支持 scalar、格式化字符串、enum/const 路径、flag 位表达式、数组、字典、内联对象、`None`、
-  存在值和函数字面量。
-- 数值默认值可带一元负号，例如 `-1`、`-0.5`。
-- 多态 object 字段可用 `ConcreteType { ... }` 指定具体子 type。
-- 记录引用默认值与字段声明类型相同时写 `&key`，需要显式目标类型时写 `&Type::key`。
-- 默认值展开必须有限；非空可选值、非空集合或省略的 object 字段形成默认物化环时报错。
+默认值可以包含集合、对象、引用、可选值、函数和 fstring。
+函数可以放在任何类型允许的位置，不因嵌套而受限。
+fstring 初始化必须写 `f"..."`。
 
-## 5. 类型别名与常量
+`&key` 表示本类型记录，其他类型写 `&Type::key`。
+默认值中的记录引用在加载具体数据时解析，不在契约中保存运行时记录地址。
 
-```text
-alias-decl := "type" identifier "=" type ";"
-const-decl := "const" identifier ":" type "=" value ";"
-```
+## 5. 函数字段
 
-```cft
-type ItemId = string;
-type Callback = fn(value: int) -> int;
+`=>` 是函数字段默认实现的简写，参数名取自字段签名。
+使用该简写时签名必须为所有参数命名；完整写法为 `= fn(...) -> R { ... }`。
 
-const MAX_LEVEL: int = 100;
-const DEFAULT_TAGS: [string] = ["common"];
-```
-
-类型别名只为已有类型提供名称，不创建新的 object type。`const` 必须声明类型；局部变量可由初始值推断类型。
+- 默认实现必须符合字段签名，参数名不影响签名相等。
+- CFD 提供的实现替代该对象的默认实现，契约本身保持只读。
+- 函数中的 self 指向所属对象，只读。
+- 取出函数字段后仍记住原对象，不因存入其他位置而重新绑定。
+- 父类型默认实现按声明类型检查，执行时使用实际对象的数据和最终函数实现。
 
 ## 6. 注解
 
-```text
-annotation := "@" identifier [ "(" [ annotation-arg { "," annotation-arg } ] ")" ]
-```
-
-注解写在声明前；同一目标不能重复使用同名注解。
+同一目标不能重复使用同名注解。自定义注解作为契约元数据保存。
 
 | 注解 | 目标 | 作用 |
 | --- | --- | --- |
-| `@label("...")` | object type、enum、变体、字段 | 编辑器显示名称，并生成目标代码注释 |
-| `@description("...")` | object type、enum、变体、字段 | 编辑器说明，并生成目标代码注释 |
-| `@flag` | enum | 位标志 enum |
-| `@struct` | sealed type | 生成值类型 |
-| `@singleton` | 具体 type | 约束该类型只有一个固定 key 的记录 |
-| `@Host` | `@singleton` 具体 type | 声明由宿主提供的服务类型 |
-| `@idAsEnum(Name)` | type | 用空 enum `Name` 为 record key 生成稳定枚举值 |
-| `@localized` | 顶层 type 字段 | 绑定 `language` 维度 |
-| `@dimension("name")` | 顶层 type 字段 | 绑定指定维度 |
+| @label("...") | 对象类型、enum、变体、字段 | 显示名称和生成代码注释 |
+| @description("...") | 对象类型、enum、变体、字段 | 编辑说明和生成代码注释 |
+| @flag | enum | 32 位标志集合 |
+| @struct | sealed 类型 | 目标代码使用值类型表示 |
+| @singleton | sealed 类型 | 恰好一条记录，key 为类型短名 |
+| @idAsEnum(Name) | 类型 | 仅在目标代码中为记录 key 生成 enum |
+| @localized | 顶层记录字段 | 绑定 language 维度 |
+| @dimension("name") | 顶层记录字段 | 绑定指定维度 |
 
-```cft
-@label("物品")
-type Item {
-  @label("名称")
-  @description("显示给玩家的名称")
-  name: string;
+`@singleton` 类型可以继承普通父类型，单例注解不向父类型传播。
+没有记录或记录 key 不正确都属于加载错误。
 
-  @dimension("language")
-  description: string?;
-}
-
-@flag
-enum Permission {
-  Read = 1,
-  Write = 2,
-  Execute = 4,
-}
-```
-
-`@singleton`、`@Host` 和 `@idAsEnum` 的用法：
+`@idAsEnum(Name)` 中的 Name 引用空 enum 声明，作为代码生成目标。
+生成器根据记录 key 输出目标语言成员，不向 CFT enum 回填成员，不改变契约、记录加载或 id 类型。
+该注解不能与 `@singleton` 同时使用。
 
 ```cft
 @singleton
-type Settings {
+sealed type Settings {
   version: string;
-}
-
-@Host
-@singleton
-type Logger {
-  info: fn(message: string) -> ();
 }
 
 enum ItemId {}
 
 @idAsEnum(ItemId)
-type Item {
+type CatalogItem {
   name: string;
 }
 ```
 
-约束：
+`@localized` 与 `@dimension` 不能同时修饰同一字段。
+维度字段和生成记录见[维度](./09-维度.md)。
 
-- `@localized` 与 `@dimension` 不能同时用于同一字段。
-- 维度字段不能位于 sealed 内联 type 中。
-- `@idAsEnum(Name)` 要求 `Name` 是无变体 enum，且不能与 `@singleton` 同时使用。
-- 自定义注解作为 schema metadata 保留。
-
-## 7. 函数字段
+## 7. check
 
 ```text
-field-decl := { annotation } identifier ":" func-type [ "=" function-literal | "=>" block ] ";"
+check-block := "check" [ identifier ] block
+check-decl := "check" identifier block
 ```
 
-```cft
-type Calculator {
-  classify: fn(value: int) -> string => {
-    if value >= 10 { "large" } else { "small" }
-  };
-}
-```
-
-- CFT 声明函数签名，普通函数字段可以同时声明默认 body。
-- 默认 body 用 `=>` 直接跟随字段的 `func-type`，省略重复签名，参数名取自字段签名；也可用 `= fn(...) -> ... { ... }` 的完整写法。`=>` 要求字段 `func-type` 为所有参数命名，否则必须使用完整写法。
-- CFD 提供同字段函数值时覆盖该默认实现。
-- 函数字段的默认实现必须与字段签名一致，参数名不参与签名相等性。
-- 函数默认值只允许直接用于函数字段，不能嵌套在集合、可选类型或 object 默认值中。
-- `@Host` type 的函数字段可以声明默认实现；宿主绑定优先覆盖默认实现。
-
-## 8. check 块
-
-```text
-check-block := "check" [ identifier ] "{" function-body "}"
-check-decl  := "check" identifier "{" function-body "}"
-```
-
-```cft
-type Monster {
-  level: int;
-  drops: [int] = [];
-
-  check {
-    require(1 <= level <= 100, "等级必须在 1 到 100 之间");
-    for drop in drops {
-      require(drop >= 0, "掉落数量不能为负");
-    }
-  }
-}
-```
-
-```cft
-check ItemIntegrity {
-  require(records(Item).len() > 0, "项目中至少需要一个物品");
-}
-```
-
-type 内的 `check` 必须位于所有字段之后，一个类型只能有一个 `check` 块，可带可选名称。完整规则见
-[07-Check校验](./07-Check校验.md)。
+type 内的 check 位于所有字段之后；顶层 check 必须命名。
+check 是可选的特殊函数，可以调用普通函数。执行和报告规则见[Check 校验](./07-Check校验.md)。
