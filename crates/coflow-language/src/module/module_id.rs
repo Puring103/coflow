@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Stable identifier for one CFT module in a collected project schema.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ModuleId(String);
 
 impl ModuleId {

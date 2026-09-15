@@ -1,0 +1,4 @@
+UiText: UiText_hint_platform {
+  desktop: "Press Enter",
+  mobile: "Tap to continue",
+}

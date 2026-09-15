@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn request_errors_are_reported_without_returning_from_handler() {
-    let (_cleanup, project) = test_project("lsp-request-error", "type Item { key: string; }\n");
+    let (_cleanup, project) = test_project("lsp-request-error", "table Item { key: string; }\n");
     let schema_path = project.root_dir().join("schema");
     std::fs::remove_dir_all(schema_path).expect("remove schema dir");
     let mut server = LspServer::new(project, Vec::new());
@@ -35,7 +35,7 @@ fn request_errors_are_reported_without_returning_from_handler() {
 #[test]
 fn notification_errors_are_logged_without_returning_from_handler() {
     let (_cleanup, project) =
-        test_project("lsp-notification-error", "type Item { key: string; }\n");
+        test_project("lsp-notification-error", "table Item { key: string; }\n");
     let schema_path = project.root_dir().join("schema");
     std::fs::remove_dir_all(schema_path).expect("remove schema dir");
     let mut server = LspServer::new(project, Vec::new());
@@ -46,7 +46,7 @@ fn notification_errors_are_logged_without_returning_from_handler() {
         "params": {
             "textDocument": {
                 "uri": "file:///missing.cft",
-                "text": "type Item { key: string; }\n"
+                "text": "table Item { key: string; }\n"
             }
         }
     }));
@@ -61,7 +61,7 @@ fn notification_errors_are_logged_without_returning_from_handler() {
 
 #[test]
 fn requests_after_shutdown_return_invalid_request() {
-    let (_cleanup, project) = test_project("lsp-shutdown", "type Item { key: string; }\n");
+    let (_cleanup, project) = test_project("lsp-shutdown", "table Item { key: string; }\n");
     let mut server = LspServer::new(project, Vec::new());
 
     server
@@ -98,7 +98,7 @@ fn requests_after_shutdown_return_invalid_request() {
 
 #[test]
 fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
-    let (_cleanup, project) = test_project("lsp-handler-edges", "type Item { key: string; }\n");
+    let (_cleanup, project) = test_project("lsp-handler-edges", "table Item { key: string; }\n");
     let mut server = LspServer::new(project, Vec::new());
 
     for uri in ["file://", "file://localhost", "file://server"] {
@@ -161,7 +161,7 @@ fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
 
 #[test]
 fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
-    let source = "type Item { key: string; }\n";
+    let source = "table Item { key: string; }\n";
     let (_cleanup, project) = test_project("lsp-save-edges", source);
     let schema_path = project.root_dir().join("schema").join("main.cft");
     let uri = path_to_file_uri(&schema_path);
@@ -176,7 +176,7 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
         .expect("open document");
     server.writer.clear();
 
-    let changed = "type Item { key: int; }\n";
+    let changed = "table Item { key: int; }\n";
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",
@@ -216,17 +216,17 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
 
 #[test]
 fn validation_snapshot_rejects_stale_revision_commit() {
-    let (_cleanup, project) = test_project("lsp-stale-snapshot", "type First {}\n");
+    let (_cleanup, project) = test_project("lsp-stale-snapshot", "table First {}\n");
     let schema_path = project.root_dir().join("schema").join("main.cft");
     let uri = path_to_file_uri(&schema_path);
     let mut core = LspValidationCore::new(project);
 
     assert!(core
-        .apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+        .apply_open_document(uri.clone(), "table First {}\n".to_string(), Some(1))
         .expect("open first revision"));
     let stale_input = core.validation_input();
     assert!(core
-        .apply_change_document(uri.clone(), "type Second {}\n".to_string(), Some(2))
+        .apply_change_document(uri.clone(), "table Second {}\n".to_string(), Some(2))
         .expect("change to second revision"));
     let current_input = core.validation_input();
 
@@ -244,12 +244,12 @@ fn validation_snapshot_rejects_stale_revision_commit() {
         .build()
         .and_then(|build| build.document_by_uri(&uri))
         .expect("current build document");
-    assert_eq!(document.source(), "type Second {}\n");
+    assert_eq!(document.source(), "table Second {}\n");
 }
 
 #[test]
 fn failed_snapshot_invalidates_build_and_clears_old_uri() {
-    let (_cleanup, project) = test_project("lsp-failed-snapshot", "type Item {}\n");
+    let (_cleanup, project) = test_project("lsp-failed-snapshot", "table Item {}\n");
     let schema_dir = project.root_dir().join("schema");
     let schema_uri = path_to_file_uri(&schema_dir.join("main.cft"));
     let mut core = LspValidationCore::new(project);
@@ -284,7 +284,7 @@ fn failed_snapshot_invalidates_build_and_clears_old_uri() {
 fn unreadable_cfd_source_invalidates_current_snapshot() {
     let (_cleanup, project) = test_project_with_config(
         "lsp-unreadable-cfd-snapshot",
-        "type Item {}\n",
+        "table Item {}\n",
         "data/items.cfd",
     );
     let source_path = project.root_dir().join("data").join("items.cfd");
@@ -315,22 +315,22 @@ fn unreadable_cfd_source_invalidates_current_snapshot() {
 
 #[test]
 fn stale_document_version_does_not_replace_newer_text() {
-    let (_cleanup, project) = test_project("lsp-document-version", "type Item {}\n");
+    let (_cleanup, project) = test_project("lsp-document-version", "table Item {}\n");
     let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut core = LspValidationCore::new(project);
 
     assert!(core
-        .apply_open_document(uri.clone(), "type Newer {}\n".to_string(), Some(7))
+        .apply_open_document(uri.clone(), "table Newer {}\n".to_string(), Some(7))
         .expect("open document"));
     assert!(!core
-        .apply_change_document(uri, "type Older {}\n".to_string(), Some(6))
+        .apply_change_document(uri, "table Older {}\n".to_string(), Some(6))
         .expect("reject stale change"));
     let document = core
         .open_documents()
         .values()
         .next()
         .expect("open document state");
-    assert_eq!(document.text, "type Newer {}\n");
+    assert_eq!(document.text, "table Newer {}\n");
     assert_eq!(document.version, Some(7));
 }
 
@@ -340,10 +340,10 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
     use std::sync::{mpsc, Arc, Barrier};
     use std::time::Duration;
 
-    let (_cleanup, project) = test_project("lsp-validation-coalescing", "type First {}\n");
+    let (_cleanup, project) = test_project("lsp-validation-coalescing", "table First {}\n");
     let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut core = LspValidationCore::new(project);
-    core.apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+    core.apply_open_document(uri.clone(), "table First {}\n".to_string(), Some(1))
         .expect("open first revision");
     let first = core.validation_input();
 
@@ -367,10 +367,10 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
 
     assert!(worker.schedule(first));
     entered.wait();
-    core.apply_change_document(uri.clone(), "type Second {}\n".to_string(), Some(2))
+    core.apply_change_document(uri.clone(), "table Second {}\n".to_string(), Some(2))
         .expect("second revision");
     assert!(worker.schedule(core.validation_input()));
-    core.apply_change_document(uri, "type Third {}\n".to_string(), Some(3))
+    core.apply_change_document(uri, "table Third {}\n".to_string(), Some(3))
         .expect("third revision");
     let latest = core.validation_input();
     assert!(worker.schedule(latest.clone()));
@@ -397,12 +397,12 @@ fn validation_worker_coalesces_pending_revisions_and_commits_only_latest() {
 
 #[test]
 fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
-    let (_cleanup, project) = test_project("lsp-stale-queued-request", "type First {}\n");
+    let (_cleanup, project) = test_project("lsp-stale-queued-request", "table First {}\n");
     let uri = path_to_file_uri(&project.root_dir().join("schema").join("main.cft"));
     let mut server = LspServer::new(project, Vec::new());
     server
         .core
-        .apply_open_document(uri.clone(), "type First {}\n".to_string(), Some(1))
+        .apply_open_document(uri.clone(), "table First {}\n".to_string(), Some(1))
         .expect("open first revision");
     let mut pending = VecDeque::from([PendingRequest::new(
         server.core.revision(),
@@ -419,7 +419,7 @@ fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
 
     server
         .core
-        .apply_change_document(uri, "type Second {}\n".to_string(), Some(2))
+        .apply_change_document(uri, "table Second {}\n".to_string(), Some(2))
         .expect("advance past queued request");
     let current = build_snapshot(&server.core.validation_input());
     server.core.commit_snapshot(current);
@@ -435,7 +435,7 @@ fn queued_feature_request_is_cancelled_when_its_validation_revision_expires() {
 #[test]
 fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
     let (_cleanup, project) =
-        test_project_with_config("lsp-watched-files", "type Item {}\n", "data/items.cfd");
+        test_project_with_config("lsp-watched-files", "table Item {}\n", "data/items.cfd");
     let root = project.root_dir().to_path_buf();
     let schema_path = root.join("schema").join("main.cft");
     let cfd_path = root.join("data").join("items.cfd");
@@ -444,7 +444,7 @@ fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
     let mut server = LspServer::new(project, Vec::new());
     server.validate_project().expect("initial validation");
 
-    std::fs::write(&schema_path, "type Item { value: int = 1; }\n").expect("change schema");
+    std::fs::write(&schema_path, "table Item { value: int = 1; }\n").expect("change schema");
     std::fs::write(&cfd_path, "new: Item {}\n").expect("change CFD");
     server
         .handle_message(&json!({
@@ -473,7 +473,7 @@ fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
     assert!(cfd_document.source.contains("new: Item"));
 
     let alternate_path = root.join("alternate.cft");
-    std::fs::write(&alternate_path, "type Alternate {}\n").expect("write alternate schema");
+    std::fs::write(&alternate_path, "table Alternate {}\n").expect("write alternate schema");
     let config_path = root.join("coflow.yaml");
     std::fs::write(
         &config_path,
@@ -496,7 +496,7 @@ fn watched_closed_schema_cfd_and_config_files_refresh_the_snapshot() {
 
 #[test]
 fn feature_requests_return_empty_results_for_missing_params_and_unknown_documents() {
-    let source = "type Item { key: string; }\n";
+    let source = "table Item { key: string; }\n";
     let (_cleanup, project) = test_project("lsp-request-param-edges", source);
     let mut server = LspServer::new(project, Vec::new());
     server.validate_project().expect("initial validation");
@@ -558,7 +558,7 @@ fn feature_requests_return_empty_results_for_missing_params_and_unknown_document
 fn initialize_advertises_semantic_token_modifiers() {
     let (_cleanup, project) = test_project(
         "lsp-semantic-modifier-legend",
-        "type Item { key: string; }\n",
+        "table Item { key: string; }\n",
     );
     let mut server = LspServer::new(project, Vec::new());
 
@@ -588,7 +588,7 @@ fn initialize_advertises_semantic_token_modifiers() {
 
 #[test]
 fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
-    let source = "type Item {\n  key: string;\n}\n";
+    let source = "table Item {\n  key: string;\n}\n";
     let (_cleanup, project) = test_project("lsp-formatting-edges", source);
     let schema_path = project.root_dir().join("schema").join("main.cft");
     let schema_uri = path_to_file_uri(&schema_path);
@@ -602,7 +602,7 @@ fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
             "params": {
                 "textDocument": {
                     "uri": extra_uri,
-                    "text": "type Extra { key: string; }\n"
+                    "text": "table Extra { key: string; }\n"
                 }
             }
         }))
@@ -630,7 +630,7 @@ fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
     assert_eq!(written_messages(&server.writer)[0]["result"], json!([]));
     server.writer.clear();
 
-    let dirty = "type Item {\nkey: string;\n}";
+    let dirty = "table Item {\nkey: string;\n}";
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",

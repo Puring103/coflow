@@ -38,8 +38,8 @@ fn compares_published_session_with_heads_own_project_model() {
     let project_root = repo.path().join("game");
     write_project(
         &project_root,
-        "type Item { value: int; }\n",
-        "Item {\n  old { value: 1, }\n  changed { value: 2, }\n}\n",
+        "table Item { value: int; }\n",
+        "old: Item { value: 1, }\nchanged: Item { value: 2, }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
     git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
@@ -50,12 +50,12 @@ fn compares_published_session_with_heads_own_project_model() {
     // 当前 schema 新增默认字段，HEAD 仍必须按旧 schema 加载。
     fs::write(
         project_root.join("schema.cft"),
-        "type Item { value: int; enabled: bool = true; }\n",
+        "table Item { value: int; enabled: bool = true; }\n",
     )
     .expect("update schema");
     fs::write(
         project_root.join("data/items.cfd"),
-        "Item {\n  changed { value: 3, }\n  added { value: 4, }\n}\n",
+        "changed: Item { value: 3, }\nadded: Item { value: 4, }\n",
     )
     .expect("update data");
 
@@ -77,12 +77,12 @@ fn compares_published_session_with_heads_own_project_model() {
             && file
                 .before
                 .as_deref()
-                .is_some_and(|source| source.contains("old { value: 1"))
+                .is_some_and(|source| source.contains("old: Item { value: 1"))
             && file
                 .after
                 .as_deref()
-                .is_some_and(|source| source.contains("added { value: 4"))
-            && file.patch.contains("-  old { value: 1, }")
+                .is_some_and(|source| source.contains("added: Item { value: 4"))
+            && file.patch.contains("-old: Item { value: 1, }")
     }));
 
     let changes = diff
@@ -112,8 +112,8 @@ fn excludes_ignored_untracked_project_sources() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { base { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " base: Item { value: 1, }\n",
     );
     fs::write(repo.path().join(".gitignore"), "data/ignored.cfd\n").expect("write ignore");
     git(repo.path(), &["init", "--quiet"]);
@@ -123,7 +123,7 @@ fn excludes_ignored_untracked_project_sources() {
     git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
     fs::write(
         repo.path().join("data/ignored.cfd"),
-        "Item { ignored { value: 2, } }\n",
+        " ignored: Item { value: 2, }\n",
     )
     .expect("write ignored data");
 
@@ -145,8 +145,8 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { current { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " current: Item { value: 1, }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
     git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
@@ -156,7 +156,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
 
     fs::write(
         repo.path().join("data/items.cfd"),
-        "Item { current { value: 2, } }\n",
+        " current: Item { value: 2, }\n",
     )
     .expect("write published value");
     let project = Project::open_schema_only(Some(repo.path())).expect("open project");
@@ -168,12 +168,12 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     fs::write(repo.path().join("coflow.yaml"), "invalid: true\n").expect("write later config");
     fs::write(
         repo.path().join("schema.cft"),
-        "type Broken { value: string; }\n",
+        "table Broken { value: string; }\n",
     )
     .expect("write later schema");
     fs::write(
         repo.path().join("data/items.cfd"),
-        "Item { current { value: 99, } }\n",
+        " current: Item { value: 99, }\n",
     )
     .expect("write later disk value");
     let diff = session
@@ -188,7 +188,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     assert_eq!(diff.files[0].path, "data/items.cfd");
     assert!(diff.files[0]
         .patch
-        .contains("+Item { current { value: 2, } }"));
+        .contains("+ current: Item { value: 2, }"));
     assert!(!diff.files[0].patch.contains("99"));
 }
 
@@ -197,8 +197,8 @@ fn keeps_source_diff_when_head_project_is_invalid() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { current { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " current: Item { value: 1, }\n",
     );
     fs::write(repo.path().join("coflow.yaml"), "not-a-project: true\n")
         .expect("write invalid HEAD config");
@@ -242,8 +242,8 @@ fn ignores_checkout_line_ending_differences() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { current { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " current: Item { value: 1, }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
     git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
@@ -274,8 +274,8 @@ fn respects_nested_excludes_and_keeps_force_added_files() {
     let global = tempfile::NamedTempFile::new().expect("global excludes");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { base { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " base: Item { value: 1, }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
     git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
@@ -303,12 +303,12 @@ fn respects_nested_excludes_and_keeps_force_added_files() {
     ] {
         let path = repo.path().join("data").join(path);
         fs::create_dir_all(path.parent().expect("parent")).expect("data directory");
-        fs::write(path, format!("Item {{ {key} {{ value: 2, }} }}\n")).expect("new data");
+        fs::write(path, format!("{key}: Item {{ value: 2, }}\n")).expect("new data");
     }
     git(repo.path(), &["add", "--force", "data/staged.cfd"]);
     fs::write(
         repo.path().join("data/items.cfd"),
-        "Item { base { value: 3, } }\n",
+        " base: Item { value: 3, }\n",
     )
     .expect("tracked data");
     let project = Project::open_schema_only(Some(repo.path())).expect("project");
@@ -343,8 +343,8 @@ fn reads_packed_heads_in_detached_linked_worktrees() {
         let project_path = "游戏 project";
         write_project(
             &repo.path().join(project_path),
-            "type Item { value: int; }\n",
-            "Item { base { value: 1, } }\n",
+            "table Item { value: int; }\n",
+            " base: Item { value: 1, }\n",
         );
         git(
             repo.path(),
@@ -374,7 +374,7 @@ fn reads_packed_heads_in_detached_linked_worktrees() {
         let project_root = checkout.join(project_path);
         fs::write(
             project_root.join("data/items.cfd"),
-            "Item { base { value: 2, } }\n",
+            " base: Item { value: 2, }\n",
         )
         .expect("change data");
         let project = Project::open_schema_only(Some(&project_root)).expect("project");
@@ -389,8 +389,8 @@ fn reads_packed_heads_in_detached_linked_worktrees() {
         assert!(diff.semantic_available, "{:?}", diff.diagnostics);
         assert_eq!(diff.files.len(), 1);
         assert_eq!(diff.records.len(), 1);
-        assert!(diff.files[0].patch.contains("-Item { base { value: 1, } }"));
-        assert!(diff.files[0].patch.contains("+Item { base { value: 2, } }"));
+        assert!(diff.files[0].patch.contains("- base: Item { value: 1, }"));
+        assert!(diff.files[0].patch.contains("+ base: Item { value: 2, }"));
     }
 }
 
@@ -399,8 +399,8 @@ fn reports_git_diagnostic_for_unborn_head() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
-        "Item { base { value: 1, } }\n",
+        "table Item { value: int; }\n",
+        " base: Item { value: 1, }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
     let project = Project::open_schema_only(Some(repo.path())).expect("project");
@@ -421,17 +421,13 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     let repo = tempfile::tempdir().expect("repo");
     write_project(
         repo.path(),
-        "type Item { @localized name: string; }\n",
+        "table Item { @localized name: string; }\n",
         "one: Item { name: \"Name\" }\n",
     );
     let dimensions = repo.path().join("dimensions/language");
     fs::create_dir_all(&dimensions).expect("dimensions");
     let overlay = dimensions.join("Item_name.cfd");
-    fs::write(
-        &overlay,
-        "one: __coflow_language_Item_name { zh: \"Before\" }\n",
-    )
-    .expect("overlay");
+    fs::write(&overlay, "one: Item_name_language { zh: \"Before\" }\n").expect("overlay");
     let config = serde_json::json!({
         "schema": "schema.cft", "data": "data/",
         "dimensions": {"language": {"variants": ["zh"], "out_dir": coflow_runtime::path_to_slash(&dimensions)}},
@@ -447,11 +443,7 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     git(repo.path(), &["config", "user.name", "Coflow Tests"]);
     git(repo.path(), &["add", "."]);
     git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
-    fs::write(
-        &overlay,
-        "one: __coflow_language_Item_name { zh: \"After\" }\n",
-    )
-    .expect("changed overlay");
+    fs::write(&overlay, "one: Item_name_language { zh: \"After\" }\n").expect("changed overlay");
     let session = Runtime::new()
         .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
         .expect("session");
@@ -470,7 +462,7 @@ fn excludes_sources_outside_repository_with_diagnostics() {
     let external = tempfile::tempdir().expect("external");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "base: Item { value: 1 }\n",
     );
     let external_file = external.path().join("outside.cfd");

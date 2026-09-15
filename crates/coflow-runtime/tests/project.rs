@@ -12,7 +12,7 @@ fn project_with_config(config: &str) -> TempDir {
     fs::write(dir.path().join("coflow.yaml"), config).expect("config");
     fs::write(
         dir.path().join("schema.cft"),
-        "type Item { name: string; }\n",
+        "table Item { name: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data");
@@ -69,7 +69,7 @@ fn validation_reports_missing_codegen_and_missing_data_path() {
     .expect("config");
     fs::write(
         dir.path().join("schema.cft"),
-        "type Item { name: string; }\n",
+        "table Item { name: string; }\n",
     )
     .expect("schema");
     let project = Project::open_schema_only(Some(&dir.path().join("coflow.yaml"))).expect("open");
@@ -109,7 +109,7 @@ fn adds_existing_inputs_to_project_config() {
     );
     let extra_schema = project.path().join("extra.cft");
     let extra_data = project.path().join("extra.cfd");
-    fs::write(&extra_schema, "type Extra {}\n").expect("extra schema");
+    fs::write(&extra_schema, "table Extra {}\n").expect("extra schema");
     fs::write(&extra_data, "").expect("extra data");
     let config = project.path().join("coflow.yaml");
 

@@ -24,6 +24,7 @@ pub enum CfdSeverity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CfdErrorCode {
+    ExecutionUnavailable,
     UnknownType,
     AbstractRecordType,
     MissingObjectType,
@@ -69,6 +70,7 @@ impl CfdErrorCode {
     #[must_use]
     const fn entry(self) -> (CfdStage, &'static str) {
         match self {
+            Self::ExecutionUnavailable => (CfdStage::Check, "EXEC-001"),
             Self::UnknownType => (CfdStage::DataModel, "DATA-001"),
             Self::AbstractRecordType => (CfdStage::DataModel, "DATA-002"),
             Self::MissingObjectType => (CfdStage::DataModel, "DATA-003"),

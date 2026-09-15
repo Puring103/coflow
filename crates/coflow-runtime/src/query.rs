@@ -1,6 +1,6 @@
 use crate::api::WriterCapabilities;
 use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
-use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_core::schema::{CftSchema, CftValueType};
 
 use crate::indexes::{FileIndex, SourceIndex};
 use crate::mutation::defaults::default_value_for_value_type;
@@ -439,9 +439,7 @@ fn dimension_value_at_path<'a>(
 ) -> Option<&'a CfdValue> {
     for segment in path {
         value = match value {
-            CfdValue::OptionSome(inner)
-            | CfdValue::ResultOk(inner)
-            | CfdValue::ResultErr(inner) => inner,
+            CfdValue::OptionSome(inner) => inner,
             CfdValue::OptionNone => return None,
             _ => value,
         };
@@ -521,13 +519,6 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         CftValueType::Option(inner) => Some(Box::new(field_shape(schema, inner))),
         _ => None,
     };
-    let (result_ok, result_err) = match ty {
-        CftValueType::Result(ok, err) => (
-            Some(Box::new(field_shape(schema, ok))),
-            Some(Box::new(field_shape(schema, err))),
-        ),
-        _ => (None, None),
-    };
     FieldShapeInfo {
         display_label: ty.display_label(),
         label: None,
@@ -537,8 +528,6 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         enum_is_flag,
         nullable: matches!(ty, CftValueType::Option(_)),
         option_inner,
-        result_ok,
-        result_err,
         polymorphic_types,
         collection_key,
         collection_item,
@@ -552,7 +541,7 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::field_shape;
-    use coflow_language::cft::{
+    use coflow_core::schema::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
     };
 
@@ -560,7 +549,7 @@ mod tests {
     fn concrete_base_object_shape_exposes_all_assignable_types() {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
+            "data NPC {} data Game : NPC {} table Building { npc: NPC; }",
         )]);
         let schema =
             build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
@@ -573,7 +562,10 @@ mod tests {
 
     #[test]
     fn optional_concrete_object_shape_exposes_its_inner_object_type() {
-        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), "type Node {}")]);
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "table Node {}",
+        )]);
         let schema =
             build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
         let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
@@ -582,7 +574,7 @@ mod tests {
 
         let shape = field_shape(&schema, &node_type);
 
-        assert_eq!(shape.display_label, "Option<Option<Node>>");
+        assert_eq!(shape.display_label, "Node??");
         assert_eq!(shape.object_type.as_deref(), Some("Node"));
         assert!(shape.nullable);
     }
@@ -597,7 +589,7 @@ mod tests {
             build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
         let dict_type = CftValueType::Dict(
             Box::new(CftValueType::Enum(
-                coflow_language::cft::EnumName::new("Element").expect("valid enum name"),
+                coflow_core::schema::EnumName::new("Element").expect("valid enum name"),
             )),
             Box::new(CftValueType::Int),
         );

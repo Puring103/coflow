@@ -117,7 +117,7 @@ mod tests {
 
     use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
     use crate::api::SourceLocation;
-    use coflow_language::cft::ModuleId;
+    use coflow_core::schema::ModuleId;
     use coflow_language::diagnostics::{CftDiagnostic, CftErrorCode, CftSeverity};
     use coflow_language::source::Span;
     use std::collections::BTreeMap;

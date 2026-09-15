@@ -1,4 +1,4 @@
-first: __coflow_language_Item_title {
+first: Item_title_language {
   zh: "First translated",
   en: None,
 }

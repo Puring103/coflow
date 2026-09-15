@@ -6,7 +6,7 @@ use crate::syntax::ast::{
     Annotation, ConstDef, EnumDef, EnumVariant, FieldDef, Item, TypeAliasDef, TypeDef, TypeRef,
     TypeRefKind,
 };
-use crate::syntax::lexer::{Token, TokenKind};
+use crate::syntax::lexer::TokenKind;
 
 impl Parser<'_> {
     pub(super) fn parse_const(
@@ -17,11 +17,8 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::Const, CftErrorCode::UnexpectedToken)?
             .start;
         let name = self.expect_ident()?;
-        let ty = if self.eat(&TokenKind::Colon).is_some() {
-            Some(self.parse_value_type()?.value)
-        } else {
-            None
-        };
+        self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
+        let ty = Some(self.parse_value_type()?.value);
         self.expect_simple(&TokenKind::Equal, CftErrorCode::ExpectedToken)?;
         let value = self.parse_default_expr()?.value;
         let end = self
@@ -113,9 +110,24 @@ impl Parser<'_> {
                 break;
             }
         }
-        self.expect_simple(&TokenKind::Type, CftErrorCode::ExpectedToken)?;
+        use crate::syntax::ast::TypeKind;
+        let kind = match self.bump().kind {
+            TokenKind::Table => Some(TypeKind::Table),
+            TokenKind::Singleton => Some(TypeKind::Singleton),
+            TokenKind::Data => Some(TypeKind::Data),
+            TokenKind::Type => None,
+            _ => {
+                return self.err(
+                    CftErrorCode::ExpectedToken,
+                    "expected table, singleton, data or type",
+                )
+            }
+        };
         let name = self.expect_ident()?;
         if self.eat(&TokenKind::Equal).is_some() {
+            if kind.is_some() {
+                return self.err(CftErrorCode::InvalidTopLevelItem, "aliases must use type");
+            }
             if let Some(span) = abstract_span.or(sealed_span) {
                 return self.err_at(
                     CftErrorCode::InvalidTopLevelItem,
@@ -135,8 +147,18 @@ impl Parser<'_> {
                 span: Span::new(start, end),
             }));
         }
+        let Some(kind) = kind else {
+            return self.err(
+                CftErrorCode::InvalidTopLevelItem,
+                "object declarations use table, singleton or data",
+            );
+        };
         let parent = if self.eat(&TokenKind::Colon).is_some() {
-            Some(self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?)
+            let path = self.expect_name_path()?;
+            Some(crate::syntax::ast::NameRef {
+                name: path.canonical(),
+                span: path.span,
+            })
         } else {
             None
         };
@@ -157,15 +179,26 @@ impl Parser<'_> {
                 dangling_annotations.append(&mut pending_annotations);
                 break;
             }
-            if self.at(&TokenKind::Check) && self.next_at(&TokenKind::LBrace) {
-                if seen_check {
-                    return self.err(CftErrorCode::DuplicateCheckBlock, "duplicate check block");
+            if self.at(&TokenKind::Check) {
+                if kind == TypeKind::Data {
+                    return self.err(
+                        CftErrorCode::InvalidTopLevelItem,
+                        "data cannot declare check",
+                    );
                 }
                 if !pending_annotations.is_empty() {
                     dangling_annotations.append(&mut pending_annotations);
                 }
                 seen_check = true;
-                check = Some(self.parse_check_block()?);
+                let next = self.parse_check_block()?;
+                if let Some(previous) = &mut check {
+                    let previous: &mut crate::syntax::ast::CheckBlock = previous;
+                    previous.source.push('\n');
+                    previous.source.push_str(&next.source);
+                    previous.span = previous.span.join(next.span);
+                } else {
+                    check = Some(next);
+                }
                 continue;
             }
             if seen_check {
@@ -180,6 +213,7 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
         Ok(Item::Type(TypeDef {
+            kind,
             name: name.name,
             name_span: name.span,
             is_abstract,
@@ -201,7 +235,40 @@ impl Parser<'_> {
         self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
         let ty = self.parse_value_type()?.value;
         let default = if self.eat(&TokenKind::Equal).is_some() {
-            Some(self.parse_default_expr()?.value)
+            if self.eat(&TokenKind::Greater).is_some() {
+                match &ty.kind {
+                    TypeRefKind::Function(parameters, _)
+                        if parameters.iter().any(|parameter| parameter.name.is_none()) =>
+                    {
+                        return self.err(
+                            CftErrorCode::InvalidDefaultExpression,
+                            "function implementation requires named parameters",
+                        );
+                    }
+                    TypeRefKind::Function(..) | TypeRefKind::Named(_) => {}
+                    _ => {
+                        return self.err(
+                            CftErrorCode::InvalidDefaultExpression,
+                            "=> requires a function field",
+                        )
+                    }
+                }
+                let body = self.capture_function_body()?;
+                let source = format!(
+                    "{} {}",
+                    &self.source[ty.span.start..ty.span.end],
+                    &self.source[body.start..body.end]
+                );
+                Some(crate::syntax::ast::DefaultExpr {
+                    kind: crate::syntax::ast::DefaultExprKind::Function {
+                        signature: ty.clone(),
+                        source,
+                    },
+                    span: ty.span.join(body),
+                })
+            } else {
+                Some(self.parse_default_expr()?.value)
+            }
         } else {
             None
         };
@@ -221,43 +288,42 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_value_type(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
-        self.parse_value_type_primary()
+        let mut value = self.parse_value_type_primary()?;
+        if let Some(end) = self.eat(&TokenKind::Question) {
+            if matches!(value.value.kind, TypeRefKind::Option(_)) {
+                return self.err(
+                    CftErrorCode::ExpectedToken,
+                    "nested optional types are not supported",
+                );
+            }
+            let span = value.value.span.join(end);
+            value = self.node(StructureKind::TypeRef, span, [value.depth], || TypeRef {
+                kind: TypeRefKind::Option(Box::new(value.value)),
+                span,
+            })?;
+        }
+        Ok(value)
     }
 
     // 类型语法的所有首 token 分支集中处理，便于核对递归深度预算。
     #[allow(clippy::too_many_lines)]
     fn parse_value_type_primary(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
         if let Some(start) = self.eat(&TokenKind::LParen) {
+            if !self.at(&TokenKind::RParen) {
+                // 括号区分可选函数与返回可选值的函数，同时参与结构深度限制。
+                let mut inner = self.nested(StructureKind::TypeRef, start, |parser| {
+                    parser.parse_value_type()
+                })?;
+                let end = self.expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?;
+                inner.value.span = start.join(end);
+                return Ok(inner);
+            }
             let end = self
                 .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
                 .end;
             return self.node(StructureKind::TypeRef, start, [], || TypeRef {
                 span: Span::new(start.start, end),
                 kind: TypeRefKind::Unit,
-            });
-        }
-        if self.peek_ident_is("Option") {
-            let start = self.expect_ident()?.span;
-            self.expect_simple(&TokenKind::Less, CftErrorCode::ExpectedToken)?;
-            let inner = self.parse_value_type()?;
-            let end = self.expect_type_close()?.end;
-            let depth = inner.depth;
-            return self.node(StructureKind::TypeRef, start, [depth], || TypeRef {
-                span: Span::new(start.start, end),
-                kind: TypeRefKind::Option(Box::new(inner.value)),
-            });
-        }
-        if self.peek_ident_is("Result") {
-            let start = self.expect_ident()?.span;
-            self.expect_simple(&TokenKind::Less, CftErrorCode::ExpectedToken)?;
-            let value = self.parse_value_type()?;
-            self.expect_simple(&TokenKind::Comma, CftErrorCode::ExpectedToken)?;
-            let error = self.parse_value_type()?;
-            let end = self.expect_type_close()?.end;
-            let depths = [value.depth, error.depth];
-            return self.node(StructureKind::TypeRef, start, depths, || TypeRef {
-                span: Span::new(start.start, end),
-                kind: TypeRefKind::Result(Box::new(value.value), Box::new(error.value)),
             });
         }
         if self.peek_ident_is("fn") {
@@ -295,17 +361,6 @@ impl Parser<'_> {
                 kind: TypeRefKind::Function(parameters, Box::new(result.value)),
             });
         }
-        if let Some(start) = self.eat(&TokenKind::Amp) {
-            let inner = self.nested(StructureKind::TypeRef, start, |parser| {
-                parser.parse_value_type_primary()
-            })?;
-            let span = Span::new(start.start, inner.value.span.end);
-            let depth = inner.depth;
-            return self.node(StructureKind::TypeRef, start, [depth], || TypeRef {
-                span,
-                kind: TypeRefKind::Ref(Box::new(inner.value)),
-            });
-        }
         if let Some(start) = self.eat(&TokenKind::LBracket) {
             let inner = self.nested(StructureKind::TypeRef, start, |parser| {
                 parser.parse_value_type()
@@ -336,42 +391,23 @@ impl Parser<'_> {
                 kind: TypeRefKind::Dict(Box::new(key.value), Box::new(value.value)),
             })
         } else {
-            let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
+            let path = self.expect_name_path()?;
+            let name = crate::syntax::ast::NameRef {
+                name: path.canonical(),
+                span: path.span,
+            };
             let kind = match name.name.as_str() {
                 "int" => TypeRefKind::Int,
                 "float" => TypeRefKind::Float,
                 "bool" => TypeRefKind::Bool,
                 "string" => TypeRefKind::String,
+                "fstring" => TypeRefKind::FString,
                 _ => TypeRefKind::Named(name.name),
             };
             self.node(StructureKind::TypeRef, name.span, [], || TypeRef {
                 kind,
                 span: name.span,
             })
-        }
-    }
-
-    fn expect_type_close(&mut self) -> Result<Span, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Greater => Ok(self.bump().span),
-            TokenKind::GreaterGreater => {
-                let split = token.span.start + 1;
-                self.tokens[self.pos] = Token {
-                    kind: TokenKind::Greater,
-                    span: Span::new(split, token.span.end),
-                };
-                Ok(Span::new(token.span.start, split))
-            }
-            TokenKind::GreaterEq => {
-                let split = token.span.start + 1;
-                self.tokens[self.pos] = Token {
-                    kind: TokenKind::Equal,
-                    span: Span::new(split, token.span.end),
-                };
-                Ok(Span::new(token.span.start, split))
-            }
-            _ => self.err(CftErrorCode::ExpectedToken, "expected `>`"),
         }
     }
 }

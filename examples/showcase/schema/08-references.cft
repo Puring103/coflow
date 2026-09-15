@@ -1,10 +1,10 @@
 # Feature: references to records by key.
 
-type Category {
+table Category {
   title: string;
 }
 
-type CatalogEntry {
-  category: &Category;
-  related: Option<&CatalogEntry> = None;
+table CatalogEntry {
+  category: Category;
+  related: CatalogEntry? = None;
 }

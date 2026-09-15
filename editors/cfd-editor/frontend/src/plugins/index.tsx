@@ -371,7 +371,7 @@ function valueAtPath(row: RecordRow, path: readonly FieldPathSegment[]): FieldVa
   let value = row.fields.find(field => field.name === first.value)?.value
   for (const segment of path.slice(1)) {
     if (!value) return null
-    while (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') value = value.value
+    while (value.kind === 'option_some') value = value.value
     if (segment.kind === 'field' && value.kind === 'object') value = value.value.fields[segment.value]
     else if (segment.kind === 'index' && value.kind === 'array') value = value.value[segment.value]
     else if (segment.kind === 'dict_key' && value.kind === 'dict') {

@@ -9,6 +9,21 @@ impl Parser<'_> {
         let mut items = Vec::new();
         let mut pending_annotations = Vec::new();
         let mut diagnostics = Vec::new();
+        let namespace = if self.peek_ident_is("namespace") {
+            self.bump();
+            let path = self.expect_name_path()?;
+            self.expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?;
+            Some(path)
+        } else {
+            None
+        };
+        let mut imports = Vec::new();
+        while self.peek_ident_is("use") {
+            self.bump();
+            let path = self.expect_name_path()?;
+            self.expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?;
+            imports.push(crate::syntax::ast::Import { path });
+        }
         while !self.at(&TokenKind::Eof) {
             let declaration_start = self.pos;
             match self.parse_annotated_item(&mut pending_annotations) {
@@ -39,6 +54,8 @@ impl Parser<'_> {
             return Err(CftDiagnostics::new(diagnostics));
         }
         Ok(ModuleAst {
+            namespace,
+            imports,
             items,
             dangling_annotations: pending_annotations,
         })
@@ -60,6 +77,9 @@ impl Parser<'_> {
         } else if self.at(&TokenKind::Enum) {
             self.parse_enum(annotations).map(Item::Enum).map(Some)
         } else if self.at(&TokenKind::Type)
+            || self.at(&TokenKind::Table)
+            || self.at(&TokenKind::Singleton)
+            || self.at(&TokenKind::Data)
             || self.at(&TokenKind::Abstract)
             || self.at(&TokenKind::Sealed)
         {
@@ -102,6 +122,9 @@ impl Parser<'_> {
             || self.at(&TokenKind::Const)
             || self.at(&TokenKind::Enum)
             || self.at(&TokenKind::Type)
+            || self.at(&TokenKind::Table)
+            || self.at(&TokenKind::Singleton)
+            || self.at(&TokenKind::Data)
             || self.at(&TokenKind::Abstract)
             || self.at(&TokenKind::Sealed)
             || self.at(&TokenKind::Check)

@@ -9,9 +9,7 @@ fn join_messages(messages: &[&str]) -> String {
     messages.join("; ")
 }
 
-fn flat_views(
-    diagnostics: &coflow_runtime::DiagnosticSet,
-) -> Vec<coflow_runtime::FlatDiagnostic> {
+fn flat_views(diagnostics: &coflow_runtime::DiagnosticSet) -> Vec<coflow_runtime::FlatDiagnostic> {
     diagnostics
         .diagnostics
         .iter()

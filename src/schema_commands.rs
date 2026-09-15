@@ -215,9 +215,10 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Float => "float".to_string(),
         SchemaTypeRefInfo::Bool => "bool".to_string(),
         SchemaTypeRefInfo::String => "string".to_string(),
+        SchemaTypeRefInfo::FString => "fstring".to_string(),
         SchemaTypeRefInfo::Named { name, .. } => name.clone(),
-        SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
-        SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
+        SchemaTypeRefInfo::Ref { target } => target.clone(),
+        SchemaTypeRefInfo::Array { item } => format!("[{}]", display_value_type(item)),
         SchemaTypeRefInfo::Dict { key, value } => {
             format!(
                 "{{{}: {}}}",
@@ -226,13 +227,8 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
             )
         }
         SchemaTypeRefInfo::Option { inner } => {
-            format!("Option<{}>", display_value_type(inner))
+            format!("{}?", display_value_type(inner))
         }
-        SchemaTypeRefInfo::Result { value, error } => format!(
-            "Result<{}, {}>",
-            display_value_type(value),
-            display_value_type(error)
-        ),
         SchemaTypeRefInfo::Function { parameters, result } => format!(
             "fn({}) -> {}",
             parameters

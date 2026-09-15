@@ -12,6 +12,8 @@ export function scrubNumericValue(
     const delta = BigInt(Math.round(deltaX * 0.5 * scale))
     return { kind: 'int', value: start.value + delta }
   }
+  // 非有限值没有可拖动的数轴位置，保留其显式文本值。
+  if (typeof start.value !== 'number' || !Number.isFinite(start.value)) return start
   const next = start.value + deltaX * 0.1 * scale
   return { kind: 'float', value: Number(next.toPrecision(12)) }
 }

@@ -7,9 +7,9 @@ use crate::editor::types::{
     DimensionFileRecords, DimensionFileRow, EditorError, WriteDimensionValueOutcome,
 };
 
-use super::SessionStore;
-use super::mutation_apply::finalize_mutation;
 use super::errors::api_diagnostics_to_editor_error;
+use super::mutation_apply::finalize_mutation;
+use super::SessionStore;
 
 impl SessionStore {
     pub fn get_dimension_file_records(

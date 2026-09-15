@@ -10,8 +10,7 @@ use super::build::{session_capabilities_for_file, SessionSnapshotParts};
 use super::{ColumnStats, EditorSession};
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
-    DeletedRecordSnapshot,
+    DeletedRecordSnapshot, EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
 };
 
 /// 删除前快照：落盘前捕获 `(CfdRecord, display_path)`，undo 为尽力而为。

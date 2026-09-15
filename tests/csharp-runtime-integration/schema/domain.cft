@@ -1,69 +1,17 @@
 enum CharacterId {}
 
-enum CharacterClass {
-  Guardian,
-  Arcanist,
-}
-
-@flag
-enum CharacterTrait {
-  Empty = 0,
-  Durable = 1,
-  Ranged = 2,
-  Magical = 4,
-}
-
 @struct
-sealed type Stats {
+sealed data Stats {
   health: int;
-  attack: int;
-  resistances: {string: int} = {};
-  score: fn(bonus: int) -> int = fn(bonus: int) -> int {
-    health + attack + bonus
-  };
-}
-
-@struct
-sealed type ScenarioConfig {
-  label: string;
-  samples: [int];
-  checkpoints: {string: Stats};
-  optionalBonus: Option<Stats>;
-  validation: Result<Option<Stats>, string>;
-}
-
-abstract type Ability {
-  label: string;
-}
-
-sealed type DamageAbility : Ability {
-  damage: int;
-}
-
-sealed type HealAbility : Ability {
-  healing: int;
+  weights: [float] = [];
 }
 
 @idAsEnum(CharacterId)
-type Character {
+table Character {
   name: string;
-  characterClass: CharacterClass;
-  traits: CharacterTrait = CharacterTrait::Empty;
-  enabled: bool = true;
   stats: Stats;
-  tags: [string];
-  attributes: {string: int};
-  primaryAbility: Ability;
-  abilities: [Ability] = [];
-  status: Result<int, string> = Ok(0);
-  fallback: Option<&Character> = None;
-  power: fn(bonus: int) -> int = fn(bonus: int) -> int {
-    stats.health + bonus
-  };
-}
-
-@singleton
-type RuntimeSettings {
-  environment: string;
-  retries: int = 3;
+  friend: Character? = None;
+  labels: {bool: string} = {};
+  text: fstring = f"{self.name}";
+  score: fn(bonus: int) -> int => { return self.stats.health + bonus; };
 }

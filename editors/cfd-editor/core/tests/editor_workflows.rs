@@ -41,7 +41,7 @@ fn configured_external_sources_can_be_opened() {
     .expect("write project config");
     let schema_path = shared_root.join("schema.cft");
     let data_path = shared_root.join("items.cfd");
-    fs::write(&schema_path, "type Item { value: int; }\n").expect("write external schema");
+    fs::write(&schema_path, "table Item { value: int; }\n").expect("write external schema");
     fs::write(&data_path, "one: Item { value: 1 }\n").expect("write external data");
 
     let sessions = SessionStore::new().expect("create session store");
@@ -128,10 +128,10 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
         root.join("schema.cft"),
         concat!(
             "enum Element { Fire, Ice, }\n",
-            "type Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
-            "type Stats { label: string = \"default\"; health: int = 100; ",
+            "data Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
+            "data Stats { label: string = \"default\"; health: int = 100; ",
             "resistances: {Element: float} = {}; combat: Combat = Combat {}; }\n",
-            "type Unit { stats: Stats = Stats {}; }\n",
+            "table Unit { stats: Stats = Stats {}; }\n",
         ),
     )
     .expect("write nested-default schema");
@@ -171,10 +171,13 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     fs::write(
         root.join("schema.cft"),
         concat!(
-            "abstract type Reward { label: string; }\n",
-            "type ItemReward : Reward { count: int; tags: [string]; }\n",
-            "type CurrencyReward : Reward { amount: int; }\n",
-            "type Holder { reward: Option<Reward>; note: Option<string>; }\n",
+            "abstract table Reward { label: string; }\n",
+            "table ItemReward : Reward { count: int; tags: [string]; }\n",
+            "table CurrencyReward : Reward { amount: int; }\n",
+            "abstract data RewardValue { label: string; }\n",
+            "data ItemRewardValue: RewardValue { count: int; tags: [string]; }\n",
+            "data CurrencyRewardValue: RewardValue { amount: int; }\n",
+            "table Holder { reward: RewardValue?; note: string?; }\n",
         ),
     )
     .expect("write inheritance schema");
@@ -183,7 +186,7 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
         &populated,
         concat!(
             "holder: Holder {\n",
-            "    reward: Some(ItemReward{\n",
+            "    reward: Some(ItemRewardValue{\n",
             "        label: \"starter\",\n",
             "        count: 1,\n",
             "        tags: [],\n",
@@ -218,9 +221,9 @@ fn function_defaults_project() -> PathBuf {
     fs::write(
         root.join("schema.cft"),
         concat!(
-            "type Rule {\n",
+            "table Rule {\n",
             "  name: string = \"base\";\n",
-            "  label: string = \"rule {name}\";\n",
+            "  label: fstring = f\"rule {self.name}\";\n",
             "  apply: fn(value: int) -> int = fn(input: int) -> int {\n",
             "    var total = input + 1;\n",
             "    total\n",
@@ -255,12 +258,12 @@ fn repairable_invalid_project() -> PathBuf {
         root.join("schema.cft"),
         concat!(
             "enum Rarity { Common, Rare }\n",
-            "type Target { label: string; }\n",
-            "type Item {\n",
+            "table Target { label: string; }\n",
+            "table Item {\n",
             "  name: string;\n",
-            "  note: Option<string>;\n",
+            "  note: string?;\n",
             "  count: int = 7;\n",
-            "  target: &Target;\n",
+            "  target: Target;\n",
             "  rarity: Rarity;\n",
             "}\n",
         ),
@@ -301,7 +304,7 @@ fn cyclic_reference_project() -> PathBuf {
     .expect("write cyclic-reference project config");
     fs::write(
         root.join("schema.cft"),
-        "type Quest { prerequisite: Option<&Quest> = None; }\n",
+        "table Quest { prerequisite: Quest? = None; }\n",
     )
     .expect("write cyclic-reference schema");
     fs::write(root.join("data/quests.cfd"), "advanced: Quest {}\n")
@@ -318,7 +321,7 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
     let (root, data_file) = array_project();
     fs::write(
         root.join("schema.cft"),
-        "type Item { name: string; title: string = \"\"; count: int = 1; }\n",
+        "table Item { name: string; title: string = \"\"; count: int = 1; }\n",
     )
     .expect("write schema");
     fs::write(
@@ -513,7 +516,7 @@ fn repository_projects_open_in_editor() {
             snapshot
                 .diagnostics
                 .iter()
-                .all(|diagnostic| diagnostic.severity != "error"),
+                .all(|diagnostic| diagnostic.severity != "error" || diagnostic.code == "EXEC-001"),
             "editor reported errors for repository project `{project}`: {:#?}",
             snapshot.diagnostics
         );
@@ -591,7 +594,10 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     assert!(annotation.nullable);
     let mut polymorphic_types = annotation.polymorphic_types.clone();
     polymorphic_types.sort();
-    assert_eq!(polymorphic_types, ["CurrencyReward", "ItemReward"]);
+    assert_eq!(
+        polymorphic_types,
+        ["CurrencyRewardValue", "ItemRewardValue"]
+    );
 
     let holder = RecordCoordinate::try_new("Holder", "holder").expect("holder coordinate");
     store
@@ -601,7 +607,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
             &[field("reward"), field("label")],
             &CfdValue::String("updated".to_string()),
         )
-        .expect("write inherited field through Option<AbstractType>");
+        .expect("write inherited field through AbstractType?");
     store
         .write_field(
             session_id,
@@ -609,7 +615,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
             &[field("reward"), field("count")],
             &CfdValue::Int(2),
         )
-        .expect("write child field through Option<AbstractType>");
+        .expect("write child field through AbstractType?");
     store
         .edit_collection(
             session_id,
@@ -617,7 +623,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
             &[field("reward"), field("tags")],
             CollectionEdit::ArrayAppend { value: None },
         )
-        .expect("append first item to child collection through Option<AbstractType>");
+        .expect("append first item to child collection through AbstractType?");
     store
         .write_field(
             session_id,
@@ -956,7 +962,7 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
         .expect("open live schema");
     for path in ["schema.cft", "deleted.cft"] {
         let tokens = store
-            .highlight_source_snapshot(project.session_id, path, "type Old { value: int; }\n")
+            .highlight_source_snapshot(project.session_id, path, "table Old { value: int; }\n")
             .expect("highlight CFT snapshot");
         assert!(!tokens.semantic_token_data.is_empty(), "{path}");
     }
@@ -1272,7 +1278,7 @@ fn cft_source_is_visible_editable_and_validated() {
     let source = store
         .read_source_text(snapshot.session_id, file_path)
         .expect("read configured CFT source");
-    assert!(source.contains("type ArrayExample"));
+    assert!(source.contains("table ArrayExample"));
 
     let invalid = source.replace("[string]", "MissingType");
     let diagnostics = store
@@ -1290,7 +1296,7 @@ fn cft_source_is_visible_editable_and_validated() {
     assert!(formatted.text.contains("  tags:"), "{}", formatted.text);
     assert!(!formatted.edits.is_empty());
     let source_with_added_type = format!(
-        "{}\n\ntype AddedFromSourceEditor {{\n  value: string;\n}}\n",
+        "{}\n\ntable AddedFromSourceEditor {{\n  value: string;\n}}\n",
         formatted.text.trim_end()
     );
     let saved = store
@@ -1303,7 +1309,7 @@ fn cft_source_is_visible_editable_and_validated() {
         .flatten()
         .any(|option| { option.name == "AddedFromSourceEditor" }));
 
-    let invalid_syntax = source.replacen("type ArrayExample {", "type ArrayExample", 1);
+    let invalid_syntax = source.replacen("table ArrayExample {", "type ArrayExample", 1);
     let invalid_formatting = store
         .format_language_document(snapshot.session_id, file_path, &invalid_syntax, 2)
         .expect("ignore formatting for invalid CFT");

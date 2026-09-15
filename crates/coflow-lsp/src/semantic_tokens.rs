@@ -1,13 +1,11 @@
-use coflow_language::cft::syntax::ast::{
-    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, DefaultExpr, DefaultExprKind,
-    Item, TypeRef, TypeRefKind,
+use coflow_core::schema::syntax::ast::{
+    Annotation, AnnotationArg, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
 };
-use coflow_language::cft::syntax::lexer::{lex, TokenKind};
-use coflow_language::cft::syntax::CheckVisitor;
-use coflow_language::cft::ModuleId;
+use coflow_core::schema::syntax::lexer::{lex, TokenKind};
+use coflow_core::schema::ModuleId;
 use coflow_language::source::Span;
 
-use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
+use super::{enum_name_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
     "recordKey",
@@ -319,7 +317,7 @@ fn add_lex_semantic_token(
 fn add_ast_semantic_tokens(
     build: &LspBuild,
     document: &LspDocument,
-    ast: &coflow_language::cft::syntax::ast::ModuleAst,
+    ast: &coflow_core::schema::syntax::ast::ModuleAst,
     tokens: &mut Vec<ByteSpanToken>,
 ) {
     for annotation in &ast.dangling_annotations {
@@ -412,11 +410,6 @@ fn add_ast_semantic_tokens(
                         add_default_expr_semantic(document, default, tokens);
                     }
                 }
-                if let Some(check) = &ty.check {
-                    for stmt in &check.stmts {
-                        add_check_stmt_semantic(build, document, stmt, tokens);
-                    }
-                }
             }
             Item::TypeAlias(alias) => {
                 push_semantic_span(
@@ -439,9 +432,6 @@ fn add_ast_semantic_tokens(
                     MOD_DECLARATION | MOD_SCHEMA,
                     tokens,
                 );
-                for stmt in &check.block.stmts {
-                    add_check_stmt_semantic(build, document, stmt, tokens);
-                }
             }
         }
     }
@@ -483,7 +473,11 @@ fn add_value_type_semantic(
     tokens: &mut Vec<ByteSpanToken>,
 ) {
     match &ty.kind {
-        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::Bool | TypeRefKind::String => {
+        TypeRefKind::Int
+        | TypeRefKind::Float
+        | TypeRefKind::Bool
+        | TypeRefKind::String
+        | TypeRefKind::FString => {
             push_semantic_span(
                 &document.source,
                 ty.span,
@@ -509,14 +503,9 @@ fn add_value_type_semantic(
         TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
             add_value_type_semantic(build, document, inner, tokens);
         }
-        TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
         TypeRefKind::Dict(key, value) => {
             add_value_type_semantic(build, document, key, tokens);
             add_value_type_semantic(build, document, value, tokens);
-        }
-        TypeRefKind::Result(value, error) => {
-            add_value_type_semantic(build, document, value, tokens);
-            add_value_type_semantic(build, document, error, tokens);
         }
         TypeRefKind::Function(parameters, result) => {
             for parameter in parameters {
@@ -551,9 +540,7 @@ fn add_default_expr_semantic(
         DefaultExprKind::Bool(_) | DefaultExprKind::OptionNone => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
-        DefaultExprKind::OptionSome(value)
-        | DefaultExprKind::ResultOk(value)
-        | DefaultExprKind::ResultErr(value) => {
+        DefaultExprKind::OptionSome(value) => {
             let keyword_len = match &expr.kind {
                 DefaultExprKind::OptionSome(_) => 4,
                 _ => 3,
@@ -648,176 +635,4 @@ fn add_default_expr_semantic(
             }
         }
     }
-}
-
-fn add_check_stmt_semantic(
-    build: &LspBuild,
-    document: &LspDocument,
-    stmt: &CheckStmt,
-    tokens: &mut Vec<ByteSpanToken>,
-) {
-    let mut visitor = CheckSemanticVisitor {
-        build,
-        document,
-        tokens,
-    };
-    let result = visitor.visit_stmt(stmt);
-    debug_assert!(result.is_ok());
-}
-
-struct CheckSemanticVisitor<'a> {
-    build: &'a LspBuild,
-    document: &'a LspDocument,
-    tokens: &'a mut Vec<ByteSpanToken>,
-}
-
-impl CheckVisitor for CheckSemanticVisitor<'_> {
-    type Error = std::convert::Infallible;
-
-    fn visit_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
-        if let CheckStmt::Quantifier { bindings, .. } = stmt {
-            for binding in bindings {
-                push_semantic_span(
-                    &self.document.source,
-                    binding.span,
-                    SEM_PARAMETER,
-                    MOD_DECLARATION,
-                    self.tokens,
-                );
-            }
-        }
-        self.walk_stmt(stmt)
-    }
-
-    fn visit_expr(&mut self, expr: &CheckExpr) -> Result<(), Self::Error> {
-        if !classify_check_expr(self.build, self.document, expr, self.tokens) {
-            self.walk_expr(expr)?;
-        }
-        Ok(())
-    }
-}
-
-#[allow(clippy::too_many_lines)]
-fn classify_check_expr(
-    build: &LspBuild,
-    document: &LspDocument,
-    expr: &CheckExpr,
-    tokens: &mut Vec<ByteSpanToken>,
-) -> bool {
-    match &expr.kind {
-        CheckExprKind::Int(_) | CheckExprKind::Float(_) => {
-            push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
-        }
-        CheckExprKind::Bool(_) => {
-            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
-        }
-        CheckExprKind::String(_) => {
-            push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
-        }
-        CheckExprKind::FormattedString(_)
-        | CheckExprKind::Index { .. }
-        | CheckExprKind::BinOp { .. }
-        | CheckExprKind::Unary { .. }
-        | CheckExprKind::CmpChain { .. } => {}
-        CheckExprKind::Name(_) => {
-            push_semantic_span(
-                &document.source,
-                expr.span,
-                SEM_VARIABLE,
-                MOD_REFERENCE,
-                tokens,
-            );
-        }
-        CheckExprKind::StaticPath(path) => {
-            for segment in &path.segments {
-                push_semantic_span(
-                    &document.source,
-                    segment.span,
-                    SEM_VARIABLE,
-                    MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
-                    tokens,
-                );
-            }
-        }
-        CheckExprKind::Records { type_name } => {
-            push_semantic_span(
-                &document.source,
-                type_name.span,
-                SEM_TYPE,
-                MOD_REFERENCE | MOD_SCHEMA,
-                tokens,
-            );
-        }
-        CheckExprKind::Field { expr, name } => {
-            if let CheckExprKind::Name(enum_name) = &expr.kind {
-                if enum_variant_exists(build, enum_name, &name.name) {
-                    push_semantic_span(
-                        &document.source,
-                        expr.span,
-                        SEM_ENUM,
-                        MOD_REFERENCE | MOD_SCHEMA,
-                        tokens,
-                    );
-                    push_semantic_span(
-                        &document.source,
-                        name.span,
-                        SEM_ENUM_MEMBER,
-                        MOD_REFERENCE | MOD_SCHEMA,
-                        tokens,
-                    );
-                    return true;
-                }
-            }
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_PROPERTY,
-                MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
-                tokens,
-            );
-        }
-        CheckExprKind::Is { predicate, .. } => match predicate {
-            coflow_language::cft::syntax::ast::TypePredicate::Some { binding, .. } => {
-                push_semantic_span(
-                    &document.source,
-                    binding.span,
-                    SEM_VARIABLE,
-                    MOD_DECLARATION,
-                    tokens,
-                );
-            }
-            coflow_language::cft::syntax::ast::TypePredicate::Type(name) => {
-                push_semantic_span(
-                    &document.source,
-                    name.span,
-                    SEM_TYPE,
-                    MOD_REFERENCE | MOD_SCHEMA,
-                    tokens,
-                );
-            }
-        },
-        CheckExprKind::Call { name, .. } => {
-            let token_type = if enum_name_exists(build, &name.name) {
-                SEM_ENUM
-            } else {
-                SEM_FUNCTION
-            };
-            let modifiers = if token_type == SEM_ENUM {
-                MOD_REFERENCE | MOD_SCHEMA
-            } else {
-                MOD_REFERENCE
-            };
-            push_semantic_span(&document.source, name.span, token_type, modifiers, tokens);
-        }
-        CheckExprKind::MethodCall { name, .. } => {
-            push_semantic_span(
-                &document.source,
-                name.span,
-                SEM_FUNCTION,
-                MOD_REFERENCE,
-                tokens,
-            );
-        }
-    }
-    false
 }

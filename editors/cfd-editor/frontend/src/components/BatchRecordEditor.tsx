@@ -15,6 +15,7 @@ import {
 import { projectBatchRecordFields } from '../state/batchRecordProjection'
 import { DataCardExpanded, EnumDirectSelect, RefDirectSelect } from './DataCard'
 import { fieldTypeColor } from '../utils/typeColor'
+import { parseFieldValueText } from '../value/fieldValue'
 
 interface Props {
   records: readonly RecordRow[]
@@ -155,8 +156,8 @@ function MixedTextInput({ kind, declaredType, onCommit }: {
         onCommit({ kind: 'int', value: BigInt(text) })
       }
       else if (kind === 'float') {
-        const value = Number(text)
-        if (text && Number.isFinite(value)) onCommit({ kind: 'float', value })
+        const value = parseFieldValueText({ kind: 'float', value: 0 }, text)
+        if (value) onCommit(value)
       } else onCommit({ kind: 'string', value: text })
       setText('')
       setDirty(false)
@@ -199,7 +200,7 @@ function mixedValueKind(
   if (refTargetType) return 'ref'
   const shown = presentationValue(sample)
   if (shown.kind !== 'option_none') return shown.kind
-  const normalized = declaredType?.replace(/^Option<(.*)>$/, '$1').replace(/\?$/, '').toLowerCase()
+  const normalized = declaredType?.replace(/\?$/, '').toLowerCase()
   if (normalized === 'bool') return 'bool'
   if (normalized?.startsWith('int') || normalized?.startsWith('uint')) return 'int'
   if (normalized === 'float' || normalized === 'double' || normalized === 'number') return 'float'

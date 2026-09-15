@@ -379,7 +379,7 @@ mod tests {
         let external = temp.join("shared");
         std::fs::create_dir_all(project_root.join("schema")).expect("create schema directory");
         std::fs::create_dir_all(&external).expect("create external data directory");
-        std::fs::write(project_root.join("schema/main.cft"), "type Item {}\n")
+        std::fs::write(project_root.join("schema/main.cft"), "table Item {}\n")
             .expect("write schema");
         std::fs::write(
             project_root.join("coflow.yaml"),

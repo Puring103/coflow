@@ -2,16 +2,15 @@ use crate::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdAst {
+    pub imports: Vec<String>,
     pub records: Vec<CfdRecord>,
 }
 
-/// A top-level record or a record inside a group.
+/// A top-level table or singleton record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdRecord {
     pub key: String,
     pub key_span: Span,
-    /// Group declaration type for records nested in `Type { ... }`.
-    pub group_type: Option<(String, Span)>,
     pub type_name: String,
     pub type_span: Span,
     pub fields: Vec<CfdField>,
@@ -41,8 +40,6 @@ pub enum CfdValue {
     FormattedString(CfdFormattedString),
     OptionNone(Span),
     OptionSome(Box<CfdValue>, Span),
-    ResultOk(Box<CfdValue>, Span),
-    ResultErr(Box<CfdValue>, Span),
     Function(CfdFunction),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
@@ -58,8 +55,6 @@ impl CfdValue {
             | Self::QuotedString(_, s)
             | Self::OptionNone(s)
             | Self::OptionSome(_, s)
-            | Self::ResultOk(_, s)
-            | Self::ResultErr(_, s)
             | Self::Array(_, s) => *s,
             Self::Function(value) => value.span,
             Self::BitExpr(expr) => expr.span,
@@ -80,21 +75,6 @@ pub struct CfdFunction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdFormattedString {
     pub source: String,
-    pub segments: Vec<CfdFormatSegment>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CfdFormatSegment {
-    Text(String),
-    Reference(CfdFieldReference),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CfdFieldReference {
-    pub type_name: Option<String>,
-    pub key: Option<String>,
-    pub path: Vec<String>,
     pub span: Span,
 }
 

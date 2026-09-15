@@ -1,7 +1,9 @@
 //! Source locations shared by CFT and CFD syntax.
 
 /// Half-open byte range in a source document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

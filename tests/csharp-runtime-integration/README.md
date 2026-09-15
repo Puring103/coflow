@@ -1,14 +1,13 @@
-# C# Runtime Integration Fixture
+# C# 原生运行时集成夹具
 
-This CI fixture verifies generated C# types, scalar and composite values, defaults, enums, flags,
-polymorphic objects, CFD loading, record references, host functions, function calls, record
-queries, and immutable module replacement. It is not a user-facing example.
+此夹具验证 Rust 契约、CFD 数据、生成的 C# 包装、记录引用、data struct、集合、模板源码及释放行为。
+函数调用和模板求值断言为未实现错误。
 
-Run it from the repository root:
+从仓库根目录运行：
 
-```bash
-COFLOW_DOTNET=/path/to/dotnet tests/csharp-runtime-integration/test.sh
+```sh
+tests/csharp-runtime-integration/test.sh
 ```
 
-The script regenerates the C# types, runs the example checks, and prints
-`csharp-runtime-integration-ok` on success.
+脚本构建原生库、生成类型并运行桌面包装层测试。Unity 2022+ / IL2CPP 另按
+`docs/2-架构/07-Unity原生集成.md` 在实际 Player 中验收。

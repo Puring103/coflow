@@ -1,4 +1,4 @@
-use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_core::schema::{CftSchema, CftValueType};
 
 pub(super) fn type_after_field_segment(
     schema: &CftSchema,

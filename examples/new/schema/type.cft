@@ -9,14 +9,14 @@ enum Gender {
   Female
 }
 
-type NPC {
+data NPC {
   name: string;
   gender: Gender;
 }
 
-type game : NPC {
+data game : NPC {
 }
 
-type Building {
+table Building {
   npc: NPC;
 }

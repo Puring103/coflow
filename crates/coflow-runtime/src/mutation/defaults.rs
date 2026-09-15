@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use crate::RecordKey;
-use coflow_language::cft::{
+use coflow_core::schema::{
     CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
     ValueDependencyMode,
 };
@@ -252,31 +252,20 @@ impl<'a> DefaultValueMaterializer<'a> {
                     .map(|value| CfdValue::OptionSome(Box::new(value))),
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::ResultOk(value) => match ty {
-                CftValueType::Result(ok, _) => self
-                    .materialize_schema_default(ok, value, materialization)
-                    .map(|value| CfdValue::ResultOk(Box::new(value))),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::ResultErr(value) => match ty {
-                CftValueType::Result(_, error) => self
-                    .materialize_schema_default(error, value, materialization)
-                    .map(|value| CfdValue::ResultErr(Box::new(value))),
-                _ => self.zero_for_ty(ty, materialization),
-            },
             CftSchemaDefaultValue::Int(value) => Ok(CfdValue::Int(*value)),
             CftSchemaDefaultValue::Float(value) => Ok(CfdValue::Float(*value)),
             CftSchemaDefaultValue::Bool(value) => Ok(CfdValue::Bool(*value)),
             CftSchemaDefaultValue::String(value) => Ok(CfdValue::String(value.clone())),
             CftSchemaDefaultValue::FormattedString(source) => Ok(CfdValue::FormattedString(
                 crate::data_model::CfdFormattedString {
-                    source: source.clone(),
-                    rendered: source.clone(),
+                    constant_origin: source.constant_origin.clone(),
+                    source: source.source.clone(),
                 },
             )),
             CftSchemaDefaultValue::Function(source) => {
                 Ok(CfdValue::Function(crate::data_model::CfdFunction {
-                    source: source.clone(),
+                    constant_origin: source.constant_origin.clone(),
+                    source: source.source.clone(),
                 }))
             }
             CftSchemaDefaultValue::Enum {
@@ -332,6 +321,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                             self.materialize_schema_default(key_type, key, materialization)?;
                         let key = match key {
                             CfdValue::Int(value) => CfdDictKey::Int(value),
+                            CfdValue::Bool(value) => CfdDictKey::Bool(value),
                             CfdValue::String(value) => CfdDictKey::String(value),
                             CfdValue::Enum(value) => CfdDictKey::Enum(value),
                             _ => return self.zero_for_ty(ty, materialization),
@@ -390,6 +380,12 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Float => Ok(CfdValue::Float(0.0)),
             CftValueType::Bool => Ok(CfdValue::Bool(false)),
             CftValueType::String => Ok(CfdValue::String(String::new())),
+            CftValueType::FString => Ok(CfdValue::FormattedString(
+                crate::data_model::CfdFormattedString {
+                    constant_origin: None,
+                    source: "f\"\"".into(),
+                },
+            )),
             CftValueType::Option(_) => Ok(CfdValue::OptionNone),
             CftValueType::RecordRef(_) => Err(one_mutation_error(
                 "MUTATION-DEFAULT",
@@ -425,12 +421,10 @@ impl<'a> DefaultValueMaterializer<'a> {
                     fields,
                 ))))
             }
-            CftValueType::Result(_, _) | CftValueType::Function(_, _) | CftValueType::Unit => {
-                Err(one_mutation_error(
-                    "MUTATION-DEFAULT",
-                    format!("no implicit editable default exists for `{ty}`"),
-                ))
-            }
+            CftValueType::Function(_, _) | CftValueType::Unit => Err(one_mutation_error(
+                "MUTATION-DEFAULT",
+                format!("no implicit editable default exists for `{ty}`"),
+            )),
         }
     }
 }
@@ -516,9 +510,7 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::*;
-    use coflow_language::cft::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-    };
+    use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
 
     fn schema(source: &str) -> CftSchema {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
@@ -528,8 +520,8 @@ mod tests {
     #[test]
     fn editable_object_omits_fields_that_require_an_explicit_choice() {
         let schema = schema(
-            "type Item {} abstract type Effect {} type Damage : Effect {} \
-             type Reward { item: &Item; effect: Effect; count: int; }",
+            "table Item {} abstract data Effect {} data Damage : Effect {} \
+             table Reward { item: Item; effect: Effect; count: int; }",
         );
         let object =
             default_object_for_type(&schema, "Reward", DefaultMaterialization::EditableShape)
@@ -542,7 +534,7 @@ mod tests {
 
     #[test]
     fn record_draft_marks_required_reference_and_type_default_sources() {
-        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let schema = schema("table Item {} table Reward { item: Item; count: int; }");
         let draft = create_record_draft_for_type(&schema, "Reward").expect("draft");
         let item = draft
             .fields
@@ -565,7 +557,7 @@ mod tests {
 
     #[test]
     fn record_draft_prefers_schema_defaults_over_type_defaults() {
-        let schema = schema("type Item { configured: int = 7; generated: int; }");
+        let schema = schema("table Item { configured: int = 7; generated: int; }");
         let draft = create_record_draft_for_type(&schema, "Item").expect("draft");
         let configured = draft
             .fields
@@ -586,7 +578,7 @@ mod tests {
 
     #[test]
     fn minimal_insert_fields_omit_required_references() {
-        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let schema = schema("table Item {} table Reward { item: Item; count: int; }");
         let fields = default_missing_fields_for_type(
             &schema,
             "Reward",

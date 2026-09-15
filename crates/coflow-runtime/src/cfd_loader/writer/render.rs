@@ -1,5 +1,5 @@
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdValue};
-use coflow_language::cft::{CftSchema, CftValueType};
+use coflow_core::schema::{CftSchema, CftValueType};
 
 use super::schema_nav::{object_type_name, type_after_field_segment};
 use super::CFD_INDENT;
@@ -29,19 +29,11 @@ pub(super) fn serialize_value_for_type(
         CfdValue::OptionSome(value) => {
             serialize_value_for_type(value, schema, option_inner(expected), depth)
         }
-        CfdValue::ResultOk(value) => format!(
-            "Ok({})",
-            serialize_value_for_type(value, schema, result_ok(expected), depth)
-        ),
-        CfdValue::ResultErr(value) => format!(
-            "Err({})",
-            serialize_value_for_type(value, schema, result_error(expected), depth)
-        ),
         CfdValue::Bool(v) => v.to_string(),
         CfdValue::Int(v) => v.to_string(),
         CfdValue::Float(v) => {
-            let s = v.to_string();
-            if s.contains('.') || s.contains('e') || s.contains('E') {
+            let s = (*v as f32).to_string();
+            if !v.is_finite() || s.contains('.') || s.contains('e') || s.contains('E') {
                 s
             } else {
                 format!("{s}.0")
@@ -52,7 +44,11 @@ pub(super) fn serialize_value_for_type(
         CfdValue::Function(v) => v.source.clone(),
         CfdValue::Enum(e) => render_enum_value(e, schema, expected),
         CfdValue::Ref(target_key) if matches!(expected, Some(CftValueType::RecordRef(_))) => {
-            format!("&{target_key}")
+            let Some(CftValueType::RecordRef(target_type)) = expected else {
+                unreachable!()
+            };
+            // 裸引用按源码所属记录类型查找，跨类型字段必须保留限定目标类型。
+            format!("&{target_type}::{target_key}")
         }
         CfdValue::Ref(target_key) => format!("&{target_key}"),
         CfdValue::Object(boxed) => {
@@ -113,6 +109,7 @@ pub(super) fn serialize_value_for_type(
                     let key = match k {
                         CfdDictKey::String(s) => format!("{s:?}"),
                         CfdDictKey::Int(n) => n.to_string(),
+                        CfdDictKey::Bool(value) => value.to_string(),
                         CfdDictKey::Enum(e) => e.variant.as_ref().map_or_else(
                             || format!("{}({})", e.enum_name, e.value),
                             ToString::to_string,
@@ -143,9 +140,7 @@ pub(super) fn serialize_value_for_type(
 fn requires_multiline_collection_layout(value: &CfdValue) -> bool {
     match value {
         CfdValue::Object(_) => true,
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            requires_multiline_collection_layout(inner)
-        }
+        CfdValue::OptionSome(inner) => requires_multiline_collection_layout(inner),
         CfdValue::Array(items) => items.iter().any(requires_multiline_collection_layout),
         CfdValue::Dict(entries) => entries
             .iter()
@@ -203,25 +198,11 @@ fn option_inner(expected: Option<&CftValueType>) -> Option<&CftValueType> {
     }
 }
 
-fn result_ok(expected: Option<&CftValueType>) -> Option<&CftValueType> {
-    match expected {
-        Some(CftValueType::Result(ok, _)) => Some(ok),
-        _ => None,
-    }
-}
-
-fn result_error(expected: Option<&CftValueType>) -> Option<&CftValueType> {
-    match expected {
-        Some(CftValueType::Result(_, error)) => Some(error),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::serialize_value_for_type;
     use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
-    use coflow_language::cft::{
+    use coflow_core::schema::{
         build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
     };
     use std::collections::BTreeMap;

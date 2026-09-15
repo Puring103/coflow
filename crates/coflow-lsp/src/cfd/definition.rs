@@ -1,5 +1,5 @@
+use coflow_core::schema::{CftSchema, CftValueType};
 use coflow_language::cfd::{CfdAst, CfdField, CfdValue};
-use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::span_contains;
 
@@ -229,18 +229,6 @@ fn ref_target_in_value(
                 return None;
             };
             ref_target_in_value(value, schema, inner, offset)
-        }
-        CfdValue::ResultOk(value, _) => {
-            let CftValueType::Result(ok, _) = expected_type else {
-                return None;
-            };
-            ref_target_in_value(value, schema, ok, offset)
-        }
-        CfdValue::ResultErr(value, _) => {
-            let CftValueType::Result(_, error) = expected_type else {
-                return None;
-            };
-            ref_target_in_value(value, schema, error, offset)
         }
         _ => None,
     }

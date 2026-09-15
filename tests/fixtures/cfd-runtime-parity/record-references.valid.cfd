@@ -1,4 +1,2 @@
-Node {
-  a { next: Some(&b) }
-  b {}
-}
+a: Node { next: Some(&b) }
+b: Node {}

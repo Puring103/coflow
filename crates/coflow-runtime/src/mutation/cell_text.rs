@@ -9,7 +9,7 @@ use super::{coercion::coerce_json_field_value, one_value_error};
 pub(crate) fn parse_cell_text_value(
     session: &ProjectSession,
     actual_type: &str,
-    key: &str,
+    _key: &str,
     path: &[CfdPathSegment],
     text: &str,
 ) -> Result<CfdValue, crate::api::DiagnosticSet> {
@@ -38,15 +38,10 @@ pub(crate) fn parse_cell_text_value(
     };
     let input = match input {
         LoadedValueDraft::FormattedString(formatted) => {
-            return crate::data_model::evaluate_formatted_string(
-                session.schema(),
-                session.model(),
-                actual_type,
-                key,
-                &formatted,
-            )
-            .map(CfdValue::FormattedString)
-            .map_err(one_value_error);
+            return Ok(CfdValue::FormattedString(crate::CfdFormattedString {
+                constant_origin: formatted.constant_origin,
+                source: formatted.source,
+            }));
         }
         other => other,
     };
@@ -66,15 +61,16 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
         LoadedValueDraft::OptionSome(value) => {
             Ok(tagged_json("$some", input_value_to_json(*value)?))
         }
-        LoadedValueDraft::ResultOk(value) => Ok(tagged_json("$ok", input_value_to_json(*value)?)),
-        LoadedValueDraft::ResultErr(value) => Ok(tagged_json("$err", input_value_to_json(*value)?)),
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
         LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
             Ok(Value::Number(Number::from(value)))
         }
         LoadedValueDraft::Float(value) => Number::from_f64(value)
             .map(Value::Number)
-            .ok_or_else(|| one_value_error("cell float must be finite")),
+            .or_else(|| {
+                coflow_core::serde_float::special(value).map(|text| Value::String(text.into()))
+            })
+            .ok_or_else(|| one_value_error("invalid float")),
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
         LoadedValueDraft::FormattedString(_) => Err(one_value_error(
             "formatted strings must be evaluated before JSON coercion",
@@ -133,6 +129,7 @@ fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {
     match key {
         LoadedDictKeyDraft::String(value) => Value::String(value),
         LoadedDictKeyDraft::Int(value) => Value::Number(Number::from(value)),
+        LoadedDictKeyDraft::Bool(value) => Value::Bool(value),
         LoadedDictKeyDraft::EnumVariant { variant, .. } => Value::String(variant),
     }
 }

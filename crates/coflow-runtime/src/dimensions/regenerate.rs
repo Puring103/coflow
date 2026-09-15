@@ -8,7 +8,7 @@ use crate::cfd_loader::CfdWriter;
 use crate::data_model::CfdDataModel;
 use crate::dimensions::DimensionField;
 use crate::project::Project;
-use coflow_language::cft::CftSchema;
+use coflow_core::schema::CftSchema;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,7 +36,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
             written_sources: 0,
         };
     }
-    let mut result = commit_dimension_generation(project, plan_result.plan, catalog);
+    let mut result = commit_dimension_generation(project, schema, plan_result.plan, catalog);
     let mut diagnostics = plan_result.diagnostics;
     diagnostics.extend(result.diagnostics);
     result.diagnostics = diagnostics;
@@ -46,6 +46,7 @@ pub(crate) fn regenerate_dimension_sources_scoped(
 
 fn commit_dimension_generation(
     project: &Project,
+    schema: &CftSchema,
     plan: DimensionGenerationPlan,
     catalog: &CfdSourceCatalog,
 ) -> DimensionGenerationResult {
@@ -64,6 +65,7 @@ fn commit_dimension_generation(
             }
             DimensionGenerationPlanOp::Sync(operation) => commit_dimension_sync(
                 project,
+                schema,
                 &catalog.writer(),
                 operation,
                 &mut diagnostics,
@@ -135,6 +137,7 @@ fn commit_dimension_remove(
 
 fn commit_dimension_sync(
     project: &Project,
+    schema: &CftSchema,
     writer: &Arc<CfdWriter>,
     operation: DimensionGenerationOperation,
     diagnostics: &mut DiagnosticSet,
@@ -142,6 +145,7 @@ fn commit_dimension_sync(
 ) -> bool {
     let source = dimension_resolved_source(project, &operation.path);
     let result = writer.sync_dimension_source(&DimensionSourceRequest {
+        schema,
         source: &source,
         entries: &operation.entries,
         variants: &operation.variants,
@@ -185,17 +189,14 @@ pub(super) enum DimensionGenerationPlanOp {
 #[derive(Debug)]
 pub(super) struct DimensionGenerationOperation {
     pub(super) path: PathBuf,
-    pub(super) actual_type: String,
     pub(super) entries: Vec<DimensionSourceEntry>,
     pub(super) variants: Vec<String>,
     pub(super) bucket: String,
-    pub(super) is_singleton: bool,
 }
 
 impl DimensionGenerationOperation {
     pub(super) fn matches_renamed_source(&self, path: &Path) -> bool {
-        !self.is_singleton
-            && path.extension().and_then(|extension| extension.to_str()) == Some("cfd")
+        path.extension().and_then(|extension| extension.to_str()) == Some("cfd")
             && path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -254,14 +255,14 @@ mod tests {
     use crate::catalog::CfdSourceCatalog;
     use crate::data_model::{CfdDataModel, LoadedValueDraft};
     use crate::project::Project;
-    use coflow_language::cft::{
+    use coflow_core::schema::{
         BucketName, CftDimensionInputs, CftFile, DimensionName, FieldName, ModuleId, TypeName,
     };
 
     use crate::dimensions::DimensionField;
 
     fn test_project(root: &std::path::Path) -> Project {
-        std::fs::write(root.join("schema.cft"), "type Item { name: string; }")
+        std::fs::write(root.join("schema.cft"), "table Item { name: string; }")
             .expect("write schema");
         std::fs::write(
             root.join("coflow.yaml"),
@@ -281,7 +282,7 @@ mod tests {
         std::fs::create_dir_all(&root).expect("create temp dir");
         std::fs::write(
             root.join("schema.cft"),
-            "type Item { name: string; } type Other { label: string; }",
+            "table Item { name: string; } table Other { label: string; }",
         )
         .expect("write schema");
         std::fs::write(
@@ -290,14 +291,14 @@ mod tests {
         )
         .expect("write config");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
-        let modules = coflow_language::cft::parse_modules([CftFile::new(
+        let modules = coflow_core::schema::parse_modules([CftFile::new(
             ModuleId::from("schema.cft"),
             "schema.cft".into(),
-            "type Item { name: string; } type Other { label: string; }",
+            "table Item { name: string; } table Other { label: string; }",
         )]);
         let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
             .expect("dimensions");
-        let schema = coflow_language::cft::build_schema(&modules, &dimensions).expect("schema");
+        let schema = coflow_core::schema::build_schema(&modules, &dimensions).expect("schema");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("item", "Item", [("name", LoadedValueDraft::from("Item"))]);
         builder.add_record(
@@ -312,15 +313,15 @@ mod tests {
                 dimension: language.clone(),
                 source_type: TypeName::new("Item").expect("type"),
                 source_field: FieldName::new("name").expect("field"),
-                bucket: BucketName::new("Item").expect("bucket"),
                 is_singleton: false,
+                bucket: BucketName::new("Item").expect("bucket"),
             },
             DimensionField {
                 dimension: language,
                 source_type: TypeName::new("Other").expect("type"),
                 source_field: FieldName::new("label").expect("field"),
-                bucket: BucketName::new("Other").expect("bucket"),
                 is_singleton: false,
+                bucket: BucketName::new("Other").expect("bucket"),
             },
         ];
 
@@ -336,7 +337,7 @@ mod tests {
         assert_eq!(result.plan.operations.len(), 1);
         assert!(matches!(
             &result.plan.operations[0],
-            DimensionGenerationPlanOp::Sync(operation) if operation.actual_type == "Item"
+            DimensionGenerationPlanOp::Sync(operation) if operation.bucket == "Item"
         ));
         std::fs::remove_dir_all(root).expect("remove temp dir");
     }
@@ -363,16 +364,21 @@ mod tests {
                 DimensionGenerationPlanOp::Remove(missing_remove),
                 DimensionGenerationPlanOp::Sync(DimensionGenerationOperation {
                     path: generated,
-                    actual_type: "Item".to_string(),
                     entries: Vec::new(),
                     variants: vec!["zh".to_string()],
                     bucket: "Item".to_string(),
-                    is_singleton: false,
                 }),
             ],
         };
 
-        let result = commit_dimension_generation(&project, plan, &CfdSourceCatalog::default());
+        let modules = coflow_core::schema::parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "table Item {}",
+        )]);
+        let schema = coflow_core::schema::build_schema(&modules, &CftDimensionInputs::default())
+            .expect("schema");
+        let result =
+            commit_dimension_generation(&project, &schema, plan, &CfdSourceCatalog::default());
         let codes = result
             .diagnostics
             .diagnostics

@@ -4,7 +4,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{
     CfdDictKey, CfdEnumValue, CfdObject, CfdValue, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::cft::{CftValueType, FieldName, RecordKey};
+use coflow_core::schema::{CftValueType, FieldName, RecordKey};
 use serde_json::{Map, Value};
 
 use crate::write_rules;
@@ -60,7 +60,12 @@ fn coerce_json_value(
             .ok_or_else(|| one_value_error("expected int")),
         CftValueType::Float => value
             .as_f64()
-            .map(CfdValue::Float)
+            .or_else(|| {
+                value
+                    .as_str()
+                    .and_then(coflow_core::serde_float::parse_special)
+            })
+            .map(|value| CfdValue::Float(f64::from(value as f32)))
             .ok_or_else(|| one_value_error("expected float")),
         CftValueType::Bool => value
             .as_bool()
@@ -70,6 +75,19 @@ fn coerce_json_value(
             .as_str()
             .map(|text| CfdValue::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string")),
+        CftValueType::FString => {
+            let source = value
+                .as_str()
+                .ok_or_else(|| one_value_error("expected fstring source"))?;
+            coflow_language::lexical::validate_formatted_string_literal(source)
+                .map_err(|error| one_value_error(error.message))?;
+            Ok(CfdValue::FormattedString(
+                crate::data_model::CfdFormattedString {
+                    constant_origin: None,
+                    source: source.to_string(),
+                },
+            ))
+        }
         CftValueType::Option(inner) => {
             let object = single_tag_object(value, "Option", &["$none", "$some"])?;
             if object.contains_key("$none") {
@@ -125,19 +143,6 @@ fn coerce_json_value(
             enum_value(session, name, variant).map(CfdValue::Enum)
         }
         CftValueType::Object(name) => coerce_json_named_value(session, name, value),
-        CftValueType::Result(ok, error) => {
-            let object = single_tag_object(value, "Result", &["$ok", "$err"])?;
-            object.get("$ok").map_or_else(
-                || {
-                    coerce_json_value(session, error, &object["$err"])
-                        .map(|value| CfdValue::ResultErr(Box::new(value)))
-                },
-                |value| {
-                    coerce_json_value(session, ok, value)
-                        .map(|value| CfdValue::ResultOk(Box::new(value)))
-                },
-            )
-        }
         CftValueType::Function(_, _) | CftValueType::Unit => Err(one_value_error(format!(
             "JSON coercion for `{expected}` is not supported"
         ))),
@@ -180,12 +185,6 @@ fn normalize_cfd_value(
     match value {
         CfdValue::OptionSome(value) => {
             normalize_cfd_value(session, *value).map(|value| CfdValue::OptionSome(Box::new(value)))
-        }
-        CfdValue::ResultOk(value) => {
-            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultOk(Box::new(value)))
-        }
-        CfdValue::ResultErr(value) => {
-            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultErr(Box::new(value)))
         }
         CfdValue::Array(items) => items
             .into_iter()
@@ -348,6 +347,10 @@ fn coerce_dict_key(
             .map(|text| CfdDictKey::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string dict key")),
         CftValueType::Int => coerce_int_dict_key(value),
+        CftValueType::Bool => value
+            .as_bool()
+            .map(CfdDictKey::Bool)
+            .ok_or_else(|| one_value_error("expected bool dictionary key")),
         CftValueType::Enum(enum_name) => {
             let variant = value.as_str().ok_or_else(|| {
                 one_value_error(format!("expected enum dict key for `{enum_name}`"))
@@ -355,7 +358,7 @@ fn coerce_dict_key(
             enum_value(session, enum_name, variant).map(CfdDictKey::Enum)
         }
         _ => Err(one_value_error(
-            "dict keys support only string, int, and enum types",
+            "dict keys support string, int, bool, and enum types",
         )),
     }
 }

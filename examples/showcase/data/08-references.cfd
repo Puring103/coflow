@@ -10,6 +10,6 @@ hammer: CatalogEntry {
 }
 
 screwdriver: CatalogEntry {
-  category: &tools,
+  category: &Category::tools,
   related: None,
 }

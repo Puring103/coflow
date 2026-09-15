@@ -24,7 +24,7 @@ describe('short names', () => {
     expect(recordShortName(fields, 'count')).toBeUndefined()
     expect(recordShortName(fields, 'missing')).toBeUndefined()
     expect(recordShortName([{ ...fields[0], missing: true }], 'name')).toBeUndefined()
-    expect(recordShortName([makeFieldCell('name', { kind: 'formatted_string', value: { source: 'source', rendered: 'Rendered name' } })], 'name')).toBe('Rendered name')
+    expect(recordShortName([makeFieldCell('name', { kind: 'formatted_string', value: { source: 'f"{self.name}"' } })], 'name')).toBeUndefined()
     expect(recordShortName([makeFieldCell('name', { kind: 'string', value: '' })], 'name')).toBeUndefined()
     expect(shortNameLabel('sword', 'Sword')).toBe('Sword(sword)')
     expect(shortNameLabel('sword', null)).toBe('sword')

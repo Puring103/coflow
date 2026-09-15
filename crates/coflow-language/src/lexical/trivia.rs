@@ -128,6 +128,9 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
         } else if ch == '#' {
             offset = scan_line_comment(source, offset, source.len());
             LosslessTokenKind::Comment
+        } else if source[offset..].starts_with("f\"") {
+            offset = scan_template(source, offset).unwrap_or(source.len());
+            LosslessTokenKind::String
         } else if ch == '"' {
             offset = scan_string_literal(source, offset, source.len(), false).end;
             LosslessTokenKind::String
@@ -164,15 +167,16 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LiteralError {
-    pub(crate) message: String,
-    pub(crate) offset: usize,
+pub struct LiteralError {
+    pub message: String,
+    pub offset: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NumberLiteralError {
     FractionDigitsMissing,
     ExponentDigitsMissing,
+    InvalidSeparator,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,12 +192,22 @@ pub(crate) fn scan_number_literal(source: &str, start: usize, limit: usize) -> N
     let bytes = source.as_bytes();
     let limit = limit.min(source.len());
     let mut end = start;
-    while end < limit && bytes[end].is_ascii_digit() {
+    let mut error = None;
+    let mut has_separator = false;
+    while end < limit && (bytes[end].is_ascii_digit() || bytes[end] == b'_') {
+        if bytes[end] == b'_' {
+            has_separator = true;
+            if end == start
+                || !bytes[end - 1].is_ascii_digit()
+                || !bytes.get(end + 1).is_some_and(u8::is_ascii_digit)
+            {
+                error = Some((NumberLiteralError::InvalidSeparator, end));
+            }
+        }
         end += 1;
     }
 
     let mut is_float = false;
-    let mut error = None;
     if bytes.get(end) == Some(&b'.') && end < limit {
         if bytes.get(end + 1).is_some_and(u8::is_ascii_digit) && end + 1 < limit {
             is_float = true;
@@ -222,13 +236,8 @@ pub(crate) fn scan_number_literal(source: &str, start: usize, limit: usize) -> N
     }
 
     let raw_end = end;
-    if matches!(bytes.get(end), Some(b'f' | b'F')) && end < limit {
-        let suffix_end = end + 1;
-        let next = source[suffix_end..limit].chars().next();
-        if !next.is_some_and(super::is_identifier_continue) {
-            end = suffix_end;
-            is_float = true;
-        }
+    if is_float && has_separator {
+        error = Some((NumberLiteralError::InvalidSeparator, start));
     }
 
     NumberLiteralScan {
@@ -282,6 +291,12 @@ pub(crate) fn scan_string_literal(
                 };
             }
             let escaped = next_char(source, offset);
+            if escaped == 'u' {
+                if let Ok((_, end)) = unicode_escape(source, offset, limit) {
+                    offset = end;
+                    continue;
+                }
+            }
             if decode_simple_escape(escaped).is_none() && error.is_none() {
                 error = Some(StringLiteralError::InvalidEscape {
                     offset: offset - 1,
@@ -348,72 +363,198 @@ pub(crate) fn scan_balanced_delimiter(
     None
 }
 
-pub(crate) fn validate_number_literal(source: &str) -> Result<(), LiteralError> {
+pub fn validate_number_literal(source: &str) -> Result<(), LiteralError> {
     let scan = scan_number_literal(source, 0, source.len());
     if let Some((_, offset)) = scan.error {
         Err(LiteralError {
             message: "expected exponent digits".into(),
             offset,
         })
+    } else if scan.end != source.len() || !source.as_bytes().first().is_some_and(u8::is_ascii_digit)
+    {
+        Err(LiteralError {
+            message: "invalid number literal".into(),
+            offset: scan.end,
+        })
     } else {
         Ok(())
+    }
+}
+
+/// 按显式 float 期望类型读取字面量，普通整数仍受 i32 范围约束。
+pub fn parse_float_literal(source: &str) -> Result<f32, LiteralError> {
+    match source {
+        "inf" => return Ok(f32::INFINITY),
+        "-inf" => return Ok(f32::NEG_INFINITY),
+        _ => {}
+    }
+    let unsigned = source.strip_prefix('-').unwrap_or(source);
+    validate_number_literal(unsigned)?;
+    let normalized = source.replace('_', "");
+    if unsigned.contains('.') || unsigned.contains('e') || unsigned.contains('E') {
+        normalized.parse::<f32>().map_err(|_| LiteralError {
+            message: "invalid float literal".into(),
+            offset: 0,
+        })
+    } else {
+        normalized
+            .parse::<i32>()
+            .map(|value| value as f32)
+            .map_err(|_| LiteralError {
+                message: "int outside i32 range".into(),
+                offset: 0,
+            })
     }
 }
 
 /// 校验函数语言使用的格式化字符串转义与插值括号。
-pub(crate) fn validate_formatted_string_literal(source: &str) -> Result<(), LiteralError> {
-    let mut offset = 1;
-    let mut interpolation = 0usize;
-    let mut closed = false;
-    while offset < source.len() {
-        let ch = next_char(source, offset);
-        offset += ch.len_utf8();
-        match ch {
-            '\\' => {
-                let escaped = (offset < source.len()).then(|| next_char(source, offset));
-                let Some(escaped) = escaped else {
-                    return Err(LiteralError {
-                        message: "unterminated string escape".into(),
-                        offset: 0,
-                    });
-                };
-                if !matches!(escaped, '"' | '\\' | 'n' | 'r' | 't') {
-                    return Err(LiteralError {
-                        message: format!("unsupported string escape `\\{escaped}`"),
-                        offset: offset - 1,
-                    });
-                }
-                offset += escaped.len_utf8();
-            }
-            '{' if source[offset..].starts_with('{') => offset += 1,
-            '{' => interpolation += 1,
-            '}' if source[offset..].starts_with('}') => offset += 1,
-            '}' if interpolation > 0 => interpolation -= 1,
-            '}' => {
-                return Err(LiteralError {
-                    message: "unmatched `}` in string".into(),
-                    offset: offset - 1,
-                });
-            }
-            '"' if interpolation == 0 => {
-                closed = true;
-                break;
-            }
-            _ => {}
-        }
-    }
-    if closed && interpolation == 0 {
-        Ok(())
-    } else {
-        Err(LiteralError {
-            message: "unterminated string literal or interpolation".into(),
+pub fn validate_formatted_string_literal(source: &str) -> Result<(), LiteralError> {
+    if !source.starts_with("f\"") {
+        return Err(LiteralError {
+            message: "expected fstring literal".into(),
             offset: 0,
-        })
+        });
     }
+    let end = scan_template(source, 0)?;
+    if end != source.len() {
+        return Err(LiteralError {
+            message: "trailing fstring content".into(),
+            offset: end,
+        });
+    }
+    Ok(())
 }
 
 fn next_char(source: &str, offset: usize) -> char {
     source[offset..].chars().next().unwrap_or('\0')
+}
+
+fn unicode_escape(source: &str, start: usize, limit: usize) -> Result<(char, usize), LiteralError> {
+    let fail = || LiteralError {
+        message: "invalid Unicode scalar escape".into(),
+        offset: start,
+    };
+    let suffix = source.get(start..limit).ok_or_else(fail)?;
+    let digits = suffix.strip_prefix("u{").ok_or_else(fail)?;
+    let end = digits.find('}').ok_or_else(fail)?;
+    if end == 0 || end > 6 {
+        return Err(fail());
+    }
+    let value = u32::from_str_radix(&digits[..end], 16)
+        .ok()
+        .and_then(char::from_u32)
+        .ok_or_else(fail)?;
+    Ok((value, start + 2 + end + 1))
+}
+
+/// 字符串转义统一解码为 Unicode 标量，普通字符串的花括号不做模板处理。
+pub fn decode_string(source: &str) -> Result<String, LiteralError> {
+    if !source.starts_with('"') || !source.ends_with('"') || source.len() < 2 {
+        return Err(LiteralError {
+            message: "expected quoted string".into(),
+            offset: 0,
+        });
+    }
+    let mut result = String::new();
+    let mut pos = 1;
+    let end = source.len() - 1;
+    while pos < end {
+        let ch = next_char(source, pos);
+        pos += ch.len_utf8();
+        if ch == '\\' {
+            if pos >= end {
+                return Err(LiteralError {
+                    message: "unterminated escape".into(),
+                    offset: pos,
+                });
+            }
+            let escaped = next_char(source, pos);
+            if escaped == 'u' {
+                let (value, next) = unicode_escape(source, pos, end)?;
+                result.push(value);
+                pos = next;
+            } else {
+                result.push(decode_simple_escape(escaped).ok_or_else(|| LiteralError {
+                    message: "invalid escape".into(),
+                    offset: pos,
+                })?);
+                pos += escaped.len_utf8();
+            }
+        } else if ch == '"' {
+            return Err(LiteralError {
+                message: "unescaped quote".into(),
+                offset: pos - 1,
+            });
+        } else {
+            result.push(ch);
+        }
+    }
+    Ok(result)
+}
+
+/// 只确定模板与插值边界，不编译或执行插值表达式。
+pub fn scan_template(source: &str, start: usize) -> Result<usize, LiteralError> {
+    let mut pos = start + 2;
+    let mut depth = 0usize;
+    while pos < source.len() {
+        let ch = next_char(source, pos);
+        if depth > 0 && ch == '"' {
+            let scan = scan_string_literal(source, pos, source.len(), false);
+            if scan.error.is_some() {
+                return Err(LiteralError {
+                    message: "invalid string in interpolation".into(),
+                    offset: pos,
+                });
+            }
+            pos = scan.end;
+            continue;
+        }
+        if depth > 0 && ch == '#' {
+            pos = scan_line_comment(source, pos, source.len());
+            continue;
+        }
+        if depth > 0 && source[pos..].starts_with("f\"") {
+            pos = scan_template(source, pos)?;
+            continue;
+        }
+        if depth == 0 && ch == '\\' {
+            pos += 1;
+            if next_char(source, pos) == 'u' {
+                pos = unicode_escape(source, pos, source.len())?.1;
+            } else {
+                let escaped = next_char(source, pos);
+                if decode_simple_escape(escaped).is_none() {
+                    return Err(LiteralError {
+                        message: "invalid template escape".into(),
+                        offset: pos,
+                    });
+                }
+                pos += escaped.len_utf8();
+            }
+            continue;
+        }
+        if depth == 0 && (source[pos..].starts_with("{{") || source[pos..].starts_with("}}")) {
+            pos += 2;
+            continue;
+        }
+        pos += ch.len_utf8();
+        match ch {
+            '"' if depth == 0 => return Ok(pos),
+            '{' => depth += 1,
+            '}' if depth > 0 => depth -= 1,
+            '}' => {
+                return Err(LiteralError {
+                    message: "unmatched template brace".into(),
+                    offset: pos - 1,
+                })
+            }
+            _ => {}
+        }
+    }
+    Err(LiteralError {
+        message: "unterminated template".into(),
+        offset: start,
+    })
 }
 
 fn take_while(source: &str, mut offset: usize, predicate: impl Fn(char) -> bool) -> usize {
@@ -467,7 +608,7 @@ mod tests {
     fn shared_scanners_keep_language_boundaries() {
         let number_source = "12.5e-2f next";
         let number = scan_number_literal(number_source, 0, number_source.len());
-        assert_eq!(number.end, 8);
+        assert_eq!(number.end, 7);
         assert!(number.is_float);
         let delimited = "(\" ) \", (# )\n value))";
         assert_eq!(
@@ -481,7 +622,7 @@ mod tests {
         for (source, end) in [
             ("12,", 2),
             ("12.5]", 4),
-            ("12e-3f ", 6),
+            ("12e-3f ", 5),
             ("12..3", 2),
             ("12.", 2),
             ("12e+", 4),

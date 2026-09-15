@@ -1,62 +1,9 @@
-@Host
-@singleton
-type HostServices {
-  environment: string;
-  trace: fn(message: string) -> ();
-  adjust: fn(value: int, operation: fn(input: int) -> int) -> int;
-  select: fn(operation: fn(input: int) -> int) -> fn(input: int) -> int;
-  decorate: fn(value: string) -> string;
-  normalize: fn(value: Option<int>) -> Result<int, string>;
-  echoStats: fn(value: Stats) -> Stats;
+singleton RuntimeSettings {
+  enabled: bool = true;
 }
 
-type Scenario {
-  hero: &Character;
-  config: ScenarioConfig;
-  stages: [fn(value: int) -> int];
-
-  execute: fn(value: int) -> int;
-  callHost: fn(value: int) -> int;
-  makeScaler: fn(scale: int) -> fn(value: int) -> int;
-  apply: fn(value: int, operation: fn(input: int) -> int) -> int;
-  compose: fn(first: fn(value: int) -> int, second: fn(value: int) -> int) -> fn(value: int) -> int;
-  hostFunction: fn(value: int) -> fn(input: int) -> int;
-  optionalFunction: fn(operation: Option<fn(input: int) -> int>) -> Option<fn(input: int) -> int>;
-  resultFunction: fn(operation: Result<fn(input: int) -> int, string>) -> Result<fn(input: int) -> int, string>;
-
-  integerLoop: fn(iterations: int) -> int;
-  floatLoop: fn(iterations: int) -> float;
-  numericConversions: fn(value: int, ratio: float) -> int;
-  enumRoundTrip: fn(value: CharacterId) -> bool;
-  increment: fn(value: int) -> int;
-  directCallChain: fn(value: int) -> int;
-  tailRecursion: fn(iterations: int) -> int;
-  tailAccumulator: fn(iterations: int, total: int) -> int;
-  fieldReadLoop: fn(iterations: int) -> int;
-  collectionPipeline: fn(value: int) -> int;
-  hostCall: fn(value: int) -> int;
-  hostComposite: fn(value: Option<int>) -> Result<int, string>;
-  propagateOption: fn(value: Option<int>) -> Option<int>;
-  propagateResult: fn(value: Result<int, string>) -> Result<int, string>;
-  propagateNested: fn(value: Result<Result<int, string>, string>) -> Result<int, string>;
-  makeOptionalAdder: fn(value: Option<int>) -> fn(input: int) -> int;
-  collectionQueries: fn(value: int) -> int;
-  emptyCollectionQueries: fn() -> int;
-  makeStats: fn(value: int) -> Stats;
-  makeDefaultStats: fn(value: int) -> Stats;
-  readExternalStats: fn(value: Stats) -> int;
-  hostStats: fn(value: Stats) -> int;
-  copyExternalCharacter: fn(value: Character) -> Character;
-  readExternalCharacterCollections: fn(value: Character) -> int;
-  copyOptionalStats: fn(value: Option<Stats>) -> Option<Stats>;
-  formatValues: fn(value: int, ratio: float, enabled: bool, optional: Option<int>) -> string;
-  syntaxControlFlow: fn(input: int) -> int;
-  syntaxOperators: fn(left: int, right: int, text: string) -> bool;
-  syntaxMatch: fn(value: int, optional: Option<int>, outcome: Result<int, string>, character: CharacterId) -> int;
-  typeMetadata: fn() -> string;
-  builtinSyntax: fn(text: string) -> bool;
-  formatSyntax: fn(text: string) -> string;
-  primeSum: fn(limit: int) -> int;
-  matrixKernel: fn(size: int) -> int;
-  fibonacci: fn(value: int) -> int;
+@Host
+singleton HostServices {
+  environment: string;
+  log: fn(message: string) -> ();
 }

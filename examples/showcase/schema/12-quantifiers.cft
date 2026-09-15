@@ -1,6 +1,6 @@
 # Feature: all, any, and none collection quantifiers.
 
-type QuantifierRule {
+table QuantifierRule {
   numbers: [int];
 
   check {

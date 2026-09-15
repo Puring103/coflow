@@ -1,12 +1,14 @@
 //! record row wire types.
-use coflow_runtime::{CfdDictKey, CfdRecord, CfdValue, DimensionValueCoordinate, DimensionValueState, RecordCoordinate};
+use coflow_runtime::{
+    CfdDictKey, CfdRecord, CfdValue, DimensionValueCoordinate, DimensionValueState,
+    RecordCoordinate,
+};
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]

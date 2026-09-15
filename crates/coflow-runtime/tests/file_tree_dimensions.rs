@@ -32,7 +32,7 @@ fn dimension_directory_identity_matches_tree_and_is_not_duplicated() {
         fs::create_dir_all(&dimension_dir).expect("dimension directory");
         fs::write(
             project_dir.join("schema.cft"),
-            "type Item { @localized name: string; }",
+            "table Item { @localized name: string; }",
         )
         .expect("schema");
         fs::write(data_dir.join("items.cfd"), "one: Item { name: \"Name\" }").expect("data");

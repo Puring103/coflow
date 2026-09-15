@@ -1,12 +1,7 @@
-# Schema API
+# 声明查询
 
-Schema API 是 CFT compiler 的只读语义模型，供 runtime、checker、codegen、LSP 和 editor 使用。它不选择输入格式、不读文件、不写产物。
+Coflow 的声明视图提供类型、字段、enum、常量、继承和维度信息。
+编辑器根据这些声明提供补全和数据编辑，代码生成据此生成强类型宿主接口。
 
-核心视图包括：
-
-- `CftSchema`：类型、字段、enum、const、继承和 dimension metadata。
-- `CftModuleSet`：模块 id、规范化路径、原文和 AST span。
-- `SchemaFieldInfo`、`SchemaTypeInfo`：供 IDE 和 generator 查询的稳定索引。
-- `ValueDependencyPlan`：默认值和 check 的依赖顺序及循环诊断。
-
-目标语言 generator 通过 `CodegenInput { schema, model, sources, target }` 消费这些只读结构；CFT 层不依赖任何 runtime 或目标语言 crate。
+声明与已加载数据只读。函数和检查规则保留签名及源码，当前版本不生成可执行程序。
+应用接入请参见 [C# 代码生成](./07-codegen/01-csharp.md)。

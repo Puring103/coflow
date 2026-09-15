@@ -1,12 +1,8 @@
-ValueGallery {
-  defaults {
-    integerValue: 0,
-    floatValue: 0.0,
-    booleanValue: true,
-    shortText: "",
-    longText: "Default-heavy record",
-    rarity: Epic,
-}
-
-
+defaults: ValueGallery {
+  integerValue: 0,
+  floatValue: 0.0,
+  booleanValue: true,
+  shortText: "",
+  longText: "Default-heavy record",
+  rarity: Epic,
 }

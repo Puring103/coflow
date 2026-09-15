@@ -14,6 +14,7 @@ export function dictKeyTemplate(annotation?: FieldAnnotation): DictKey | null {
     return { kind: 'enum', value: { enum_name: enumType, variant: null, value: 0n } }
   }
   switch (annotationDeclaredType(annotation)) {
+    case 'bool': return { kind: 'bool', value: false }
     case 'int': return { kind: 'int', value: 0n }
     case 'string': return { kind: 'string', value: '' }
     default: return null

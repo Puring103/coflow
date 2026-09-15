@@ -1,6 +1,4 @@
-# optional commas between grouped records
-Item {
-  sword { name: "Sword", tags: ["weapon", "melee"] }
-  shield { name: "Shield" },
-  bow: RangedItem { name: "Bow" }
-}
+# 每条记录显式声明类型。
+sword: Item { name: "Sword", tags: ["weapon", "melee"] }
+shield: Item { name: "Shield" }
+bow: RangedItem { name: "Bow" }

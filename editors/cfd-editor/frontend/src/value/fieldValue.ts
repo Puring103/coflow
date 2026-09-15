@@ -1,19 +1,11 @@
 import type { DictKey, FieldValue } from '../wire'
 import type { RecordRow } from '../bindings/RecordRow'
 
-const REFERENCE_NAME = String.raw`[_\p{L}][_\p{L}\p{N}]*`
-const FIELD_REFERENCE_PATTERN = new RegExp(
-  String.raw`\{(?:${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}::${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*)\}`,
-  'u',
-)
-
 export function parseFieldValueText(original: FieldValue, raw: string): FieldValue | null {
-  if (original.kind === 'option_some' || original.kind === 'result_ok' || original.kind === 'result_err') {
+  if (original.kind === 'option_some') {
     const parsed = parseFieldValueText(original.value, raw)
     if (!parsed) return null
-    if (original.kind === 'option_some') return { kind: 'option_some', value: parsed }
-    if (original.kind === 'result_ok') return { kind: 'result_ok', value: parsed }
-    return { kind: 'result_err', value: parsed }
+    return { kind: 'option_some', value: parsed }
   }
   switch (original.kind) {
     case 'bool':
@@ -21,23 +13,22 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
       return { kind: 'bool', value: raw === 'true' }
     case 'int':
       try {
-        return { kind: 'int', value: BigInt(raw) }
+        const value = BigInt(raw)
+        return value >= -2147483648n && value <= 2147483647n ? { kind: 'int', value } : null
       } catch {
         return null
       }
     case 'float': {
       if (raw.trim() === '') return null
-      const value = Number(raw)
-      return Number.isFinite(value) ? { kind: 'float', value } : null
+      if (raw === 'inf' || raw === '-inf') return { kind: 'float', value: raw }
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) return null
+      const value = Math.fround(Number(raw))
+      return { kind: 'float', value: Number.isFinite(value) ? value : value < 0 ? '-inf' : 'inf' }
     }
     case 'string':
-      return hasFieldReference(raw)
-        ? { kind: 'formatted_string', value: { source: JSON.stringify(raw), rendered: raw } }
-        : { kind: 'string', value: raw }
+      return { kind: 'string', value: raw }
     case 'formatted_string':
-      return hasFieldReference(raw)
-        ? { kind: 'formatted_string', value: { ...original.value, source: JSON.stringify(raw) } }
-        : { kind: 'string', value: raw }
+      return raw.startsWith('f"') ? { kind: 'formatted_string', value: { source: raw } } : null
     case 'enum':
       return { kind: 'enum', value: { ...original.value, variant: raw } }
     case 'ref':
@@ -48,26 +39,12 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
 }
 
 export function plainFieldValueText(value: FieldValue): string {
-  if (value.kind === 'formatted_string') return formattedSourceText(value.value.source)
+  if (value.kind === 'formatted_string') return value.value.source
   return scalarText(value) ?? ''
 }
 
-function hasFieldReference(value: string): boolean {
-  return FIELD_REFERENCE_PATTERN.test(value)
-}
-
-function formattedSourceText(source: string): string {
-  const quoted = source
-  try {
-    const value: unknown = JSON.parse(quoted)
-    return typeof value === 'string' ? value : source
-  } catch {
-    return source
-  }
-}
-
 function scalarText(value: FieldValue): string | null {
-  if (value.kind === 'option_some' || value.kind === 'result_ok' || value.kind === 'result_err') {
+  if (value.kind === 'option_some') {
     return scalarText(value.value)
   }
   switch (value.kind) {
@@ -75,7 +52,7 @@ function scalarText(value: FieldValue): string | null {
     case 'int': return String(value.value)
     case 'float': return String(value.value)
     case 'string': return value.value
-    case 'formatted_string': return value.value.rendered
+    case 'formatted_string': return value.value.source
     case 'function': return value.value.source
     case 'enum': return enumVariantText(value)
     case 'ref': return referenceKeyText(value.value)
@@ -85,8 +62,8 @@ function scalarText(value: FieldValue): string | null {
 
 export function referenceKeyText(reference: string): string {
   const withoutPrefix = reference.startsWith('&') ? reference.slice(1) : reference
-  const separator = withoutPrefix.lastIndexOf('.')
-  return separator >= 0 ? withoutPrefix.slice(separator + 1) : withoutPrefix
+  const separator = withoutPrefix.lastIndexOf('::')
+  return separator >= 0 ? withoutPrefix.slice(separator + 2) : withoutPrefix
 }
 
 export function scalarDefaultForDeclaredType(declaredType?: string): FieldValue | null {
@@ -94,6 +71,7 @@ export function scalarDefaultForDeclaredType(declaredType?: string): FieldValue 
   const stripped = stripNullableType(declaredType)
   switch (stripped) {
     case 'string': return { kind: 'string', value: '' }
+    case 'fstring': return { kind: 'formatted_string', value: { source: 'f""' } }
     case 'int': return { kind: 'int', value: 0n }
     case 'float': return { kind: 'float', value: 0 }
     case 'bool': return { kind: 'bool', value: false }
@@ -114,9 +92,7 @@ export function summaryOf(value: FieldValue): string {
   if (scalar !== null) return scalar
   switch (value.kind) {
     case 'option_none': return '-'
-    case 'option_some':
-    case 'result_ok':
-    case 'result_err': return summaryOf(value.value)
+    case 'option_some': return summaryOf(value.value)
     case 'object': return value.value.actual_type
     case 'array': {
       if (value.value.length === 0) return '[]'
@@ -162,8 +138,6 @@ function fullTextOf(value: FieldValue): string {
   switch (value.kind) {
     case 'option_none': return 'None'
     case 'option_some': return fullTextOf(value.value)
-    case 'result_ok': return `ok ${fullTextOf(value.value)}`
-    case 'result_err': return `err ${fullTextOf(value.value)}`
     case 'object': return [
       value.value.actual_type,
       ...Object.entries(value.value.fields).flatMap(([name, child]) => child ? [name, fullTextOf(child)] : [name]),
@@ -179,27 +153,17 @@ export function dictKeyShortLabel(key: DictKey): string {
   switch (key.kind) {
     case 'string': return key.value
     case 'int': return String(key.value)
+    case 'bool': return String(key.value)
     case 'enum': return `${key.value.enum_name} ${key.value.variant ?? String(key.value.value)}`
   }
 }
 
 export function optionDepthForDeclaredType(declaredType?: string): number {
-  if (!declaredType) return 0
-  let current = declaredType
-  let depth = 0
-  while (current.startsWith('Option<') && current.endsWith('>')) {
-    depth += 1
-    current = current.slice(7, -1)
-  }
-  return depth
+  return declaredType?.endsWith('?') ? 1 : 0
 }
 
 function stripNullableType(declaredType: string): string {
-  let current = declaredType
-  while (current.startsWith('Option<') && current.endsWith('>')) {
-    current = current.slice(7, -1)
-  }
-  return current.endsWith('?') ? current.slice(0, -1) : current
+  return declaredType.endsWith('?') ? declaredType.slice(0, -1) : declaredType
 }
 
 export function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
@@ -210,6 +174,7 @@ function dictKindLabel(key: DictKey): string {
   switch (key.kind) {
     case 'string': return 'string'
     case 'int': return 'int'
+    case 'bool': return 'bool'
     case 'enum': return key.value.enum_name
   }
 }
@@ -218,8 +183,6 @@ function valueKindLabel(value: FieldValue): string {
   switch (value.kind) {
     case 'option_none': return 'None'
     case 'option_some': return valueKindLabel(value.value)
-    case 'result_ok': return `Ok<${valueKindLabel(value.value)}>`
-    case 'result_err': return `Err<${valueKindLabel(value.value)}>`
     case 'bool': return 'bool'
     case 'int': return 'int'
     case 'float': return 'float'

@@ -1,7 +1,6 @@
 mod annotations;
 mod budget;
 mod check;
-mod check_primary;
 mod defaults;
 mod definitions;
 mod literals;
@@ -26,6 +25,25 @@ use crate::syntax::lexer::{lex, Token, TokenKind};
 /// grammar.
 pub fn parse_module(module: &ModuleId, source: &str) -> Result<ModuleAst, CftDiagnostics> {
     parse_module_with_options(module, source, CftParseOptions::default())
+}
+
+/// 解析完整类型文本，编辑器与 CFD 共用语言语法。
+pub fn parse_type(source: &str) -> Result<crate::syntax::ast::TypeRef, CftDiagnostics> {
+    let module = ModuleId::from("type");
+    let tokens = lex(&module, source)?;
+    let mut parser = Parser::new(&module, source, tokens, CftParseOptions::default());
+    let value = parser.parse_value_type()?.value;
+    parser.expect_simple(&TokenKind::Eof, CftErrorCode::ExpectedToken)?;
+    Ok(value)
+}
+
+/// 共享函数签名解析入口；只读取类型前缀，不编译函数体。
+pub fn parse_type_prefix(source: &str) -> Result<crate::syntax::ast::TypeRef, CftDiagnostics> {
+    let module = ModuleId::from("signature");
+    let tokens = lex(&module, source)?;
+    Parser::new(&module, source, tokens, CftParseOptions::default())
+        .parse_value_type()
+        .map(|parsed| parsed.value)
 }
 
 /// Parses one CFT module with explicit structural resource limits.
@@ -160,7 +178,10 @@ impl<'a> Parser<'a> {
 
     pub(super) fn bump(&mut self) -> Token {
         let token = self.tokens[self.pos].clone();
-        self.pos += 1;
+        // EOF 是稳定哨兵，未完成声明的错误恢复不能越过 token 数组。
+        if token.kind != TokenKind::Eof {
+            self.pos += 1;
+        }
         token
     }
 

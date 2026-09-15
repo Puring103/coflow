@@ -1,6 +1,6 @@
 use crate::api::{DiagnosticSet, WriteFieldPathSegment};
+use coflow_core::schema::{CftSchema, CftValueType};
 use coflow_language::cfd::ast::{CfdBlock, CfdRecord as AstRecord, CfdValue as AstValue};
-use coflow_language::cft::{CftSchema, CftValueType};
 use coflow_language::source::Span;
 
 use super::diag;
@@ -98,12 +98,6 @@ fn locate_target_in_value(
     match (current_type, value) {
         (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) => {
             return locate_target_in_value(schema, inner_type, inner_value, path, depth);
-        }
-        (CftValueType::Result(ok_type, _), AstValue::ResultOk(inner_value, _)) => {
-            return locate_target_in_value(schema, ok_type, inner_value, path, depth);
-        }
-        (CftValueType::Result(_, error_type), AstValue::ResultErr(inner_value, _)) => {
-            return locate_target_in_value(schema, error_type, inner_value, path, depth);
         }
         _ => {}
     }

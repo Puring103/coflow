@@ -1,25 +1,25 @@
-@struct sealed type Stats {
+@struct sealed data Stats {
     value: int;
     transform: fn(int) -> int = fn(input: int) -> int { input + value };
 }
 
-type Item {
+table Item {
     @localized title: string = "Item";
     stats: Stats;
-    next: Option<&Item> = None;
+    next: Item? = None;
     calculate: fn(int) -> int;
 }
 
-@struct sealed type ThemeValue { value: int; }
+@struct sealed data ThemeValue { value: int; }
 
-type DimensionBase {
+table DimensionBase {
     @localized name: string;
     @dimension("platform") hint: string;
 }
 
-type DimensionChild : DimensionBase {}
+table DimensionChild : DimensionBase {}
 
-@singleton type UiText {
+singleton UiText {
     @localized welcome: string;
     @dimension("language") weights: [int] = [1, 2];
     @dimension("language") theme: ThemeValue = ThemeValue { value: 5 };
@@ -28,7 +28,7 @@ type DimensionChild : DimensionBase {}
     sameTheme: fn(ThemeValue, ThemeValue) -> bool = fn(left: ThemeValue, right: ThemeValue) -> bool { left == right };
 }
 
-@Host @singleton type Services {
+@Host singleton Services {
     environment: string;
     adjust: fn(int) -> int;
     notify: fn(int) -> ();

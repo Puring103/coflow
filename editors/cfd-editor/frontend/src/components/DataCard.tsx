@@ -192,6 +192,7 @@ function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
 
 function dictKeyText(k: DictKey): string {
   switch (k.kind) {
+    case 'bool': return String(k.value)
     case 'string': return `"${k.value}"`
     case 'int': return String(k.value)
     case 'enum': return dictEnumVariantText(k)
@@ -218,8 +219,6 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
     case 'option_some':
-    case 'result_ok':
-    case 'result_err':
       return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
     case 'bool':
       return (
@@ -233,7 +232,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'string':
       return <span className="vc vc-str"><RichTextString text={value.value} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'formatted_string':
-      return <span className="vc vc-str"><RichTextString text={value.value.rendered} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
+      return <span className="vc vc-str"><code>{highlightSearchText(value.value.source, highlightQuery)}</code></span>
     case 'enum':
       return (
         <span className="vc vc-enum">
@@ -1363,7 +1362,7 @@ function TextDirectInput({
     <input
       className="dc-input dc-input-flat dc-input-themed"
       style={{ '--field-color': color } as CSSProperties}
-      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
+      type="text"
       value={text}
       onChange={e => setText(e.target.value)}
       onBlur={() => {
@@ -1825,7 +1824,7 @@ export function InlineEditor({
   return (
     <input
       className="dc-input"
-      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
+      type="text"
       value={editVal}
       autoFocus
       onChange={e => setEditVal(e.target.value)}
@@ -2146,6 +2145,7 @@ function childCount(v: FieldValue): number | null {
 
 function dictKeyEq(a: DictKey, b: DictKey): boolean {
   if (a.kind !== b.kind) return false
+  if (a.kind === 'bool' && b.kind === 'bool') return a.value === b.value
   if (a.kind === 'string' && b.kind === 'string') return a.value === b.value
   if (a.kind === 'int' && b.kind === 'int') return a.value === b.value
   if (a.kind === 'enum' && b.kind === 'enum') {
@@ -2156,6 +2156,7 @@ function dictKeyEq(a: DictKey, b: DictKey): boolean {
 
 function dictKeyPathText(key: DictKey): string {
   switch (key.kind) {
+    case 'bool': return String(key.value)
     case 'string': return JSON.stringify(key.value)
     case 'int': return String(key.value)
     case 'enum': {

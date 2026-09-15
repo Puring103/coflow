@@ -11,16 +11,14 @@ workspace = true
 
 [features]
 default = []
-internal-check-bench = []
 ts-export = [
     "dep:ts-rs",
-    "coflow-model/ts-export",
+    "coflow-core/ts-export",
 ]
 
 [dependencies]
 coflow-language = { path = "../coflow-language" }
-coflow-model = { path = "../coflow-model" }
-coflow-checker = { path = "../coflow-checker" }
+coflow-core = { path = "../coflow-core" }
 coflow-codegen = { path = "../coflow-codegen" }
 coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
 coflow-staging = { path = "../coflow-staging" }
@@ -35,18 +33,3 @@ gix = { version = "0.87", default-features = false, features = ["sha1", "sha256"
 
 [dev-dependencies]
 coflow-format = { path = "../coflow-format" }
-
-[[bench]]
-name = "check_planning"
-harness = false
-required-features = ["internal-check-bench"]
-
-[[bench]]
-name = "check_execution"
-harness = false
-required-features = ["internal-check-bench"]
-
-[[bench]]
-name = "check_limits"
-harness = false
-required-features = ["internal-check-bench"]

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <TargetFramework>netstandard2.1</TargetFramework>
     <RootNamespace>Coflow.Runtime</RootNamespace>
     <AssemblyName>Coflow.Runtime</AssemblyName>
     <Nullable>enable</Nullable>
@@ -9,14 +9,7 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Coflow.Runtime</PackageId>
-    <Description>Strongly typed CFD module loading, snapshot compilation, function binding, and virtual machine execution.</Description>
-    <PackageVersion>0.9.1</PackageVersion>
-    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
+    <Description>Unity 2022+ and IL2CPP bindings for the Coflow Rust runtime.</Description>
+    <PackageVersion>0.11.0</PackageVersion>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
 </Project>

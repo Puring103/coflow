@@ -1,10 +1,9 @@
-@singleton
-type UiText {
+singleton UiText {
   key: string;
 
   @localized
   text: string;
 
   @dimension("platform")
-  hint: Option<string> = None;
+  hint: string? = None;
 }

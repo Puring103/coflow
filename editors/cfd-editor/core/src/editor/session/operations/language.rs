@@ -2,8 +2,8 @@
 //!
 //! 语言服务只借用会话内的嵌入式 LSP，不触碰引擎写接口。
 
-use super::super::{EditorSession, SessionStore};
 use super::super::errors::api_diagnostics_to_editor_error;
+use super::super::{EditorSession, SessionStore};
 use crate::editor::types::{
     EditorError, FunctionDocumentState, LanguageCompletion, LanguageDiagnostic,
     LanguageDocumentState, LanguageFormattingResult, LanguagePosition, LanguageRange,
@@ -213,7 +213,6 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
     }
     source.len()
 }
-
 
 impl SessionStore {
     #[allow(clippy::significant_drop_tightening)]
@@ -537,5 +536,4 @@ impl SessionStore {
         drop(session);
         self.reload_session(id)
     }
-
 }

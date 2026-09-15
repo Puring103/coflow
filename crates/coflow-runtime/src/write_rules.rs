@@ -3,7 +3,7 @@ use crate::data_model::{
     CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
     ValueValidationRequest,
 };
-use coflow_language::cft::{CftSchema, CftValueType, TypeName};
+use coflow_core::schema::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
 
 use crate::ProjectSession;
@@ -151,14 +151,6 @@ pub(crate) fn expected_type_for_record_path(
             match (&current_type, current_value) {
                 (CftValueType::Option(inner), Some(CfdValue::OptionSome(value))) => {
                     current_type = (**inner).clone();
-                    current_value = Some(value);
-                }
-                (CftValueType::Result(ok, _), Some(CfdValue::ResultOk(value))) => {
-                    current_type = (**ok).clone();
-                    current_value = Some(value);
-                }
-                (CftValueType::Result(_, err), Some(CfdValue::ResultErr(value))) => {
-                    current_type = (**err).clone();
                     current_value = Some(value);
                 }
                 _ => break,

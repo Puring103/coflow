@@ -152,8 +152,13 @@ fn prepare_project_code<T>(
     }
 
     let session = Runtime::new().open_read_only_session(project.clone())?;
-    if session.queries().has_diagnostics() {
-        return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
+    // 生成契约和静态包装不依赖虚拟机；执行暂不可用不属于生成输入错误。
+    let mut input_diagnostics = session.queries().diagnostics().as_set().clone();
+    input_diagnostics
+        .diagnostics
+        .retain(|diagnostic| diagnostic.code != "EXEC-001");
+    if !input_diagnostics.is_empty() {
+        return Ok(CommandOutcome::Diagnostics(input_diagnostics));
     }
     let id_as_enum_values =
         id_as_enum::prepare_values(project, session.queries().id_as_enum_info())?;

@@ -1,5 +1,5 @@
-use coflow_language::cft::syntax::ast::{Annotation, Item};
-use coflow_language::cft::{CftConstValue, CftType};
+use coflow_core::schema::syntax::ast::{Annotation, Item};
+use coflow_core::schema::{CftConstValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
@@ -149,17 +149,17 @@ fn type_hover_text(ty: &CftType) -> String {
 fn const_value_to_string(value: &CftConstValue) -> String {
     match value {
         CftConstValue::Int(value) => value.to_string(),
-        CftConstValue::Float(value) => value.to_string(),
+        CftConstValue::Float(value) => (*value as f32).to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
-        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => source.clone(),
+        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => {
+            source.source.clone()
+        }
         CftConstValue::Enum {
             enum_name, variant, ..
         } => format!("{enum_name}::{variant}"),
         CftConstValue::OptionNone => "None".to_string(),
         CftConstValue::OptionSome(value) => format!("Some({})", const_value_to_string(value)),
-        CftConstValue::ResultOk(value) => format!("Ok({})", const_value_to_string(value)),
-        CftConstValue::ResultErr(value) => format!("Err({})", const_value_to_string(value)),
         CftConstValue::Array(values) => format!(
             "[{}]",
             values

@@ -1855,7 +1855,7 @@ function CellTextEditor({
   return (
     <input
       className="dc-input dc-input-flat"
-      type={value.kind === 'float' ? 'number' : 'text'}
+      type="text"
       inputMode={value.kind === 'int' ? 'numeric' : undefined}
       value={text}
       autoFocus

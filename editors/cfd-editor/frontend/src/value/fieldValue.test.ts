@@ -3,13 +3,13 @@ import { parseFieldValueText, plainFieldValueText, recordMatchesFullTextSearch, 
 import type { RecordRow } from '../bindings/RecordRow'
 
 describe('FieldValue authoring', () => {
-  it('parses integers without passing through a JavaScript number', () => {
+  it('keeps signed 32-bit integer limits', () => {
     const parsed = parseFieldValueText(
       { kind: 'int', value: 0n },
-      '9007199254740993123456789',
+      '2147483647',
     )
 
-    expect(parsed).toEqual({ kind: 'int', value: 9007199254740993123456789n })
+    expect(parsed).toEqual({ kind: 'int', value: 2147483647n })
   })
 
   it('rejects partial or non-finite numeric input', () => {
@@ -22,10 +22,6 @@ describe('FieldValue authoring', () => {
       kind: 'option_some',
       value: { kind: 'int', value: 1n },
     }, '2')).toEqual({ kind: 'option_some', value: { kind: 'int', value: 2n } })
-    expect(parseFieldValueText({
-      kind: 'result_err',
-      value: { kind: 'string', value: 'old' },
-    }, 'new')).toEqual({ kind: 'result_err', value: { kind: 'string', value: 'new' } })
   })
 
   it('provides one summary for table filtering and editor cards', () => {
@@ -33,43 +29,27 @@ describe('FieldValue authoring', () => {
       kind: 'array',
       value: [
         { kind: 'string', value: 'alpha' },
-        { kind: 'int', value: 9007199254740993n },
+        { kind: 'int', value: 2147483647n },
       ],
-    })).toBe('[alpha, 9007199254740993]')
+    })).toBe('[alpha, 2147483647]')
   })
 
-  it('displays formatted output but edits the original source', () => {
-    const value = {
-      kind: 'formatted_string' as const,
-      value: {
-        source: '"<b>{&Item::sword.name}</b>"',
-        rendered: '<b>Iron Sword</b>',
-      },
-    }
-    expect(summaryOf(value)).toBe('<b>Iron Sword</b>')
-    expect(plainFieldValueText(value)).toBe('<b>{&Item::sword.name}</b>')
+  it('shows and edits template source without execution', () => {
+    const value = { kind: 'formatted_string' as const, value: { source: 'f"{self.name}"' } }
+    expect(summaryOf(value)).toBe('f"{self.name}"')
+    expect(plainFieldValueText(value)).toBe('f"{self.name}"')
+    expect(parseFieldValueText(value, 'f"new {self.name}"')).toEqual({ kind: 'formatted_string', value: { source: 'f"new {self.name}"' } })
+    expect(parseFieldValueText(value, 'ordinary')).toBeNull()
   })
 
-  it('automatically recognizes record field references in ordinary string input', () => {
-    expect(parseFieldValueText(
-      { kind: 'string', value: '' },
-      '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
-    )).toEqual({
-      kind: 'formatted_string',
-      value: {
-        source: '"当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}"',
-        rendered: '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
-      },
-    })
-    expect(parseFieldValueText({ kind: 'string', value: '' }, '样式 {color:red}')).toEqual({
-      kind: 'string',
-      value: '样式 {color:red}',
-    })
+  it('keeps braces literal in ordinary strings', () => {
+    expect(parseFieldValueText({ kind: 'string', value: '' }, '{self.name}')).toEqual({ kind: 'string', value: '{self.name}' })
+    expect(parseFieldValueText({ kind: 'int', value: 0n }, '2147483648')).toBeNull()
   })
 
   it('renders references as keys without type qualifiers', () => {
-    expect(referenceKeyText('&ItemConfig.sword')).toBe('sword')
-    expect(summaryOf({ kind: 'ref', value: 'ItemConfig.sword' })).toBe('sword')
+    expect(referenceKeyText('&ItemConfig::sword')).toBe('sword')
+    expect(summaryOf({ kind: 'ref', value: 'ItemConfig::sword' })).toBe('sword')
     expect(referenceKeyText('plain_key')).toBe('plain_key')
   })
 

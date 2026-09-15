@@ -1,6 +1,7 @@
 {
   "version": 1,
   "graph_positions": {},
+  "graph_compact_modes": {},
   "short_name_fields": {},
   "view_order": {},
   "views": {},
@@ -8,12 +9,6 @@
   "record_groups": {},
   "workspace": {
     "tabs": [
-      {
-        "file_path": "data/dimensions/language/UiText.cfd",
-        "type_name": "CompositeEffect",
-        "view_id": "__default_table",
-        "view_kind": "table"
-      },
       {
         "file_path": "data/01-values.cfd",
         "type_name": "ValueGallery",
@@ -44,11 +39,7 @@
         "file_path": "data/03-quests.cfd",
         "type_name": "Quest",
         "view_id": "__default_source",
-        "view_kind": "source",
-        "coordinate": {
-          "actual_type": "Quest",
-          "key": "introduction"
-        }
+        "view_kind": "source"
       },
       {
         "file_path": "schema/05-dimensions.cft",

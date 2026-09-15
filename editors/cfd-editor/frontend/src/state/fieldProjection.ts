@@ -76,8 +76,6 @@ export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
     case 'option_none':
       return true
     case 'option_some':
-    case 'result_ok':
-    case 'result_err':
       return sameFieldValue(left.value, (right as typeof left).value)
     case 'bool':
     case 'float':
@@ -86,7 +84,7 @@ export function sameFieldValue(left: FieldValue, right: FieldValue): boolean {
       return left.value === (right as typeof left).value
     case 'formatted_string': {
       const value = (right as typeof left).value
-      return left.value.source === value.source && left.value.rendered === value.rendered
+      return left.value.source === value.source
     }
     case 'function':
       return left.value.source === (right as typeof left).value.source
@@ -193,6 +191,7 @@ function valueAtPath(
 
 function sameDictKey(left: DictKey, right: DictKey): boolean {
   if (left.kind !== right.kind) return false
+  if (left.kind === 'bool') return left.value === (right as typeof left).value
   if (left.kind === 'string') return left.value === (right as typeof left).value
   if (left.kind === 'int') return BigInt(left.value) === BigInt((right as typeof left).value)
   const value = (right as typeof left).value

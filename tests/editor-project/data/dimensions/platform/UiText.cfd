@@ -1,5 +1,0 @@
-hint: __coflow_platform_UiText_hint {
-  default: "Press Enter",
-  desktop: "Press Enter",
-  mobile: "Tap to continue",
-}

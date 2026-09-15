@@ -40,10 +40,10 @@ use crate::editor::types::{EditorError, ProjectBootstrap};
 pub use diagnostics::Diagnostics;
 // 跨模块复用：行构建/mutation/错误映射统一经 `session::` 路径暴露，
 // 子模块不再经 `super::*` 通配导入，避免分层被打破。
-pub(crate) use build::{build_session, diagnostic_messages};
 use build::SessionSnapshotParts;
-pub(crate) use row_build::project_bootstrap;
+pub(crate) use build::{build_session, diagnostic_messages};
 use revision::{RevisionCoordinator, RevisionTicket};
+pub(crate) use row_build::project_bootstrap;
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.

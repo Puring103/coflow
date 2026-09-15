@@ -17,10 +17,10 @@ use crate::api::{
 };
 use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
 use crate::{RecordOrigin, TextSpan};
-use coflow_format::format_cfd;
-use coflow_language::cft::{
+use coflow_core::schema::{
     build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
 };
+use coflow_format::format_cfd;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -120,10 +120,8 @@ fn reorders_grouped_and_top_level_records_without_losing_record_types() {
     let file = dir.join("items.cfd");
     fs::write(
         &file,
-        r"Item {
-  grouped {
-    value: 1,
-  }
+        r"grouped: Item {
+  value: 1,
 }
 
 top: Item {
@@ -132,7 +130,7 @@ top: Item {
 ",
     )
     .expect("write seed");
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -186,7 +184,7 @@ shield: Item {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
           value: int;
         }
@@ -230,7 +228,7 @@ fn inserts_missing_field_with_two_space_indentation() {
     let dir = temp_dir("insert-missing-field-indentation");
     let file = dir.join("items.cfd");
     fs::write(&file, "sword: Item {\n}\n").expect("write seed");
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let origin = origin_for(&file);
     let value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
@@ -260,7 +258,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
     fs::write(
         &file,
         r"stage_start: Stage {
-  first_clear_reward: ItemReward { item: &sword, count: 1 },
+  first_clear_reward: ItemReward { item: &Item::sword, count: 1 },
 }
 ",
     )
@@ -268,18 +266,18 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        abstract type Reward {}
+        abstract data Reward {}
 
-        type ItemReward : Reward {
-          item: &Item;
+        data ItemReward : Reward {
+          item: Item;
           count: int;
         }
 
-        type Stage {
+        table Stage {
           first_clear_reward: Reward;
         }
         ",
@@ -307,7 +305,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("ItemReward { item: &blade, count: 1 }"),
+        after.contains("ItemReward { item: &Item::blade, count: 1 }"),
         "expected polymorphic field ref update: {after}"
     );
 }
@@ -331,8 +329,8 @@ shared: Skill {
 
     let schema = compile_schema(
         r"
-        type Item { name: string; }
-        type Skill { name: string; }
+        table Item { name: string; }
+        table Skill { name: string; }
         ",
     );
 
@@ -350,7 +348,7 @@ shared: Skill {
             field_path: &segments,
             new_value: &request_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect("write skill");
     writer.publish().expect("publish staged field");
@@ -381,7 +379,7 @@ target_b: Item {
 }
 
 picker: Holder {
-  current: &target_a,
+  current: &Item::target_a,
 }
 "#,
     )
@@ -389,12 +387,12 @@ picker: Holder {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Holder {
-          current: &Item;
+        table Holder {
+          current: Item;
         }
         ",
     );
@@ -418,14 +416,14 @@ picker: Holder {
             field_path: &segments,
             new_value: &new_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect("write succeeds");
     writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("&target_b"),
+        after.contains("&Item::target_b"),
         "expected key ref form, got: {after}"
     );
     // The new file must still re-parse with the same loader.
@@ -438,7 +436,7 @@ picker: Holder {
 }
 
 #[test]
-fn ref_to_unknown_target_uses_short_form() {
+fn ref_to_unknown_target_keeps_declared_type() {
     // Unknown targets remain key references; semantic validation happens
     // when the project generation is rebuilt.
     let dir = temp_dir("ref-fallback");
@@ -458,12 +456,12 @@ picker: Holder {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Holder {
-          current: &Item;
+        table Holder {
+          current: Item;
         }
         ",
     );
@@ -482,14 +480,14 @@ picker: Holder {
             field_path: &segments,
             new_value: &new_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect("write succeeds");
     writer.publish().expect("publish staged field");
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("&ghost"),
+        after.contains("&Item::ghost"),
         "expected key ref form, got: {after}"
     );
 }
@@ -514,7 +512,7 @@ fn inserts_record_at_end_of_cfd_file() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
           value: int;
         }
@@ -534,7 +532,7 @@ fn inserts_record_at_end_of_cfd_file() {
             record_key: "potion",
             actual_type: "Item",
             fields: &fields,
-            schema: schema,
+            schema: &schema,
             before: None,
         })
         .expect("insert succeeds");
@@ -564,8 +562,8 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item { name: string; }
-        type Skill { name: string; }
+        table Item { name: string; }
+        table Skill { name: string; }
         ",
     );
     let schema = &schema;
@@ -582,7 +580,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
             record_key: "shared",
             actual_type: "Skill",
             fields: &fields,
-            schema: schema,
+            schema: &schema,
             before: None,
         })
         .expect("insert unrelated same-key skill");
@@ -614,15 +612,15 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Slot {
-          item: &Item;
+        data Slot {
+          item: Item;
         }
 
-        type Loot {
+        table Loot {
           slot: Slot;
         }
         ",
@@ -645,7 +643,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
             record_key: "starter",
             actual_type: "Loot",
             fields: &fields,
-            schema: schema,
+            schema: &schema,
             before: None,
         })
         .expect("insert succeeds");
@@ -653,7 +651,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("  slot: Slot {\n    item: &sword,\n  },"),
+        after.contains("  slot: Slot {\n    item: &Item::sword,\n  },"),
         "nested fields should use one two-space indentation unit per level: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
@@ -680,7 +678,7 @@ shield: Item {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
         ",
@@ -762,7 +760,7 @@ fn writes_enum_dict_key_path_using_member_display_text() {
         r"
         enum Element { Fire = 1, Ice = 2 }
 
-        type Loot {
+        table Loot {
           resistances: {Element: int};
         }
         ",
@@ -784,7 +782,7 @@ fn writes_enum_dict_key_path_using_member_display_text() {
             field_path: &segments,
             new_value: &new_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect("write succeeds");
     writer.publish().expect("publish staged field");
@@ -802,16 +800,14 @@ fn writes_group_record_without_required_commas() {
     let file = dir.join("effects.cfd");
     fs::write(
         &file,
-        r"DamageEffect {
-  eff_fireball_damage {
-    damage: { lo: 6, hi: 6 },
-    pierce_divine: false,
-  }
+        r"eff_fireball_damage: DamageEffect {
+  damage: { lo: 6, hi: 6 },
+  pierce_divine: false,
+}
 
-  eff_execute_damage {
-    damage: { lo: 999, hi: 999 },
-    pierce_divine: false,
-  }
+eff_execute_damage: DamageEffect {
+  damage: { lo: 999, hi: 999 },
+  pierce_divine: false,
 }
 ",
     )
@@ -819,12 +815,12 @@ fn writes_group_record_without_required_commas() {
 
     let schema = compile_schema(
         r"
-        type IntRange {
+        data IntRange {
           lo: int;
           hi: int;
         }
 
-        type DamageEffect {
+        table DamageEffect {
           damage: IntRange;
           pierce_divine: bool;
         }
@@ -847,7 +843,7 @@ fn writes_group_record_without_required_commas() {
             field_path: &segments,
             new_value: &new_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect("write succeeds");
     writer.publish().expect("publish staged field");
@@ -879,7 +875,7 @@ sword: Item {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           value: int;
         }
         ",
@@ -898,7 +894,7 @@ sword: Item {
             field_path: &segments,
             new_value: &new_value,
             materialized_top_level: None,
-            schema: schema,
+            schema: &schema,
         })
         .expect_err("invalid CFD syntax should fail before patching");
 

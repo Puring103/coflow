@@ -3,8 +3,8 @@ use crate::api::{
     SourceLocation,
 };
 use crate::data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
-use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
-use coflow_language::cft::CftSchema;
+use coflow_core::check::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
+use coflow_core::schema::CftSchema;
 
 use super::{CheckDiagnosticStore, ProjectCheckOutput};
 use crate::load::logical_locations_from_cfd;

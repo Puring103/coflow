@@ -1,0 +1,6 @@
+{
+  "name": "Coflow.Runtime",
+  "rootNamespace": "Coflow.Runtime",
+  "autoReferenced": true,
+  "allowUnsafeCode": false
+}

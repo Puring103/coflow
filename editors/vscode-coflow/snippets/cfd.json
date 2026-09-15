@@ -8,17 +8,6 @@
     ],
     "description": "Top-level CFD record."
   },
-  "Group block": {
-    "prefix": "group",
-    "body": [
-      "${1:TypeName} {",
-      "\t${2:key} {",
-      "\t\t${3:field}: ${4:value}",
-      "\t}",
-      "}"
-    ],
-    "description": "Grouped CFD records of the same type."
-  },
   "Direct reference": {
     "prefix": "&ref",
     "body": "&${1:Type}::${2:key}",
@@ -32,21 +21,30 @@
   "Some": {
     "prefix": "Some",
     "body": "Some(${1:value})",
-    "description": "Present Option value."
-  },
-  "Ok": {
-    "prefix": "Ok",
-    "body": "Ok(${1:value})",
-    "description": "Successful Result value."
-  },
-  "Err": {
-    "prefix": "Err",
-    "body": "Err(${1:error})",
-    "description": "Failed Result value."
+    "description": "Present optional value."
   },
   "Function": {
     "prefix": "fn",
-    "body": ["fn(${1:value}: ${2:int}) -> ${3:int} {", "\t${4:value}", "}"],
+    "body": [
+      "fn(${1:value}: ${2:int}) -> ${3:int} {",
+      "\t${4:value}",
+      "}"
+    ],
     "description": "CFD function value."
+  },
+  "Inline data": {
+    "prefix": "data",
+    "body": "${1:DataName} { ${2:field}: ${3:value} }",
+    "description": "Typed inline data value."
+  },
+  "use": {
+    "prefix": "use",
+    "body": "use ${1:namespace}::${2:Name};",
+    "description": "Import a declaration."
+  },
+  "fstring": {
+    "prefix": "fstring",
+    "body": "f\"${1:text} {${2:self.name}}\"",
+    "description": "Formatted string template."
   }
 }

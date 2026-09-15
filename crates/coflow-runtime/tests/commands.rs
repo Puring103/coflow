@@ -10,13 +10,13 @@ fn write_project() -> TempDir {
     let dir = tempfile::tempdir().expect("temp project");
     fs::write(
         dir.path().join("schema.cft"),
-        "type Item { name: string; }\n",
+        "table Item { name: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data dir");
     fs::write(
         dir.path().join("data/items.cfd"),
-        "Item { sword { name: \"Fire Sword\", } }\n",
+        " sword: Item { name: \"Fire Sword\", }\n",
     )
     .expect("data");
     fs::write(
@@ -32,7 +32,7 @@ fn write_id_as_enum_project(is_flag: bool, records: &str) -> TempDir {
     let flag = if is_flag { "@flag " } else { "" };
     fs::write(
         dir.path().join("schema.cft"),
-        format!("{flag}enum ItemId {{}}\n@idAsEnum(ItemId) type Item {{ name: string; }}\n"),
+        format!("{flag}enum ItemId {{}}\n@idAsEnum(ItemId) table Item {{ name: string; }}\n"),
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data dir");
@@ -122,7 +122,7 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     assert_eq!(values["third"], 4);
     let generated = fs::read_to_string(flag_dir.path().join("generated/csharp/ItemId.cs"))
         .expect("generated flag enum");
-    assert!(generated.contains("None = 0"));
+    assert!(generated.contains("@first = 1"));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn cli_codegen_dispatches_through_the_language_registry() {
     assert_eq!(report.targets.len(), 1);
     assert!(project
         .path()
-        .join("generated/csharp/Coflow.Metadata.cs")
+        .join("generated/csharp/Coflow.Contract.cs")
         .is_file());
 }
 
@@ -227,7 +227,7 @@ fn csharp_codegen_rejects_removed_numeric_width_options() {
     let error = coflow_runtime::commands::generate_project_code(&opened)
         .expect_err("removed C# options must not be accepted");
 
-    assert!(error.to_string().contains("unknown field `int_32`"));
+    assert!(error.to_string().contains("unsupported C# option `int_32`"));
     assert!(!project.path().join("generated/csharp").exists());
 }
 
@@ -242,12 +242,14 @@ fn csharp_codegen_applies_namespace_option() {
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
 
     coflow_runtime::commands::generate_project_code(&opened).expect("generate namespaced C#");
-    let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Metadata.cs"))
+    let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Contract.cs"))
         .expect("metadata");
     assert!(metadata
         .replace("\r\n", "\n")
-        .contains("namespace Game.Config\n{"));
-    assert!(metadata.contains("global::Game.Config."));
+        .contains("namespace @Game.@Config {"));
+    let item =
+        fs::read_to_string(project.path().join("generated/csharp/Item.cs")).expect("type wrapper");
+    assert!(item.contains("global::@Game.@Config."));
 }
 
 #[test]
@@ -290,7 +292,7 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
     fs::write(
         project_dir
             .path()
-            .join("generated/csharp/Coflow.Metadata.cs"),
+            .join("generated/csharp/Coflow.Contract.cs"),
         "changed",
     )
     .expect("change generated output");
@@ -307,7 +309,7 @@ fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
     let dir = write_project();
     let project = Project::open(Some(dir.path())).expect("project");
     coflow_runtime::commands::generate_project_code(&project).expect("generate");
-    let output = dir.path().join("generated/csharp/Coflow.Metadata.cs");
+    let output = dir.path().join("generated/csharp/Coflow.Contract.cs");
     let original = fs::read_to_string(&output).expect("generated text");
     assert!(!original.contains('\r'));
     assert!(original.ends_with('\n') && !original.ends_with("\n\n"));
@@ -355,7 +357,7 @@ fn codegen_preserves_unity_meta_without_generation_history() {
 
     fs::write(
         project_dir.path().join("schema.cft"),
-        "type Item { name: string; level: int = 1; }\n",
+        "table Item { name: string; level: int = 1; }\n",
     )
     .expect("change schema");
     let changed = Project::open(Some(&config)).expect("reopen changed project");
@@ -372,7 +374,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     let dir = tempfile::tempdir().expect("dimension project");
     fs::write(
         dir.path().join("schema.cft"),
-        "type UiText { @localized welcome: string; }\n",
+        "table UiText { @localized welcome: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
@@ -384,7 +386,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     fs::write(
         dir.path()
             .join("data/dimensions/language/UiText_welcome.cfd"),
-        "main: __coflow_language_UiText_welcome { default: \"Hello\", zh: \"你好\" }\n",
+        "main: UiText_welcome_language { default: \"Hello\", zh: \"你好\" }\n",
     )
     .expect("dimension CFD");
     fs::write(
@@ -399,17 +401,13 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
         outcome,
         coflow_runtime::commands::CommandOutcome::Success(_)
     ));
-    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
+    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Contract.cs"))
         .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
-    assert!(generated.contains("Readlanguage("));
-    assert!(generated.contains("context.FindRecord(variantsType, recordKey)"));
-    assert!(generated.contains("runtime.RegisterDimension(\"__coflow_language_UiText_welcome\""));
-    assert!(generated.contains("runtime.RegisterStruct<language<string>>(1, 0, 1,"));
-    assert!(generated.contains("runtime.RegisterDictionary<string, string>();"));
-    assert!(generated.contains("value.welcome.Import(context)"));
-    assert!(!generated.contains("Localization"));
-    assert!(!generated.contains("TbUiTextWelcomeVariants"));
+    let wrapper =
+        fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("type wrapper");
+    assert!(wrapper.contains("CoflowDimension<string> @welcome"));
+    assert!(generated.contains("CoflowContract.Load"));
 }
 
 #[test]
@@ -417,7 +415,7 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
     let dir = tempfile::tempdir().expect("singleton dimension project");
     fs::write(
         dir.path().join("schema.cft"),
-        "@singleton type UiText { @localized welcome: string; @localized farewell: string; }\n",
+        "singleton UiText { @localized welcome: string; @localized farewell: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
@@ -426,11 +424,14 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
         "UiText: UiText { welcome: \"Hello\", farewell: \"Bye\" }\n",
     )
     .expect("base CFD");
-    fs::write(
-        dir.path().join("data/dimensions/language/UiText.cfd"),
-        "welcome: __coflow_language_UiText_welcome { zh: \"你好\" }\nfarewell: __coflow_language_UiText_farewell { zh: \"再见\" }\n",
-    )
-    .expect("dimension CFD");
+    for (field, value) in [("welcome", "你好"), ("farewell", "再见")] {
+        fs::write(
+            dir.path()
+                .join(format!("data/dimensions/language/UiText_{field}.cfd")),
+            format!("UiText: UiText_{field}_language {{ zh: \"{value}\" }}"),
+        )
+        .expect("dimension CFD");
+    }
     fs::write(
         dir.path().join("coflow.yaml"),
         "schema: schema.cft\ndata: data/base.cfd\ndimensions:\n  language:\n    variants: [zh]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
@@ -443,13 +444,14 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
         outcome,
         coflow_runtime::commands::CommandOutcome::Success(_)
     ));
-    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Metadata.cs"))
-        .expect("generated CFD binding");
-    assert!(!generated.contains("data/dimensions/language/UiText.cfd"));
-    assert!(generated
-        .contains("\"__coflow_language_UiText_welcome\", \"welcome\", new string[] { \"zh\" }"));
-    assert!(generated
-        .contains("\"__coflow_language_UiText_farewell\", \"farewell\", new string[] { \"zh\" }"));
+    let generated =
+        fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("wrapper");
+    assert!(generated.contains("CoflowDimension<string> @welcome"));
+    assert!(generated.contains("CoflowDimension<string> @farewell"));
+    let session = Runtime::new()
+        .open_read_only_session(project)
+        .expect("reload");
+    assert!(session.into_diagnostics().is_empty());
 }
 
 #[test]
@@ -457,7 +459,7 @@ fn rust_runtime_rejects_dimension_record_type_mismatches_like_csharp() {
     let dir = tempfile::tempdir().expect("dimension project");
     fs::write(
         dir.path().join("schema.cft"),
-        "type UiText { @localized welcome: string; } type Other { value: string; }\n",
+        "table UiText { @localized welcome: string; } table Other { value: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
@@ -513,22 +515,22 @@ fn rust_runtime_rejects_dimension_record_type_mismatches_like_csharp() {
 }
 
 #[test]
-fn rust_runtime_rejects_unknown_singleton_dimension_rows_and_variants() {
+fn runtime_ignores_unknown_dimension_variants_and_orphan_rows() {
     let dir = tempfile::tempdir().expect("dimension project");
     fs::write(
         dir.path().join("schema.cft"),
-        "@singleton type UiText { @localized welcome: string; @localized farewell: string; }\n",
+        "singleton UiText { @localized welcome: string; @localized farewell: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
     fs::write(
         dir.path().join("data/base.cfd"),
-        "ui: UiText { welcome: \"Hello\", farewell: \"Bye\" }\n",
+        "UiText: UiText { welcome: \"Hello\", farewell: \"Bye\" }\n",
     )
     .expect("base CFD");
     fs::write(
-        dir.path().join("data/dimensions/language/UiText.cfd"),
-        "welcome: __coflow_language_UiText_welcome { zh: \"你好\", typo_variant: \"错误\" }\nunknown: __coflow_language_UiText_welcome { zh: \"错误\" }\n",
+        dir.path().join("data/dimensions/language/UiText_welcome.cfd"),
+        "UiText: UiText_welcome_language { zh: \"你好\", typo_variant: \"错误\" }\nunknown: UiText_welcome_language { zh: \"错误\" }\n",
     )
     .expect("invalid dimension CFD");
     fs::write(
@@ -542,16 +544,5 @@ fn rust_runtime_rejects_unknown_singleton_dimension_rows_and_variants() {
         Ok(session) => session.into_diagnostics(),
         Err(diagnostics) => diagnostics,
     };
-    for code in ["CFD-DIMENSION-FIELD", "CFD-DIMENSION-VARIANT"] {
-        let diagnostic = diagnostics
-            .diagnostics
-            .iter()
-            .find(|diagnostic| diagnostic.code == code)
-            .unwrap_or_else(|| panic!("missing {code}"));
-        assert!(matches!(
-            diagnostic.primary.as_ref().map(|label| &label.location),
-            Some(coflow_runtime::SourceLocation::FileSpan { path, .. })
-                if path.ends_with("data/dimensions/language/UiText.cfd")
-        ));
-    }
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
 }

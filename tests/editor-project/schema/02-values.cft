@@ -1,11 +1,11 @@
 @struct
-sealed type Vector2 {
+sealed data Vector2 {
   x: float = 0.0;
   y: float = 0.0;
 }
 
 @struct
-sealed type Stats {
+sealed data Stats {
   health: int = 100;
   speed: float = 1.0;
   resistances: {Element: float} = {};
@@ -13,7 +13,7 @@ sealed type Stats {
 
 @label("基础字段集合")
 @description("用于验证每一种字段编辑器及其空值、默认值和复杂集合状态。")
-type ValueGallery {
+table ValueGallery {
   integerValue: int;
   floatValue: float;
   booleanValue: bool;
@@ -21,8 +21,8 @@ type ValueGallery {
   longText: string;
   rarity: Rarity = Common;
   features: Feature = Feature::Tradable | Feature::Stackable;
-  optionalText: Option<string> = None;
-  optionalNumber: Option<int> = None;
+  optionalText: string? = None;
+  optionalNumber: int? = None;
   numbers: [int] = [];
   labels: {string: string} = {};
   position: Vector2 = Vector2 { x: 0.0, y: 0.0 };

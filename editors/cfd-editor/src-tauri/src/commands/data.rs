@@ -5,10 +5,11 @@ use tauri::State;
 
 use super::run_host_command;
 use crate::editor::{
-    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft, DeleteRecordOutcome,
-    EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
-    PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow, RefTarget,
-    RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
+    DeleteRecordOutcome, EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery,
+    InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
+    WriteFieldOutcome,
 };
 use coflow_runtime::{
     CfdPathSegment, CfdValue, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,

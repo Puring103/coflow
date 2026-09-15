@@ -6,7 +6,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDataModel, CfdValue};
 use crate::dimensions::DimensionField;
 use crate::project::Project;
-use coflow_language::cft::CftSchema;
+use coflow_core::schema::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -78,22 +78,13 @@ fn plan_configured_dimension(
         }
         let operation = DimensionGenerationOperation {
             path: path.clone(),
-            actual_type: field.source_type.to_string(),
             entries: dimension_entries(schema, model, field),
             variants: config.variants.clone(),
-            bucket: field.bucket.to_string(),
-            is_singleton: field.is_singleton,
+            bucket: field.bucket.to_string().replace("::", "_"),
         };
         match dimension_operations.entry(path_identity) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(operation);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry)
-                if field.is_singleton
-                    && entry.get().is_singleton
-                    && entry.get().actual_type == field.source_type.as_str() =>
-            {
-                entry.get_mut().entries.extend(operation.entries);
             }
             std::collections::btree_map::Entry::Occupied(entry) => {
                 diagnostics.push(dimension_diagnostic(
@@ -236,22 +227,7 @@ fn dimension_entries(
     model: &CfdDataModel,
     field: &DimensionField,
 ) -> Vec<crate::api::DimensionSourceEntry> {
-    if field.is_singleton {
-        model
-            .records_assignable_to(schema, &field.source_type)
-            .next()
-            .map(|(_, record)| crate::api::DimensionSourceEntry {
-                key: field.source_field.to_string(),
-                actual_type: field.record_type(),
-                default: record
-                    .fields()
-                    .get(field.source_field.as_str())
-                    .cloned()
-                    .unwrap_or(CfdValue::OptionNone),
-            })
-            .into_iter()
-            .collect()
-    } else {
+    {
         model
             .records_assignable_to(schema, &field.source_type)
             .map(|(_, record)| crate::api::DimensionSourceEntry {

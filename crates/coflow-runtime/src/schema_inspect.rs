@@ -1,5 +1,5 @@
 use crate::api::FlatDiagnostic;
-use coflow_language::cft::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
+use coflow_core::schema::{CftConstValue, CftSchema, CftSchemaDefaultValue, CftValueType};
 use serde::Serialize;
 
 use crate::ProjectSchemaSession;
@@ -84,6 +84,7 @@ pub enum SchemaTypeRefInfo {
     Float,
     Bool,
     String,
+    FString,
     Named {
         name: String,
         target_kind: String,
@@ -101,10 +102,6 @@ pub enum SchemaTypeRefInfo {
     Option {
         inner: Box<Self>,
     },
-    Result {
-        value: Box<Self>,
-        error: Box<Self>,
-    },
     Function {
         parameters: Vec<Self>,
         result: Box<Self>,
@@ -117,8 +114,6 @@ pub enum SchemaTypeRefInfo {
 pub enum SchemaDefaultValueInfo {
     OptionNone,
     OptionSome(Box<Self>),
-    ResultOk(Box<Self>),
-    ResultErr(Box<Self>),
     Int(#[serde(with = "crate::data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
@@ -169,8 +164,6 @@ pub enum SchemaConstValueInfo {
     },
     OptionNone,
     OptionSome(Box<Self>),
-    ResultOk(Box<Self>),
-    ResultErr(Box<Self>),
     Array(Vec<Self>),
     Dictionary(Vec<(Self, Self)>),
     Object {
@@ -230,7 +223,7 @@ pub fn inspect_schema(
             fields: view
                 .resolve_type(&ty.name)
                 .into_iter()
-                .flat_map(coflow_language::cft::CftType::all_fields)
+                .flat_map(coflow_core::schema::CftType::all_fields)
                 .map(|field| SchemaFieldInfo {
                     name: field.name.to_string(),
                     ty: value_type_info(&field.value_type),
@@ -325,6 +318,7 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
         CftValueType::Float => SchemaTypeRefInfo::Float,
         CftValueType::Bool => SchemaTypeRefInfo::Bool,
         CftValueType::String => SchemaTypeRefInfo::String,
+        CftValueType::FString => SchemaTypeRefInfo::FString,
         CftValueType::Object(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "type".to_string(),
@@ -346,10 +340,6 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
         CftValueType::Option(inner) => SchemaTypeRefInfo::Option {
             inner: Box::new(value_type_info(inner)),
         },
-        CftValueType::Result(value, error) => SchemaTypeRefInfo::Result {
-            value: Box::new(value_type_info(value)),
-            error: Box::new(value_type_info(error)),
-        },
         CftValueType::Function(parameters, result) => SchemaTypeRefInfo::Function {
             parameters: parameters
                 .iter()
@@ -367,20 +357,16 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::OptionSome(value) => {
             SchemaDefaultValueInfo::OptionSome(Box::new(default_value_info(value)))
         }
-        CftSchemaDefaultValue::ResultOk(value) => {
-            SchemaDefaultValueInfo::ResultOk(Box::new(default_value_info(value)))
-        }
-        CftSchemaDefaultValue::ResultErr(error) => {
-            SchemaDefaultValueInfo::ResultErr(Box::new(default_value_info(error)))
-        }
         CftSchemaDefaultValue::Int(value) => SchemaDefaultValueInfo::Int(*value),
         CftSchemaDefaultValue::Float(value) => SchemaDefaultValueInfo::Float(*value),
         CftSchemaDefaultValue::Bool(value) => SchemaDefaultValueInfo::Bool(*value),
         CftSchemaDefaultValue::String(value) => SchemaDefaultValueInfo::String(value.clone()),
         CftSchemaDefaultValue::FormattedString(source) => {
-            SchemaDefaultValueInfo::FormattedString(source.clone())
+            SchemaDefaultValueInfo::FormattedString(source.source.clone())
         }
-        CftSchemaDefaultValue::Function(source) => SchemaDefaultValueInfo::Function(source.clone()),
+        CftSchemaDefaultValue::Function(source) => {
+            SchemaDefaultValueInfo::Function(source.source.clone())
+        }
         CftSchemaDefaultValue::Enum {
             enum_name,
             variant,
@@ -424,9 +410,9 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
         CftConstValue::FormattedString(source) => {
-            SchemaConstValueInfo::FormattedString(source.clone())
+            SchemaConstValueInfo::FormattedString(source.source.clone())
         }
-        CftConstValue::Function(source) => SchemaConstValueInfo::Function(source.clone()),
+        CftConstValue::Function(source) => SchemaConstValueInfo::Function(source.source.clone()),
         CftConstValue::Enum {
             enum_name,
             variant,
@@ -439,12 +425,6 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::OptionNone => SchemaConstValueInfo::OptionNone,
         CftConstValue::OptionSome(value) => {
             SchemaConstValueInfo::OptionSome(Box::new(const_value_info(value)))
-        }
-        CftConstValue::ResultOk(value) => {
-            SchemaConstValueInfo::ResultOk(Box::new(const_value_info(value)))
-        }
-        CftConstValue::ResultErr(value) => {
-            SchemaConstValueInfo::ResultErr(Box::new(const_value_info(value)))
         }
         CftConstValue::Array(values) => {
             SchemaConstValueInfo::Array(values.iter().map(const_value_info).collect())

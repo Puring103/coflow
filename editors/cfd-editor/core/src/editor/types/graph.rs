@@ -1,9 +1,9 @@
 //! graph wire types.
+use super::records::{FieldCell, FieldDiagnostic};
 use coflow_runtime::RecordCoordinate;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
-use super::records::{FieldCell, FieldDiagnostic};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
