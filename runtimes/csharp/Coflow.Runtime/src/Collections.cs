@@ -10,19 +10,19 @@ namespace Coflow
         private readonly Runtime runtime;
         private readonly TypeBinding<T> binding;
         internal Table(Runtime runtime, TypeBinding<T> binding) { this.runtime = runtime; this.binding = binding; }
-        public int Count => checked((int)Native.Call(21, runtime.Handle, binding.Name).Length);
+        public int Count => checked((int)Native.Call(NativeOperation.TableLength, runtime.Handle, binding.Name).Length);
         public T this[string key] => TryGet(key, out var record) ? record : throw new KeyNotFoundException(key);
         public bool TryGet(string key, out T record)
         {
             if (key == null) throw new ArgumentNullException(nameof(key));
-            var result = Native.Call(32, runtime.Handle, binding.Name, Encoding.UTF8.GetBytes(key));
+            var result = Native.Call(NativeOperation.TryFindRecord, runtime.Handle, binding.Name, Encoding.UTF8.GetBytes(key));
             if (result.Handle == 0) { record = default!; return false; }
             record = binding.Read(new RuntimeValue(runtime, result.Handle)); return true;
         }
         public IEnumerator<T> GetEnumerator()
         {
             int count = Count;
-            for (int i = 0; i < count; ++i) yield return binding.Read(new RuntimeValue(runtime, Native.Call(22, runtime.Handle, binding.Name, index: (ulong)i).Handle));
+            for (int i = 0; i < count; ++i) yield return binding.Read(new RuntimeValue(runtime, Native.Call(NativeOperation.TableValue, runtime.Handle, binding.Name, index: (ulong)i).Handle));
         }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }

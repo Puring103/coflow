@@ -281,20 +281,11 @@ impl Parser<'_> {
             });
         }
         if first.name == "Some" {
-            self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
-            let inner_span = self.peek().span;
-            let inner = self.nested(StructureKind::DefaultValue, inner_span, |parser| {
-                parser.parse_default_expr()
-            })?;
-            let end = self
-                .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
-                .end;
-            let span = Span::new(first.span.start, end);
-            let depth = inner.depth;
-            let kind = DefaultExprKind::OptionSome(Box::new(inner.value));
-            return self.node(StructureKind::DefaultValue, first.span, [depth], || {
-                DefaultExpr { kind, span }
-            });
+            return self.err_at(
+                CftErrorCode::InvalidDefaultExpression,
+                first.span,
+                "optional values use None or a bare value",
+            );
         }
         let start = first.span.start;
         let mut end = first.span.end;

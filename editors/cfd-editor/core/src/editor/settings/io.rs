@@ -58,12 +58,15 @@ pub(crate) fn read_project_settings(
             settings.version
         )));
     }
-    Ok(EditorProjectSettings::from(settings))
+    settings.into_runtime(project_root)
 }
 
 pub(crate) fn write_project_settings(
     project_root: &Path,
     settings: &EditorProjectSettings,
 ) -> Result<(), EditorError> {
-    write_json(&settings_path(project_root), &SettingsFile::from(settings))
+    write_json(
+        &settings_path(project_root),
+        &SettingsFile::from_runtime(project_root, settings)?,
+    )
 }

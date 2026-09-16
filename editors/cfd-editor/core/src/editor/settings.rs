@@ -5,12 +5,14 @@
 //! - `io`：原子读写与版本校验；
 //! - `sanitize`：workspace/列宽/分组/视图归一化。
 
+#[path = "settings/io.rs"]
 pub(crate) mod io;
+#[path = "settings/model.rs"]
 pub(crate) mod model;
+#[path = "settings/sanitize.rs"]
 pub(crate) mod sanitize;
 
 pub(crate) use io::{read_project_settings, write_project_settings};
-pub(crate) use model::RESERVED_VIEW_ID_PREFIX;
 pub(crate) use sanitize::{
     sanitized_column_widths, sanitized_record_groups, sanitized_views, sanitized_workspace,
 };
@@ -49,12 +51,12 @@ mod tests {
         let root = std::env::temp_dir().join(format!("coflow-editor-settings-{nonce}"));
         let mut settings = EditorProjectSettings::default();
         settings.graph_positions.insert(
-            "items-view".to_string(),
+            r#"["data/items.cfd","view-1","Item"]"#.to_string(),
             BTreeMap::from([("Item::a".to_string(), [-240.5, 360.25])]),
         );
         settings
             .graph_compact_modes
-            .insert("items-view".to_string(), false);
+            .insert(r#"["data/items.cfd","view-1","Item"]"#.to_string(), false);
         settings.view_order.insert(
             "data/items.cfd".to_string(),
             BTreeMap::from([(
@@ -126,6 +128,45 @@ mod tests {
         assert_eq!(loaded.workspace, settings.workspace);
         assert!(root.join("editor-setting").join(SETTINGS_FILE).is_file());
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn settings_store_project_and_external_files_as_relative_paths() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("coflow-editor-relative-settings-{nonce}"));
+        let root = base.join("project");
+        let external = base.join("shared").join("items.cfd");
+        fs::create_dir_all(&root).expect("create project root");
+
+        let mut settings = EditorProjectSettings::default();
+        let external_runtime = coflow_runtime::path_to_slash(&external);
+        settings
+            .view_order
+            .insert(external_runtime.clone(), BTreeMap::new());
+        settings.workspace = EditorWorkspaceState {
+            tabs: vec![EditorWorkspaceTab {
+                file_path: external_runtime.clone(),
+                type_name: "Item".to_string(),
+                view_id: "__default_table".to_string(),
+                view_kind: crate::editor::WorkspaceViewKind::Table,
+                coordinate: None,
+            }],
+            active_tab_id: Some(format!("{external_runtime}\u{1f}Item")),
+        };
+
+        write_project_settings(&root, &settings).expect("write relative settings");
+        let raw = fs::read_to_string(root.join("editor-setting").join(SETTINGS_FILE))
+            .expect("read settings json");
+        assert!(raw.contains("../shared/items.cfd"));
+        assert!(!raw.contains(&external_runtime));
+
+        let loaded = read_project_settings(&root).expect("read relative settings");
+        assert!(loaded.view_order.contains_key(&external_runtime));
+        assert_eq!(loaded.workspace.tabs[0].file_path, external_runtime);
+        fs::remove_dir_all(base).expect("remove fixture");
     }
 
     #[test]

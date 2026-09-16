@@ -99,7 +99,7 @@ impl Validator<'_, '_> {
                 };
                 parsed.constant_origin = source.constant_origin.clone();
                 parsed.from_default = true;
-                parsed.location=Some(source.into());
+                parsed.location = Some(source.into());
                 return Some(ValueDraft::FormattedString(parsed));
             }
             CftSchemaDefaultValue::Function(source)

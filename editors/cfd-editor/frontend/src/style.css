@@ -2018,6 +2018,9 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   height: var(--h-row);
   position: relative;
 }
+.table-cell-content {
+  min-width: 0;
+}
 .data-table td:last-child {
   border-right: none;
 }
@@ -2063,8 +2066,8 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
     color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
   ) !important;
 }
-.data-table td > .dc-compact,
-.data-table td > .vc {
+.data-table td > .table-cell-content > .dc-compact,
+.data-table td > .table-cell-content > .vc {
   display: inline-flex;
   max-width: 100%;
 }
@@ -2160,7 +2163,7 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   overflow: visible;
   text-overflow: clip;
 }
-.data-table td.complex-cell > .dc-cell-diag,
+.data-table td.complex-cell > .table-cell-content > .dc-cell-diag,
 .data-table td.complex-cell .cell-edit-wrap {
   display: block;
   overflow: visible;
@@ -2216,13 +2219,120 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
   background: color-mix(in srgb, var(--accent) 13%, var(--bg-1)) !important;
   position: relative;
 }
+/* 超高选中格提升到表格外绘制，避免浏览器的 table-row 行盒裁剪。 */
+.table-cell-expanded-overlay {
+  position: fixed;
+  z-index: 5100;
+  min-height: var(--h-row);
+  padding: 5px 10px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg-1));
+  border: 2px solid var(--accent);
+  color: var(--text);
+  font-size: var(--fs-ui);
+}
+/* 输入控件自身就是完整单元格界面，浮层只负责定位，不再重复绘制包装。 */
+.table-cell-expanded-overlay:has(.cell-string-editor),
+.table-cell-expanded-overlay:has(.cell-numeric-editor) {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.table-cell-expanded-overlay .cell-edit-wrap,
+.table-cell-expanded-overlay .dc-compact,
+.table-cell-expanded-overlay .vc,
+.table-cell-expanded-overlay .vc-str,
+.table-cell-expanded-overlay .rich-text-string {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .table-row td.selected-cell::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   border: 0 solid var(--accent);
+  z-index: 4;
 }
+/* 字符串编辑器抵消单元格内边距，始终占满整个单元格。 */
+.data-table td.string-cell .cell-string-editor,
+.table-cell-expanded-overlay .cell-string-editor {
+  display: block;
+  width: calc(100% + 20px);
+  min-height: var(--h-row);
+  margin: -5px -10px;
+}
+.table-cell-expanded-overlay .cell-string-editor {
+  width: 100%;
+  margin: 0;
+}
+.data-table td.string-cell .cell-string-editor .rich-text-input,
+.data-table td.string-cell .cell-string-editor textarea,
+.table-cell-expanded-overlay .cell-string-editor .rich-text-input,
+.table-cell-expanded-overlay .cell-string-editor textarea {
+  width: 100%;
+  min-height: var(--h-row);
+  box-sizing: border-box;
+  resize: none;
+}
+.cell-string-editor textarea[data-auto-size="true"] {
+  overflow-y: hidden;
+}
+.data-table td.numeric-cell .cell-numeric-editor,
+.table-cell-expanded-overlay .cell-numeric-editor {
+  position: relative;
+  display: block;
+  width: calc(100% + 20px);
+  min-height: var(--h-row);
+  margin: -5px -10px;
+}
+.table-cell-expanded-overlay .cell-numeric-editor {
+  width: 100%;
+  margin: 0;
+}
+.data-table td.numeric-cell .cell-numeric-editor .dc-input,
+.table-cell-expanded-overlay .cell-numeric-editor .dc-input {
+  width: 100%;
+  height: var(--h-row);
+  padding-right: 28px;
+  box-sizing: border-box;
+}
+.cell-numeric-scrub {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 24px;
+  height: var(--h-row);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.cell-numeric-scrub:hover {
+  color: var(--accent);
+}
+.cell-numeric-scrub-left,
+.cell-numeric-scrub-right {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.cell-numeric-scrub-left { border-right: 5px solid currentColor; }
+.cell-numeric-scrub-right { border-left: 5px solid currentColor; }
 .table-row td.selected-cell.range-top::after { border-top-width: 2px; }
 .table-row td.selected-cell.range-bottom::after { border-bottom-width: 2px; }
 .table-row td.selected-cell.range-left::after { border-left-width: 2px; }

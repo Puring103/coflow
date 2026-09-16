@@ -95,7 +95,13 @@ fn functions_and_templates_are_compiled_and_read_explicitly() {
         matches!(runtime.value(text).expect("stored template").as_ref(), Value::Template { owner: Some(owner), .. } if *owner == a)
     );
     assert_eq!(runtime.read_text(text).expect("execute template"), "sword");
-    let result = runtime.invoke(runtime.field(a,"run").expect("function"), &[], coflow_core::vm::executor::ExecutionLimits::default()).expect("execute function");
+    let result = runtime
+        .invoke(
+            runtime.field(a, "run").expect("function"),
+            &[],
+            coflow_core::vm::executor::ExecutionLimits::default(),
+        )
+        .expect("execute function");
     assert!(matches!(result, HostValue::Int(42)));
 }
 

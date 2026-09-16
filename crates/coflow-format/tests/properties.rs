@@ -25,8 +25,8 @@ fn comments(source: &str) -> Vec<&str> {
 fn formatting_preserves_non_trivia_tokens_and_comments() {
     for (source, formatted) in [
         (
-            "type 变量 { value: Result<int?, string>; # CFT 注释\n}",
-            format_cft("type 变量 { value: Result<int?, string>; # CFT 注释\n}"),
+            "data 变量 { value: int?; # CFT 注释\n}",
+            format_cft("data 变量 { value: int?; # CFT 注释\n}"),
         ),
         (
             "记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }",
@@ -41,7 +41,7 @@ fn formatting_preserves_non_trivia_tokens_and_comments() {
 #[test]
 fn malformed_sources_format_stably() {
     for source in [
-        "table Item { value: Result<\nint,\n",
+        "table Item { value: [\nint\n",
         "check Rules { all item in records(Item) { item.value >",
         "item: Item { values: [Other { value: \"unterminated",
         "item: Item { callback: fn(value: int) -> int { if value > 0 { value }",

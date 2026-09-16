@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::editor::EditorError;
+use cfd_editor_core::editor::EditorError;
 
 /// 用系统默认应用打开 `path`，与具体编辑器命令无关。
 pub(crate) fn open_path(path: &Path) -> Result<(), EditorError> {

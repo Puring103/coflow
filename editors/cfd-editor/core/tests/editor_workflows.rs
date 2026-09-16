@@ -418,16 +418,18 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
         .load_project(&root.join("coflow.yaml"))
         .expect("load project");
     let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
+    let first_view = r#"["data/05-arrays.cfd","first-view","Item"]"#;
+    let second_view = r#"["data/05-arrays.cfd","second-view","Item"]"#;
     store
-        .set_graph_positions(project.session_id, "first-view".into(), positions.clone())
+        .set_graph_positions(project.session_id, first_view.into(), positions.clone())
         .expect("save positions");
     store
-        .set_graph_positions(project.session_id, "second-view".into(), BTreeMap::new())
+        .set_graph_positions(project.session_id, second_view.into(), BTreeMap::new())
         .expect("save second view");
     assert!(store
         .set_graph_positions(
             project.session_id,
-            "first-view".into(),
+            first_view.into(),
             BTreeMap::from([("Item::one".to_string(), [f64::NAN, 0.0])])
         )
         .is_err());
@@ -444,8 +446,8 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
     let settings = store
         .get_project_settings(reopened.session_id)
         .expect("read positions");
-    assert_eq!(settings.graph_positions["first-view"], positions);
-    assert!(settings.graph_positions["second-view"].is_empty());
+    assert_eq!(settings.graph_positions[first_view], positions);
+    assert!(settings.graph_positions[second_view].is_empty());
     fs::remove_dir_all(root).expect("remove project");
 }
 

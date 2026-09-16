@@ -271,10 +271,7 @@ fn add_lex_semantic_token(
         | TokenKind::True
         | TokenKind::False => SEM_KEYWORD,
         TokenKind::Ident(text)
-            if matches!(
-                text.as_str(),
-                "fn" | "Option" | "Result" | "None" | "Some" | "Ok" | "Err"
-            ) =>
+            if matches!(text.as_str(), "fn" | "None" | "Some") =>
         {
             SEM_KEYWORD
         }
@@ -539,19 +536,6 @@ fn add_default_expr_semantic(
         }
         DefaultExprKind::Bool(_) | DefaultExprKind::OptionNone => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
-        }
-        DefaultExprKind::OptionSome(value) => {
-            let keyword_len = match &expr.kind {
-                DefaultExprKind::OptionSome(_) => 4,
-                _ => 3,
-            };
-            push_semantic_span_plain(
-                &document.source,
-                Span::new(expr.span.start, expr.span.start + keyword_len),
-                SEM_KEYWORD,
-                tokens,
-            );
-            add_default_expr_semantic(document, value, tokens);
         }
         DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
             push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);

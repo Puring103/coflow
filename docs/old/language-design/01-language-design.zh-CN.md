@@ -1,280 +1,115 @@
-# C# Runtime 基础语言设计
+# Coflow 基础语言设计
 
 > 状态：内部设计契约
 >
-> 范围：C# Runtime 所编译的 CFD 函数语言，以及数据值与函数值共享的基础语义。
+> 范围：CFT 声明、CFD 数据与函数共享的语言语义。
 
-源码排版及 CFD 对语义值的文本表示见 `04-source-formatting.zh-CN.md`。
+源码排版及 CFD 对语义值的文本表示见 `04-source-formatting.zh-CN.md`。公开语法说明位于
+`website/docs/docs/reference/03-language/`；加载、Module 和 Host 边界见
+`02-api-runtime-design.zh-CN.md`；寄存器 VM 见 `03-vm-design.zh-CN.md`。
 
-本文档定义语言语义，不提供用户教程或调用示例。公开的 CFT、CFD 语法说明位于
-`website/docs/docs/reference/03-language/`。加载、Module 和 Host 边界见
-`02-api-runtime-design.zh-CN.md`；寄存器与执行机制见 `03-vm-design.zh-CN.md`。
+## 1. 设计边界
 
-## 1. 设计目标
-
-基础语言必须满足：
-
-- CFT 在构建期定义类型、字段、默认值、函数签名和注解。
-- CFD 在运行期提供记录值，并可覆盖 CFT 中的普通函数默认实现。
-- 数据值与函数值使用同一套静态类型，不在 VM 中建立第二套语义类型。
-- Module 是源码管理和增量编译单位，Module 之间可以相互引用且加载顺序不影响语义。
-- `Coflow.Compile()` 同时完成数据实体化、函数检查、编译和全局链接。
+- CFT 定义类型、字段、默认值、函数签名、check 和注解。
+- CFD 提供记录值，并可覆盖 CFT 中普通函数字段的默认实现。
+- Rust Runtime 完成声明编译、数据实体化、函数编译、链接和执行。
+- C# Runtime 加载 Rust 生成的契约与数据，通过 FFI 访问值、调用函数并绑定 Host。
+- 数据值与函数值共享一套静态类型；发布后的 Runtime 快照不可变。
 - 类型错误在快照发布前诊断，执行期只处理动态 fault。
-- 语言行为不依赖 C# 反射顺序、文化区域、CLR 对象地址或容器具体实现。
-
-编译关系为：
-
-```text
-CFT
-├── type declarations
-├── field declarations
-├── function signatures
-├── constants and defaults, including direct function defaults
-└── annotations
-
-CFD
-├── record values
-├── inline values
-├── record references
-└── function bodies
-```
 
 ## 2. 名称与作用域
 
-type、enum、constant 和函数签名属于 CFT 声明空间；record key、局部变量、参数和匿名函数捕获属于
-CFD 值或函数作用域。
+type、enum、constant、type alias 和命名 check 使用项目全局唯一的短名；源文件和目录不创建
+命名空间。类型位置只接受短名，`::` 用于 enum 静态成员、记录引用以及内建函数路径。
 
-名称解析遵循以下边界：
-
-- type、enum、constant、类型别名和命名 check 使用项目全局唯一的短名；源文件和目录不创建作用域。
-- 类型位置只接受短名；`::` 仅用于 enum 静态成员和带类型的 record reference。
-- 同一作用域不能重复声明局部名称；内层 block 可以遮蔽外层局部值。
-- 参数名不参与函数类型相等性或调用 ABI。
-- 字段和函数 identity 由所属 type、record key 与字段名共同确定。
-- `$type`、`$field`、`$id` 等编译期元数据只能在其定义的函数上下文使用。
+局部变量、参数和匿名函数捕获属于函数作用域。同一作用域不能重复声明局部名称，内层 block 可以
+遮蔽外层局部值。参数名不参与函数类型相等性或调用 ABI。字段和函数 identity 由所属类型、记录 key
+与字段名共同确定。
 
 ## 3. 类型系统
 
-Runtime 函数语言使用以下静态类型类别：
-
 | 类别 | 类型 |
 | --- | --- |
-| unit | `()` |
-| scalar | `int`、`float`、`bool`、`string` |
-| nominal | enum、生成 class、生成 struct、记录类型 |
-| collection | `[T]`、`{K: V}` |
-| algebraic | `Option<T>`、`Result<T, E>` |
-| callable | `fn(A...) -> R` |
-
-类型规则如下：
+| 无返回值 | `()` |
+| 标量 | `int`、`float`、`bool`、`string` |
+| 名义类型 | enum、data、table、singleton |
+| 集合 | `[T]`、`{K: V}` |
+| 可选 | `T?` |
+| 函数 | `fn(A...) -> R` |
+| 模板 | `fstring` |
 
 - `int` 是有符号 64 位整数，`float` 是 IEEE 754 binary64。
-- `bool` 只有 `true` 和 `false` 两个规范值。
-- enum 是 nominal type；不同 enum 即使底层整数相同也不兼容。
-- class 继承只允许子类型用于声明的父类型位置，不提供用户定义隐式转换；struct 不通过继承获得能力。
-- `@struct` 与 class 一样可以声明全部字段类别，包括函数字段；C# 目标生成真正的 `readonly struct`。
-- list 元素类型、dictionary key/value 类型和 Option/Result payload 都是不变的静态类型参数。
-- dictionary key 只允许语言明确支持的可哈希 scalar 或 enum 类型。
-- 函数类型由参数类型序列和返回类型组成，不支持协变、逆变或用户泛型函数。
-- 不执行隐式 int/float、string/enum、nullable/Option 转换。
-
-值的逻辑形状为：
-
-```text
-ValueShape
-├── Unit
-├── Scalar(T)
-├── Object(T)
-├── List(T)
-├── Dictionary(K, V)
-├── Option
-│   ├── tag
-│   └── payload(T)
-├── Result
-│   ├── tag
-│   ├── ok payload(T)
-│   └── error payload(E)
-└── Function
-    ├── signature
-    └── callable identity or closure
-```
+- enum 是名义类型；不同 enum 的底层整数相同也不兼容。
+- data 支持 sealed 与继承；table 是有稳定 key 的记录类型；singleton 每个类型只有一个值。
+- `@struct` 只适用于无继承的 sealed data，并影响 C# 值类型生成。
+- list 元素和 dictionary key/value 是不变类型；dictionary key 只允许 string、int、bool 和 enum。
+- `T?` 表示单层可选类型，不允许 `T??`；非空值使用 `T` 本身，不存在 `Some(...)` 构造语法。
+- 函数类型由参数类型序列和返回类型组成，不支持用户泛型、协变或逆变。
+- 不执行隐式数值、字符串、enum 或可选类型转换。
 
 ## 4. 数据值与配置边界
 
-普通 CFD 字段只接受 schema-guided 的结构化值。默认值、引用、继承字段和集合在候选快照构建阶段
-解析，不在字段首次读取时延迟求值。
+普通 CFD 字段只接受 schema 引导的结构化值。默认值、引用、继承字段和集合在候选快照构建阶段
+解析，不在首次读取时延迟求值。
 
-数据值遵循：
-
-- `Option<T>` 的语义值由缺失/存在 tag 和 `T` payload 构成。函数表达式使用 `None` / `Some(T)`；
-  schema-guided CFD 对存在值允许直接写 `T`，writer 也规范写回裸值。
-- `Result<T, E>` 通过 `Ok(T)` 或 `Err(E)` 表达业务结果，可用于普通字段、struct 字段、集合元素、
-  函数签名、常量和表达式。
+- 可选值是 `None` 或直接的非空值；writer 对非空值规范写回裸值。
 - 记录引用按声明的目标记录域和 key 解析，不能退化为普通 string。
 - inline object 与 record reference 是不同值类别。
 - list 保留源顺序；dictionary key 必须唯一。
-- object 值允许通过 Option、list、dictionary 和 record reference 形成有限递归结构；必填 object 包含环
-  和默认值物化环在 schema 编译阶段拒绝。
-- 发布后的数据不可变，函数执行不能修改配置记录或集合。
+- object 可通过可选、list、dictionary 和记录引用形成有限递归结构；必填 object 环与默认值物化环
+  在 schema 编译阶段拒绝。
 - 普通配置字段不执行任意算术、控制流或 Host 调用。
-- 应用可以主动构造生成 class 和 struct。此类值进入 VM 时按 Schema 验证并复制；必填字段中的 null
-  或无效 `default(TStruct)` 产生边界 fault。
 
-## 5. 函数声明与实现
+## 5. 函数、模板与 Host
 
-CFT 声明函数签名，普通函数字段可以同时声明默认 body；CFD 提供同字段函数值时覆盖该默认实现。
-函数默认值只允许直接用于函数字段，不嵌套在其他默认值中。`@Host @singleton` 的函数由应用配置，
-CFT 不能声明默认 body，CFD 也不能为其提供实现。Rust 数据模型保存函数源码但不提供执行引擎；C#
-Runtime 在 `Coflow.Compile()` 中对当前工作状态的全部有效函数体进行类型检查、编译和链接。
+CFT 函数字段可以声明默认 body；CFD 为同一字段提供函数值时覆盖默认实现。函数默认值只直接用于
+函数字段，不嵌套在其他默认值中。`@Host` singleton 的函数由应用绑定，CFT 和 CFD 均不提供实现。
 
-应用主动构造的普通值没有 CFD 记录身份。导入 VM 时，其函数字段使用 CFT 默认实现；没有默认实现的
-函数保持缺失并只在实际调用时 fault。CFD 记录级覆盖只属于该记录的 Runtime 值。普通值不能携带应用
-delegate，应用函数只能通过 Host 注入。这些规则对 class 和 struct 完全一致。
+Rust Runtime 对所有有效函数体进行类型检查并编译为寄存器 VM 程序。直接调用、间接调用和 Host 调用
+使用同一静态签名。匿名函数按值捕获实际使用的外层局部值；捕获分析在编译期完成，不提供可变
+upvalue。递归调用受统一执行限制约束。
 
-函数值具有统一语义：
+fstring 是独立的模板值类型。模板在读取时由 Rust Runtime 求值；普通 string 中的花括号没有插值
+语义。复制函数或模板值不改变其对象绑定。
 
-```text
-CallableValue
-├── Signature
-├── DirectFunction
-│   └── function identity
-├── Closure
-│   ├── function identity
-│   └── captured values
-└── HostFunction
-    └── configured delegate
-```
-
-直接调用、间接调用和 Host 调用必须使用同一静态签名。无捕获函数可以直接作为函数值；匿名函数按值
-捕获实际使用的外层局部值。捕获分析在编译期完成，不提供可变 upvalue 或通用闭包 GC。
-
-普通递归、相互递归和通过函数值的递归均允许。是否降低为尾调用由控制流位置决定，不改变语言结果。
-
-## 6. 表达式与 block
+## 6. 表达式与控制流
 
 函数 body 是有类型的表达式。block 包含零个或多个 statement，并可由最后一个未加分号的表达式产生
-block 值。
+block 值。核心能力包括字面量、局部读取、字段和索引读取、集合与对象构造、运算、调用、匿名函数、
+block、`return`、`if`、`while`、`for`、类型测试和可选值传播。
 
-核心表达式类别为：
+局部变量通过 `var` 引入，声明后类型固定。赋值只允许写入可变局部变量，不允许写参数、配置字段、
+集合元素或闭包捕获。显式 `return` 立即结束当前函数；所有可到达出口必须产生声明的返回类型。
 
-```text
-Expression
-├── literal and metadata
-├── local and argument read
-├── field and index read
-├── object, list and dictionary construction
-├── Option and Result construction
-├── unary and binary operation
-├── conversion and type test
-├── direct and indirect call
-├── anonymous function
-├── block and explicit return
-├── if and match
-├── while and for
-└── propagation
-```
+`if` 条件必须为 bool。有值分支必须产生相同静态类型；缺少 `else` 时只能作为 `()`。条件中的
+`value is Some(name)` 解包非空可选值，`value is TypeName` 完成名义类型收窄。语言不提供 `match`。
 
-局部变量通过 `var` 引入，声明后类型固定。赋值只允许写入可变局部变量，不允许写参数、配置字段、集合
-元素或闭包捕获。复合赋值先按普通运算符完成类型检查，再写回同一局部变量。
+`while` 每轮重新计算条件。`for` 可遍历整数区间、list、dictionary 和记录集合。循环结果为 `()`，
+`break` 与 `continue` 只影响最近循环。循环、调用和集合操作统一计入 Runtime 执行预算。
 
-显式 `return` 立即结束当前函数。一个可到达函数出口的路径必须产生声明返回类型；已经终止的路径不再
-参与后续表达式的类型合并。
+## 7. 可选值传播
 
-## 7. 控制流
+表达式 `value?` 要求 `value` 为 `T?`，当前函数返回类型也必须为可选类型。非空时表达式继续产生
+`T`；为 `None` 时当前函数立即返回 `None`。传播一次只处理一层，不执行隐式类型转换。
 
-`if` 条件必须是 bool。两个有值分支必须产生相同静态类型；缺少 `else` 时整个表达式只能作为 unit。
+## 8. 运算与内建
 
-`match` 在编译期检查 pattern 与被匹配值的类型，并要求表达式位置上的分支穷尽。支持的 pattern 类别
-包括 literal、bool、enum、Option、Result、类型 pattern、绑定 pattern 和 catch-all。pattern 绑定只在
-对应 arm 内可见。
+运算符由静态类型决定，不进行运行时重载搜索。整数使用 checked 64 位运算；浮点遵循 binary64；
+字符串比较使用 ordinal 语义；逻辑运算保持短路。位运算只接受 int 或 `@flag` enum。
 
-循环语义如下：
+内建方法由编译器静态解析，包括 string 查询、集合长度与关系、dictionary key/value 查询、数值操作，
+以及 map、filter、fold、any 和 all。高阶内建必须验证回调签名，全部工作量计入 VM 预算。
 
-- `while` 每轮重新计算 bool 条件。
-- range `for` 按整数顺序迭代，并明确区分开区间终点与闭区间终点。
-- list `for` 按稳定整数顺序读取元素。
-- dictionary `for` 使用当前只读集合提供的稳定枚举快照。
-- `break` 和 `continue` 只在最近循环内有效。
-- 循环表达式结果是 unit；从循环返回函数值必须使用 `return`。
+## 9. Fault 语义
 
-循环和高阶集合操作最终必须受 VM 工作量预算约束，语法层不提供绕过执行限制的迭代入口。该预算当前
-尚未实现，状态见 VM 设计第 13 节。
+整数溢出、除零、非法转换、越界索引、缺失函数、Host 异常、错误 Runtime 代际以及执行预算超限均为
+运行时 fault。fault 携带函数、来源路径、表达式 span 和精简调用栈，不暴露寄存器快照。
 
-## 8. Option、Result 与传播
+## 10. 固定不支持
 
-Option 和 Result 是语言值，不是异常协议。构造、匹配和传播都保留完整静态 payload 类型。
-
-传播规则为：
-
-```text
-Option<T> propagation
-├── Some(value) -> continue with value
-└── None        -> return None
-
-Result<T, E> propagation
-├── Ok(value)   -> continue with value
-└── Err(error)  -> return Err(error)
-```
-
-传播源与当前函数返回类型必须具有相同外层构造；Result 的 error 类型必须一致。嵌套传播每次只处理一层
-tag，不隐式扁平化不同的 Option/Result 组合。
-
-## 9. 运算与转换
-
-运算符由 operand 静态类型决定，不执行运行时重载搜索。
-
-| 类别 | 语义约束 |
-| --- | --- |
-| 整数算术 | checked 64 位运算；溢出与除零产生 fault |
-| 浮点算术 | IEEE 754 binary64；不隐式转为整数 |
-| 字符串连接 | 只接受 string operand |
-| 比较 | 两侧类型必须兼容，string 使用 ordinal 语义 |
-| 相等 | 遵循对应生成类型或集合的语言相等语义 |
-| 位运算 | 只接受 int 或语言允许的 flag enum |
-| 移位 | 左值和位数均为 int；非法位数与溢出语义必须由统一语言规则确定 |
-| 逻辑运算 | 只接受 bool，并保持短路求值 |
-| 显式转换 | 只允许语言注册的转换，失败产生 source-mapped fault |
-
-常量折叠必须与运行时执行使用相同语义。编译器不能因 CLR 运算符的掩码、舍入或文化区域规则导致常量
-表达式与非恒定表达式结果不同。
-
-## 10. 内建方法
-
-内建方法是编译器理解的静态操作，不是通过反射发现的普通成员。内建集合方法可以具有编译器提供的
-泛型签名，但用户函数不能声明泛型参数。
-
-内建方法分为：
-
-- string 长度、包含、前后缀、空白与正则匹配。
-- list 长度、包含、唯一性、排序性、聚合与集合关系。
-- dictionary 长度、key/value 查询和只读 keys/values。
-- int/float 的绝对值、平方根、有限性和近似比较。
-- list 的 map、filter、fold、find、any 和 all。
-
-高阶内建必须验证 callback 签名；`find` 返回 Option，空集合上的 fold 使用显式初值，any/all 使用各自
-的空集合恒等值。执行限制落地后，线性内建的元素工作量必须计入 VM 预算，不能以单次 native 调用隐藏
-无界扫描。
-
-## 11. Fault 语义
-
-业务失败通过 Result 返回。以下情况属于运行时 fault：
-
-- 整数溢出、除零和非法转换。
-- 无效索引或不满足语言前置条件的内建操作。
-- 缺失的普通函数、未绑定或抛出未处理异常的 Host function。
-- 使用错误 `Coflow` 或旧快照代际执行值的实例函数。
-- 无效间接调用目标或 VM 状态不变量破坏。
-- 指令、frame、寄存器、集合、导入或逸出值预算超限。
-
-fault 必须绑定当前函数、来源路径、产生故障的表达式 span 和精简 Coflow 调用栈。fault 不暴露寄存器
-快照，也不转换为语言 Result。
-
-## 12. 固定不支持的语言能力
-
-当前函数语言不支持：
-
-- 用户泛型、隐式数值转换和异常捕获语法。
-- 可变配置对象、可变集合和可变 closure capture。
+- `Result<T, E>`、`Ok(...)`、`Err(...)` 和异常捕获语法。
+- `Some(...)` 值构造、嵌套可选类型和 `match`。
+- 用户泛型、隐式数值转换和运行时类型声明。
+- 可变配置对象、可变集合和可变闭包捕获。
 - coroutine、`await`、`yield`、Task、continuation 或 scheduler。
-- 动态字段访问、按字符串调用函数或运行时类型声明。
-- 宏、运行时代码加载和可序列化 bytecode。
+- 动态字段访问、按字符串调用函数、宏和运行时代码加载。

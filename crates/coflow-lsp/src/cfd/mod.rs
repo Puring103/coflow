@@ -347,10 +347,6 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         CfdValue::FormattedString(value) => collect_formatted_string_tokens(value, c),
         CfdValue::Function(value) => collect_function_tokens(value.span, &value.source, c),
         CfdValue::OptionNone(span) => c.add_plain(*span, SEM_KEYWORD),
-        CfdValue::OptionSome(value, span) => {
-            c.add_plain(Span::new(span.start, span.start + 4), SEM_KEYWORD);
-            collect_value_tokens(value, c);
-        }
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {
                 c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
@@ -1055,6 +1051,19 @@ fn completion_context_in_value<'a>(
     expected: &'a CftValueType,
     offset: usize,
 ) -> Option<CompletionContext<'a>> {
+    // 非空可选值没有 Some 包装，补全按内部声明类型分析同一语法节点。
+    if let CftValueType::Option(inner) = expected {
+        if matches!(
+            value,
+            CfdValue::Block(_)
+                | CfdValue::Array(_, _)
+                | CfdValue::Ref(_)
+                | CfdValue::Function(_)
+                | CfdValue::FormattedString(_)
+        ) {
+            return completion_context_in_value(value, schema, inner, offset);
+        }
+    }
     match (value, expected) {
         (CfdValue::BitExpr(expression), CftValueType::Enum(_)) => {
             let mut selected = std::collections::BTreeSet::new();
@@ -1071,9 +1080,6 @@ fn completion_context_in_value<'a>(
                 }
             }
             Some(CompletionContext::Value(inner))
-        }
-        (CfdValue::OptionSome(inner_value, _), CftValueType::Option(inner)) => {
-            completion_context_in_value(inner_value, schema, inner, offset)
         }
         (CfdValue::Block(block), CftValueType::Dict(_, value_type)) => {
             for field in &block.fields {
@@ -1141,13 +1147,6 @@ fn value_completion_items(
         CftValueType::Option(inner) => {
             let mut items =
                 vec![json!({ "label": "None", "kind": 14, "detail": value_type.display_label() })];
-            items.push(json!({
-                "label": "Some",
-                "kind": 3,
-                "detail": format!("Some({})", inner.display_label()),
-                "insertText": format!("Some(${{1:{}}})", value_placeholder(inner)),
-                "insertTextFormat": 2,
-            }));
             items.extend(value_completion_items(schema, inner, build));
             items
         }
@@ -1730,7 +1729,6 @@ fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
         CfdValue::Array(values, _) => values
             .iter()
             .find_map(|value| function_in_value(value, offset)),
-        CfdValue::OptionSome(value, _) => function_in_value(value, offset),
         _ => None,
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     CfdDataModel, CfdDictKey, CfdValue,
 };
 use std::{
-    collections::{BTreeMap,BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -15,8 +15,8 @@ use std::{
     thread::ThreadId,
 };
 
-mod execution;
 mod checking;
+mod execution;
 pub use checking::CheckSelection;
 
 static NEXT_RUNTIME: AtomicU64 = AtomicU64::new(1);
@@ -73,7 +73,9 @@ pub enum HostValue {
 /// Host 服务整对象绑定；数据读取和函数调用使用同一 Runtime 生命周期。
 pub trait HostService: std::fmt::Debug + Send + Sync {
     fn call(&self, field: &str, _arguments: &[HostValue]) -> Result<HostValue, ExecutionError> {
-        Err(ExecutionError::InvalidAccess(format!("Host 函数未实现：{field}")))
+        Err(ExecutionError::InvalidAccess(format!(
+            "Host 函数未实现：{field}"
+        )))
     }
     fn read(&self, field: &str) -> Result<HostValue, ExecutionError>;
     fn has_member(
@@ -99,9 +101,9 @@ pub struct Runtime {
     execution: Mutex<Option<(ThreadId, usize)>>,
     vm: execution::VmState,
     contract_values: BTreeSet<ValueId>,
-    constants: BTreeMap<String,ValueId>,
-    function_imports: BTreeMap<ValueId,BTreeMap<String,String>>,
-    function_locations: BTreeMap<ValueId,crate::ingest::CallableLocation>,
+    constants: BTreeMap<String, ValueId>,
+    function_imports: BTreeMap<ValueId, BTreeMap<String, String>>,
+    function_locations: BTreeMap<ValueId, crate::ingest::CallableLocation>,
     check_reporter: Arc<checking::CheckReporter>,
 }
 
@@ -121,10 +123,19 @@ pub struct BuildDiagnostic {
 }
 
 impl From<String> for BuildDiagnostic {
-    fn from(message:String)->Self {Self{code:"BUILD".into(),source:String::new(),message,span:None}}
+    fn from(message: String) -> Self {
+        Self {
+            code: "BUILD".into(),
+            source: String::new(),
+            message,
+            span: None,
+        }
+    }
 }
 impl From<&str> for BuildDiagnostic {
-    fn from(message:&str)->Self {message.to_string().into()}
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
 }
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
@@ -152,8 +163,11 @@ impl RuntimeBuilder {
     }
     pub fn bind(&mut self, name: String, service: Arc<dyn HostService>) -> Result<(), String> {
         if name == "Coflow::Check" {
-            if self.bindings.contains_key(&name) {return Err("duplicate Host binding Coflow::Check".into());}
-            self.bindings.insert(name,service);return Ok(());
+            if self.bindings.contains_key(&name) {
+                return Err("duplicate Host binding Coflow::Check".into());
+            }
+            self.bindings.insert(name, service);
+            return Ok(());
         }
         let ty = self
             .contract
@@ -226,7 +240,13 @@ impl RuntimeBuilder {
         }
         let runtime = model
             .map_err(|e| e.to_string())
-            .and_then(|model| Runtime::from_model(self.contract, model, self.bindings).map_err(|diagnostic| {let message=diagnostic.message.clone();diagnostics.push(diagnostic);message}))
+            .and_then(|model| {
+                Runtime::from_model(self.contract, model, self.bindings).map_err(|diagnostic| {
+                    let message = diagnostic.message.clone();
+                    diagnostics.push(diagnostic);
+                    message
+                })
+            })
             .map(Arc::new);
         if let Err(message) = &runtime {
             if diagnostics.is_empty() {
@@ -272,10 +292,21 @@ impl Runtime {
             );
         }
         // 常量先建立独立存储，后续字段复用其中的函数与模板身份。
-        let check_record_ids=model.records().map(|(id,record)|(arena.records[&(record.actual_type().to_string(),record.key().to_string())],id)).collect();
-        let mut constants=BTreeMap::new();
+        let check_record_ids = model
+            .records()
+            .map(|(id, record)| {
+                (
+                    arena.records[&(record.actual_type().to_string(), record.key().to_string())],
+                    id,
+                )
+            })
+            .collect();
+        let mut constants = BTreeMap::new();
         for constant in contract.schema().all_consts() {
-            constants.insert(constant.name.to_string(),arena.constant(&constant.value, None)?);
+            constants.insert(
+                constant.name.to_string(),
+                arena.constant(&constant.value, None)?,
+            );
         }
         for (_, record) in model.records() {
             let id = arena.records[&(record.actual_type().to_string(), record.key().to_string())];
@@ -373,7 +404,12 @@ impl Runtime {
             };
         }
         let Arena {
-            values, records, contract_values, function_imports, function_locations, ..
+            values,
+            records,
+            contract_values,
+            function_imports,
+            function_locations,
+            ..
         } = arena;
         let identity = NEXT_RUNTIME
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
@@ -395,9 +431,11 @@ impl Runtime {
             }
             table_values.insert(ty.name.to_string(), ids);
         }
-        let check_reporter=Arc::new(checking::CheckReporter::default());
-        let mut bindings=bindings;
-        bindings.entry("Coflow::Check".into()).or_insert_with(||check_reporter.clone());
+        let check_reporter = Arc::new(checking::CheckReporter::default());
+        let mut bindings = bindings;
+        bindings
+            .entry("Coflow::Check".into())
+            .or_insert_with(|| check_reporter.clone());
         let mut runtime = Self {
             identity,
             contract,
@@ -437,16 +475,24 @@ impl Runtime {
     }
     pub fn ensure_value(&self, id: ValueId) -> Result<(), ExecutionError> {
         self.ensure_alive()?;
-        if id < self.values.len() { Ok(()) } else { self.vm.value(id).map(|_| ()) }
+        if id < self.values.len() {
+            Ok(())
+        } else {
+            self.vm.value(id).map(|_| ())
+        }
     }
     /// 数据与集合按读取值比较；记录、函数按创建身份比较。
     pub fn equals(&self, left: ValueId, right: ValueId) -> Result<bool, ExecutionError> {
-        let _entry=self.enter()?;
-        self.execution_equals(left,right)
+        let _entry = self.enter()?;
+        self.execution_equals(left, right)
     }
     pub fn value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
         self.ensure_alive()?;
-        let value = if let Some(value) = self.values.get(id) { value.clone() } else { self.vm.value(id)? };
+        let value = if let Some(value) = self.values.get(id) {
+            value.clone()
+        } else {
+            self.vm.value(id)?
+        };
         if let Value::HostData {
             service,
             field,
@@ -806,8 +852,8 @@ struct Arena<'a> {
     records: BTreeMap<(String, String), ValueId>,
     constant_callables: BTreeMap<String, ValueId>,
     contract_values: BTreeSet<ValueId>,
-    function_imports: BTreeMap<ValueId,BTreeMap<String,String>>,
-    function_locations: BTreeMap<ValueId,crate::ingest::CallableLocation>,
+    function_imports: BTreeMap<ValueId, BTreeMap<String, String>>,
+    function_locations: BTreeMap<ValueId, crate::ingest::CallableLocation>,
 }
 impl Arena<'_> {
     fn constant(
@@ -853,7 +899,7 @@ impl Arena<'_> {
                 };
                 let id = self.push(value);
                 self.constant_callables.insert(origin.clone(), id);
-                self.function_locations.insert(id,source.into());
+                self.function_locations.insert(id, source.into());
                 self.contract_values.insert(id);
                 return Ok(id);
             }
@@ -1029,9 +1075,27 @@ impl Arena<'_> {
                 Value::Dict(entries)
             }
         };
-        let id=self.push(next);
-        match value{CfdValue::Function(function)=>{self.function_imports.insert(id,function.imports.clone()); if let Some(location)=&function.location{self.function_locations.insert(id,location.clone());}},CfdValue::FormattedString(template)=>{self.function_imports.insert(id,template.imports.clone()); if let Some(location)=&template.location{self.function_locations.insert(id,location.clone());}},_=>{}}
-        if matches!(value,CfdValue::Function(function) if function.from_default) || matches!(value,CfdValue::FormattedString(template) if template.from_default) {self.contract_values.insert(id);}
+        let id = self.push(next);
+        match value {
+            CfdValue::Function(function) => {
+                self.function_imports.insert(id, function.imports.clone());
+                if let Some(location) = &function.location {
+                    self.function_locations.insert(id, location.clone());
+                }
+            }
+            CfdValue::FormattedString(template) => {
+                self.function_imports.insert(id, template.imports.clone());
+                if let Some(location) = &template.location {
+                    self.function_locations.insert(id, location.clone());
+                }
+            }
+            _ => {}
+        }
+        if matches!(value,CfdValue::Function(function) if function.from_default)
+            || matches!(value,CfdValue::FormattedString(template) if template.from_default)
+        {
+            self.contract_values.insert(id);
+        }
         Ok(id)
     }
 }

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 
 import { ShortNameColumnMenu } from './ShortNameContext'
 import { shortNameCandidate } from '../state/shortNames'
@@ -103,6 +104,7 @@ import {
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { RecordContextMenu } from './RecordContextMenu'
 import { FunctionEditorButton } from './FunctionBodyDialog'
+import { sameNumericValue, scrubNumericValue, type NumericFieldValue } from '../value/numericScrub'
 
 import { isNativeEditorTarget } from '../utils/dom'
 import {
@@ -393,8 +395,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   // Declared schema type per column, sampled from the first record that
   // carries an annotation for this field. Different records normally
-  // agree on the declared type for a shared field name; if they don't
-  // (e.g. a rename mid-migration) we show whatever we saw first.
+  // agree on the declared type for a shared field name; if they don't,
+  // we show whatever we saw first.
   // Depending on `data.records` here would rebuild the map — and via the
   // columns memo, every columnDef — on every edit, causing react-table to
   // replay column sizes and briefly flash the row layout. Freezing on the
@@ -1449,6 +1451,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       const classes = [
                         pillColumns.has(cell.column.id) ? 'pill-cell' : '',
                         fieldPath && isComplexValue(fieldCell(row.original, cell.column.id)?.value) ? 'complex-cell' : '',
+                        fieldPath && ['string', 'formatted_string'].includes(fieldCell(row.original, cell.column.id)?.value.kind ?? '') ? 'string-cell' : '',
+                        fieldPath && ['int', 'float'].includes(fieldCell(row.original, cell.column.id)?.value.kind ?? '') ? 'numeric-cell' : '',
                         selected ? 'selected-cell' : '',
                         selected && selectedValueRange?.rowStart === selectedRowIndex ? 'range-top' : '',
                         selected && selectedValueRange?.rowEnd === selectedRowIndex ? 'range-bottom' : '',
@@ -1486,7 +1490,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             }
                           }}
                         >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          <TableCellContent selected={selected}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCellContent>
                         </td>
                       )
                     })}
@@ -1617,6 +1623,65 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     </div>
   )
 })
+
+function TableCellContent({ selected, children }: { selected: boolean; children: ReactNode }) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [overlayRect, setOverlayRect] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const content = contentRef.current
+    if (!selected || !content) {
+      setExpanded(false)
+      setOverlayRect(null)
+      return
+    }
+    if (!expanded && content.scrollHeight > 18) {
+      const cell = content.closest('td')
+      const rect = cell?.getBoundingClientRect()
+      if (rect) {
+        setOverlayRect({ top: rect.top, left: rect.left, width: rect.width })
+        setExpanded(true)
+      }
+    }
+  }, [selected, children, expanded])
+
+  useEffect(() => {
+    if (!expanded) return
+    const updatePosition = () => {
+      const cell = contentRef.current?.closest('td')
+      const rect = cell?.getBoundingClientRect()
+      if (rect) setOverlayRect({ top: rect.top, left: rect.left, width: rect.width })
+    }
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    const cell = contentRef.current?.closest('td')
+    const observer = cell ? new ResizeObserver(updatePosition) : null
+    if (cell) observer?.observe(cell)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+      observer?.disconnect()
+    }
+  }, [expanded])
+
+  return (
+    <>
+      <div ref={contentRef} className="table-cell-content">
+        {!expanded && children}
+      </div>
+      {expanded && overlayRect && createPortal(
+        <div
+          className="table-cell-expanded-overlay"
+          style={{ top: overlayRect.top, left: overlayRect.left, width: overlayRect.width }}
+        >
+          {children}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
 
 
 function CellSyntaxEditor({
@@ -1835,37 +1900,124 @@ function CellTextEditor({
   }
   if (value.kind === 'string' || value.kind === 'formatted_string') {
     return (
-      <RichTextInput
-        className="dc-input dc-input-flat"
-        value={text}
-        rows={1}
-        autoFocus
-        onValueChange={setText}
-        onBlur={() => { commit(); onCancel() }}
-        onKeyDown={event => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            commit()
-          }
-          if (event.key === 'Escape') setText(plainFieldValueText(value))
-        }}
-      />
+      <span className="cell-string-editor">
+        <RichTextInput
+          className="dc-input dc-input-flat"
+          value={text}
+          rows={1}
+          autoSize
+          autoFocus
+          onValueChange={setText}
+          onBlur={() => { commit(); onCancel() }}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              commit()
+            }
+            if (event.key === 'Escape') setText(plainFieldValueText(value))
+          }}
+        />
+      </span>
     )
   }
   return (
-    <input
-      className="dc-input dc-input-flat"
-      type="text"
-      inputMode={value.kind === 'int' ? 'numeric' : undefined}
-      value={text}
-      autoFocus
-      onChange={e => setText(e.target.value)}
-      onBlur={() => { commit(); onCancel() }}
-      onKeyDown={e => {
-        if (e.key === 'Enter') commit()
-        if (e.key === 'Escape') setText(String(value.value))
-      }}
+    <NumericCellEditor
+      value={value}
+      text={text}
+      onTextChange={setText}
+      onCommit={onCommit}
+      onCancel={onCancel}
+      commitText={commit}
     />
+  )
+}
+
+function NumericCellEditor({
+  value, text, onTextChange, onCommit, onCancel, commitText,
+}: {
+  value: NumericFieldValue
+  text: string
+  onTextChange: (text: string) => void
+  onCommit: (next: FieldValue) => void
+  onCancel: () => void
+  commitText: () => void
+}) {
+  const cleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => cleanupRef.current?.(), [])
+
+  function beginScrub(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    cleanupRef.current?.()
+    const pointerId = event.pointerId
+    const startX = event.clientX
+    let latest = value
+    let finished = false
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      document.body.classList.remove('dc-numeric-scrubbing')
+      if (cleanupRef.current === cleanup) cleanupRef.current = null
+    }
+    const complete = (commit: boolean) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      if (commit && !sameNumericValue(value, latest)) onCommit(latest)
+    }
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return
+      latest = scrubNumericValue(value, pointerEvent.clientX - startX, pointerEvent)
+      onTextChange(String(latest.value))
+    }
+    const finish = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) complete(true)
+    }
+    const cancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) complete(false)
+    }
+    cleanupRef.current = cleanup
+    document.body.classList.add('dc-numeric-scrubbing')
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', cancel)
+  }
+
+  return (
+    <span className="cell-numeric-editor">
+      <input
+        className="dc-input dc-input-flat"
+        type="text"
+        inputMode={value.kind === 'int' ? 'numeric' : undefined}
+        value={text}
+        autoFocus
+        onChange={event => onTextChange(event.target.value)}
+        onBlur={() => { commitText(); onCancel() }}
+        onKeyDown={event => {
+          if (event.key === 'Enter') commitText()
+          if (event.key === 'Escape') onTextChange(String(value.value))
+        }}
+      />
+      <span
+        className="cell-numeric-scrub"
+        title="左右拖动调整数值"
+        role="button"
+        tabIndex={0}
+        aria-label="拖动调整数值"
+        onPointerDown={beginScrub}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+          event.preventDefault()
+          const direction = event.key === 'ArrowLeft' ? -1 : 1
+          onCommit(scrubNumericValue(value, direction * 2, event))
+        }}
+      >
+        <span className="cell-numeric-scrub-left" aria-hidden />
+        <span className="cell-numeric-scrub-right" aria-hidden />
+      </span>
+    </span>
   )
 }
 

@@ -29,7 +29,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     let mut output = String::new();
     let mut delimiters = DelimiterIndent::default();
     let mut function_bodies = FunctionScopes::default();
-    let mut generic_continuation_depth = 0usize;
     let mut continuation = false;
     let mut pending_blank_line = false;
     let mut pending_field_annotation = None;
@@ -44,9 +43,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
             continue;
         }
         let formatted = normalize_inline_spacing(trimmed);
-        let generic_closers = leading_generic_closers(&formatted, generic_continuation_depth);
-        let line_indent = delimiters.depth_after_leading_closers(&formatted)
-            + generic_continuation_depth.saturating_sub(generic_closers);
+        let line_indent = delimiters.depth_after_leading_closers(&formatted);
         let is_field_annotation = line_indent > 0 && formatted.starts_with('@');
         let is_top_level_annotation = line_indent == 0 && formatted.starts_with('@');
         let is_top_level_definition = line_indent == 0
@@ -108,8 +105,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         output.push('\n');
         delimiters.apply_line(&formatted);
         function_bodies.apply_line(&formatted);
-        generic_continuation_depth =
-            generic_depth_after_line(&formatted, generic_continuation_depth);
         if !is_comment {
             continuation = line_requires_continuation(&formatted);
         }
@@ -307,42 +302,12 @@ fn split_array_object_header(source: &str) -> Option<(&str, &str)> {
 
 fn line_requires_continuation(line: &str) -> bool {
     let code = code_before_comment(line);
-    if code
-        .strip_suffix('<')
-        .is_some_and(|prefix| is_generic_open(prefix.trim_end()))
-    {
-        return false;
-    }
     [
         ":", "=", "->", "=>", "+", "-", "*", "/", "%", "&&", "||", "&", "|", "^", "==", "!=", "<",
         ">", "<=", ">=", ".",
     ]
     .iter()
     .any(|operator| code.ends_with(operator))
-}
-
-fn leading_generic_closers(line: &str, depth: usize) -> usize {
-    tokenize_lossless(line)
-        .into_iter()
-        .skip_while(|token| token.kind == LosslessTokenKind::Whitespace)
-        .take_while(|token| token.text(line) == ">")
-        .count()
-        .min(depth)
-}
-
-fn generic_depth_after_line(line: &str, mut depth: usize) -> usize {
-    let code = code_before_comment(line);
-    let mut prefix = String::new();
-    for token in tokenize_lossless(code) {
-        let text = token.text(code);
-        match text {
-            "<" if depth > 0 || is_generic_open(&prefix) => depth += 1,
-            ">" if depth > 0 => depth -= 1,
-            _ => {}
-        }
-        prefix.push_str(text);
-    }
-    depth
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -360,7 +325,6 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
     let mut braces = Vec::<(BraceKind, usize)>::new();
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
-    let mut generic_depth = 0usize;
     let mut just_closed_structural = false;
 
     for (index, token) in tokens.iter().enumerate() {
@@ -392,14 +356,6 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
                 bracket_depth = bracket_depth.saturating_sub(1);
                 output.push_str(text);
                 just_closed_structural = false;
-            }
-            "<" if token.kind == LosslessTokenKind::Symbol && is_generic_open(&output) => {
-                generic_depth += 1;
-                output.push_str(text);
-            }
-            ">" if token.kind == LosslessTokenKind::Symbol && generic_depth > 0 => {
-                generic_depth -= 1;
-                output.push_str(text);
             }
             "{" if token.kind == LosslessTokenKind::Symbol => {
                 let kind = classify_open_brace(current_line_fragment(&output), language);
@@ -439,13 +395,11 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
             "," if token.kind == LosslessTokenKind::Symbol => {
                 output.push_str(text);
                 let split_cft_enum = language == FormatLanguage::Cft
-                    && generic_depth == 0
                     && braces.last().is_some_and(|(kind, depth)| {
                         *kind == BraceKind::Enum && *depth == bracket_depth
                     })
                     && paren_depth == 0;
                 let split_cfd_field = language == FormatLanguage::Cfd
-                    && generic_depth == 0
                     && braces.last().is_some_and(|(kind, depth)| {
                         *kind != BraceKind::Inline && *depth == bracket_depth
                     })
@@ -617,7 +571,6 @@ fn normalize_inline_spacing(line: &str) -> String {
     let mut output = String::with_capacity(line.len());
     let mut pending_space = false;
     let mut tight_right = false;
-    let mut generic_depth = 0usize;
     let mut inline_brace_spacing = Vec::new();
 
     for (index, token) in tokens.iter().enumerate() {
@@ -711,20 +664,6 @@ fn normalize_inline_spacing(line: &str) -> String {
                 output.push('}');
                 pending_space = false;
                 tight_right = false;
-            }
-            "<" if is_generic_open(&output) => {
-                trim_end_spaces(&mut output);
-                output.push('<');
-                generic_depth += 1;
-                pending_space = false;
-                tight_right = true;
-            }
-            ">" if generic_depth > 0 => {
-                trim_end_spaces(&mut output);
-                output.push('>');
-                generic_depth -= 1;
-                pending_space = false;
-                tight_right = true;
             }
             "=" | "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||" | "+="
             | "-=" | "*=" | "/=" | "%=" | "//=" | "**=" | "<<=" | ">>=" | "&=" | "|=" | "^="
@@ -827,17 +766,6 @@ const fn is_separator(ch: char) -> bool {
         ch,
         ':' | ',' | '=' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '<' | '>'
     )
-}
-
-fn is_generic_open(output: &str) -> bool {
-    tokenize_lossless(output)
-        .into_iter()
-        .rev()
-        .find(|token| !token.is_trivia())
-        .is_some_and(|token| {
-            token.kind == LosslessTokenKind::Identifier
-                && matches!(token.text(output), "Option" | "Result")
-        })
 }
 
 fn is_type_header(line: &str) -> bool {

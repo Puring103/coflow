@@ -248,17 +248,7 @@ impl<'a> Parser<'a> {
                     return Ok(CfdValue::OptionNone(Span::new(start, self.pos)));
                 }
                 if self.peek_keyword("Some") {
-                    let start = self.pos;
-                    self.eat_keyword("Some");
-                    self.skip_ws_and_comments();
-                    self.expect_char('(', "optional argument `(`")?;
-                    let value = self.parse_value()?;
-                    self.skip_ws_and_comments();
-                    self.expect_char(')', "optional end `)`")?;
-                    return Ok(CfdValue::OptionSome(
-                        Box::new(value),
-                        Span::new(start, self.pos),
-                    ));
+                    return Err(self.error("optional values use None or a bare value"));
                 }
                 // Peek ahead: if after a name token there is `{`, it's a block.
                 let saved = self.pos;

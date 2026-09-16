@@ -39,4 +39,4 @@ welcome: UiText_text_language { en: None, zh: "欢迎" }
 
 C# 包装提供 `Default()`、`For("zh")`，使用方式见 [C# 代码生成](./07-codegen/01-csharp.md)。
 将业务和维度 CFD 一起提交构建器后再构建运行时。
-模板和函数覆盖保留原业务对象绑定，当前版本不执行模板求值、语言内部方法或 check。
+模板和函数覆盖保留原业务对象绑定；模板读取、语言内部方法和 check 使用同一 Runtime 执行语义。

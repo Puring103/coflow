@@ -560,7 +560,7 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     );
     assert_eq!(
         completion_labels(option_items.as_array().expect("option items").clone()),
-        vec!["None", "Some", "true", "false"]
+        vec!["None", "true", "false"]
     );
 }
 

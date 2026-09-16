@@ -219,7 +219,6 @@ pub enum DefaultExprKind {
     Float(f64),
     Bool(bool),
     OptionNone,
-    OptionSome(Box<DefaultExpr>),
     String(String),
     FormattedString(String),
     Function {

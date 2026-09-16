@@ -12,11 +12,6 @@ mod open;
 mod plugin_manifest;
 mod plugins;
 
-/// Compatibility re-export for generated TypeScript binding tests and host consumers.
-pub mod editor {
-    pub use cfd_editor_core::editor::*;
-}
-
 use cfd_editor_core::EditorHost;
 use tauri::Manager;
 

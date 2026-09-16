@@ -39,7 +39,6 @@ pub enum CfdValue {
     QuotedString(String, Span),
     FormattedString(CfdFormattedString),
     OptionNone(Span),
-    OptionSome(Box<CfdValue>, Span),
     Function(CfdFunction),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
@@ -54,7 +53,6 @@ impl CfdValue {
             Self::Scalar(_, s)
             | Self::QuotedString(_, s)
             | Self::OptionNone(s)
-            | Self::OptionSome(_, s)
             | Self::Array(_, s) => *s,
             Self::Function(value) => value.span,
             Self::BitExpr(expr) => expr.span,

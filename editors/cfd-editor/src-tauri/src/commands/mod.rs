@@ -11,7 +11,7 @@ pub(crate) use project::*;
 use cfd_editor_core::EditorHost;
 use tauri::State;
 
-use crate::editor::EditorError;
+use cfd_editor_core::editor::EditorError;
 pub(crate) async fn run_blocking<T>(
     work: impl FnOnce() -> Result<T, EditorError> + Send + 'static,
 ) -> Result<T, EditorError>

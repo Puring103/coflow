@@ -14,10 +14,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::checks::{
-    run_full_project_checks,
-    ProjectCheckOutput,
-};
+use crate::checks::{run_full_project_checks, ProjectCheckOutput};
 use crate::dimensions;
 use crate::indexes::{
     CfdSourceEntry, DiagnosticLogicalLocation, PendingRecordRef, RecordIndexBuilder,
@@ -639,12 +636,7 @@ fn build_output_from_cache(
         .map(|(index, location)| (model_offset + index, location))
         .collect();
     let check = if options.load.run_checks {
-        run_project_checks(
-            schema,
-            &model,
-            &origins,
-            &mut statistics,
-        )
+        run_project_checks(schema, &model, &origins, &mut statistics)
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),

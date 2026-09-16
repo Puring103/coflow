@@ -210,8 +210,9 @@ fn cli_codegen_dispatches_through_the_language_registry() {
     assert_eq!(report.targets.len(), 1);
     assert!(project
         .path()
-        .join("generated/csharp/Coflow.Contract.cs")
+        .join("generated/csharp/Coflow.Bindings.cs")
         .is_file());
+    assert!(project.path().join("generated/csharp/coflow.contract").is_file());
 }
 
 #[test]
@@ -242,7 +243,7 @@ fn csharp_codegen_applies_namespace_option() {
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
 
     coflow_runtime::commands::generate_project_code(&opened).expect("generate namespaced C#");
-    let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Contract.cs"))
+    let metadata = fs::read_to_string(project.path().join("generated/csharp/Coflow.Bindings.cs"))
         .expect("metadata");
     assert!(metadata
         .replace("\r\n", "\n")
@@ -292,7 +293,7 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
     fs::write(
         project_dir
             .path()
-            .join("generated/csharp/Coflow.Contract.cs"),
+            .join("generated/csharp/Coflow.Bindings.cs"),
         "changed",
     )
     .expect("change generated output");
@@ -309,7 +310,7 @@ fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
     let dir = write_project();
     let project = Project::open(Some(dir.path())).expect("project");
     coflow_runtime::commands::generate_project_code(&project).expect("generate");
-    let output = dir.path().join("generated/csharp/Coflow.Contract.cs");
+    let output = dir.path().join("generated/csharp/Coflow.Bindings.cs");
     let original = fs::read_to_string(&output).expect("generated text");
     assert!(!original.contains('\r'));
     assert!(original.ends_with('\n') && !original.ends_with("\n\n"));
@@ -334,6 +335,22 @@ fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
         );
     }
     fs::write(&output, original.replacen('\n', " \n", 1)).expect("trailing space change");
+    assert!(matches!(
+        coflow_runtime::commands::build_project_status(&project).expect("status"),
+        coflow_runtime::commands::CommandOutcome::Success(true)
+    ));
+}
+
+#[test]
+fn generated_status_compares_binary_artifacts_exactly() {
+    let dir = write_project();
+    let project = Project::open(Some(dir.path())).expect("project");
+    coflow_runtime::commands::generate_project_code(&project).expect("generate");
+    let output = dir.path().join("generated/csharp/coflow.contract");
+    let mut bytes = fs::read(&output).expect("generated contract");
+    bytes[0] ^= 0xff;
+    fs::write(output, bytes).expect("change generated contract");
+
     assert!(matches!(
         coflow_runtime::commands::build_project_status(&project).expect("status"),
         coflow_runtime::commands::CommandOutcome::Success(true)
@@ -401,7 +418,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
         outcome,
         coflow_runtime::commands::CommandOutcome::Success(_)
     ));
-    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Contract.cs"))
+    let generated = fs::read_to_string(dir.path().join("generated/csharp/Coflow.Bindings.cs"))
         .expect("generated CFD binding");
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
     let wrapper =

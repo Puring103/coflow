@@ -4,7 +4,7 @@ use cfd_editor_core::EditorHost;
 use tauri::State;
 
 use super::run_host_command;
-use crate::editor::{
+use cfd_editor_core::editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
     DeleteRecordOutcome, EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery,
     InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow,

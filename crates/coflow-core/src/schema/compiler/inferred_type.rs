@@ -87,13 +87,6 @@ impl InferredType {
         }
     }
 
-    pub(super) fn object_name(&self) -> Option<&TypeName> {
-        match self.value_type()? {
-            CftValueType::Object(name) => Some(name),
-            _ => None,
-        }
-    }
-
     pub(super) const fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)
     }

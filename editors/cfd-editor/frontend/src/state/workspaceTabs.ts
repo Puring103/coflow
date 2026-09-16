@@ -97,8 +97,8 @@ export function sanitizeProjectWorkspace(
   const seen = new Set<string>()
   for (const candidate of value.tabs) {
     if (!isObject(candidate)) continue
-    const filePath = stringProperty(candidate, 'file_path', 'filePath')
-    const typeName = stringProperty(candidate, 'type_name', 'typeName')
+    const filePath = stringProperty(candidate, 'file_path')
+    const typeName = stringProperty(candidate, 'type_name')
     const option = fileTypes[filePath]?.find(type => type.name === typeName)
     const isDimensionFile = !typeName && (sourceFiles?.has(filePath) ?? false)
     if (!option && !isDimensionFile) continue
@@ -106,9 +106,9 @@ export function sanitizeProjectWorkspace(
     if (seen.has(id)) continue
     seen.add(id)
 
-    const rawKind = candidate.view_kind ?? candidate.viewKind
+    const rawKind = candidate.view_kind
     const requestedKind = isViewKind(rawKind) ? rawKind : 'table'
-    const requestedId = stringProperty(candidate, 'view_id', 'viewId')
+    const requestedId = stringProperty(candidate, 'view_id')
     const pluginView = requestedId.includes('/')
     const viewKind: ViewRenderKind = pluginView
       ? 'table'
@@ -171,8 +171,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function stringProperty(
   value: Record<string, unknown>,
   wireName: string,
-  legacyName: string,
 ): string {
-  const candidate = value[wireName] ?? value[legacyName]
+  const candidate = value[wireName]
   return typeof candidate === 'string' ? candidate : ''
 }

@@ -49,23 +49,15 @@ pub use cfd_loader::{
     load_cfd_model, parse_cfd_input_records, CfdTextDiagnostic, CfdTextDiagnostics,
     CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
-pub use coflow_core as data_model;
-pub use coflow_core::cell_value;
-pub use coflow_core::check::{
-    execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
-    CheckOutput, CheckSchemaLocation,
-};
+pub(crate) use coflow_core as data_model;
 pub use coflow_core::serde_i64;
 pub use coflow_core::{
-    validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
-    CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel, CfdModelBuildOutput, CfdModelBuilder,
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues,
+    CfdDimensionValue, CfdEnumValue, CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel,
     CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable,
-    CfdValue, CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
-    DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
-    LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction, LoadedRecordDraft, LoadedValueDraft,
-    MappedDiagnostic, MappedLabel, PendingInsertRef, RecordCoordinate, RecordOrigin, RefEdge,
-    RefSite, TextSpan, ValueValidationMode, ValueValidationRequest,
+    CfdValue, DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft,
+    DimensionValueLookup, LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction,
+    LoadedRecordDraft, LoadedValueDraft, RecordCoordinate, RecordOrigin, TextSpan,
 };
 pub use diff::{
     ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,

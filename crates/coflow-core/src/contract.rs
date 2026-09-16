@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{fmt, sync::Arc};
 
 const MAGIC: &[u8; 8] = b"COFLOWCT";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const HEADER: usize = 8 + 4 + 8 + 32;
 
 #[derive(Debug, Clone)]

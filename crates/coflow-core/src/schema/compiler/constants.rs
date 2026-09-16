@@ -68,10 +68,7 @@ impl ValueResolver<'_, '_> {
     ) -> Option<(CftValueType, CftConstValue)> {
         // 可选类型的简写值仍按其明确的内部期望类型解析。
         if let Some(CftValueType::Option(inner)) = expected {
-            if !matches!(
-                expression.kind,
-                DefaultExprKind::OptionNone | DefaultExprKind::OptionSome(_)
-            ) {
+            if !matches!(expression.kind, DefaultExprKind::OptionNone) {
                 let (_, value) =
                     self.resolve_static_value(module, expression, Some(inner), visiting)?;
                 return Some((
@@ -117,7 +114,10 @@ impl ValueResolver<'_, '_> {
             DefaultExprKind::FormattedString(source) => (
                 CftValueType::FString,
                 CftConstValue::FormattedString(crate::schema::CftCallableSource::literal(
-                    source.clone(), source.clone(), module.clone(), expression.span,
+                    source.clone(),
+                    source.clone(),
+                    module.clone(),
+                    expression.span,
                 )),
             ),
             DefaultExprKind::Function { signature, source } => {
@@ -139,7 +139,12 @@ impl ValueResolver<'_, '_> {
                 let source = format!("{}{}", value_type, &source[parsed.span.end..]);
                 (
                     value_type,
-                    CftConstValue::Function(crate::schema::CftCallableSource::literal(source, original_source, module.clone(), expression.span)),
+                    CftConstValue::Function(crate::schema::CftCallableSource::literal(
+                        source,
+                        original_source,
+                        module.clone(),
+                        expression.span,
+                    )),
                 )
             }
             DefaultExprKind::BitExpr { op, lhs, rhs } => {
@@ -189,10 +194,6 @@ impl ValueResolver<'_, '_> {
                     CftValueType::Option(inner.clone()),
                     CftConstValue::OptionNone,
                 )
-            }
-            DefaultExprKind::OptionSome(_) => {
-                self.push_diag(CftErrorCode::InvalidDefaultExpression,module,expression.span,"optional values use None or a bare value; Some is only a condition pattern");
-                return None;
             }
             DefaultExprKind::StaticPath(path) => {
                 self.resolve_static_path_value(module, path, expected, visiting)?

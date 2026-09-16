@@ -35,7 +35,7 @@ export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'inf
 
 export function diagnosticDisplayMessage(diagnostic: DiagnosticItem): string {
   const lines = [diagnostic.message]
-  for (const context of diagnostic.contexts ?? []) {
+  for (const context of diagnostic.contexts) {
     let detail = context.kind
     if (context.kind === 'check' && context.name) detail = `check ${context.name}`
     else if (context.kind === 'when' && context.expression) detail = `在 when ${context.expression} 内`
@@ -80,15 +80,12 @@ export function diagnosticMatchesAnchor(
   return topLevelFieldName(diagnosticPath) === topLevelFieldName(fieldPath)
 }
 
-/** 错误路由以后端 `kind` 判别器为准，形状推断只做兜底。 */
+/** 错误路由以后端 `kind` 判别器为准。 */
 export function isEditorError(err: unknown): err is EditorError {
-  if (!err || typeof err !== 'object') return false
-  if ('kind' in err && typeof (err as { kind?: unknown }).kind === 'string') return true
-  return (
-    'message' in err &&
-    'diagnostics' in err &&
-    Array.isArray((err as { diagnostics?: unknown }).diagnostics)
-  )
+  return !!err
+    && typeof err === 'object'
+    && 'kind' in err
+    && typeof (err as { kind?: unknown }).kind === 'string'
 }
 
 export function errorMessage(err: unknown): string {

@@ -219,9 +219,6 @@ fn walk_default(
             | DefaultExprKind::Function { .. }
             | DefaultExprKind::StaticPath(_)
             | DefaultExprKind::RecordReference(_) => {}
-            DefaultExprKind::OptionSome(value) => {
-                pending.push((value, cursor));
-            }
         }
     }
     Ok(())

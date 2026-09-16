@@ -12,6 +12,93 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+enum Operation {
+    LoadContract = 1,
+    CreateCompiler = 3,
+    AddSchemaSource = 4,
+    AddDimension = 5,
+    CompileContract = 6,
+    SerializeContract = 7,
+    ContractIdentity = 8,
+    RuntimeContractIdentity = 9,
+    CreateBuilder = 10,
+    AddDataSource = 11,
+    BuildRuntime = 12,
+    FindRecord = 20,
+    TableLength = 21,
+    TableValue = 22,
+    ReadField = 23,
+    InspectValue = 24,
+    ReadText = 25,
+    ArrayValue = 26,
+    DictionaryKey = 27,
+    DictionaryValue = 28,
+    Invoke = 29,
+    TypeName = 30,
+    ProgramSource = 31,
+    TryFindRecord = 32,
+    DimensionVariant = 34,
+    ValueEquals = 35,
+    DimensionDefault = 36,
+    Singleton = 37,
+    DictionaryFind = 38,
+    CanonicalValue = 39,
+    BufferLength = 40,
+    CreateBuffer = 41,
+    ReleaseValue = 42,
+    Collect = 43,
+    RetainValue = 44,
+    RunChecks = 45,
+}
+
+impl TryFrom<u32> for Operation {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => Self::LoadContract,
+            3 => Self::CreateCompiler,
+            4 => Self::AddSchemaSource,
+            5 => Self::AddDimension,
+            6 => Self::CompileContract,
+            7 => Self::SerializeContract,
+            8 => Self::ContractIdentity,
+            9 => Self::RuntimeContractIdentity,
+            10 => Self::CreateBuilder,
+            11 => Self::AddDataSource,
+            12 => Self::BuildRuntime,
+            20 => Self::FindRecord,
+            21 => Self::TableLength,
+            22 => Self::TableValue,
+            23 => Self::ReadField,
+            24 => Self::InspectValue,
+            25 => Self::ReadText,
+            26 => Self::ArrayValue,
+            27 => Self::DictionaryKey,
+            28 => Self::DictionaryValue,
+            29 => Self::Invoke,
+            30 => Self::TypeName,
+            31 => Self::ProgramSource,
+            32 => Self::TryFindRecord,
+            34 => Self::DimensionVariant,
+            35 => Self::ValueEquals,
+            36 => Self::DimensionDefault,
+            37 => Self::Singleton,
+            38 => Self::DictionaryFind,
+            39 => Self::CanonicalValue,
+            40 => Self::BufferLength,
+            41 => Self::CreateBuffer,
+            42 => Self::ReleaseValue,
+            43 => Self::Collect,
+            44 => Self::RetainValue,
+            45 => Self::RunChecks,
+            _ => return Err("operation unavailable in this build".into()),
+        })
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Response {
@@ -106,9 +193,9 @@ struct NativeService {
 }
 impl NativeService {
     fn request(&self, op: u32, field: &str) -> Result<Response, String> {
-        self.request_bytes(op,field.as_bytes())
+        self.request_bytes(op, field.as_bytes())
     }
-    fn request_bytes(&self, op:u32, bytes:&[u8])->Result<Response,String>{
+    fn request_bytes(&self, op: u32, bytes: &[u8]) -> Result<Response, String> {
         let mut result = Response::default();
         // 回调必须同步返回；不持有注册表锁，允许同线程重入。
         unsafe {
@@ -167,9 +254,16 @@ impl coflow_core::runtime::HostService for NativeService {
             .map_err(ExecutionError::InvalidAccess)?;
         invocation::host_result(result)
     }
-    fn call(&self,field:&str,args:&[coflow_core::runtime::HostValue])->Result<coflow_core::runtime::HostValue,coflow_core::vm::ExecutionError>{
-        let bytes=invocation::encode_call(field,args).map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
-        let result=self.request_bytes(2,&bytes).map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
+    fn call(
+        &self,
+        field: &str,
+        args: &[coflow_core::runtime::HostValue],
+    ) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> {
+        let bytes = invocation::encode_call(field, args)
+            .map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
+        let result = self
+            .request_bytes(2, &bytes)
+            .map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
         invocation::host_result(result)
     }
 }
@@ -275,15 +369,21 @@ pub unsafe extern "C" fn coflow_request(
 }
 
 fn dispatch(
-    op: u32,
+    operation: u32,
     handle: u64,
     raw_value: u64,
     key: &[u8],
     data: &[u8],
     index: u64,
 ) -> Result<Response, String> {
+    let op = Operation::try_from(operation)?;
     match op {
-        35 => {
+        #[cfg(not(feature = "cft-compiler"))]
+        Operation::CreateCompiler
+        | Operation::AddSchemaSource
+        | Operation::AddDimension
+        | Operation::CompileContract => Err("operation unavailable in this build".into()),
+        Operation::ValueEquals => {
             let (runtime, left) = target(handle, raw_value)?;
             let (other, right) = target(handle, index)?;
             if runtime.identity() != other.identity() {
@@ -298,7 +398,7 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        9 => {
+        Operation::RuntimeContractIdentity => {
             let runtime = match get(handle)? {
                 Entry::Runtime(runtime) => runtime,
                 _ => return Err("expected Runtime or value".into()),
@@ -306,26 +406,26 @@ fn dispatch(
             runtime.ensure_alive().map_err(|error| error.to_string())?;
             buffer(runtime.contract().identity().to_vec())
         }
-        1 => Ok(Response {
+        Operation::LoadContract => Ok(Response {
             handle: insert(Entry::Contract(Arc::new(
                 Contract::from_bytes(data).map_err(|e| e.to_string())?,
             )))?,
             ..Response::default()
         }),
         #[cfg(feature = "cft-compiler")]
-        3 => Ok(Response {
+        Operation::CreateCompiler => Ok(Response {
             handle: insert(Entry::Compiler(Arc::new(
                 Mutex::new(Compilation::default()),
             )))?,
             ..Response::default()
         }),
         #[cfg(feature = "cft-compiler")]
-        4 | 5 | 6 => {
+        Operation::AddSchemaSource | Operation::AddDimension | Operation::CompileContract => {
             let Entry::Compiler(compiler) = get(handle)? else {
                 return Err("expected CFT compilation".into());
             };
             let mut compiler = compiler.try_lock().map_err(|_| "CFT compilation busy")?;
-            if op == 4 {
+            if op == Operation::AddSchemaSource {
                 compiler
                     .sources
                     .push(coflow_core::schema::CftFile::from_source(
@@ -334,7 +434,7 @@ fn dispatch(
                     ));
                 return Ok(Response::default());
             }
-            if op == 5 {
+            if op == Operation::AddDimension {
                 let variants = text(data)?.split('\n').map(str::to_string).collect();
                 if compiler
                     .dimensions
@@ -357,17 +457,17 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        7 | 8 => {
+        Operation::SerializeContract | Operation::ContractIdentity => {
             let Entry::Contract(contract) = get(handle)? else {
                 return Err("expected contract".into());
             };
-            buffer(if op == 7 {
+            buffer(if op == Operation::SerializeContract {
                 contract.to_bytes().map_err(|e| e.to_string())?
             } else {
                 contract.identity().to_vec()
             })
         }
-        10 => {
+        Operation::CreateBuilder => {
             let Entry::Contract(contract) = get(handle)? else {
                 return Err("expected contract".into());
             };
@@ -378,12 +478,12 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        11 | 12 => {
+        Operation::AddDataSource | Operation::BuildRuntime => {
             let Entry::Builder(builder) = get(handle)? else {
                 return Err("expected builder".into());
             };
             let mut builder = builder.try_lock().map_err(|_| "builder busy")?;
-            if op == 11 {
+            if op == Operation::AddDataSource {
                 builder
                     .as_mut()
                     .ok_or("builder already consumed")?
@@ -429,7 +529,7 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        20 | 32 => {
+        Operation::FindRecord | Operation::TryFindRecord => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
@@ -438,11 +538,11 @@ fn dispatch(
                 .map_err(|e| e.to_string())?;
             match id {
                 Some(id) => value(runtime, id),
-                None if op == 32 => Ok(Response::default()),
+                None if op == Operation::TryFindRecord => Ok(Response::default()),
                 None => Err("record not found".into()),
             }
         }
-        21 => {
+        Operation::TableLength => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
@@ -457,7 +557,7 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        22 => {
+        Operation::TableValue => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
@@ -472,12 +572,12 @@ fn dispatch(
                 .ok_or("record index out of range")?;
             value(runtime, id)
         }
-        23 => {
+        Operation::ReadField => {
             let (runtime, id) = target(handle, raw_value)?;
             let field = runtime.field(id, text(key)?).map_err(|e| e.to_string())?;
             value(runtime, field)
         }
-        24 => {
+        Operation::InspectValue => {
             let (runtime, id) = target(handle, raw_value)?;
             let value = runtime.value(id).map_err(|e| e.to_string())?;
             let mut response = Response::default();
@@ -518,7 +618,7 @@ fn dispatch(
             }
             Ok(response)
         }
-        25 => {
+        Operation::ReadText => {
             let (runtime, id) = target(handle, raw_value)?;
             buffer(
                 runtime
@@ -527,42 +627,184 @@ fn dispatch(
                     .into_bytes(),
             )
         }
-        26 | 27 | 28 => {
+        Operation::ArrayValue | Operation::DictionaryKey | Operation::DictionaryValue => {
             let (runtime, id) = target(handle, raw_value)?;
             let value_ref = runtime.value(id).map_err(|e| e.to_string())?;
             let index = usize::try_from(index).map_err(|_| "index overflow")?;
             let child = match (value_ref.as_ref(), op) {
-                (Value::Array(items), 26) => *items.get(index).ok_or("array index out of range")?,
-                (Value::Dict(items), 27) => {
+                (Value::Array(items), Operation::ArrayValue) => {
+                    *items.get(index).ok_or("array index out of range")?
+                }
+                (Value::Dict(items), Operation::DictionaryKey) => {
                     items.get(index).ok_or("dictionary index out of range")?.0
                 }
-                (Value::Dict(items), 28) => {
+                (Value::Dict(items), Operation::DictionaryValue) => {
                     items.get(index).ok_or("dictionary index out of range")?.1
                 }
                 _ => return Err("container operation mismatch".into()),
             };
             value(runtime, child)
         }
-        29 => {
+        Operation::Invoke => {
             let (runtime, id) = target(handle, raw_value)?;
-            let args=invocation::decode_arguments(data)?;
-            invocation::response(runtime.invoke(id,&args,coflow_core::vm::executor::ExecutionLimits::default()).map_err(|e|e.to_string())?)
+            let args = invocation::decode_arguments(data)?;
+            invocation::response(
+                runtime
+                    .invoke(
+                        id,
+                        &args,
+                        coflow_core::vm::executor::ExecutionLimits::default(),
+                    )
+                    .map_err(|e| e.to_string())?,
+            )
         }
-        42 => {
-            let (runtime,id)=target(handle,raw_value)?;
-            runtime.release_value(id).map_err(|e|e.to_string())?;
+        Operation::ReleaseValue => {
+            let (runtime, id) = target(handle, raw_value)?;
+            runtime.release_value(id).map_err(|e| e.to_string())?;
             Ok(Response::default())
         }
-        44 => {
-            let (runtime,id)=target(handle,raw_value)?;
-            runtime.retain_value(id).map_err(|e|e.to_string())?;
+        Operation::RetainValue => {
+            let (runtime, id) = target(handle, raw_value)?;
+            runtime.retain_value(id).map_err(|e| e.to_string())?;
             Ok(Response::default())
         }
-        43 => {
-            let Entry::Runtime(runtime)=get(handle)? else{return Err("expected Runtime".into());};
-            Ok(Response{length:runtime.collect().map_err(|e|e.to_string())? as u64,..Response::default()})
+        Operation::RunChecks => {
+            let Entry::Runtime(runtime) = get(handle)? else {
+                return Err("expected Runtime".into());
+            };
+            let mut position = 0usize;
+            let take_u32 = |position: &mut usize| -> Result<u32, String> {
+                let end = position.checked_add(4).ok_or("check request overflow")?;
+                let value = u32::from_le_bytes(
+                    data.get(*position..end)
+                        .ok_or("truncated check request")?
+                        .try_into()
+                        .map_err(|_| "invalid check request")?,
+                );
+                *position = end;
+                Ok(value)
+            };
+            let take_u64 = |position: &mut usize| -> Result<u64, String> {
+                let end = position.checked_add(8).ok_or("check request overflow")?;
+                let value = u64::from_le_bytes(
+                    data.get(*position..end)
+                        .ok_or("truncated check request")?
+                        .try_into()
+                        .map_err(|_| "invalid check request")?,
+                );
+                *position = end;
+                Ok(value)
+            };
+            let take_text = |position: &mut usize| -> Result<String, String> {
+                let length = take_u32(position)? as usize;
+                let end = position
+                    .checked_add(length)
+                    .ok_or("check request overflow")?;
+                let value =
+                    text(data.get(*position..end).ok_or("truncated check request")?)?.to_string();
+                *position = end;
+                Ok(value)
+            };
+            let max_work = take_u64(&mut position)?;
+            let max_iterations = take_u64(&mut position)?;
+            let include_global = *data.get(position).ok_or("truncated check request")? != 0;
+            position += 1;
+            let mut names = std::collections::BTreeSet::new();
+            for _ in 0..take_u32(&mut position)? {
+                names.insert(take_text(&mut position)?);
+            }
+            let record_count = take_u32(&mut position)?;
+            let records = if record_count == u32::MAX {
+                None
+            } else {
+                let mut records = Vec::with_capacity(record_count as usize);
+                for _ in 0..record_count {
+                    let raw = take_u64(&mut position)?;
+                    let id = usize::try_from(raw.checked_sub(1).ok_or("missing value ID")?)
+                        .map_err(|_| "value ID overflow")?;
+                    runtime.ensure_value(id).map_err(|e| e.to_string())?;
+                    records.push(id);
+                }
+                Some(records)
+            };
+            if position != data.len() {
+                return Err("trailing check request bytes".into());
+            }
+            let output = runtime.run_checks(
+                coflow_core::runtime::CheckSelection {
+                    records,
+                    names,
+                    include_global,
+                },
+                coflow_core::check::CheckLimits {
+                    evaluation: coflow_core::check::EvaluationLimits::new(max_work, max_iterations),
+                },
+            );
+            fn write_text(bytes: &mut Vec<u8>, value: &str) -> Result<(), String> {
+                bytes.extend_from_slice(
+                    &u32::try_from(value.len())
+                        .map_err(|_| "check text too large")?
+                        .to_le_bytes(),
+                );
+                bytes.extend_from_slice(value.as_bytes());
+                Ok(())
+            }
+            let mut bytes = Vec::new();
+            bytes.push(u8::from(output.is_success()));
+            for value in [
+                output.statistics.requested_tasks as u64,
+                output.statistics.executed_tasks as u64,
+                output.statistics.rejected_tasks as u64,
+                output.statistics.work_used,
+                output.statistics.dimension_projected_records as u64,
+            ] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes.extend_from_slice(
+                &u32::try_from(output.request_diagnostics.len())
+                    .map_err(|_| "too many check diagnostics")?
+                    .to_le_bytes(),
+            );
+            for diagnostic in output.request_diagnostics {
+                write_text(&mut bytes, diagnostic.diagnostic.code.as_str())?;
+                write_text(&mut bytes, &diagnostic.diagnostic.message)?;
+                if let Some(location) = diagnostic.schema_location {
+                    bytes.push(1);
+                    write_text(&mut bytes, location.module.as_str())?;
+                    bytes.extend_from_slice(&(location.span.start as u64).to_le_bytes());
+                    bytes.extend_from_slice(&(location.span.end as u64).to_le_bytes());
+                } else {
+                    bytes.push(0);
+                }
+                let names = diagnostic
+                    .contexts
+                    .into_iter()
+                    .filter_map(|context| match context {
+                        coflow_core::check::CheckDiagnosticContext::Check { name } => Some(name),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                bytes.extend_from_slice(
+                    &u32::try_from(names.len())
+                        .map_err(|_| "too many check contexts")?
+                        .to_le_bytes(),
+                );
+                for name in names {
+                    write_text(&mut bytes, &name)?;
+                }
+            }
+            buffer(bytes)
         }
-        30 => {
+        Operation::Collect => {
+            let Entry::Runtime(runtime) = get(handle)? else {
+                return Err("expected Runtime".into());
+            };
+            Ok(Response {
+                length: runtime.collect().map_err(|e| e.to_string())? as u64,
+                ..Response::default()
+            })
+        }
+        Operation::TypeName => {
             let (runtime, id) = target(handle, raw_value)?;
             match runtime.value(id).map_err(|e| e.to_string())?.as_ref() {
                 Value::Object { type_name, .. } | Value::Enum { type_name, .. } => {
@@ -571,7 +813,7 @@ fn dispatch(
                 _ => Err("value has no named type".into()),
             }
         }
-        31 => {
+        Operation::ProgramSource => {
             let (runtime, id) = target(handle, raw_value)?;
             match runtime.value(id).map_err(|e| e.to_string())?.as_ref() {
                 Value::Template { source, .. } | Value::Function { source, .. } => {
@@ -580,14 +822,14 @@ fn dispatch(
                 _ => Err("value has no program source".into()),
             }
         }
-        37 => {
+        Operation::Singleton => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
             let id = runtime.singleton(text(key)?).map_err(|e| e.to_string())?;
             value(runtime, id)
         }
-        38 => {
+        Operation::DictionaryFind => {
             let (runtime, id) = target(handle, raw_value)?;
             use coflow_core::runtime::HostValue;
             let key = match index {
@@ -610,12 +852,12 @@ fn dispatch(
                 None => Ok(Response::default()),
             }
         }
-        39 => {
+        Operation::CanonicalValue => {
             let (runtime, id) = target(handle, raw_value)?;
             let canonical = runtime.canonical_value(id).map_err(|e| e.to_string())?;
             value(runtime, canonical)
         }
-        40 => {
+        Operation::BufferLength => {
             let Entry::Buffer(bytes) = get(handle)? else {
                 return Err("expected buffer".into());
             };
@@ -624,20 +866,19 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        41 => buffer(data.to_vec()),
-        34 => {
+        Operation::CreateBuffer => buffer(data.to_vec()),
+        Operation::DimensionVariant => {
             let (runtime, id) = target(handle, raw_value)?;
             let selected = runtime
                 .dimension_variant(id, text(key)?)
                 .map_err(|e| e.to_string())?;
             value(runtime, selected)
         }
-        36 => {
+        Operation::DimensionDefault => {
             let (runtime, id) = target(handle, raw_value)?;
             let base = runtime.dimension_default(id).map_err(|e| e.to_string())?;
             value(runtime, base)
         }
-        _ => Err("operation unavailable in this build".into()),
     }
 }
 

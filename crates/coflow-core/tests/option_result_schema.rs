@@ -41,4 +41,5 @@ fn nested_optional_and_removed_generic_types_are_rejected() {
     }
     assert!(compile("table Item { value: int? = null; }").is_err());
     assert!(compile("table Item { value: int? = Some(2); }").is_err());
+    assert!(compile("data Stats { value: int; } table Item { @expand stats: Stats; }").is_err());
 }

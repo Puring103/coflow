@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../generated/**/*.cs" />
+    <Content Include="../generated/coflow.contract" Link="coflow.contract" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../../runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj" />
   </ItemGroup>
   <Import Project="../../../runtimes/csharp/Directory.Build.targets" />

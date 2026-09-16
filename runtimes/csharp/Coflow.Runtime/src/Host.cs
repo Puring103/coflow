@@ -6,11 +6,86 @@ namespace Coflow
 {
     public abstract class HostBinding
     {
-        internal Contract Contract { get; }
         internal string Service { get; }
-        protected HostBinding(Contract contract, string service) { Contract = contract; Service = service; }
+        protected HostBinding(string service) { Service = service; }
         public abstract string MemberType(string field);
         public abstract object? Read(string field);
+        public abstract void Call(string field, HostCall call);
+    }
+    public sealed class HostCall
+    {
+        private readonly byte[] data;
+        private int position;
+        private readonly int count;
+        private int consumed;
+        internal Response Result { get; private set; }
+        internal HostCall(byte[] data, int position)
+        {
+            this.data = data; this.position = position;
+            count = checked((int)ReadUInt32());
+        }
+        public T Argument<T>(InvocationCodec<T> codec)
+        {
+            if (codec == null) throw new ArgumentNullException(nameof(codec));
+            if (consumed >= count) throw new CoflowException("Host argument count mismatch.");
+            consumed++;
+            var response = ReadEncodedValue();
+            var runtime = response.Tag == 11 ? Runtime.Lookup(response.Handle) : null!;
+            return codec.ReadResult(runtime, response);
+        }
+        public void Return<T>(InvocationCodec<T> codec, T value)
+        {
+            if (codec == null) throw new ArgumentNullException(nameof(codec));
+            if (consumed != count) throw new CoflowException("Host argument count mismatch.");
+            var writer = new InvocationWriter(1);
+            codec.WriteArgument(writer, value);
+            var encoded = writer.Finish();
+            var originalPosition = position;
+            position = 4;
+            Result = ReadEncodedValue(encoded);
+            position = originalPosition;
+        }
+        private Response ReadEncodedValue() => ReadEncodedValue(data);
+        private Response ReadEncodedValue(byte[] source)
+        {
+            byte tag = ReadByte(source);
+            var response = new Response { Tag = tag };
+            switch (tag)
+            {
+                case 0: break;
+                case 1: response.Integer = ReadByte(source) == 0 ? 0 : 1; break;
+                case 2: response.Integer = unchecked((int)ReadUInt32(source)); break;
+                case 3: response.Number = BitConverter.Int32BitsToSingle(unchecked((int)ReadUInt32(source))); break;
+                case 4:
+                    var text = ReadBytes(source, checked((int)ReadUInt32(source)));
+                    response = Native.Call(NativeOperation.CreateBuffer, data: text); response.Tag = 4; break;
+                case 5:
+                    var type = ReadBytes(source, checked((int)ReadUInt32(source)));
+                    response = Native.Call(NativeOperation.CreateBuffer, data: type); response.Tag = 5; response.Integer = ReadUInt32(source); break;
+                case 11: response.Handle = ReadUInt64(source); response.Length = ReadUInt64(source); break;
+                default: throw new CoflowException("Unknown Host value tag.");
+            }
+            return response;
+        }
+        private byte ReadByte(byte[]? source = null)
+        {
+            var bytes = source ?? data;
+            if ((uint)position >= (uint)bytes.Length) throw new CoflowException("Truncated Host arguments.");
+            return bytes[position++];
+        }
+        private uint ReadUInt32(byte[]? source = null)
+        {
+            var bytes = source ?? data;
+            uint value = ReadByte(bytes);
+            value |= (uint)ReadByte(bytes) << 8; value |= (uint)ReadByte(bytes) << 16; value |= (uint)ReadByte(bytes) << 24;
+            return value;
+        }
+        private ulong ReadUInt64(byte[]? source = null) => ReadUInt32(source) | ((ulong)ReadUInt32(source) << 32);
+        private byte[] ReadBytes(byte[] source, int length)
+        {
+            if (length < 0 || position > source.Length - length) throw new CoflowException("Truncated Host arguments.");
+            var result = new byte[length]; Array.Copy(source, position, result, 0, length); position += length; return result;
+        }
     }
     public readonly struct HostEnum
     {
@@ -63,30 +138,43 @@ namespace Coflow
             try
             {
                 var bytes=new byte[checked((int)length.ToUInt64())];Marshal.Copy(field,bytes,0,bytes.Length);
-                string name=Encoding.UTF8.GetString(bytes);
                 var host=(HostBinding)GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Target!;
-                if(op==0){result=Native.Call(41,data:Encoding.UTF8.GetBytes(host.MemberType(name)));return;}
+                if(op==2)
+                {
+                    int position=0;
+                    uint fieldLength=ReadUInt32(bytes,ref position);
+                    if(fieldLength>int.MaxValue||position>bytes.Length-(int)fieldLength)throw new CoflowException("Invalid Host call payload.");
+                    string function=Encoding.UTF8.GetString(bytes,position,(int)fieldLength); position+=(int)fieldLength;
+                    var call=new HostCall(bytes,position); host.Call(function,call); result=call.Result; return;
+                }
+                string name=Encoding.UTF8.GetString(bytes);
+                if(op==0){result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(host.MemberType(name)));return;}
                 switch(host.Read(name))
                 {
                     case null: result.Tag=0;break;
                     case bool v: result.Tag=1;result.Integer=v?1:0;break;
                     case int v: result.Tag=2;result.Integer=v;break;
                     case float v: result.Tag=3;result.Number=v;break;
-                    case string v: result=Native.Call(41,data:Encoding.UTF8.GetBytes(v));result.Tag=4;break;
+                    case string v: result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v));result.Tag=4;break;
                     case HostEnum v:
-                        result=Native.Call(41,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
+                        result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
                     case IRuntimeValue v:
                         var value = v.RuntimeValue;
-                        value.Request(24);
+                        value.Request(NativeOperation.InspectValue);
                         result.Handle=value.Owner.Handle.Id; result.Length=value.Id; result.Tag=11; break;
                     default: throw new CoflowException("Host data must be a scalar or a value from the same Runtime.");
                 }
             }
             catch(Exception error)
             {
-                try{result=Native.Call(41,data:Encoding.UTF8.GetBytes(error.Message));}catch{result=default;}
+                try{result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(error.Message));}catch{result=default;}
                 result.Error=1;
             }
+        }
+        private static uint ReadUInt32(byte[] bytes,ref int position)
+        {
+            if(position>bytes.Length-4)throw new CoflowException("Invalid Host call payload.");
+            uint value=bytes[position]; value|=(uint)bytes[position+1]<<8; value|=(uint)bytes[position+2]<<16; value|=(uint)bytes[position+3]<<24; position+=4; return value;
         }
 #if UNITY_2022_1_OR_NEWER
         [AOT.MonoPInvokeCallback(typeof(ReleaseCallback))]

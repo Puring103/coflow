@@ -46,7 +46,9 @@ impl CftCallableSource {
         Self {
             source,
             constant_origin: None,
-            original_source, module, span,
+            original_source,
+            module,
+            span,
         }
     }
 }
@@ -119,7 +121,6 @@ pub struct CftField {
     pub name: FieldName,
     pub value_type: CftValueType,
     pub default: Option<CftSchemaDefaultValue>,
-    pub is_expand: bool,
     pub dimension: Option<CftFieldDimension>,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,

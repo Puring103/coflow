@@ -926,7 +926,7 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
         ),
         CompletionScope::TypeBody => matches!(
             label,
-            "@label" | "@description" | "@expand" | "@localized" | "@dimension"
+            "@label" | "@description" | "@localized" | "@dimension"
         ),
         CompletionScope::EnumBody => matches!(label, "@label" | "@description"),
         CompletionScope::CheckBlock => false,

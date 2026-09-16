@@ -39,7 +39,6 @@ pub struct SchemaFieldInfo {
     pub ty: SchemaTypeRefInfo,
     pub has_default: bool,
     pub default: Option<SchemaDefaultValueInfo>,
-    pub is_expand: bool,
     pub dimension: Option<SchemaFieldDimensionInfo>,
 }
 
@@ -229,7 +228,6 @@ pub fn inspect_schema(
                     ty: value_type_info(&field.value_type),
                     has_default: field.default.is_some(),
                     default: field.default.as_ref().map(default_value_info),
-                    is_expand: field.is_expand,
                     dimension: field
                         .dimension
                         .as_ref()

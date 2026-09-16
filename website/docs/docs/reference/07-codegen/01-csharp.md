@@ -13,6 +13,7 @@ codegen:
 ```
 
 运行 `coflow codegen`。默认命名空间为 `Coflow.Generated`，生成字段保留 CFT 名称。
+输出目录同时包含 C# 源码和 `coflow.contract`；需要把契约文件作为运行时资源部署。
 
 ## 构建与查询
 
@@ -22,7 +23,8 @@ codegen:
 using Coflow;
 using Game.Config;
 
-using var builder = new RuntimeBuilder(Generated.Contract);
+using var contract = Generated.LoadContract(contractBytes);
+using var builder = new RuntimeBuilder(contract);
 builder.AddSource("sword: Item { name: \"Sword\" }");
 using var runtime = builder.Build();
 
@@ -31,7 +33,8 @@ string id = sword.Id;
 string name = sword.name;
 ```
 
-`Generated.Contract` 是可复用的只读契约，无需单独释放。
+`contractBytes` 是部署的 `coflow.contract` 内容，例如 Unity 中可使用 `TextAsset.bytes`。
+契约由 Rust 加载并校验，使用结束后与 builder、Runtime 一起释放。
 `AddSource(text, sourceName: "角色配置")` 可以附带诊断标签，不需要真实文件名。
 省略名称时自动编号；每次调用都追加来源，同名不表示替换。Unity 中可以直接提交 `TextAsset.text`。
 
@@ -69,12 +72,15 @@ var settings = runtime.Singleton<Settings>();
 数组支持索引和枚举；字典支持索引、枚举及 `TryGetValue`。
 维度字段通过 `Default()` 读取基础值，通过 `For("zh")` 读取回退后的变体值。
 
-对象、struct、集合和函数包装不需要单独 Dispose。只需释放 builder 和 Runtime。
+对象、struct、集合和函数包装不需要单独 Dispose。只需释放契约、builder 和 Runtime。
 包装会保活所属 Runtime；显式释放 Runtime 后，已有包装不能继续读取，复制出的字符串和标量不受影响。
 
-函数、模板和 check 暂不执行。函数可以读取 `Source`；
-fstring 字段通过 `Get_<字段名>_Template().ProgramSource` 查看源码。
-直接读取模板文本或调用函数会报告未实现。
+函数按签名生成为 `RuntimeFunction<T1, ..., TResult>`，通过 `Invoke(...)` 调用；无返回值使用 `Unit`。
+函数的 `Source` 提供源码。读取 fstring 属性会执行模板并返回字符串，
+`Get_<字段名>_Template().ProgramSource` 可读取模板源码。
+
+`runtime.RunChecks()` 执行全部记录规则和全局规则，返回结构化诊断和执行统计。
+`CheckOptions` 可以选择记录、规则名称、是否包含全局规则及执行预算。
 
 ## Host 服务
 
@@ -82,6 +88,7 @@ fstring 字段通过 `Get_<字段名>_Template().ProgramSource` 查看源码。
 @Host
 singleton Services {
   environment: string;
+  log: fn(message: string) -> ();
 }
 ```
 
@@ -91,13 +98,18 @@ singleton Services {
 sealed class ServicesHost : IServices
 {
     public string environment => "Unity";
+    public Unit log(string message)
+    {
+        UnityEngine.Debug.Log(message);
+        return default;
+    }
 }
 
 // 在 Build() 前绑定。
 builder.BindHost(new ServicesHost());
 ```
 
-宿主实现强类型数据属性，无需填写成员名或类型字符串。当前函数成员不要求托管实现，执行接口留空。
+宿主实现强类型数据属性和函数，无需填写成员名、类型字符串或处理无类型参数数组。
 同一服务重复绑定时报错；缺少绑定仍允许构建，实际读取时报错。
 对象和集合等复杂值必须来自正在调用的同一 Runtime。
 

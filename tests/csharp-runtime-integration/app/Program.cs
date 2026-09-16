@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Coflow;
 using Game.Config;
 
@@ -6,15 +7,15 @@ internal static class Program
 {
     private static void Main()
     {
-        using var builder = new RuntimeBuilder(Generated.Contract);
+        using var contract = Generated.LoadContract(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
+        using var builder = new RuntimeBuilder(contract);
         builder.AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 100 } } RuntimeSettings: RuntimeSettings {}");
         using var runtime = builder.Build();
         var hero = runtime.Table<Character>()["hero"];
         if (!(hero is Hero) || hero.name != "Hero" || hero.stats.health != 100) throw new Exception("Generated data mismatch.");
         if (!runtime.Singleton<RuntimeSettings>().enabled) throw new Exception("Singleton mismatch.");
-        bool unavailable = false;
-        try { hero.score.Call(); } catch (CoflowException) { unavailable = true; }
-        if (!unavailable) throw new Exception("Execution must remain unavailable.");
+        if (hero.score.Invoke(23) != 123) throw new Exception("Function execution mismatch.");
+        if (hero.text != "Hero") throw new Exception("Template execution mismatch.");
         Console.WriteLine("csharp-runtime-integration-ok");
     }
 }

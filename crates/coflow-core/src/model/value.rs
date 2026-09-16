@@ -229,7 +229,7 @@ pub enum CfdValue {
 pub struct CfdFunction {
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub imports: BTreeMap<String,String>,
+    pub imports: BTreeMap<String, String>,
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub from_default: bool,
@@ -251,7 +251,7 @@ pub struct CfdFunction {
 pub struct CfdFormattedString {
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub imports: BTreeMap<String,String>,
+    pub imports: BTreeMap<String, String>,
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub from_default: bool,

@@ -4,7 +4,7 @@ using Coflow;
 namespace @Game.@Config {
 public readonly struct @Stats : IRuntimeValue {
 private readonly RuntimeValue Value;
-public @Stats(RuntimeValue value) { value.RequireContract(global::@Game.@Config.Generated.Contract); Value = value; }
+public @Stats(RuntimeValue value) { value.RequireContract(global::@Game.@Config.Generated.ContractIdentity); Value = value; }
 private T Read<T>(string field, Func<RuntimeValue,T> codec) => codec(Value.Field(field));
 public RuntimeValue RuntimeValue => Value;
 public int @health => Read("health", ValueCodecs.Int);

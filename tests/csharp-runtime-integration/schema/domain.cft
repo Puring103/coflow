@@ -21,6 +21,7 @@ table Character {
   callback: (fn() -> int)?;
   text: fstring = f"{self.name}";
   score: fn(bonus: int) -> int => { return self.stats.health + bonus; };
+  check Healthy { Coflow::Check::require(self.stats.health > 0, "health must be positive"); }
 }
 
 table Hero : Character {

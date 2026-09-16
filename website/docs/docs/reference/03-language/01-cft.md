@@ -1,7 +1,7 @@
 # CFT 声明语言
 
 CFT 定义数据类型、默认值、常量、维度和规则声明。`coflow cft check` 检查声明，
-包括名称、类型、继承、默认值和注解。当前版本保留函数、模板和 check 源码，暂不编译或执行其程序体。
+包括名称、类型、继承、默认值、函数、模板、check 和注解。程序体在契约生成时编译，由运行时按需执行。
 
 ```cft
 namespace game;
@@ -57,7 +57,7 @@ type Callback = fn(value: int) -> int;
 | 记录 | `Item` | `&Item::sword` |
 | 数组 | `[T]` | `[1, 2]` |
 | 字典 | `{K: V}` | `{ "hp": 100 }` |
-| 可选值 | `T?` | `None`、`Some(value)`、非空值 |
+| 可选值 | `T?` | `None` 或直接书写非空值 |
 | 函数 | `fn(name: T) -> R` | 完整签名的函数字面量 |
 | 无返回值 | `()` | 用于函数签名 |
 
@@ -72,7 +72,7 @@ type Callback = fn(value: int) -> int;
 
 普通字符串的花括号只是文本。模板必须起源于 `f"..."`，已有模板可按明确的 fstring 类型传递。
 对象字段中直接声明的函数和模板绑定该对象，复制已有函数或模板不改变绑定。
-当前版本可保存、复制和读取程序源码；执行和模板文本求值会报告未实现。
+函数、模板和 check 使用同一套静态类型检查与运行时执行机制。fstring 在普通读取时求值，check 仅在显式请求时执行。
 
 | 注解 | 用途 |
 | --- | --- |
@@ -81,7 +81,6 @@ type Callback = fn(value: int) -> int;
 | `@struct` | 无继承的 sealed data 值类型 |
 | `@Host` | 由宿主提供的 singleton 服务 |
 | `@idAsEnum(Name)` | 将 table 的记录 key 映射到稳定枚举 |
-| `@expand` | 展开内联字段的编辑视图 |
 | `@localized`、`@dimension("name")` | 记录字段的维度值 |
 
 check 声明仅适用于记录和顶层规则，data 不声明 check。详见 [Check 校验](./04-check.md)。
