@@ -24,7 +24,7 @@ const BASE: int = 10;
 const VALUES: [int] = [BASE, 20];
 const WEIGHTS: {string: int} = { "fire": BASE, "ice": 5 };
 const DEFAULT_STATS: Stats = Stats { hp: BASE, mode: Mode::Primary };
-const MAYBE_ITEM: Item? = Some(&Item::wooden_sword);
+const MAYBE_ITEM: Item? = &Item::wooden_sword;
 const NO_ITEM: Item? = None;
 "#,
     )

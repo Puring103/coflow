@@ -2,120 +2,167 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Coflow.Runtime
+namespace Coflow
 {
-    public sealed class CoflowContract : IDisposable
+    // 生成器显式引用所有工厂，IL2CPP 无需反射或运行时构造泛型代码。
+    public abstract class TypeBinding
     {
-        internal NativeHandle Handle { get; }
-        internal CoflowContract(ulong handle) { Handle = new NativeHandle(handle); }
-        public static CoflowContract Load(byte[] bytes) => new CoflowContract(Native.Call(1, data: bytes).Handle);
-        public byte[] Identity => Native.ReadBuffer(Native.Call(8, Handle));
-        public byte[] ToBytes() => Native.ReadBuffer(Native.Call(7, Handle));
-        public CoflowBuilder CreateBuilder() => new CoflowBuilder(Native.Call(10, Handle).Handle);
-        public void Dispose() => Handle.Dispose();
+        internal Type ManagedType { get; }
+        internal string Name { get; }
+        protected TypeBinding(Type type, string name) { ManagedType = type; Name = name; }
     }
-    public sealed class CoflowBuilder : IDisposable
+    public sealed class TypeBinding<T> : TypeBinding
     {
-        internal NativeHandle Handle { get; }
-        internal CoflowBuilder(ulong handle) { Handle = new NativeHandle(handle); }
-        public void AddSource(string logicalPath, string source) => Native.Call(11, Handle, logicalPath, Encoding.UTF8.GetBytes(source));
-        public void BindHost(string service, ICoflowHost host) => HostBridge.Bind(this, service, host);
-        public CoflowRuntime Build() => new CoflowRuntime(Native.Call(12, Handle).Handle);
-        public void Dispose() => Handle.Dispose();
+        internal Func<RuntimeValue, T> Read { get; }
+        public TypeBinding(string name, Func<RuntimeValue, T> read) : base(typeof(T), name) { Read = read; }
     }
-    public sealed class CoflowRuntime : IDisposable
+    public sealed class Contract
     {
         internal NativeHandle Handle { get; }
-        internal CoflowRuntime(ulong handle) { Handle = new NativeHandle(handle); }
-        public CoflowValue Record(string type, string key) => new CoflowValue(Native.Call(20, Handle, type, Encoding.UTF8.GetBytes(key)).Handle, this);
-        public IReadOnlyList<T> Records<T>(string type, Func<CoflowValue, T> wrap)
+        private readonly byte[] identity;
+        private readonly Dictionary<Type, TypeBinding> bindings = new Dictionary<Type, TypeBinding>();
+        public Contract(byte[] bytes, params TypeBinding[] types)
         {
-            int count = checked((int)Native.Call(21, Handle, type).Length);
-            var records = new List<T>(count);
-            for (int i = 0; i < count; ++i) records.Add(wrap(new CoflowValue(Native.Call(22, Handle, type, index: (ulong)i).Handle, this)));
-            return records;
-        }
-        public void Dispose() => Handle.Dispose();
-    }
-    public enum CoflowValueKind : uint { None, Bool, Int, Float, String, Enum, Object, Array, Dictionary, Function, Template }
-    public interface ICoflowValue { CoflowValue RetainValue(); }
-    public sealed class CoflowValue : IDisposable, ICoflowValue
-    {
-        internal NativeHandle Handle { get; }
-        // 值包装保活所属 Runtime；显式 Dispose 仍使所有依赖值失效。
-        internal CoflowRuntime Owner { get; }
-        internal CoflowValue(ulong handle, CoflowRuntime owner) { Handle = new NativeHandle(handle); Owner = owner; }
-        private Response Describe() => Native.Call(24, Handle);
-        public CoflowValueKind Kind => (CoflowValueKind)Describe().Tag;
-        public int Count => checked((int)Describe().Length);
-        public bool IsNone => Kind == CoflowValueKind.None;
-        public bool Bool { get { var r = Describe(); Require(r.Tag, 1); return r.Integer != 0; } }
-        public int Int { get { var r = Describe(); Require(r.Tag, 2); return checked((int)r.Integer); } }
-        public float Float { get { var r = Describe(); Require(r.Tag, 3); return (float)r.Number; } }
-        public uint Enum { get { var r = Describe(); Require(r.Tag, 5); return checked((uint)r.Integer); } }
-        public string Text => Native.ReadString(25, Handle);
-        public string TypeName => Native.ReadString(30, Handle);
-        public string ProgramSource => Native.ReadString(31, Handle);
-        public void RequireContract(byte[] expected)
-        {
-            var actual = Native.ReadBuffer(Native.Call(9, Handle));
-            bool matches = expected != null && expected.Length == actual.Length;
-            if (matches && expected != null) for (int i = 0; i < actual.Length; ++i) matches &= actual[i] == expected[i];
-            if (!matches) { Dispose(); throw new CoflowException("Generated types do not match the runtime contract."); }
-        }
-        public CoflowValue Field(string name) => new CoflowValue(Native.Call(23, Handle, name).Handle, Owner);
-        public CoflowValue DimensionDefault() => new CoflowValue(Native.Call(36, Handle).Handle, Owner);
-        public CoflowValue DimensionValue(string variant) => new CoflowValue(Native.Call(34, Handle, variant).Handle, Owner);
-        public CoflowValue RetainValue() => Retain();
-        public CoflowValue Retain() => new CoflowValue(Native.Call(33, Handle).Handle, Owner);
-        public bool ValueEquals(CoflowValue other)
-        {
-            if (other == null) throw new ArgumentNullException(nameof(other));
-            bool retained = false;
+            Handle = new NativeHandle(Native.Call(1, data: bytes).Handle);
             try
             {
-                other.Handle.DangerousAddRef(ref retained);
-                return Native.Call(35, Handle, index: other.Handle.Id).Integer != 0;
+                identity = Native.ReadBuffer(Native.Call(8, Handle));
+                foreach (var type in types) bindings.Add(type.ManagedType, type);
             }
-            finally { if (retained) other.Handle.DangerousRelease(); }
+            catch { Handle.Dispose(); throw; }
         }
-        public CoflowValue At(int index) => Element(26, index);
-        public CoflowValue KeyAt(int index) => Element(27, index);
-        public CoflowValue ValueAt(int index) => Element(28, index);
-        private CoflowValue Element(uint op, int index)
+        internal TypeBinding<T> Binding<T>() => bindings.TryGetValue(typeof(T), out var binding)
+            ? (TypeBinding<T>)binding : throw new CoflowException("Type is not registered in this contract.");
+        internal bool Matches(Contract other)
         {
-            if (index < 0) throw new ArgumentOutOfRangeException(nameof(index));
-            return new CoflowValue(Native.Call(op, Handle, index: (ulong)index).Handle, Owner);
+            if (ReferenceEquals(this, other)) return true;
+            if (identity.Length != other.identity.Length) return false;
+            for (int i = 0; i < identity.Length; ++i) if (identity[i] != other.identity[i]) return false;
+            return true;
         }
-        public void Call() => Native.Call(29, Handle);
-        private static void Require(uint actual, uint expected) { if (actual != expected) throw new CoflowException("Value type mismatch."); }
+    }
+    public sealed class RuntimeBuilder : IDisposable
+    {
+        internal NativeHandle Handle { get; }
+        internal Contract Contract { get; }
+        public RuntimeBuilder(Contract contract)
+        {
+            Contract = contract ?? throw new ArgumentNullException(nameof(contract));
+            Handle = new NativeHandle(Native.Call(10, contract.Handle).Handle);
+        }
+        public RuntimeBuilder AddSource(string text, string? sourceName = null)
+        {
+            if (text == null) throw new ArgumentNullException(nameof(text));
+            Native.Call(11, Handle, sourceName ?? "", Encoding.UTF8.GetBytes(text));
+            return this;
+        }
+        public RuntimeBuilder BindHost(HostBinding binding)
+        {
+            if (binding == null) throw new ArgumentNullException(nameof(binding));
+            if (!Contract.Matches(binding.Contract)) throw new CoflowException("Host belongs to a different contract.");
+            HostBridge.Bind(this, binding);
+            return this;
+        }
+        public Runtime Build() => new Runtime(Native.Call(12, Handle).Handle, Contract);
         public void Dispose() => Handle.Dispose();
     }
-    public abstract class CoflowObject : IDisposable, ICoflowValue
+    public sealed class Runtime : IDisposable
     {
-        protected CoflowValue Value { get; }
-        protected CoflowObject(CoflowValue value) { Value = value; }
+        internal NativeHandle Handle { get; }
+        internal Contract Contract { get; }
+        internal Runtime(ulong handle, Contract contract) { Handle = new NativeHandle(handle); Contract = contract; }
+        public Table<T> Table<T>()
+        {
+            var binding = Contract.Binding<T>();
+            Native.Call(21, Handle, binding.Name);
+            return new Table<T>(this, binding);
+        }
+        public T Singleton<T>()
+        {
+            var binding = Contract.Binding<T>();
+            return binding.Read(new RuntimeValue(this, Native.Call(37, Handle, binding.Name).Handle));
+        }
+        public void Dispose() => Handle.Dispose();
+    }
+    public enum ValueKind : uint { None, Bool, Int, Float, String, Enum, Object, Array, Dictionary, Function, Template }
+    public interface IRuntimeValue { RuntimeValue RuntimeValue { get; } }
+
+    // 值 ID 只在所属 Runtime 内有效，不分配独立原生句柄，也不要求单独释放。
+    public readonly struct RuntimeValue : IEquatable<RuntimeValue>, IRuntimeValue
+    {
+        internal Runtime Owner { get; }
+        internal ulong Id { get; }
+        internal RuntimeValue(Runtime owner, ulong id) { Owner = owner; Id = id; }
+        RuntimeValue IRuntimeValue.RuntimeValue => this;
+        internal Response Request(uint op, string key = "", byte[]? data = null, ulong index = 0)
+        {
+            if (Owner == null || Id == 0) throw new CoflowException("Invalid value.");
+            return Native.Call(op, Owner.Handle, key, data, index, Id);
+        }
+        private RuntimeValue Child(Response result) => new RuntimeValue(Owner, result.Handle);
+        public ValueKind Kind => (ValueKind)Request(24).Tag;
+        public int Count => checked((int)Request(24).Length);
+        public bool IsNone => Kind == ValueKind.None;
+        public bool Bool { get { var r = Request(24); Require(r.Tag, 1); return r.Integer != 0; } }
+        public int Int { get { var r = Request(24); Require(r.Tag, 2); return checked((int)r.Integer); } }
+        public float Float { get { var r = Request(24); Require(r.Tag, 3); return (float)r.Number; } }
+        public uint Enum { get { var r = Request(24); Require(r.Tag, 5); return checked((uint)r.Integer); } }
+        public string Text => Encoding.UTF8.GetString(Native.ReadBuffer(Request(25)));
+        public string TypeName => Encoding.UTF8.GetString(Native.ReadBuffer(Request(30)));
+        public string ProgramSource => Encoding.UTF8.GetString(Native.ReadBuffer(Request(31)));
+        public RuntimeValue Field(string name) => Child(Request(23, name));
+        public RuntimeValue Canonical() => Child(Request(39));
+        public RuntimeValue DimensionDefault() => Child(Request(36));
+        public RuntimeValue DimensionValue(string variant) => Child(Request(34, variant));
+        public RuntimeValue At(int index) => Element(26, index);
+        public RuntimeValue KeyAt(int index) => Element(27, index);
+        public RuntimeValue ValueAt(int index) => Element(28, index);
+        private RuntimeValue Element(uint op, int index)
+        {
+            if (index < 0) throw new ArgumentOutOfRangeException(nameof(index));
+            return Child(Request(op, index: (ulong)index));
+        }
+        internal RuntimeValue Find(DictionaryKey key) => Child(Request(38, key.TypeName, key.Bytes, key.Tag));
+        internal bool IsMissing => Id == 0;
+        public void Call() => Request(29);
+        public void RequireContract(Contract contract)
+        {
+            if (Owner == null || !Owner.Contract.Matches(contract)) throw new CoflowException("Generated types do not match the runtime contract.");
+        }
+        public bool ValueEquals(RuntimeValue other) => ReferenceEquals(Owner, other.Owner) && Request(35, index: other.Id).Integer != 0;
+        public bool Equals(RuntimeValue other) => ReferenceEquals(Owner, other.Owner) && Id == other.Id;
+        public override bool Equals(object? other) => other is RuntimeValue value && Equals(value);
+        public override int GetHashCode() => unchecked((Owner?.GetHashCode() ?? 0) * 397 ^ Id.GetHashCode());
+        private static void Require(uint actual, uint expected) { if (actual != expected) throw new CoflowException("Value type mismatch."); }
+    }
+    public abstract class RuntimeObject : IRuntimeValue
+    {
+        protected RuntimeValue Value { get; }
+        protected RuntimeObject(RuntimeValue value) { Value = value; }
+        public RuntimeValue RuntimeValue => Value;
         public string ActualType => Value.TypeName;
-        public CoflowValue RetainValue() => Value.Retain();
-        public bool ValueEquals(CoflowObject other) => other != null && Value.ValueEquals(other.Value);
-        protected T Read<T>(string field, Func<CoflowValue, T> codec) => codec(Value.Field(field));
-        public void Dispose() => Value.Dispose();
+        protected T Read<T>(string field, Func<RuntimeValue, T> read) => read(Value.Field(field));
+        public bool ValueEquals(RuntimeObject other) => other != null && Value.ValueEquals(other.Value);
+        public override bool Equals(object? other) => other is RuntimeObject value && Value.Equals(value.Value);
+        public override int GetHashCode() => Value.GetHashCode();
+        public static bool operator ==(RuntimeObject? left, RuntimeObject? right) => ReferenceEquals(left, right) || (!(left is null) && left.Equals(right));
+        public static bool operator !=(RuntimeObject? left, RuntimeObject? right) => !(left == right);
     }
-    public sealed class CoflowFunction : IDisposable, ICoflowValue
+    public sealed class RuntimeFunction : IRuntimeValue
     {
-        private readonly CoflowValue value;
-        public CoflowFunction(CoflowValue value) { this.value = value; }
-        public CoflowValue RetainValue() => value.Retain();
-        public string Source => value.ProgramSource;
-        public void Call() => value.Call();
-        public void Dispose() => value.Dispose();
+        public RuntimeValue RuntimeValue { get; }
+        public RuntimeFunction(RuntimeValue value) { RuntimeValue = value; }
+        public string Source => RuntimeValue.ProgramSource;
+        public void Call() => RuntimeValue.Call();
     }
-    public static class CoflowCodecs
+    public static class ValueCodecs
     {
-        public static int Int(CoflowValue value) { using (value) return value.Int; }
-        public static float Float(CoflowValue value) { using (value) return value.Float; }
-        public static bool Bool(CoflowValue value) { using (value) return value.Bool; }
-        public static string String(CoflowValue value) { using (value) return value.Text; }
-        public static uint Enum(CoflowValue value) { using (value) return value.Enum; }
+        public static T? OptionalValue<T>(RuntimeValue value, Func<RuntimeValue, T> read) where T : struct => value.IsNone ? (T?)null : read(value);
+        public static T? OptionalReference<T>(RuntimeValue value, Func<RuntimeValue, T> read) where T : class => value.IsNone ? null : read(value);
+        public static int Int(RuntimeValue value) => value.Int;
+        public static float Float(RuntimeValue value) => value.Float;
+        public static bool Bool(RuntimeValue value) => value.Bool;
+        public static string String(RuntimeValue value) => value.Text;
+        public static uint Enum(RuntimeValue value) => value.Enum;
     }
 }

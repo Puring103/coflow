@@ -10,11 +10,17 @@ pub(super) fn materialize(value: &CftConstValue) -> Result<LoadedValueDraft, Str
         CftConstValue::String(v) => LoadedValueDraft::String(v.clone()),
         CftConstValue::FormattedString(source) => {
             LoadedValueDraft::FormattedString(LoadedFormattedString {
+                    from_default: true,
+                    location: Some(source.into()),
+                    imports: Default::default(),
                 constant_origin: source.constant_origin.clone(),
                 source: source.source.clone(),
             })
         }
         CftConstValue::Function(source) => LoadedValueDraft::Function(LoadedFunction {
+                    from_default: true,
+                    location: Some(source.into()),
+                    imports: Default::default(),
             constant_origin: source.constant_origin.clone(),
             source: source.source.clone(),
         }),

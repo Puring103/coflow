@@ -281,7 +281,6 @@ pub(crate) enum PreparedMutationOp {
     FoldedSetField {
         record: RecordCoordinate,
         write_file: String,
-        path: CfdPath,
     },
     FoldedRenameRecord {
         old_record: RecordCoordinate,

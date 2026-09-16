@@ -103,6 +103,17 @@ fn name(source: &str) -> String {
         .collect::<Vec<_>>()
         .join(".")
 }
+fn key_codec(ty: &CftValueType) -> Result<String, CsharpCodegenError> {
+    Ok(match ty {
+        CftValueType::Int => "DictionaryKey.Int".into(),
+        CftValueType::Bool => "DictionaryKey.Bool".into(),
+        CftValueType::String => "DictionaryKey.String".into(),
+        CftValueType::Enum(name) => {
+            format!("key => DictionaryKey.Enum({}, (uint)key)", quoted(name))
+        }
+        _ => return Err(CsharpCodegenError::new("invalid dictionary key type")),
+    })
+}
 fn qualified(root: &str, source: &str) -> String {
     format!("global::{}.{}", root, name(source))
 }
@@ -133,46 +144,65 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
         CftValueType::String | CftValueType::FString => "string".into(),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => qualified(root, n),
         CftValueType::Enum(n) => qualified(root, n),
-        CftValueType::Array(t) => format!("CoflowArray<{}>", cs_type(t, root)?),
+        CftValueType::Array(t) => format!("RuntimeArray<{}>", cs_type(t, root)?),
         CftValueType::Dict(k, v) => format!(
-            "CoflowDictionary<{},{}>",
+            "RuntimeDictionary<{},{}>",
             cs_type(k, root)?,
             cs_type(v, root)?
         ),
-        CftValueType::Option(t) => format!("CoflowOptional<{}>", cs_type(t, root)?),
-        CftValueType::Function(..) => "CoflowFunction".into(),
-        CftValueType::Unit => "CoflowValue".into(),
+        CftValueType::Option(t) => format!("{}?", cs_type(t, root)?),
+        CftValueType::Function(..) => "RuntimeFunction".into(),
+        CftValueType::Unit => "RuntimeValue".into(),
     })
 }
-fn codec(ty: &CftValueType, root: &str, depth: usize) -> Result<String, CsharpCodegenError> {
+fn codec(
+    schema: &CftSchema,
+    ty: &CftValueType,
+    root: &str,
+    depth: usize,
+) -> Result<String, CsharpCodegenError> {
     let v = format!("v{depth}");
     let next = depth + 1;
     Ok(match ty {
-        CftValueType::Int => "CoflowCodecs.Int".into(),
-        CftValueType::Float => "CoflowCodecs.Float".into(),
-        CftValueType::Bool => "CoflowCodecs.Bool".into(),
-        CftValueType::String | CftValueType::FString => "CoflowCodecs.String".into(),
-        CftValueType::Enum(n) => format!("{v} => ({})CoflowCodecs.Enum({v})", qualified(root, n)),
+        CftValueType::Int => "ValueCodecs.Int".into(),
+        CftValueType::Float => "ValueCodecs.Float".into(),
+        CftValueType::Bool => "ValueCodecs.Bool".into(),
+        CftValueType::String | CftValueType::FString => "ValueCodecs.String".into(),
+        CftValueType::Enum(n) => format!("{v} => ({})ValueCodecs.Enum({v})", qualified(root, n)),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => {
             format!("{}.Wrap", qualified(root, n))
         }
         CftValueType::Array(t) => format!(
             "{v} => new {}({v}, {})",
             cs_type(ty, root)?,
-            codec(t, root, next)?
+            codec(schema, t, root, next)?
         ),
         CftValueType::Dict(k, t) => format!(
-            "{v} => new {}({v}, {}, {})",
+            "{v} => new {}({v}, {}, {}, {})",
             cs_type(ty, root)?,
-            codec(k, root, next)?,
-            codec(t, root, next)?
+            codec(schema, k, root, next)?,
+            codec(schema, t, root, next)?,
+            key_codec(k)?
         ),
-        CftValueType::Option(t) => format!(
-            "{v} => new {}({v}, {})",
-            cs_type(ty, root)?,
-            codec(t, root, next)?
-        ),
-        CftValueType::Function(..) => format!("{v} => new CoflowFunction({v})"),
+        CftValueType::Option(t) => {
+            let value_type = matches!(
+                t.as_ref(),
+                CftValueType::Int
+                    | CftValueType::Float
+                    | CftValueType::Bool
+                    | CftValueType::Enum(_)
+            ) || matches!(t.as_ref(), CftValueType::Object(name) if schema.resolve_type(name).is_some_and(|ty| ty.is_struct));
+            format!(
+                "{v} => ValueCodecs.{}({v}, {})",
+                if value_type {
+                    "OptionalValue"
+                } else {
+                    "OptionalReference"
+                },
+                codec(schema, t, root, next)?
+            )
+        }
+        CftValueType::Function(..) => format!("{v} => new RuntimeFunction({v})"),
         CftValueType::Unit => format!("{v} => {v}"),
     })
 }
@@ -191,9 +221,9 @@ fn generate(
         .join(".");
     let root = escaped_root.as_str();
     for ty in schema.all_types() {
-        if ty.name.as_str() == "CoflowSchema" {
+        if ["Generated", "GeneratedHostBindings"].contains(&ty.name.as_str()) {
             return Err(CsharpCodegenError::new(
-                "CoflowSchema conflicts with generated contract metadata",
+                "type conflicts with generated contract metadata",
             ));
         }
         let mut reserved: BTreeSet<String> = [
@@ -201,7 +231,7 @@ fn generate(
             "Read",
             "ActualType",
             "Dispose",
-            "RetainValue",
+            "RuntimeValue",
             "ValueEquals",
             "Wrap",
         ]
@@ -253,19 +283,19 @@ fn generate(
         let base = ty
             .parent
             .as_ref()
-            .map_or_else(|| "CoflowObject".into(), |p| qualified(root, p));
-        let guard = format!("value.RequireContract(global::{root}.CoflowSchema.Identity);");
+            .map_or_else(|| "RuntimeObject".into(), |p| qualified(root, p));
+        let guard = format!("value.RequireContract(global::{root}.Generated.Contract);");
         let mut body = if ty.is_struct {
-            format!("using System;\nusing Coflow.Runtime;\nnamespace {} {{\npublic readonly struct @{} : IDisposable, ICoflowValue {{\nprivate readonly CoflowValue Value;\npublic @{}(CoflowValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<CoflowValue,T> codec) => codec(Value.Field(field));\npublic CoflowValue RetainValue() => Value.Retain();\npublic void Dispose() => Value.Dispose();\n", namespace(root, &ty.name), type_name, type_name, guard)
+            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeValue {{\nprivate readonly RuntimeValue Value;\npublic @{}(RuntimeValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<RuntimeValue,T> codec) => codec(Value.Field(field));\npublic RuntimeValue RuntimeValue => Value;\n", namespace(root, &ty.name), type_name, type_name, guard)
         } else {
-            format!("using System;\nusing Coflow.Runtime;\nnamespace {} {{\npublic {}class @{} : {} {{\n{} @{}(CoflowValue value) : base(value) {{ {} }}\n",namespace(root,&ty.name),if ty.is_abstract{"abstract "}else if ty.is_sealed||ty.is_singleton{"sealed "}else{""},type_name,base,if ty.is_abstract{"protected"}else{"public"},type_name,guard)
+            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic {}class @{} : {} {{\n{} @{}(RuntimeValue value) : base(value) {{ {} }}\n",namespace(root,&ty.name),if ty.is_abstract{"abstract "}else if ty.is_sealed||ty.is_singleton{"sealed "}else{""},type_name,base,if ty.is_abstract{"protected"}else{"public"},type_name,guard)
         };
         if ty.kind != coflow_language::cft::syntax::ast::TypeKind::Data && ty.parent.is_none() {
-            body.push_str("public string Id => Read(\"id\", CoflowCodecs.String);\n");
+            body.push_str("public string Id => Read(\"id\", ValueCodecs.String);\n");
         }
         for field in ty.own_fields() {
             let property_type = if field.dimension.is_some() {
-                format!("CoflowDimension<{}>", cs_type(&field.value_type, root)?)
+                format!("RuntimeDimension<{}>", cs_type(&field.value_type, root)?)
             } else {
                 cs_type(&field.value_type, root)?
             };
@@ -273,10 +303,10 @@ fn generate(
                 format!(
                     "v => new {}(v, {})",
                     property_type,
-                    codec(&field.value_type, root, 1)?
+                    codec(schema, &field.value_type, root, 1)?
                 )
             } else {
-                codec(&field.value_type, root, 0)?
+                codec(schema, &field.value_type, root, 0)?
             };
             body.push_str(&format!(
                 "public {} @{} => Read({}, {});\n",
@@ -288,10 +318,10 @@ fn generate(
             if matches!(field.value_type, CftValueType::FString) {
                 if field.dimension.is_some() {
                     // 维度字段存储记录句柄，模板句柄取自其基础值或回退后的变体。
-                    body.push_str(&format!("public CoflowValue Get_{}_Template(string variant = null) {{ using (var dimension = Value.Field({})) {{ return variant == null ? dimension.DimensionDefault() : dimension.DimensionValue(variant); }} }}\n", field.name, quoted(&field.name)));
+                    body.push_str(&format!("public RuntimeValue Get_{}_Template(string? variant = null) {{ var dimension = Value.Field({}); return variant == null ? dimension.DimensionDefault() : dimension.DimensionValue(variant); }}\n", field.name, quoted(&field.name)));
                 } else {
                     body.push_str(&format!(
-                        "public CoflowValue Get_{}_Template() => Value.Field({});\n",
+                        "public RuntimeValue Get_{}_Template() => Value.Field({});\n",
                         field.name,
                         quoted(&field.name)
                     ));
@@ -300,7 +330,7 @@ fn generate(
         }
         // 工厂分派由生成器静态列出，不依赖反射或运行时泛型实例生成。
         body.push_str(&format!(
-            "public {}static {} Wrap(CoflowValue value) {{\nswitch (value.TypeName) {{\n",
+            "public {}static {} Wrap(RuntimeValue value) {{\nvalue = value.Canonical();\nswitch (value.TypeName) {{\n",
             if ty.parent.is_some() { "new " } else { "" },
             qualified(root, &ty.name)
         ));
@@ -314,7 +344,9 @@ fn generate(
                 qualified(root, &child.name)
             ));
         }
-        body.push_str("default: value.Dispose(); throw new CoflowException(\"Unexpected runtime type.\");\n}\n}\n}\n}\n");
+        body.push_str(
+            "default: throw new CoflowException(\"Unexpected runtime type.\");\n}\n}\n}\n}\n",
+        );
         files.push(file(&ty.name, body));
     }
     let contract = coflow_core::contract::Contract::new(schema.clone())
@@ -322,18 +354,95 @@ fn generate(
     let bytes = contract
         .to_bytes()
         .map_err(|e| CsharpCodegenError::new(e.to_string()))?;
-    let identity = contract
-        .identity()
-        .iter()
-        .map(u8::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
     let payload = bytes
         .iter()
         .map(u8::to_string)
         .collect::<Vec<_>>()
         .join(",");
-    files.push(GeneratedFile{relative_path:"Coflow.Contract.cs".into(),contents:format!("using Coflow.Runtime;\nnamespace {root} {{ public static class CoflowSchema {{ public static byte[] Identity => new byte[] {{ {identity} }}; public static CoflowContract Load() => CoflowContract.Load(new byte[] {{ {payload} }}); }} }}\n")});
+    let bindings = schema
+        .all_types()
+        .map(|ty| {
+            format!(
+                "new TypeBinding<{}>({}, {}.Wrap)",
+                qualified(root, &ty.name),
+                quoted(&ty.name),
+                qualified(root, &ty.name)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    files.push(GeneratedFile { relative_path: "Coflow.Contract.cs".into(), contents: format!("using Coflow;\nnamespace {root} {{ public static class Generated {{ public static Contract Contract {{ get; }} = new Contract(new byte[] {{ {payload} }}, new TypeBinding[] {{ {bindings} }}); }} }}\n") });
+    let mut hosts = format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {root} {{ public static class GeneratedHostBindings {{\n");
+    let mut interfaces = String::new();
+    for (index, ty) in schema.all_types().filter(|ty| ty.is_host).enumerate() {
+        let interface_name = format!("I{}", short(&ty.name));
+        let source_interface = ty.name.rsplit_once("::").map_or_else(
+            || interface_name.clone(),
+            |(ns, _)| format!("{ns}::{interface_name}"),
+        );
+        if schema.resolve_type(&source_interface).is_some()
+            || schema.resolve_enum(&source_interface).is_some()
+        {
+            return Err(CsharpCodegenError::new(
+                "Host interface name conflicts with a declaration",
+            ));
+        }
+        let interface_type = qualified(root, &source_interface);
+        interfaces.push_str(&format!(
+            "namespace {} {{ public interface @{} {{\n",
+            namespace(root, &ty.name),
+            interface_name
+        ));
+        for field in ty
+            .all_fields()
+            .filter(|field| !matches!(field.value_type, CftValueType::Function(..)))
+        {
+            interfaces.push_str(&format!(
+                "{} @{} {{ get; }}\n",
+                cs_type(&field.value_type, root)?,
+                field.name
+            ));
+        }
+        interfaces.push_str("} }\n");
+        hosts.push_str(&format!("public static RuntimeBuilder BindHost(this RuntimeBuilder builder, {interface_type} host) => builder.BindHost(new Adapter{index}(host));\nprivate sealed class Adapter{index} : HostBinding {{ private readonly {interface_type} host; public Adapter{index}({interface_type} host) : base(Generated.Contract, {}) {{ this.host = host ?? throw new ArgumentNullException(nameof(host)); }}\npublic override string MemberType(string field) {{ switch(field) {{\n", quoted(&ty.name)));
+        for field in ty.all_fields() {
+            hosts.push_str(&format!(
+                "case {}: return {};\n",
+                quoted(&field.name),
+                quoted(&field.value_type.to_string())
+            ));
+        }
+        hosts.push_str("default: throw new CoflowException(\"Unknown Host member.\"); } }\npublic override object? Read(string field) { switch(field) {\n");
+        for field in ty
+            .all_fields()
+            .filter(|field| !matches!(field.value_type, CftValueType::Function(..)))
+        {
+            let value = match &field.value_type {
+                CftValueType::Enum(name) => {
+                    format!("new HostEnum({}, (uint)host.@{})", quoted(name), field.name)
+                }
+                CftValueType::Option(inner) if matches!(inner.as_ref(), CftValueType::Enum(_)) => {
+                    let CftValueType::Enum(name) = inner.as_ref() else {
+                        return Err(CsharpCodegenError::new("invalid optional enum"));
+                    };
+                    format!(
+                        "host.@{0} is {{ }} __{0} ? (object)new HostEnum({1}, (uint)__{0}) : null",
+                        field.name,
+                        quoted(name)
+                    )
+                }
+                _ => format!("host.@{}", field.name),
+            };
+            hosts.push_str(&format!("case {}: return {value};\n", quoted(&field.name)));
+        }
+        hosts.push_str("default: throw new CoflowException(\"Host function execution is unavailable.\"); } } }\n");
+    }
+    hosts.push_str("} }\n");
+    hosts.push_str(&interfaces);
+    files.push(GeneratedFile {
+        relative_path: "Coflow.Host.cs".into(),
+        contents: hosts,
+    });
     Ok(files)
 }
 fn file(source: &str, contents: String) -> GeneratedFile {

@@ -1,2 +1,2 @@
-a: Node { next: Some(&b) }
+a: Node { next: &b }
 b: Node {}

@@ -27,6 +27,9 @@ pub(crate) fn parse_automatic_formatted_string(
     coflow_language::lexical::validate_formatted_string_literal(text)
         .map_err(|error| syntax(error.message))?;
     Ok(Some(LoadedFormattedString {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
         constant_origin: None,
         source: text.to_string(),
     }))

@@ -8,7 +8,6 @@ use crate::project::Project;
 use coflow_core::schema::{CftModuleSet, CftSchema};
 
 use crate::cfd_loader::CfdWriter;
-use crate::checks::CheckDiagnosticStore;
 use crate::dimensions;
 use crate::dimensions::DimensionRuntimePlan;
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
@@ -115,7 +114,6 @@ pub(crate) fn rebuild_project_session_from_generation(
         model,
         indexes,
         source_data,
-        check_state,
         changed_dimension_paths,
         execution_stats,
         writer: _,
@@ -127,7 +125,6 @@ pub(crate) fn rebuild_project_session_from_generation(
             diagnostics,
             indexes,
             source_data,
-            check_state,
             execution_stats,
         ),
         changed_dimension_paths,
@@ -171,7 +168,6 @@ fn finish_project_session(
         model,
         indexes,
         source_data,
-        check_state,
         changed_dimension_paths,
         execution_stats,
         writer,
@@ -194,7 +190,6 @@ fn finish_project_session(
             diagnostics,
             indexes,
             source_data,
-            check_state,
             execution_stats,
         ),
         changed_dimension_paths,
@@ -232,7 +227,6 @@ struct LoadedSessionData {
     model: CfdDataModel,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
-    check_state: CheckDiagnosticStore,
     changed_dimension_paths: Vec<PathBuf>,
     execution_stats: ProjectExecutionStats,
     writer: Option<Arc<CfdWriter>>,
@@ -244,7 +238,6 @@ impl LoadedSessionData {
             model: empty_model(schema)?,
             indexes: SessionIndexes::default(),
             source_data: SourceDataCache::default(),
-            check_state: CheckDiagnosticStore::default(),
             changed_dimension_paths: Vec::new(),
             execution_stats: ProjectExecutionStats::default(),
             writer: None,
@@ -270,7 +263,6 @@ fn build_data_pipeline(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
                 writer: None,
@@ -299,7 +291,6 @@ fn build_data_pipeline(
         model: output.model,
         indexes,
         source_data: output.source_data,
-        check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
         execution_stats,
         writer: dimensions.writer,
@@ -314,7 +305,6 @@ fn rebuild_data_pipeline(
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
     let changed_records = impact.changed_records();
-    let check_impact = impact.check_impact(&ctx.schema);
     let (mut output, mut indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
@@ -323,8 +313,6 @@ fn rebuild_data_pipeline(
             include_implicit_dimension_sources: false,
             run_checks: !ctx.has_dimension_fields(),
             refresh_implicit_dimension_sources: false,
-            previous_checks: Some(&previous.check_state),
-            check_impact: &check_impact,
         },
     ) {
         Ok(loaded) => loaded,
@@ -337,7 +325,6 @@ fn rebuild_data_pipeline(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
                 writer: None,
@@ -389,8 +376,6 @@ fn rebuild_data_pipeline(
                 include_implicit_dimension_sources: refresh_dimension_topology,
                 run_checks: true,
                 refresh_implicit_dimension_sources: true,
-                previous_checks: Some(&previous.check_state),
-                check_impact: &check_impact,
             },
         ) {
             Ok((reloaded, reloaded_indexes)) => {
@@ -418,7 +403,6 @@ fn rebuild_data_pipeline(
         model: output.model,
         indexes,
         source_data: output.source_data,
-        check_state: output.check_state,
         changed_dimension_paths: dimensions.changed_paths,
         execution_stats,
         writer: dimensions.writer,
@@ -492,8 +476,6 @@ struct CachedLoadOptions<'a> {
     include_implicit_dimension_sources: bool,
     run_checks: bool,
     refresh_implicit_dimension_sources: bool,
-    previous_checks: Option<&'a CheckDiagnosticStore>,
-    check_impact: &'a crate::checks::impact::CheckImpact,
 }
 
 fn load_cached_data(
@@ -516,8 +498,6 @@ fn load_cached_data(
                 run_checks: options.run_checks,
             },
             refresh_implicit_dimension_sources: options.refresh_implicit_dimension_sources,
-            previous_checks: options.previous_checks,
-            check_impact: options.check_impact,
             source_overrides: &ctx.source_overrides,
         },
     ) {
@@ -564,7 +544,6 @@ fn build_read_only_data(
                 model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
                 indexes: load_failure.indexes.finalize_rejected(),
                 source_data: SourceDataCache::default(),
-                check_state: CheckDiagnosticStore::default(),
                 changed_dimension_paths: Vec::new(),
                 execution_stats: ProjectExecutionStats::default(),
                 writer: None,
@@ -577,7 +556,6 @@ fn build_read_only_data(
         model: output.model,
         indexes,
         source_data: output.source_data,
-        check_state: output.check_state,
         changed_dimension_paths: Vec::new(),
         execution_stats: output.statistics,
         writer: None,
@@ -649,7 +627,6 @@ fn assemble_session(
     diagnostics: DiagnosticsStore,
     indexes: SessionIndexes,
     source_data: SourceDataCache,
-    check_state: CheckDiagnosticStore,
     execution_stats: ProjectExecutionStats,
 ) -> ProjectSession {
     ProjectSession {
@@ -663,7 +640,6 @@ fn assemble_session(
         records: indexes.records,
         files: indexes.files,
         source_data,
-        check_state,
         execution_stats,
     }
 }

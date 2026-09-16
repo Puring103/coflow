@@ -14,9 +14,8 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::checks::impact::CheckImpact;
 use crate::checks::{
-    run_full_project_checks, run_incremental_project_checks, CheckDiagnosticStore,
+    run_full_project_checks,
     ProjectCheckOutput,
 };
 use crate::dimensions;
@@ -33,7 +32,6 @@ pub(crate) struct ProjectLoadOutput {
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     pub(crate) source_data: SourceDataCache,
-    pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) statistics: ProjectExecutionStats,
 }
 
@@ -128,8 +126,6 @@ pub(crate) struct LoadProjectDataOptions {
 pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) load: LoadProjectDataOptions,
     pub(crate) refresh_implicit_dimension_sources: bool,
-    pub(crate) previous_checks: Option<&'a CheckDiagnosticStore>,
-    pub(crate) check_impact: &'a CheckImpact,
     pub(crate) source_overrides: &'a [DataSourceTextOverride],
 }
 
@@ -152,7 +148,6 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
         source_data: SourceDataCache::default(),
-        check_state: CheckDiagnosticStore::default(),
         statistics: ProjectExecutionStats::default(),
     })
 }
@@ -239,7 +234,6 @@ pub(crate) fn load_project_data(
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
-            state: CheckDiagnosticStore::default(),
             statistics: coflow_core::check::CheckExecutionStats::default(),
         }
     };
@@ -257,7 +251,6 @@ pub(crate) fn load_project_data(
         diagnostics: model_diagnostics,
         logical_locations: model_logical_locations,
         source_data: state.source_data,
-        check_state: check.state,
         statistics,
     })
 }
@@ -646,19 +639,16 @@ fn build_output_from_cache(
         .map(|(index, location)| (model_offset + index, location))
         .collect();
     let check = if options.load.run_checks {
-        run_cached_project_checks(
+        run_project_checks(
             schema,
             &model,
             &origins,
-            options.previous_checks,
-            options.check_impact,
             &mut statistics,
         )
     } else {
         ProjectCheckOutput {
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
-            state: CheckDiagnosticStore::default(),
             statistics: coflow_core::check::CheckExecutionStats::default(),
         }
     };
@@ -676,7 +666,6 @@ fn build_output_from_cache(
         diagnostics: model_diagnostics,
         logical_locations: model_logical_locations,
         source_data,
-        check_state: check.state,
         statistics,
     })
 }
@@ -783,18 +772,13 @@ fn build_partial_model(
     }
 }
 
-fn run_cached_project_checks(
+fn run_project_checks(
     schema: &CftSchema,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
-    previous_checks: Option<&CheckDiagnosticStore>,
-    check_impact: &CheckImpact,
     _statistics: &mut ProjectExecutionStats,
 ) -> ProjectCheckOutput {
-    previous_checks.map_or_else(
-        || run_full_project_checks(schema, model, origins),
-        |previous| run_incremental_project_checks(schema, model, origins, previous, check_impact),
-    )
+    run_full_project_checks(schema, model, origins)
 }
 
 fn record_model_work(

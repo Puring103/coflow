@@ -229,6 +229,15 @@ pub enum CfdValue {
 pub struct CfdFunction {
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub imports: BTreeMap<String,String>,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub from_default: bool,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub location: Option<crate::ingest::CallableLocation>,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
     pub constant_origin: Option<String>,
     pub source: String,
 }
@@ -240,6 +249,15 @@ pub struct CfdFunction {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct CfdFormattedString {
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub imports: BTreeMap<String,String>,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub from_default: bool,
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
+    pub location: Option<crate::ingest::CallableLocation>,
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub constant_origin: Option<String>,

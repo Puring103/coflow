@@ -34,11 +34,11 @@ table Entity {
   related: [Entity] = [];
 
   check {
-    level > 0: "实体 {id} 的等级必须大于 0";
-    name.isBlank() == false;
-    tags.isUnique();
-    all effect in alternateEffects {
-      effect.label.isBlank() == false;
+    Coflow::Check::require(self.level > 0, f"实体 {self.id} 的等级必须大于 0");
+    Coflow::Check::require(!self.name.isBlank(), "实体名称不能为空");
+    Coflow::Check::require(self.tags.isUnique(), "实体标签必须唯一");
+    for effect in self.alternateEffects {
+      Coflow::Check::require(!effect.label.isBlank(), "效果名称不能为空");
     }
   }
 }
@@ -63,21 +63,19 @@ table Quest {
   rewardGroups: {string: [RewardEntry]} = {};
 
   check {
-    displayId.isBlank() == false;
-    steps.len() > 0;
-    all step, index in steps {
-      step.title.isBlank() == false: "第 {index} 个步骤缺少标题";
-      step.targets.len() > 0;
-      all reward in step.rewards {
-        reward.count > 0;
+    Coflow::Check::require(!self.displayId.isBlank(), "任务标识不能为空");
+    Coflow::Check::require(self.steps.len() > 0, "任务需要步骤");
+    for index, step in self.steps {
+      Coflow::Check::require(!step.title.isBlank(), f"第 {index} 个步骤缺少标题");
+      Coflow::Check::require(step.targets.len() > 0, "步骤需要目标");
+      for reward in step.rewards {
+        Coflow::Check::require(reward.count > 0, "奖励数量必须为正");
       }
     }
   }
 }
 
 check EntityCatalog {
-  records(Entity).len() >= 3;
-  any entity in records(Entity) {
-    entity.rarity == Rarity::Epic;
-  }
+  Coflow::Check::require(Coflow::Check::records(Entity).len() >= 3, "实体目录至少需要三项");
+  Coflow::Check::require(Coflow::Check::records(Entity).any(fn(entity: Entity) -> bool { entity.rarity == Rarity::Epic }), "实体目录需要 Epic 实体");
 }

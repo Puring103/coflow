@@ -258,12 +258,18 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftSchemaDefaultValue::String(value) => Ok(CfdValue::String(value.clone())),
             CftSchemaDefaultValue::FormattedString(source) => Ok(CfdValue::FormattedString(
                 crate::data_model::CfdFormattedString {
+                    from_default: true,
+                    location: Some(source.into()),
+                    imports: Default::default(),
                     constant_origin: source.constant_origin.clone(),
                     source: source.source.clone(),
                 },
             )),
             CftSchemaDefaultValue::Function(source) => {
                 Ok(CfdValue::Function(crate::data_model::CfdFunction {
+                    from_default: true,
+                    location: Some(source.into()),
+                    imports: Default::default(),
                     constant_origin: source.constant_origin.clone(),
                     source: source.source.clone(),
                 }))
@@ -382,6 +388,9 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::String => Ok(CfdValue::String(String::new())),
             CftValueType::FString => Ok(CfdValue::FormattedString(
                 crate::data_model::CfdFormattedString {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
                     constant_origin: None,
                     source: "f\"\"".into(),
                 },

@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity, WriterCapabilities};
 use crate::catalog::CfdSourceCatalog;
-use crate::checks::impact::CheckImpact;
 use crate::data_model::CfdDataModel;
 use crate::data_model::{CfdPathSegment, CfdValue};
 use crate::indexes::SessionIndexBuilder;
@@ -570,7 +569,6 @@ impl SourceValidationContext {
         let reload_paths = self.source_data.display_paths_for_paths(&override_paths);
         let mut indexes = SessionIndexBuilder::default();
         let catalog = CfdSourceCatalog::default();
-        let check_impact = CheckImpact::default();
         let result = reload_project_data_from_cache(
             &self.project,
             &self.schema,
@@ -585,8 +583,6 @@ impl SourceValidationContext {
                     run_checks: true,
                 },
                 refresh_implicit_dimension_sources: false,
-                previous_checks: None,
-                check_impact: &check_impact,
                 source_overrides: overrides,
             },
         );

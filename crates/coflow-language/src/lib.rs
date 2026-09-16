@@ -26,6 +26,7 @@ mod module;
 mod syntax;
 
 pub mod cfd;
+pub mod function;
 pub mod limits;
 pub mod source;
 

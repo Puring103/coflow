@@ -1,10 +1,10 @@
-# Feature: record validation with check expressions.
+# Feature: record validation with require.
 
 table RangeRule {
   minimum: int;
   maximum: int;
 
   check {
-    minimum <= maximum;
+    Coflow::Check::require(self.minimum <= self.maximum, "minimum must not exceed maximum");
   }
 }

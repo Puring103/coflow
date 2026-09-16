@@ -452,12 +452,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "CFT Option value",
                 Some("Option without a value."),
             ));
-            items.push(snippet_completion_item(
-                "Some",
-                "Some(${1:value})",
-                "CFT Option constructor",
-                "Option containing a value.",
-            ));
         }
         TypeRefKind::Function(parameters, result) => {
             let mut next_tab = 1;

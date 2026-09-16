@@ -1,9 +1,9 @@
 //! Unity/IL2CPP C ABI。句柄为不复用的整数，不暴露 Rust 对象地址。
+mod invocation;
 #[cfg(test)]
 mod tests;
 use coflow_core::{
     contract::Contract,
-    loading::SourceInput,
     runtime::{Runtime, RuntimeBuilder, Value, ValueId},
 };
 use std::{
@@ -28,7 +28,6 @@ enum Entry {
     Contract(Arc<Contract>),
     Builder(Arc<Mutex<Option<RuntimeBuilder>>>),
     Runtime(Arc<Runtime>),
-    Value(Arc<Runtime>, ValueId),
     Buffer(Arc<Vec<u8>>),
     #[cfg(feature = "cft-compiler")]
     Compiler(Arc<Mutex<Compilation>>),
@@ -77,15 +76,21 @@ fn buffer(bytes: Vec<u8>) -> Result<Response, String> {
 fn value(runtime: Arc<Runtime>, id: ValueId) -> Result<Response, String> {
     runtime.ensure_value(id).map_err(|e| e.to_string())?;
     Ok(Response {
-        handle: insert(Entry::Value(runtime, id))?,
+        handle: u64::try_from(id)
+            .map_err(|_| "value ID overflow")?
+            .checked_add(1)
+            .ok_or("value ID overflow")?,
         ..Response::default()
     })
 }
-fn target(handle: u64) -> Result<(Arc<Runtime>, ValueId), String> {
-    match get(handle)? {
-        Entry::Value(runtime, id) => Ok((runtime, id)),
-        _ => Err("expected value handle".into()),
-    }
+fn target(handle: u64, raw_value: u64) -> Result<(Arc<Runtime>, ValueId), String> {
+    let Entry::Runtime(runtime) = get(handle)? else {
+        return Err("expected Runtime".into());
+    };
+    let id = usize::try_from(raw_value.checked_sub(1).ok_or("missing value ID")?)
+        .map_err(|_| "value ID overflow")?;
+    runtime.ensure_value(id).map_err(|e| e.to_string())?;
+    Ok((runtime, id))
 }
 fn text(bytes: &[u8]) -> Result<&str, String> {
     std::str::from_utf8(bytes).map_err(|e| e.to_string())
@@ -101,10 +106,13 @@ struct NativeService {
 }
 impl NativeService {
     fn request(&self, op: u32, field: &str) -> Result<Response, String> {
+        self.request_bytes(op,field.as_bytes())
+    }
+    fn request_bytes(&self, op:u32, bytes:&[u8])->Result<Response,String>{
         let mut result = Response::default();
         // 回调必须同步返回；不持有注册表锁，允许同线程重入。
         unsafe {
-            (self.callback)(self.context, op, field.as_ptr(), field.len(), &mut result);
+            (self.callback)(self.context, op, bytes.as_ptr(), bytes.len(), &mut result);
         }
         if result.error != 0 {
             let message = take_buffer(result.handle)
@@ -153,43 +161,16 @@ impl coflow_core::runtime::HostService for NativeService {
         &self,
         field: &str,
     ) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> {
-        use coflow_core::{runtime::HostValue, vm::ExecutionError};
+        use coflow_core::vm::ExecutionError;
         let result = self
             .request(1, field)
             .map_err(ExecutionError::InvalidAccess)?;
-        match result.tag {
-            0 => Ok(HostValue::None),
-            1 => Ok(HostValue::Bool(result.integer != 0)),
-            2 => i32::try_from(result.integer)
-                .map(HostValue::Int)
-                .map_err(|_| ExecutionError::InvalidAccess("Host int outside i32 range".into())),
-            3 => Ok(HostValue::Float(result.number as f32)),
-            4 => take_buffer(result.handle)
-                .and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
-                .map(HostValue::String)
-                .map_err(ExecutionError::InvalidAccess),
-            11 => {
-                // 回调提交一个独立保留句柄，读取后立即释放该传输句柄。
-                let entry = registry()
-                    .lock()
-                    .map_err(|_| ExecutionError::InvalidHandle)?
-                    .entries
-                    .remove(&result.handle);
-                match entry {
-                    Some(Entry::Value(runtime, value)) => {
-                        runtime.ensure_alive()?;
-                        Ok(HostValue::Existing {
-                            runtime: runtime.identity(),
-                            value,
-                        })
-                    }
-                    _ => Err(ExecutionError::InvalidHandle),
-                }
-            }
-            _ => Err(ExecutionError::InvalidAccess(
-                "invalid Host data tag".into(),
-            )),
-        }
+        invocation::host_result(result)
+    }
+    fn call(&self,field:&str,args:&[coflow_core::runtime::HostValue])->Result<coflow_core::runtime::HostValue,coflow_core::vm::ExecutionError>{
+        let bytes=invocation::encode_call(field,args).map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
+        let result=self.request_bytes(2,&bytes).map_err(coflow_core::vm::ExecutionError::InvalidAccess)?;
+        invocation::host_result(result)
     }
 }
 
@@ -243,6 +224,7 @@ pub unsafe extern "C" fn coflow_bind_host(
 pub unsafe extern "C" fn coflow_request(
     op: u32,
     handle: u64,
+    raw_value: u64,
     key: *const u8,
     key_len: usize,
     data: *const u8,
@@ -275,7 +257,7 @@ pub unsafe extern "C" fn coflow_request(
         } else {
             unsafe { std::slice::from_raw_parts(data, data_len) }
         };
-        dispatch(op, handle, key, data, index)
+        dispatch(op, handle, raw_value, key, data, index)
     }))
     .unwrap_or_else(|_| Err("native boundary panic".into()));
     let response = match result {
@@ -292,11 +274,18 @@ pub unsafe extern "C" fn coflow_request(
     response.error
 }
 
-fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result<Response, String> {
+fn dispatch(
+    op: u32,
+    handle: u64,
+    raw_value: u64,
+    key: &[u8],
+    data: &[u8],
+    index: u64,
+) -> Result<Response, String> {
     match op {
         35 => {
-            let (runtime, left) = target(handle)?;
-            let (other, right) = target(index)?;
+            let (runtime, left) = target(handle, raw_value)?;
+            let (other, right) = target(handle, index)?;
             if runtime.identity() != other.identity() {
                 return Err("values belong to different Runtime instances".into());
             }
@@ -311,7 +300,7 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
         }
         9 => {
             let runtime = match get(handle)? {
-                Entry::Runtime(runtime) | Entry::Value(runtime, _) => runtime,
+                Entry::Runtime(runtime) => runtime,
                 _ => return Err("expected Runtime or value".into()),
             };
             runtime.ensure_alive().map_err(|error| error.to_string())?;
@@ -398,33 +387,71 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
                 builder
                     .as_mut()
                     .ok_or("builder already consumed")?
-                    .add_source(SourceInput::new(text(key)?, text(data)?));
+                    .add_text(
+                        text(data)?,
+                        if key.is_empty() {
+                            None
+                        } else {
+                            Some(text(key)?)
+                        },
+                    );
                 return Ok(Response::default());
             }
-            let runtime = builder
-                .take()
+            // 构建失败保留候选输入；只有成功后才消耗构建器。
+            let built = builder
+                .as_ref()
                 .ok_or("builder already consumed")?
-                .build()
-                .runtime?;
+                .clone()
+                .build();
+            let runtime = match built.runtime {
+                Ok(runtime) => runtime,
+                Err(_) => {
+                    let mut bytes = Vec::new();
+                    bytes.extend_from_slice(&(built.diagnostics.len() as u32).to_le_bytes());
+                    for error in built.diagnostics {
+                        for text in [&error.code, &error.source, &error.message] {
+                            bytes.extend_from_slice(&(text.len() as u32).to_le_bytes());
+                            bytes.extend_from_slice(text.as_bytes());
+                        }
+                        bytes.push(u8::from(error.span.is_some()));
+                        let (start, end) = error.span.unwrap_or_default();
+                        bytes.extend_from_slice(&(start as u64).to_le_bytes());
+                        bytes.extend_from_slice(&(end as u64).to_le_bytes());
+                    }
+                    let mut response = buffer(bytes)?;
+                    response.error = 2;
+                    return Ok(response);
+                }
+            };
+            builder.take();
             Ok(Response {
                 handle: insert(Entry::Runtime(runtime))?,
                 ..Response::default()
             })
         }
-        20 => {
+        20 | 32 => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
             let id = runtime
-                .record(text(key)?, text(data)?)
+                .find_record(text(key)?, text(data)?)
                 .map_err(|e| e.to_string())?;
-            value(runtime, id)
+            match id {
+                Some(id) => value(runtime, id),
+                None if op == 32 => Ok(Response::default()),
+                None => Err("record not found".into()),
+            }
         }
         21 => {
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
-            let ids = runtime.records(text(key)?).map_err(|e| e.to_string())?;
+            runtime
+                .require_record_kind(text(key)?, false)
+                .map_err(|e| e.to_string())?;
+            let ids = runtime
+                .table_values(text(key)?)
+                .map_err(|e| e.to_string())?;
             Ok(Response {
                 length: ids.len() as u64,
                 ..Response::default()
@@ -434,19 +461,24 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             let Entry::Runtime(runtime) = get(handle)? else {
                 return Err("expected Runtime".into());
             };
-            let ids = runtime.records(text(key)?).map_err(|e| e.to_string())?;
+            runtime
+                .require_record_kind(text(key)?, false)
+                .map_err(|e| e.to_string())?;
+            let ids = runtime
+                .table_values(text(key)?)
+                .map_err(|e| e.to_string())?;
             let id = *ids
                 .get(usize::try_from(index).map_err(|_| "index overflow")?)
                 .ok_or("record index out of range")?;
             value(runtime, id)
         }
         23 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             let field = runtime.field(id, text(key)?).map_err(|e| e.to_string())?;
             value(runtime, field)
         }
         24 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             let value = runtime.value(id).map_err(|e| e.to_string())?;
             let mut response = Response::default();
             match value.as_ref() {
@@ -487,7 +519,7 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             Ok(response)
         }
         25 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             buffer(
                 runtime
                     .read_text(id)
@@ -496,7 +528,7 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             )
         }
         26 | 27 | 28 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             let value_ref = runtime.value(id).map_err(|e| e.to_string())?;
             let index = usize::try_from(index).map_err(|_| "index overflow")?;
             let child = match (value_ref.as_ref(), op) {
@@ -512,12 +544,26 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             value(runtime, child)
         }
         29 => {
-            let (runtime, id) = target(handle)?;
-            runtime.call(id).map_err(|e| e.to_string())?;
+            let (runtime, id) = target(handle, raw_value)?;
+            let args=invocation::decode_arguments(data)?;
+            invocation::response(runtime.invoke(id,&args,coflow_core::vm::executor::ExecutionLimits::default()).map_err(|e|e.to_string())?)
+        }
+        42 => {
+            let (runtime,id)=target(handle,raw_value)?;
+            runtime.release_value(id).map_err(|e|e.to_string())?;
             Ok(Response::default())
         }
+        44 => {
+            let (runtime,id)=target(handle,raw_value)?;
+            runtime.retain_value(id).map_err(|e|e.to_string())?;
+            Ok(Response::default())
+        }
+        43 => {
+            let Entry::Runtime(runtime)=get(handle)? else{return Err("expected Runtime".into());};
+            Ok(Response{length:runtime.collect().map_err(|e|e.to_string())? as u64,..Response::default()})
+        }
         30 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             match runtime.value(id).map_err(|e| e.to_string())?.as_ref() {
                 Value::Object { type_name, .. } | Value::Enum { type_name, .. } => {
                     buffer(type_name.as_bytes().to_vec())
@@ -526,13 +572,48 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             }
         }
         31 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             match runtime.value(id).map_err(|e| e.to_string())?.as_ref() {
                 Value::Template { source, .. } | Value::Function { source, .. } => {
                     buffer(source.as_bytes().to_vec())
                 }
                 _ => Err("value has no program source".into()),
             }
+        }
+        37 => {
+            let Entry::Runtime(runtime) = get(handle)? else {
+                return Err("expected Runtime".into());
+            };
+            let id = runtime.singleton(text(key)?).map_err(|e| e.to_string())?;
+            value(runtime, id)
+        }
+        38 => {
+            let (runtime, id) = target(handle, raw_value)?;
+            use coflow_core::runtime::HostValue;
+            let key = match index {
+                1 if data.len() == 1 => HostValue::Bool(data[0] != 0),
+                2 if data.len() == 4 => HostValue::Int(i32::from_le_bytes(
+                    data.try_into().map_err(|_| "invalid int")?,
+                )),
+                4 => HostValue::String(text(data)?.into()),
+                5 if data.len() == 4 => HostValue::Enum {
+                    type_name: text(key)?.into(),
+                    value: u32::from_le_bytes(data.try_into().map_err(|_| "invalid enum")?),
+                },
+                _ => return Err("invalid dictionary key".into()),
+            };
+            match runtime
+                .dictionary_find(id, key)
+                .map_err(|e| e.to_string())?
+            {
+                Some(child) => value(runtime, child),
+                None => Ok(Response::default()),
+            }
+        }
+        39 => {
+            let (runtime, id) = target(handle, raw_value)?;
+            let canonical = runtime.canonical_value(id).map_err(|e| e.to_string())?;
+            value(runtime, canonical)
         }
         40 => {
             let Entry::Buffer(bytes) = get(handle)? else {
@@ -544,19 +625,15 @@ fn dispatch(op: u32, handle: u64, key: &[u8], data: &[u8], index: u64) -> Result
             })
         }
         41 => buffer(data.to_vec()),
-        33 => {
-            let (runtime, id) = target(handle)?;
-            value(runtime, id)
-        }
         34 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             let selected = runtime
                 .dimension_variant(id, text(key)?)
                 .map_err(|e| e.to_string())?;
             value(runtime, selected)
         }
         36 => {
-            let (runtime, id) = target(handle)?;
+            let (runtime, id) = target(handle, raw_value)?;
             let base = runtime.dimension_default(id).map_err(|e| e.to_string())?;
             value(runtime, base)
         }

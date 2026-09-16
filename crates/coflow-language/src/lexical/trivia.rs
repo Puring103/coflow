@@ -66,8 +66,9 @@ impl DelimiterNesting {
 }
 
 const SYMBOLS: &[&str] = &[
-    "..=", "->", "=>", "::", "//", "**", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "+=",
-    "-=", "*=", "/=", "..", "(", ")", "{", "}", "[", "]", ",", ":", ";", ".", "?", "+", "-", "*",
+    // 最长匹配：复合赋值必须先于其运算符前缀，避免格式化把一个运算符拆成两个。
+    "//=", "**=", "<<=", ">>=", "..=", "->", "=>", "::", "//", "**", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "+=",
+    "-=", "*=", "/=", "%=", "&=", "|=", "^=", "..", "(", ")", "{", "}", "[", "]", ",", ":", ";", ".", "?", "+", "-", "*",
     "/", "%", "~", "!", "&", "|", "^", "<", ">", "=", "@",
 ];
 
@@ -215,7 +216,9 @@ pub(crate) fn scan_number_literal(source: &str, start: usize, limit: usize) -> N
             while end < limit && bytes[end].is_ascii_digit() {
                 end += 1;
             }
-        } else if bytes.get(end + 1) != Some(&b'.') {
+        } else if bytes.get(end + 1) != Some(&b'.')
+            && !source.get(end + 1..limit).and_then(|tail|tail.chars().next()).is_some_and(|ch| ch == '_' || ch.is_alphabetic())
+        {
             error = Some((NumberLiteralError::FractionDigitsMissing, end + 1));
         }
     }

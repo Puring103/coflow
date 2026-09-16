@@ -102,8 +102,7 @@ fn parse_value(
     match ty {
         CellType::Option(_) if text == "None" => Ok(LoadedValueDraft::OptionNone),
         CellType::Option(inner) => {
-            let value = constructor_inner(text, "Some").unwrap_or(text);
-            parse_value(schema, inner, value, ValueContext::Nested)
+            parse_value(schema, inner, text, ValueContext::Nested)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
         }
         CellType::Int => Ok(LoadedValueDraft::Int(i64::from({
@@ -135,11 +134,6 @@ fn parse_value(
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
         CellType::Unsupported(display) => Err(type_mismatch(display)),
     }
-}
-
-fn constructor_inner<'a>(text: &'a str, name: &str) -> Option<&'a str> {
-    let rest = text.strip_prefix(name)?.trim_start();
-    strip_outer_pair(rest, '(', ')')
 }
 
 pub(crate) fn parse_enum(

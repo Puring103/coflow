@@ -1,10 +1,9 @@
-# C# 代码生成
+# C# 接入
 
-Coflow 为 Unity 2022+ 生成强类型 C# 包装，支持 .NET Standard 2.1 和 IL2CPP。
-通过 Unity Package Manager 引入 Coflow.Runtime，并安装目标平台对应的原生库。
-生成目录包含类型声明和加载契约的入口，CFD 数据由应用提供。
+Coflow.Runtime 面向 Unity 2022+、.NET Standard 2.1 和 IL2CPP。
+通过 Unity Package Manager 引入运行时包，并安装目标平台对应的原生插件。
 
-在项目配置中指定输出目录和 C# 命名空间：
+配置生成代码的目录和命名空间：
 
 ```yaml
 codegen:
@@ -13,48 +12,97 @@ codegen:
     namespace: Game.Config
 ```
 
-运行 `coflow codegen` 更新生成目录。默认命名空间为 `Coflow.Generated`；
-类型、字段和 enum 成员保留 CFT 名称，CFT 命名空间映射为嵌套的 C# 命名空间。
+运行 `coflow codegen`。默认命名空间为 `Coflow.Generated`，生成字段保留 CFT 名称。
 
-## 加载与读取
+## 构建与查询
 
 对于 `table Item { name: string; }`：
 
 ```csharp
-using Coflow.Runtime;
+using Coflow;
 using Game.Config;
 
-using var contract = CoflowSchema.Load();
-using var builder = contract.CreateBuilder();
-builder.AddSource("items.cfd", "sword: Item { name: \"Sword\" }");
+using var builder = new RuntimeBuilder(Generated.Contract);
+builder.AddSource("sword: Item { name: \"Sword\" }");
 using var runtime = builder.Build();
-using var sword = Item.Wrap(runtime.Record("Item", "sword"));
-string name = sword.name;
+
+var sword = runtime.Table<Item>()["sword"];
 string id = sword.Id;
+string name = sword.name;
 ```
 
-一次提交所有需要互相引用的 CFD 来源，再调用 `Build()`。构建成功后数据只读；
-修改来源或 Host 绑定时创建新的构建器和运行时。生成类型必须与加载的契约匹配。
+`Generated.Contract` 是可复用的只读契约，无需单独释放。
+`AddSource(text, sourceName: "角色配置")` 可以附带诊断标签，不需要真实文件名。
+省略名称时自动编号；每次调用都追加来源，同名不表示替换。Unity 中可以直接提交 `TextAsset.text`。
+
+`AddSource` 和 `BindHost` 支持链式调用。一次提交全部互相引用的数据后调用 `Build()`。
+成功构建消耗 builder，之后不能修改或再次构建；失败时保留输入，允许追加缺失来源再构建。
+更新数据或绑定时创建新的 builder 和 Runtime。
+
+```csharp
+var items = runtime.Table<Item>();
+bool found = items.TryGet("sword", out var item);
+foreach (var entry in items)
+    UnityEngine.Debug.Log(entry.name);
+
+// Settings 必须声明为 singleton。
+var settings = runtime.Singleton<Settings>();
+```
+
+`Table<T>()` 仅接受 table，包含其派生类型记录，自动返回实际子类型包装。
+索引器查找失败抛出 `KeyNotFoundException`，`TryGet` 返回 false。
+`Singleton<T>()` 仅接受 singleton。相同 Runtime 内的同一记录包装相等，不同 Runtime 的记录不相等。
 
 ## 值与生命周期
 
-普通字符串、数字、布尔和 enum 按值读取。对象、数组、字典、可选值与函数包装
-支持 `Dispose()`，使用结束后释放。显式释放运行时后，属于它的包装不能继续访问。
+| Coflow 类型 | C# 读取类型 |
+| --- | --- |
+| int、float、bool、string、enum | 对应 C# 值 |
+| table、singleton、data | 生成类型 |
+| `@struct sealed data` | 生成的 readonly struct |
+| `[T]` | `RuntimeArray<T>` |
+| `{K: V}` | `RuntimeDictionary<K, V>` |
+| 可选标量、enum、struct | `T?` |
+| 可选对象、字符串、集合、函数 | 可为 null 的对应包装或字符串 |
+| 维度字段 | `RuntimeDimension<T>` |
 
 数组支持索引和枚举；字典支持索引、枚举及 `TryGetValue`。
-可选值通过 `HasValue` 和 `GetValue()` 访问。
-维度字段通过 `Default()` 读取基础值，通过 `For("zh")` 读取回退后的指定变体。
+维度字段通过 `Default()` 读取基础值，通过 `For("zh")` 读取回退后的变体值。
 
-函数和模板保留源码。当前版本暂不提供函数执行、模板求值和 check 执行。
-读取 fstring 文本会报告未实现；调用生成的 `Get_<字段名>_Template()`
-可获取模板包装，通过 `ProgramSource` 查看源码。
+对象、struct、集合和函数包装不需要单独 Dispose。只需释放 builder 和 Runtime。
+包装会保活所属 Runtime；显式释放 Runtime 后，已有包装不能继续读取，复制出的字符串和标量不受影响。
+
+函数、模板和 check 暂不执行。函数可以读取 `Source`；
+fstring 字段通过 `Get_<字段名>_Template().ProgramSource` 查看源码。
+直接读取模板文本或调用函数会报告未实现。
 
 ## Host 服务
 
-使用 `@Host singleton` 声明服务，并在构建前调用
-`builder.BindHost("服务限定名", host)`。宿主实现 `ICoflowHost`：
-`MemberType` 返回成员的 Coflow 类型，`Read` 提供字段值。
-标量可以直接返回；对象、集合和模板等复杂值返回同一运行时的现有包装。
+```cft
+@Host
+singleton Services {
+  environment: string;
+}
+```
 
-服务可以缺少绑定，实际访问时报告错误。宿主回调异常转换为 `CoflowException`。
-同一个运行时并发执行会报告忙错误；空闲后可以换线程使用。
+生成代码提供 `IServices` 接口和 `BindHost` 扩展：
+
+```csharp
+sealed class ServicesHost : IServices
+{
+    public string environment => "Unity";
+}
+
+// 在 Build() 前绑定。
+builder.BindHost(new ServicesHost());
+```
+
+宿主实现强类型数据属性，无需填写成员名或类型字符串。当前函数成员不要求托管实现，执行接口留空。
+同一服务重复绑定时报错；缺少绑定仍允许构建，实际读取时报错。
+对象和集合等复杂值必须来自正在调用的同一 Runtime。
+
+## 错误
+
+构建失败抛出 `BuildException`，`Diagnostics` 提供错误代码、来源标签、消息和可用的 UTF-8 字节范围。
+失败不返回部分 Runtime。其他原生访问错误通过 `CoflowException` 报告；访问已释放 Runtime 的包装抛出 `ObjectDisposedException`。
+同一 Runtime 的并发执行报告忙错误，空闲后可以换线程使用。

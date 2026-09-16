@@ -1,14 +1,16 @@
+#nullable enable
 using System;
-using Coflow.Runtime;
+using Coflow;
 namespace @Game.@Config {
-public sealed class @RuntimeSettings : CoflowObject {
-public @RuntimeSettings(CoflowValue value) : base(value) { value.RequireContract(global::@Game.@Config.CoflowSchema.Identity); }
-public string Id => Read("id", CoflowCodecs.String);
-public bool @enabled => Read("enabled", CoflowCodecs.Bool);
-public static global::@Game.@Config.@RuntimeSettings Wrap(CoflowValue value) {
+public sealed class @RuntimeSettings : RuntimeObject {
+public @RuntimeSettings(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.Contract); }
+public string Id => Read("id", ValueCodecs.String);
+public bool @enabled => Read("enabled", ValueCodecs.Bool);
+public static global::@Game.@Config.@RuntimeSettings Wrap(RuntimeValue value) {
+value = value.Canonical();
 switch (value.TypeName) {
 case "RuntimeSettings": return new global::@Game.@Config.@RuntimeSettings(value);
-default: value.Dispose(); throw new CoflowException("Unexpected runtime type.");
+default: throw new CoflowException("Unexpected runtime type.");
 }
 }
 }

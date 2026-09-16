@@ -35,7 +35,8 @@ pub fn analyze(schema: &CftSchema, input: SourceInput) -> (SourceAnalysis, Vec<L
     diagnostics.extend(errors);
     let records = records
         .into_iter()
-        .map(|record| {
+        .map(|mut record| {
+            for value in record.record.fields.values_mut() { locate_callable_paths(value,&input.path.to_string_lossy()); }
             record.record.with_origin(RecordOrigin::File {
                 path: input.path.clone(),
                 span: None,
@@ -167,4 +168,17 @@ pub fn dimension_source<'a>(
             })
             .map(|field| (dimension, field.as_ref()))
     })
+}
+
+fn locate_callable_paths(value:&mut crate::LoadedValueDraft,path:&str) {
+    use crate::LoadedValueDraft as V;
+    match value {
+        V::Function(value)=>if let Some(location)=&mut value.location{location.path=Some(path.into());},
+        V::FormattedString(value)=>if let Some(location)=&mut value.location{location.path=Some(path.into());},
+        V::Array(values)=>for value in values{locate_callable_paths(value,path);},
+        V::Dict(values)=>for(_,value)in values{locate_callable_paths(value,path);},
+        V::Object{fields,..}=>for value in fields.values_mut(){locate_callable_paths(value,path);},
+        V::OptionSome(value)=>locate_callable_paths(value,path),
+        _=>{}
+    }
 }

@@ -58,12 +58,12 @@ fn optional_collection_and_reference_recursion_are_finite() {
 #[test]
 fn recursive_default_materialization_is_rejected() {
     for source in [
-        "data Node { child: Node? = Some(Node {}); }",
+        "data Node { child: Node? = Node {}; }",
         "data Node { children: [Node] = [Node {}]; }",
         "data Node { indexed: {string: Node} = { \"child\": Node {} }; }",
         concat!(
-            "data A { b: B? = Some(B {}); } ",
-            "data B { a: A? = Some(A {}); }"
+            "data A { b: B? = B {}; } ",
+            "data B { a: A? = A {}; }"
         ),
     ] {
         let diagnostics = compile(source).expect_err("recursive default must fail");
@@ -93,7 +93,7 @@ fn terminating_recursive_defaults_are_allowed() {
     compile(
         r#"
             data Node {
-                child: Node? = Some(Node { child: None });
+                child: Node? = Node { child: None };
             }
         "#,
     )

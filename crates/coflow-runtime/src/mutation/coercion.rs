@@ -83,6 +83,9 @@ fn coerce_json_value(
                 .map_err(|error| one_value_error(error.message))?;
             Ok(CfdValue::FormattedString(
                 crate::data_model::CfdFormattedString {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
                     constant_origin: None,
                     source: source.to_string(),
                 },

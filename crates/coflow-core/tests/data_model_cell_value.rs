@@ -550,12 +550,7 @@ fn parses_omitted_and_option_cells() -> TestResult {
         parse_ok(&schema, "int?", "None")?,
         ParsedCell::Value(LoadedValueDraft::OptionNone)
     );
-    assert_eq!(
-        parse_ok(&schema, "int?", "Some(3)")?,
-        ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
-            LoadedValueDraft::Int(3)
-        )))
-    );
+    parse_err(&schema, "int?", "Some(3)")?;
     assert_eq!(
         parse_ok(&schema, "int?", "3")?,
         ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
@@ -1276,7 +1271,7 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
         LoadedValueDraft::record_ref("Item::item_1")
     );
     assert_eq!(
-        parse_value(&schema, "Item?", "Some(&item_1)")?,
+        parse_value(&schema, "Item?", "&item_1")?,
         LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("Item::item_1")))
     );
     assert_eq!(

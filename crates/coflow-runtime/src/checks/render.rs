@@ -30,7 +30,6 @@ pub(super) fn render_check_store(
     ProjectCheckOutput {
         diagnostics: map_check_diagnostics_with_origins(Some(schema), raw, origins),
         logical_locations,
-        state,
         statistics,
     }
 }

@@ -12,8 +12,8 @@ fn compile(
     )
 }
 #[test]
-fn optional_fields_accept_none_some_and_direct_values() {
-    let schema = compile("table Item { a: int? = None; b: int? = Some(2); c: int? = 3; }")
+fn optional_fields_accept_none_and_direct_values() {
+    let schema = compile("table Item { a: int? = None; b: int? = 2; c: int? = 3; }")
         .expect("optional declarations");
     let item = schema.resolve_type("Item").expect("Item");
     assert_eq!(
@@ -40,4 +40,5 @@ fn nested_optional_and_removed_generic_types_are_rejected() {
         );
     }
     assert!(compile("table Item { value: int? = null; }").is_err());
+    assert!(compile("table Item { value: int? = Some(2); }").is_err());
 }

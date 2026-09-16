@@ -208,6 +208,9 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         // 构建只保存模板，动态读取由未来的 VM 负责。
         let _ = (node, cursor);
         Some(CfdValue::FormattedString(CfdFormattedString {
+                    from_default: value.from_default,
+                    location: value.location.clone(),
+                    imports: value.imports.clone(),
             constant_origin: value.constant_origin.clone(),
             source: value.source.clone(),
         }))

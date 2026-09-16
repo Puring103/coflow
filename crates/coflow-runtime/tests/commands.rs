@@ -406,8 +406,8 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     assert!(!generated.contains("data/dimensions/language/UiText_welcome.cfd"));
     let wrapper =
         fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("type wrapper");
-    assert!(wrapper.contains("CoflowDimension<string> @welcome"));
-    assert!(generated.contains("CoflowContract.Load"));
+    assert!(wrapper.contains("RuntimeDimension<string> @welcome"));
+    assert!(generated.contains("new Contract("));
 }
 
 #[test]
@@ -446,8 +446,8 @@ fn csharp_codegen_reads_each_singleton_dimension_record() {
     ));
     let generated =
         fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("wrapper");
-    assert!(generated.contains("CoflowDimension<string> @welcome"));
-    assert!(generated.contains("CoflowDimension<string> @farewell"));
+    assert!(generated.contains("RuntimeDimension<string> @welcome"));
+    assert!(generated.contains("RuntimeDimension<string> @farewell"));
     let session = Runtime::new()
         .open_read_only_session(project)
         .expect("reload");

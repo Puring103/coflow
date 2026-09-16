@@ -635,8 +635,8 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
     let model = load_cfd_model(
         &schema,
         r#"
-a: Node { next: Some(&b) }
-b: Node { next: Some(&a) }
+a: Node { next: &b }
+b: Node { next: &a }
 "#,
     )?;
 

@@ -41,17 +41,17 @@ codegen:
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并使用生成的 `CoflowSchema` 入口：
+将 `runtimes/csharp/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并使用生成的契约：
 
 ```csharp
 using Coflow.Generated;
+using Coflow;
 
-using var contract = CoflowSchema.Load();
-using var builder = contract.CreateBuilder();
-builder.AddSource("items.cfd", itemsText);
+using var builder = new RuntimeBuilder(Generated.Contract);
+builder.AddSource(itemsText);
 using var runtime = builder.Build();
-using var item = Item.Wrap(runtime.Record("Item", "sword"));
+var item = runtime.Table<Item>()["sword"];
 ```
 
 应用向构建器提供所有互相引用的 CFD 文本。构建成功后数据只读；更新数据或 Host 绑定时创建新运行时。
-使用结束后释放运行时及其包装。完整用法见 [C# 接入文档](website/docs/docs/reference/07-codegen/01-csharp.md)。
+使用结束后释放运行时，记录和集合无需单独释放。完整用法见 [C# 接入文档](website/docs/docs/reference/07-codegen/01-csharp.md)。

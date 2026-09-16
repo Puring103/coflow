@@ -370,10 +370,16 @@ fn record_states(
 fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
     match value {
         CfdValue::Function(function) => CfdValue::Function(crate::CfdFunction {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
             constant_origin: None,
             source: normalized_line_endings(&function.source),
         }),
         CfdValue::FormattedString(value) => CfdValue::FormattedString(crate::CfdFormattedString {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
             constant_origin: None,
             source: normalized_line_endings(&value.source),
         }),
