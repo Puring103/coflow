@@ -1,8 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use coflow_core::schema::{
-    build_schema, parse_modules, CftConstValue, CftDimensionInputs, CftFile, CftSchemaDefaultValue,
-    ModuleId,
+    build_schema, parse_modules, CftConstValue, CftFile, CftSchemaDefaultValue, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -10,7 +9,7 @@ fn compile(
     source: &str,
 ) -> Result<coflow_core::schema::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]

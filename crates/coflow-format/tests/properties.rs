@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 
-use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 use coflow_format::{format_cfd, format_cft};
 use coflow_language::cfd::parse_cfd;
 use coflow_language::lexical::{tokenize_lossless, LosslessTokenKind};
@@ -57,11 +57,11 @@ fn malformed_sources_format_stably() {
 fn valid_sources_parse_before_and_after_formatting() {
     let cft = "table Item { name: string; items: [int]; count: int; check { count > 0; } }";
     let before_modules = parse_modules([CftFile::from_source(ModuleId::from("main"), cft)]);
-    let before = build_schema(&before_modules, &CftDimensionInputs::default()).expect("schema");
+    let before = build_schema(&before_modules).expect("schema");
     let formatted_cft = format_cft(cft);
     let after_modules =
         parse_modules([CftFile::from_source(ModuleId::from("main"), formatted_cft)]);
-    let after = build_schema(&after_modules, &CftDimensionInputs::default()).expect("schema");
+    let after = build_schema(&after_modules).expect("schema");
     let shape = |schema: &coflow_core::schema::CftSchema| {
         schema
             .all_types()
@@ -77,7 +77,8 @@ fn valid_sources_parse_before_and_after_formatting() {
     };
     assert_eq!(shape(&before), shape(&after));
 
-    let cfd = "item: Item { name: \"Widget\", values: [1, 2], }";
+    let cfd =
+        "item: Item { name: dimension { default: \"Widget\", zh: \"组件\" }, values: [1, 2], }";
     let (before, before_diagnostics) = parse_cfd(cfd);
     let (after, after_diagnostics) = parse_cfd(&format_cfd(cfd));
     assert!(before_diagnostics.is_empty());

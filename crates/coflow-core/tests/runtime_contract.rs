@@ -2,7 +2,7 @@ use coflow_core::{
     contract::Contract,
     loading::SourceInput,
     runtime::{HostService, HostValue, Runtime, RuntimeBuilder, Value},
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, CftValueType, ModuleId},
     vm::ExecutionError,
 };
 use std::sync::Arc;
@@ -10,10 +10,8 @@ use std::sync::Arc;
 fn contract(source: &str) -> Arc<Contract> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
     Arc::new(
-        Contract::new(
-            build_schema(&modules, &CftDimensionInputs::default()).expect("valid declarations"),
-        )
-        .expect("serializable contract"),
+        Contract::new(build_schema(&modules).expect("valid declarations"))
+            .expect("serializable contract"),
     )
 }
 fn runtime(source: &str, data: &str) -> Arc<Runtime> {
@@ -161,18 +159,15 @@ fn data_cannot_be_loaded_as_a_record_and_record_keys_span_inheritance() {
 }
 
 #[test]
-fn dimension_records_exist_without_overrides_and_keep_business_template_owner() {
+fn dimension_values_keep_business_template_owner() {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
         "table Item { @localized name: fstring; }",
     )]);
-    let dimensions = CftDimensionInputs::try_new([("language", vec!["zh".into(), "en".into()])])
-        .expect("dimensions");
-    let contract = Arc::new(
-        Contract::new(build_schema(&modules, &dimensions).expect("schema")).expect("contract"),
-    );
+    let contract =
+        Arc::new(Contract::new(build_schema(&modules).expect("schema")).expect("contract"));
     let mut builder = RuntimeBuilder::new(contract);
-    builder.add_source(SourceInput::new("data.cfd", "a: Item { name: f\"base\" } b: Item { name: f\"base\" } a: Item_name_language { zh: f\"覆盖\", unknown: \"ignored\" }"));
+    builder.add_source(SourceInput::new("data.cfd", "a: Item { name: dimension { default: f\"base\", zh: f\"覆盖\" } } b: Item { name: dimension { default: f\"base\" } }"));
     let runtime = builder.build().runtime.expect("dimension data");
     for key in ["a", "b"] {
         let business = runtime.record("Item", key).expect("business");
@@ -180,12 +175,6 @@ fn dimension_records_exist_without_overrides_and_keep_business_template_owner() 
         let base = runtime.dimension_default(dimension).expect("base");
         assert!(
             matches!(runtime.value(base).expect("template").as_ref(), Value::Template { owner: Some(owner), .. } if *owner == business)
-        );
-        assert_eq!(
-            runtime
-                .read_text(runtime.field(dimension, "id").expect("generated id"))
-                .expect("id"),
-            key
         );
     }
 }
@@ -304,9 +293,7 @@ fn dimension_metadata_does_not_shadow_variant_names_and_unknown_variants_fall_ba
         ModuleId::from("main"),
         "table Item { @localized name: string; }",
     )]);
-    let dimensions =
-        CftDimensionInputs::try_new([("language", vec!["record".into()])]).expect("dimension");
-    let schema = build_schema(&modules, &dimensions).expect("schema");
+    let schema = build_schema(&modules).expect("schema");
     let field = schema
         .resolve_type("Item")
         .expect("Item")
@@ -319,7 +306,7 @@ fn dimension_metadata_does_not_shadow_variant_names_and_unknown_variants_fall_ba
     let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).expect("contract")));
     builder.add_source(SourceInput::new(
         "data.cfd",
-        r#"a: Item { name: "base" } a: Item_name_language { record: "override" }"#,
+        r#"a: Item { name: dimension { default: "base", record: "override" } }"#,
     ));
     let runtime = builder.build().runtime.expect("data");
     let dimension = runtime

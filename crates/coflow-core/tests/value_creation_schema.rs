@@ -1,13 +1,13 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
-use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 use coflow_language::diagnostics::CftErrorCode;
 
 fn compile(
     source: &str,
 ) -> Result<coflow_core::schema::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]

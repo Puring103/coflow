@@ -417,20 +417,15 @@ fn reports_git_diagnostic_for_unborn_head() {
 }
 
 #[test]
-fn compares_absolute_dimension_paths_against_snapshot() {
+fn compares_inline_dimension_changes_against_snapshot() {
     let repo = tempfile::tempdir().expect("repo");
     write_project(
         repo.path(),
         "table Item { @localized name: string; }\n",
-        "one: Item { name: \"Name\" }\n",
+        "one: Item { name: dimension { default: \"Name\", zh: \"Before\" } }\n",
     );
-    let dimensions = repo.path().join("dimensions/language");
-    fs::create_dir_all(&dimensions).expect("dimensions");
-    let overlay = dimensions.join("Item_name.cfd");
-    fs::write(&overlay, "one: Item_name_language { zh: \"Before\" }\n").expect("overlay");
     let config = serde_json::json!({
         "schema": "schema.cft", "data": "data/",
-        "dimensions": {"language": {"variants": ["zh"], "out_dir": coflow_runtime::path_to_slash(&dimensions)}},
         "codegen": [{"language": "csharp", "dir": "generated"}],
     });
     fs::write(
@@ -443,14 +438,18 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     git(repo.path(), &["config", "user.name", "Coflow Tests"]);
     git(repo.path(), &["add", "."]);
     git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
-    fs::write(&overlay, "one: Item_name_language { zh: \"After\" }\n").expect("changed overlay");
+    fs::write(
+        repo.path().join("data/items.cfd"),
+        "one: Item { name: dimension { default: \"Name\", zh: \"After\" } }\n",
+    )
+    .expect("changed business data");
     let session = Runtime::new()
         .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
         .expect("session");
     let diff = session.queries().diff_against_head().expect("diff");
     assert!(diff.semantic_available, "{:?}", diff.diagnostics);
     assert_eq!(diff.files.len(), 1);
-    assert_eq!(diff.files[0].path, "dimensions/language/Item_name.cfd");
+    assert_eq!(diff.files[0].path, "data/items.cfd");
     assert!(diff.files[0].patch.contains("Before"));
     assert!(diff.files[0].patch.contains("After"));
     assert!(!diff.records.is_empty());

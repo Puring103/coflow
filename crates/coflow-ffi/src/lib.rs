@@ -18,7 +18,6 @@ enum Operation {
     LoadContract = 1,
     CreateCompiler = 3,
     AddSchemaSource = 4,
-    AddDimension = 5,
     CompileContract = 6,
     SerializeContract = 7,
     ContractIdentity = 8,
@@ -51,6 +50,7 @@ enum Operation {
     Collect = 43,
     RetainValue = 44,
     RunChecks = 45,
+    DimensionVariantKey = 46,
 }
 
 impl TryFrom<u32> for Operation {
@@ -61,7 +61,6 @@ impl TryFrom<u32> for Operation {
             1 => Self::LoadContract,
             3 => Self::CreateCompiler,
             4 => Self::AddSchemaSource,
-            5 => Self::AddDimension,
             6 => Self::CompileContract,
             7 => Self::SerializeContract,
             8 => Self::ContractIdentity,
@@ -94,6 +93,7 @@ impl TryFrom<u32> for Operation {
             43 => Self::Collect,
             44 => Self::RetainValue,
             45 => Self::RunChecks,
+            46 => Self::DimensionVariantKey,
             _ => return Err("operation unavailable in this build".into()),
         })
     }
@@ -123,7 +123,6 @@ enum Entry {
 #[derive(Debug, Default)]
 struct Compilation {
     sources: Vec<coflow_core::schema::CftFile>,
-    dimensions: BTreeMap<String, Vec<String>>,
 }
 #[derive(Debug, Default)]
 struct Registry {
@@ -379,10 +378,9 @@ fn dispatch(
     let op = Operation::try_from(operation)?;
     match op {
         #[cfg(not(feature = "cft-compiler"))]
-        Operation::CreateCompiler
-        | Operation::AddSchemaSource
-        | Operation::AddDimension
-        | Operation::CompileContract => Err("operation unavailable in this build".into()),
+        Operation::CreateCompiler | Operation::AddSchemaSource | Operation::CompileContract => {
+            Err("operation unavailable in this build".into())
+        }
         Operation::ValueEquals => {
             let (runtime, left) = target(handle, raw_value)?;
             let (other, right) = target(handle, index)?;
@@ -420,7 +418,7 @@ fn dispatch(
             ..Response::default()
         }),
         #[cfg(feature = "cft-compiler")]
-        Operation::AddSchemaSource | Operation::AddDimension | Operation::CompileContract => {
+        Operation::AddSchemaSource | Operation::CompileContract => {
             let Entry::Compiler(compiler) = get(handle)? else {
                 return Err("expected CFT compilation".into());
             };
@@ -434,23 +432,9 @@ fn dispatch(
                     ));
                 return Ok(Response::default());
             }
-            if op == Operation::AddDimension {
-                let variants = text(data)?.split('\n').map(str::to_string).collect();
-                if compiler
-                    .dimensions
-                    .insert(text(key)?.into(), variants)
-                    .is_some()
-                {
-                    return Err("duplicate dimension".into());
-                }
-                return Ok(Response::default());
-            }
             let modules = coflow_core::schema::parse_modules(compiler.sources.clone());
-            let dimensions =
-                coflow_core::schema::CftDimensionInputs::try_new(compiler.dimensions.clone())
-                    .map_err(|e| e.to_string())?;
-            let schema = coflow_core::schema::build_schema(&modules, &dimensions)
-                .map_err(|e| format!("{e:?}"))?;
+            let schema =
+                coflow_core::schema::build_schema(&modules).map_err(|e| format!("{e:?}"))?;
             let contract = Contract::new(schema).map_err(|e| e.to_string())?;
             Ok(Response {
                 handle: insert(Entry::Contract(Arc::new(contract)))?,
@@ -614,6 +598,10 @@ fn dispatch(
                 }
                 Value::Function { .. } => response.tag = 9,
                 Value::Template { .. } => response.tag = 10,
+                Value::Dimension { variants, .. } => {
+                    response.tag = 11;
+                    response.length = variants.len() as u64;
+                }
                 Value::HostData { .. } => return Err("unresolved Host data".into()),
             }
             Ok(response)
@@ -878,6 +866,18 @@ fn dispatch(
             let (runtime, id) = target(handle, raw_value)?;
             let base = runtime.dimension_default(id).map_err(|e| e.to_string())?;
             value(runtime, base)
+        }
+        Operation::DimensionVariantKey => {
+            let (runtime, id) = target(handle, raw_value)?;
+            let dimension = runtime.value(id).map_err(|e| e.to_string())?;
+            let Value::Dimension { variants, .. } = dimension.as_ref() else {
+                return Err("value is not a dimension".into());
+            };
+            let variant = variants
+                .keys()
+                .nth(usize::try_from(index).map_err(|_| "dimension index overflow")?)
+                .ok_or_else(|| "dimension index out of range".to_string())?;
+            buffer(variant.as_bytes().to_vec())
         }
     }
 }

@@ -1,8 +1,7 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
 use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftFunctionParameter, CftValueType,
-    EnumName, ModuleId,
+    build_schema, parse_modules, CftFile, CftFunctionParameter, CftValueType, EnumName, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -10,7 +9,7 @@ fn compile(
     source: &str,
 ) -> Result<coflow_core::schema::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main.cft"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]
@@ -74,8 +73,7 @@ fn aliases_resolve_by_project_global_short_name_across_files() {
             "#,
         ),
     ]);
-    let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("project-global aliases should resolve");
+    let schema = build_schema(&modules).expect("project-global aliases should resolve");
     assert_eq!(
         schema
             .resolve_type("Item")

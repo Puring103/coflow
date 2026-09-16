@@ -1,9 +1,3 @@
-//! Resolved dimension metadata exposed to hosts.
-//!
-//! Combines the `DimensionConfig` declared in `coflow.yaml` with the schema
-//! dimension fields discovered during model build.
-
-use crate::project::{normalize_path, path_to_slash, DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-export")]
@@ -18,17 +12,9 @@ use super::sources::DimensionField;
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DimensionInfo {
-    /// Stable dimension name from `coflow.yaml` (e.g. `"language"`).
     pub name: String,
-    /// Human-readable label resolved with the `display_name` fallback chain:
-    /// `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
     pub display_name: String,
     pub variants: Vec<String>,
-    /// File-tree path of the managed directory: project-relative inside the
-    /// project, otherwise an external display path; absent without `out_dir`.
-    pub out_dir: Option<String>,
-    /// Schema fields belonging to this dimension. Wire only the source
-    /// type and field; the schema view itself is not part of the editor surface.
     pub fields: Vec<DimensionFieldInfo>,
 }
 
@@ -44,70 +30,47 @@ pub struct DimensionFieldInfo {
     pub is_singleton: bool,
 }
 
-/// Resolve all configured dimensions into `DimensionInfo`.
 #[must_use]
-pub(crate) fn dimensions_for_project(
-    project: &Project,
+pub(crate) fn dimensions_for_model(
+    model: &crate::data_model::CfdDataModel,
     fields: &[DimensionField],
 ) -> Vec<DimensionInfo> {
-    let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
-        std::collections::BTreeMap::new();
-    for field in fields {
-        by_name
-            .entry(field.dimension.as_str())
-            .or_default()
-            .push(field);
+    let mut variants =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    for (_, record) in model.records() {
+        for values in record.dimension_fields.values() {
+            variants
+                .entry(values.dimension.to_string())
+                .or_default()
+                .extend(values.variants.keys().map(ToString::to_string));
+        }
     }
-
-    let mut out = Vec::new();
-    for (name, config) in &project.config().dimensions {
-        let display_name = resolved_display_name(name, config);
-        let out_dir = config.out_dir.as_ref().map(|p| {
-            let absolute = normalize_path(&project.resolve_path(p));
-            let rel = absolute
-                .strip_prefix(project.root_dir())
-                .unwrap_or(&absolute);
-            // 与文件树共用路径标识，避免 Windows 扩展路径前缀使维度分组失配。
-            path_to_slash(rel)
-        });
-        let info_fields = by_name
-            .get(name.as_str())
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .map(|field| DimensionFieldInfo {
+    let mut grouped = std::collections::BTreeMap::<String, Vec<DimensionFieldInfo>>::new();
+    for field in fields {
+        grouped
+            .entry(field.dimension.to_string())
+            .or_default()
+            .push(DimensionFieldInfo {
                 source_type: field.source_type.to_string(),
                 source_field: field.source_field.to_string(),
                 is_singleton: field.is_singleton,
-            })
-            .collect();
-        out.push(DimensionInfo {
-            name: name.clone(),
-            display_name,
-            variants: config.variants.clone(),
-            out_dir,
-            fields: info_fields,
-        });
+            });
     }
-    out
-}
-
-/// Compute the display label for a dimension. Falls back through:
-/// 1. `config.display_name` (explicit user choice),
-/// 2. a small built-in table for shipped dimensions,
-/// 3. the raw `name`.
-#[must_use]
-pub(crate) fn resolved_display_name(name: &str, config: &DimensionConfig) -> String {
-    if let Some(custom) = &config.display_name {
-        return custom.clone();
-    }
-    builtin_display_name(name).map_or_else(|| name.to_string(), str::to_string)
-}
-
-#[must_use]
-pub(crate) const fn builtin_display_name(name: &str) -> Option<&'static str> {
-    match name.as_bytes() {
-        b"language" => Some("本地化"),
-        _ => None,
-    }
+    grouped
+        .into_iter()
+        .map(|(name, fields)| DimensionInfo {
+            display_name: if name == "language" {
+                "本地化".into()
+            } else {
+                name.clone()
+            },
+            variants: variants
+                .remove(&name)
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
+            name,
+            fields,
+        })
+        .collect()
 }

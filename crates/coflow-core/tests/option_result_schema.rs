@@ -1,15 +1,14 @@
 #![allow(clippy::expect_used)]
 use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchemaDefaultValue, CftValueType,
-    ModuleId,
+    build_schema, parse_modules, CftFile, CftSchemaDefaultValue, CftValueType, ModuleId,
 };
 fn compile(
     source: &str,
 ) -> Result<coflow_core::schema::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
-    build_schema(
-        &parse_modules([CftFile::from_source(ModuleId::from("main"), source)]),
-        &CftDimensionInputs::default(),
-    )
+    build_schema(&parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        source,
+    )]))
 }
 #[test]
 fn optional_fields_accept_none_and_direct_values() {

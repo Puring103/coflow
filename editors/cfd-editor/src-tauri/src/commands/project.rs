@@ -7,11 +7,11 @@ use cfd_editor_core::EditorHost;
 use tauri::State;
 
 use super::run_host_command;
+use crate::open::open_path;
 use cfd_editor_core::editor::{
     DimensionFileRecords, EditorError, EditorProjectSettings, EditorRecordGroup,
     EditorWorkspaceState, ProjectBootstrap, ViewConfig,
 };
-use crate::open::open_path;
 use coflow_runtime::ProjectDiff;
 
 #[tauri::command]

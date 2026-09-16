@@ -39,12 +39,12 @@ pub(crate) fn run_full_project_checks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
     fn schema(source: &str) -> CftSchema {
-        build_schema(
-            &parse_modules([CftFile::from_source(ModuleId::from("main"), source)]),
-            &CftDimensionInputs::default(),
-        )
+        build_schema(&parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            source,
+        )]))
         .expect("schema")
     }
     #[test]

@@ -1,9 +1,7 @@
 use crate::diagnostics::cli_file_error;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_format::{format_cfd, format_cft};
-use coflow_runtime::{
-    discover_directory_files, path_is_same_or_descendant, path_to_slash, DiagnosticSet, Project,
-};
+use coflow_runtime::{discover_directory_files, path_to_slash, DiagnosticSet, Project};
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -76,13 +74,6 @@ fn discover_targets(project: &Project) -> Result<Vec<FormatTarget>, DiagnosticSe
         );
     }
 
-    let managed_dimension_dirs = project
-        .config()
-        .dimensions
-        .values()
-        .filter_map(|dimension| dimension.out_dir.as_ref())
-        .map(|path| project.resolve_path(path))
-        .collect::<Vec<_>>();
     for source in project.data_paths() {
         let path = project.resolve_path(source.path());
         let files = if path.is_dir() {
@@ -93,12 +84,6 @@ fn discover_targets(project: &Project) -> Result<Vec<FormatTarget>, DiagnosticSe
             vec![path]
         };
         for path in files {
-            if managed_dimension_dirs
-                .iter()
-                .any(|directory| path_is_same_or_descendant(&path, directory))
-            {
-                continue;
-            }
             if language_for_path(&path) != Some(Language::Cfd) {
                 continue;
             }
@@ -184,10 +169,9 @@ mod tests {
         let dir = tempdir().expect("temp dir");
         fs::create_dir_all(dir.path().join("schema")).expect("schema dir");
         fs::create_dir_all(dir.path().join("data")).expect("data dir");
-        fs::create_dir_all(dir.path().join("data/dimensions/language")).expect("dimension dir");
         fs::write(
             dir.path().join("coflow.yaml"),
-            "schema: schema/\ndata: data/\ndimensions:\n  language:\n    variants: [en]\n    out_dir: data/dimensions/language\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+            "schema: schema/\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
         )
         .expect("config");
         fs::write(
@@ -205,8 +189,6 @@ mod tests {
             "ignored:Item{name:\"Ignored\",}",
         )
         .expect("ignored data");
-        let dimension = dir.path().join("data/dimensions/language/Item_name.cfd");
-        fs::write(&dimension, "ignored:Item{name:\"Generated\",}").expect("dimension data");
 
         assert!(run(Some(dir.path()), false).expect("format project"));
         assert_eq!(
@@ -220,10 +202,6 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.path().join("ignored.cfd")).expect("read ignored"),
             "ignored:Item{name:\"Ignored\",}"
-        );
-        assert_eq!(
-            fs::read_to_string(dimension).expect("read dimension"),
-            "ignored:Item{name:\"Generated\",}"
         );
     }
 

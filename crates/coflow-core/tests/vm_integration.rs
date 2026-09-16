@@ -1,7 +1,7 @@
 use coflow_core::{
     contract::Contract,
     runtime::{HostService, HostValue, Runtime, RuntimeBuilder},
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::{executor::ExecutionLimits, ExecutionError},
 };
 use std::sync::{
@@ -14,7 +14,7 @@ fn contract(sources: &[&str]) -> Arc<Contract> {
         parse_modules(sources.iter().enumerate().map(|(i, source)| {
             CftFile::from_source(ModuleId::from(format!("module{i}")), *source)
         }));
-    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let schema = build_schema(&modules).expect("schema");
     let contract = Contract::new(schema).expect("compile");
     Arc::new(Contract::from_bytes(&contract.to_bytes().expect("serialize")).expect("deserialize"))
 }
@@ -282,12 +282,10 @@ fn template_collections_preserve_filter_storage_and_short_circuit_reads() {
 fn dimensions_execute_default_for_and_variants_in_declaration_order() {
     let source="table Item { value: int = 7; @localized name: fstring; run: fn() -> string => { self.name.default() + self.name.for(\"zh\") + self.name.variants()[\"en\"] }; }";
     let modules = parse_modules([CftFile::from_source(ModuleId::from("dimension"), source)]);
-    let dimensions =
-        CftDimensionInputs::try_new([("language", vec!["zh".into(), "en".into()])]).unwrap();
-    let schema = build_schema(&modules, &dimensions).unwrap();
+    let schema = build_schema(&modules).unwrap();
     let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
     builder.add_text(
-        "a: Item { name: f\"base{self.value}\" } a: Item_name_language { zh: f\"中{self.value}\" }",
+        "a: Item { name: dimension { default: f\"base{self.value}\", zh: f\"中{self.value}\" } } b: Item { name: dimension { default: f\"base{self.value}\", en: f\"english{self.value}\" } }",
         Some("dimensions.cfd"),
     );
     let runtime = builder.build().runtime.expect("dimension runtime");
@@ -387,10 +385,10 @@ fn cfd_optional_values_use_none_or_bare_values_and_reject_constructors() {
 #[test]
 fn contract_compilation_errors_keep_module_and_exact_expression_span() {
     let source = "table Rule { run: fn() -> int => { \"错误\" }; }";
-    let schema = build_schema(
-        &parse_modules([CftFile::from_source(ModuleId::from("bad.cft"), source)]),
-        &CftDimensionInputs::default(),
-    )
+    let schema = build_schema(&parse_modules([CftFile::from_source(
+        ModuleId::from("bad.cft"),
+        source,
+    )]))
     .unwrap();
     let coflow_core::contract::ContractError::Compilation(error) =
         Contract::new(schema).unwrap_err()

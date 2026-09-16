@@ -1,1 +1,2 @@
 RuntimeSettings: RuntimeSettings {}
+localized: LocalizedText { value: dimension { default: "Hello", zh: "你好" } }

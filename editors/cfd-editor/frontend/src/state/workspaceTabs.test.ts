@@ -136,7 +136,7 @@ describe('project workspace tabs', () => {
     expect(workspaceToWire([tab], tab.id).tabs[0]).not.toHaveProperty('coordinate')
   })
 
-  it('restores a dimension file tab with an empty type name', () => {
+  it('restores a virtual dimension tab with an empty type name', () => {
     const filePath = 'data/dimensions/language/item.cfd'
     const id = workspaceTabId(filePath, '')
     const restored = sanitizeProjectWorkspace({

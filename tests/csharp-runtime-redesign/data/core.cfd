@@ -1,12 +1,19 @@
-text: UiText { welcome: "Hello", count: 17 }
+UiText: UiText {
+  welcome: dimension { default: "Hello", zh: "你好" },
+  weights: dimension { default: [1, 2], zh: [3, 4, 5] },
+  theme: dimension { default: ThemeValue { value: 5 }, zh: ThemeValue { value: 9 } },
+  count: 17,
+}
 
   first: Item {
+      title: dimension { default: "Item", zh: "First translated" },
       stats: Stats { value: 2 },
       next: &second,
-      calculate: fn(input: int) -> int { &second.calculate(input) + stats.value },
+      calculate: fn(input: int) -> int { (&Item::second).calculate(input) + self.stats.value },
   }
-  self: Item {
+  self_item: Item {
+      title: dimension { default: "Item" },
       stats: Stats { value: 8 },
-      next: &self,
-      calculate: fn(input: int) -> int { input + stats.value },
+      next: &self_item,
+      calculate: fn(input: int) -> int { input + self.stats.value },
   }

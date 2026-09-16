@@ -9,8 +9,8 @@ use crate::data_model::{
 use crate::project::{normalize_path, path_is_same_or_descendant, path_to_slash, Project};
 use coflow_core::schema::{CftModuleSet, CftSchema};
 
-use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
-use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
+use crate::dimensions::{dimensions_for_model, DimensionInfo, DimensionRuntimePlan};
+use crate::files::{self, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
@@ -114,7 +114,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub(crate) fn dimensions(&self) -> Vec<DimensionInfo> {
-        dimensions_for_project(&self.project, self.dimension_plan.fields())
+        dimensions_for_model(&self.model, self.dimension_plan.fields())
     }
 
     /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
@@ -223,7 +223,7 @@ impl ProjectSession {
     }
 
     /// File-tree view of the project. All `.cfd` files are visible, while
-    /// dimension `out_dirs` become virtual subtrees.
+    /// Dimensions become virtual subtrees that point back to business CFD files.
     #[must_use]
     pub(crate) fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
@@ -252,21 +252,6 @@ impl ProjectSession {
                 if let Ok(relative) = source.canonical_path.strip_prefix(self.project.root_dir()) {
                     options.in_sources.insert(path_to_slash(relative));
                 }
-            }
-        }
-        for info in self.dimensions() {
-            if let Some(out_dir) = self
-                .project
-                .config()
-                .dimensions
-                .get(&info.name)
-                .and_then(|config| config.out_dir.as_ref())
-            {
-                let absolute = normalize_path(&self.project.resolve_path(out_dir));
-                options.dimension_groups.push(DimensionGroup {
-                    display_name: info.display_name.clone(),
-                    dir: absolute,
-                });
             }
         }
         self.file_tree_with(&options)

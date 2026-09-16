@@ -128,16 +128,18 @@ pub struct CftField {
 }
 
 impl CftField {
-    /// value_type 描述来源中的基础值；运行时维度访问返回生成记录。
+    /// 公开字段类型保持不变；VM 使用不可在源码中引用的句柄标识编译维度访问。
     pub fn runtime_value_type(&self) -> CftValueType {
         self.dimension.as_ref().map_or_else(
             || self.value_type.clone(),
             |binding| {
-                CftValueType::RecordRef(TypeName::from_validated(super::dimension_record_type(
-                    binding.dimension.as_str(),
-                    self.declaring_type.as_str(),
-                    self.name.as_str(),
-                )))
+                CftValueType::RecordRef(TypeName::from_validated(
+                    super::dimensions::dimension_value_marker(
+                        binding.dimension.as_str(),
+                        self.declaring_type.as_str(),
+                        self.name.as_str(),
+                    ),
+                ))
             },
         )
     }
@@ -232,23 +234,7 @@ impl CftDisplayMetadata {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CftDimension {
     pub name: DimensionName,
-    pub variants: Vec<crate::VariantName>,
-    pub(crate) variant_by_name: BTreeMap<crate::VariantName, usize>,
     pub fields: Vec<Arc<CftField>>,
-}
-
-impl CftDimension {
-    #[must_use]
-    pub fn variant(&self, name: &str) -> Option<&crate::VariantName> {
-        self.variant_by_name
-            .get(name)
-            .and_then(|index| self.variants.get(*index))
-    }
-
-    #[must_use]
-    pub fn variant_index(&self, name: &str) -> Option<usize> {
-        self.variant_by_name.get(name).copied()
-    }
 }
 
 #[cfg(feature = "cft-compiler")]

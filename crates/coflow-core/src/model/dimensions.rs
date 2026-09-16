@@ -7,7 +7,6 @@ pub enum DimensionFieldLookupError {
     UnknownRecord,
     NotDimensional,
     DimensionMismatch,
-    UnknownVariant,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +27,7 @@ impl CfdDataModel {
     /// # Errors
     ///
     /// Returns an error when the owner record, schema field, dimension, or
-    /// configured variant does not match the requested coordinate.
+    /// requested coordinate does not match the schema.
     pub fn dimension_field_value<'a>(
         &'a self,
         schema: &CftSchema,
@@ -49,12 +48,6 @@ impl CfdDataModel {
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         if binding.dimension.as_str() != dimension {
             return Err(DimensionFieldLookupError::DimensionMismatch);
-        }
-        let schema_dimension = schema
-            .resolve_dimension(dimension)
-            .ok_or(DimensionFieldLookupError::DimensionMismatch)?;
-        if schema_dimension.variant(variant).is_none() {
-            return Err(DimensionFieldLookupError::UnknownVariant);
         }
         let Some(values) = record.dimension_field(field_name) else {
             return Ok(DimensionValueLookup::Missing);

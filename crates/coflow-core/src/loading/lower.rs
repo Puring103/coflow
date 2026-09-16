@@ -87,10 +87,7 @@ fn lower_records_with_mode(
                 continue;
             }
         }
-        let context = super::dimension_source(schema, &record.type_name).map_or_else(
-            || record.type_name.clone(),
-            |(_, field)| field.declaring_type.to_string(),
-        );
+        let context = record.type_name.clone();
         for field in &mut record.fields {
             resolve_source_value(schema, &mut field.value, Some(&context), &imports);
         }
@@ -224,14 +221,17 @@ fn lower_record(
             record.type_span,
         ));
     }
-    let fields = lower_object_fields(
+    let (fields, dimension_values) = lower_object_fields(
         schema,
         &type_name,
+        &record.key,
         &record.fields,
         preserve_repairable_values,
     )?;
+    let mut draft = LoadedRecordDraft::new(record.key.clone(), type_name, fields);
+    draft.dimension_values = dimension_values;
     Ok(ParsedLoadedRecordDraft {
-        record: LoadedRecordDraft::new(record.key.clone(), type_name, fields),
+        record: draft,
         span: text_span(record.span),
     })
 }
@@ -239,9 +239,16 @@ fn lower_record(
 fn lower_object_fields(
     schema: &CftSchema,
     type_name: &str,
+    record_key: &str,
     fields: &[CfdField],
     preserve_repairable_values: bool,
-) -> Result<BTreeMap<String, LoadedValueDraft>, CfdTextDiagnostics> {
+) -> Result<
+    (
+        BTreeMap<String, LoadedValueDraft>,
+        Vec<crate::DimensionValueDraft>,
+    ),
+    CfdTextDiagnostics,
+> {
     let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
         error(
             CfdTextErrorCode::UnknownType,
@@ -256,6 +263,15 @@ fn lower_object_fields(
     let mut values = BTreeMap::new();
     let mut seen = BTreeSet::new();
     let mut diagnostics = Vec::new();
+    let mut dimension_values = Vec::new();
+    let source_key =
+        crate::RecordKey::new(record_key.to_string()).map_err(|error| CfdTextDiagnostics {
+            diagnostics: vec![CfdTextDiagnostic::error(
+                CfdTextErrorCode::TypeMismatch,
+                error.to_string(),
+                CfdTextSpan::default(),
+            )],
+        })?;
     for field in fields {
         if field.name == "id"
             && schema_type.kind != coflow_language::cft::syntax::ast::TypeKind::Data
@@ -282,9 +298,6 @@ fn lower_object_fields(
             continue;
         }
         let Some(meta) = fields_by_name.get(field.name.as_str()) else {
-            if super::dimension_source(schema, type_name).is_some() {
-                continue;
-            }
             diagnostics.extend(
                 error(
                     CfdTextErrorCode::UnknownField,
@@ -295,19 +308,101 @@ fn lower_object_fields(
             );
             continue;
         };
-        match lower_value_resolved(
-            schema,
-            &field.value,
-            &meta.value_type,
-            preserve_repairable_values,
-        ) {
-            Ok(value) => {
-                values.insert(field.name.clone(), value);
+        match (&meta.dimension, &field.value) {
+            (Some(binding), CfdValue::Dimension(dimension)) => {
+                let mut entries = BTreeSet::new();
+                let mut default = None;
+                for entry in &dimension.fields {
+                    if !entries.insert(entry.name.clone()) {
+                        diagnostics.extend(
+                            error(
+                                CfdTextErrorCode::DuplicateField,
+                                format!("duplicate dimension entry `{}`", entry.name),
+                                entry.name_span,
+                            )
+                            .diagnostics,
+                        );
+                        continue;
+                    }
+                    match lower_value_resolved(
+                        schema,
+                        &entry.value,
+                        &meta.value_type,
+                        preserve_repairable_values,
+                    ) {
+                        Ok(value) if entry.name == "default" => default = Some(value),
+                        Ok(value) => match crate::VariantName::new(entry.name.clone()) {
+                            Ok(variant) => dimension_values.push(crate::DimensionValueDraft {
+                                source_type: meta.declaring_type.clone(),
+                                source_key: source_key.clone(),
+                                field: meta.name.clone(),
+                                dimension: binding.dimension.clone(),
+                                variant,
+                                value,
+                                origin: crate::RecordOrigin::None,
+                            }),
+                            Err(_) => diagnostics.extend(
+                                error(
+                                    CfdTextErrorCode::TypeMismatch,
+                                    format!("invalid dimension variant `{}`", entry.name),
+                                    entry.name_span,
+                                )
+                                .diagnostics,
+                            ),
+                        },
+                        Err(error) => diagnostics.extend(error.diagnostics),
+                    }
+                }
+                if let Some(default) = default {
+                    values.insert(field.name.clone(), default);
+                } else {
+                    diagnostics.extend(
+                        error(
+                            CfdTextErrorCode::TypeMismatch,
+                            "dimension value requires `default`",
+                            dimension.span,
+                        )
+                        .diagnostics,
+                    );
+                }
             }
-            Err(error) => diagnostics.extend(error.diagnostics),
+            (Some(_), _) => diagnostics.extend(
+                error(
+                    CfdTextErrorCode::TypeMismatch,
+                    format!(
+                        "dimension field `{}` requires `dimension {{ ... }}`",
+                        field.name
+                    ),
+                    field.value.span(),
+                )
+                .diagnostics,
+            ),
+            (None, CfdValue::Dimension(_)) => diagnostics.extend(
+                error(
+                    CfdTextErrorCode::TypeMismatch,
+                    format!("field `{}` is not dimensional", field.name),
+                    field.value.span(),
+                )
+                .diagnostics,
+            ),
+            (None, _) => match lower_value_resolved(
+                schema,
+                &field.value,
+                &meta.value_type,
+                preserve_repairable_values,
+            ) {
+                Ok(value) => {
+                    values.insert(field.name.clone(), value);
+                }
+                Err(error) => diagnostics.extend(error.diagnostics),
+            },
         }
     }
-    finish(values, diagnostics)
+    if diagnostics.is_empty() {
+        Ok((values, dimension_values))
+    } else {
+        Err(CfdTextDiagnostics { diagnostics })
+    }
 }
 
 pub fn lower_value(
@@ -672,12 +767,17 @@ fn lower_object(
                     block.span,
                 ));
             };
-            let fields = lower_object_fields(
+            let (fields, dimensions) = lower_object_fields(
                 schema,
                 &actual_type,
+                "inline",
                 &block.fields,
                 preserve_repairable_values,
             )?;
+            debug_assert!(
+                dimensions.is_empty(),
+                "data fields cannot declare dimensions"
+            );
             Ok(LoadedValueDraft::object(actual_type, fields))
         }
         CfdValue::Ref(_) => Err(error(

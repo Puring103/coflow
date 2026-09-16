@@ -21,9 +21,12 @@ impl SessionStore {
         let session = entry.state.read();
         let queries = session.queries();
         let normalized_path = file_path.replace('\\', "/");
+        let dimension_name = normalized_path
+            .strip_prefix("@dimension/")
+            .ok_or_else(|| EditorError::not_found("dimension view not found"))?;
         let (dimension, fields) = queries
-            .dimension_fields_for_file(&normalized_path)
-            .ok_or_else(|| EditorError::not_found("managed dimension file not found"))?;
+            .dimension_fields(dimension_name)
+            .ok_or_else(|| EditorError::not_found("dimension view not found"))?;
         let dimension_name = DimensionName::new(dimension.name.clone())
             .map_err(|error| EditorError::other(error.to_string()))?;
         let mut rows = Vec::new();

@@ -17,9 +17,7 @@ use crate::api::{
 };
 use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
 use crate::{RecordOrigin, TextSpan};
-use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_format::format_cfd;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,7 +37,7 @@ fn temp_dir(name: &str) -> PathBuf {
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default()).expect("schema compile")
+    build_schema(&modules).expect("schema compile")
 }
 
 fn empty_source(path: &Path) -> CfdSource {

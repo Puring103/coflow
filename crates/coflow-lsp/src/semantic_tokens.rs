@@ -270,11 +270,7 @@ fn add_lex_semantic_token(
         | TokenKind::Is
         | TokenKind::True
         | TokenKind::False => SEM_KEYWORD,
-        TokenKind::Ident(text)
-            if matches!(text.as_str(), "fn" | "None" | "Some") =>
-        {
-            SEM_KEYWORD
-        }
+        TokenKind::Ident(text) if matches!(text.as_str(), "fn" | "None" | "Some") => SEM_KEYWORD,
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
         TokenKind::String(_)
         | TokenKind::FormattedStringStart

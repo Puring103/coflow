@@ -1,5 +1,13 @@
 UiText: UiText {
   key: "ui",
-  text: "Welcome",
-  hint: "Press Enter",
+  text: dimension {
+    default: "Welcome",
+    en: "Welcome",
+    zh: "欢迎",
+  },
+  hint: dimension {
+    default: "Press Enter",
+    desktop: "Press Enter",
+    mobile: "Tap to continue",
+  },
 }

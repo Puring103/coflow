@@ -35,7 +35,10 @@ pub(crate) const LITERALS: &[(&str, &str)] =
 
 pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
     ("None", "Option without a value."),
-    ("Some", "Pattern used by `is Some(name)` to bind a non-empty optional value."),
+    (
+        "Some",
+        "Pattern used by `is Some(name)` to bind a non-empty optional value.",
+    ),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(

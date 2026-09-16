@@ -1764,7 +1764,7 @@ impl<'a> Compiler<'a> {
             return self.higher_builtin(receiver, name, arguments, span);
         }
         let dimension = if let Ty::RecordRef(type_name) = &receiver.ty {
-            crate::loading::dimension_source(self.schema, type_name)
+            crate::schema::dimensions::dimension_field_for_marker(self.schema, type_name)
         } else {
             None
         };

@@ -1,5 +1,5 @@
 use coflow_core::{
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, CftValueType, ModuleId},
     vm::{
         bytecode::{decode_compact, encode_compact, Instruction, Opcode},
         compiler::{compile, CompileContext},
@@ -7,7 +7,7 @@ use coflow_core::{
 };
 
 fn schema() -> coflow_core::schema::CftSchema {
-    build_schema(&parse_modules([CftFile::from_source(ModuleId::from("test"), "table Item { price: int; calc: fn(int) -> int; } table Sword: Item { damage: int; } data Point { x: int; y: int = 0; }")]), &CftDimensionInputs::default()).expect("schema")
+    build_schema(&parse_modules([CftFile::from_source(ModuleId::from("test"), "table Item { price: int; calc: fn(int) -> int; } table Sword: Item { damage: int; } data Point { x: int; y: int = 0; }")])).expect("schema")
 }
 #[test]
 fn compiles_scalar_control_flow_and_closure_programs() {

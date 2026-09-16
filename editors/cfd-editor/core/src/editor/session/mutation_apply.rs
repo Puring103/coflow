@@ -99,8 +99,13 @@ pub(crate) fn apply_collection_edit(
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
         (CfdValue::OptionSome(inner), edit) => {
-            if matches!(inner.as_ref(), CfdValue::OptionSome(_) | CfdValue::OptionNone) {
-                return Err(EditorError::write("nested optional values are not supported"));
+            if matches!(
+                inner.as_ref(),
+                CfdValue::OptionSome(_) | CfdValue::OptionNone
+            ) {
+                return Err(EditorError::write(
+                    "nested optional values are not supported",
+                ));
             }
             apply_collection_edit(*inner, edit, default_item)
                 .map(|value| CfdValue::OptionSome(Box::new(value)))
@@ -218,5 +223,4 @@ mod collection_edit_tests {
             CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)])))
         );
     }
-
 }

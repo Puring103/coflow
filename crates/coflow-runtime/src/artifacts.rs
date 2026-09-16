@@ -223,19 +223,6 @@ fn validate_output_scope(
             }
         }
     }
-    protected.extend(
-        project
-            .config()
-            .dimensions
-            .values()
-            .filter_map(|dimension| {
-                dimension
-                    .out_dir
-                    .as_ref()
-                    .map(|path| ("dimension output", project.resolve_path(path)))
-            }),
-    );
-
     for (label, path) in protected {
         match crate::resolve_existing_or_future_path(&path) {
             Ok(protected_path) if paths_overlap(resolved_output, &protected_path) => {

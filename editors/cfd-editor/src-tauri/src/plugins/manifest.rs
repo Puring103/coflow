@@ -3,9 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+use crate::plugin_manifest::PluginManifest;
 use cfd_editor_core::editor::EditorError;
 use serde::{Deserialize, Serialize};
-use crate::plugin_manifest::PluginManifest;
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

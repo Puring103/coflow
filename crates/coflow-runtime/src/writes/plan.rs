@@ -4,7 +4,6 @@ use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet, WriteFi
 use crate::cfd_loader::CfdWriter;
 use crate::data_model::{CfdValue, RecordOrigin};
 
-use crate::dimensions::DimensionField;
 use crate::indexes::{RecordRef, SourceId};
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
@@ -43,12 +42,6 @@ pub(crate) struct DimensionWritePlan {
     pub(super) manager: Arc<CfdWriter>,
 }
 
-pub(crate) struct DimensionRecordAction {
-    pub(super) source: CfdSource,
-    pub(super) manager: Arc<CfdWriter>,
-    pub(super) field: DimensionField,
-}
-
 pub(crate) enum RenamePlan {
     Noop { coordinate: RecordCoordinate },
     Write(Box<RenameWritePlan>),
@@ -60,7 +53,6 @@ pub(crate) struct RenameWritePlan {
     pub(super) display_path: String,
     pub(super) writer: Arc<CfdWriter>,
     pub(super) reference_actions: Vec<ReferenceUpdateAction>,
-    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct DeletePlan {
@@ -68,7 +60,6 @@ pub(crate) struct DeletePlan {
     pub(super) origin: RecordOrigin,
     pub(super) display_path: String,
     pub(super) writer: Arc<CfdWriter>,
-    pub(super) dimension_actions: Vec<DimensionRecordAction>,
 }
 
 pub(crate) struct ReorderPlan {
@@ -175,7 +166,7 @@ pub(crate) fn prepare_mutation_execution(
         }),
         PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
             let source = source_for_file(session, write_file)?;
-            let manager = catalog.dimension_source_manager();
+            let manager = lookup_source_writer(catalog);
             Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
                 source,
                 manager,
@@ -528,14 +519,12 @@ fn prepare_rename(
     }
     let writer = lookup_source_writer(catalog);
     let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
-    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type);
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
         origin: target_ref.origin.clone(),
         display_path: target_ref.display_path.clone(),
         writer,
         reference_actions,
-        dimension_actions,
     })))
 }
 
@@ -560,45 +549,10 @@ fn prepare_delete(
         )));
     };
     let writer = lookup_source_writer(catalog);
-    let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type);
     Ok(DeletePlan {
         coordinate: record_ref.coordinate.clone(),
         origin: model_record.origin.clone(),
         display_path: record_ref.display_path.clone(),
         writer,
-        dimension_actions,
     })
-}
-
-fn dimension_record_actions(
-    session: &ProjectSession,
-    catalog: &CfdSourceCatalog,
-    actual_type: &str,
-) -> Vec<DimensionRecordAction> {
-    let schema = session.schema();
-    let mut actions = Vec::new();
-    for (entry, field) in session.source_data.dimension_sources() {
-        if field.is_singleton {
-            continue;
-        }
-        let applies = schema
-            .field(actual_type, &field.source_field)
-            .is_some_and(|schema_field| {
-                schema_field.declaring_type == field.source_type
-                    && schema_field
-                        .dimension
-                        .as_ref()
-                        .is_some_and(|binding| binding.dimension == field.dimension)
-            });
-        if !applies {
-            continue;
-        }
-        let manager = catalog.dimension_source_manager();
-        actions.push(DimensionRecordAction {
-            source: entry.source.clone(),
-            manager,
-            field: field.clone(),
-        });
-    }
-    actions
 }

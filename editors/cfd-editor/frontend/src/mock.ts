@@ -41,7 +41,7 @@ export const MOCK_PROJECT: ProjectBootstrap = {
       in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
+        { name: 'Item_name.cfd', path: '@dimension/language', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: '@dimension/language', children: [] },
       ],
     },
     {
@@ -53,7 +53,7 @@ export const MOCK_PROJECT: ProjectBootstrap = {
       in_data: false,
       first_source_descendant: null,
       children: [
-        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
+        { name: 'Item_icon.cfd', path: '@dimension/platform', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: '@dimension/platform', children: [] },
       ],
     },
     {
@@ -73,8 +73,8 @@ export const MOCK_PROJECT: ProjectBootstrap = {
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
-    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], out_dir: 'data/dimensions/language', fields: [] },
-    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], out_dir: 'data/dimensions/platform', fields: [] },
+    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [] },
+    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], fields: [] },
   ],
   file_types: {
     'data/item.cfd': [
@@ -212,9 +212,9 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
 }
 
 export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {
-  'data/dimensions/language/Item_name.cfd': {
+  '@dimension/language': {
     revision: 1,
-    file_path: 'data/dimensions/language/Item_name.cfd',
+    file_path: '@dimension/language',
     dimension: 'language',
     display_name: '本地化',
     variants: ['zh-CN', 'en-US'],
@@ -241,9 +241,9 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
     ],
   },
-  'data/dimensions/platform/Item_icon.cfd': {
+  '@dimension/platform': {
     revision: 1,
-    file_path: 'data/dimensions/platform/Item_icon.cfd',
+    file_path: '@dimension/platform',
     dimension: 'platform',
     display_name: '平台',
     variants: ['mobile', 'desktop'],

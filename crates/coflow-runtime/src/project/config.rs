@@ -1,7 +1,6 @@
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -15,7 +14,6 @@ pub struct ProjectConfig {
     /// Code targets are the only published outputs.  The field is deliberately
     /// named `codegen` so data-export concepts cannot reappear in configuration.
     pub codegen: Vec<OutputConfig>,
-    pub dimensions: BTreeMap<String, DimensionConfig>,
 }
 
 impl Serialize for ProjectConfig {
@@ -24,13 +22,10 @@ impl Serialize for ProjectConfig {
         S: Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(4))?;
+        let mut map = serializer.serialize_map(Some(3))?;
         map.serialize_entry("schema", &self.schema)?;
         map.serialize_entry("data", &self.data)?;
         map.serialize_entry("codegen", &self.codegen)?;
-        if !self.dimensions.is_empty() {
-            map.serialize_entry("dimensions", &self.dimensions)?;
-        }
         map.end()
     }
 }
@@ -53,12 +48,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
             .remove("codegen")
             .map(|value| config_value(value).map_err(de::Error::custom))
             .transpose()?;
-        let dimensions = fields
-            .remove("dimensions")
-            .map(|value| config_value(value).map_err(de::Error::custom))
-            .transpose()?
-            .unwrap_or_default();
-
         if let Some(key) = fields.keys().next() {
             return Err(de::Error::custom(format!("unknown field `{key}`")));
         }
@@ -79,7 +68,6 @@ impl<'de> Deserialize<'de> for ProjectConfig {
             schema,
             data,
             codegen,
-            dimensions,
         })
     }
 }
@@ -96,19 +84,6 @@ fn data_value(value: Value) -> Result<Vec<SourceConfig>, String> {
             .collect(),
         _ => Err("data must be a path or a list of paths".to_string()),
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct DimensionConfig {
-    #[serde(default)]
-    pub variants: Vec<String>,
-    pub out_dir: Option<PathBuf>,
-    /// Human-readable label for this dimension. The editor falls back to a
-    /// built-in mapping (e.g. `"language" → "本地化"`) when missing, and to
-    /// the raw dimension name otherwise.
-    #[serde(default)]
-    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::api::{
-    CfdSource, CfdSourceCatalog, DiagnosticSet, DimensionSourceSchema, WriteCellRequest,
+    CfdSource, CfdSourceCatalog, DiagnosticSet, DimensionFieldSchema, WriteCellRequest,
     WriteDimensionValueRequest, WriteFieldPathSegment,
 };
 use crate::cfd_loader::CfdWriter;
@@ -11,7 +11,7 @@ use crate::data_model::{
 };
 use coflow_core::schema::{CftSchema, RecordKey};
 
-use super::writer::lookup_source_writer;
+use super::writer::{lookup_source_writer, source_for_file};
 use crate::indexes::SourceId;
 use crate::ProjectSession;
 
@@ -68,9 +68,9 @@ impl ReferenceUpdateAction {
 
 pub(super) struct OwnedDimensionWriteRequest {
     source: CfdSource,
+    actual_type: String,
     source_type: coflow_core::schema::TypeName,
     source_field: coflow_core::schema::FieldName,
-    dimension: coflow_core::schema::DimensionName,
     variant: coflow_core::schema::VariantName,
     source_key: RecordKey,
     new_value: CfdValue,
@@ -81,12 +81,6 @@ impl OwnedDimensionWriteRequest {
         &'a self,
         schema: &'a CftSchema,
     ) -> Result<WriteDimensionValueRequest<'a>, DiagnosticSet> {
-        let source_type = schema.resolve_type(&self.source_type).ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension source type `{}` disappeared before reference rewrite",
-                self.source_type
-            ))
-        })?;
         let source_field = schema
             .field(&self.source_type, &self.source_field)
             .ok_or_else(|| {
@@ -95,20 +89,13 @@ impl OwnedDimensionWriteRequest {
                     self.source_type, self.source_field
                 ))
             })?;
-        let dimension = schema.resolve_dimension(&self.dimension).ok_or_else(|| {
-            transaction_invariant(format!(
-                "dimension `{}` disappeared before reference rewrite",
-                self.dimension
-            ))
-        })?;
         Ok(WriteDimensionValueRequest {
             source: &self.source,
-            schema: DimensionSourceSchema {
+            schema: DimensionFieldSchema {
                 schema,
-                dimension,
-                source_type,
                 source_field,
             },
+            actual_type: &self.actual_type,
             source_key: &self.source_key,
             variant: &self.variant,
             new_value: Some(&self.new_value),
@@ -201,29 +188,26 @@ pub(super) fn reference_update_actions(
                         dimension.field
                     ))
                 })?;
-            let source_entry = session
-                .source_data
-                .dimension_source(
-                    field.declaring_type.as_str(),
-                    field.name.as_str(),
-                    dimension.dimension.as_str(),
-                )
+            let display_path = session
+                .file_for_record(host_record.actual_type(), host_record.key())
                 .ok_or_else(|| {
                     transaction_invariant(format!(
-                        "dimension field `{}.{}` lost its managed source before reference rewrite",
-                        field.declaring_type, field.name
+                        "dimension host record `{}:{}` lost its source before reference rewrite",
+                        host_record.key(),
+                        host_record.actual_type()
                     ))
                 })?;
-            let manager = catalog.dimension_source_manager();
+            let source = source_for_file(session, display_path)?;
+            let manager = lookup_source_writer(catalog);
             let action_index = actions.len();
             actions.push(ReferenceUpdateAction::Dimension {
                 manager,
-                display_path: source_entry.display_path.clone(),
+                display_path: display_path.to_string(),
                 request: Box::new(OwnedDimensionWriteRequest {
-                    source: source_entry.source.clone(),
+                    source,
+                    actual_type: host_record.actual_type().to_string(),
                     source_type: field.declaring_type.clone(),
                     source_field: field.name.clone(),
-                    dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
                     source_key: RecordKey::new(host_record.key().to_string()).map_err(|error| {
                         transaction_invariant(format!(

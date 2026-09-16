@@ -23,7 +23,7 @@ mod schema_sources;
 mod validation;
 
 pub use crate::api::path_to_slash;
-pub use config::{DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig};
+pub use config::{OutputConfig, ProjectConfig, SchemaConfig, SourceConfig};
 pub use config_write::{
     add_project_input, create_project_file, delete_project_entry, ProjectInputKind,
 };
@@ -194,13 +194,6 @@ impl Project {
                     .data
                     .iter()
                     .map(|source| self.resolve_path(source.path())),
-            )
-            .chain(
-                self.config
-                    .dimensions
-                    .values()
-                    .filter_map(|dimension| dimension.out_dir.as_deref())
-                    .map(|path| self.resolve_path(path)),
             )
             .map(|path| normalize_path(&path))
             .collect::<Vec<_>>();

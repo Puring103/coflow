@@ -2,8 +2,8 @@ use crate::api::{Diagnostic, DiagnosticSet};
 use crate::project::{normalize_path, Project};
 use coflow_core::schema::syntax::parser::CftParseOptions;
 use coflow_core::schema::{
-    build_schema_with_limits, parse_modules_with_options, CftDimensionInputs, CftFile,
-    CftModuleSet, CftSchema, ModuleId,
+    build_schema_with_limits, parse_modules_with_options, CftFile, CftModuleSet, CftSchema,
+    ModuleId,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -90,25 +90,10 @@ fn collect_project_schema(
         .modules()
         .map(|(id, module)| (id.as_str().to_string(), module.path().display().to_string()))
         .collect();
-    let dimensions = CftDimensionInputs::try_new(
-        project
-            .config()
-            .dimensions
-            .iter()
-            .map(|(name, config)| (name.clone(), config.variants.clone())),
-    )
-    .map_err(|error| {
-        DiagnosticSet::one(Diagnostic::error(
-            "RUNTIME-INTERNAL",
-            "RUNTIME",
-            format!("validated project dimensions are invalid: {error}"),
-        ))
-    })?;
-    let (schema, cft_diagnostics) =
-        match build_schema_with_limits(&modules, &dimensions, limits.structural) {
-            Ok(schema) => (Some(schema), Vec::new()),
-            Err(errors) => (None, errors.diagnostics),
-        };
+    let (schema, cft_diagnostics) = match build_schema_with_limits(&modules, limits.structural) {
+        Ok(schema) => (Some(schema), Vec::new()),
+        Err(errors) => (None, errors.diagnostics),
+    };
     let diagnostics =
         diagnostic_set_from_cft(dedupe_cft_diagnostics(cft_diagnostics), &sources, &paths);
     Ok(ProjectSchemaAttempt {

@@ -10,7 +10,7 @@ use crate::{ProjectSession, RecordCoordinate};
 use super::coercion::coerce_mutation_value;
 use super::prepare::set_nested_value;
 use super::types::{
-    DimensionSourceCoordinate, DimensionValueCoordinate, DimensionValueExpectation,
+    DimensionValueCoordinate, DimensionValueExpectation, DimensionWriteCoordinate,
     PreparedMutationOp,
 };
 use super::{
@@ -73,25 +73,23 @@ pub(super) fn prepare_dimension_value(
         pending_records,
     )?;
 
-    let entry = session
-        .source_data
-        .dimension_source(
-            target.field.declaring_type.as_str(),
-            target.field.name.as_str(),
-            target.binding.dimension.as_str(),
+    let write_file = session
+        .file_for_record(
+            target.record.actual_type.as_str(),
+            target.record.key.as_str(),
         )
         .ok_or_else(|| {
             one_mutation_error(
                 "MUTATION-DIMENSION",
                 format!(
-                    "dimension field `{}.{}` has no managed source",
-                    target.field.declaring_type, target.field.name
+                    "record `{}:{}` has no writable CFD source",
+                    target.record.key, target.record.actual_type
                 ),
             )
         })?;
     Ok(PreparedMutationOp::WriteDimensionValue {
         record: target.record,
-        coordinate: DimensionSourceCoordinate {
+        coordinate: DimensionWriteCoordinate {
             source_type: target.field.declaring_type.clone(),
             source_key: record_key,
             field: target.field.name.clone(),
@@ -100,7 +98,7 @@ pub(super) fn prepare_dimension_value(
             path: CfdPath { segments: path },
         },
         new_value,
-        write_file: entry.display_path.clone(),
+        write_file: write_file.to_string(),
     })
 }
 
@@ -141,19 +139,10 @@ fn resolve_dimension_target<'schema>(
             ),
         ));
     }
-    let schema_dimension = session
-        .schema()
-        .resolve_dimension(dimension)
-        .ok_or_else(|| {
-            one_mutation_error(
-                "MUTATION-DIMENSION",
-                format!("unknown dimension `{dimension}`"),
-            )
-        })?;
-    let schema_variant = schema_dimension.variant(variant).ok_or_else(|| {
+    let schema_variant = VariantName::new(variant.to_string()).map_err(|_| {
         one_mutation_error(
             "MUTATION-DIMENSION",
-            format!("unknown variant `{dimension}.{variant}`"),
+            format!("invalid variant `{dimension}.{variant}`"),
         )
     })?;
     Ok(DimensionMutationTarget {
@@ -161,7 +150,7 @@ fn resolve_dimension_target<'schema>(
         record_id,
         field: schema_field,
         binding,
-        variant: schema_variant.clone(),
+        variant: schema_variant,
     })
 }
 
@@ -173,16 +162,13 @@ fn dimension_path_type(
 ) -> Result<CftValueType, DiagnosticSet> {
     let mut full_path = vec![CfdPathSegment::Field(field.to_string())];
     full_path.extend(path.iter().cloned());
-    let mut expected_type = write_rules::expected_type_for_cfd_path(
+    let expected_type = write_rules::expected_type_for_cfd_path(
         session.schema(),
         actual_type,
         &full_path,
         "MUTATION-DIMENSION-PATH",
         "MUTATION",
     )?;
-    if path.is_empty() && !matches!(expected_type, CftValueType::Option(_)) {
-        expected_type = CftValueType::Option(Box::new(expected_type));
-    }
     Ok(expected_type)
 }
 

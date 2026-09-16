@@ -1,6 +1,6 @@
 //! File-tree view for the project.
 //!
-//! Surfaces CFD files under the project root and groups managed dimension
+//! Surfaces CFD files under the project root and groups virtual dimension
 //! directories under a display-named virtual folder.
 
 use serde::{Deserialize, Serialize};

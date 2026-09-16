@@ -10,7 +10,7 @@ mod stage;
 mod target;
 mod writer;
 
-use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
+use crate::api::{DiagnosticSet, WriteFieldPathSegment};
 use crate::data_model::{CfdPath, CfdRecord, CfdValue};
 use std::collections::BTreeSet;
 
@@ -62,10 +62,6 @@ impl MutationImpact {
             }
         }
         impact
-    }
-
-    pub(crate) fn changed_records(&self) -> BTreeSet<RecordCoordinate> {
-        self.records.clone()
     }
 
     fn add_operation_change(&mut self, operation: &crate::mutation::PreparedMutationOp) {
@@ -147,16 +143,10 @@ pub(crate) fn effective_write_target_for_path(
 
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
-    catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
     source_overrides: &[crate::DataSourceTextOverride],
 ) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(
-        session,
-        catalog,
-        impact,
-        source_overrides,
-    )
+    crate::session_build::rebuild_project_session_from_generation(session, impact, source_overrides)
 }
 
 #[cfg(test)]
@@ -197,7 +187,7 @@ mod tests {
         let touched = crate::WriteOutcome::touch(record.clone());
         let operations = [(&price, &touched), (&name, &touched)];
         let impact = MutationImpact::from_operations(operations);
-        assert_eq!(impact.changed_records(), BTreeSet::from([record.clone()]));
+        assert_eq!(impact.records, BTreeSet::from([record.clone()]));
 
         let deleted = PreparedMutationOp::DeleteRecord {
             record: record.clone(),
@@ -209,7 +199,7 @@ mod tests {
         };
         let impact =
             MutationImpact::from_operations([(&price, &touched), (&deleted, &deleted_outcome)]);
-        assert_eq!(impact.changed_records(), BTreeSet::from([record]));
+        assert_eq!(impact.records, BTreeSet::from([record]));
         assert!(impact.structural_change);
     }
 }

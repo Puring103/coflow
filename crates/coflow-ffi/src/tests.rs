@@ -1,34 +1,87 @@
 use super::*;
-use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
 #[test]
 fn operation_codes_match_the_public_header_and_csharp_runtime() {
     let header = include_str!("../include/coflow.h");
     let csharp = include_str!("../../../runtimes/csharp/Coflow.Runtime/src/Native.cs");
     let operations = [
-        ("COFLOW_LOAD_CONTRACT", "LoadContract", Operation::LoadContract),
-        ("COFLOW_CONTRACT_IDENTITY", "ContractIdentity", Operation::ContractIdentity),
-        ("COFLOW_NEW_BUILDER", "CreateBuilder", Operation::CreateBuilder),
+        (
+            "COFLOW_LOAD_CONTRACT",
+            "LoadContract",
+            Operation::LoadContract,
+        ),
+        (
+            "COFLOW_CONTRACT_IDENTITY",
+            "ContractIdentity",
+            Operation::ContractIdentity,
+        ),
+        (
+            "COFLOW_NEW_BUILDER",
+            "CreateBuilder",
+            Operation::CreateBuilder,
+        ),
         ("COFLOW_ADD_CFD", "AddDataSource", Operation::AddDataSource),
-        ("COFLOW_BUILD_RUNTIME", "BuildRuntime", Operation::BuildRuntime),
+        (
+            "COFLOW_BUILD_RUNTIME",
+            "BuildRuntime",
+            Operation::BuildRuntime,
+        ),
         ("COFLOW_RECORD_COUNT", "TableLength", Operation::TableLength),
         ("COFLOW_RECORD_AT", "TableValue", Operation::TableValue),
         ("COFLOW_FIELD", "ReadField", Operation::ReadField),
         ("COFLOW_DESCRIBE", "InspectValue", Operation::InspectValue),
         ("COFLOW_TEXT", "ReadText", Operation::ReadText),
         ("COFLOW_ARRAY_AT", "ArrayValue", Operation::ArrayValue),
-        ("COFLOW_DICT_KEY_AT", "DictionaryKey", Operation::DictionaryKey),
-        ("COFLOW_DICT_VALUE_AT", "DictionaryValue", Operation::DictionaryValue),
+        (
+            "COFLOW_DICT_KEY_AT",
+            "DictionaryKey",
+            Operation::DictionaryKey,
+        ),
+        (
+            "COFLOW_DICT_VALUE_AT",
+            "DictionaryValue",
+            Operation::DictionaryValue,
+        ),
         ("COFLOW_CALL", "Invoke", Operation::Invoke),
         ("COFLOW_TYPE_NAME", "TypeName", Operation::TypeName),
-        ("COFLOW_PROGRAM_SOURCE", "ProgramSource", Operation::ProgramSource),
-        ("COFLOW_TRY_RECORD", "TryFindRecord", Operation::TryFindRecord),
-        ("COFLOW_DIMENSION_VALUE", "DimensionVariant", Operation::DimensionVariant),
+        (
+            "COFLOW_PROGRAM_SOURCE",
+            "ProgramSource",
+            Operation::ProgramSource,
+        ),
+        (
+            "COFLOW_TRY_RECORD",
+            "TryFindRecord",
+            Operation::TryFindRecord,
+        ),
+        (
+            "COFLOW_DIMENSION_VALUE",
+            "DimensionVariant",
+            Operation::DimensionVariant,
+        ),
         ("COFLOW_VALUE_EQUALS", "ValueEquals", Operation::ValueEquals),
-        ("COFLOW_DIMENSION_DEFAULT", "DimensionDefault", Operation::DimensionDefault),
+        (
+            "COFLOW_DIMENSION_DEFAULT",
+            "DimensionDefault",
+            Operation::DimensionDefault,
+        ),
+        (
+            "COFLOW_DIMENSION_VARIANT_KEY",
+            "DimensionVariantKey",
+            Operation::DimensionVariantKey,
+        ),
         ("COFLOW_SINGLETON", "Singleton", Operation::Singleton),
-        ("COFLOW_DICT_FIND", "DictionaryFind", Operation::DictionaryFind),
-        ("COFLOW_CANONICAL_VALUE", "CanonicalValue", Operation::CanonicalValue),
+        (
+            "COFLOW_DICT_FIND",
+            "DictionaryFind",
+            Operation::DictionaryFind,
+        ),
+        (
+            "COFLOW_CANONICAL_VALUE",
+            "CanonicalValue",
+            Operation::CanonicalValue,
+        ),
         ("COFLOW_NEW_BUFFER", "CreateBuffer", Operation::CreateBuffer),
         ("COFLOW_RUN_CHECKS", "RunChecks", Operation::RunChecks),
     ];
@@ -75,9 +128,7 @@ fn value_request(
 }
 fn contract(source: &str) -> Handle {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("test"), source)]);
-    let contract =
-        Contract::new(build_schema(&modules, &CftDimensionInputs::default()).expect("schema"))
-            .expect("contract");
+    let contract = Contract::new(build_schema(&modules).expect("schema")).expect("contract");
     let result = request(1, 0, &[], &contract.to_bytes().expect("bytes"), 0);
     assert_eq!(result.error, 0);
     Handle(result.handle)

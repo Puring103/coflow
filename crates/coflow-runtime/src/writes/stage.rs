@@ -1,7 +1,7 @@
 use crate::api::{
-    DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceSchema, InsertRecordRequest,
-    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest,
-    RewriteDimensionRecordRequest, WriteCellRequest, WriteDimensionValueRequest, WriteRecordRef,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionFieldSchema, InsertRecordRequest,
+    RenameRecordRequest, ReorderRecordsOperation, ReorderRecordsRequest, WriteCellRequest,
+    WriteDimensionValueRequest, WriteRecordRef,
 };
 use crate::data_model::CfdValue;
 use coflow_core::schema::RecordKey;
@@ -11,8 +11,8 @@ use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 use super::plan::{
-    DeletePlan, DimensionRecordAction, DimensionWritePlan, InsertPlan, MutationExecutionPlan,
-    RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
+    DeletePlan, DimensionWritePlan, InsertPlan, MutationExecutionPlan, RenamePlan, RenameWritePlan,
+    ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -95,7 +95,7 @@ pub(crate) fn stage_mutation_op(
             MutationExecutionPlan::Rename(plan),
         ) => stage_rename_record_key(session, plan, record, new_key),
         (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {
-            stage_delete_record(session, plan, record)
+            stage_delete_record(plan, record)
         }
         (
             PreparedMutationOp::SwapRecords { .. } | PreparedMutationOp::MoveRecord { .. },
@@ -261,30 +261,23 @@ fn stage_write_dimension_value(
     session: &ProjectSession,
     plan: &DimensionWritePlan,
     record: &RecordCoordinate,
-    coordinate: &crate::mutation::DimensionSourceCoordinate,
+    coordinate: &crate::mutation::DimensionWriteCoordinate,
     new_value: Option<&CfdValue>,
     write_file: &str,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
-    let source_type = schema
-        .resolve_type(&coordinate.source_type)
-        .ok_or_else(|| plan_mismatch("dimension source type disappeared before staging"))?;
     let source_field = schema
         .field(&coordinate.source_type, &coordinate.field)
         .ok_or_else(|| plan_mismatch("dimension source field disappeared before staging"))?;
-    let dimension = schema
-        .resolve_dimension(&coordinate.dimension)
-        .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
     let result = plan
         .manager
         .write_dimension_value(&WriteDimensionValueRequest {
             source: &plan.source,
-            schema: DimensionSourceSchema {
+            schema: DimensionFieldSchema {
                 schema,
-                dimension,
-                source_type,
                 source_field,
             },
+            actual_type: &record.actual_type,
             source_key: &coordinate.source_key,
             variant: &coordinate.variant,
             new_value,
@@ -354,16 +347,8 @@ fn stage_rename_record_key(
         diagnostics.extend(action.execute(schema)?);
         affected_files.insert(action.display_path().to_string());
     }
-    let old_key = plan.old_coordinate.key.clone();
     let new_dimension_key = RecordKey::new(new_key.to_string())
         .map_err(|_| plan_mismatch("new record key became invalid before dimension staging"))?;
-    rewrite_dimension_records(
-        session,
-        &plan.dimension_actions,
-        &old_key,
-        Some(&new_dimension_key),
-        &mut affected_files,
-    )?;
 
     let new_coordinate =
         RecordCoordinate::new(plan.old_coordinate.actual_type.clone(), new_dimension_key);
@@ -414,7 +399,6 @@ fn stage_insert_record(
 }
 
 fn stage_delete_record(
-    session: &ProjectSession,
     plan: &DeletePlan,
     record: &RecordCoordinate,
 ) -> Result<WriteOutcome, DiagnosticSet> {
@@ -424,15 +408,7 @@ fn stage_delete_record(
         actual_type: &record.actual_type,
     };
     let writer_outcome = plan.writer.delete_record(&request)?;
-    let old_key = record.key.clone();
-    let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
-    rewrite_dimension_records(
-        session,
-        &plan.dimension_actions,
-        &old_key,
-        None,
-        &mut affected_files,
-    )?;
+    let affected_files = BTreeSet::from([plan.display_path.clone()]);
     Ok(WriteOutcome {
         touched: Vec::new(),
         inserted: None,
@@ -521,44 +497,6 @@ fn write_record_ref(position: &super::plan::ResolvedRecordPosition) -> WriteReco
         record_key: &position.coordinate.key,
         actual_type: &position.coordinate.actual_type,
     }
-}
-
-fn rewrite_dimension_records(
-    session: &ProjectSession,
-    actions: &[DimensionRecordAction],
-    old_key: &RecordKey,
-    new_key: Option<&RecordKey>,
-    affected_files: &mut BTreeSet<String>,
-) -> Result<(), DiagnosticSet> {
-    let schema = session.schema();
-    for action in actions {
-        let source_type = schema
-            .resolve_type(&action.field.source_type)
-            .ok_or_else(|| plan_mismatch("dimension source type disappeared before staging"))?;
-        let source_field = schema
-            .field(&action.field.source_type, &action.field.source_field)
-            .ok_or_else(|| plan_mismatch("dimension source field disappeared before staging"))?;
-        let dimension = schema
-            .resolve_dimension(&action.field.dimension)
-            .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
-        let result = action
-            .manager
-            .rewrite_dimension_record(&RewriteDimensionRecordRequest {
-                source: &action.source,
-                schema: DimensionSourceSchema {
-                    schema,
-                    dimension,
-                    source_type,
-                    source_field,
-                },
-                old_key,
-                new_key,
-            })?;
-        if result.changed {
-            affected_files.insert(action.source.display_name.clone());
-        }
-    }
-    Ok(())
 }
 
 fn plan_mismatch(message: &str) -> DiagnosticSet {

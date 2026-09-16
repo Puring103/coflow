@@ -1,6 +1,6 @@
 //! 复现字节码的完整程序体积和解码成本。两种存储编码使用相同逻辑程序。
 use coflow_core::{
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::{
         bytecode::{decode_compact, encode_compact, Instruction, Program},
         compiler::{compile, CompileContext},
@@ -14,13 +14,10 @@ fn programs<'a>(program: &'a Program, out: &mut Vec<&'a Program>) {
     }
 }
 fn main() {
-    let schema = build_schema(
-        &parse_modules([CftFile::from_source(
-            ModuleId::from("benchmark"),
-            "@Host singleton Service { read: fn(int) -> int; }",
-        )]),
-        &CftDimensionInputs::default(),
-    )
+    let schema = build_schema(&parse_modules([CftFile::from_source(
+        ModuleId::from("benchmark"),
+        "@Host singleton Service { read: fn(int) -> int; }",
+    )]))
     .unwrap();
     let wide = format!(
         "fn() -> int {{ [{}].sum() }}",

@@ -29,9 +29,7 @@ pub use diagnostics::{
     FlatDiagnostic, Label, LineIndex, Severity, SourceLocation, TextPosition, TextRange,
 };
 pub(crate) use operations::{
-    DimensionSourceEntry, DimensionSourceLoadRequest, DimensionSourceLoadResult,
-    DimensionSourceRequest, DimensionSourceResult, DimensionSourceSchema,
-    RewriteDimensionRecordRequest, WriteDimensionValueRequest,
+    DimensionFieldSchema, DimensionWriteResult, WriteDimensionValueRequest,
 };
 pub(crate) use source::{CfdLoadContext, CfdSource, CfdSourcePath, LoadedCfdSource};
 pub use writer::WriterCapabilities;

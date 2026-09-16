@@ -39,6 +39,9 @@ pub fn analyze(schema: &CftSchema, input: SourceInput) -> (SourceAnalysis, Vec<L
             for value in record.record.fields.values_mut() {
                 locate_callable_paths(value, &input.path.to_string_lossy());
             }
+            for value in &mut record.record.dimension_values {
+                locate_callable_paths(&mut value.value, &input.path.to_string_lossy());
+            }
             record.record.with_origin(RecordOrigin::File {
                 path: input.path.clone(),
                 span: None,
@@ -63,56 +66,12 @@ pub fn load(
     let mut errors = Vec::new();
     let mut builder = CfdDataModel::builder(schema);
     let mut origins = Vec::new();
-    let mut dimension_records = std::collections::BTreeSet::new();
     for input in inputs {
         let (analysis, records) = analyze(schema, input);
         errors.extend(analysis.diagnostics.iter().cloned());
         for record in records {
             origins.push(record.origin.clone());
-            if let Some((dimension, field)) = dimension_source(schema, &record.actual_type) {
-                if !dimension_records.insert((record.actual_type.clone(), record.key.clone())) {
-                    errors.push(CfdTextDiagnostic::error(
-                        CfdTextErrorCode::TypeMismatch,
-                        format!(
-                            "duplicate dimension record `{}::{}`",
-                            record.actual_type, record.key
-                        ),
-                        CfdTextSpan::default(),
-                    ));
-                    continue;
-                }
-                for (variant, value) in record.fields {
-                    let Some(variant) = dimension
-                        .variants
-                        .iter()
-                        .find(|name| name.as_str() == variant)
-                    else {
-                        continue;
-                    };
-                    let key = match crate::schema::RecordKey::new(record.key.clone()) {
-                        Ok(key) => key,
-                        Err(error) => {
-                            errors.push(CfdTextDiagnostic::error(
-                                CfdTextErrorCode::TypeMismatch,
-                                error.to_string(),
-                                CfdTextSpan::default(),
-                            ));
-                            continue;
-                        }
-                    };
-                    builder.add_dimension_value_draft(crate::DimensionValueDraft {
-                        source_type: field.declaring_type.clone(),
-                        source_key: key,
-                        field: field.name.clone(),
-                        dimension: dimension.name.clone(),
-                        variant: variant.clone(),
-                        value,
-                        origin: record.origin.clone(),
-                    });
-                }
-            } else {
-                builder.add_loaded_record(record);
-            }
+            builder.add_loaded_record(record);
         }
         analyses.push(analysis);
     }
@@ -129,47 +88,8 @@ pub fn load(
         .map_err(|diagnostics| CfdTextLoadError::DataModel {
             diagnostics,
             origins,
-        })
-        .and_then(|model| {
-            for (generated, key) in dimension_records {
-                let Some((_, field)) = dimension_source(schema, &generated) else {
-                    continue;
-                };
-                if !model
-                    .records_assignable_to(schema, field.declaring_type.as_str())
-                    .any(|(_, record)| record.key() == key)
-                {
-                    return Err(CfdTextLoadError::Text(CfdTextDiagnostics {
-                        diagnostics: vec![CfdTextDiagnostic::error(
-                            CfdTextErrorCode::TypeMismatch,
-                            format!("dimension record `{generated}::{key}` has no business record"),
-                            CfdTextSpan::default(),
-                        )],
-                    }));
-                }
-            }
-            Ok(model)
         });
     (analyses, result)
-}
-
-pub fn dimension_source<'a>(
-    schema: &'a CftSchema,
-    name: &str,
-) -> Option<(&'a crate::schema::CftDimension, &'a crate::schema::CftField)> {
-    schema.all_dimensions().find_map(|dimension| {
-        dimension
-            .fields
-            .iter()
-            .find(|field| {
-                crate::schema::dimension_record_type(
-                    dimension.name.as_str(),
-                    field.declaring_type.as_str(),
-                    field.name.as_str(),
-                ) == name
-            })
-            .map(|field| (dimension, field.as_ref()))
-    })
 }
 
 fn locate_callable_paths(value: &mut crate::LoadedValueDraft, path: &str) {

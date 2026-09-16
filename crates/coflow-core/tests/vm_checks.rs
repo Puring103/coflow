@@ -2,12 +2,12 @@ use coflow_core::{
     check::{CheckLimits, EvaluationLimits},
     contract::Contract,
     runtime::{CheckSelection, RuntimeBuilder},
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, ModuleId},
 };
 use std::sync::Arc;
 fn runtime(source: &str, data: &str) -> Arc<coflow_core::runtime::Runtime> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("checks"), source)]);
-    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let schema = build_schema(&modules).expect("schema");
     let contract = Arc::new(Contract::new(schema).expect("compiled contract"));
     let contract = Arc::new(
         Contract::from_bytes(&contract.to_bytes().expect("bytes")).expect("load bytecode"),
@@ -65,10 +65,10 @@ fn invalid_function_and_check_bodies_fail_contract_compilation() {
         "table Item { check { return; } }",
         "table Item { check { missing(); } }",
     ] {
-        let schema = build_schema(
-            &parse_modules([CftFile::from_source(ModuleId::from("invalid"), source)]),
-            &CftDimensionInputs::default(),
-        )
+        let schema = build_schema(&parse_modules([CftFile::from_source(
+            ModuleId::from("invalid"),
+            source,
+        )]))
         .expect("declarations");
         assert!(Contract::new(schema).is_err(), "{source}");
     }

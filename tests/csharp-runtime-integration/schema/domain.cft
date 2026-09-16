@@ -27,3 +27,8 @@ table Character {
 table Hero : Character {
   level: int = 1;
 }
+
+table LocalizedText {
+  @localized
+  value: string;
+}

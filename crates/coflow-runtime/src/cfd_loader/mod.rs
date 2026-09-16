@@ -196,7 +196,7 @@ mod tests {
 
     use std::fs;
 
-    use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
     use super::CfdLoader;
     use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
@@ -207,7 +207,7 @@ mod tests {
             ModuleId::from("main"),
             "table Item { value: int; }",
         )]);
-        build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
+        build_schema(&modules).expect("schema")
     }
 
     #[test]

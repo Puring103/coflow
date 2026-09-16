@@ -10,10 +10,6 @@ use super::CFD_INDENT;
 /// emitted as `&key`; the target type is supplied by the surrounding schema
 /// context rather than by the value syntax.
 #[must_use]
-pub(super) fn serialize_value(v: &CfdValue, depth: usize) -> String {
-    serialize_value_for_type(v, None, None, depth)
-}
-
 // 值序列化与 CFT 类型枚举逐项对应，集中分派能保证所有复合值使用相同缩进上下文。
 #[allow(clippy::too_many_lines)]
 pub(super) fn serialize_value_for_type(
@@ -202,9 +198,7 @@ fn option_inner(expected: Option<&CftValueType>) -> Option<&CftValueType> {
 mod tests {
     use super::serialize_value_for_type;
     use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
-    use coflow_core::schema::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId,
-    };
+    use coflow_core::schema::{build_schema, parse_modules, CftFile, CftValueType, ModuleId};
     use std::collections::BTreeMap;
 
     #[test]
@@ -244,8 +238,7 @@ mod tests {
             ModuleId::from("main"),
             "@flag enum Access { Empty = 0, Read = 1, Write = 2, Execute = 4 }",
         )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default())
-            .map_err(|error| format!("{error:?}"))?;
+        let schema = build_schema(&modules).map_err(|error| format!("{error:?}"))?;
         let schema_enum = schema
             .resolve_enum("Access")
             .ok_or_else(|| "missing Access enum".to_string())?;
