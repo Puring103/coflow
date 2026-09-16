@@ -22,6 +22,7 @@ pub struct LoadedRecordDraft {
     /// Where this top-level record originated. Loaders set this when parsing;
     /// synthetic records leave it as [`RecordOrigin::None`].
     pub origin: RecordOrigin,
+    pub dimension_values: Vec<DimensionValueDraft>,
 }
 
 impl LoadedRecordDraft {
@@ -39,11 +40,15 @@ impl LoadedRecordDraft {
                 .map(|(name, value)| (name.into(), value))
                 .collect(),
             origin: RecordOrigin::None,
+            dimension_values: Vec::new(),
         }
     }
 
     #[must_use]
     pub fn with_origin(mut self, origin: RecordOrigin) -> Self {
+        for value in &mut self.dimension_values {
+            value.origin = origin.clone();
+        }
         self.origin = origin;
         self
     }

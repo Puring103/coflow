@@ -334,10 +334,6 @@ fn schema_input_fingerprint(
         source_override.normalized_path.hash(&mut hasher);
         source_override.source.hash(&mut hasher);
     }
-    for (dimension, config) in &project.config().dimensions {
-        dimension.hash(&mut hasher);
-        config.variants.hash(&mut hasher);
-    }
     Ok(hasher.finish())
 }
 
@@ -359,7 +355,6 @@ impl Runtime {
     }
 
     /// Opens data for editor, inspection, and background tasks that must not
-    /// write generated dimension sources.
     ///
     /// # Errors
     ///
@@ -405,7 +400,7 @@ impl Runtime {
             .map(BuildProjectSession::new)
     }
 
-    /// Opens a mutation-capable session without generating dimension files.
+    /// Opens a mutation-capable session over the configured business CFD files.
     /// The session owns the CFD catalog used by every command and rebuild.
     ///
     /// # Errors
@@ -549,9 +544,7 @@ pub struct WriteProjectSession {
 /// 编辑器对未保存草稿做项目级校验所需的只读快照。
 #[derive(Debug, Clone)]
 pub struct SourceValidationContext {
-    project: Project,
     schema: Arc<CftSchema>,
-    dimension_plan: Arc<crate::dimensions::DimensionRuntimePlan>,
     source_data: crate::load::SourceDataCache,
 }
 
@@ -568,21 +561,13 @@ impl SourceValidationContext {
             .collect::<BTreeSet<_>>();
         let reload_paths = self.source_data.display_paths_for_paths(&override_paths);
         let mut indexes = SessionIndexBuilder::default();
-        let catalog = CfdSourceCatalog::default();
         let result = reload_project_data_from_cache(
-            &self.project,
             &self.schema,
-            &self.dimension_plan,
-            &catalog,
             &mut indexes,
             &self.source_data,
             &reload_paths,
             ReloadProjectDataOptions {
-                load: LoadProjectDataOptions {
-                    include_implicit_dimension_sources: !self.dimension_plan.is_empty(),
-                    run_checks: true,
-                },
-                refresh_implicit_dimension_sources: false,
+                load: LoadProjectDataOptions { run_checks: true },
                 source_overrides: overrides,
             },
         );
@@ -672,9 +657,7 @@ impl WriteProjectSession {
     #[must_use]
     pub fn validation_context(&self) -> SourceValidationContext {
         SourceValidationContext {
-            project: self.session.project.clone(),
             schema: Arc::clone(&self.session.schema),
-            dimension_plan: Arc::clone(&self.session.dimension_plan),
             source_data: self.session.source_data.clone(),
         }
     }

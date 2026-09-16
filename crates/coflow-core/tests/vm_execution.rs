@@ -1,14 +1,14 @@
 use coflow_core::{
     contract::Contract,
     runtime::{HostValue, Runtime, RuntimeBuilder},
-    schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId},
+    schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::executor::ExecutionLimits,
 };
 use std::sync::Arc;
 fn make_runtime(body: &str, signature: &str) -> Arc<Runtime> {
     let source = format!("table Rule {{ value: int = 7; run: {signature} => {{ {body} }}; }}");
     let modules = parse_modules([CftFile::from_source(ModuleId::from("test"), source)]);
-    let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+    let schema = build_schema(&modules).expect("schema");
     let contract = Arc::new(Contract::new(schema).expect("contract"));
     let mut builder = RuntimeBuilder::new(contract);
     builder.add_text("rule: Rule {}", Some("test.cfd"));

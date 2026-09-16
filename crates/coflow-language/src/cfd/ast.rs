@@ -39,6 +39,7 @@ pub enum CfdValue {
     QuotedString(String, Span),
     FormattedString(CfdFormattedString),
     OptionNone(Span),
+    Dimension(CfdDimensionValue),
     Function(CfdFunction),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
@@ -55,12 +56,19 @@ impl CfdValue {
             | Self::OptionNone(s)
             | Self::Array(_, s) => *s,
             Self::Function(value) => value.span,
+            Self::Dimension(value) => value.span,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
             Self::Ref(r) => r.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdDimensionValue {
+    pub fields: Vec<CfdField>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -132,7 +132,7 @@ where
             return report_without_publish(session, false, failed);
         }
     };
-    let rebuilt = match rebuild_after_mutation(session, catalog, &impact, &source_overrides) {
+    let rebuilt = match rebuild_after_mutation(session, &impact, &source_overrides) {
         Ok(rebuilt) => rebuilt,
         Err(diagnostics) => {
             if let Some(last) = executable.last() {
@@ -141,11 +141,6 @@ where
             return report_without_publish(session, false, failed);
         }
     };
-    let changed_dimension_files = rebuilt
-        .changed_dimension_paths
-        .iter()
-        .map(|path| crate::project_path(session.project.root_dir(), path))
-        .collect::<Vec<_>>();
     let new_session = rebuilt.session;
     let additional_files = match prepare_additional_files(&new_session, &staged) {
         Ok(files) => files,
@@ -170,7 +165,6 @@ where
     let affected_files = impact
         .affected_files
         .into_iter()
-        .chain(changed_dimension_files)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

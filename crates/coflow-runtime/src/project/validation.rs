@@ -1,10 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::project::{
-    normalize_path, path_is_same_or_descendant, path_to_slash, resolve_project_relative,
-    schema_path_policy::SchemaPathPolicy, DimensionConfig, OutputConfig, ProjectConfig,
-    SchemaConfig, SourceConfig,
+    normalize_path, path_is_same_or_descendant, resolve_project_relative,
+    schema_path_policy::SchemaPathPolicy, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 
 pub(super) struct ProjectDiagnostic {
@@ -24,11 +22,6 @@ impl ProjectDiagnostic {
             key_path: key_path.into_iter().map(Into::into).collect(),
         }
     }
-
-    fn with_code(mut self, code: impl Into<String>) -> Self {
-        self.code = Some(code.into());
-        self
-    }
 }
 
 pub(super) fn validate_project_config_schema_only_collecting(
@@ -39,168 +32,6 @@ pub(super) fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
     diagnostics.extend(validate_codegen_collecting(&config.codegen));
     diagnostics.extend(validate_source_shapes_collecting(&config.data));
-    diagnostics.extend(validate_dimensions_collecting(root_dir, &config.dimensions));
-    diagnostics.extend(validate_dimension_source_overlap_collecting(
-        root_dir,
-        &config.data,
-        &config.dimensions,
-    ));
-    diagnostics
-}
-
-fn validate_dimension_source_overlap_collecting(
-    root_dir: &Path,
-    sources: &[SourceConfig],
-    dimensions: &BTreeMap<String, DimensionConfig>,
-) -> Vec<ProjectDiagnostic> {
-    let dimension_dirs = dimensions
-        .iter()
-        .filter_map(|(dimension, config)| {
-            config.out_dir.as_ref().map(|out_dir| {
-                (
-                    dimension.as_str(),
-                    normalize_path(&resolve_project_relative(root_dir, out_dir)),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    if dimension_dirs.is_empty() {
-        return Vec::new();
-    }
-
-    let mut diagnostics = Vec::new();
-    for (index, source) in sources.iter().enumerate() {
-        let path = source.location();
-        let source_path = normalize_path(&resolve_project_relative(root_dir, path));
-        for (dimension, out_dir) in &dimension_dirs {
-            if path_is_same_or_descendant(&source_path, out_dir) {
-                diagnostics.push(
-                    ProjectDiagnostic::new(
-                        format!(
-                            "data path `{}` is inside dimensions.{dimension}.out_dir and is managed by Coflow; remove it from data",
-                            path_to_slash(path)
-                        ),
-                        ["data".to_string(), index.to_string()],
-                    )
-                    .with_code("DIM-SOURCE-003"),
-                );
-            }
-        }
-    }
-    diagnostics
-}
-
-fn validate_dimensions_collecting(
-    root_dir: &Path,
-    dimensions: &BTreeMap<String, DimensionConfig>,
-) -> Vec<ProjectDiagnostic> {
-    let mut diagnostics = Vec::new();
-    let mut owned_dirs = Vec::new();
-    for (name, config) in dimensions {
-        diagnostics.extend(validate_dimension_collecting(name, config));
-        if let Some(out_dir) = &config.out_dir {
-            owned_dirs.push((
-                name,
-                normalize_path(&resolve_project_relative(root_dir, out_dir)),
-            ));
-        }
-    }
-    for (index, (name, path)) in owned_dirs.iter().enumerate() {
-        for (other_name, other_path) in owned_dirs.iter().skip(index + 1) {
-            if path_is_same_or_descendant(path, other_path)
-                || path_is_same_or_descendant(other_path, path)
-            {
-                diagnostics.push(
-                    ProjectDiagnostic::new(
-                        format!(
-                            "dimensions.{other_name}.out_dir overlaps dimensions.{name}.out_dir; every dimension requires an exclusive managed directory"
-                        ),
-                        ["dimensions", other_name.as_str(), "out_dir"],
-                    )
-                    .with_code("DIM-SOURCE-007"),
-                );
-            }
-        }
-    }
-    diagnostics
-}
-
-fn validate_dimension_collecting(
-    dimension: &str,
-    config: &DimensionConfig,
-) -> Vec<ProjectDiagnostic> {
-    let mut diagnostics = Vec::new();
-    if !coflow_language::lexical::is_cft_identifier(dimension) {
-        diagnostics.push(
-            ProjectDiagnostic::new(
-                format!("dimension name `{dimension}` is not a valid CFT identifier"),
-                ["dimensions", dimension],
-            )
-            .with_code("DIM-CONFIG-002"),
-        );
-    }
-    if config.out_dir.is_none() {
-        diagnostics.push(
-            ProjectDiagnostic::new(
-                format!("dimensions.{dimension}.out_dir is required"),
-                ["dimensions", dimension, "out_dir"],
-            )
-            .with_code("DIM-CONFIG-003"),
-        );
-    }
-    if config.variants.is_empty() {
-        diagnostics.push(
-            ProjectDiagnostic::new(
-                format!("dimensions.{dimension}.variants must not be empty"),
-                ["dimensions", dimension, "variants"],
-            )
-            .with_code("DIM-CONFIG-002"),
-        );
-    }
-    let mut seen = BTreeSet::new();
-    for (index, variant) in config.variants.iter().enumerate() {
-        let key_path = vec![
-            "dimensions".to_string(),
-            dimension.to_string(),
-            "variants".to_string(),
-            index.to_string(),
-        ];
-        if variant == "default" {
-            diagnostics.push(
-                ProjectDiagnostic::new(
-                    format!(
-                        "dimensions.{dimension}.variants cannot include reserved variant `default`"
-                    ),
-                    key_path.clone(),
-                )
-                .with_code("DIM-CONFIG-002"),
-            );
-            continue;
-        }
-        if !coflow_language::lexical::is_cft_identifier(variant) {
-            diagnostics.push(
-                ProjectDiagnostic::new(
-                    format!(
-                        "dimensions.{dimension}.variants[{index}] `{variant}` is not a valid CFT identifier"
-                    ),
-                    key_path.clone(),
-                )
-                .with_code("DIM-CONFIG-002"),
-            );
-            continue;
-        }
-        if !seen.insert(variant.clone()) {
-            diagnostics.push(
-                ProjectDiagnostic::new(
-                    format!(
-                        "dimensions.{dimension}.variants contains duplicate variant `{variant}`"
-                    ),
-                    key_path,
-                )
-                .with_code("DIM-CONFIG-002"),
-            );
-        }
-    }
     diagnostics
 }
 

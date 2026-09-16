@@ -205,19 +205,6 @@ impl SourceIndex {
     pub(crate) fn push(&mut self, entry: CfdSourceEntry) {
         self.entries.push(entry);
     }
-
-    pub(crate) fn get_or_insert_dimension(&mut self, entry: CfdSourceEntry) -> SourceId {
-        if let Some(index) = self
-            .entries
-            .iter()
-            .position(|candidate| candidate.source.location == entry.source.location)
-        {
-            return SourceId(index);
-        }
-        let id = SourceId(self.entries.len());
-        self.entries.push(entry);
-        id
-    }
 }
 
 #[derive(Debug, Clone)]

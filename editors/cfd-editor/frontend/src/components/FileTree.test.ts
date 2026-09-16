@@ -17,26 +17,19 @@ function node(name: string, path: string, children: FileTreeNode[] = []): FileTr
   }
 }
 
-function dimension(name: string, displayName: string, outDir: string): DimensionInfo {
-  return { name, display_name: displayName, out_dir: outDir, variants: [], fields: [] }
+function dimension(name: string, displayName: string): DimensionInfo {
+  return { name, display_name: displayName, variants: [], fields: [] }
 }
 
 describe('buildFileTreeGroups', () => {
-  it('keeps schema first, then data, localization, and other configured dimensions', () => {
+  it('keeps schema and data files while adding virtual dimension views', () => {
     const schema = node('schema', 'schema', [node('items.cft', 'schema/items.cft')])
     const data = node('data', 'data', [node('items.cfd', 'data/items.cfd')])
-    const languageFile = node('Item_name.cfd', 'generated/lang/Item_name.cfd')
-    const platformFile = node('Item_icon.cfd', 'generated/platform/Item_icon.cfd')
     const groups = buildFileTreeGroups(
+      [schema, data],
       [
-        node('平台', 'generated/platform', [platformFile]),
-        node('本地化', 'generated/lang', [languageFile]),
-        schema,
-        data,
-      ],
-      [
-        dimension('platform', '平台', 'generated/platform'),
-        dimension('language', '本地化', 'generated\\lang\\'),
+        dimension('platform', '平台'),
+        dimension('language', '本地化'),
       ],
     )
 
@@ -48,18 +41,16 @@ describe('buildFileTreeGroups', () => {
     ])
     expect(groups[0].nodes).toEqual([schema])
     expect(groups[1].nodes).toEqual([data])
-    expect(groups[2].nodes).toEqual([languageFile])
-    expect(groups[3].nodes).toEqual([platformFile])
+    expect(groups[2].nodes[0]?.path).toBe('@dimension/language')
+    expect(groups[3].nodes[0]?.path).toBe('@dimension/platform')
   })
 
-  it('leaves unmatched nodes under data for older snapshots', () => {
+  it('keeps data nodes when dimensions are present', () => {
     const data = node('data', 'data')
 
-    expect(buildFileTreeGroups([data], [dimension('language', '本地化', 'missing')]))
-      .toEqual([
-        { key: '__schema__', label: '类型', icon: 'code', nodes: [] },
-        { key: '__data__', label: '数据', icon: 'data', nodes: [data] },
-      ])
+    const groups = buildFileTreeGroups([data], [dimension('language', '本地化')])
+    expect(groups[1].nodes).toEqual([data])
+    expect(groups[2].nodes[0]?.path).toBe('@dimension/language')
   })
 
   it('keeps empty directories in their configured group', () => {

@@ -1,5 +1,10 @@
-  second: Item {
-      stats: Stats { value: 4 },
-      next: &first,
-      calculate: fn(input: int) -> int { &Services.adjust(input) + stats.value },
-  }
+second: Item {
+  stats: Stats { value: 4 },
+  next: &first,
+  calculate: fn(input: int) -> int { Services.adjust(input) + self.stats.value },
+}
+
+child: DimensionChild {
+  name: dimension { default: "Base name", zh: "Translated name" },
+  hint: dimension { default: "Base hint", mobile: "Tap", desktop: "Click" },
+}

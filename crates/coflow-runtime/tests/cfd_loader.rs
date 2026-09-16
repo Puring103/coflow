@@ -8,9 +8,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_runtime::SourceLocation;
 use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
@@ -30,7 +28,7 @@ fn runtime_parity_fixture(name: &str) -> String {
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
@@ -39,7 +37,7 @@ fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
             .iter()
             .map(|(name, source)| CftFile::from_source(ModuleId::from(*name), *source)),
     );
-    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 #[test]
@@ -133,7 +131,7 @@ fn nested_optional_declarations_are_rejected() {
         ModuleId::from("main"),
         "table Item { nested: int??; }",
     )]);
-    assert!(build_schema(&modules, &CftDimensionInputs::default()).is_err());
+    assert!(build_schema(&modules).is_err());
 }
 
 #[test]

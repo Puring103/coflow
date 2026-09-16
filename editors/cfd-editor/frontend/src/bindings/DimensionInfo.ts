@@ -2,20 +2,8 @@
 import type { DimensionFieldInfo } from "./DimensionFieldInfo";
 
 export type DimensionInfo = {
-/**
- * Stable dimension name from `coflow.yaml` (e.g. `"language"`).
- */
 name: string,
-/**
- * Human-readable label resolved with the `display_name` fallback chain:
- * `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
- */
 display_name: string, variants: Array<string>,
-/**
- * File-tree path of the managed directory: project-relative inside the
- * project, otherwise an external display path; absent without `out_dir`.
- */
-out_dir: string | null,
 /**
  * Schema fields belonging to this dimension. Wire only the source
  * type and field; the schema view itself is not part of the editor surface.

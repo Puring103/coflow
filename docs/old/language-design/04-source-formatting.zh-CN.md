@@ -103,7 +103,6 @@ runtime writer 负责 schema-guided CFD 局部写入，直接生成规范局部�
 
 - 只处理目标 `coflow.yaml` 配置的 schema 和 data 路径，以及小写扩展名 `.cft` / `.cfd` 文件。
 - 重叠配置路径解析为真实路径后去重，每个文件最多处理一次。
-- 跳过 `dimensions.*.out_dir` 下由 Coflow 管理的生成文件。
 - 默认模式只替换发生变化的文件，并使用同目录临时文件完成原子替换。
 - `--check` 不写文件；任一文件与规范输出不同即返回非零状态并列出文件。
 

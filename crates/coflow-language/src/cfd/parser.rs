@@ -1,8 +1,8 @@
 mod tokens;
 
 use super::ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFormattedString,
-    CfdFunction, CfdRecord, CfdRef, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdDimensionValue, CfdField,
+    CfdFormattedString, CfdFunction, CfdRecord, CfdRef, CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::lexical::{
@@ -230,6 +230,18 @@ impl<'a> Parser<'a> {
 
         if self.peek_keyword("fn") {
             return self.parse_function();
+        }
+        if self.peek_keyword("dimension") {
+            let start = self.pos;
+            self.eat_keyword("dimension");
+            let block = self.parse_block()?;
+            if block.type_marker.is_some() {
+                return Err(self.error("dimension value requires `dimension { ... }`"));
+            }
+            return Ok(CfdValue::Dimension(CfdDimensionValue {
+                fields: block.fields,
+                span: Span::new(start, block.span.end),
+            }));
         }
         match self.peek_char() {
             Some('"') => {

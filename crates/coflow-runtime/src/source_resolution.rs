@@ -4,17 +4,10 @@ use crate::api::{
     CfdSource, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation,
 };
 use crate::cfd_loader::CfdLoader;
-use crate::project::{discover_directory_files, path_is_same_or_descendant, Project, SourceConfig};
-
-mod dimensions;
+use crate::project::{discover_directory_files, Project, SourceConfig};
 
 pub(crate) struct ResolvedLoaderSource {
     pub(crate) source: CfdSource,
-}
-
-pub(crate) struct ResolvedDimensionSource {
-    pub(crate) source: CfdSource,
-    pub(crate) fields: Vec<crate::dimensions::DimensionField>,
 }
 
 #[derive(Clone)]
@@ -47,23 +40,6 @@ impl<'a> SourceResolver<'a> {
         Self::resolve_file(configured)
     }
 
-    pub(crate) fn resolve_implicit(
-        &self,
-        configured: &ConfiguredSource,
-    ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
-        if configured.location.path().is_dir() {
-            return self.resolve_directory(configured);
-        }
-        Self::resolve_file(configured)
-    }
-
-    pub(crate) fn resolve_dimension_sources(
-        &self,
-        plan: &crate::dimensions::DimensionRuntimePlan,
-    ) -> Result<Vec<ResolvedDimensionSource>, DiagnosticSet> {
-        dimensions::resolve_dimension_sources(self, plan)
-    }
-
     fn resolve_directory(
         &self,
         configured: &ConfiguredSource,
@@ -75,20 +51,8 @@ impl<'a> SourceResolver<'a> {
                 error.to_string(),
             ))
         })?;
-        let managed_dimension_dirs = self
-            .project
-            .config()
-            .dimensions
-            .values()
-            .filter_map(|config| config.out_dir.as_ref())
-            .map(|out_dir| self.project.resolve_path(out_dir))
-            .collect::<Vec<_>>();
         let mut resolved = Vec::new();
-        for path in files.into_iter().filter(|path| {
-            !managed_dimension_dirs
-                .iter()
-                .any(|out_dir| path_is_same_or_descendant(path, out_dir))
-        }) {
+        for path in files {
             if path.extension().and_then(|extension| extension.to_str()) != Some("cfd") {
                 continue;
             }

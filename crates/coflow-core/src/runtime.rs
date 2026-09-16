@@ -42,6 +42,10 @@ pub enum Value {
     },
     Array(Vec<ValueId>),
     Dict(Vec<(ValueId, ValueId)>),
+    Dimension {
+        default: ValueId,
+        variants: BTreeMap<String, ValueId>,
+    },
     Function {
         source: String,
         owner: Option<ValueId>,
@@ -285,6 +289,16 @@ impl Runtime {
         for (_, record) in model.records() {
             arena.record(record.actual_type(), record.key());
         }
+        // 变体集合来自整个数据模型；单条记录缺少的变体在运行时映射到其 default。
+        let mut dimension_variants = BTreeMap::<String, BTreeSet<String>>::new();
+        for (_, record) in model.records() {
+            for values in record.dimension_fields.values() {
+                dimension_variants
+                    .entry(values.dimension.to_string())
+                    .or_default()
+                    .extend(values.variants.keys().map(ToString::to_string));
+            }
+        }
         for ty in contract.schema().singleton_types().filter(|ty| ty.is_host) {
             arena.record(
                 ty.name.as_str(),
@@ -318,7 +332,6 @@ impl Runtime {
                 continue;
             }
             let mut fields = Vec::new();
-            let mut bases = Vec::new();
             let key = arena.push(Value::String(record.key().to_string()));
             fields.push(("id".into(), key));
             for field in ty.all_fields() {
@@ -327,38 +340,25 @@ impl Runtime {
                     .ok_or_else(|| format!("missing field {}", field.name))?;
                 let base = arena.value(value, &field.value_type, Some(id))?;
                 let value_id = if let Some(binding) = &field.dimension {
-                    let generated = crate::schema::dimension_record_type(
-                        binding.dimension.as_str(),
-                        field.declaring_type.as_str(),
-                        field.name.as_str(),
-                    );
-                    let dimension_id = arena.record(&generated, record.key());
-                    let mut variants = vec![("id".into(), key)];
-                    bases.push((field.name.to_string(), base));
-                    let meta = contract
-                        .schema()
-                        .resolve_dimension(binding.dimension.as_str())
-                        .ok_or("missing dimension schema")?;
-                    for variant in &meta.variants {
-                        let stored = record
-                            .dimension_field(field.name.as_str())
-                            .and_then(|d| d.variants.get(variant));
-                        let override_id = match stored {
-                            Some(value) if !matches!(value.value, CfdValue::OptionNone) => {
-                                arena.value(&value.value, &field.value_type, Some(id))?
-                            }
-                            _ => arena.push(Value::None),
-                        };
-                        variants.push((variant.to_string(), override_id));
+                    let mut variants = BTreeMap::new();
+                    if let Some(stored) = record.dimension_field(field.name.as_str()) {
+                        debug_assert_eq!(stored.dimension, binding.dimension);
+                        for (variant, value) in &stored.variants {
+                            variants.insert(
+                                variant.to_string(),
+                                arena.value(&value.value, &field.value_type, Some(id))?,
+                            );
+                        }
                     }
-                    arena.values[dimension_id] = Value::Object {
-                        type_name: generated,
-                        key: Some(record.key().into()),
-                        fields: variants,
-                        bases: Vec::new(),
-                        dimension: Some((id, field.name.to_string())),
-                    };
-                    dimension_id
+                    if let Some(all_variants) = dimension_variants.get(binding.dimension.as_str()) {
+                        for variant in all_variants {
+                            variants.entry(variant.clone()).or_insert(base);
+                        }
+                    }
+                    arena.push(Value::Dimension {
+                        default: base,
+                        variants,
+                    })
                 } else {
                     base
                 };
@@ -368,7 +368,7 @@ impl Runtime {
                 type_name: record.actual_type().into(),
                 key: Some(record.key().into()),
                 fields,
-                bases,
+                bases: Vec::new(),
                 dimension: None,
             };
         }
@@ -514,51 +514,23 @@ impl Runtime {
             _ => Err(ExecutionError::InvalidAccess("expected object".into())),
         }
     }
-    /// 维度回退沿隐藏回链读取业务对象内部基础值，不占用用户变体名。
     pub fn dimension_default(&self, id: ValueId) -> Result<ValueId, ExecutionError> {
-        let value = self.value(id)?;
-        let Value::Object {
-            dimension: Some((owner, field)),
-            ..
-        } = value.as_ref()
-        else {
-            return Err(ExecutionError::InvalidAccess(
-                "expected dimension record".into(),
-            ));
-        };
-        let owner = self.value(*owner)?;
-        let Value::Object { bases, .. } = owner.as_ref() else {
-            return Err(ExecutionError::InvalidHandle);
-        };
-        bases
-            .iter()
-            .find(|(name, _)| name == field)
-            .map(|(_, id)| *id)
-            .ok_or(ExecutionError::InvalidHandle)
+        match self.value(id)?.as_ref() {
+            Value::Dimension { default, .. } => Ok(*default),
+            _ => Err(ExecutionError::InvalidAccess(
+                "expected dimension value".into(),
+            )),
+        }
     }
     pub fn dimension_variant(&self, id: ValueId, variant: &str) -> Result<ValueId, ExecutionError> {
         let base = self.dimension_default(id)?;
         let value = self.value(id)?;
-        let Value::Object {
-            fields, type_name, ..
-        } = value.as_ref()
-        else {
+        let Value::Dimension { variants, .. } = value.as_ref() else {
             return Err(ExecutionError::InvalidHandle);
         };
-        let (dimension, _) = loading::dimension_source(self.contract.schema(), type_name)
-            .ok_or(ExecutionError::InvalidHandle)?;
-        if !dimension
-            .variants
-            .iter()
-            .any(|name| name.as_str() == variant)
-        {
+        let Some(selected) = variants.get(variant).copied() else {
             return Ok(base);
-        }
-        let selected = fields
-            .iter()
-            .find(|(name, _)| name == variant)
-            .map(|(_, id)| *id)
-            .ok_or(ExecutionError::InvalidHandle)?;
+        };
         if matches!(self.value(selected)?.as_ref(), Value::None) {
             Ok(base)
         } else {

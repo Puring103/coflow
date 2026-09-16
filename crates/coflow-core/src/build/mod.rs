@@ -65,7 +65,9 @@ impl<'a> CfdModelBuilder<'a> {
         self
     }
 
-    pub fn add_loaded_record(&mut self, record: LoadedRecordDraft) -> &mut Self {
+    pub fn add_loaded_record(&mut self, mut record: LoadedRecordDraft) -> &mut Self {
+        // 维度值属于业务记录草稿，所有构建入口必须与主体记录一起接收。
+        self.dimension_values.append(&mut record.dimension_values);
         self.records.push(record);
         self
     }
@@ -396,25 +398,6 @@ impl<'a> ModelCompiler<'a> {
                     input.field,
                     binding.dimension,
                     input.dimension
-                ),
-            ));
-            return None;
-        }
-        if self
-            .schema
-            .cft()
-            .resolve_dimension(input.dimension.as_str())
-            .and_then(|dimension| dimension.variant(input.variant.as_str()))
-            .is_none()
-        {
-            self.diagnostics.push(dimension_diagnostic(
-                &input,
-                Some(record_id),
-                path,
-                crate::CfdErrorCode::TypeMismatch,
-                format!(
-                    "unknown variant `{}` for dimension `{}`",
-                    input.variant, input.dimension
                 ),
             ));
             return None;

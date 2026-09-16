@@ -8,25 +8,18 @@
 )]
 
 pub(crate) use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, DimensionName, FieldName,
-    ModuleId, RecordKey, TypeName, VariantName,
+    build_schema, parse_modules, CftFile, CftSchema, DimensionName, FieldName, ModuleId, RecordKey,
+    TypeName, VariantName,
 };
 pub(crate) use coflow_core::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftSchema {
-    compile_schema_with_dimensions(source, CftDimensionInputs::default())
-}
-
-pub(crate) fn compile_schema_with_dimensions(
-    source: &str,
-    dimensions: CftDimensionInputs,
-) -> CftSchema {
     let modules = parse_modules([CftFile::new(
         ModuleId::from("main"),
         std::path::PathBuf::from("main.cft"),
         source,
     )]);
-    build_schema(&modules, &dimensions).expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 pub(crate) fn assert_has_code(diags: &CfdDiagnostics, code: CfdErrorCode) {

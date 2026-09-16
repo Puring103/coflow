@@ -56,10 +56,6 @@ export interface FileTreeGroup {
 }
 
 export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: DimensionInfo[]): FileTreeGroup[] {
-  const dimensionNodes = new Map(nodes.map(node => [normalizePath(node.path), node]))
-  const dimensionPaths = new Set(
-    dimensions.flatMap(dimension => dimension.out_dir ? [normalizePath(dimension.out_dir)] : []),
-  )
   const groups: FileTreeGroup[] = [{
     key: '__schema__',
     label: '类型',
@@ -70,7 +66,7 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     label: '数据',
     icon: 'data',
     nodes: filterTree(
-      nodes.filter(node => !dimensionPaths.has(normalizePath(node.path))),
+      nodes,
       node => !node.name.endsWith('.cft'),
       node => node.in_data,
     ),
@@ -81,14 +77,20 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
     return 0
   })
   for (const dimension of orderedDimensions) {
-    if (!dimension.out_dir) continue
-    const node = dimensionNodes.get(normalizePath(dimension.out_dir))
-    if (!node) continue
     groups.push({
       key: `__dimension__:${dimension.name}`,
       label: dimension.display_name,
       icon: dimension.name === 'language' ? 'localization' : 'dimension',
-      nodes: node.children,
+      nodes: [{
+        name: '全部记录',
+        path: `@dimension/${dimension.name}`,
+        is_dir: false,
+        in_sources: false,
+        in_schema: false,
+        in_data: false,
+        first_source_descendant: null,
+        children: [],
+      }],
     })
   }
   return groups
@@ -104,10 +106,6 @@ function filterTree(
     const children = filterTree(node.children, includeFile, includeDirectory)
     return includeDirectory(node) || children.length > 0 ? [{ ...node, children }] : []
   })
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
 function visibleFlatItems(

@@ -35,7 +35,7 @@ describe('organizeDimensionRows', () => {
     }))
   })
 
-  it('projects owner record groups into managed dimension rows', () => {
+  it('projects owner record groups into dimension rows', () => {
     const groups: EditorProjectSettings['record_groups'] = {
       'data/items.cfd': {
         Item: [{

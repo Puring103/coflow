@@ -1,6 +1,6 @@
 use super::{ResolvedTypes, ResolvedValues, SchemaDeclarations, SymbolTable, ValidatedSchema};
 use crate::limits::{StructuralBudget, StructuralLimits};
-use crate::schema::{AnalysisBudget, CftDimensionInputs, CftSchema};
+use crate::schema::{AnalysisBudget, CftSchema};
 use crate::CftDiagnostics;
 use coflow_language::cft::CftModuleSet;
 
@@ -18,11 +18,8 @@ struct StageOutput<T> {
 ///
 /// Returns parse diagnostics retained by the module set or schema/type
 /// diagnostics from the semantic compilation pass.
-pub fn build_schema(
-    module_set: &CftModuleSet,
-    dimensions: &CftDimensionInputs,
-) -> Result<CftSchema, CftDiagnostics> {
-    build_schema_with_limits(module_set, dimensions, StructuralLimits::default())
+pub fn build_schema(module_set: &CftModuleSet) -> Result<CftSchema, CftDiagnostics> {
+    build_schema_with_limits(module_set, StructuralLimits::default())
 }
 
 /// Builds an immutable semantic schema with explicit structural and analysis limits.
@@ -32,7 +29,6 @@ pub fn build_schema(
 /// Returns retained parse diagnostics or schema compilation diagnostics.
 pub fn build_schema_with_limits(
     module_set: &CftModuleSet,
-    dimensions: &CftDimensionInputs,
     limits: StructuralLimits,
 ) -> Result<CftSchema, CftDiagnostics> {
     if !module_set.diagnostics().is_empty() {
@@ -47,7 +43,7 @@ pub fn build_schema_with_limits(
     let types = resolve_types(symbols, &mut analysis_budget)?;
     let values = resolve_values(types);
     let validated = validate_checks(values)?;
-    lower_schema(&validated, dimensions, &mut analysis_budget)
+    lower_schema(&validated, &mut analysis_budget)
 }
 
 fn collect_symbols<'a>(
@@ -128,12 +124,11 @@ fn validate_checks(
 
 fn lower_schema(
     validated: &StageOutput<ValidatedSchema<'_>>,
-    dimensions: &CftDimensionInputs,
     analysis_budget: &mut AnalysisBudget,
 ) -> Result<CftSchema, CftDiagnostics> {
     debug_assert!(validated.diagnostics.is_empty());
     let declarations: SchemaDeclarations = validated.product.lower_declarations();
-    CftSchema::from_declarations(declarations, dimensions, analysis_budget)
+    CftSchema::from_declarations(declarations, analysis_budget)
 }
 
 #[cfg(test)]
@@ -151,8 +146,7 @@ mod tests {
     #[test]
     fn phase_diagnostics_keep_source_independent_pass_order() {
         let modules = modules("abstract sealed data Child: Missing { type: int; }");
-        let diagnostics =
-            build_schema(&modules, &CftDimensionInputs::default()).expect_err("schema must fail");
+        let diagnostics = build_schema(&modules).expect_err("schema must fail");
         let codes = diagnostics
             .diagnostics
             .iter()
@@ -171,12 +165,8 @@ mod tests {
     #[test]
     fn analysis_budget_is_passed_to_the_graph_phase() {
         let modules = modules("table Parent {} table Child: Parent {}");
-        let diagnostics = build_schema_with_limits(
-            &modules,
-            &CftDimensionInputs::default(),
-            StructuralLimits::new(100, 100, 0),
-        )
-        .expect_err("inheritance edge must exhaust analysis steps");
+        let diagnostics = build_schema_with_limits(&modules, StructuralLimits::new(100, 100, 0))
+            .expect_err("inheritance edge must exhaust analysis steps");
         assert_eq!(
             diagnostics
                 .diagnostics
@@ -190,8 +180,8 @@ mod tests {
     #[test]
     fn failed_inheritance_does_not_enter_value_resolution() {
         let modules = modules("table A: B { value: int = Missing; } table B: A {}");
-        let diagnostics = build_schema(&modules, &CftDimensionInputs::default())
-            .expect_err("inheritance cycle must stop the pipeline");
+        let diagnostics =
+            build_schema(&modules).expect_err("inheritance cycle must stop the pipeline");
         assert!(diagnostics
             .diagnostics
             .iter()
@@ -314,8 +304,7 @@ mod tests {
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         let validated = validate_checks(resolve_values(types)).expect("body compilation deferred");
-        let schema = lower_schema(&validated, &CftDimensionInputs::default(), &mut analysis)
-            .expect("schema");
+        let schema = lower_schema(&validated, &mut analysis).expect("schema");
         assert!(schema
             .resolve_check("Invalid")
             .expect("check")
@@ -333,8 +322,7 @@ mod tests {
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         let validated = validate_checks(resolve_values(types)).expect("check stage");
-        let schema = lower_schema(&validated, &CftDimensionInputs::default(), &mut analysis)
-            .expect("lower stage");
+        let schema = lower_schema(&validated, &mut analysis).expect("lower stage");
         assert!(schema.resolve_type("Item").is_some());
     }
 }

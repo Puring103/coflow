@@ -6,7 +6,7 @@ pub use coflow_language::cft::{
 #[cfg(feature = "cft-compiler")]
 mod compiler;
 mod declarations;
-mod dimensions;
+pub(crate) mod dimensions;
 mod names;
 mod plans;
 mod queries;
@@ -17,9 +17,6 @@ pub use check_builtins::CftCheckBuiltin;
 #[cfg(feature = "cft-compiler")]
 pub use compiler::{build_schema, build_schema_with_limits};
 pub use declarations::*;
-pub use dimensions::{
-    dimension_record_type, CftDimensionInput, CftDimensionInputError, CftDimensionInputs,
-};
 pub use names::*;
 pub use plans::{
     ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
@@ -107,7 +104,6 @@ impl CftSchema {
     #[cfg(feature = "cft-compiler")]
     pub(in crate::schema) fn from_declarations(
         declarations: SchemaDeclarations,
-        dimension_inputs: &CftDimensionInputs,
         budget: &mut AnalysisBudget,
     ) -> Result<Self, CftDiagnostics> {
         let aliases = declarations.aliases;
@@ -115,9 +111,8 @@ impl CftSchema {
         let enums = declarations.enums;
         let top_level_checks = declarations.checks;
         let sources = declarations.sources;
-        let mut types = declarations.types;
-        let dimensions = dimensions::build_dimensions(&types, dimension_inputs)?;
-        dimensions::generated_types(&mut types, &dimensions);
+        let types = declarations.types;
+        let dimensions = dimensions::build_dimensions(&types);
 
         let mut inheritance_root_by_type = BTreeMap::new();
         let mut ancestors_by_type = BTreeMap::new();

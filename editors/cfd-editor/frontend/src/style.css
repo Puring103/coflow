@@ -1011,7 +1011,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   gap: 8px;
 }
 
-/* Managed dimension files are owner-record overlays, not ordinary source records. */
+/* Dimension nodes are virtual views over their owner records. */
 .dimension-table-view {
   flex: 1;
   min-height: 0;

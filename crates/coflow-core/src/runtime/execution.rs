@@ -1408,14 +1408,11 @@ impl RuntimeHost<'_> {
                 return self.read_slot(self.slot(self.runtime.dimension_variant(id, &text)?)?);
             }
             let value = self.runtime.value(id)?;
-            let Value::Object { type_name, .. } = value.as_ref() else {
-                return Err(invalid("维度方法需要记录"));
+            let Value::Dimension { variants, .. } = value.as_ref() else {
+                return Err(invalid("维度方法需要维度值"));
             };
-            let (dimension, _) =
-                loading::dimension_source(self.runtime.contract.schema(), type_name)
-                    .ok_or_else(|| invalid("需要维度记录"))?;
             let mut values = Vec::new();
-            for variant in &dimension.variants {
+            for variant in variants.keys() {
                 self.budget.charge(1)?;
                 let key = self.allocate(Value::String(variant.to_string()))?;
                 let value =

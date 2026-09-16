@@ -20,7 +20,7 @@ pub use types::{
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
     ProjectFileUpdate,
 };
-pub(crate) use types::{DimensionSourceCoordinate, PreparedMutationOp};
+pub(crate) use types::{DimensionWriteCoordinate, PreparedMutationOp};
 
 pub(super) fn schema_field<'a>(
     schema: &'a CftSchema,

@@ -710,7 +710,7 @@ export function buildDiffTree(diff: ProjectDiff | null, nodes: FileTreeNode[], c
   }
   collect(tree)
   // HEAD 独有路径按路径字符串的最长已存在目录前缀挂回同一层级，
-  // 兼容目录节点 path 本身含斜杠（如维度 out_dir）的情况；无前缀时再逐级补目录。
+  // 兼容目录节点 path 本身含斜杠的情况；无前缀时再逐级补目录。
   const findDir = (dirPath: string): FileTreeNode | undefined => {
     const node = indexByPath.get(dirPath)
     return node && node.is_dir ? node : undefined

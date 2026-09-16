@@ -519,11 +519,11 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::*;
-    use coflow_core::schema::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
     fn schema(source: &str) -> CftSchema {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-        build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
+        build_schema(&modules).expect("schema")
     }
 
     #[test]

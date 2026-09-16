@@ -41,6 +41,10 @@ fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
             }
             None
         }
+        CfdValue::Dimension(dimension) => dimension
+            .fields
+            .iter()
+            .find_map(|field| type_name_in_value(&field.value, offset)),
         _ => None,
     }
 }
@@ -133,6 +137,10 @@ fn field_name_in_value<'a>(
             }
             None
         }
+        // 维度项不是 schema 字段，但其值仍按原业务字段类型递归解析。
+        CfdValue::Dimension(dimension) => dimension.fields.iter().find_map(|field| {
+            field_name_in_value(&field.value, schema, owner_type.clone(), offset)
+        }),
         _ => None,
     }
 }
@@ -230,6 +238,10 @@ fn ref_target_in_value(
             }
             None
         }
+        CfdValue::Dimension(dimension) => dimension
+            .fields
+            .iter()
+            .find_map(|field| ref_target_in_value(&field.value, schema, expected_type, offset)),
         _ => None,
     }
 }

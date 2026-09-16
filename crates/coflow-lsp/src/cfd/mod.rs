@@ -356,6 +356,12 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
                 collect_value_tokens(&field.value, c);
             }
         }
+        CfdValue::Dimension(dimension) => {
+            for field in &dimension.fields {
+                c.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
+                collect_value_tokens(&field.value, c);
+            }
+        }
         CfdValue::Array(items, _) => {
             for item in items {
                 collect_value_tokens(item, c);
@@ -699,6 +705,22 @@ pub(crate) fn completion_with_build(
             } => {
                 field_completion_items(source, schema, type_name, &existing, offset)
             }
+            CompletionContext::DimensionFields {
+                value_type,
+                has_default,
+            } => {
+                if has_default {
+                    Vec::new()
+                } else {
+                    vec![json!({
+                        "label": "default",
+                        "kind": 5,
+                        "detail": format!("default: {}", fmt_value_type(value_type)),
+                        "insertText": "default: $1",
+                        "insertTextFormat": 2,
+                    })]
+                }
+            }
         });
     }
 
@@ -1012,6 +1034,10 @@ enum CompletionContext<'a> {
         type_name: &'a str,
         existing: std::collections::BTreeSet<&'a str>,
     },
+    DimensionFields {
+        value_type: &'a CftValueType,
+        has_default: bool,
+    },
 }
 
 fn completion_context<'a>(
@@ -1065,6 +1091,17 @@ fn completion_context_in_value<'a>(
         }
     }
     match (value, expected) {
+        (CfdValue::Dimension(dimension), value_type) => {
+            for field in &dimension.fields {
+                if offset >= field.name_span.end && offset <= field.span.end {
+                    return completion_context_in_value(&field.value, schema, value_type, offset);
+                }
+            }
+            Some(CompletionContext::DimensionFields {
+                value_type,
+                has_default: dimension.fields.iter().any(|field| field.name == "default"),
+            })
+        }
         (CfdValue::BitExpr(expression), CftValueType::Enum(_)) => {
             let mut selected = std::collections::BTreeSet::new();
             collect_bit_expr_values(expression, &mut selected);
@@ -1729,6 +1766,10 @@ fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
         CfdValue::Array(values, _) => values
             .iter()
             .find_map(|value| function_in_value(value, offset)),
+        CfdValue::Dimension(dimension) => dimension
+            .fields
+            .iter()
+            .find_map(|field| function_in_value(&field.value, offset)),
         _ => None,
     }
 }

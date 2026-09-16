@@ -1,42 +1,42 @@
 # 本地化与维度
 
-维度为同一记录字段提供多组变体值。项目配置声明变体和输出目录：
-
-```yaml
-dimensions:
-  language:
-    variants: [en, zh]
-    out_dir: data/dimensions/language
-```
-
-记录字段使用 `@localized` 绑定 language 维度，或用 `@dimension("name")` 绑定其他维度。
-data 不声明维度字段。
+维度为同一记录字段提供基础值和任意数量的变体值。字段使用 `@localized` 绑定
+`language` 维度，或使用 `@dimension("name")` 绑定其他维度。
 
 ```cft
-table UiText {
+table Item {
   @localized
-  text: string;
+  name: string;
+
+  @dimension("region")
+  price: int;
 }
 ```
 
-业务 CFD 写基础值，维度 CFD 写覆盖值：
+维度值直接写在业务 CFD 中：
 
 ```cfd
-welcome: UiText { text: "Welcome" }
-welcome: UiText_text_language { en: None, zh: "欢迎" }
+sword: Item {
+  name: dimension {
+    default: "Sword",
+    zh: "剑",
+    ja: "剣",
+  },
+  price: dimension {
+    default: 100,
+    cn: 90,
+  },
+}
 ```
 
-`UiText_text_language` 是生成的维度记录类型短名，只在维度记录类型位置特殊解析；
-有歧义时使用生成类型的完整限定名。覆盖记录 key 与业务记录一致。
+维度字段必须使用 `dimension { ... }`，其中 `default` 必填。其他字段名即变体名，
+值类型与原字段一致；只有 `T?` 字段的变体可以显式写 `None`。
 
-`coflow build` 按字段生成或更新维度文件。table 和 singleton 都使用每字段一份文件，
-文件名为 `<bucket>_<字段名>.cfd`；未指定 bucket 时使用类型名。
-继承字段按声明类型归属。修改基础值应编辑业务记录。
+变体从项目加载的全部 CFD 动态汇总，不需要在 `coflow.yaml` 中声明。缺少某个变体时
+继承 `default`，未知变体查询同样返回 `default`；显式 `None` 是可选字段的有效覆盖。
+读取基础值使用 `.default()`，读取指定变体使用 `.for("zh")`，`.variants()` 返回当前
+维度的全部有效变体值。
 
-读取基础值使用 `.default()`，指定变体使用 `.for("zh")`。
-覆盖为 None、未提供或变体名未知时回退基础值。没有隐式的当前语言。
-未知变体数据不加载；更新维度文件时清理已删除业务记录的覆盖。
-
-C# 包装提供 `Default()`、`For("zh")`，使用方式见 [C# 代码生成](https://puring103.github.io/coflow/docs/reference/07-codegen/01-csharp)。
-将业务和维度 CFD 一起提交构建器后再构建运行时。
-模板和函数覆盖保留原业务对象绑定；模板读取、语言内部方法和 check 使用同一 Runtime 执行语义。
+C# 生成字段使用 `RuntimeDimension<T>`，提供对应的 `Default()`、`For(...)` 和
+`Variants()` 读取方式。
+编辑器的维度展开视图直接编辑所属业务记录，不会生成辅助类型、记录或 CFD 文件。

@@ -266,7 +266,8 @@ pub fn inspect_schema(
             .all_dimensions()
             .map(|dimension| SchemaDimensionInfo {
                 name: dimension.name.to_string(),
-                variants: dimension.variants.iter().map(ToString::to_string).collect(),
+                // Schema inspection has no data model; variants are discovered from CFD data.
+                variants: Vec::new(),
                 fields: dimension
                     .fields
                     .iter()

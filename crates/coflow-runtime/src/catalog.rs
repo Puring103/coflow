@@ -38,8 +38,4 @@ impl CfdSourceCatalog {
     pub(crate) fn writer(&self) -> Arc<CfdWriter> {
         Arc::clone(&self.writer)
     }
-
-    pub(crate) fn dimension_source_manager(&self) -> Arc<CfdWriter> {
-        Arc::clone(&self.writer)
-    }
 }

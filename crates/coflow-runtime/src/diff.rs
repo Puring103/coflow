@@ -673,13 +673,7 @@ impl GitProject {
                     .schema
                     .paths()
                     .iter()
-                    .chain(config.data.iter().map(crate::SourceConfig::path))
-                    .chain(
-                        config
-                            .dimensions
-                            .values()
-                            .filter_map(|dimension| dimension.out_dir.as_ref()),
-                    );
+                    .chain(config.data.iter().map(crate::SourceConfig::path));
                 for input in inputs {
                     let absolute = crate::normalize_path(
                         &self.repo_root.join(&self.project_relative).join(input),
@@ -825,11 +819,6 @@ impl GitDiffPaths {
         }
         for source in &mut project.config.data {
             *source = crate::SourceConfig::from_path(rebase(source.path())?);
-        }
-        for dimension in project.config.dimensions.values_mut() {
-            if let Some(path) = &mut dimension.out_dir {
-                *path = rebase(path)?;
-            }
         }
         Ok(())
     }

@@ -1,6 +1,6 @@
 @struct sealed data Stats {
     value: int;
-    transform: fn(int) -> int = fn(input: int) -> int { input + value };
+    transform: fn(int) -> int = fn(input: int) -> int { input + self.value };
 }
 
 table Item {
@@ -24,7 +24,7 @@ singleton UiText {
     @dimension("language") weights: [int] = [1, 2];
     @dimension("language") theme: ThemeValue = ThemeValue { value: 5 };
     count: int;
-    readCount: fn() -> int = fn() -> int { count };
+    readCount: fn() -> int = fn() -> int { self.count };
     sameTheme: fn(ThemeValue, ThemeValue) -> bool = fn(left: ThemeValue, right: ThemeValue) -> bool { left == right };
 }
 

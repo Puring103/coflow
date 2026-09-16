@@ -32,6 +32,7 @@ namespace Coflow
         CanonicalValue = 39,
         CreateBuffer = 41,
         RunChecks = 45,
+        DimensionVariantKey = 46,
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct Response

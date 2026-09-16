@@ -10,9 +10,7 @@
 use coflow_core::cell_value::{
     parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
-use coflow_core::schema::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_core::schema::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_core::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft, LoadedValueDraft,
 };
@@ -22,8 +20,7 @@ type TestResult = Result<(), String>;
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
-        .map_err(|err| format!("schema should compile: {err:?}"))
+    build_schema(&modules).map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn parse_ok(schema: &CftSchema, declared_type: &str, text: &str) -> Result<ParsedCell, String> {

@@ -135,7 +135,7 @@ pub struct DimensionValueCoordinate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DimensionSourceCoordinate {
+pub(crate) struct DimensionWriteCoordinate {
     pub source_type: TypeName,
     pub source_key: RecordKey,
     pub field: FieldName,
@@ -250,7 +250,7 @@ pub(crate) enum PreparedMutationOp {
     },
     WriteDimensionValue {
         record: RecordCoordinate,
-        coordinate: DimensionSourceCoordinate,
+        coordinate: DimensionWriteCoordinate,
         new_value: Option<CfdValue>,
         write_file: String,
     },

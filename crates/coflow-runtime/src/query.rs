@@ -210,41 +210,28 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    pub fn dimension_fields_for_file(
+    pub fn dimension_fields(
         self,
-        file_path: &str,
+        dimension_name: &str,
     ) -> Option<(DimensionInfo, Vec<crate::DimensionFieldInfo>)> {
-        let normalized_path = crate::project_path(
-            self.session.project.root_dir(),
-            std::path::Path::new(file_path),
-        );
-        let path = std::path::Path::new(&normalized_path);
-        for info in self.dimensions() {
-            let Some(out_dir) = info.out_dir.as_ref() else {
-                continue;
-            };
-            if !path.starts_with(std::path::Path::new(out_dir)) {
-                continue;
+        self.dimensions().into_iter().find_map(|info| {
+            if info.name != dimension_name {
+                return None;
             }
             let fields = self
                 .session
                 .dimension_plan
                 .fields()
                 .iter()
-                .filter(|field| {
-                    field.dimension.as_str() == info.name && field.matches_source_path(path)
-                })
+                .filter(|field| field.dimension.as_str() == info.name)
                 .map(|field| crate::DimensionFieldInfo {
                     source_type: field.source_type.to_string(),
                     source_field: field.source_field.to_string(),
                     is_singleton: field.is_singleton,
                 })
                 .collect::<Vec<_>>();
-            if !fields.is_empty() {
-                return Some((info, fields));
-            }
-        }
-        None
+            Some((info, fields))
+        })
     }
 
     #[must_use]
@@ -542,7 +529,7 @@ mod tests {
 
     use super::field_shape;
     use coflow_core::schema::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, ModuleId, TypeName,
+        build_schema, parse_modules, CftFile, CftValueType, ModuleId, TypeName,
     };
 
     #[test]
@@ -551,8 +538,7 @@ mod tests {
             ModuleId::from("main"),
             "data NPC {} data Game : NPC {} table Building { npc: NPC; }",
         )]);
-        let schema =
-            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
+        let schema = build_schema(&modules).expect("schema should compile");
         let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
 
         let shape = field_shape(&schema, &npc_type);
@@ -566,8 +552,7 @@ mod tests {
             ModuleId::from("main"),
             "table Node {}",
         )]);
-        let schema =
-            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
+        let schema = build_schema(&modules).expect("schema should compile");
         let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
             CftValueType::Object(TypeName::new("Node").expect("valid type name")),
         ))));
@@ -585,8 +570,7 @@ mod tests {
             ModuleId::from("main"),
             "enum Element { Fire, Ice, }",
         )]);
-        let schema =
-            build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile");
+        let schema = build_schema(&modules).expect("schema should compile");
         let dict_type = CftValueType::Dict(
             Box::new(CftValueType::Enum(
                 coflow_core::schema::EnumName::new("Element").expect("valid enum name"),

@@ -111,7 +111,7 @@ namespace Coflow
             Handle.Dispose();
         }
     }
-    public enum ValueKind : uint { None, Bool, Int, Float, String, Enum, Object, Array, Dictionary, Function, Template }
+    public enum ValueKind : uint { None, Bool, Int, Float, String, Enum, Object, Array, Dictionary, Function, Template, Dimension }
     public interface IRuntimeValue { RuntimeValue RuntimeValue { get; } }
 
     // 值 ID 只在所属 Runtime 内有效，不分配独立原生句柄，也不要求单独释放。
@@ -141,6 +141,11 @@ namespace Coflow
         public RuntimeValue Canonical() => Child(Request(NativeOperation.CanonicalValue));
         public RuntimeValue DimensionDefault() => Child(Request(NativeOperation.DimensionDefault));
         public RuntimeValue DimensionValue(string variant) => Child(Request(NativeOperation.DimensionVariant, variant));
+        public string DimensionVariantAt(int index)
+        {
+            if (index < 0) throw new ArgumentOutOfRangeException(nameof(index));
+            return Encoding.UTF8.GetString(Native.ReadBuffer(Request(NativeOperation.DimensionVariantKey, index: (ulong)index)));
+        }
         public RuntimeValue At(int index) => Element(NativeOperation.ArrayValue, index);
         public RuntimeValue KeyAt(int index) => Element(NativeOperation.DictionaryKey, index);
         public RuntimeValue ValueAt(int index) => Element(NativeOperation.DictionaryValue, index);
