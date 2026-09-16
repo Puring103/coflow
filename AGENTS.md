@@ -104,7 +104,7 @@ implementation constraints there.
 
 ### Internal Crate Boundaries
 
-- `coflow-core` owns immutable contracts, CFT declaration compilation behind `cft-compiler`, schema-guided data construction, in-memory loading, runtime values, Host bindings, and VM/check interfaces. Function compilation and execution currently remain unimplemented.
+- `coflow-core` owns immutable contracts, CFT declaration compilation behind `cft-compiler`, schema-guided data construction, in-memory loading, runtime values, Host bindings, function compilation, register VM execution, closures, templates, and explicit checks.
 - `coflow-ffi` owns the C ABI, native handles, host callback adaptation, and Unity/IL2CPP boundary. It does not own project configuration or file discovery.
 - `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
 - `coflow-staging` owns the internal all-or-nothing filesystem staging primitives shared by CFD writes and generated-code publication.

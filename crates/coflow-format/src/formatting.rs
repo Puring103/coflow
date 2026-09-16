@@ -727,7 +727,8 @@ fn normalize_inline_spacing(line: &str) -> String {
                 tight_right = true;
             }
             "=" | "->" | "=>" | ".." | "..=" | "<=" | ">=" | "==" | "!=" | "&&" | "||" | "+="
-            | "-=" | "*=" | "/=" | "<<" | ">>" | "**" | "//" | "<" | ">" => {
+            | "-=" | "*=" | "/=" | "%=" | "//=" | "**=" | "<<=" | ">>=" | "&=" | "|=" | "^="
+            | "<<" | ">>" | "**" | "//" | "<" | ">" => {
                 push_spaced_operator(&mut output, text);
                 pending_space = true;
                 tight_right = false;
@@ -805,6 +806,14 @@ fn is_binary_operator_token(tokens: &[LosslessToken], source: &str, index: usize
                 | "-="
                 | "*="
                 | "/="
+                | "%="
+                | "//="
+                | "**="
+                | "<<="
+                | ">>="
+                | "&="
+                | "|="
+                | "^="
                 | "<<"
                 | ">>"
                 | "**"

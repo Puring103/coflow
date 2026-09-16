@@ -165,7 +165,7 @@ pub struct EffectiveFieldWrite {
 pub fn value_summary(value: &CfdValue) -> String {
     match value {
         CfdValue::OptionNone => "None".to_string(),
-        CfdValue::OptionSome(value) => format!("Some({})", value_summary(value)),
+        CfdValue::OptionSome(value) => value_summary(value),
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => (*value as f32).to_string(),

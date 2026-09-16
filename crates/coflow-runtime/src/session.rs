@@ -9,7 +9,6 @@ use crate::data_model::{
 use crate::project::{normalize_path, path_is_same_or_descendant, path_to_slash, Project};
 use coflow_core::schema::{CftModuleSet, CftSchema};
 
-use crate::checks::CheckDiagnosticStore;
 use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
@@ -30,7 +29,6 @@ pub(crate) struct ProjectSession {
     pub(crate) records: RecordIndex,
     pub(crate) files: FileIndex,
     pub(crate) source_data: SourceDataCache,
-    pub(crate) check_state: CheckDiagnosticStore,
     pub(crate) execution_stats: ProjectExecutionStats,
 }
 

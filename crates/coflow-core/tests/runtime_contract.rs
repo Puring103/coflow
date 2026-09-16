@@ -87,23 +87,16 @@ fn record_identity_and_data_content_are_distinct() {
 }
 
 #[test]
-fn functions_and_templates_are_stored_without_execution() {
-    let runtime = runtime("table Item { name: string; text: fstring = f\"{self.name}\"; run: fn() -> int => { return unknownFunction(); }; }", "a: Item { name: \"sword\" }");
+fn functions_and_templates_are_compiled_and_read_explicitly() {
+    let runtime = runtime("table Item { name: string; text: fstring = f\"{self.name}\"; run: fn() -> int => { 42 }; }", "a: Item { name: \"sword\" }");
     let a = runtime.record("Item", "a").expect("a");
     let text = runtime.field(a, "text").expect("template");
     assert!(
         matches!(runtime.value(text).expect("stored template").as_ref(), Value::Template { owner: Some(owner), .. } if *owner == a)
     );
-    assert_eq!(
-        runtime.read_text(text).expect_err("execution deferred"),
-        ExecutionError::Unavailable
-    );
-    assert_eq!(
-        runtime
-            .call(runtime.field(a, "run").expect("function"))
-            .expect_err("execution deferred"),
-        ExecutionError::Unavailable
-    );
+    assert_eq!(runtime.read_text(text).expect("execute template"), "sword");
+    let result = runtime.invoke(runtime.field(a,"run").expect("function"), &[], coflow_core::vm::executor::ExecutionLimits::default()).expect("execute function");
+    assert!(matches!(result, HostValue::Int(42)));
 }
 
 #[derive(Debug)]

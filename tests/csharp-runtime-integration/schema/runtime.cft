@@ -5,5 +5,7 @@ singleton RuntimeSettings {
 @Host
 singleton HostServices {
   environment: string;
+  favorite: Character?;
+  mood: Mood;
   log: fn(message: string) -> ();
 }

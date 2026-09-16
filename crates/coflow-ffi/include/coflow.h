@@ -6,7 +6,8 @@
 extern "C" {
 #endif
 
-/* UTF-8 输入只在调用期间借用；返回句柄必须通过 coflow_release 释放。 */
+/* UTF-8 输入只在调用期间借用。契约、构建器、Runtime 和缓冲区句柄需释放；
+ * 值操作的 handle 返回值是 Runtime 局部值 ID（从 1 开始），不单独释放。0 表示未找到。 */
 typedef struct CoflowResponse {
     uint64_t handle;
     int64_t integer;
@@ -40,16 +41,25 @@ typedef enum CoflowOperation {
     COFLOW_CALL = 29,
     COFLOW_TYPE_NAME = 30,
     COFLOW_PROGRAM_SOURCE = 31,
-    COFLOW_RETAIN_VALUE = 33,
+    COFLOW_TRY_RECORD = 32,
     COFLOW_DIMENSION_VALUE = 34,
     COFLOW_VALUE_EQUALS = 35,
     COFLOW_DIMENSION_DEFAULT = 36,
+    COFLOW_SINGLETON = 37,
+    COFLOW_DICT_FIND = 38,
+    COFLOW_CANONICAL_VALUE = 39,
     COFLOW_BUFFER_LENGTH = 40,
-    COFLOW_NEW_BUFFER = 41
+    COFLOW_NEW_BUFFER = 41,
+    COFLOW_RELEASE_VALUE = 42,
+    COFLOW_COLLECT = 43,
+    COFLOW_RETAIN_VALUE = 44
 } CoflowOperation;
 
-/* 返回 0 表示成功；失败信息通过 out.handle 的 UTF-8 缓冲区返回。 */
-uint32_t coflow_request(uint32_t operation, uint64_t handle,
+/* 返回 0 表示成功，1 为 UTF-8 错误消息，2 为结构化构建诊断缓冲区。
+ * value 为 Runtime 局部值 ID；非值操作传 0。
+ * 诊断：u32 数量，然后每项三个 u32 长度+UTF-8 文本（code/source/message），
+ * u8 是否有范围、u64 起始/结束 UTF-8 字节偏移；所有整数为小端。 */
+uint32_t coflow_request(uint32_t operation, uint64_t handle, uint64_t value,
     const uint8_t *key, size_t key_length, const uint8_t *data,
     size_t data_length, uint64_t index, CoflowResponse *out);
 uint32_t coflow_buffer_copy(uint64_t handle, uint8_t *destination, size_t capacity);
@@ -57,7 +67,16 @@ void coflow_release(uint64_t handle);
 
 /* 回调同步执行，异常须在宿主内捕获并转换为 error 和消息缓冲区。
  * operation=0 查询成员类型文本，operation=1 读取成员数据。
+ * operation=2 调用函数：输入为 u32 长度+UTF-8 成员名，再接参数编码。
+ * CALL(29) 的 data 使用相同参数编码：u32 数量，每项 u8 tag 后接载荷。
+ * tag 0 无载荷；1 为 u8 bool；2 为 i32；3 为 f32 位；4 为 u32 长度+UTF-8；
+ * 5 为字符串类型名+u32 enum 值；11 为 u64 Runtime 句柄+u64 局部值 ID。
+ * 所有整数小端，参数只借用本次调用。空 data 表示无参数。
+ * CALL 返回相同 tag，标量在 integer/number，文本在缓冲区，11 在 handle/length。
+ * 返回的动态值通过 RELEASE_VALUE(42) 释放保活；COLLECT(43) 返回回收数量。
+ * 借用的子值需独立存活时调用 RETAIN_VALUE(44)，每次增加的保活须配对释放。
  * 返回的缓冲区句柄所有权转移给 Rust；release 可能发生在终结线程。
+ * tag=11 使用 handle=Runtime 句柄、length=局部值 ID，不转移其所有权。
  */
 typedef void (*CoflowHostCallback)(uint64_t context, uint32_t operation,
     const uint8_t *field, size_t field_length, CoflowResponse *out);

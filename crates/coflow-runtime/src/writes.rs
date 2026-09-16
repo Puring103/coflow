@@ -11,12 +11,10 @@ mod target;
 mod writer;
 
 use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
-use crate::data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
-use coflow_core::schema::{FieldName, TypeName};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::data_model::{CfdPath, CfdRecord, CfdValue};
+use std::collections::BTreeSet;
 
 use super::{ProjectSession, RecordCoordinate};
-use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::indexes::RecordRef;
 pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
 pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure};
@@ -24,8 +22,7 @@ pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBa
 #[derive(Debug, Default)]
 pub(crate) struct MutationImpact {
     pub(crate) affected_files: BTreeSet<String>,
-    pub(crate) record_changes: BTreeMap<RecordCoordinate, ChangedRecordFields>,
-    membership_types: BTreeSet<TypeName>,
+    records: BTreeSet<RecordCoordinate>,
     pub(crate) structural_change: bool,
 }
 
@@ -45,10 +42,7 @@ impl MutationImpact {
                 .extend(outcome.affected_files.iter().cloned());
             impact.add_operation_change(operation);
             for touched in &outcome.touched {
-                impact
-                    .record_changes
-                    .entry(touched.clone())
-                    .or_insert(ChangedRecordFields::All);
+                impact.records.insert(touched.clone());
             }
             if let Some(inserted) = &outcome.inserted {
                 impact.structural_change = true;
@@ -71,52 +65,16 @@ impl MutationImpact {
     }
 
     pub(crate) fn changed_records(&self) -> BTreeSet<RecordCoordinate> {
-        self.record_changes.keys().cloned().collect()
-    }
-
-    pub(crate) fn check_impact(&self, schema: &coflow_core::schema::CftSchema) -> CheckImpact {
-        let mut memberships = BTreeSet::new();
-        for actual_type in &self.membership_types {
-            memberships.insert(actual_type.clone());
-            if let Some(ancestors) = schema.ancestor_type_names(actual_type) {
-                memberships.extend(ancestors.iter().cloned());
-            }
-        }
-        CheckImpact {
-            records: self.record_changes.clone(),
-            record_sets: memberships,
-        }
+        self.records.clone()
     }
 
     fn add_operation_change(&mut self, operation: &crate::mutation::PreparedMutationOp) {
         use crate::mutation::PreparedMutationOp;
         match operation {
-            PreparedMutationOp::SetField {
-                write_record, path, ..
-            }
-            | PreparedMutationOp::UnsetField {
-                write_record, path, ..
-            } => self.add_path(
-                write_record.clone(),
-                &CfdPath {
-                    segments: path.clone(),
-                },
-            ),
-            PreparedMutationOp::FoldedSetField { record, path, .. } => {
-                self.add_path(record.clone(), path);
-            }
-            PreparedMutationOp::WriteDimensionValue {
-                record, coordinate, ..
-            } => self.add_field(
-                record.clone(),
-                ChangedField {
-                    field: coordinate.field.clone(),
-                    projection: ChangedProjection::Dimension {
-                        dimension: coordinate.dimension.clone(),
-                        variant: coordinate.variant.clone(),
-                    },
-                },
-            ),
+            PreparedMutationOp::SetField { write_record, .. }
+            | PreparedMutationOp::UnsetField { write_record, .. } => self.add_all(write_record.clone()),
+            PreparedMutationOp::FoldedSetField { record, .. }
+            | PreparedMutationOp::WriteDimensionValue { record, .. } => self.add_all(record.clone()),
             PreparedMutationOp::InsertRecord {
                 actual_type, key, ..
             } => {
@@ -158,42 +116,11 @@ impl MutationImpact {
         }
     }
 
-    fn add_path(&mut self, record: RecordCoordinate, path: &CfdPath) {
-        let Some(field) = path.segments.iter().find_map(|segment| match segment {
-            CfdPathSegment::Field(field) => FieldName::new(field).ok(),
-            CfdPathSegment::Index(_) | CfdPathSegment::DictKey(_) => None,
-        }) else {
-            self.add_all(record);
-            return;
-        };
-        self.add_field(
-            record,
-            ChangedField {
-                field,
-                projection: ChangedProjection::Base,
-            },
-        );
-    }
-
-    fn add_field(&mut self, record: RecordCoordinate, field: ChangedField) {
-        match self.record_changes.entry(record) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(ChangedRecordFields::Fields(BTreeSet::from([field])));
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let ChangedRecordFields::Fields(fields) = entry.get_mut() {
-                    fields.insert(field);
-                }
-            }
-        }
-    }
-
     fn add_all(&mut self, record: RecordCoordinate) {
-        self.record_changes.insert(record, ChangedRecordFields::All);
+        self.records.insert(record);
     }
 
     fn add_structural_record(&mut self, record: &RecordCoordinate) {
-        self.membership_types.insert(record.actual_type.clone());
         self.add_all(record.clone());
     }
 }
@@ -233,9 +160,9 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
-    use crate::data_model::CfdPathSegment;
+    use crate::data_model::{CfdPathSegment, CfdValue};
     use crate::mutation::PreparedMutationOp;
-    use coflow_core::schema::RecordKey;
+    use coflow_core::schema::{RecordKey, TypeName};
 
     fn coordinate(key: &str) -> RecordCoordinate {
         RecordCoordinate::new(
@@ -245,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn mutation_impact_unions_precise_paths_and_structural_changes_absorb_them() {
+    fn mutation_impact_tracks_changed_records_and_structural_changes() {
         let record = coordinate("sword");
         let price = PreparedMutationOp::SetField {
             record: record.clone(),
@@ -266,20 +193,7 @@ mod tests {
         let touched = crate::WriteOutcome::touch(record.clone());
         let operations = [(&price, &touched), (&name, &touched)];
         let impact = MutationImpact::from_operations(operations);
-        assert_eq!(
-            impact.record_changes.get(&record),
-            Some(&ChangedRecordFields::Fields(BTreeSet::from([
-                ChangedField {
-                    field: FieldName::new("name").expect("field"),
-                    projection: ChangedProjection::Base,
-                },
-                ChangedField {
-                    field: FieldName::new("price").expect("field"),
-                    projection: ChangedProjection::Base,
-                },
-            ])))
-        );
-        assert!(impact.membership_types.is_empty());
+        assert_eq!(impact.changed_records(), BTreeSet::from([record.clone()]));
 
         let deleted = PreparedMutationOp::DeleteRecord {
             record: record.clone(),
@@ -291,13 +205,7 @@ mod tests {
         };
         let impact =
             MutationImpact::from_operations([(&price, &touched), (&deleted, &deleted_outcome)]);
-        assert_eq!(
-            impact.record_changes.get(&record),
-            Some(&ChangedRecordFields::All)
-        );
-        assert_eq!(
-            impact.membership_types,
-            BTreeSet::from([record.actual_type])
-        );
+        assert_eq!(impact.changed_records(), BTreeSet::from([record]));
+        assert!(impact.structural_change);
     }
 }

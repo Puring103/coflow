@@ -1,14 +1,12 @@
 using System;
-namespace Coflow.Runtime
+namespace Coflow
 {
-    public sealed class CoflowDimension<T> : IDisposable, ICoflowValue
+    public sealed class RuntimeDimension<T> : IRuntimeValue
     {
-        private readonly CoflowValue value;
-        private readonly Func<CoflowValue,T> read;
-        public CoflowDimension(CoflowValue value, Func<CoflowValue,T> read) { this.value=value; this.read=read; }
-        public T Default() => read(value.DimensionDefault());
-        public T For(string variant) => read(value.DimensionValue(variant));
-        public CoflowValue RetainValue() => value.Retain();
-        public void Dispose() => value.Dispose();
+        public RuntimeValue RuntimeValue { get; }
+        private readonly Func<RuntimeValue, T> read;
+        public RuntimeDimension(RuntimeValue value, Func<RuntimeValue, T> read) { RuntimeValue = value; this.read = read; }
+        public T Default() => read(RuntimeValue.DimensionDefault());
+        public T For(string variant) => read(RuntimeValue.DimensionValue(variant));
     }
 }

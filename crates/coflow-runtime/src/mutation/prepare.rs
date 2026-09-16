@@ -380,9 +380,6 @@ pub(super) fn prepare_set_on_pending_insert(
     Ok(PreparedMutationOp::FoldedSetField {
         record: validated_record_coordinate(actual_type, key)?,
         write_file: insert_file.to_string(),
-        path: CfdPath {
-            segments: path.clone(),
-        },
     })
 }
 

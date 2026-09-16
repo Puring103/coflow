@@ -1,4 +1,4 @@
-//! 检查入口；当前版本只保留接口，不执行检查程序。
+//! 显式检查入口；规则通过共享字节码运行时实际执行。
 mod limits;
 mod output;
 pub use limits::EvaluationLimits;
@@ -51,22 +51,68 @@ impl From<crate::CfdDiagnostic> for CheckDiagnostic {
     }
 }
 
-/// 空接口必须报告未实现，不能将未执行的检查报告为通过。
+/// 项目工具的便捷入口；同一 Runtime 的宿主调用和细粒度选择使用 Runtime::run_checks。
 pub fn execute_checks(
-    _schema: &crate::schema::CftSchema,
-    _model: &crate::CfdDataModel,
-    _limits: CheckLimits,
+    schema: &crate::schema::CftSchema,
+    model: &crate::CfdDataModel,
+    limits: CheckLimits,
 ) -> CheckOutput {
-    CheckOutput {
-        request_diagnostics: vec![crate::CfdDiagnostic::error(
-            crate::CfdErrorCode::ExecutionUnavailable,
-            "当前版本未实现虚拟机与检查执行",
-        )
-        .into()],
-        statistics: CheckExecutionStats {
-            requested_tasks: 1,
-            rejected_tasks: 1,
-            ..CheckExecutionStats::default()
+    let contract = match crate::contract::Contract::new(schema.clone()) {
+        Ok(contract) => contract,
+        Err(crate::contract::ContractError::Compilation(error)) => {
+            return CheckOutput {
+                request_diagnostics: vec![CheckDiagnostic {
+                    diagnostic: crate::CfdDiagnostic::error(
+                        crate::CfdErrorCode::CheckEvalTypeError,
+                        error.message,
+                    ),
+                    contexts: Vec::new(),
+                    schema_location: Some(CheckSchemaLocation {
+                        module: error.module,
+                        span: error.span,
+                    }),
+                }],
+                statistics: CheckExecutionStats {
+                    requested_tasks: 1,
+                    rejected_tasks: 1,
+                    ..CheckExecutionStats::default()
+                },
+            }
+        }
+        Err(error) => {
+            return CheckOutput {
+                request_diagnostics: vec![crate::CfdDiagnostic::error(
+                    crate::CfdErrorCode::CheckEvalTypeError,
+                    error.to_string(),
+                )
+                .into()],
+                statistics: CheckExecutionStats {
+                    requested_tasks: 1,
+                    rejected_tasks: 1,
+                    ..CheckExecutionStats::default()
+                },
+            }
+        }
+    };
+    let runtime = crate::runtime::Runtime::from_model(
+        std::sync::Arc::new(contract),
+        model.clone(),
+        crate::runtime::HostBindings::new(),
+    )
+    .map_err(|diagnostic| diagnostic.message);
+    match runtime {
+        Ok(runtime) => runtime.run_checks(crate::runtime::CheckSelection::default(), limits),
+        Err(message) => CheckOutput {
+            request_diagnostics: vec![crate::CfdDiagnostic::error(
+                crate::CfdErrorCode::CheckEvalTypeError,
+                message,
+            )
+            .into()],
+            statistics: CheckExecutionStats {
+                requested_tasks: 1,
+                rejected_tasks: 1,
+                ..CheckExecutionStats::default()
+            },
         },
     }
 }

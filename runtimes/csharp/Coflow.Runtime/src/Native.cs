@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Coflow.Runtime
+namespace Coflow
 {
     [StructLayout(LayoutKind.Sequential)]
     internal struct Response
@@ -35,13 +35,13 @@ namespace Coflow.Runtime
         private const string Library = "coflow_ffi";
 #endif
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_request")]
-        private static extern uint Request(uint op, ulong handle, byte[] key, UIntPtr keyLength,
+        private static extern uint Request(uint op, ulong handle, ulong value, byte[] key, UIntPtr keyLength,
             byte[] data, UIntPtr dataLength, ulong index, out Response response);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_buffer_copy")]
         private static extern uint Copy(ulong handle, byte[] destination, UIntPtr capacity);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_release")]
         internal static extern void Release(ulong handle);
-        internal static Response Call(uint op, NativeHandle? handle = null, string key = "", byte[]? data = null, ulong index = 0)
+        internal static Response Call(uint op, NativeHandle? handle = null, string key = "", byte[]? data = null, ulong index = 0, ulong value = 0)
         {
             var encoded = Encoding.UTF8.GetBytes(key);
             data ??= Array.Empty<byte>();
@@ -49,8 +49,9 @@ namespace Coflow.Runtime
             try
             {
                 if (handle != null) handle.DangerousAddRef(ref retained);
-                uint status = Request(op, handle?.Id ?? 0, encoded, (UIntPtr)encoded.Length,
+                uint status = Request(op, handle?.Id ?? 0, value, encoded, (UIntPtr)encoded.Length,
                     data, (UIntPtr)data.Length, index, out var result);
+                if (status == 2) throw BuildException.Decode(ReadBuffer(result));
                 if (status != 0) throw new CoflowException(result.Handle == 0 ? "Native operation failed." : Encoding.UTF8.GetString(ReadBuffer(result)));
                 return result;
             }
@@ -66,5 +67,5 @@ namespace Coflow.Runtime
         }
         internal static string ReadString(uint op, NativeHandle handle) => Encoding.UTF8.GetString(ReadBuffer(Call(op, handle)));
     }
-    public sealed class CoflowException : Exception { public CoflowException(string message) : base(message) { } }
+    public class CoflowException : Exception { public CoflowException(string message) : base(message) { } }
 }

@@ -1,4 +1,4 @@
-//! 宿主运行时：只读值区、记录身份、固定服务绑定与显式生命周期。
+//! 宿主运行时：只读配置、字节码执行、动态值保活与显式生命周期。
 use crate::{
     contract::Contract,
     loading::{self, SourceAnalysis, SourceInput},
@@ -7,13 +7,17 @@ use crate::{
     CfdDataModel, CfdDictKey, CfdValue,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap,BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread::ThreadId,
 };
+
+mod execution;
+mod checking;
+pub use checking::CheckSelection;
 
 static NEXT_RUNTIME: AtomicU64 = AtomicU64::new(1);
 pub type ValueId = usize;
@@ -66,8 +70,11 @@ pub enum HostValue {
     Existing { runtime: u64, value: ValueId },
 }
 
-/// 宿主绑定只描述数据与函数成员；当前版本不执行任何函数目标。
+/// Host 服务整对象绑定；数据读取和函数调用使用同一 Runtime 生命周期。
 pub trait HostService: std::fmt::Debug + Send + Sync {
+    fn call(&self, field: &str, _arguments: &[HostValue]) -> Result<HostValue, ExecutionError> {
+        Err(ExecutionError::InvalidAccess(format!("Host 函数未实现：{field}")))
+    }
     fn read(&self, field: &str) -> Result<HostValue, ExecutionError>;
     fn has_member(
         &self,
@@ -84,18 +91,42 @@ pub struct Runtime {
     contract: Arc<Contract>,
     values: Vec<Arc<Value>>,
     records: BTreeMap<(String, String), ValueId>,
+    table_values: BTreeMap<String, Vec<ValueId>>,
+    check_record_ids: BTreeMap<ValueId, crate::CfdRecordId>,
+    record_lookup: BTreeMap<(String, String), ValueId>,
     bindings: HostBindings,
     released: AtomicBool,
     execution: Mutex<Option<(ThreadId, usize)>>,
+    vm: execution::VmState,
+    contract_values: BTreeSet<ValueId>,
+    constants: BTreeMap<String,ValueId>,
+    function_imports: BTreeMap<ValueId,BTreeMap<String,String>>,
+    function_locations: BTreeMap<ValueId,crate::ingest::CallableLocation>,
+    check_reporter: Arc<checking::CheckReporter>,
 }
 
 #[derive(Debug)]
 pub struct RuntimeBuild {
     pub analyses: Vec<SourceAnalysis>,
+    pub diagnostics: Vec<BuildDiagnostic>,
     pub runtime: Result<Arc<Runtime>, String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct BuildDiagnostic {
+    pub code: String,
+    pub source: String,
+    pub message: String,
+    pub span: Option<(usize, usize)>,
+}
+
+impl From<String> for BuildDiagnostic {
+    fn from(message:String)->Self {Self{code:"BUILD".into(),source:String::new(),message,span:None}}
+}
+impl From<&str> for BuildDiagnostic {
+    fn from(message:&str)->Self {message.to_string().into()}
+}
+#[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     contract: Arc<Contract>,
     sources: Vec<SourceInput>,
@@ -112,7 +143,18 @@ impl RuntimeBuilder {
     pub fn add_source(&mut self, input: SourceInput) {
         self.sources.push(input);
     }
+    /// 来源名称只用于诊断，同名输入仍逐次追加；匿名来源由核心稳定编号。
+    pub fn add_text(&mut self, source: &str, name: Option<&str>) {
+        let name = name
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("source-{}", self.sources.len() + 1));
+        self.add_source(SourceInput::new(name, source));
+    }
     pub fn bind(&mut self, name: String, service: Arc<dyn HostService>) -> Result<(), String> {
+        if name == "Coflow::Check" {
+            if self.bindings.contains_key(&name) {return Err("duplicate Host binding Coflow::Check".into());}
+            self.bindings.insert(name,service);return Ok(());
+        }
         let ty = self
             .contract
             .schema()
@@ -145,25 +187,79 @@ impl RuntimeBuilder {
     }
     pub fn build(self) -> RuntimeBuild {
         let (analyses, model) = loading::load(self.contract.schema(), self.sources);
+        let mut diagnostics: Vec<_> = analyses
+            .iter()
+            .flat_map(|source| {
+                source.diagnostics.iter().map(|error| BuildDiagnostic {
+                    code: format!("{:?}", error.code),
+                    source: source.input.path.to_string_lossy().into_owned(),
+                    message: error.message.clone(),
+                    span: Some((error.span.start, error.span.end)),
+                })
+            })
+            .collect();
+        if let Err(loading::CfdTextLoadError::DataModel {
+            diagnostics: errors,
+            origins,
+        }) = &model
+        {
+            for error in &errors.diagnostics {
+                let origin = error.primary.as_ref().and_then(|label| {
+                    label
+                        .origin
+                        .as_ref()
+                        .or_else(|| label.record.and_then(|id| origins.get(id.index())))
+                });
+                let source = match origin {
+                    Some(crate::RecordOrigin::File { path, .. }) => {
+                        path.to_string_lossy().into_owned()
+                    }
+                    _ => String::new(),
+                };
+                diagnostics.push(BuildDiagnostic {
+                    code: error.code.to_string(),
+                    source,
+                    message: error.message.clone(),
+                    span: None,
+                });
+            }
+        }
         let runtime = model
             .map_err(|e| e.to_string())
-            .and_then(|model| Runtime::from_model(self.contract, model, self.bindings))
+            .and_then(|model| Runtime::from_model(self.contract, model, self.bindings).map_err(|diagnostic| {let message=diagnostic.message.clone();diagnostics.push(diagnostic);message}))
             .map(Arc::new);
-        RuntimeBuild { analyses, runtime }
+        if let Err(message) = &runtime {
+            if diagnostics.is_empty() {
+                diagnostics.push(BuildDiagnostic {
+                    code: "BUILD".into(),
+                    source: String::new(),
+                    message: message.clone(),
+                    span: None,
+                });
+            }
+        }
+        RuntimeBuild {
+            analyses,
+            diagnostics,
+            runtime,
+        }
     }
 }
 
 impl Runtime {
-    fn from_model(
+    pub(crate) fn from_model(
         contract: Arc<Contract>,
         model: CfdDataModel,
         bindings: HostBindings,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, BuildDiagnostic> {
         let mut arena = Arena {
             contract: &contract,
             values: Vec::new(),
             records: BTreeMap::new(),
             constant_callables: BTreeMap::new(),
+            contract_values: BTreeSet::new(),
+            function_imports: BTreeMap::new(),
+            function_locations: BTreeMap::new(),
         };
         // 先分配所有记录身份，再连接字段，允许自引用及跨记录循环。
         for (_, record) in model.records() {
@@ -176,8 +272,10 @@ impl Runtime {
             );
         }
         // 常量先建立独立存储，后续字段复用其中的函数与模板身份。
+        let check_record_ids=model.records().map(|(id,record)|(arena.records[&(record.actual_type().to_string(),record.key().to_string())],id)).collect();
+        let mut constants=BTreeMap::new();
         for constant in contract.schema().all_consts() {
-            arena.constant(&constant.value, None)?;
+            constants.insert(constant.name.to_string(),arena.constant(&constant.value, None)?);
         }
         for (_, record) in model.records() {
             let id = arena.records[&(record.actual_type().to_string(), record.key().to_string())];
@@ -275,20 +373,51 @@ impl Runtime {
             };
         }
         let Arena {
-            values, records, ..
+            values, records, contract_values, function_imports, function_locations, ..
         } = arena;
         let identity = NEXT_RUNTIME
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
             .map_err(|_| "Runtime identity exhausted")?;
-        Ok(Self {
+        // 按静态查询类型建立一次索引，宿主枚举不重复扫描或复制整张表。
+        let mut table_values = BTreeMap::new();
+        let mut record_lookup = BTreeMap::new();
+        for ty in contract
+            .schema()
+            .all_types()
+            .filter(|ty| ty.kind != coflow_language::cft::syntax::ast::TypeKind::Data)
+        {
+            let mut ids = Vec::new();
+            for ((actual, key), id) in &records {
+                if contract.schema().is_assignable(actual, &ty.name) {
+                    ids.push(*id);
+                    record_lookup.insert((ty.name.to_string(), key.clone()), *id);
+                }
+            }
+            table_values.insert(ty.name.to_string(), ids);
+        }
+        let check_reporter=Arc::new(checking::CheckReporter::default());
+        let mut bindings=bindings;
+        bindings.entry("Coflow::Check".into()).or_insert_with(||check_reporter.clone());
+        let mut runtime = Self {
             identity,
             contract,
             values: values.into_iter().map(Arc::new).collect(),
             records,
+            table_values,
+            check_record_ids,
+            record_lookup,
             bindings,
             released: AtomicBool::new(false),
             execution: Mutex::new(None),
-        })
+            vm: execution::VmState::default(),
+            contract_values,
+            constants,
+            function_imports,
+            function_locations,
+            check_reporter,
+        };
+        runtime.vm = execution::VmState::build(&runtime)?;
+        Ok(runtime)
     }
     pub fn identity(&self) -> u64 {
         self.identity
@@ -308,105 +437,16 @@ impl Runtime {
     }
     pub fn ensure_value(&self, id: ValueId) -> Result<(), ExecutionError> {
         self.ensure_alive()?;
-        self.values
-            .get(id)
-            .map(|_| ())
-            .ok_or(ExecutionError::InvalidHandle)
+        if id < self.values.len() { Ok(()) } else { self.vm.value(id).map(|_| ()) }
     }
     /// 数据与集合按读取值比较；记录、函数按创建身份比较。
     pub fn equals(&self, left: ValueId, right: ValueId) -> Result<bool, ExecutionError> {
-        let _entry = self.enter()?;
-        let left = self.value(left)?;
-        let right = self.value(right)?;
-        match (left.as_ref(), right.as_ref()) {
-            (Value::None, Value::None) => Ok(true),
-            (Value::Bool(a), Value::Bool(b)) => Ok(a == b),
-            (Value::Int(a), Value::Int(b)) => Ok(a == b),
-            (Value::Float(a), Value::Float(b)) => Ok(a == b),
-            (Value::Int(a), Value::Float(b)) => Ok(*a as f32 == *b),
-            (Value::Float(a), Value::Int(b)) => Ok(*a == *b as f32),
-            (Value::String(a), Value::String(b)) => Ok(a == b),
-            (
-                Value::Enum {
-                    type_name: a,
-                    value: av,
-                },
-                Value::Enum {
-                    type_name: b,
-                    value: bv,
-                },
-            ) => Ok(a == b && av == bv),
-            (Value::Template { .. }, _) | (_, Value::Template { .. }) => {
-                Err(ExecutionError::Unavailable)
-            }
-            (Value::Function { .. }, Value::Function { .. }) => Ok(Arc::ptr_eq(&left, &right)),
-            (Value::Object { key: Some(_), .. }, Value::Object { key: Some(_), .. }) => {
-                Ok(Arc::ptr_eq(&left, &right))
-            }
-            (
-                Value::Object {
-                    type_name: a,
-                    fields: af,
-                    ..
-                },
-                Value::Object {
-                    type_name: b,
-                    fields: bf,
-                    ..
-                },
-            ) => {
-                if a != b || af.len() != bf.len() {
-                    return Ok(false);
-                }
-                for ((an, av), (bn, bv)) in af.iter().zip(bf) {
-                    if an != bn || !self.equals(*av, *bv)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            (Value::Array(a), Value::Array(b)) => {
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-                for (a, b) in a.iter().zip(b) {
-                    if !self.equals(*a, *b)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            (Value::Dict(a), Value::Dict(b)) => {
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-                for (ak, av) in a {
-                    let mut found = false;
-                    for (bk, bv) in b {
-                        if self.equals(*ak, *bk)? {
-                            if !self.equals(*av, *bv)? {
-                                return Ok(false);
-                            }
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            _ => Ok(false),
-        }
+        let _entry=self.enter()?;
+        self.execution_equals(left,right)
     }
     pub fn value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
         self.ensure_alive()?;
-        let value = self
-            .values
-            .get(id)
-            .ok_or(ExecutionError::InvalidHandle)?
-            .clone();
+        let value = if let Some(value) = self.values.get(id) { value.clone() } else { self.vm.value(id)? };
         if let Value::HostData {
             service,
             field,
@@ -491,6 +531,103 @@ impl Runtime {
                 ExecutionError::InvalidAccess(format!("record {type_name}::{key} not found"))
             })
     }
+    pub fn require_record_kind(
+        &self,
+        type_name: &str,
+        singleton: bool,
+    ) -> Result<(), ExecutionError> {
+        self.ensure_alive()?;
+        let ty = self
+            .contract
+            .schema()
+            .resolve_type(type_name)
+            .ok_or_else(|| ExecutionError::InvalidAccess(format!("unknown type {type_name}")))?;
+        let expected = if singleton {
+            coflow_language::cft::syntax::ast::TypeKind::Singleton
+        } else {
+            coflow_language::cft::syntax::ast::TypeKind::Table
+        };
+        if ty.kind != expected {
+            return Err(ExecutionError::InvalidAccess(format!(
+                "{type_name} is not a {}",
+                if singleton { "singleton" } else { "table" }
+            )));
+        }
+        Ok(())
+    }
+    pub fn find_record(
+        &self,
+        type_name: &str,
+        key: &str,
+    ) -> Result<Option<ValueId>, ExecutionError> {
+        self.require_record_kind(type_name, false)?;
+        Ok(self
+            .record_lookup
+            .get(&(type_name.to_string(), key.to_string()))
+            .copied())
+    }
+    pub fn table_values(&self, type_name: &str) -> Result<&[ValueId], ExecutionError> {
+        self.require_record_kind(type_name, false)?;
+        self.table_values
+            .get(type_name)
+            .map(Vec::as_slice)
+            .ok_or_else(|| ExecutionError::InvalidAccess("unknown table".into()))
+    }
+    pub fn singleton(&self, type_name: &str) -> Result<ValueId, ExecutionError> {
+        self.require_record_kind(type_name, true)?;
+        self.record(
+            type_name,
+            type_name.rsplit("::").next().unwrap_or(type_name),
+        )
+    }
+    /// Host 返回已有对象时归一到原对象 ID，确保记录包装保留同一身份。
+    pub fn canonical_value(&self, id: ValueId) -> Result<ValueId, ExecutionError> {
+        self.ensure_value(id)?;
+        if !matches!(self.values[id].as_ref(), Value::HostData { .. }) {
+            return Ok(id);
+        }
+        let resolved = self.value(id)?;
+        self.values
+            .iter()
+            .position(|value| Arc::ptr_eq(value, &resolved))
+            .ok_or_else(|| {
+                ExecutionError::InvalidAccess("expected an existing object value".into())
+            })
+    }
+    /// 字典查找在核心执行，宿主只传输已声明键类型的标量。
+    pub fn dictionary_find(
+        &self,
+        id: ValueId,
+        key: HostValue,
+    ) -> Result<Option<ValueId>, ExecutionError> {
+        let dictionary = self.value(id)?;
+        let Value::Dict(entries) = dictionary.as_ref() else {
+            return Err(ExecutionError::InvalidAccess("expected dictionary".into()));
+        };
+        for (candidate, value) in entries {
+            let candidate = self.value(*candidate)?;
+            let equal = match (candidate.as_ref(), &key) {
+                (Value::Bool(a), HostValue::Bool(b)) => a == b,
+                (Value::Int(a), HostValue::Int(b)) => a == b,
+                (Value::String(a), HostValue::String(b)) => a == b,
+                (
+                    Value::Enum {
+                        type_name: a,
+                        value: av,
+                    },
+                    HostValue::Enum {
+                        type_name: b,
+                        value: bv,
+                    },
+                ) => a == b && av == bv,
+                _ => false,
+            };
+            if equal {
+                return Ok(Some(*value));
+            }
+        }
+        Ok(None)
+    }
     pub fn records(&self, type_name: &str) -> Result<Vec<ValueId>, ExecutionError> {
         self.ensure_alive()?;
         let ty = self
@@ -510,24 +647,11 @@ impl Runtime {
             .map(|(_, id)| *id)
             .collect())
     }
-    pub fn call(&self, id: ValueId) -> Result<(), ExecutionError> {
-        let _entry = self.enter()?;
-        if let Value::Function {
-            host: Some((service, _)),
-            ..
-        } = self.value(id)?.as_ref()
-        {
-            if !self.bindings.contains_key(service) {
-                return Err(ExecutionError::MissingHostBinding(service.clone()));
-            }
-        }
-        Err(ExecutionError::Unavailable)
-    }
     pub fn read_text(&self, id: ValueId) -> Result<String, ExecutionError> {
         let _entry = self.enter()?;
         match self.value(id)?.as_ref() {
             Value::String(value) => Ok(value.clone()),
-            Value::Template { .. } => Err(ExecutionError::Unavailable),
+            Value::Template { .. } => self.evaluate_text(id),
             _ => Err(ExecutionError::InvalidAccess("expected string".into())),
         }
     }
@@ -555,10 +679,7 @@ impl Runtime {
                 if runtime != self.identity {
                     return Err(ExecutionError::ForeignRuntime);
                 }
-                let value = self
-                    .values
-                    .get(value)
-                    .ok_or(ExecutionError::InvalidHandle)?;
+                let value = self.value(value)?;
                 // 不允许用 Host 字段占位符递归触发自身；返回实际数据句柄。
                 if matches!(value.as_ref(), Value::HostData { .. }) {
                     return Err(ExecutionError::InvalidAccess(
@@ -603,9 +724,7 @@ impl Runtime {
                                     .fold(0u32, |mask, variant| mask | variant.value as u32);
                                 *value & !mask == 0
                             } else {
-                                meta.variants
-                                    .iter()
-                                    .any(|variant| variant.value == i64::from(*value))
+                                *value <= i32::MAX as u32
                             }
                         })
             }
@@ -686,6 +805,9 @@ struct Arena<'a> {
     values: Vec<Value>,
     records: BTreeMap<(String, String), ValueId>,
     constant_callables: BTreeMap<String, ValueId>,
+    contract_values: BTreeSet<ValueId>,
+    function_imports: BTreeMap<ValueId,BTreeMap<String,String>>,
+    function_locations: BTreeMap<ValueId,crate::ingest::CallableLocation>,
 }
 impl Arena<'_> {
     fn constant(
@@ -731,6 +853,8 @@ impl Arena<'_> {
                 };
                 let id = self.push(value);
                 self.constant_callables.insert(origin.clone(), id);
+                self.function_locations.insert(id,source.into());
+                self.contract_values.insert(id);
                 return Ok(id);
             }
             C::Array(values) => Value::Array(
@@ -905,6 +1029,9 @@ impl Arena<'_> {
                 Value::Dict(entries)
             }
         };
-        Ok(self.push(next))
+        let id=self.push(next);
+        match value{CfdValue::Function(function)=>{self.function_imports.insert(id,function.imports.clone()); if let Some(location)=&function.location{self.function_locations.insert(id,location.clone());}},CfdValue::FormattedString(template)=>{self.function_imports.insert(id,template.imports.clone()); if let Some(location)=&template.location{self.function_locations.insert(id,location.clone());}},_=>{}}
+        if matches!(value,CfdValue::Function(function) if function.from_default) || matches!(value,CfdValue::FormattedString(template) if template.from_default) {self.contract_values.insert(id);}
+        Ok(id)
     }
 }

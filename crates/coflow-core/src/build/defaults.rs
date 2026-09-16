@@ -98,12 +98,17 @@ impl Validator<'_, '_> {
                     return None;
                 };
                 parsed.constant_origin = source.constant_origin.clone();
+                parsed.from_default = true;
+                parsed.location=Some(source.into());
                 return Some(ValueDraft::FormattedString(parsed));
             }
             CftSchemaDefaultValue::Function(source)
                 if matches!(ty, CftValueType::Function(_, _)) =>
             {
                 CfdValue::Function(crate::CfdFunction {
+                    from_default: true,
+                    location: Some(source.into()),
+                    imports: Default::default(),
                     constant_origin: source.constant_origin.clone(),
                     source: source.source.clone(),
                 })

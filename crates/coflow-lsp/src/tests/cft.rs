@@ -313,7 +313,7 @@ table Item {\n\
 fn completion_items_cover_context_filters_and_default_boundaries() {
     let source = "const LIMIT: int = 5;\n\
 const NAME: string = \"boss\";\n\
-const OUTCOME: int? = Some(1);\n\
+const OUTCOME: int? = 1;\n\
 enum Kind { One = 1, Two = 2, }\n\
 data Target { key: string; value: int; }\n\
 table Item {\n\
@@ -416,19 +416,19 @@ table Item {\n\
     );
     let option_labels = completion_labels(completion_items(&build, document, &option_position));
     assert!(option_labels.contains(&"None".to_string()));
-    assert!(option_labels.contains(&"Some".to_string()));
+    assert!(!option_labels.contains(&"Some".to_string()));
     assert!(!option_labels.contains(&"LIMIT".to_string()));
     assert!(!option_labels.contains(&"NAME".to_string()));
 
     let result_position = position_from_byte(
         source,
         source
-            .find("const OUTCOME: int? = Some(1)")
+            .find("const OUTCOME: int? = 1")
             .expect("optional constant")
             + "const OUTCOME: int? = ".len(),
     );
     let result_labels = completion_labels(completion_items(&build, document, &result_position));
-    assert!(result_labels.contains(&"Some".to_string()));
+    assert!(!result_labels.contains(&"Some".to_string()));
     assert!(result_labels.contains(&"None".to_string()));
     assert!(!result_labels.contains(&"LIMIT".to_string()));
 

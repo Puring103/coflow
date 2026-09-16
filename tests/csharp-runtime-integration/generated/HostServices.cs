@@ -1,15 +1,19 @@
+#nullable enable
 using System;
-using Coflow.Runtime;
+using Coflow;
 namespace @Game.@Config {
-public sealed class @HostServices : CoflowObject {
-public @HostServices(CoflowValue value) : base(value) { value.RequireContract(global::@Game.@Config.CoflowSchema.Identity); }
-public string Id => Read("id", CoflowCodecs.String);
-public string @environment => Read("environment", CoflowCodecs.String);
-public CoflowFunction @log => Read("log", v0 => new CoflowFunction(v0));
-public static global::@Game.@Config.@HostServices Wrap(CoflowValue value) {
+public sealed class @HostServices : RuntimeObject {
+public @HostServices(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.Contract); }
+public string Id => Read("id", ValueCodecs.String);
+public string @environment => Read("environment", ValueCodecs.String);
+public global::@Game.@Config.@Character? @favorite => Read("favorite", v0 => ValueCodecs.OptionalReference(v0, global::@Game.@Config.@Character.Wrap));
+public global::@Game.@Config.@Mood @mood => Read("mood", v0 => (global::@Game.@Config.@Mood)ValueCodecs.Enum(v0));
+public RuntimeFunction @log => Read("log", v0 => new RuntimeFunction(v0));
+public static global::@Game.@Config.@HostServices Wrap(RuntimeValue value) {
+value = value.Canonical();
 switch (value.TypeName) {
 case "HostServices": return new global::@Game.@Config.@HostServices(value);
-default: value.Dispose(); throw new CoflowException("Unexpected runtime type.");
+default: throw new CoflowException("Unexpected runtime type.");
 }
 }
 }

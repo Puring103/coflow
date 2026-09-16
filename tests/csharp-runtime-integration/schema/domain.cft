@@ -1,9 +1,11 @@
 enum CharacterId {}
+enum Mood { Calm, Happy }
 
 @struct
 sealed data Stats {
   health: int;
   weights: [float] = [];
+  bonus: int?;
 }
 
 @idAsEnum(CharacterId)
@@ -12,6 +14,15 @@ table Character {
   stats: Stats;
   friend: Character? = None;
   labels: {bool: string} = {};
+  moods: {Mood: string} = {};
+  mood: Mood?;
+  extra: Stats?;
+  notes: [string]?;
+  callback: (fn() -> int)?;
   text: fstring = f"{self.name}";
   score: fn(bonus: int) -> int => { return self.stats.health + bonus; };
+}
+
+table Hero : Character {
+  level: int = 1;
 }

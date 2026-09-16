@@ -2,12 +2,21 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Coflow.Runtime
+namespace Coflow
 {
-    public interface ICoflowHost
+    public abstract class HostBinding
     {
-        string MemberType(string field);
-        object? Read(string field);
+        internal Contract Contract { get; }
+        internal string Service { get; }
+        protected HostBinding(Contract contract, string service) { Contract = contract; Service = service; }
+        public abstract string MemberType(string field);
+        public abstract object? Read(string field);
+    }
+    public readonly struct HostEnum
+    {
+        internal string TypeName { get; }
+        internal uint Value { get; }
+        public HostEnum(string typeName, uint value) { TypeName = typeName; Value = value; }
     }
     internal static class HostBridge
     {
@@ -24,7 +33,7 @@ namespace Coflow.Runtime
         private static readonly ReleaseCallback FreeCallback = Free;
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl,EntryPoint="coflow_bind_host")]
         private static extern uint Bind(ulong builder,byte[] service,UIntPtr length,ulong context,Callback read,ReleaseCallback free);
-        internal static void Bind(CoflowBuilder builder,string service,ICoflowHost host)
+        internal static void Bind(RuntimeBuilder builder,HostBinding host)
         {
             if(host==null)throw new ArgumentNullException(nameof(host));
             var context=GCHandle.Alloc(host);
@@ -33,7 +42,7 @@ namespace Coflow.Runtime
             try
             {
                 builder.Handle.DangerousAddRef(ref retained);
-                var bytes=Encoding.UTF8.GetBytes(service);
+                var bytes=Encoding.UTF8.GetBytes(host.Service);
                 // 原生接口接管 context，绑定失败也会调用 Free。
                 uint result=Bind(builder.Handle.Id,bytes,(UIntPtr)bytes.Length,unchecked((ulong)GCHandle.ToIntPtr(context).ToInt64()),ReadCallback,FreeCallback);
                 submitted=true;
@@ -55,7 +64,7 @@ namespace Coflow.Runtime
             {
                 var bytes=new byte[checked((int)length.ToUInt64())];Marshal.Copy(field,bytes,0,bytes.Length);
                 string name=Encoding.UTF8.GetString(bytes);
-                var host=(ICoflowHost)GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Target!;
+                var host=(HostBinding)GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Target!;
                 if(op==0){result=Native.Call(41,data:Encoding.UTF8.GetBytes(host.MemberType(name)));return;}
                 switch(host.Read(name))
                 {
@@ -64,8 +73,12 @@ namespace Coflow.Runtime
                     case int v: result.Tag=2;result.Integer=v;break;
                     case float v: result.Tag=3;result.Number=v;break;
                     case string v: result=Native.Call(41,data:Encoding.UTF8.GetBytes(v));result.Tag=4;break;
-                    case ICoflowValue v:
-                        using (var value = v.RetainValue()) { result = Native.Call(33, value.Handle); result.Tag = 11; } break;
+                    case HostEnum v:
+                        result=Native.Call(41,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
+                    case IRuntimeValue v:
+                        var value = v.RuntimeValue;
+                        value.Request(24);
+                        result.Handle=value.Owner.Handle.Id; result.Length=value.Id; result.Tag=11; break;
                     default: throw new CoflowException("Host data must be a scalar or a value from the same Runtime.");
                 }
             }

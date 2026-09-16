@@ -36,13 +36,17 @@ pub struct CftTopLevelCheck {
 pub struct CftCallableSource {
     pub source: String,
     pub constant_origin: Option<String>,
+    pub module: ModuleId,
+    pub span: Span,
+    pub original_source: String,
 }
 
 impl CftCallableSource {
-    pub fn literal(source: String) -> Self {
+    pub fn literal(source: String, original_source: String, module: ModuleId, span: Span) -> Self {
         Self {
             source,
             constant_origin: None,
+            original_source, module, span,
         }
     }
 }

@@ -159,7 +159,7 @@ fn const_value_to_string(value: &CftConstValue) -> String {
             enum_name, variant, ..
         } => format!("{enum_name}::{variant}"),
         CftConstValue::OptionNone => "None".to_string(),
-        CftConstValue::OptionSome(value) => format!("Some({})", const_value_to_string(value)),
+        CftConstValue::OptionSome(value) => const_value_to_string(value),
         CftConstValue::Array(values) => format!(
             "[{}]",
             values

@@ -186,12 +186,12 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
         &populated,
         concat!(
             "holder: Holder {\n",
-            "    reward: Some(ItemRewardValue{\n",
+            "    reward: ItemRewardValue{\n",
             "        label: \"starter\",\n",
             "        count: 1,\n",
             "        tags: [],\n",
-            "    }),\n",
-            "    note: Some(\"old\"),\n",
+            "    },\n",
+            "    note: \"old\",\n",
             "}\n",
         ),
     )

@@ -39,6 +39,9 @@ pub(crate) fn parse_cell_text_value(
     let input = match input {
         LoadedValueDraft::FormattedString(formatted) => {
             return Ok(CfdValue::FormattedString(crate::CfdFormattedString {
+                    from_default: false,
+                    location: None,
+                    imports: Default::default(),
                 constant_origin: formatted.constant_origin,
                 source: formatted.source,
             }));

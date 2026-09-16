@@ -1,18 +1,20 @@
+#nullable enable
 using System;
-using Coflow.Runtime;
+using Coflow;
 namespace @Game.@Config {
-public readonly struct @Stats : IDisposable, ICoflowValue {
-private readonly CoflowValue Value;
-public @Stats(CoflowValue value) { value.RequireContract(global::@Game.@Config.CoflowSchema.Identity); Value = value; }
-private T Read<T>(string field, Func<CoflowValue,T> codec) => codec(Value.Field(field));
-public CoflowValue RetainValue() => Value.Retain();
-public void Dispose() => Value.Dispose();
-public int @health => Read("health", CoflowCodecs.Int);
-public CoflowArray<float> @weights => Read("weights", v0 => new CoflowArray<float>(v0, CoflowCodecs.Float));
-public static global::@Game.@Config.@Stats Wrap(CoflowValue value) {
+public readonly struct @Stats : IRuntimeValue {
+private readonly RuntimeValue Value;
+public @Stats(RuntimeValue value) { value.RequireContract(global::@Game.@Config.Generated.Contract); Value = value; }
+private T Read<T>(string field, Func<RuntimeValue,T> codec) => codec(Value.Field(field));
+public RuntimeValue RuntimeValue => Value;
+public int @health => Read("health", ValueCodecs.Int);
+public RuntimeArray<float> @weights => Read("weights", v0 => new RuntimeArray<float>(v0, ValueCodecs.Float));
+public int? @bonus => Read("bonus", v0 => ValueCodecs.OptionalValue(v0, ValueCodecs.Int));
+public static global::@Game.@Config.@Stats Wrap(RuntimeValue value) {
+value = value.Canonical();
 switch (value.TypeName) {
 case "Stats": return new global::@Game.@Config.@Stats(value);
-default: value.Dispose(); throw new CoflowException("Unexpected runtime type.");
+default: throw new CoflowException("Unexpected runtime type.");
 }
 }
 }

@@ -1,17 +1,11 @@
-# Feature: all, any, and none collection quantifiers.
+# Feature: collection predicates.
 
 table QuantifierRule {
   numbers: [int];
 
   check {
-    all value in numbers {
-      value >= 0;
-    }
-    any value in numbers {
-      value == 0;
-    }
-    none value in numbers {
-      value < 0;
-    }
+    Coflow::Check::require(self.numbers.all(fn(value: int) -> bool { value >= 0 }), "numbers must be nonnegative");
+    Coflow::Check::require(self.numbers.any(fn(value: int) -> bool { value == 0 }), "numbers must contain zero");
+    Coflow::Check::require(!self.numbers.any(fn(value: int) -> bool { value < 0 }), "numbers must not contain negatives");
   }
 }

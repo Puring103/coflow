@@ -271,6 +271,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             }
             (CftValueType::Function(_, _), LoadedValueDraft::Function(value)) => {
                 Some(ValueDraft::Value(CfdValue::Function(crate::CfdFunction {
+                    from_default: value.from_default,
+                    location: value.location.clone(),
+                    imports: value.imports.clone(),
                     constant_origin: value.constant_origin.clone(),
                     source: value.source.clone(),
                 })))
