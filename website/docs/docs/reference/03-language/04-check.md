@@ -1,8 +1,7 @@
 # Check 校验
 
-当前版本支持声明和保存 check 源码，尚未实现函数编译、虚拟机及 check 执行。
-项目存在检查规则时，执行检查返回 `EXEC-001`，不会把未执行的规则报告为通过。
-声明检查、静态数据加载和代码生成可独立使用。
+check 在 Runtime 构建成功后通过显式请求执行。每次请求实际运行选中的记录规则和顶层规则，
+返回业务诊断、完成状态及执行统计；构建、数据加载和代码生成不会隐式执行 check。
 
 check 可以定义在 table、singleton 内或作为命名顶层规则：
 
@@ -10,18 +9,14 @@ check 可以定义在 table、singleton 内或作为命名顶层规则：
 table Item {
   price: int;
   check {
-    validator.require(self.price >= 0, "价格不能为负数");
+    Coflow::Check::require(self.price >= 0, "价格不能为负数");
   }
-}
-
-@Host
-singleton validator {
-  require: fn(condition: bool, message: string) -> ();
 }
 ```
 
 记录规则作用于记录，不会沿字段、集合或引用自动遍历内联对象；data 不定义 check。
 `self.id` 可读取记录身份。
 
-`require` 是宿主提供的普通函数，参数按普通调用立即求值。
-Host 声明与绑定见 [C# 代码生成](../07-codegen/01-csharp.md#host-服务)。
+`Coflow::Check::require` 按普通调用规则立即求值。条件为 false 时记录消息并继续当前规则；
+执行错误终止当前规则，后续规则继续执行。C# 通过 `Runtime.RunChecks(CheckOptions)` 选择记录、
+规则名称、全局规则和执行预算。

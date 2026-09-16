@@ -91,15 +91,20 @@ pub(crate) fn finalize_mutation(
     Ok(report)
 }
 
-/// 集合字段的纯函数编辑：`Option` 包装自动展开/回包，数组/字典分支各自处理。
+/// 集合字段的纯函数编辑：单层 `Option` 包装自动展开/回包，数组/字典分支各自处理。
 pub(crate) fn apply_collection_edit(
     value: CfdValue,
     edit: CollectionEdit,
     default_item: Option<CfdValue>,
 ) -> Result<CfdValue, EditorError> {
     match (value, edit) {
-        (CfdValue::OptionSome(inner), edit) => apply_collection_edit(*inner, edit, default_item)
-            .map(|value| CfdValue::OptionSome(Box::new(value))),
+        (CfdValue::OptionSome(inner), edit) => {
+            if matches!(inner.as_ref(), CfdValue::OptionSome(_) | CfdValue::OptionNone) {
+                return Err(EditorError::write("nested optional values are not supported"));
+            }
+            apply_collection_edit(*inner, edit, default_item)
+                .map(|value| CfdValue::OptionSome(Box::new(value)))
+        }
         (CfdValue::OptionNone, edit @ CollectionEdit::ArrayAppend { .. }) => {
             apply_collection_edit(CfdValue::Array(Vec::new()), edit, default_item)
                 .map(|value| CfdValue::OptionSome(Box::new(value)))
@@ -214,26 +219,4 @@ mod collection_edit_tests {
         );
     }
 
-    #[test]
-    fn dict_insert_preserves_nested_option_layers() {
-        let next = apply_collection_edit(
-            CfdValue::OptionSome(Box::new(CfdValue::OptionNone)),
-            CollectionEdit::DictInsert {
-                key: coflow_runtime::CfdDictKey::String("key".to_string()),
-                value: Some(CfdValue::Bool(true)),
-            },
-            None,
-        )
-        .expect("nested optional dict edit");
-
-        assert_eq!(
-            next,
-            CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(CfdValue::Dict(
-                vec![(
-                    coflow_runtime::CfdDictKey::String("key".to_string()),
-                    CfdValue::Bool(true),
-                )]
-            ),))))
-        );
-    }
 }

@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use super::SessionStore;
-use crate::editor::settings::{
+use crate::editor::settings_store::{
     read_project_settings, sanitized_column_widths, sanitized_record_groups, sanitized_views,
     sanitized_workspace, write_project_settings,
 };

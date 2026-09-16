@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs" Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="../../../tests/csharp-runtime-integration/generated/coflow.contract" Link="coflow.contract" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Coflow.Runtime/Coflow.Runtime.csproj"
                       SetTargetFramework="TargetFramework=netstandard2.1" />
   </ItemGroup>

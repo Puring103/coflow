@@ -96,7 +96,6 @@ pub(crate) fn generated_types(
                         name: crate::FieldName::from_validated(variant.to_string()),
                         value_type: optional.clone(),
                         default: None,
-                        is_expand: false,
                         dimension: None,
                         annotations: Vec::new(),
                         display: None,

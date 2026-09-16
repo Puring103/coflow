@@ -2,7 +2,8 @@
 
 mod convert;
 mod session;
-mod settings;
+#[path = "settings.rs"]
+mod settings_store;
 pub mod types;
 
 pub use session::SessionStore;

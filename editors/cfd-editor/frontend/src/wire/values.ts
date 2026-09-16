@@ -110,15 +110,12 @@ export function nullValue(): FieldValue {
   return { kind: 'option_none' }
 }
 
-/** 必填缺失字段直接写值；只有明确的 Option 层才创建 Some。 */
+/** 必填缺失字段直接写值；可选字段使用内部 Some 表示非空状态。 */
 export function applyCreatedValue(
-  current: FieldValue,
-  optionLayer: number | null,
+  optional: boolean,
   created: FieldValue,
 ): FieldValue {
-  return optionLayer === null
-    ? created
-    : replaceOptionLayer(current, optionLayer, { kind: 'option_some', value: created })
+  return optional ? { kind: 'option_some', value: created } : created
 }
 
 export function isNullValue(value: FieldValue): boolean {
@@ -146,35 +143,9 @@ export function replacePresentationValue(original: FieldValue, value: FieldValue
   }
 }
 
-export function optionLayerStates(
-  value: FieldValue,
-  declaredDepth: number,
-): Array<'some' | 'none'> {
-  const states: Array<'some' | 'none'> = []
-  let current = value
-  for (let depth = 0; depth < declaredDepth; depth += 1) {
-    if (current.kind === 'option_some') {
-      states.push('some')
-      current = current.value
-      continue
-    }
-    states.push('none')
-    break
-  }
-  return states
-}
-
-export function replaceOptionLayer(
-  value: FieldValue,
-  layer: number,
-  replacement: FieldValue,
-): FieldValue {
-  if (layer === 0) return replacement
-  if (value.kind !== 'option_some') return value
-  return {
-    kind: 'option_some',
-    value: replaceOptionLayer(value.value, layer - 1, replacement),
-  }
+export function optionalState(value: FieldValue, optional: boolean): 'some' | 'none' | null {
+  if (!optional) return null
+  return value.kind === 'option_some' ? 'some' : 'none'
 }
 
 export function stringValue(value: string): FieldValue {

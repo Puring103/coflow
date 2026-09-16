@@ -4,6 +4,35 @@ using System.Text;
 
 namespace Coflow
 {
+    // 与 coflow_ffi 的 Operation 一一对应，托管代码不直接使用协议数字。
+    internal enum NativeOperation : uint
+    {
+        LoadContract = 1,
+        ContractIdentity = 8,
+        CreateBuilder = 10,
+        AddDataSource = 11,
+        BuildRuntime = 12,
+        TableLength = 21,
+        TableValue = 22,
+        ReadField = 23,
+        InspectValue = 24,
+        ReadText = 25,
+        ArrayValue = 26,
+        DictionaryKey = 27,
+        DictionaryValue = 28,
+        Invoke = 29,
+        TypeName = 30,
+        ProgramSource = 31,
+        TryFindRecord = 32,
+        DimensionVariant = 34,
+        ValueEquals = 35,
+        DimensionDefault = 36,
+        Singleton = 37,
+        DictionaryFind = 38,
+        CanonicalValue = 39,
+        CreateBuffer = 41,
+        RunChecks = 45,
+    }
     [StructLayout(LayoutKind.Sequential)]
     internal struct Response
     {
@@ -41,7 +70,7 @@ namespace Coflow
         private static extern uint Copy(ulong handle, byte[] destination, UIntPtr capacity);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_release")]
         internal static extern void Release(ulong handle);
-        internal static Response Call(uint op, NativeHandle? handle = null, string key = "", byte[]? data = null, ulong index = 0, ulong value = 0)
+        internal static Response Call(NativeOperation op, NativeHandle? handle = null, string key = "", byte[]? data = null, ulong index = 0, ulong value = 0)
         {
             var encoded = Encoding.UTF8.GetBytes(key);
             data ??= Array.Empty<byte>();
@@ -49,7 +78,7 @@ namespace Coflow
             try
             {
                 if (handle != null) handle.DangerousAddRef(ref retained);
-                uint status = Request(op, handle?.Id ?? 0, value, encoded, (UIntPtr)encoded.Length,
+                uint status = Request((uint)op, handle?.Id ?? 0, value, encoded, (UIntPtr)encoded.Length,
                     data, (UIntPtr)data.Length, index, out var result);
                 if (status == 2) throw BuildException.Decode(ReadBuffer(result));
                 if (status != 0) throw new CoflowException(result.Handle == 0 ? "Native operation failed." : Encoding.UTF8.GetString(ReadBuffer(result)));
@@ -65,7 +94,7 @@ namespace Coflow
             if (Copy(buffer.Id, bytes, (UIntPtr)bytes.Length) != 0) throw new CoflowException("Native buffer read failed.");
             return bytes;
         }
-        internal static string ReadString(uint op, NativeHandle handle) => Encoding.UTF8.GetString(ReadBuffer(Call(op, handle)));
+        internal static string ReadString(NativeOperation op, NativeHandle handle) => Encoding.UTF8.GetString(ReadBuffer(Call(op, handle)));
     }
     public class CoflowException : Exception { public CoflowException(string message) : base(message) { } }
 }

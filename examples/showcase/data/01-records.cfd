@@ -26,18 +26,18 @@ test2: Product {
 
 sadasd: Product {
   name: "sadsad",
-  price: 12,
+  price: 33,
   enabled: true
 }
 
 n: Product {
   name: "asdsad",
-  price: 123,
+  price: 169,
   enabled: true
 }
 
 asdasd: Product {
-  name: "value",
-  price: 0,
+  name: "value阿萨德value阿萨德value阿萨德value阿萨德value阿萨德value阿萨德value阿萨德\n实打实\n实打实的\n实打实的",
+  price: 49,
   enabled: true,
 }

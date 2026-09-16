@@ -159,8 +159,8 @@ fn formatter_rejoins_split_function_type_headers() {
 
 #[test]
 fn formatter_recovers_fields_and_indents_expression_continuations() {
-    let source = "table Calculator {\nname:\nstring;\napply:\nfn(\nvalue: int\n)\n->\nResult<\nint,\nstring\n>;\n}\ncheck Rules {\nenabled && # continue after this comment\ncount >\n0;\nmatches(\nvalue,\n\"x\"\n);\n}\n";
-    let expected = "table Calculator {\n  name: string;\n  apply: fn(\n    value: int\n  ) -> Result<\n    int,\n    string\n  >;\n}\n\ncheck Rules {\n  enabled && # continue after this comment\n    count >\n    0;\n  matches(\n    value,\n    \"x\"\n  );\n}\n";
+    let source = "table Calculator {\nname:\nstring;\napply:\nfn(\nvalue: int\n)\n->\n[\nint\n];\n}\ncheck Rules {\nenabled && # continue after this comment\ncount >\n0;\nmatches(\nvalue,\n\"x\"\n);\n}\n";
+    let expected = "table Calculator {\n  name: string;\n  apply: fn(\n    value: int\n  ) -> [\n    int\n  ];\n}\n\ncheck Rules {\n  enabled && # continue after this comment\n    count >\n    0;\n  matches(\n    value,\n    \"x\"\n  );\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 }

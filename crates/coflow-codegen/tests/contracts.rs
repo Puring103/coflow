@@ -28,14 +28,8 @@ impl CodeGenerator for TestGenerator {
 #[test]
 fn artifacts_reject_duplicate_or_non_portable_paths() {
     let duplicate = CodeArtifactSet::new(vec![
-        CodeArtifactFile {
-            relative_path: "Item.cs".into(),
-            contents: String::new(),
-        },
-        CodeArtifactFile {
-            relative_path: "Item.cs".into(),
-            contents: String::new(),
-        },
+        CodeArtifactFile::text("Item.cs", ""),
+        CodeArtifactFile::text("Item.cs", ""),
     ]);
     assert!(matches!(
         duplicate,
@@ -52,10 +46,7 @@ fn artifacts_reject_duplicate_or_non_portable_paths() {
     ] {
         let files = paths
             .into_iter()
-            .map(|path| CodeArtifactFile {
-                relative_path: path.into(),
-                contents: String::new(),
-            })
+            .map(|path| CodeArtifactFile::text(path, ""))
             .collect();
         assert!(CodeArtifactSet::new(files).is_err());
     }

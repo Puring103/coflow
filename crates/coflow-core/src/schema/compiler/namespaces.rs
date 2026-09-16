@@ -208,7 +208,6 @@ fn value(v: &mut DefaultExpr, context: Option<&str>, resolve: &impl Fn(&str) -> 
                 value(v, context, resolve);
             }
         }
-        DefaultExprKind::OptionSome(v) => value(v, context, resolve),
         DefaultExprKind::BitExpr { lhs, rhs, .. } => {
             value(lhs, context, resolve);
             value(rhs, context, resolve);

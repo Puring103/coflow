@@ -5,10 +5,9 @@ use super::manifest::{
     FrontendPluginBundle, FrontendPlugins, PluginScope, ProjectFrontendPlugins,
     ProjectPluginDefaults,
 };
-use crate::editor::EditorError;
+use cfd_editor_core::editor::EditorError;
 use crate::plugin_manifest::PluginManifest;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 

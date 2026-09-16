@@ -3,12 +3,8 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-use cfd_editor_core::EditorHost;
+use cfd_editor_core::editor::EditorError;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
-
-use crate::commands::{run_blocking, run_host_command};
-use crate::editor::EditorError;
 use crate::plugin_manifest::PluginManifest;
 
 #[derive(Debug, Clone, Serialize)]

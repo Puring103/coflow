@@ -61,10 +61,7 @@ fn recursive_default_materialization_is_rejected() {
         "data Node { child: Node? = Node {}; }",
         "data Node { children: [Node] = [Node {}]; }",
         "data Node { indexed: {string: Node} = { \"child\": Node {} }; }",
-        concat!(
-            "data A { b: B? = B {}; } ",
-            "data B { a: A? = A {}; }"
-        ),
+        concat!("data A { b: B? = B {}; } ", "data B { a: A? = A {}; }"),
     ] {
         let diagnostics = compile(source).expect_err("recursive default must fail");
         assert!(

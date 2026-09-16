@@ -72,9 +72,13 @@ impl MutationImpact {
         use crate::mutation::PreparedMutationOp;
         match operation {
             PreparedMutationOp::SetField { write_record, .. }
-            | PreparedMutationOp::UnsetField { write_record, .. } => self.add_all(write_record.clone()),
+            | PreparedMutationOp::UnsetField { write_record, .. } => {
+                self.add_all(write_record.clone())
+            }
             PreparedMutationOp::FoldedSetField { record, .. }
-            | PreparedMutationOp::WriteDimensionValue { record, .. } => self.add_all(record.clone()),
+            | PreparedMutationOp::WriteDimensionValue { record, .. } => {
+                self.add_all(record.clone())
+            }
             PreparedMutationOp::InsertRecord {
                 actual_type, key, ..
             } => {

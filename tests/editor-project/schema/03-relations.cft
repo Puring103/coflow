@@ -25,7 +25,6 @@ table Entity {
   rarity: Rarity = Common;
   tags: [string] = DEFAULT_TAGS;
 
-  @expand
   stats: Stats = Stats {};
 
   primaryEffect: Effect;

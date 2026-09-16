@@ -340,7 +340,7 @@ table Item {\n\
     assert!(!top_labels.contains(&"@index".to_string()));
 
     let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
-    assert!(type_labels.contains(&"@expand".to_string()));
+    assert!(!type_labels.contains(&"@expand".to_string()));
     assert!(type_labels.contains(&"@localized".to_string()));
     assert!(type_labels.contains(&"@dimension".to_string()));
     assert!(type_labels.contains(&"@description".to_string()));

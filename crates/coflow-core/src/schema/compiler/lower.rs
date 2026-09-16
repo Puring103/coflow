@@ -210,7 +210,6 @@ impl ValidatedSchema<'_> {
                 .default
                 .as_ref()
                 .and_then(|default| self.schema_default_value(module, default)),
-            is_expand: has_annotation(&field.annotations, "expand"),
             dimension,
             annotations: Self::schema_annotations(&field.annotations),
             display: display_metadata(&field.annotations),

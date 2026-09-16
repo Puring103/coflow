@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Coflow;
 using Game.Config;
@@ -8,11 +9,19 @@ using Xunit;
 public sealed class NativeRuntimeTests
 {
     private const string Source = "hero: Hero { name: \"Hero\", stats: Stats { health: 100, weights: [1.25, 2.5] }, labels: { true: \"yes\", false: \"no\" }, moods: { Mood::Happy: \"happy\" }, mood: Mood::Calm, extra: Stats { health: 12, bonus: 5 } } RuntimeSettings: RuntimeSettings {}";
+    private static readonly Contract Contract = Generated.LoadContract(
+        File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
     private static Runtime Build(IHostServices? host = null)
     {
-        using var builder = new RuntimeBuilder(Generated.Contract).AddSource(Source);
+        using var builder = new RuntimeBuilder(Contract).AddSource(Source);
         if (host != null) builder.BindHost(host);
         return builder.Build();
+    }
+    [Fact]
+    public void GeneratedBindingsRejectAnotherContractIdentity()
+    {
+        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract"));
+        Assert.Throws<CoflowException>(() => new Contract(bytes, new byte[32]));
     }
     [Fact]
     public void TypedQueriesAndNullableValuesReadNativeData()
@@ -71,7 +80,7 @@ public sealed class NativeRuntimeTests
     [Fact]
     public void BuilderAppendsSourcesAndIsConsumedOnlyOnSuccess()
     {
-        using var builder = new RuntimeBuilder(Generated.Contract);
+        using var builder = new RuntimeBuilder(Contract);
         var failure = Assert.Throws<BuildException>(() => builder.Build());
         Assert.NotEmpty(failure.Diagnostics);
         builder.AddSource(Source, "same-name");
@@ -81,7 +90,7 @@ public sealed class NativeRuntimeTests
         Assert.Throws<CoflowException>(() => builder.Build());
         Assert.Throws<CoflowException>(() => builder.AddSource(""));
         Assert.Throws<CoflowException>(() => builder.BindHost(new Host()));
-        using var invalid = new RuntimeBuilder(Generated.Contract).AddSource("a: Missing {}");
+        using var invalid = new RuntimeBuilder(Contract).AddSource("a: Missing {}");
         var diagnostic = Assert.Throws<BuildException>(() => invalid.Build()).Diagnostics[0];
         Assert.Equal("source-1", diagnostic.SourceName);
         Assert.NotEmpty(diagnostic.Code);
@@ -101,23 +110,46 @@ public sealed class NativeRuntimeTests
         Assert.Equal(host.favorite, service.favorite);
         host.favorite = missing.Table<Character>()["hero"];
         Assert.Throws<CoflowException>(() => service.favorite);
-        using var builder = new RuntimeBuilder(Generated.Contract).BindHost(host);
+        using var builder = new RuntimeBuilder(Contract).BindHost(host);
         Assert.Throws<CoflowException>(() => builder.BindHost(host));
     }
     [Fact]
-    public void ProgramSourcesRemainAvailableWithoutExecution()
+    public void FunctionsTemplatesAndHostCallsExecute()
     {
-        using var runtime = Build();
+        var host = new Host();
+        using var runtime = Build(host);
         var hero = runtime.Table<Character>()["hero"];
         Assert.Contains("self.name", hero.Get_text_Template().ProgramSource);
-        Assert.Throws<CoflowException>(() => hero.text);
+        Assert.Equal("Hero", hero.text);
         Assert.Contains("bonus", hero.score.Source);
-        Assert.Throws<CoflowException>(() => hero.score.Call());
+        Assert.Equal(123, hero.score.Invoke(23));
+        runtime.Singleton<HostServices>().log.Invoke("ready");
+        Assert.Equal("ready", host.lastMessage);
+    }
+    [Fact]
+    public void ChecksReturnStructuredResultsAndSupportRecordSelection()
+    {
+        using var healthy = Build();
+        var success = healthy.RunChecks();
+        Assert.True(success.Success);
+        Assert.Equal(1UL, success.Statistics.ExecutedTasks);
+
+        using var builder = new RuntimeBuilder(Contract).AddSource(Source.Replace("health: 100", "health: -1"));
+        using var invalid = builder.Build();
+        var hero = invalid.Table<Character>()["hero"];
+        var failure = invalid.RunChecks(new CheckOptions(records: new IRuntimeValue[] { hero }, includeGlobal: false));
+        Assert.False(failure.Success);
+        var diagnostic = Assert.Single(failure.Diagnostics);
+        Assert.Equal("CHECK-001", diagnostic.Code);
+        Assert.Equal("health must be positive", diagnostic.Message);
+        Assert.Contains("Healthy", diagnostic.CheckNames);
     }
     private sealed class Host : IHostServices
     {
+        public string? lastMessage { get; private set; }
         public string environment => "Unity";
         public Character? favorite { get; set; }
         public Mood mood => Mood.Happy;
+        public Unit log(string message) { lastMessage = message; return default; }
     }
 }

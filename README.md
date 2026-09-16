@@ -37,17 +37,18 @@ codegen:
 ```
 
 `data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。C# 目标可设置 `namespace`，默认使用 `Coflow.Generated`。
-当前版本保留函数、fstring 与 check 源码，暂不提供函数编译、执行、模板求值和 check 执行。
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并使用生成的契约：
+将 `runtimes/csharp/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
+`coflow.contract` 作为运行时资源部署：
 
 ```csharp
 using Coflow.Generated;
 using Coflow;
 
-using var builder = new RuntimeBuilder(Generated.Contract);
+using var contract = Generated.LoadContract(contractBytes);
+using var builder = new RuntimeBuilder(contract);
 builder.AddSource(itemsText);
 using var runtime = builder.Build();
 var item = runtime.Table<Item>()["sword"];

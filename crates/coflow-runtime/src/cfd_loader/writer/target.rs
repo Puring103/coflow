@@ -95,11 +95,11 @@ fn locate_target_in_value(
             ty: current_type.clone(),
         });
     }
-    match (current_type, value) {
-        (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) => {
-            return locate_target_in_value(schema, inner_type, inner_value, path, depth);
+    // 非空可选值在源码中直接写内部值，路径定位时透明地下钻声明类型。
+    if let CftValueType::Option(inner) = current_type {
+        if !matches!(value, AstValue::OptionNone(_)) {
+            return locate_target_in_value(schema, inner, value, path, depth);
         }
-        _ => {}
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {

@@ -79,21 +79,18 @@ impl CodeGenerator for CsharpCfdCodeGenerator {
                     .collect(),
             );
         }
-        let files = generate(input.schema, &variants, namespace)
+        let (files, contract) = generate(input.schema, &variants, namespace)
             .map_err(|e| CodegenError::Message(e.to_string()))?;
-        CodeArtifactSet::new(
-            files
-                .into_iter()
-                .map(|f| CodeArtifactFile {
-                    relative_path: f.relative_path,
-                    contents: f.contents,
-                })
-                .collect(),
-        )
+        let mut artifacts = files
+            .into_iter()
+            .map(|file| CodeArtifactFile::text(file.relative_path, file.contents))
+            .collect::<Vec<_>>();
+        artifacts.push(CodeArtifactFile::binary("coflow.contract", contract));
+        CodeArtifactSet::new(artifacts)
     }
 }
 pub fn generate_csharp(schema: &CftSchema) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate(schema, &BTreeMap::new(), "Coflow.Generated")
+    generate(schema, &BTreeMap::new(), "Coflow.Generated").map(|(files, _)| files)
 }
 
 fn name(source: &str) -> String {
@@ -151,8 +148,20 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
             cs_type(v, root)?
         ),
         CftValueType::Option(t) => format!("{}?", cs_type(t, root)?),
-        CftValueType::Function(..) => "RuntimeFunction".into(),
-        CftValueType::Unit => "RuntimeValue".into(),
+        CftValueType::Function(parameters, result) => {
+            if parameters.len() > 8 {
+                return Err(CsharpCodegenError::new(
+                    "C# functions support at most 8 parameters",
+                ));
+            }
+            let mut types = parameters
+                .iter()
+                .map(|parameter| cs_type(&parameter.value_type, root))
+                .collect::<Result<Vec<_>, _>>()?;
+            types.push(cs_type(result, root)?);
+            format!("RuntimeFunction<{}>", types.join(","))
+        }
+        CftValueType::Unit => "Unit".into(),
     })
 }
 fn codec(
@@ -202,15 +211,79 @@ fn codec(
                 codec(schema, t, root, next)?
             )
         }
-        CftValueType::Function(..) => format!("{v} => new RuntimeFunction({v})"),
-        CftValueType::Unit => format!("{v} => {v}"),
+        CftValueType::Function(parameters, result) => {
+            let codecs = parameters
+                .iter()
+                .map(|parameter| invocation_codec(schema, &parameter.value_type, root, next))
+                .chain(std::iter::once(invocation_codec(
+                    schema, result, root, next,
+                )))
+                .collect::<Result<Vec<_>, _>>()?;
+            format!(
+                "{v} => new {}({v}, {})",
+                cs_type(ty, root)?,
+                codecs.join(", ")
+            )
+        }
+        CftValueType::Unit => format!("{v} => default"),
+    })
+}
+fn invocation_codec(
+    schema: &CftSchema,
+    ty: &CftValueType,
+    root: &str,
+    depth: usize,
+) -> Result<String, CsharpCodegenError> {
+    let v = format!("v{depth}");
+    let next = depth + 1;
+    Ok(match ty {
+        CftValueType::Unit => "ValueCodecs.UnitInvocation".into(),
+        CftValueType::Int => "ValueCodecs.IntInvocation".into(),
+        CftValueType::Float => "ValueCodecs.FloatInvocation".into(),
+        CftValueType::Bool => "ValueCodecs.BoolInvocation".into(),
+        CftValueType::String | CftValueType::FString => "ValueCodecs.StringInvocation".into(),
+        CftValueType::Enum(name) => format!(
+            "ValueCodecs.EnumInvocation<{}>({}, {v} => ({}){v}, {v} => (uint){v})",
+            qualified(root, name),
+            quoted(name),
+            qualified(root, name)
+        ),
+        CftValueType::Object(_)
+        | CftValueType::RecordRef(_)
+        | CftValueType::Array(_)
+        | CftValueType::Dict(_, _)
+        | CftValueType::Function(..) => {
+            format!(
+                "ValueCodecs.RuntimeInvocation<{}>({})",
+                cs_type(ty, root)?,
+                codec(schema, ty, root, next)?
+            )
+        }
+        CftValueType::Option(inner) => {
+            let value_type = matches!(
+                inner.as_ref(),
+                CftValueType::Int
+                    | CftValueType::Float
+                    | CftValueType::Bool
+                    | CftValueType::Enum(_)
+            ) || matches!(inner.as_ref(), CftValueType::Object(name) if schema.resolve_type(name).is_some_and(|ty| ty.is_struct));
+            format!(
+                "ValueCodecs.{}({})",
+                if value_type {
+                    "OptionalValueInvocation"
+                } else {
+                    "OptionalReferenceInvocation"
+                },
+                invocation_codec(schema, inner, root, next)?
+            )
+        }
     })
 }
 fn generate(
     schema: &CftSchema,
     ids: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     root: &str,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+) -> Result<(Vec<GeneratedFile>, Vec<u8>), CsharpCodegenError> {
     if root.is_empty() || !root.split('.').all(coflow_language::lexical::is_identifier) {
         return Err(CsharpCodegenError::new("invalid C# namespace"));
     }
@@ -284,7 +357,7 @@ fn generate(
             .parent
             .as_ref()
             .map_or_else(|| "RuntimeObject".into(), |p| qualified(root, p));
-        let guard = format!("value.RequireContract(global::{root}.Generated.Contract);");
+        let guard = format!("value.RequireContract(global::{root}.Generated.ContractIdentity);");
         let mut body = if ty.is_struct {
             format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeValue {{\nprivate readonly RuntimeValue Value;\npublic @{}(RuntimeValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<RuntimeValue,T> codec) => codec(Value.Field(field));\npublic RuntimeValue RuntimeValue => Value;\n", namespace(root, &ty.name), type_name, type_name, guard)
         } else {
@@ -354,7 +427,8 @@ fn generate(
     let bytes = contract
         .to_bytes()
         .map_err(|e| CsharpCodegenError::new(e.to_string()))?;
-    let payload = bytes
+    let identity = contract
+        .identity()
         .iter()
         .map(u8::to_string)
         .collect::<Vec<_>>()
@@ -371,7 +445,7 @@ fn generate(
         })
         .collect::<Vec<_>>()
         .join(",\n");
-    files.push(GeneratedFile { relative_path: "Coflow.Contract.cs".into(), contents: format!("using Coflow;\nnamespace {root} {{ public static class Generated {{ public static Contract Contract {{ get; }} = new Contract(new byte[] {{ {payload} }}, new TypeBinding[] {{ {bindings} }}); }} }}\n") });
+    files.push(GeneratedFile { relative_path: "Coflow.Bindings.cs".into(), contents: format!("using Coflow;\nnamespace {root} {{ public static class Generated {{ internal static byte[] ContractIdentity {{ get; }} = new byte[] {{ {identity} }}; private static TypeBinding[] Bindings {{ get; }} = new TypeBinding[] {{ {bindings} }}; public static Contract LoadContract(byte[] bytes) => new Contract(bytes, ContractIdentity, Bindings); }} }}\n") });
     let mut hosts = format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {root} {{ public static class GeneratedHostBindings {{\n");
     let mut interfaces = String::new();
     for (index, ty) in schema.all_types().filter(|ty| ty.is_host).enumerate() {
@@ -393,18 +467,38 @@ fn generate(
             namespace(root, &ty.name),
             interface_name
         ));
-        for field in ty
-            .all_fields()
-            .filter(|field| !matches!(field.value_type, CftValueType::Function(..)))
-        {
-            interfaces.push_str(&format!(
-                "{} @{} {{ get; }}\n",
-                cs_type(&field.value_type, root)?,
-                field.name
-            ));
+        for field in ty.all_fields() {
+            if let CftValueType::Function(parameters, result) = &field.value_type {
+                let arguments = parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(parameter_index, parameter)| {
+                        Ok(format!(
+                            "{} @{}",
+                            cs_type(&parameter.value_type, root)?,
+                            parameter
+                                .name
+                                .as_deref()
+                                .unwrap_or(&format!("arg{parameter_index}"))
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
+                interfaces.push_str(&format!(
+                    "{} @{}({});\n",
+                    cs_type(result, root)?,
+                    field.name,
+                    arguments.join(", ")
+                ));
+            } else {
+                interfaces.push_str(&format!(
+                    "{} @{} {{ get; }}\n",
+                    cs_type(&field.value_type, root)?,
+                    field.name
+                ));
+            }
         }
         interfaces.push_str("} }\n");
-        hosts.push_str(&format!("public static RuntimeBuilder BindHost(this RuntimeBuilder builder, {interface_type} host) => builder.BindHost(new Adapter{index}(host));\nprivate sealed class Adapter{index} : HostBinding {{ private readonly {interface_type} host; public Adapter{index}({interface_type} host) : base(Generated.Contract, {}) {{ this.host = host ?? throw new ArgumentNullException(nameof(host)); }}\npublic override string MemberType(string field) {{ switch(field) {{\n", quoted(&ty.name)));
+        hosts.push_str(&format!("public static RuntimeBuilder BindHost(this RuntimeBuilder builder, {interface_type} host) => builder.BindHost(new Adapter{index}(host));\nprivate sealed class Adapter{index} : HostBinding {{ private readonly {interface_type} host; public Adapter{index}({interface_type} host) : base({}) {{ this.host = host ?? throw new ArgumentNullException(nameof(host)); }}\npublic override string MemberType(string field) {{ switch(field) {{\n", quoted(&ty.name)));
         for field in ty.all_fields() {
             hosts.push_str(&format!(
                 "case {}: return {};\n",
@@ -435,7 +529,32 @@ fn generate(
             };
             hosts.push_str(&format!("case {}: return {value};\n", quoted(&field.name)));
         }
-        hosts.push_str("default: throw new CoflowException(\"Host function execution is unavailable.\"); } } }\n");
+        hosts.push_str("default: throw new CoflowException(\"Host function members cannot be read as data.\"); } }\npublic override void Call(string field, HostCall call) { switch(field) {\n");
+        for field in ty
+            .all_fields()
+            .filter(|field| matches!(field.value_type, CftValueType::Function(..)))
+        {
+            let CftValueType::Function(parameters, result) = &field.value_type else {
+                unreachable!();
+            };
+            let arguments = parameters
+                .iter()
+                .map(|parameter| {
+                    Ok(format!(
+                        "call.Argument({})",
+                        invocation_codec(schema, &parameter.value_type, root, 0)?
+                    ))
+                })
+                .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
+            hosts.push_str(&format!(
+                "case {}: call.Return({}, host.@{}({})); return;\n",
+                quoted(&field.name),
+                invocation_codec(schema, result, root, 0)?,
+                field.name,
+                arguments.join(", ")
+            ));
+        }
+        hosts.push_str("default: throw new CoflowException(\"Unknown Host function.\"); } } }\n");
     }
     hosts.push_str("} }\n");
     hosts.push_str(&interfaces);
@@ -443,7 +562,7 @@ fn generate(
         relative_path: "Coflow.Host.cs".into(),
         contents: hosts,
     });
-    Ok(files)
+    Ok((files, bytes))
 }
 fn file(source: &str, contents: String) -> GeneratedFile {
     GeneratedFile {

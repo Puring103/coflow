@@ -29,7 +29,7 @@ pub enum LoadedValueDraft {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedFunction {
-    pub imports: BTreeMap<String,String>,
+    pub imports: BTreeMap<String, String>,
     pub from_default: bool,
     pub location: Option<CallableLocation>,
     pub constant_origin: Option<String>,
@@ -38,7 +38,7 @@ pub struct LoadedFunction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedFormattedString {
-    pub imports: BTreeMap<String,String>,
+    pub imports: BTreeMap<String, String>,
     pub from_default: bool,
     pub location: Option<CallableLocation>,
     pub constant_origin: Option<String>,
@@ -175,7 +175,12 @@ pub struct CallableLocation {
 }
 
 impl From<&crate::schema::CftCallableSource> for CallableLocation {
-    fn from(source:&crate::schema::CftCallableSource)->Self{
-        Self{module:Some(source.module.clone()),source:source.original_source.clone(),span:source.span,path:None}
+    fn from(source: &crate::schema::CftCallableSource) -> Self {
+        Self {
+            module: Some(source.module.clone()),
+            source: source.original_source.clone(),
+            span: source.span,
+            path: None,
+        }
     }
 }

@@ -95,14 +95,23 @@ export function applyRichTextCompletion(
 type RichTextInputProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> & {
   value: string
   onValueChange: (value: string) => void
+  autoSize?: boolean
 }
 
-export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, ...props }: RichTextInputProps) {
+export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, autoSize = false, ...props }: RichTextInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [cursor, setCursor] = useState(0)
   const [active, setActive] = useState(0)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const suggestions = useMemo(() => richTextSuggestions(value, cursor), [value, cursor])
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!autoSize || !input) return
+    // 表格编辑器按真实内容增高，由外层选中格浮层负责覆盖显示。
+    input.style.height = 'auto'
+    input.style.height = `${input.scrollHeight}px`
+  }, [autoSize, value])
 
   useLayoutEffect(() => {
     if (suggestions.length === 0) return
@@ -169,6 +178,7 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
       <textarea
         {...props}
         ref={inputRef}
+        data-auto-size={autoSize || undefined}
         value={value}
         onChange={event => {
           onValueChange(event.currentTarget.value)

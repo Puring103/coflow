@@ -1,4 +1,3 @@
-use super::inferred_type::InferredType;
 use super::state::SymbolKind;
 use super::ResolvedTypes;
 use crate::source::Span;
@@ -150,6 +149,14 @@ impl ResolvedTypes<'_> {
                 seen.insert(&annotation.name, annotation.span);
             }
             let Some(spec) = AnnotationSpec::for_name(&annotation.name) else {
+                // 注解集合是语言契约的一部分，未知名称不能静默进入生成契约。
+                push_diag(
+                    diagnostics,
+                    CftErrorCode::UnknownAnnotation,
+                    module,
+                    annotation.span,
+                    format!("unknown annotation `@{}`", annotation.name),
+                );
                 continue;
             };
             if !spec.targets.contains(&target) {
@@ -221,35 +228,6 @@ impl ResolvedTypes<'_> {
                 "field can only declare one dimension annotation",
             );
         }
-        if let Some(annotation) = find_annotation(&field.annotations, "expand") {
-            // @expand requires an inline concrete object field. Arrays, dicts,
-            // primitives, enums, option wrappers, refs, abstract objects, and
-            // singleton objects don't make sense because the loader needs one
-            // known inline set of inner field names to consume from adjacent
-            // header columns.
-            let resolved = self.resolve_field_type(&field.ty);
-            if !self.expand_target_is_concrete_inline_object(&resolved) {
-                push_diag(
-                    diagnostics,
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@expand fields must reference an inline concrete type (no refs, abstract/singleton types, Option, arrays, dicts, enums, or primitives)",
-                );
-            }
-        }
-    }
-
-    fn expand_target_is_concrete_inline_object(&self, ty: &InferredType) -> bool {
-        if ty.is_unknown() {
-            return true;
-        }
-        ty.object_name().is_some_and(|name| {
-            self.types.get(name.as_str()).is_some_and(|info| {
-                !info.def.is_abstract
-                    && info.def.kind == coflow_language::cft::syntax::ast::TypeKind::Data
-            })
-        })
     }
 
     fn validate_id_as_enum_name(
@@ -356,10 +334,6 @@ impl AnnotationSpec {
                     AnnotationTarget::Field,
                 ],
                 args: AnnotationArgs::OneString,
-            },
-            "expand" => Self {
-                targets: &[AnnotationTarget::Field],
-                args: AnnotationArgs::None,
             },
             "localized" => Self {
                 targets: &[AnnotationTarget::Field],

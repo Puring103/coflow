@@ -10,6 +10,9 @@
   <ItemGroup>
     <Compile Include="../../../tests/csharp-runtime-integration/generated/**/*.cs"
              Link="Generated/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="../../../tests/csharp-runtime-integration/generated/coflow.contract"
+             Link="coflow.contract"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../../tests/csharp-runtime-integration/data/*.cfd"
              Link="Data/%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />

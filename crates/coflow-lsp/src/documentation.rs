@@ -35,7 +35,7 @@ pub(crate) const LITERALS: &[(&str, &str)] =
 
 pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
     ("None", "Option without a value."),
-    ("Some", "Construct an Option containing a value."),
+    ("Some", "Pattern used by `is Some(name)` to bind a non-empty optional value."),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(
@@ -85,12 +85,6 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@description(\"${1:text}\")",
         detail: "schema annotation",
         documentation: "Attach schema documentation.",
-    },
-    AnnotationCompletion {
-        label: "@expand",
-        insert_text: "@expand",
-        detail: "field annotation",
-        documentation: "Expand a concrete inline object's fields in table-oriented editors.",
     },
     AnnotationCompletion {
         label: "@localized",

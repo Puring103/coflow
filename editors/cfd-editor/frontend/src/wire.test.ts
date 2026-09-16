@@ -7,9 +7,8 @@ import {
   diagnosticDisplayMessage,
   nullValue,
   objectFieldCells,
-  optionLayerStates,
+  optionalState,
   presentationValue,
-  replaceOptionLayer,
   replacePresentationValue,
   type DiagnosticItem,
 } from './wire'
@@ -28,7 +27,7 @@ function context(kind: string, values: Partial<DiagnosticContext> = {}): Diagnos
   }
 }
 
-function diagnostic(contexts?: DiagnosticItem['contexts']): DiagnosticItem {
+function diagnostic(contexts: DiagnosticItem['contexts'] = []): DiagnosticItem {
   return {
     id: 'custom-message',
     severity: 'error',
@@ -36,7 +35,7 @@ function diagnostic(contexts?: DiagnosticItem['contexts']): DiagnosticItem {
     stage: 'CHECK',
     message: 'custom message',
     target: { kind: 'none' },
-    ...(contexts === undefined ? {} : { contexts }),
+    contexts,
   } as DiagnosticItem
 }
 
@@ -63,11 +62,6 @@ describe('diagnostic display message', () => {
     expect(item.message).toBe('custom message')
   })
 
-  it('keeps legacy diagnostics unchanged when contexts are absent', () => {
-    const item = diagnostic(undefined)
-
-    expect(diagnosticDisplayMessage(item)).toBe('custom message')
-  })
 })
 
 describe('annotationChildren', () => {
@@ -91,8 +85,8 @@ describe('wrapped values', () => {
   it('wraps only explicit Option creation targets', () => {
     const created = { kind: 'object', value: { actual_type: 'Damage', fields: {} } } as const
 
-    expect(applyCreatedValue(nullValue(), null, created)).toEqual(created)
-    expect(applyCreatedValue(nullValue(), 0, created)).toEqual({
+    expect(applyCreatedValue(false, created)).toEqual(created)
+    expect(applyCreatedValue(true, created)).toEqual({
       kind: 'option_some',
       value: created,
     })
@@ -111,29 +105,10 @@ describe('wrapped values', () => {
     })
   })
 
-  it('preserves and switches each nested Option layer independently', () => {
-    const outerNone = nullValue()
-    const innerNone = replaceOptionLayer(outerNone, 0, {
-      kind: 'option_some',
-      value: nullValue(),
-    })
-    const value = replaceOptionLayer(innerNone, 1, {
-      kind: 'option_some',
-      value: { kind: 'int', value: 1n },
-    })
-
-    expect(optionLayerStates(outerNone, 2)).toEqual(['none'])
-    expect(optionLayerStates(innerNone, 2)).toEqual(['some', 'none'])
-    expect(optionLayerStates(value, 2)).toEqual(['some', 'some'])
-    expect(replacePresentationValue(value, { kind: 'int', value: 2n })).toEqual({
-      kind: 'option_some',
-      value: {
-        kind: 'option_some',
-        value: { kind: 'int', value: 2n },
-      },
-    })
-    expect(replaceOptionLayer(value, 1, nullValue())).toEqual(innerNone)
-    expect(replaceOptionLayer(value, 0, nullValue())).toEqual(outerNone)
+  it('reports the single declared Option state', () => {
+    expect(optionalState(nullValue(), true)).toBe('none')
+    expect(optionalState({ kind: 'option_some', value: { kind: 'int', value: 1n } }, true)).toBe('some')
+    expect(optionalState({ kind: 'int', value: 1n }, false)).toBeNull()
   })
 })
 
@@ -150,7 +125,7 @@ describe('objectFieldCells', () => {
         actual_type: 'Holder',
         fields: {
           name: { kind: 'string', value: 'holder' },
-          legacy: { kind: 'bool', value: true },
+          extra: { kind: 'bool', value: true },
         },
       },
     } as const
@@ -158,7 +133,7 @@ describe('objectFieldCells', () => {
     expect(objectFieldCells(value, annotation)).toEqual([
       { name: 'target', value: nullValue(), missing: true, annotation: target },
       { name: 'name', value: { kind: 'string', value: 'holder' }, missing: false, annotation: null },
-      { name: 'legacy', value: { kind: 'bool', value: true }, missing: false, annotation: null },
+      { name: 'extra', value: { kind: 'bool', value: true }, missing: false, annotation: null },
     ])
   })
 })

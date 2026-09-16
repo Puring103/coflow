@@ -8,7 +8,7 @@ use super::super::{
     SessionStore,
 };
 use crate::editor::convert::{record_view_to_row, WireContext};
-use crate::editor::settings::read_project_settings;
+use crate::editor::settings_store::read_project_settings;
 use crate::editor::types::{
     CreateRecordDraft, EditorError, FileRecords, GraphData, GraphQuery, PluginSchemaField,
     PluginSchemaType, ProjectSearchHit, ProjectSearchMode, ProjectSearchResults, RecordRow,

@@ -1,7 +1,6 @@
 //! record row wire types.
 use coflow_runtime::{
-    CfdDictKey, CfdRecord, CfdValue, DimensionValueCoordinate, DimensionValueState,
-    RecordCoordinate,
+    CfdDictKey, CfdRecord, CfdValue, DimensionValueState, RecordCoordinate,
 };
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{FlatDiagnostic, WriterCapabilities};

@@ -181,6 +181,12 @@ fn ref_target_in_value(
     expected_type: &CftValueType,
     offset: usize,
 ) -> Option<(String, String)> {
+    // 非空可选值直接使用内部值语法，查询时透明地下钻其声明类型。
+    if let CftValueType::Option(inner) = expected_type {
+        if !matches!(value, CfdValue::OptionNone(_)) {
+            return ref_target_in_value(value, schema, inner, offset);
+        }
+    }
     match value {
         CfdValue::Ref(r) => {
             if span_contains(r.key.1, offset) {
@@ -223,12 +229,6 @@ fn ref_target_in_value(
                 }
             }
             None
-        }
-        CfdValue::OptionSome(value, _) => {
-            let CftValueType::Option(inner) = expected_type else {
-                return None;
-            };
-            ref_target_in_value(value, schema, inner, offset)
         }
         _ => None,
     }

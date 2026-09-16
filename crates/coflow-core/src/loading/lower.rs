@@ -38,7 +38,11 @@ fn lower_records_with_mode(
     preserve_repairable_values: bool,
 ) -> (Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
     let mut original_sources = BTreeMap::new();
-    for record in &ast.records { for field in &record.fields { collect_callable_sources(&field.value,&mut original_sources); } }
+    for record in &ast.records {
+        for field in &record.fields {
+            collect_callable_sources(&field.value, &mut original_sources);
+        }
+    }
     let mut records = Vec::with_capacity(ast.records.len());
     let mut diagnostics = Vec::new();
     let mut imports = BTreeMap::new();
@@ -92,9 +96,11 @@ fn lower_records_with_mode(
         }
         match lower_record(schema, &record, preserve_repairable_values) {
             Ok(mut record) => {
-                for value in record.record.fields.values_mut() { attach_imports(value,&imports,&original_sources); }
+                for value in record.record.fields.values_mut() {
+                    attach_imports(value, &imports, &original_sources);
+                }
                 records.push(record);
-            },
+            }
             Err(error) => diagnostics.extend(error.diagnostics),
         }
     }
@@ -146,7 +152,6 @@ fn resolve_source_value(
                 resolve_source_value(schema, value, context, imports);
             }
         }
-        CfdValue::OptionSome(value, _) => resolve_source_value(schema, value, context, imports),
         CfdValue::Scalar(text, _) => *text = resolve_import(text, imports),
         CfdValue::BitExpr(expr) => resolve_bit_imports(expr, imports),
         CfdValue::Function(function) => {
@@ -372,7 +377,6 @@ fn lower_value_resolved(
         }
         CftValueType::Option(inner) => match value {
             CfdValue::OptionNone(_) => Ok(LoadedValueDraft::OptionNone),
-            CfdValue::OptionSome(_, span) => Err(error(CfdTextErrorCode::TypeMismatch,"optional values use None or a bare value",*span)),
             value => lower_value_resolved(schema, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         },
@@ -415,9 +419,14 @@ fn lower_function(
         ));
     }
     Ok(LoadedValueDraft::Function(LoadedFunction {
-                    from_default: false,
-                    location: Some(crate::ingest::CallableLocation {module:None,source: function.source.clone(),span:function.span,path:None}),
-                    imports: Default::default(),
+        from_default: false,
+        location: Some(crate::ingest::CallableLocation {
+            module: None,
+            source: function.source.clone(),
+            span: function.span,
+            path: None,
+        }),
+        imports: Default::default(),
         constant_origin: None,
         source: function.source.clone(),
     }))
@@ -490,9 +499,14 @@ fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
         CfdValue::FormattedString(value) => {
             Ok(LoadedValueDraft::FormattedString(LoadedFormattedString {
-                    from_default: false,
-                    location: Some(crate::ingest::CallableLocation {module:None,source: value.source.clone(),span:value.span,path:None}),
-                    imports: Default::default(),
+                from_default: false,
+                location: Some(crate::ingest::CallableLocation {
+                    module: None,
+                    source: value.source.clone(),
+                    span: value.span,
+                    path: None,
+                }),
+                imports: Default::default(),
                 constant_origin: None,
                 source: value.source.clone(),
             }))
@@ -944,25 +958,66 @@ const fn text_span(span: Span) -> CfdTextSpan {
     }
 }
 
-fn attach_imports(value:&mut LoadedValueDraft,imports:&BTreeMap<String,String>,sources:&BTreeMap<usize,String>){
+fn attach_imports(
+    value: &mut LoadedValueDraft,
+    imports: &BTreeMap<String, String>,
+    sources: &BTreeMap<usize, String>,
+) {
     match value {
-        LoadedValueDraft::Function(value)=>{value.imports=imports.clone(); if let Some(location)=&mut value.location {if let Some(source)=sources.get(&location.span.start){location.source=source.clone();}}},
-        LoadedValueDraft::FormattedString(value)=>{value.imports=imports.clone(); if let Some(location)=&mut value.location {if let Some(source)=sources.get(&location.span.start){location.source=source.clone();}}},
-        LoadedValueDraft::OptionSome(value)=>attach_imports(value,imports,sources),
-        LoadedValueDraft::Array(values)=>for value in values{attach_imports(value,imports,sources);},
-        LoadedValueDraft::Dict(values)=>for(_,value)in values{attach_imports(value,imports,sources);},
-        LoadedValueDraft::Object{fields,..}=>for value in fields.values_mut(){attach_imports(value,imports,sources);},
-        _=>{},
+        LoadedValueDraft::Function(value) => {
+            value.imports = imports.clone();
+            if let Some(location) = &mut value.location {
+                if let Some(source) = sources.get(&location.span.start) {
+                    location.source = source.clone();
+                }
+            }
+        }
+        LoadedValueDraft::FormattedString(value) => {
+            value.imports = imports.clone();
+            if let Some(location) = &mut value.location {
+                if let Some(source) = sources.get(&location.span.start) {
+                    location.source = source.clone();
+                }
+            }
+        }
+        LoadedValueDraft::OptionSome(value) => attach_imports(value, imports, sources),
+        LoadedValueDraft::Array(values) => {
+            for value in values {
+                attach_imports(value, imports, sources);
+            }
+        }
+        LoadedValueDraft::Dict(values) => {
+            for (_, value) in values {
+                attach_imports(value, imports, sources);
+            }
+        }
+        LoadedValueDraft::Object { fields, .. } => {
+            for value in fields.values_mut() {
+                attach_imports(value, imports, sources);
+            }
+        }
+        _ => {}
     }
 }
 
-fn collect_callable_sources(value:&CfdValue,sources:&mut BTreeMap<usize,String>) {
+fn collect_callable_sources(value: &CfdValue, sources: &mut BTreeMap<usize, String>) {
     match value {
-        CfdValue::Function(value)=>{sources.insert(value.span.start,value.source.clone());}
-        CfdValue::FormattedString(value)=>{sources.insert(value.span.start,value.source.clone());}
-        CfdValue::Array(values,_)=>for value in values{collect_callable_sources(value,sources);},
-        CfdValue::Block(block)=>for field in &block.fields{collect_callable_sources(&field.value,sources);},
-        CfdValue::OptionSome(value,_)=>collect_callable_sources(value,sources),
-        _=>{}
+        CfdValue::Function(value) => {
+            sources.insert(value.span.start, value.source.clone());
+        }
+        CfdValue::FormattedString(value) => {
+            sources.insert(value.span.start, value.source.clone());
+        }
+        CfdValue::Array(values, _) => {
+            for value in values {
+                collect_callable_sources(value, sources);
+            }
+        }
+        CfdValue::Block(block) => {
+            for field in &block.fields {
+                collect_callable_sources(&field.value, sources);
+            }
+        }
+        _ => {}
     }
 }

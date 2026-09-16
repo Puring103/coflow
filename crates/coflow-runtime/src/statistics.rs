@@ -2,7 +2,7 @@
 ///
 /// These counters describe actual runtime work. They are deliberately kept
 /// outside editor and mutation wire DTOs so observability does not alter
-/// serialized compatibility contracts.
+/// their serialized contracts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ProjectExecutionStats {
     pub sources_resolved: usize,

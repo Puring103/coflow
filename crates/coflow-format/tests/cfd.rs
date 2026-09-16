@@ -32,8 +32,8 @@ fn cfd_formatter_separates_array_close_after_structural_object() {
 
 #[test]
 fn cfd_formatter_recovers_multiline_fields_functions_else_and_comments() {
-    let source = "item: Example {\nname:\n\"Widget\",\ncallback:\nfn(\nvalue: int,\nfallback: fn(int) ->\nint\n)\n->\nResult<\nint,\nstring\n>\n{\nif value > 0 {\n\"ok\"\n}\nelse {\n\"bad\"\n}\n},\n# callback: fn(value: int) ->\nlabel: \"kept\",\n}\n";
-    let expected = "item: Example {\n  name: \"Widget\",\n  callback: fn(\n    value: int,\n    fallback: fn(int) -> int\n  ) -> Result<\n    int,\n    string\n  > {\n    if value > 0 {\n      \"ok\"\n    } else {\n      \"bad\"\n    }\n  },\n  # callback: fn(value: int) ->\n  label: \"kept\",\n}\n";
+    let source = "item: Example {\nname:\n\"Widget\",\ncallback:\nfn(\nvalue: int,\nfallback: fn(int) ->\nint\n)\n->\n[\nint\n]\n{\nif value > 0 {\n[1]\n}\nelse {\n[]\n}\n},\n# callback: fn(value: int) ->\nlabel: \"kept\",\n}\n";
+    let expected = "item: Example {\n  name: \"Widget\",\n  callback: fn(\n    value: int,\n    fallback: fn(int) -> int\n  ) -> [\n    int\n  ] {\n    if value > 0 {\n      [1]\n    } else {\n      []\n    }\n  },\n  # callback: fn(value: int) ->\n  label: \"kept\",\n}\n";
     assert_eq!(format_cfd(source), expected);
     assert_eq!(format_cfd(expected), expected);
 }

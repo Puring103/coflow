@@ -1,7 +1,7 @@
 //! Small, data-only SPI for target-language code generators.
 //!
 //! A generator receives one immutable schema/model snapshot and returns only
-//! target-language source artifacts; publication and filesystem access stay in
+//! target-language source and runtime artifacts; publication and filesystem access stay in
 //! the application layer.
 
 use coflow_core::schema::CftSchema;
@@ -53,7 +53,46 @@ pub struct CodegenDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeArtifactFile {
     pub relative_path: PathBuf,
-    pub contents: String,
+    pub contents: CodeArtifactContent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeArtifactContent {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+impl CodeArtifactContent {
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Text(value) => value.as_bytes(),
+            Self::Binary(value) => value,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_text(&self) -> bool {
+        matches!(self, Self::Text(_))
+    }
+}
+
+impl CodeArtifactFile {
+    #[must_use]
+    pub fn text(relative_path: impl Into<PathBuf>, contents: impl Into<String>) -> Self {
+        Self {
+            relative_path: relative_path.into(),
+            contents: CodeArtifactContent::Text(contents.into()),
+        }
+    }
+
+    #[must_use]
+    pub fn binary(relative_path: impl Into<PathBuf>, contents: Vec<u8>) -> Self {
+        Self {
+            relative_path: relative_path.into(),
+            contents: CodeArtifactContent::Binary(contents),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

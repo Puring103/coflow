@@ -1,4 +1,4 @@
-use crate::codegen::{CodeArtifactFile, IdAsEnumValues};
+use crate::codegen::{CodeArtifactContent, CodeArtifactFile, IdAsEnumValues};
 use crate::{Diagnostic, DiagnosticSet, Label, Project, SourceLocation};
 use coflow_staging::{StagedChange, StagedDirectory, StagedFile};
 use std::collections::{BTreeMap, BTreeSet};
@@ -288,7 +288,7 @@ fn artifact_files_match(
     }
     let mut expected = files
         .iter()
-        .map(|file| (file.relative_path.clone(), file.contents.as_bytes()))
+        .map(|file| (file.relative_path.clone(), &file.contents))
         .collect::<BTreeMap<_, _>>();
     Ok(compare_tree(directory, directory, &mut expected)? && expected.is_empty())
 }
@@ -296,7 +296,7 @@ fn artifact_files_match(
 fn compare_tree(
     root: &Path,
     directory: &Path,
-    expected: &mut BTreeMap<PathBuf, &[u8]>,
+    expected: &mut BTreeMap<PathBuf, &CodeArtifactContent>,
 ) -> Result<bool, DiagnosticSet> {
     let entries = fs::read_dir(directory)
         .map_err(|error| artifact_error(directory, format!("failed to inspect output: {error}")))?;
@@ -329,7 +329,7 @@ fn compare_tree(
         let actual = fs::read(&path).map_err(|error| {
             artifact_error(&path, format!("failed to read output entry: {error}"))
         })?;
-        if !generated_text_matches(&actual, contents) {
+        if !artifact_contents_match(&actual, contents) {
             return Ok(false);
         }
     }
@@ -355,6 +355,14 @@ fn generated_text_matches(actual: &[u8], expected: &[u8]) -> bool {
     normalized(actual).eq(normalized(expected))
 }
 
+fn artifact_contents_match(actual: &[u8], expected: &CodeArtifactContent) -> bool {
+    if expected.is_text() {
+        generated_text_matches(actual, expected.bytes())
+    } else {
+        actual == expected.bytes()
+    }
+}
+
 fn write_artifacts(
     root: &Path,
     original: &Path,
@@ -373,8 +381,8 @@ fn write_artifacts(
         let existing = read_optional_file(&original.join(&file.relative_path))?;
         let contents = existing
             .as_deref()
-            .filter(|contents| generated_text_matches(contents, file.contents.as_bytes()))
-            .unwrap_or(file.contents.as_bytes());
+            .filter(|contents| artifact_contents_match(contents, &file.contents))
+            .unwrap_or_else(|| file.contents.bytes());
         let mut output = fs::File::create(&path).map_err(|error| {
             artifact_error(&path, format!("failed to create artifact: {error}"))
         })?;

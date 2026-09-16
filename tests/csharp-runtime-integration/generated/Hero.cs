@@ -3,7 +3,7 @@ using System;
 using Coflow;
 namespace @Game.@Config {
 public class @Hero : global::@Game.@Config.@Character {
-public @Hero(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.Contract); }
+public @Hero(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.ContractIdentity); }
 public int @level => Read("level", ValueCodecs.Int);
 public new static global::@Game.@Config.@Hero Wrap(RuntimeValue value) {
 value = value.Canonical();

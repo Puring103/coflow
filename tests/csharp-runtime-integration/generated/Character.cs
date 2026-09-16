@@ -3,7 +3,7 @@ using System;
 using Coflow;
 namespace @Game.@Config {
 public class @Character : RuntimeObject {
-public @Character(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.Contract); }
+public @Character(RuntimeValue value) : base(value) { value.RequireContract(global::@Game.@Config.Generated.ContractIdentity); }
 public string Id => Read("id", ValueCodecs.String);
 public string @name => Read("name", ValueCodecs.String);
 public global::@Game.@Config.@Stats @stats => Read("stats", global::@Game.@Config.@Stats.Wrap);
@@ -13,10 +13,10 @@ public RuntimeDictionary<global::@Game.@Config.@Mood,string> @moods => Read("moo
 public global::@Game.@Config.@Mood? @mood => Read("mood", v0 => ValueCodecs.OptionalValue(v0, v1 => (global::@Game.@Config.@Mood)ValueCodecs.Enum(v1)));
 public global::@Game.@Config.@Stats? @extra => Read("extra", v0 => ValueCodecs.OptionalValue(v0, global::@Game.@Config.@Stats.Wrap));
 public RuntimeArray<string>? @notes => Read("notes", v0 => ValueCodecs.OptionalReference(v0, v1 => new RuntimeArray<string>(v1, ValueCodecs.String)));
-public RuntimeFunction? @callback => Read("callback", v0 => ValueCodecs.OptionalReference(v0, v1 => new RuntimeFunction(v1)));
+public RuntimeFunction<int>? @callback => Read("callback", v0 => ValueCodecs.OptionalReference(v0, v1 => new RuntimeFunction<int>(v1, ValueCodecs.IntInvocation)));
 public string @text => Read("text", ValueCodecs.String);
 public RuntimeValue Get_text_Template() => Value.Field("text");
-public RuntimeFunction @score => Read("score", v0 => new RuntimeFunction(v0));
+public RuntimeFunction<int,int> @score => Read("score", v0 => new RuntimeFunction<int,int>(v0, ValueCodecs.IntInvocation, ValueCodecs.IntInvocation));
 public static global::@Game.@Config.@Character Wrap(RuntimeValue value) {
 value = value.Canonical();
 switch (value.TypeName) {

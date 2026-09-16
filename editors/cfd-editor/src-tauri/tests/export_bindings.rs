@@ -7,7 +7,7 @@
 #[cfg(feature = "ts-export")]
 #[test]
 fn export_bindings() {
-    use cfd_editor_lib::editor::types as t;
+    use cfd_editor_core::editor::types as t;
     // Core types
     export_with_retry::<coflow_runtime::CfdValue>("CfdValue tree");
     export_with_retry::<coflow_runtime::CfdRecord>("CfdRecord tree");

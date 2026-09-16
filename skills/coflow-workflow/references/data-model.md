@@ -1,17 +1,14 @@
-# CFD 数据模型
+# 数据模型
 
-CFD 解析先得到语法节点，再按 CFT schema lower 为稳定的数据模型。模型不包含表格行号或目标语言格式。
+Coflow 将记录和内联数据分开：table 与 singleton 拥有记录身份，data 只作为数据值使用。
+记录 key 在整棵继承树内唯一，记录之间通过带类型的引用关联。
 
-核心 identity 是 `(source_id, record_index)`；记录引用使用 `(declared_type, key)`，诊断位置来自 source span。
+加载按照声明补齐默认值、校验值类型并解析跨文件引用。数组和字典保留声明顺序。
+可选字段以 None 表示空值，函数与 fstring 保留源码和创建时绑定。
+数据模型构建不执行函数、模板或 check；成功发布 Runtime 后由应用显式调用或执行检查。
 
-```text
-CfdDataModel
-  records: RecordIndex
-  values: CfdValue
-  source_index: SourceIndex
-  diagnostics: DiagnosticSet
-```
+构建成功后的运行时数据只读。修改数据或宿主绑定时，重新构建运行时。
+重复记录、未知字段、缺失必填字段、类型错误与错误引用会报告带源码位置的诊断。
 
-`CfdValue` 覆盖 `Option`、`Result`、bool、整数、浮点、字符串、格式化字符串、函数、enum、引用、数组、字典和对象。默认值、继承、多态、维度 overlay 和 check 在 schema-guided lower/check 阶段完成；目标语言 generator 只读取最终 schema/model。
-
-重复记录、未知字段、缺失必填字段、错误引用和 check 失败均是带 source span 的诊断。模型发布是不可变操作，失败尝试不能覆盖上一份成功 generation。
+语法参见 [CFT](https://puring103.github.io/coflow/docs/reference/03-language/01-cft) 和 [CFD](./cfd.md)，
+宿主读取参见 [C# 代码生成](./csharp.md)。

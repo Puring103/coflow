@@ -33,7 +33,6 @@ pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorC
 use objects::parse_object;
 use refs::parse_ref;
 pub use render::{render_cell_value, CellRenderError};
-use scan::strip_outer_pair;
 pub(crate) use strings::parse_automatic_formatted_string;
 use strings::parse_string;
 use types::CellType;
@@ -101,10 +100,8 @@ fn parse_value(
     let text = text.trim();
     match ty {
         CellType::Option(_) if text == "None" => Ok(LoadedValueDraft::OptionNone),
-        CellType::Option(inner) => {
-            parse_value(schema, inner, text, ValueContext::Nested)
-                .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
-        }
+        CellType::Option(inner) => parse_value(schema, inner, text, ValueContext::Nested)
+            .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         CellType::Int => Ok(LoadedValueDraft::Int(i64::from({
             coflow_language::lexical::validate_number_literal(
                 text.strip_prefix('-').unwrap_or(text),

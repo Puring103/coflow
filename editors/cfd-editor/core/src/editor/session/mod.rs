@@ -62,7 +62,7 @@ pub struct EditorSession {
     pub(crate) type_display_names: BTreeMap<(String, String), String>,
     pub(crate) ref_target_cache: HashMap<String, Vec<crate::editor::types::RefTarget>>,
     pub(crate) shape_cache: crate::editor::convert::ShapeCache,
-    pub(crate) revisions: RevisionCoordinator,
+    revisions: RevisionCoordinator,
 }
 
 impl std::fmt::Debug for EditorSession {

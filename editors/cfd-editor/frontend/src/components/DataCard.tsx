@@ -43,10 +43,9 @@ import {
   isComplexValue,
   nullValue,
   objectFieldCells,
-  optionLayerStates,
+  optionalState,
   presentationValue,
   refValue,
-  replaceOptionLayer,
   replacePresentationValue,
 } from '../wire'
 import { Icon } from './Icon'
@@ -712,29 +711,26 @@ function FieldRow({
   ), [pluginRecord, pathKey, presentationType, shownValue])
   const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
   const optionDepth = optionDepthForDeclaredType(declaredType)
-  const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
-  const innerValueAvailable = optionNoneLayer < 0 || optionNoneLayer === optionDepth - 1
+  const optionState = optionalState(value, optionDepth === 1)
   // A `null` value on a field whose declared type is an array/dict/object
   // should still be treated as expandable, so the user can just click
   // "add element" instead of first coercing null → empty collection by
   // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = shownValue.kind === 'option_none' && innerValueAvailable
+  const nullCollectionShape = shownValue.kind === 'option_none'
     ? collectionShapeForDeclaredType(declaredType)
     : null
   const displayValue = nullCollectionShape ?? shownValue
   const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
-  // Extra trailing controls for nullable / polymorphic fields. Enum and ref
-  // scalars already expose a `None` option in their pill selects, so we
-  // don't double up there. Bool doesn't get a clear button unless nullable.
+  // Option layers and polymorphic fields use trailing controls; scalar
+  // editors render their own value choices.
   const commit = onEdit
     ? (next: FieldValue) => onEdit(fieldPath, replacePresentationValue(value, next))
     : undefined
   const nullControls = commit ? (
     <NullableControls
       value={value}
-      nullable={!!nullable}
       declaredType={declaredType}
       objectType={valueAnnotation?.object_type ?? undefined}
       enumType={enumType}
@@ -830,14 +826,13 @@ function FieldRow({
       trailing={mergedTrailing}
       dragProps={dragProps}
       collectionItem={collectionItem}
-      editorEnabled={innerValueAvailable}
+      editorEnabled={optionState !== 'none' || nullCollectionShape !== null}
     />
   )
 }
 
 function NullableControls({
   value,
-  nullable,
   declaredType,
   objectType,
   enumType,
@@ -849,7 +844,6 @@ function NullableControls({
   onCommitValue,
 }: {
   value: FieldValue
-  nullable: boolean
   declaredType?: string
   objectType?: string
   enumType?: string
@@ -861,70 +855,49 @@ function NullableControls({
   onCommitValue: (next: FieldValue) => void
 }) {
   const shownValue = presentationValue(value)
-  const optionDepth = optionDepthForDeclaredType(declaredType)
-  const layers = optionLayerStates(value, optionDepth)
-  const noneLayer = layers.indexOf('none')
+  const isOptional = optionDepthForDeclaredType(declaredType) === 1
+  const state = optionalState(value, isOptional)
   const isObject = shownValue.kind === 'object'
   const isPolymorphic = polymorphicTypes.length > 0
-  const canSwitchType = showTypeSwitcher && isObject && polymorphicTypes.length >= 2 && noneLayer < 0
-  const canCreate = noneLayer >= 0 && (
-    noneLayer < optionDepth - 1
-    || scalarDefaultForDeclaredType(declaredType) !== null
-    || isPolymorphic
-    || !!enumType
-    || !!refTargetType
-    || !!objectType
-  )
-
-  // 非 Option 的旧 nullable 元数据仍按单层控件处理。
-  const legacyCanClear = optionDepth === 0 && nullable && shownValue.kind !== 'option_none'
-  const legacyCanCreate = optionDepth === 0 && shownValue.kind === 'option_none' && (
+  const canSwitchType = showTypeSwitcher && isObject && polymorphicTypes.length >= 2 && state !== 'none'
+  const canCreate = state === 'none' && (
     scalarDefaultForDeclaredType(declaredType) !== null
     || isPolymorphic
     || !!enumType
     || !!refTargetType
     || !!objectType
   )
+  const canCreateMissing = !isOptional && shownValue.kind === 'option_none' && (
+    isPolymorphic || !!refTargetType || !!objectType
+  )
 
   const lookups = useEditorLookups()
-  const [choosingTarget, setChoosingTarget] = useState<{ optionLayer: number | null } | null>(null)
+  const [choosingTarget, setChoosingTarget] = useState<boolean | null>(null)
 
-  if (layers.length === 0 && !legacyCanClear && !legacyCanCreate && !canSwitchType) return null
+  if (state === null && !canCreateMissing && !canSwitchType) return null
 
   async function materializeObject(typeName: string) {
     const result = await lookups.makeDefaultObject(typeName)
     if (result.ok) onCommit(result.value)
   }
 
-  function commitCreated(layer: number, inner: FieldValue) {
-    onCommitValue(replaceOptionLayer(value, layer, {
-      kind: 'option_some',
-      value: inner,
-    }))
-  }
-
-  function commitTarget(target: { optionLayer: number | null }, created: FieldValue) {
-    onCommitValue(applyCreatedValue(value, target.optionLayer, created))
+  function commitTarget(optional: boolean, created: FieldValue) {
+    onCommitValue(applyCreatedValue(optional, created))
   }
 
   async function handleCreate(
     event: React.MouseEvent<HTMLButtonElement>,
-    target: { optionLayer: number | null },
+    optional: boolean,
   ) {
-    const layer = target.optionLayer
-    if (layer === null) {
+    if (!optional) {
       if (isPolymorphic) {
-        setChoosingTarget(target)
+        setChoosingTarget(false)
         return
       }
       if (objectType) {
         const result = await lookups.makeDefaultObject(objectType)
-        if (result.ok) commitTarget(target, result.value)
+        if (result.ok) commitTarget(false, result.value)
       }
-      return
-    }
-    if (layer < optionDepth - 1) {
-      commitCreated(layer, nullValue())
       return
     }
     if (refTargetType) {
@@ -944,16 +917,16 @@ function NullableControls({
     })
     if (scalarDefault) {
       const resolved = await scalarDefault()
-      if (resolved) commitCreated(layer, resolved)
+      if (resolved) commitTarget(true, resolved)
       return
     }
     if (isPolymorphic) {
-      setChoosingTarget(target)
+      setChoosingTarget(true)
       return
     }
     if (objectType) {
       const result = await lookups.makeDefaultObject(objectType)
-      if (result.ok) commitCreated(layer, result.value)
+      if (result.ok) commitTarget(true, result.value)
     }
   }
 
@@ -968,25 +941,13 @@ function NullableControls({
           onCommit={next => { void materializeObject(next) }}
         />
       )}
-      {layers.map((state, layer) => state === 'some' && (
-        <button
-          key={`clear-${layer}`}
-          type="button"
-          className="dc-null-btn dc-null-btn-clear"
-          title="清除为 None"
-          aria-label="清除为 None"
-          onClick={() => onCommitValue(replaceOptionLayer(value, layer, nullValue()))}
-        >
-          <Icon name="close" size={11} />
-        </button>
-      ))}
-      {legacyCanClear && (
+      {state === 'some' && (
         <button
           type="button"
           className="dc-null-btn dc-null-btn-clear"
           title="清除为 None"
           aria-label="清除为 None"
-          onClick={() => onCommit(nullValue())}
+          onClick={() => onCommitValue(nullValue())}
         >
           <Icon name="close" size={11} />
         </button>
@@ -997,18 +958,18 @@ function NullableControls({
           className="dc-null-btn dc-null-btn-create"
           title="创建值"
           aria-label="创建值"
-          onClick={event => { void handleCreate(event, { optionLayer: noneLayer }) }}
+          onClick={event => { void handleCreate(event, true) }}
         >
           <Icon name="plus" size={11} />
         </button>
       )}
-      {legacyCanCreate && (
+      {canCreateMissing && (
         <button
           type="button"
           className="dc-null-btn dc-null-btn-create"
           title="创建值"
           aria-label="创建值"
-          onClick={event => { void handleCreate(event, { optionLayer: null }) }}
+          onClick={event => { void handleCreate(event, false) }}
         >
           <Icon name="plus" size={11} />
         </button>
