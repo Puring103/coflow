@@ -31,8 +31,11 @@ namespace Coflow
         DictionaryFind = 38,
         CanonicalValue = 39,
         CreateBuffer = 41,
+        Collect = 43,
         RunChecks = 45,
         DimensionVariantKey = 46,
+        ProjectSnapshot = 47,
+        CreateValueLease = 48,
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct Response
@@ -59,6 +62,7 @@ namespace Coflow
     }
     internal static class Native
     {
+        [ThreadStatic] internal static long RequestCount;
 #if (UNITY_IOS || UNITY_WEBGL) && !UNITY_EDITOR
         private const string Library = "__Internal";
 #else
@@ -79,6 +83,7 @@ namespace Coflow
             try
             {
                 if (handle != null) handle.DangerousAddRef(ref retained);
+                System.Threading.Interlocked.Increment(ref RequestCount);
                 uint status = Request((uint)op, handle?.Id ?? 0, value, encoded, (UIntPtr)encoded.Length,
                     data, (UIntPtr)data.Length, index, out var result);
                 if (status == 2) throw BuildException.Decode(ReadBuffer(result));

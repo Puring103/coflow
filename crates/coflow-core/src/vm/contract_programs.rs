@@ -1,4 +1,4 @@
-//! 构建期编译契约中的默认程序；Runtime 只选择绑定，加载契约不重新编译。
+//! Contract 创建时分析全部默认函数、模板和检查，映像构建时只降低 IR。
 use super::{
     bytecode::Program,
     compiler::{self, CompileContext},
@@ -13,20 +13,19 @@ use std::{collections::BTreeMap, sync::Arc};
 pub struct ProgramKey {
     pub module: ModuleId,
     pub owner: Option<String>,
-    pub source: String,
     pub offset: usize,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckProgram {
+#[derive(Debug, Clone)]
+pub struct CheckProgram<P = Program> {
     pub owner: Option<String>,
     pub name: String,
     pub module: ModuleId,
-    pub program: Arc<Program>,
+    pub program: Arc<P>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ContractPrograms {
-    pub functions: BTreeMap<ProgramKey, Arc<Program>>,
-    pub checks: Vec<CheckProgram>,
+pub struct ContractIr {
+    pub functions: BTreeMap<ProgramKey, Arc<super::ir::Function>>,
+    pub checks: Vec<CheckIr>,
 }
 #[derive(Debug, Clone)]
 pub struct ProgramDiagnostic {
@@ -50,7 +49,7 @@ fn diagnostic(
         message,
     }
 }
-impl ContractPrograms {
+impl ContractIr {
     pub fn compile(schema: &CftSchema) -> Result<Self, ProgramDiagnostic> {
         let mut programs = Self::default();
         for meta in schema.all_types() {
@@ -111,7 +110,6 @@ impl ContractPrograms {
         let key = ProgramKey {
             module: source.module.clone(),
             owner: owner.map(str::to_string),
-            source: source.source.clone(),
             offset: source.span.start,
         };
         if self.functions.contains_key(&key) {
@@ -152,9 +150,9 @@ impl ContractPrograms {
             original
         };
         let mut program = if template {
-            compiler::compile_template(schema, compile_source, &name, context)
+            compiler::analyze_template(schema, compile_source, &name, context)
         } else {
-            compiler::compile(schema, compile_source, &name, context)
+            compiler::analyze(schema, compile_source, &name, context)
         }
         .map_err(|e| {
             let map = |offset: usize| {
@@ -266,7 +264,7 @@ impl ContractPrograms {
             )
         })? {
             let name = check.name.clone().unwrap_or_else(|| "<anonymous>".into());
-            let mut program = compiler::compile_check(
+            let mut program = compiler::analyze_check(
                 schema,
                 &check,
                 source,
@@ -288,7 +286,7 @@ impl ContractPrograms {
                     .map(|source| source.path.to_string_lossy().into_owned()),
                 span.start,
             );
-            self.checks.push(CheckProgram {
+            self.checks.push(CheckIr {
                 owner: owner.map(str::to_string),
                 name,
                 module: module.clone(),
@@ -296,5 +294,54 @@ impl ContractPrograms {
             });
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckIr {
+    pub owner: Option<String>,
+    pub name: String,
+    pub module: ModuleId,
+    pub program: Arc<super::ir::Function>,
+}
+#[derive(Debug, Clone)]
+pub struct ContractPrograms<P = Program> {
+    pub functions: BTreeMap<ProgramKey, Arc<P>>,
+    pub checks: Vec<CheckProgram<P>>,
+}
+impl ContractIr {
+    pub(crate) fn validate(&self, schema: &CftSchema) -> Result<(), ProgramDiagnostic> {
+        for function in self.functions.values().map(AsRef::as_ref).chain(self.checks.iter().map(|check| check.program.as_ref())) {
+            function.validate_semantics(schema).map_err(|message| ProgramDiagnostic {
+                module: function.module.clone().unwrap_or_else(|| ModuleId::from("<contract>")),
+                path: function.path.clone(),
+                span: function.body.first().map_or(crate::source::Span::default(), |node| node.span),
+                message,
+            })?;
+        }
+        Ok(())
+    }
+    pub(crate) fn lower(&self, optimize: bool) -> Result<ContractPrograms, ProgramDiagnostic> {
+        let lower = |function: &super::ir::Function| function.lower_optimized(optimize).map(Arc::new).map_err(|message| ProgramDiagnostic {
+            module: function.module.clone().unwrap_or_else(|| ModuleId::from("<contract>")),
+            path: function.path.clone(), span: function.body.first().map_or(crate::source::Span::default(), |node| node.span), message,
+        });
+        Ok(ContractPrograms {
+            functions: self.functions.iter().map(|(key, function)| Ok((key.clone(), lower(function)?))).collect::<Result<_, ProgramDiagnostic>>()?,
+            checks: self.checks.iter().map(|check| Ok(CheckProgram { owner: check.owner.clone(), name: check.name.clone(), module: check.module.clone(), program: lower(&check.program)? })).collect::<Result<_, ProgramDiagnostic>>()?,
+        })
+    }
+}
+
+impl<P> Default for ContractPrograms<P> {
+    fn default() -> Self { Self { functions: BTreeMap::new(), checks: Vec::new() } }
+}
+impl ContractPrograms {
+    pub(crate) fn publish(self) -> Result<ContractPrograms<super::image::ValidatedProgram>, String> {
+        let publish = |program: Arc<Program>| super::image::ValidatedProgram::new(Arc::unwrap_or_clone(program)).map(Arc::new);
+        Ok(ContractPrograms {
+            functions: self.functions.into_iter().map(|(key, program)| Ok((key, publish(program)?))).collect::<Result<_, String>>()?,
+            checks: self.checks.into_iter().map(|check| Ok(CheckProgram { owner: check.owner, name: check.name, module: check.module, program: publish(check.program)? })).collect::<Result<_, String>>()?,
+        })
     }
 }

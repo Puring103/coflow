@@ -49,6 +49,7 @@ pub enum StatementKind {
         operator: String,
         value: Expr,
     },
+    Set { target: Expr, value: Expr },
     Expression(Expr),
     While {
         condition: Expr,
@@ -87,6 +88,7 @@ pub enum ExprKind {
         type_name: String,
         fields: Vec<(String, Expr)>,
     },
+    Build { source: BuildSource, binding: String, body: Block },
     Unary {
         operator: String,
         value: Box<Expr>,
@@ -130,6 +132,11 @@ pub enum ExprKind {
 pub enum TemplatePart {
     Text(String),
     Expression(Expr),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum BuildSource {
+    Type(TypeRef),
+    Value(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

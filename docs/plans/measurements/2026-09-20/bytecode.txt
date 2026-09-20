@@ -1,0 +1,12 @@
+   Compiling coflow-core v0.11.0 (C:\wtl\WTL\Project\coflow\crates\coflow-core)
+    Finished `release` profile [optimized] target(s) in 1m 00s
+     Running `target\release\examples\bytecode_layout.exe`
+| program | instructions | registers | fixed total bytes | compact total bytes | extension % | fixed decode us | compact decode us |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| arithmetic | 9 | 5 | 628 | 624 | 44.4 | 26 | 108 |
+| wide-registers | 403 | 401 | 177446 | 179042 | 99.5 | 100 | 687 |
+| large-constants | 802 | 2 | 33405 | 33405 | 50.0 | 124 | 1146 |
+| closures | 25 | 9 | 1738 | 1694 | 28.0 | 51 | 197 |
+| templates | 13 | 5 | 1194 | 1158 | 15.4 | 51 | 146 |
+| host-calls | 10 | 6 | 747 | 723 | 20.0 | 25 | 108 |
+| collections | 43 | 11 | 2812 | 2752 | 32.6 | 78 | 285 |

@@ -268,3 +268,48 @@ fn builtin_matrix_handles_empty_values_unicode_and_numeric_boundaries() {
         assert!(call(&runtime, &[]).is_err(), "{body}");
     }
 }
+
+#[test]
+fn dictionaries_keep_insertion_order_and_normalized_keys() {
+    // 插入序迭代顺序保持不变。
+    let runtime = make_runtime(
+        "var order: string = \"\"; for key, value in {\"z\": 1, \"a\": 2, \"m\": 3} { order = order + key; } order",
+        "fn() -> string",
+    );
+    assert!(matches!(
+        call(&runtime, &[]).expect("order"),
+        HostValue::String(value) if value == "zam"
+    ));
+    // 键按内容归一化：同键二次构造报错，字符串键按内容查表。
+    let runtime = make_runtime(
+        "var dict: {string: int} = {\"x\": 1, \"y\": 2}; dict[\"y\"]",
+        "fn() -> int",
+    );
+    assert!(matches!(
+        call(&runtime, &[]).expect("lookup"),
+        HostValue::Int(2)
+    ));
+    // int 键与 bool 键不会互相命中；重复键在构造时报错。
+    let runtime = make_runtime("var dict: {int: int} = {1: 1}; dict[1]", "fn() -> int");
+    assert!(matches!(
+        call(&runtime, &[]).expect("int key"),
+        HostValue::Int(1)
+    ));
+    let runtime = make_runtime(
+        "var dict: {int: int} = {1: 1, 1: 2}; dict",
+        "fn() -> {int: int}",
+    );
+    assert!(call(&runtime, &[]).is_err());
+    // enum 键按类型名与值归一化。
+    let source = "enum Platform { Windows = 1 } table Rule { value: int = 7; run: fn() -> int => { var dict: {Platform: int} = {Platform::Windows: 1}; dict[Platform::Windows] }; }";
+    let modules = parse_modules([CftFile::from_source(ModuleId::from("test"), source)]);
+    let schema = build_schema(&modules).expect("schema");
+    let contract = Arc::new(Contract::new(schema).expect("contract"));
+    let mut builder = RuntimeBuilder::new(contract);
+    builder.add_text("rule: Rule {}", Some("test.cfd"));
+    let runtime = builder.build().runtime.expect("runtime");
+    assert!(matches!(
+        call(&runtime, &[]).expect("enum key"),
+        HostValue::Int(1)
+    ));
+}

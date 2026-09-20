@@ -16,6 +16,8 @@ pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("for", "Iterate over a collection."),
     ("in", "Select the loop collection."),
     ("is", "Check the runtime object type."),
+    ("build", "Construct a local data or collection value and freeze it on normal completion."),
+    ("as", "Name the exclusive binding in a build scope."),
 ];
 
 pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[

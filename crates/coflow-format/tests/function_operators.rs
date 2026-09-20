@@ -33,3 +33,16 @@ fn cft_and_cfd_keep_compound_assignment_intact_and_unary_rhs_tight() {
         }
     }
 }
+
+#[test]
+fn builder_scopes_format_without_changing_dictionary_types_or_tokens() {
+    for body in ["build [int] as b { b.append(1); b[0]=2; }", "build {string:int} as b { b[\"a\"]=1; b.remove(\"a\"); }", "build (values) as b { b.append(3); }"] {
+        let sources = [format!("table Rule {{ run: fn(values: [int]) -> [int] => {{ {body} }}; }}"), format!("r: Rule {{ run: fn(values: [int]) -> [int] {{ {body} }} }}")];
+        for (source, formatter) in sources.iter().zip([format_cft as fn(&str) -> String, format_cfd]) {
+            let formatted = formatter(source);
+            assert_eq!(significant(source), significant(&formatted));
+            assert_eq!(formatter(&formatted), formatted);
+            assert!(formatted.contains("as b {\n"), "{formatted}");
+        }
+    }
+}

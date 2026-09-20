@@ -1,5 +1,6 @@
 //! Unity/IL2CPP C ABI。句柄为不复用的整数，不暴露 Rust 对象地址。
 mod invocation;
+mod projection;
 #[cfg(test)]
 mod tests;
 use coflow_core::{
@@ -51,6 +52,8 @@ enum Operation {
     RetainValue = 44,
     RunChecks = 45,
     DimensionVariantKey = 46,
+    ProjectSnapshot = 47,
+    CreateValueLease = 48,
 }
 
 impl TryFrom<u32> for Operation {
@@ -94,6 +97,8 @@ impl TryFrom<u32> for Operation {
             44 => Self::RetainValue,
             45 => Self::RunChecks,
             46 => Self::DimensionVariantKey,
+            47 => Self::ProjectSnapshot,
+            48 => Self::CreateValueLease,
             _ => return Err("operation unavailable in this build".into()),
         })
     }
@@ -110,46 +115,136 @@ pub struct Response {
     pub error: u32,
 }
 
-#[derive(Debug, Clone)]
+// 实例实际保存在创建线程的 TLS 中，绝不借助 unsafe Send/Sync 跨线程搬运。
+type ThreadBound<T> = std::rc::Rc<T>;
+
+// lease 不强持有原生实例；显式释放实例立即回收执行资源。
+#[derive(Debug)]
+struct ValueLease { runtime: std::rc::Weak<Runtime>, value: ValueId }
+impl Drop for ValueLease {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.upgrade() { let _ = runtime.release_value(self.value); }
+    }
+}
+#[derive(Debug)]
 enum Entry {
     Contract(Arc<Contract>),
-    Builder(Arc<Mutex<Option<RuntimeBuilder>>>),
-    Runtime(Arc<Runtime>),
+    Builder(ThreadBound<Mutex<Option<RuntimeBuilder>>>),
+    Runtime(ThreadBound<Runtime>),
+    ValueLease(ThreadBound<ValueLease>),
     Buffer(Arc<Vec<u8>>),
     #[cfg(feature = "cft-compiler")]
     Compiler(Arc<Mutex<Compilation>>),
+}
+
+impl Clone for Entry {
+    fn clone(&self) -> Self {
+        match self {
+            Entry::Contract(value) => Entry::Contract(Arc::clone(value)),
+            Entry::Builder(value) => Entry::Builder(value.clone()),
+            Entry::Runtime(value) => Entry::Runtime(value.clone()),
+            Entry::ValueLease(value) => Entry::ValueLease(value.clone()),
+            Entry::Buffer(value) => Entry::Buffer(Arc::clone(value)),
+            #[cfg(feature = "cft-compiler")]
+            Entry::Compiler(value) => Entry::Compiler(Arc::clone(value)),
+        }
+    }
 }
 #[cfg(feature = "cft-compiler")]
 #[derive(Debug, Default)]
 struct Compilation {
     sources: Vec<coflow_core::schema::CftFile>,
 }
+#[derive(Debug, Clone)]
+enum SharedEntry {
+    Contract(Arc<Contract>),
+    Buffer(Arc<Vec<u8>>),
+    #[cfg(feature = "cft-compiler")]
+    Compiler(Arc<Mutex<Compilation>>),
+    Local { owner: std::thread::ThreadId, release_requested: bool },
+}
 #[derive(Debug, Default)]
 struct Registry {
     next: u64,
-    entries: BTreeMap<u64, Entry>,
+    entries: BTreeMap<u64, SharedEntry>,
+    releases: std::collections::HashMap<std::thread::ThreadId, Vec<u64>>,
 }
 static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| Mutex::new(Registry::default()))
 }
+#[derive(Default)]
+struct LocalEntries(BTreeMap<u64, Entry>);
+impl Drop for LocalEntries {
+    fn drop(&mut self) {
+        // 创建线程退出也会释放未显式 Dispose 的执行资源；不把回调移交终结线程。
+        if let Ok(mut shared) = registry().lock() {
+            for id in self.0.keys() { shared.entries.remove(id); }
+            shared.releases.remove(&std::thread::current().id());
+        }
+        // 锁已释放，Host 的释放回调不会在全局锁内执行。
+        let entries = std::mem::take(&mut self.0);
+        drop(entries);
+    }
+}
+thread_local! {
+    static LOCAL_ENTRIES: std::cell::RefCell<LocalEntries> = std::cell::RefCell::new(LocalEntries::default());
+}
+fn finish_release(entry: Entry) {
+    if let Entry::Runtime(runtime) = &entry { runtime.release(); }
+    drop(entry);
+}
+fn drain_releases() -> Result<(), String> {
+    let owner = std::thread::current().id();
+    let pending = {
+        let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
+        let ids = shared.releases.remove(&owner).unwrap_or_default();
+        for id in &ids { shared.entries.remove(id); }
+        ids
+    };
+    let removed = LOCAL_ENTRIES.try_with(|local| {
+        let mut local = local.borrow_mut();
+        pending.into_iter().filter_map(|id| local.0.remove(&id)).collect::<Vec<_>>()
+    }).map_err(|_| "execution thread is shutting down")?;
+    for entry in removed { finish_release(entry); }
+    Ok(())
+}
 fn insert(entry: Entry) -> Result<u64, String> {
-    let mut reg = registry()
-        .lock()
-        .map_err(|_| "handle registry unavailable")?;
-    reg.next = reg.next.checked_add(1).ok_or("handle identity exhausted")?;
-    let id = reg.next;
-    reg.entries.insert(id, entry);
+    let id = {
+        let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
+        shared.next = shared.next.checked_add(1).ok_or("handle identity exhausted")?;
+        shared.next
+    };
+    let stored = match entry {
+        Entry::Contract(value) => SharedEntry::Contract(value),
+        Entry::Buffer(value) => SharedEntry::Buffer(value),
+        #[cfg(feature = "cft-compiler")]
+        Entry::Compiler(value) => SharedEntry::Compiler(value),
+        local => {
+            LOCAL_ENTRIES.try_with(|entries| entries.borrow_mut().0.insert(id, local))
+                .map_err(|_| "execution thread is shutting down")?;
+            SharedEntry::Local { owner: std::thread::current().id(), release_requested: false }
+        }
+    };
+    registry().lock().map_err(|_| "handle registry unavailable")?.entries.insert(id, stored);
     Ok(id)
 }
 fn get(id: u64) -> Result<Entry, String> {
-    registry()
-        .lock()
-        .map_err(|_| "handle registry unavailable")?
-        .entries
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| "invalid or released handle".into())
+    drain_releases()?;
+    let shared = registry().lock().map_err(|_| "handle registry unavailable")?
+        .entries.get(&id).cloned().ok_or("invalid or released handle")?;
+    match shared {
+        SharedEntry::Contract(value) => Ok(Entry::Contract(value)),
+        SharedEntry::Buffer(value) => Ok(Entry::Buffer(value)),
+        #[cfg(feature = "cft-compiler")]
+        SharedEntry::Compiler(value) => Ok(Entry::Compiler(value)),
+        SharedEntry::Local { owner, release_requested } => {
+            if owner != std::thread::current().id() { return Err("Runtime must be accessed on its creating thread".into()); }
+            if release_requested { return Err("invalid or released handle".into()); }
+            LOCAL_ENTRIES.try_with(|entries| entries.borrow().0.get(&id).cloned())
+                .map_err(|_| "execution thread is shutting down")?.ok_or_else(|| "invalid or released handle".into())
+        }
+    }
 }
 fn buffer(bytes: Vec<u8>) -> Result<Response, String> {
     let length = bytes.len() as u64;
@@ -159,7 +254,7 @@ fn buffer(bytes: Vec<u8>) -> Result<Response, String> {
         ..Response::default()
     })
 }
-fn value(runtime: Arc<Runtime>, id: ValueId) -> Result<Response, String> {
+fn value(runtime: ThreadBound<Runtime>, id: ValueId) -> Result<Response, String> {
     runtime.ensure_value(id).map_err(|e| e.to_string())?;
     Ok(Response {
         handle: u64::try_from(id)
@@ -169,12 +264,11 @@ fn value(runtime: Arc<Runtime>, id: ValueId) -> Result<Response, String> {
         ..Response::default()
     })
 }
-fn target(handle: u64, raw_value: u64) -> Result<(Arc<Runtime>, ValueId), String> {
+fn target(handle: u64, raw_value: u64) -> Result<(ThreadBound<Runtime>, ValueId), String> {
     let Entry::Runtime(runtime) = get(handle)? else {
         return Err("expected Runtime".into());
     };
-    let id = usize::try_from(raw_value.checked_sub(1).ok_or("missing value ID")?)
-        .map_err(|_| "value ID overflow")?;
+    let id = raw_value.checked_sub(1).ok_or("missing value ID")?;
     runtime.ensure_value(id).map_err(|e| e.to_string())?;
     Ok((runtime, id))
 }
@@ -218,16 +312,14 @@ impl Drop for NativeService {
     }
 }
 fn take_buffer(handle: u64) -> Result<Vec<u8>, String> {
-    let entry = registry()
-        .lock()
-        .map_err(|_| "handle registry unavailable")?
-        .entries
-        .remove(&handle);
-    match entry {
-        Some(Entry::Buffer(bytes)) => Ok(bytes.as_ref().clone()),
-        _ => Err("expected returned Host buffer".into()),
-    }
+    let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
+    // 先检查种类，错误的 Host 返回句柄不能删除或析构其他线程的实例。
+    let Some(SharedEntry::Buffer(bytes)) = shared.entries.get(&handle) else { return Err("expected returned Host buffer".into()); };
+    let bytes = bytes.as_ref().clone();
+    shared.entries.remove(&handle);
+    Ok(bytes)
 }
+
 impl coflow_core::runtime::HostService for NativeService {
     fn has_member(
         &self,
@@ -456,7 +548,7 @@ fn dispatch(
                 return Err("expected contract".into());
             };
             Ok(Response {
-                handle: insert(Entry::Builder(Arc::new(Mutex::new(Some(
+                handle: insert(Entry::Builder(ThreadBound::new(Mutex::new(Some(
                     RuntimeBuilder::new(contract),
                 )))))?,
                 ..Response::default()
@@ -509,9 +601,21 @@ fn dispatch(
             };
             builder.take();
             Ok(Response {
-                handle: insert(Entry::Runtime(runtime))?,
+                handle: insert(Entry::Runtime(ThreadBound::new(
+                    Arc::try_unwrap(runtime).map_err(|_| "runtime handle shared")?,
+                )))?,
                 ..Response::default()
             })
+        }
+        Operation::CreateValueLease => {
+            let (runtime, id) = target(handle, raw_value)?;
+            if index == 0 { runtime.retain_value(id).map_err(|error| error.to_string())?; }
+            Ok(Response { handle: insert(Entry::ValueLease(ThreadBound::new(ValueLease { runtime: ThreadBound::downgrade(&runtime), value: id })))?, ..Response::default() })
+        }
+        Operation::ProjectSnapshot => {
+            let Entry::Runtime(runtime) = get(handle)? else { return Err("expected Runtime".into()); };
+            let root = if raw_value == 0 { None } else { Some(raw_value - 1) };
+            buffer(projection::encode(&runtime, root)?)
         }
         Operation::FindRecord | Operation::TryFindRecord => {
             let Entry::Runtime(runtime) = get(handle)? else {
@@ -621,13 +725,21 @@ fn dispatch(
             let index = usize::try_from(index).map_err(|_| "index overflow")?;
             let child = match (value_ref.as_ref(), op) {
                 (Value::Array(items), Operation::ArrayValue) => {
-                    *items.get(index).ok_or("array index out of range")?
+                    items.get(index).ok_or("array index out of range")?
                 }
                 (Value::Dict(items), Operation::DictionaryKey) => {
-                    items.get(index).ok_or("dictionary index out of range")?.0
+                    items
+                        .get_index(index)
+                        .ok_or("dictionary index out of range")?
+                        .1
+                         .0
                 }
                 (Value::Dict(items), Operation::DictionaryValue) => {
-                    items.get(index).ok_or("dictionary index out of range")?.1
+                    items
+                        .get_index(index)
+                        .ok_or("dictionary index out of range")?
+                        .1
+                         .1
                 }
                 _ => return Err("container operation mismatch".into()),
             };
@@ -708,8 +820,7 @@ fn dispatch(
                 let mut records = Vec::with_capacity(record_count as usize);
                 for _ in 0..record_count {
                     let raw = take_u64(&mut position)?;
-                    let id = usize::try_from(raw.checked_sub(1).ok_or("missing value ID")?)
-                        .map_err(|_| "value ID overflow")?;
+                    let id = raw.checked_sub(1).ok_or("missing value ID")?;
                     runtime.ensure_value(id).map_err(|e| e.to_string())?;
                     records.push(id);
                 }
@@ -905,13 +1016,25 @@ pub unsafe extern "C" fn coflow_buffer_copy(
 }
 #[no_mangle]
 pub extern "C" fn coflow_release(handle: u64) {
-    let removed = registry()
-        .lock()
-        .ok()
-        .and_then(|mut registry| registry.entries.remove(&handle));
-    // 不在注册表锁内释放宿主资源，释放回调可以安全地再次进入边界。
-    if let Some(Entry::Runtime(runtime)) = &removed {
-        runtime.release();
+    let removed = {
+        let Ok(mut shared) = registry().lock() else { return; };
+        if let Some(SharedEntry::Local { owner, release_requested }) = shared.entries.get_mut(&handle) {
+            if *owner != std::thread::current().id() {
+                // 终结线程只申请释放；创建线程下一次进入或退出时执行实际析构。
+                let owner = *owner;
+                if !*release_requested {
+                    *release_requested = true;
+                    shared.releases.entry(owner).or_default().push(handle);
+                }
+                return;
+            }
+        }
+        shared.entries.remove(&handle)
+    };
+    if matches!(removed, Some(SharedEntry::Local { .. })) {
+        if let Ok(Some(entry)) = LOCAL_ENTRIES.try_with(|entries| entries.borrow_mut().0.remove(&handle)) {
+            finish_release(entry);
+        }
     }
     drop(removed);
 }

@@ -7,10 +7,11 @@ use crate::{
     vm::{contract_programs::CheckProgram, executor::ExecutionLimits},
     CfdDiagnostic, CfdErrorCode,
 };
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Mutex};
 
 #[derive(Debug, Default)]
 pub(super) struct CheckReporter {
+    // 检查报告需要 Send+Sync（作为 HostService 绑定），保留互斥锁；仅在检查调度路径触碰。
     pub messages: Mutex<Vec<Vec<CheckMessage>>>,
     pub location: Mutex<Option<CheckSchemaLocation>>,
 }
@@ -90,7 +91,7 @@ impl Runtime {
         let records = selection
             .records
             .unwrap_or_else(|| self.records.values().copied().collect());
-        let mut tasks: Vec<(CheckProgram, Option<ValueId>)> = Vec::new();
+        let mut tasks: Vec<(CheckProgram<crate::vm::image::ValidatedProgram>, Option<ValueId>)> = Vec::new();
         for id in records {
             let value = match self.value(id) {
                 Ok(value) => value,
@@ -128,7 +129,7 @@ impl Runtime {
                 .unwrap_or_default();
             ancestors.push(type_name.clone());
             for owner in ancestors {
-                for program in &self.contract.programs().checks {
+                for program in self.code().checks() {
                     if program.owner.as_deref() == Some(owner.as_str())
                         && (selection.names.is_empty() || selection.names.contains(&program.name))
                     {
@@ -138,7 +139,7 @@ impl Runtime {
             }
         }
         if selection.include_global {
-            for program in &self.contract.programs().checks {
+            for program in self.code().checks() {
                 if program.owner.is_none()
                     && (selection.names.is_empty() || selection.names.contains(&program.name))
                 {
@@ -241,7 +242,7 @@ impl Runtime {
         output
     }
 }
-fn diagnostic(program: &CheckProgram, code: CfdErrorCode, message: String) -> CheckDiagnostic {
+fn diagnostic(program: &CheckProgram<crate::vm::image::ValidatedProgram>, code: CfdErrorCode, message: String) -> CheckDiagnostic {
     CheckDiagnostic {
         diagnostic: CfdDiagnostic::error(code, message),
         contexts: vec![CheckDiagnosticContext::Check {

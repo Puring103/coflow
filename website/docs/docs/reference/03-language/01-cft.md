@@ -84,3 +84,20 @@ type Callback = fn(value: int) -> int;
 | `@localized`、`@dimension("name")` | 记录字段的维度值 |
 
 check 声明仅适用于记录和顶层规则，data 不声明 check。详见 [Check 校验](./04-check.md)。
+
+## 局部构造
+
+函数内可用 `build` 创建或修改 data、数组和字典，正常结束自动得到不可变值：
+
+```cft
+var values: [int] = build [int] as b {
+  b.append(1);
+  b.append(2);
+};
+var updated: [int] = build (values) as b {
+  b[0] = 3;
+  b.remove(1);
+};
+```
+
+data 字段用 `b.field = value;` 赋值；所有正常出口须填完必填字段。字典覆盖保留顺序，删除后重新插入放在末尾。构造不会修改输入；嵌套值需单独构造后替换。构造绑定不能复制、捕获、返回或传入函数，记录与 singleton 不可动态构造。

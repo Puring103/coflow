@@ -885,3 +885,26 @@ fn line_indexed_cfd_range_matches_linear_scan() {
         }
     }
 }
+
+#[test]
+fn function_builder_completion_exposes_scope_binding_and_snippet() {
+    let source = "fn() -> [int] { build [int] as items { items.append(1); } }";
+    let result = cfd::function_document(&json!({ "source": source }));
+    let items = result["completions"].as_array().unwrap();
+    assert!(items.iter().any(|item| item["label"] == "build" && item["insertTextFormat"] == 2));
+    assert!(items.iter().any(|item| item["label"] == "items" && item["detail"] == "local variable"));
+    assert!(result["diagnostics"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn function_cursor_completion_excludes_closed_builders_and_future_locals() {
+    let source = "fn() -> int { var values = build [int] as items { items.append(1); }; var later = 2; later }";
+    let labels = |offset| cfd::function_source_completion_items_at(source, offset, None).unwrap().into_iter()
+        .filter_map(|item| item["label"].as_str().map(str::to_owned)).collect::<Vec<_>>();
+    let inside = labels(source.find("items.append").unwrap());
+    assert!(inside.iter().any(|label| label == "items"));
+    assert!(!inside.iter().any(|label| label == "later"));
+    let after = labels(source.find("var later").unwrap());
+    assert!(after.iter().any(|label| label == "values"));
+    assert!(!after.iter().any(|label| label == "items" || label == "later"));
+}

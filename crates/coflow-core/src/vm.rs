@@ -2,8 +2,20 @@
 use std::fmt;
 pub mod bytecode;
 pub mod compiler;
+pub mod construction;
 pub mod contract_programs;
 pub mod executor;
+pub mod ir;
+mod ir_validation;
+mod ir_flow;
+mod ssa;
+mod escape;
+mod ranges;
+mod collections;
+mod ir_construction;
+mod ir_narrowing;
+pub(crate) mod image;
+pub(crate) mod optimization;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionError {
@@ -43,29 +55,5 @@ impl fmt::Display for ExecutionError {
 }
 impl std::error::Error for ExecutionError {}
 
-#[derive(Debug, Clone, Default)]
-pub struct VirtualMachine;
-impl VirtualMachine {
-    pub fn call(
-        &self,
-        host: &dyn executor::ExecutionHost,
-        binding: executor::Binding,
-        arguments: &[executor::Slot],
-        limits: executor::ExecutionLimits,
-    ) -> Result<executor::Slot, ExecutionError> {
-        executor::execute(host, binding, arguments, executor::Budget::new(limits))
-    }
-}
-#[derive(Debug, Clone, Default)]
-pub struct FunctionCompiler;
-impl FunctionCompiler {
-    pub fn compile(
-        &self,
-        schema: &crate::schema::CftSchema,
-        source: &str,
-        name: &str,
-        context: compiler::CompileContext,
-    ) -> Result<bytecode::Program, compiler::CompileError> {
-        compiler::compile(schema, source, name, context)
-    }
-}
+#[cfg(test)]
+mod dispatch_micro;

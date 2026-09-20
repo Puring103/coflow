@@ -1,12 +1,12 @@
 use coflow_core::{
     contract::Contract,
-    runtime::{HostService, HostValue, Runtime, RuntimeBuilder},
+    runtime::{HostService, HostValue, OptimizationProfile, Runtime, RuntimeBuilder},
     schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::{executor::ExecutionLimits, ExecutionError},
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, Weak,
+    Arc, Weak,
 };
 
 fn contract(sources: &[&str]) -> Arc<Contract> {
@@ -39,6 +39,37 @@ fn int(value: HostValue) -> i32 {
         HostValue::Int(value) => value,
         value => panic!("expected int: {value:?}"),
     }
+}
+
+#[test]
+fn range_proven_hoisting_preserves_empty_loop_and_checked_faults() {
+    let contract = contract(&["table Rule { run: fn(x: int, count: int) -> int => { var sum: int = 0; for i in 0..count { sum += (x & 255) + 1; sum += x + 1; } sum }; }"]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(contract.clone()); builder.optimization_profile(profile);
+        builder.add_text("r: Rule {}", None); let runtime = builder.build().runtime.unwrap();
+        let function = runtime.field(runtime.record("Rule", "r").unwrap(), "run").unwrap();
+        let call = |x, count| runtime.invoke(function, &[HostValue::Int(x), HostValue::Int(count)], ExecutionLimits::default());
+        assert_eq!(int(call(i32::MAX, 0).unwrap()), 0);
+        assert_eq!(int(call(i32::MIN, -1).unwrap()), 0);
+        assert_eq!(int(call(3, 5).unwrap()), 40);
+        assert!(call(i32::MAX, 1).is_err());
+    }
+}
+
+#[test]
+fn streaming_projection_keeps_pending_children_alive_during_reentrant_collection() {
+    let runtime = build(&["table Rule { run: fn() -> [int] => { [1, 2, 3] }; }"], "r: Rule {}");
+    let HostValue::Existing { value: root, .. } = invoke(&runtime, "Rule", "r", "run") else { panic!("array result"); };
+    runtime.release_value(root).unwrap();
+    let mut sum = 0;
+    let count = runtime.visit_projection(Some(root), |_, value| {
+        runtime.collect()?;
+        if let coflow_core::runtime::Value::Int(value) = value { sum += value; }
+        Ok(())
+    }).unwrap();
+    assert_eq!(count, 4); assert_eq!(sum, 6);
+    runtime.collect().unwrap();
+    assert_eq!(runtime.dynamic_value_count().unwrap(), 0);
 }
 
 #[test]
@@ -106,7 +137,7 @@ fn execution_limits_cover_iterations_memory_and_recursive_frames() {
             "内存",
         ),
         (
-            "self.run()",
+            "self.run() + 1",
             ExecutionLimits {
                 max_depth: 8,
                 ..ExecutionLimits::default()
@@ -129,9 +160,14 @@ fn execution_limits_cover_iterations_memory_and_recursive_frames() {
     }
 }
 
+thread_local! {
+    // 单线程 Runtime：重入测试通过线程局部传递 Runtime 弱引用。
+    static REENTER_RUNTIME: std::cell::RefCell<Option<Weak<Runtime>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 #[derive(Debug, Default)]
 struct Service {
-    runtime: Mutex<Weak<Runtime>>,
     calls: AtomicUsize,
 }
 impl HostService for Service {
@@ -159,8 +195,22 @@ impl HostService for Service {
             }
             "panic" => panic!("intentional Host panic"),
             "wrong" => Ok(HostValue::String("wrong type".into())),
+            "collect" => {
+                let runtime = REENTER_RUNTIME.with(|cell| cell.borrow().as_ref().unwrap().upgrade().unwrap());
+                runtime.collect()?;
+                let function = runtime.field(runtime.record("Rule", "r")?, "inner")?;
+                let result = runtime.invoke(function, &[], ExecutionLimits::default())?;
+                runtime.collect()?;
+                Ok(result)
+            }
             "reenter" => {
-                let runtime = self.runtime.lock().unwrap().upgrade().unwrap();
+                let runtime = REENTER_RUNTIME.with(|cell| {
+                    cell.borrow()
+                        .as_ref()
+                        .expect("runtime")
+                        .upgrade()
+                        .expect("runtime alive")
+                });
                 let function = runtime.field(runtime.record("Rule", "r")?, "plain")?;
                 runtime.invoke(function, &[], ExecutionLimits::default())
             }
@@ -177,7 +227,7 @@ fn host_arguments_reentry_panic_and_return_validation_use_real_calls() {
         .expect("bind");
     builder.add_text("r: Rule {}", None);
     let runtime = builder.build().runtime.expect("runtime");
-    *service.runtime.lock().unwrap() = Arc::downgrade(&runtime);
+    REENTER_RUNTIME.with(|cell| *cell.borrow_mut() = Some(Arc::downgrade(&runtime)));
     assert_eq!(int(invoke(&runtime, "Rule", "r", "run")), 42);
     for field in ["crash", "bad"] {
         let target = runtime
@@ -349,7 +399,8 @@ fn retained_child_outlives_released_parent_and_old_ids_never_alias_new_values() 
     let coflow_core::runtime::Value::Array(values) = parent_value.as_ref() else {
         panic!("array")
     };
-    let child = values[0];
+    let child = values.get(0).unwrap();
+    drop(parent_value);
     runtime.retain_value(child).unwrap();
     runtime.release_value(parent).unwrap();
     runtime.collect().unwrap();
@@ -390,11 +441,273 @@ fn contract_compilation_errors_keep_module_and_exact_expression_span() {
         source,
     )]))
     .unwrap();
-    let coflow_core::contract::ContractError::Compilation(error) =
-        Contract::new(schema).unwrap_err()
-    else {
-        panic!("compile diagnostic")
+    let coflow_core::contract::ContractError::Semantic(error) = Contract::new(schema).expect_err("invalid unused CFT function") else {
+        panic!("expected semantic error");
     };
-    assert_eq!(error.module.as_str(), "bad.cft");
-    assert_eq!(&source[error.span.start..error.span.end], "\"错误\"");
+    assert_eq!(error.path.as_deref(), Some("bad.cft"));
+    let (start, end) = (error.span.start, error.span.end);
+    assert_eq!(&source[start..end], "\"错误\"");
+}
+
+#[test]
+fn runtime_profiles_link_each_cfd_snapshot_without_changing_success_results() {
+    let contract = contract(&[
+        "table Rule { value: int; run: fn() -> int => { &Rule::target.value + self.value }; }",
+    ]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        for (target, expected) in [(7, 10), (11, 14)] {
+            let mut builder = RuntimeBuilder::new(contract.clone());
+            builder.optimization_profile(profile);
+            builder.add_text(
+                &format!("target: Rule {{ value: {target} }} caller: Rule {{ value: 3 }}"),
+                Some("snapshot.cfd"),
+            );
+            let runtime = builder.build().runtime.expect("linked runtime");
+            assert_eq!(runtime.optimization_profile(), profile);
+            assert!(matches!(
+                invoke(&runtime, "Rule", "caller", "run"),
+                HostValue::Int(value) if value == expected
+            ));
+        }
+    }
+}
+
+#[test]
+fn nested_ranges_and_empty_ranges_preserve_profile_results_after_fusion() {
+    let contract = contract(&[
+        "table Rule { run: fn() -> int => { var result: int = 0; for i in 0..3 { for j in 0..4 { result += 1; } } for unused in 2..2 { result += 100; } for unused in 4..1 { result += 1000; } result }; }",
+    ]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(contract.clone());
+        builder.optimization_profile(profile);
+        builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.expect("nested range snapshot");
+        assert_eq!(int(invoke(&runtime, "Rule", "r", "run")), 12);
+    }
+}
+
+#[test]
+fn fixed_owner_specialization_and_static_templates_are_snapshot_local() {
+    let compiled = contract(&[r#"table Item { name: string; number: int; text: fstring = f"{self.name}:{self.number}"; run: fn() -> int => { self.number }; }"#]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut images = Vec::new();
+        for (name, number) in [("first", 11), ("second", 22)] {
+            let mut builder = RuntimeBuilder::new(compiled.clone());
+            builder.optimization_profile(profile);
+            builder.add_text(&format!("a: Item {{ name: \"{name}\", number: {number} }}"), None);
+            images.push(builder.build().runtime.unwrap());
+        }
+        for (runtime, expected, number) in [(&images[0], "first:11", 11), (&images[1], "second:22", 22)] {
+            assert_eq!(int(invoke(runtime, "Item", "a", "run")), number);
+            let text = runtime.field(runtime.record("Item", "a").unwrap(), "text").unwrap();
+            runtime.collect().unwrap();
+            let before = runtime.dynamic_value_count().unwrap();
+            for _ in 0..20 { assert_eq!(runtime.read_text(text).unwrap(), expected); }
+            if profile == OptimizationProfile::Release {
+                assert_eq!(runtime.dynamic_value_count().unwrap(), before, "静态模板读取不执行或分配动态文本");
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_direct_calls_preserve_faults_and_divergence() {
+    let compiled = contract(&[r#"table Rule {
+        leaf: fn() -> int => { 7 };
+        middle: fn() -> int => { self.leaf() };
+        pure: fn() -> int => { self.middle(); 9 };
+        fail: fn() -> int => { 2147483647 + 1 };
+        fault: fn() -> int => { self.fail(); 9 };
+        recur: fn() -> int => { self.recur() };
+        diverge: fn() -> int => { self.recur(); 9 };
+    }"#]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(compiled.clone());
+        builder.optimization_profile(profile); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        assert_eq!(int(invoke(&runtime, "Rule", "r", "pure")), 9);
+        let record = runtime.record("Rule", "r").unwrap();
+        for name in ["fault", "diverge"] {
+            let function = runtime.field(record, name).unwrap();
+            assert!(runtime.invoke(function, &[], ExecutionLimits { max_depth: 8, max_work: 2000, ..ExecutionLimits::default() }).is_err(), "{name} 的未使用调用不能删除");
+        }
+        if profile == OptimizationProfile::Release {
+            let function = runtime.field(record, "pure").unwrap();
+            assert_eq!(int(runtime.invoke(function, &[], ExecutionLimits { max_depth: 1, ..ExecutionLimits::default() }).unwrap()), 9, "跨调用图证明纯且有限的未使用调用已删除");
+        }
+    }
+}
+
+#[test]
+fn release_tail_calls_reuse_argument_windows_and_debug_keeps_frames() {
+    let compiled = contract(&["table Rule { run: fn(count: int, left: int, right: int) -> int => { if count == 0 { left } else { self.run(count - 1, right, left) } }; }"]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(compiled.clone()); builder.optimization_profile(profile); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        let function = runtime.field(runtime.record("Rule", "r").unwrap(), "run").unwrap();
+        let result = runtime.invoke(function, &[HostValue::Int(1001), HostValue::Int(7), HostValue::Int(9)], ExecutionLimits { max_depth: 4, ..ExecutionLimits::default() });
+        if profile == OptimizationProfile::Release { assert_eq!(int(result.unwrap()), 9); }
+        else { assert!(result.is_err()); }
+    }
+}
+
+#[test]
+fn concatenation_preserves_host_order_in_both_profiles() {
+    #[derive(Debug, Default)]
+    struct Trace(std::sync::Mutex<Vec<String>>);
+    impl HostService for Trace {
+        fn read(&self, _: &str) -> Result<HostValue, ExecutionError> { Err(ExecutionError::InvalidHandle) }
+        fn has_member(&self, _: &str, _: &coflow_core::schema::CftValueType, _: &coflow_core::schema::CftSchema) -> bool { true }
+        fn call(&self, _: &str, args: &[HostValue]) -> Result<HostValue, ExecutionError> {
+            let HostValue::String(value) = &args[0] else { return Err(ExecutionError::InvalidHandle); };
+            self.0.lock().unwrap().push(value.clone()); Ok(HostValue::String(value.clone()))
+        }
+    }
+    let compiled = contract(&[r#"@Host singleton Trace { emit: fn(string) -> string; } table Rule { run: fn() -> string => { Trace.emit("a") + Trace.emit("b") + Trace.emit("c") }; }"#]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let trace = Arc::new(Trace::default());
+        let mut builder = RuntimeBuilder::new(compiled.clone()); builder.optimization_profile(profile);
+        builder.bind("Trace".into(), trace.clone()).unwrap(); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        assert!(trace.0.lock().unwrap().is_empty());
+        assert!(matches!(invoke(&runtime, "Rule", "r", "run"), HostValue::String(value) if value == "abc"));
+        assert_eq!(*trace.0.lock().unwrap(), ["a", "b", "c"]);
+    }
+}
+
+#[test]
+fn bounded_scalar_inlining_preserves_checked_results_without_extra_frames() {
+    let compiled = contract(&["table Rule { twice: fn(value: int) -> int => { value * 2 }; run: fn(value: int) -> int => { self.twice(value) + 1 }; }"]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(compiled.clone()); builder.optimization_profile(profile); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        let target = runtime.field(runtime.record("Rule", "r").unwrap(), "run").unwrap();
+        let limits = ExecutionLimits { max_depth: 1, ..ExecutionLimits::default() };
+        let result = runtime.invoke(target, &[HostValue::Int(21)], limits);
+        if profile == OptimizationProfile::Release { assert_eq!(int(result.unwrap()), 43); } else { assert!(result.is_err()); }
+        assert!(runtime.invoke(target, &[HostValue::Int(i32::MAX)], ExecutionLimits::default()).unwrap_err().to_string().contains("溢出"));
+    }
+}
+
+#[derive(Debug)]
+struct RecursiveHost;
+impl HostService for RecursiveHost {
+    fn has_member(&self, _: &str, _: &coflow_core::schema::CftValueType, _: &coflow_core::schema::CftSchema) -> bool { true }
+    fn read(&self, _: &str) -> Result<HostValue, ExecutionError> {
+        let runtime = REENTER_RUNTIME.with(|cell| cell.borrow().as_ref().unwrap().upgrade().unwrap());
+        runtime.read_host("Recursive", "value", &coflow_core::schema::CftValueType::Int)?;
+        Ok(HostValue::Int(0))
+    }
+    fn call(&self, _: &str, _: &[HostValue]) -> Result<HostValue, ExecutionError> {
+        let runtime = REENTER_RUNTIME.with(|cell| cell.borrow().as_ref().unwrap().upgrade().unwrap());
+        let function = runtime.field(runtime.singleton("Recursive")?, "run")?;
+        runtime.invoke(function, &[], ExecutionLimits::default())
+    }
+}
+#[test]
+fn host_only_reentry_shares_depth_and_work_and_releases_failed_boundaries() {
+    let mut builder = RuntimeBuilder::new(contract(&["@Host singleton Recursive { value: int; run: fn() -> int; } table Rule { read: fn() -> int => { Recursive.value }; plain: fn() -> int => { 7 }; }"]));
+    builder.bind("Recursive".into(), Arc::new(RecursiveHost)).unwrap();
+    builder.add_text("r: Rule {}", None);
+    let runtime = builder.build().runtime.unwrap();
+    REENTER_RUNTIME.with(|cell| *cell.borrow_mut() = Some(Arc::downgrade(&runtime)));
+    let read = runtime.field(runtime.record("Rule", "r").unwrap(), "read").unwrap();
+    let call = runtime.field(runtime.singleton("Recursive").unwrap(), "run").unwrap();
+    for target in [read, call] {
+        for (limits, expected) in [
+            (ExecutionLimits { max_depth: 8, ..ExecutionLimits::default() }, "深度"),
+            (ExecutionLimits { max_work: 4, ..ExecutionLimits::default() }, "工作量"),
+        ] {
+            let error = runtime.invoke(target, &[], limits).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+            assert_eq!(int(invoke(&runtime, "Rule", "r", "plain")), 7);
+        }
+    }
+}
+
+#[test]
+fn fused_total_map_filter_stages_preserve_values_and_empty_inputs() {
+    let schema = contract(&["table Rule { run: fn(values: [int]) -> [int] => { values.map(fn(x: int) -> int { x & 255 }).filter(fn(x: int) -> bool { x > 2 }) }; }"]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(schema.clone()); builder.optimization_profile(profile); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        let target = runtime.field(runtime.record("Rule", "r").unwrap(), "run").unwrap();
+        for (input, expected) in [(vec![], vec![]), (vec![i32::MIN, -1, 2, 259, i32::MAX], vec![255, 3, 255])] {
+            let HostValue::Existing { value, .. } = runtime.invoke(target, &[HostValue::Array(input.into_iter().map(HostValue::Int).collect())], ExecutionLimits::default()).unwrap() else { panic!("array"); };
+            let root = runtime.value(value).unwrap();
+            let coflow_core::runtime::Value::Array(items) = root.as_ref() else { panic!("array"); };
+            let actual = items.iter().map(|id| match runtime.value(id).unwrap().as_ref() { coflow_core::runtime::Value::Int(value) => *value, _ => panic!("int") }).collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+            runtime.release_value(value).unwrap();
+        }
+    }
+}
+
+#[test]
+fn existing_argument_is_rooted_before_later_imports_trigger_collection() {
+    let runtime = build(&["table Rule { make: fn() -> [int] => { [42] }; consume: fn(first: [int], allocations: [string]) -> int => { first[0] }; }"], "r: Rule {}");
+    let value = invoke(&runtime, "Rule", "r", "make");
+    let HostValue::Existing { value: id, .. } = &value else { panic!("array"); };
+    runtime.release_value(*id).unwrap();
+    let target = runtime.field(runtime.record("Rule", "r").unwrap(), "consume").unwrap();
+    let pressure = HostValue::Array((0..2048).map(|i| HostValue::String(i.to_string())).collect());
+    assert_eq!(int(runtime.invoke(target, &[value, pressure], ExecutionLimits::default()).unwrap()), 42);
+    assert_eq!(runtime.dynamic_value_count().unwrap(), 0);
+}
+
+#[test]
+fn repeated_scalar_root_maps_release_temporary_strings_in_long_loops() {
+    let runtime = build(&[r#"table Rule { run: fn() -> int => { var total: int = 0; for i in 0..20000 { total += i.string().len(); } total }; }"#], "r: Rule {}");
+    let target = runtime.field(runtime.record("Rule", "r").unwrap(), "run").unwrap();
+    let result = runtime.invoke(target, &[], ExecutionLimits { max_heap_bytes: 512 * 1024, ..ExecutionLimits::default() }).unwrap();
+    assert_eq!(int(result), 88890);
+    assert_eq!(runtime.dynamic_value_count().unwrap(), 0);
+}
+#[test]
+fn out_of_range_external_ids_are_errors_before_compact_encoding() {
+    let runtime = build(&["table Rule {}"], "r: Rule {}");
+    assert!(runtime.invoke(u64::MAX, &[], ExecutionLimits::default()).is_err());
+    assert!(runtime.equals(u64::MAX, u64::MAX).is_err());
+}
+
+#[test]
+fn paused_outer_frames_keep_arrays_and_closure_captures_across_host_gc_and_reentry() {
+    let schema = contract(&[r#"@Host singleton Service { collect: fn() -> int; }
+        table Rule {
+            inner: fn() -> int => { var count: int = 0; for i in 0..4000 { count += i.string().len(); } count };
+            run: fn() -> int => { var values: [string] = ["alive", "root"]; var saved: fn() -> int = fn() -> int { values[0].len() }; Service.collect(); saved() + values[1].len() };
+        }"#]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(schema.clone()); builder.optimization_profile(profile);
+        builder.bind("Service".into(), Arc::new(Service::default())).unwrap(); builder.add_text("r: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        REENTER_RUNTIME.with(|cell| *cell.borrow_mut() = Some(Arc::downgrade(&runtime)));
+        assert_eq!(int(invoke(&runtime, "Rule", "r", "run")), 9);
+        assert_eq!(runtime.dynamic_value_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn temporary_set_keys_share_budget_and_failed_calls_release_reservations() {
+    let keys = (0..64).map(|index| format!("\"{index}{}\"", "x".repeat(1024))).collect::<Vec<_>>().join(",");
+    let runtime = build(&["table Rule { items: [string]; run: fn() -> bool => { self.items.isUnique() }; }"], &format!("rule: Rule {{ items: [{keys}] }}"));
+    let run = runtime.field(runtime.record("Rule", "rule").unwrap(), "run").unwrap();
+    let limits = ExecutionLimits { max_heap_bytes: 32 * 1024, ..ExecutionLimits::default() };
+    for _ in 0..3 {
+        let error = runtime.invoke(run, &[], limits).unwrap_err().to_string();
+        assert!(error.contains("内存预算"), "{error}");
+        assert!(matches!(runtime.invoke(run, &[], ExecutionLimits::default()).unwrap(), HostValue::Bool(true)));
+    }
+}
+
+#[test]
+fn repeated_captureless_closure_creation_keeps_identity_in_both_profiles() {
+    let contract = contract(&["table Rule { make: fn() -> fn() -> int => { fn() -> int { 7 } }; run: fn() -> int => { var first: fn() -> int = self.make(); var second: fn() -> int = self.make(); var copied: fn() -> int = first; if first == second || first != copied { 0 } else { first() + second() } }; }"]);
+    for profile in [OptimizationProfile::Debug, OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(contract.clone());
+        builder.optimization_profile(profile);
+        builder.add_text("rule: Rule {}", Some("identity.cfd"));
+        let runtime = builder.build().runtime.unwrap();
+        assert_eq!(int(invoke(&runtime, "Rule", "rule", "run")), 14);
+    }
 }

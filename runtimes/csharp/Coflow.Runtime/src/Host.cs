@@ -40,6 +40,10 @@ namespace Coflow
             var writer = new InvocationWriter(1);
             codec.WriteArgument(writer, value);
             var encoded = writer.Finish();
+            if (encoded[4] == 6 || encoded[4] == 7 || encoded[4] == 8) {
+                Result = Native.Call(NativeOperation.CreateBuffer, data: encoded);
+                var aggregate = Result; aggregate.Tag = 12; Result = aggregate; return;
+            }
             var originalPosition = position;
             position = 4;
             Result = ReadEncodedValue(encoded);
@@ -111,7 +115,9 @@ namespace Coflow
         internal static void Bind(RuntimeBuilder builder,HostBinding host)
         {
             if(host==null)throw new ArgumentNullException(nameof(host));
-            var context=GCHandle.Alloc(host);
+            // 强所有权留在托管 builder/runtime；原生只持弱句柄，避免 Host 反向引用
+            // Runtime 时形成 GC 无法看见的跨语言强引用环。
+            var context=GCHandle.Alloc(host, GCHandleType.Weak);
             bool retained=false;
             bool submitted=false;
             try
@@ -127,6 +133,7 @@ namespace Coflow
             {
                 if(!submitted&&context.IsAllocated)context.Free();
                 if(retained)builder.Handle.DangerousRelease();
+                GC.KeepAlive(host);
             }
         }
 #if UNITY_2022_1_OR_NEWER
@@ -138,7 +145,8 @@ namespace Coflow
             try
             {
                 var bytes=new byte[checked((int)length.ToUInt64())];Marshal.Copy(field,bytes,0,bytes.Length);
-                var host=(HostBinding)GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Target!;
+                var host=GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Target as HostBinding
+                    ?? throw new CoflowException("Host owner is no longer available.");
                 if(op==2)
                 {
                     int position=0;
@@ -159,9 +167,8 @@ namespace Coflow
                     case HostEnum v:
                         result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
                     case IRuntimeValue v:
-                        var value = v.RuntimeValue;
-                        value.Request(NativeOperation.InspectValue);
-                        result.Handle=value.Owner.Handle.Id; result.Length=value.Id; result.Tag=11; break;
+                        var writer = new InvocationWriter(1); v.RuntimeValue.Write(writer);
+                        result = Native.Call(NativeOperation.CreateBuffer, data: writer.Finish()); result.Tag = 12; break;
                     default: throw new CoflowException("Host data must be a scalar or a value from the same Runtime.");
                 }
             }

@@ -327,7 +327,14 @@ impl<'a> Parser<'a> {
                     }
                 } else {
                     let expression = p.expression(0, true)?;
-                    if p.take(";") {
+                    if p.take("=") {
+                        if !matches!(expression.kind, ExprKind::Field { .. } | ExprKind::Index { .. }) {
+                            return Err(p.error("构造赋值需要直接字段或索引目标"));
+                        }
+                        let value = p.expression(0, true)?;
+                        p.expect(";")?;
+                        StatementKind::Set { target: expression, value }
+                    } else if p.take(";") {
                         StatementKind::Expression(expression)
                     } else if p.take("}") {
                         tail = Some(Box::new(expression));
@@ -411,6 +418,19 @@ impl<'a> Parser<'a> {
         let start = self.span().start;
         let token = self.peek();
         let kind = match token {
+            "build" => {
+                self.pos += 1;
+                let source = if self.take("(") {
+                    let value = self.expression(0, true)?;
+                    self.expect(")")?;
+                    BuildSource::Value(Box::new(value))
+                } else { BuildSource::Type(self.ty()?) };
+                self.expect("as")?;
+                let binding = self.identifier(false)?;
+                let body = self.block()?;
+                if body.tail.is_some() { return Err(self.error("构造块只接受语句，正常结束自动冻结")); }
+                ExprKind::Build { source, binding, body }
+            }
             "fn" => ExprKind::Function(self.function()?),
             "if" => {
                 self.pos += 1;

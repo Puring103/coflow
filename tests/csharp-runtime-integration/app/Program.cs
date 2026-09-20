@@ -14,8 +14,8 @@ internal static class Program
         var hero = runtime.Table<Character>()["hero"];
         if (!(hero is Hero) || hero.name != "Hero" || hero.stats.health != 100) throw new Exception("Generated data mismatch.");
         if (!runtime.Singleton<RuntimeSettings>().enabled) throw new Exception("Singleton mismatch.");
-        if (hero.score.Invoke(23) != 123) throw new Exception("Function execution mismatch.");
-        if (hero.text != "Hero") throw new Exception("Template execution mismatch.");
+        if (hero.score(23) != 123) throw new Exception("Function execution mismatch.");
+        if (hero.text.Render() != "Hero") throw new Exception("Template execution mismatch.");
         var localized = runtime.Table<LocalizedText>()["localized"].value;
         if (localized.Default() != "Hello" || localized.For("zh") != "你好") throw new Exception("Dimension lookup mismatch.");
         var variants = localized.Variants();

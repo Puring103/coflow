@@ -1,6 +1,56 @@
 use super::*;
 use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
+#[derive(Debug)]
+struct ThreadProbe(Arc<Mutex<Vec<std::thread::ThreadId>>>);
+impl Drop for ThreadProbe {
+    fn drop(&mut self) { self.0.lock().unwrap().push(std::thread::current().id()); }
+}
+impl coflow_core::runtime::HostService for ThreadProbe {
+    fn read(&self, _: &str) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> {
+        Ok(coflow_core::runtime::HostValue::Int(1))
+    }
+    fn has_member(&self, _: &str, _: &coflow_core::schema::CftValueType, _: &coflow_core::schema::CftSchema) -> bool { true }
+}
+fn thread_runtime(drops: Arc<Mutex<Vec<std::thread::ThreadId>>>) -> u64 {
+    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("thread"), "@Host singleton Service { value: int; }")])).unwrap();
+    let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
+    builder.bind("Service".into(), Arc::new(ThreadProbe(drops))).unwrap();
+    let runtime = Arc::try_unwrap(builder.build().runtime.unwrap()).unwrap();
+    insert(Entry::Runtime(ThreadBound::new(runtime))).unwrap()
+}
+
+#[test]
+fn foreign_access_is_rejected_and_finalizer_release_runs_on_creator() {
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let observed = drops.clone();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let id = thread_runtime(observed);
+        ready_tx.send((id, std::thread::current().id())).unwrap();
+        resume_rx.recv().unwrap();
+        assert!(get(id).is_err());
+    });
+    let (id, creator) = ready_rx.recv().unwrap();
+    assert!(get(id).unwrap_err().contains("creating thread"));
+    coflow_release(id);
+    assert!(drops.lock().unwrap().is_empty());
+    resume_tx.send(()).unwrap();
+    thread.join().unwrap();
+    assert_eq!(*drops.lock().unwrap(), [creator]);
+    assert!(!registry().lock().unwrap().entries.contains_key(&id));
+}
+
+#[test]
+fn creator_thread_exit_releases_unclaimed_runtime_without_leaking_registry_entry() {
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let observed = drops.clone();
+    let (id, creator) = std::thread::spawn(move || (thread_runtime(observed), std::thread::current().id())).join().unwrap();
+    assert_eq!(*drops.lock().unwrap(), [creator]);
+    assert!(!registry().lock().unwrap().entries.contains_key(&id));
+}
+
 #[test]
 fn operation_codes_match_the_public_header_and_csharp_runtime() {
     let header = include_str!("../include/coflow.h");
@@ -27,6 +77,8 @@ fn operation_codes_match_the_public_header_and_csharp_runtime() {
             "BuildRuntime",
             Operation::BuildRuntime,
         ),
+        ("COFLOW_PROJECT_SNAPSHOT", "ProjectSnapshot", Operation::ProjectSnapshot),
+        ("COFLOW_CREATE_VALUE_LEASE", "CreateValueLease", Operation::CreateValueLease),
         ("COFLOW_RECORD_COUNT", "TableLength", Operation::TableLength),
         ("COFLOW_RECORD_AT", "TableValue", Operation::TableValue),
         ("COFLOW_FIELD", "ReadField", Operation::ReadField),
@@ -284,4 +336,27 @@ fn abi_host_function_uses_synchronous_typed_callback() {
     let function = value_request(23, runtime.0, record, b"run", &[], 0).handle;
     let result = value_request(29, runtime.0, function, &[], &[], 0);
     assert_eq!((result.error, result.tag, result.integer), (0, 2, 42));
+}
+
+#[test]
+fn projection_and_creator_thread_lease_release_preserve_dynamic_graphs() {
+    let contract = contract("table Rule { run: fn() -> fn() -> int => { var n: int = 42; fn() -> int { n } }; }");
+    let builder = Handle(request(10, contract.0, &[], &[], 0).handle);
+    assert_eq!(request(11, builder.0, b"data.cfd", b"r: Rule {}", 0).error, 0);
+    let runtime = Handle(request(12, builder.0, &[], &[], 0).handle);
+    let projected = request(47, runtime.0, &[], &[], 0);
+    assert_eq!(projected.error, 0);
+    let bytes = take_buffer(projected.handle).unwrap();
+    assert_eq!(&bytes[..8], b"CFSP\x01\x00\x00\x00");
+    let record = request(20, runtime.0, b"Rule", b"r", 0).handle;
+    let function = value_request(23, runtime.0, record, b"run", &[], 0).handle;
+    let closure = value_request(29, runtime.0, function, &[], &[], 0);
+    let lease = value_request(48, runtime.0, closure.length, &[], &[], 1);
+    assert_eq!(lease.error, 0);
+    assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);
+    assert_eq!(value_request(29, runtime.0, closure.length, &[], &[], 0).integer, 42);
+    std::thread::spawn(move || coflow_release(lease.handle)).join().unwrap();
+    assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);
+    let stale = value_request(29, runtime.0, closure.length, &[], &[], 0);
+    assert_ne!(stale.error, 0); take_buffer(stale.handle).unwrap();
 }

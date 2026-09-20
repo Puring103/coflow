@@ -59,7 +59,7 @@ fn check_budget_stops_request_and_records_unfinished_tasks() {
     assert!(!output.is_success());
 }
 #[test]
-fn invalid_function_and_check_bodies_fail_contract_compilation() {
+fn invalid_unused_function_and_check_bodies_fail_contract_compilation() {
     for source in [
         "table Item { run: fn() -> int => { missing() }; }",
         "table Item { check { return; } }",

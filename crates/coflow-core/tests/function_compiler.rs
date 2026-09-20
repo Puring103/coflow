@@ -74,10 +74,12 @@ fn i32_minimum_and_float_return_are_distinct_from_positive_overflow() {
     )
     .expect("minimum");
     assert_eq!(program.result, CftValueType::Int);
-    assert!(program
-        .constants
-        .iter()
-        .any(|constant| matches!(constant, coflow_core::vm::bytecode::Constant::Int(i32::MIN))));
+    // 数值常量现在直接内联进指令字：校验 i32::MIN 以位模式无损编码。
+    assert!(program.instructions.iter().any(|instruction| {
+        instruction.opcode() == Some(Opcode::Constant)
+            && instruction.flags() == 1
+            && instruction.index() as i32 == i32::MIN
+    }));
 }
 #[test]
 fn compact_encoding_handles_large_operands_flags_and_truncation() {

@@ -21,6 +21,11 @@ table Character {
   callback: (fn() -> int)?;
   text: fstring = f"{self.name}";
   score: fn(bonus: int) -> int => { return self.stats.health + bonus; };
+  recordIdentity: fn(value: Character) -> Character => { value };
+  callbacks: fn(values: [fn() -> int]) -> [fn() -> int] => { values };
+  templateIdentity: fn(value: fstring) -> fstring => { value };
+  roundtrip: fn(value: Stats) -> Stats => { value };
+  closure: fn(seed: int) -> fn() -> int => { fn() -> int { seed + self.stats.health } };
   check Healthy { Coflow::Check::require(self.stats.health > 0, "health must be positive"); }
 }
 
@@ -31,4 +36,6 @@ table Hero : Character {
 table LocalizedText {
   @localized
   value: string;
+  @localized
+  optional: string?;
 }
