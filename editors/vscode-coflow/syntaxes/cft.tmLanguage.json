@@ -240,7 +240,7 @@
       "patterns": [
         {
           "name": "keyword.control.cft",
-          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(check|if|else|for|while|break|continue|return|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(check|if|else|for|while|build|as|break|continue|return|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "storage.modifier.cft",

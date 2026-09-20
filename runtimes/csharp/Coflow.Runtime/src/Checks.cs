@@ -82,7 +82,7 @@ namespace Coflow
                 }
                 request = stream.ToArray();
             }
-            var bytes = Native.ReadBuffer(Native.Call(NativeOperation.RunChecks, runtime.Handle, data: request));
+            var bytes = Native.ReadBuffer(runtime.Execute(NativeOperation.RunChecks, data: request));
             using var resultStream = new MemoryStream(bytes, false);
             using var reader = new BinaryReader(resultStream, Encoding.UTF8);
             bool success = reader.ReadByte() != 0;

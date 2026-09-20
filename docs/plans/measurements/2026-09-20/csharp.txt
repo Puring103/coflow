@@ -1,0 +1,5 @@
+contract_load_ms=4.564
+records=1000,build_and_projection_ms=133.773,managed_live_delta=10922032,build_ffi_requests=4,process_private_bytes=44875776
+local_read_allocated_bytes=0,local_read_iterations=1000000,local_read_ms=406.204,local_read_ffi_requests=0,result=10000000
+vm_call_iterations=10000,vm_call_ms=9.547,result=20000
+managed_retained_delta=4896,total_managed_allocated=19431632,process_private_delta=27013120,runtime_collected=True

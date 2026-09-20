@@ -187,6 +187,8 @@ pub struct CftEnum {
     pub variants: Vec<CftEnumVariant>,
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
+    /// `@flag` 枚举的完整值掩码；预计算避免每次位取反遍历变体。
+    pub flag_mask: u32,
     pub is_flag: bool,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,

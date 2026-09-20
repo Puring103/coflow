@@ -72,3 +72,6 @@ pub use semantics::{
     CfdValueSemanticError, CfdValueSemanticErrorKind, PendingInsertRef, ValueValidationMode,
     ValueValidationRequest,
 };
+
+#[cfg(test)]
+mod allocation_probe;

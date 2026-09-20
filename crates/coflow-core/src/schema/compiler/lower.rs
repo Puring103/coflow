@@ -103,6 +103,10 @@ impl ValidatedSchema<'_> {
                 .enumerate()
                 .map(|(index, variant)| (variant.value, index))
                 .collect();
+            // flag 掩码预计算；普通枚举掩码无意义，置 0。
+            let flag_mask = variants
+                .iter()
+                .fold(0u32, |mask, variant| mask | variant.value as u32);
             let name = EnumName::from_validated(name.clone());
             let schema = CftEnum {
                 module: info.module.clone(),
@@ -110,6 +114,7 @@ impl ValidatedSchema<'_> {
                 variants,
                 variant_by_name,
                 variant_by_value,
+                flag_mask,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),

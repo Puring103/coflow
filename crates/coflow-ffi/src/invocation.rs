@@ -3,15 +3,13 @@ use super::*;
 use coflow_core::{runtime::HostValue, vm::ExecutionError};
 
 fn runtime_handle(identity: u64) -> Result<u64, String> {
-    registry()
-        .lock()
-        .map_err(|_| "handle registry unavailable")?
-        .entries
+    LOCAL_ENTRIES.try_with(|entries| entries.borrow().0
         .iter()
         .find_map(|(handle, entry)| match entry {
             Entry::Runtime(runtime) if runtime.identity() == identity => Some(*handle),
             _ => None,
-        })
+        }))
+        .map_err(|_| "execution thread is shutting down")?
         .ok_or_else(|| "Runtime handle is no longer registered".into())
 }
 fn write_text(bytes: &mut Vec<u8>, value: &str) -> Result<(), String> {
@@ -37,6 +35,15 @@ pub(super) fn encode_arguments_into(bytes: &mut Vec<u8>, args: &[HostValue]) -> 
     );
     for value in args {
         match value {
+            HostValue::Array(values) => { bytes.push(7); encode_arguments_into(bytes, values)?; }
+            HostValue::Dictionary(values) => {
+                bytes.push(8); bytes.extend_from_slice(&u32::try_from(values.len()).map_err(|_| "too many entries")?.to_le_bytes());
+                for (key, value) in values { encode_arguments_into(bytes, &[key.clone(), value.clone()])?; }
+            }
+            HostValue::Data { type_name, fields } => {
+                bytes.push(6); write_text(bytes, type_name)?; bytes.extend_from_slice(&u32::try_from(fields.len()).map_err(|_| "too many fields")?.to_le_bytes());
+                for (name, value) in fields { write_text(bytes, name)?; encode_arguments_into(bytes, std::slice::from_ref(value))?; }
+            }
             HostValue::None => bytes.push(0),
             HostValue::Bool(value) => {
                 bytes.extend_from_slice(&[1, u8::from(*value)]);
@@ -80,6 +87,11 @@ impl Reader<'_> {
         self.position += N;
         bytes.try_into().map_err(|_| "invalid width".into())
     }
+    fn count(&mut self) -> Result<usize, String> {
+        let count = u32::from_le_bytes(self.take()?) as usize;
+        if count > 1_000_000 || count > self.bytes.len().saturating_sub(self.position) { return Err("argument count exceeds payload".into()); }
+        Ok(count)
+    }
     fn string(&mut self) -> Result<String, String> {
         let length = u32::from_le_bytes(self.take()?) as usize;
         let end = self.position.checked_add(length).ok_or("input overflow")?;
@@ -94,17 +106,17 @@ impl Reader<'_> {
     }
 }
 pub(super) fn decode_arguments(bytes: &[u8]) -> Result<Vec<HostValue>, String> {
-    if bytes.is_empty() {
-        return Ok(Vec::new());
-    }
+    if bytes.is_empty() { return Ok(Vec::new()); }
     let mut reader = Reader { bytes, position: 0 };
-    let count = u32::from_le_bytes(reader.take()?) as usize;
-    if count > usize::from(u16::MAX) + 1 || count > bytes.len().saturating_sub(4) {
-        return Err("argument count exceeds payload".into());
-    }
+    let values = decode_list(&mut reader, 0)?;
+    if reader.position != bytes.len() { return Err("trailing argument bytes".into()); }
+    Ok(values)
+}
+fn decode_list(reader: &mut Reader<'_>, depth: usize) -> Result<Vec<HostValue>, String> {
+    if depth >= 128 { return Err("argument nesting limit exceeded".into()); }
+    let count = reader.count()?;
     let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(match reader.take::<1>()?[0] {
+    for _ in 0..count { values.push(match reader.take::<1>()?[0] {
             0 => HostValue::None,
             1 => match reader.take::<1>()?[0] {
                 0 => HostValue::Bool(false),
@@ -118,6 +130,18 @@ pub(super) fn decode_arguments(bytes: &[u8]) -> Result<Vec<HostValue>, String> {
                 type_name: reader.string()?,
                 value: u32::from_le_bytes(reader.take()?),
             },
+            6 => {
+                let type_name = reader.string()?; let count = reader.count()?;
+                let mut fields = Vec::with_capacity(count);
+                for _ in 0..count { let name = reader.string()?; let mut values = decode_list(reader, depth + 1)?; if values.len() != 1 { return Err("invalid data field".into()); } fields.push((name, values.remove(0))); }
+                HostValue::Data { type_name, fields }
+            }
+            7 => HostValue::Array(decode_list(reader, depth + 1)?),
+            8 => {
+                let count = reader.count()?; let mut items = Vec::with_capacity(count);
+                for _ in 0..count { let mut values = decode_list(reader, depth + 1)?; if values.len() != 2 { return Err("invalid dictionary entry".into()); } let value = values.pop().unwrap(); items.push((values.pop().unwrap(), value)); }
+                HostValue::Dictionary(items)
+            }
             11 => {
                 let handle = u64::from_le_bytes(reader.take()?);
                 let raw = u64::from_le_bytes(reader.take()?);
@@ -127,16 +151,15 @@ pub(super) fn decode_arguments(bytes: &[u8]) -> Result<Vec<HostValue>, String> {
                     value,
                 }
             }
-            _ => return Err("unknown argument tag".into()),
-        });
-    }
-    if reader.position != bytes.len() {
-        return Err("trailing argument bytes".into());
-    }
+            _ => return Err("unknown argument tag".into()), }); }
     Ok(values)
 }
 pub(super) fn response(value: HostValue) -> Result<Response, String> {
     Ok(match value {
+        value @ (HostValue::Data { .. } | HostValue::Array(_) | HostValue::Dictionary(_)) => {
+            let mut bytes = Vec::new(); encode_arguments_into(&mut bytes, &[value])?;
+            Response { tag: 12, ..buffer(bytes)? }
+        }
         HostValue::None => Response::default(),
         HostValue::Bool(value) => Response {
             tag: 1,
@@ -192,6 +215,12 @@ pub(super) fn host_result(result: Response) -> Result<HostValue, ExecutionError>
                 .map_err(|e| invalid(e.to_string()))?,
             value: u32::try_from(result.integer).map_err(|_| invalid("enum range".into()))?,
         }),
+        12 => {
+            let bytes = take_buffer(result.handle).map_err(invalid)?;
+            let mut values = decode_arguments(&bytes).map_err(invalid)?;
+            if values.len() != 1 { return Err(invalid("invalid Host aggregate".into())); }
+            Ok(values.remove(0))
+        }
         11 => {
             let (runtime, value) = target(result.handle, result.length).map_err(invalid)?;
             Ok(HostValue::Existing {

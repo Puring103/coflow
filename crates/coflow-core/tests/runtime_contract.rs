@@ -103,6 +103,25 @@ fn functions_and_templates_are_compiled_and_read_explicitly() {
     assert!(matches!(result, HostValue::Int(42)));
 }
 
+#[test]
+fn immutable_image_is_shared_across_thread_owned_instances() {
+    let original = runtime("table Item { value: int; run: fn() -> int => { self.value + 1 }; }", "a: Item { value: 7 }");
+    let image = original.image();
+    let other = Runtime::from_image(image.clone(), Default::default()).unwrap();
+    assert!(Arc::ptr_eq(&original.image(), &other.image()));
+    assert_ne!(original.identity(), other.identity());
+    original.release();
+    let thread = std::thread::spawn(move || {
+        let runtime = Runtime::from_image(image, Default::default()).unwrap();
+        let record = runtime.record("Item", "a").unwrap();
+        let function = runtime.field(record, "run").unwrap();
+        assert!(matches!(runtime.invoke(function, &[], Default::default()).unwrap(), HostValue::Int(8)));
+    });
+    thread.join().unwrap();
+    let record = other.record("Item", "a").unwrap();
+    assert!(matches!(other.invoke(other.field(record, "run").unwrap(), &[], Default::default()).unwrap(), HostValue::Int(8)));
+}
+
 #[derive(Debug)]
 struct Environment;
 impl HostService for Environment {
@@ -179,34 +198,23 @@ fn dimension_values_keep_business_template_owner() {
     }
 }
 
-#[derive(Debug)]
-struct BlockingHost {
-    entered: Arc<std::sync::Barrier>,
-    resume: Arc<std::sync::Barrier>,
-}
-impl HostService for BlockingHost {
+impl HostService for CountService {
     fn read(&self, _: &str) -> Result<HostValue, ExecutionError> {
-        self.entered.wait();
-        self.resume.wait();
         Ok(HostValue::Int(1))
     }
     fn has_member(&self, _: &str, ty: &CftValueType, _: &coflow_core::schema::CftSchema) -> bool {
         ty == &CftValueType::Int
     }
 }
+#[derive(Debug)]
+struct CountService;
+
 #[test]
-fn concurrent_host_access_reports_busy_and_runtime_can_change_threads() {
-    let entered = Arc::new(std::sync::Barrier::new(2));
-    let resume = Arc::new(std::sync::Barrier::new(2));
+fn same_thread_host_reads_reenter_without_blocking() {
+    // Runtime 为单线程设计：host 读回调在同线程执行，重入读取不阻塞。
     let mut builder = RuntimeBuilder::new(contract("@Host singleton Services { value: int; }"));
     builder
-        .bind(
-            "Services".into(),
-            Arc::new(BlockingHost {
-                entered: entered.clone(),
-                resume: resume.clone(),
-            }),
-        )
+        .bind("Services".into(), Arc::new(CountService))
         .expect("bind");
     let runtime = builder.build().runtime.expect("runtime");
     let field = runtime
@@ -215,17 +223,8 @@ fn concurrent_host_access_reports_busy_and_runtime_can_change_threads() {
             "value",
         )
         .expect("field");
-    let worker_runtime = runtime.clone();
-    let worker = std::thread::spawn(move || worker_runtime.value(field));
-    entered.wait();
-    let busy = runtime.value(field);
-    resume.wait();
-    assert_eq!(
-        busy.expect_err("second execution must not block"),
-        ExecutionError::RuntimeBusy
-    );
     assert!(matches!(
-        worker.join().expect("worker").expect("Host read").as_ref(),
+        runtime.value(field).expect("same-thread read").as_ref(),
         Value::Int(1)
     ));
     assert!(runtime.record("Services", "Services").is_ok());

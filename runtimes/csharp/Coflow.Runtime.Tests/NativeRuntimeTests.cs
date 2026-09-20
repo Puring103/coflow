@@ -17,6 +17,28 @@ public sealed class NativeRuntimeTests
         if (host != null) builder.BindHost(host);
         return builder.Build();
     }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static (WeakReference runtime, WeakReference host) CreateUnreachableHostCycle()
+    {
+        var host = new Host();
+        var runtime = Build(host);
+        host.favorite = runtime.Table<Character>()["hero"];
+        return (new WeakReference(runtime), new WeakReference(host));
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static Runtime CreateRuntimeOwningHost() => Build(new Host());
+    [Fact]
+    public void HostCyclesAreCollectibleAndLiveRuntimeOwnsItsHost()
+    {
+        var cycle = CreateUnreachableHostCycle();
+        for (int i = 0; i < 4; ++i) { GC.Collect(); GC.WaitForPendingFinalizers(); }
+        Assert.False(cycle.runtime.IsAlive);
+        Assert.False(cycle.host.IsAlive);
+        using var runtime = CreateRuntimeOwningHost();
+        GC.Collect(); GC.WaitForPendingFinalizers();
+        Assert.Equal("Unity", runtime.Singleton<HostServices>().environment);
+        runtime.Singleton<HostServices>().log("still alive");
+    }
     [Fact]
     public void GeneratedBindingsRejectAnotherContractIdentity()
     {
@@ -69,8 +91,9 @@ public sealed class NativeRuntimeTests
         var hero = runtime.Table<Character>()["hero"];
         var weights = hero.stats.weights;
         runtime.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => hero.name);
-        Assert.Throws<ObjectDisposedException>(() => weights.Count);
+        Assert.Equal("Hero", hero.name);
+        Assert.Equal(2, weights.Count);
+        Assert.Throws<ObjectDisposedException>(() => hero.score(1));
         runtime.Dispose();
         var kept = MakeRecord();
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
@@ -119,11 +142,11 @@ public sealed class NativeRuntimeTests
         var host = new Host();
         using var runtime = Build(host);
         var hero = runtime.Table<Character>()["hero"];
-        Assert.Contains("self.name", hero.Get_text_Template().ProgramSource);
-        Assert.Equal("Hero", hero.text);
-        Assert.Contains("bonus", hero.score.Source);
-        Assert.Equal(123, hero.score.Invoke(23));
-        runtime.Singleton<HostServices>().log.Invoke("ready");
+        Assert.Contains("self.name", hero.text.RuntimeValue.ProgramSource);
+        Assert.Equal("Hero", hero.text.Render());
+        Assert.Contains("bonus", hero.scoreFunction.Source);
+        Assert.Equal(123, hero.score(bonus: 23));
+        runtime.Singleton<HostServices>().log("ready");
         Assert.Equal("ready", host.lastMessage);
     }
     [Fact]

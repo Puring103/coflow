@@ -5,7 +5,9 @@ using System.IO;
 using Coflow;
 using Game.Config;
 
-BenchmarkRunner.Run<DataAccess>();
+if (args.Length == 1 && args[0] == "--probe") SnapshotProbe.Run();
+else BenchmarkRunner.Run<DataAccess>();
+[MemoryDiagnoser]
 public class DataAccess
 {
     private Contract contract = null!;

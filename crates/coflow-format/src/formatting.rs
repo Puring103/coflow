@@ -312,6 +312,7 @@ fn line_requires_continuation(line: &str) -> bool {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BraceKind {
+    Executable,
     Structural,
     Enum,
     Inline,
@@ -383,7 +384,7 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
             }
             ";" if token.kind == LosslessTokenKind::Symbol => {
                 output.push_str(text);
-                if language == FormatLanguage::Cft
+                if (language == FormatLanguage::Cft || braces.iter().any(|(kind, _)| *kind == BraceKind::Executable))
                     && braces.iter().any(|(kind, _)| *kind != BraceKind::Inline)
                     && paren_depth == 0
                     && next_token_on_line(&tokens, source, index)
@@ -434,6 +435,13 @@ fn next_token_on_line<'a>(
 
 fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
     let prefix = prefix.trim();
+    // builder 的字典类型自身也有花括号；只有以 as 绑定结束的头才开启构造作用域。
+    let tokens = tokenize_lossless(prefix).into_iter().filter(|token| !token.is_trivia()).map(|token| token.text(prefix)).collect::<Vec<_>>();
+    if tokens.len() >= 4 && tokens[tokens.len() - 2] == "as" && is_identifier(tokens[tokens.len() - 1]) && tokens.contains(&"build") {
+        return BraceKind::Executable;
+    }
+    if tokens.last() == Some(&"build") { return BraceKind::Inline; }
+    if prefix.contains("fn") && prefix.contains("->") { return BraceKind::Executable; }
     match language {
         FormatLanguage::Cft => {
             if prefix.starts_with("enum ") {

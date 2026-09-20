@@ -59,26 +59,6 @@ pub fn execute_checks(
 ) -> CheckOutput {
     let contract = match crate::contract::Contract::new(schema.clone()) {
         Ok(contract) => contract,
-        Err(crate::contract::ContractError::Compilation(error)) => {
-            return CheckOutput {
-                request_diagnostics: vec![CheckDiagnostic {
-                    diagnostic: crate::CfdDiagnostic::error(
-                        crate::CfdErrorCode::CheckEvalTypeError,
-                        error.message,
-                    ),
-                    contexts: Vec::new(),
-                    schema_location: Some(CheckSchemaLocation {
-                        module: error.module,
-                        span: error.span,
-                    }),
-                }],
-                statistics: CheckExecutionStats {
-                    requested_tasks: 1,
-                    rejected_tasks: 1,
-                    ..CheckExecutionStats::default()
-                },
-            }
-        }
         Err(error) => {
             return CheckOutput {
                 request_diagnostics: vec![crate::CfdDiagnostic::error(

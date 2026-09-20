@@ -48,7 +48,7 @@ pub(crate) fn completion_items(
 
     if let Some((source, relative_offset)) = default_function_source_at(document, offset) {
         if let Some(items) =
-            super::cfd::function_source_completion_items_at(source, relative_offset)
+            super::cfd::function_source_completion_items_at(source, relative_offset, build.schema())
         {
             return items;
         }

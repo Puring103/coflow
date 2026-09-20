@@ -1,5 +1,6 @@
-//! 静态函数检查和寄存器 lowering；所有分支都检查，只有控制流选中的分支执行。
-use super::bytecode::*;
+//! CFT/CFD 共用语义前端，直接生成类型化 IR；所有分支均检查。
+use super::bytecode::{Constant, Program};
+use super::ir::{Function as IrFunction, LocationId, Node, Operation as O, ValueId};
 use crate::{
     schema::{CftFunctionParameter, CftSchema, CftValueType as Ty},
     source::Span,
@@ -9,6 +10,7 @@ use coflow_language::{
     function::{self, Block, Expr, ExprKind as E, Function, StatementKind as S, TemplatePart},
 };
 use std::collections::BTreeMap;
+mod builder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileError {
@@ -43,13 +45,14 @@ pub struct CompileContext {
 }
 #[derive(Debug, Clone)]
 struct Local {
-    register: Register,
+    id: ValueId,
     ty: Ty,
     mutable: bool,
+    builder: Option<BTreeMap<String, Value>>,
 }
 #[derive(Debug, Clone)]
 struct Value {
-    register: Register,
+    id: ValueId,
     ty: Ty,
     terminated: bool,
 }
@@ -57,19 +60,20 @@ struct Value {
 struct Loop {
     breaks: Vec<usize>,
     continues: Vec<usize>,
+    scope_depth: usize,
 }
 #[derive(Clone)]
 struct Compiler<'a> {
     schema: &'a CftSchema,
     context: CompileContext,
-    program: Program,
+    program: IrFunction,
     scopes: Vec<BTreeMap<String, Local>>,
     outer: BTreeMap<String, Local>,
-    captured: BTreeMap<String, (Register, usize)>,
-    capture_sources: Vec<Register>,
+    captured: BTreeMap<String, (ValueId, usize)>,
+    capture_sources: Vec<ValueId>,
     loops: Vec<Loop>,
     condition: bool,
-    literal_owner: Option<(Register, Ty)>,
+    literal_owner: Option<(ValueId, Ty)>,
     refinements: Vec<BTreeMap<String, Ty>>,
 }
 
@@ -79,24 +83,7 @@ pub fn compile(
     name: &str,
     context: CompileContext,
 ) -> Result<Program> {
-    let function = function::parse_function(source)?;
-    let mut compiler = Compiler::new(schema, name, source, context);
-    compiler.function(&function)?;
-    compiler
-        .program
-        .allocate_registers()
-        .map_err(|message| CompileError {
-            span: function.span,
-            message,
-        })?;
-    compiler
-        .program
-        .validate()
-        .map_err(|message| CompileError {
-            span: function.span,
-            message,
-        })?;
-    Ok(compiler.program)
+    lower_analysis(analyze(schema, source, name, context)?)
 }
 pub fn compile_template(
     schema: &CftSchema,
@@ -104,6 +91,56 @@ pub fn compile_template(
     name: &str,
     context: CompileContext,
 ) -> Result<Program> {
+    lower_analysis(analyze_template(schema, source, name, context)?)
+}
+pub fn compile_check(
+    schema: &CftSchema,
+    check: &function::Check,
+    source: &str,
+    name: &str,
+    context: CompileContext,
+) -> Result<Program> {
+    lower_analysis(analyze_check(schema, check, source, name, context)?)
+}
+fn lower_analysis(function: super::ir::Function) -> Result<Program> {
+    function.lower().map_err(|message| CompileError {
+        span: function
+            .body
+            .first()
+            .map_or(Span::default(), |node| node.span),
+        message,
+    })
+}
+fn finish_analysis(schema: &CftSchema, function: IrFunction) -> Result<IrFunction> {
+    // CFD 与 CFT 共用同一语义边界；不能让即时编译绕过 Contract 的 IR 检查。
+    function
+        .validate_semantics(schema)
+        .map_err(|message| CompileError {
+            span: function
+                .body
+                .first()
+                .map_or(Span::default(), |node| node.span),
+            message,
+        })?;
+    Ok(function)
+}
+pub fn analyze(
+    schema: &CftSchema,
+    source: &str,
+    name: &str,
+    context: CompileContext,
+) -> Result<super::ir::Function> {
+    let function = function::parse_function(source)?;
+    let mut compiler = Compiler::new(schema, name, source, context);
+    compiler.function(&function)?;
+    finish_analysis(schema, compiler.program)
+}
+pub fn analyze_template(
+    schema: &CftSchema,
+    source: &str,
+    name: &str,
+    context: CompileContext,
+) -> Result<super::ir::Function> {
     let expression = function::parse_expression(source)?;
     let E::Template(parts) = &expression.kind else {
         return Err(CompileError {
@@ -113,55 +150,27 @@ pub fn compile_template(
     };
     let mut compiler = Compiler::new(schema, name, source, context);
     compiler.template(parts, expression.span)?;
-    let mut program = std::sync::Arc::unwrap_or_clone(
-        compiler
-            .program
-            .closures
-            .pop()
-            .ok_or_else(|| compiler.error(expression.span, "缺少模板程序"))?
-            .program,
-    );
-    program
-        .allocate_registers()
-        .map_err(|message| CompileError {
-            span: expression.span,
-            message,
-        })?;
-    program.validate().map_err(|message| CompileError {
-        span: expression.span,
-        message,
-    })?;
-    Ok(program)
+    let Some(Node {
+        operation: O::Closure { function, .. },
+        ..
+    }) = compiler.program.body.pop()
+    else {
+        return Err(compiler.error(expression.span, "缺少模板程序"));
+    };
+    finish_analysis(schema, *function)
 }
-pub fn compile_check(
+pub fn analyze_check(
     schema: &CftSchema,
     check: &function::Check,
     source: &str,
     name: &str,
     mut context: CompileContext,
-) -> Result<Program> {
+) -> Result<super::ir::Function> {
     context.check = true;
     let mut compiler = Compiler::new(schema, name, source, context);
     let result = compiler.block(&check.body, Some(&Ty::Unit), false)?;
-    compiler.emit(
-        Instruction::new(Opcode::Return, result.register, 0, 0, 0),
-        check.span,
-    );
-    compiler
-        .program
-        .allocate_registers()
-        .map_err(|message| CompileError {
-            span: check.span,
-            message,
-        })?;
-    compiler
-        .program
-        .validate()
-        .map_err(|message| CompileError {
-            span: check.span,
-            message,
-        })?;
-    Ok(compiler.program)
+    compiler.emit(result.id, O::Return(result.id), check.span);
+    finish_analysis(schema, compiler.program)
 }
 pub fn module_context(
     schema: &CftSchema,
@@ -203,10 +212,22 @@ pub fn module_context(
 }
 impl<'a> Compiler<'a> {
     fn new(schema: &'a CftSchema, name: &str, source: &str, context: CompileContext) -> Self {
+        let program = IrFunction {
+            owner: context.owner.clone(),
+            name: name.into(),
+            source: source.into(),
+            module: None,
+            path: None,
+            parameters: Vec::new(),
+            result: Ty::Unit,
+            values: Vec::new(),
+            captures: Vec::new(),
+            body: Vec::new(),
+        };
         Self {
             schema,
             context,
-            program: Program::new(name.into(), source.into(), Vec::new(), Ty::Unit),
+            program,
             scopes: vec![BTreeMap::new()],
             outer: BTreeMap::new(),
             captured: BTreeMap::new(),
@@ -270,46 +291,59 @@ impl<'a> Compiler<'a> {
             .map_err(|message| self.error(reference.span, message))
     }
     fn slot(&mut self, ty: Ty, span: Span) -> Result<Value> {
-        let register = u16::try_from(self.program.registers.len())
-            .map_err(|_| self.error(span, "函数寄存器数量超限"))?;
-        self.program.registers.push(ty.clone());
+        let id = u32::try_from(self.program.values.len())
+            .map(ValueId)
+            .map_err(|_| self.error(span, "函数虚拟值数量超限"))?;
+        self.program.values.push(ty.clone());
         Ok(Value {
-            register,
+            id,
             ty,
             terminated: false,
         })
     }
-    fn emit(&mut self, instruction: Instruction, span: Span) -> usize {
-        let index = self.program.instructions.len();
-        self.program.instructions.push(instruction);
-        self.program.spans.push(span);
+    /// 前端只生成语义节点，操作数编码和物理寄存器分配属于映像降低阶段。
+    fn emit(&mut self, destination: ValueId, operation: O, span: Span) -> usize {
+        let index = self.program.body.len();
+        self.program.body.push(Node {
+            destination,
+            operation,
+            span,
+        });
         index
     }
-    fn emit_index(
-        &mut self,
-        opcode: Opcode,
-        register: Register,
-        index: usize,
-        span: Span,
-    ) -> Result<usize> {
-        let index = u32::try_from(index).map_err(|_| self.error(span, "程序附表过大"))?;
-        Ok(self.emit(Instruction::indexed(opcode, register, index), span))
+    fn jump(&mut self, condition: Option<ValueId>, target: usize, span: Span) -> Result<usize> {
+        let target = LocationId(u32::try_from(target).map_err(|_| self.error(span, "函数体过大"))?);
+        Ok(self.emit(
+            ValueId(0),
+            match condition {
+                Some(condition) => O::JumpFalse { condition, target },
+                None => O::Jump(target),
+            },
+            span,
+        ))
     }
     fn patch(&mut self, instruction: usize, target: usize) -> Result<()> {
-        let old = self.program.instructions[instruction];
-        let opcode = old
-            .opcode()
-            .ok_or_else(|| self.error(self.program.spans[instruction], "无效指令"))?;
-        let target = u32::try_from(target)
-            .map_err(|_| self.error(self.program.spans[instruction], "函数体过大"))?;
-        self.program.instructions[instruction] = Instruction::indexed(opcode, old.a(), target);
+        let target = LocationId(
+            u32::try_from(target).map_err(|_| self.error(Span::default(), "函数体过大"))?,
+        );
+        match &mut self.program.body[instruction].operation {
+            O::Jump(location)
+            | O::JumpFalse {
+                target: location, ..
+            }
+            | O::ForPrep {
+                target: location, ..
+            }
+            | O::ForLoop {
+                target: location, ..
+            } => *location = target,
+            _ => return Err(self.error(self.program.body[instruction].span, "只能回填控制流节点")),
+        }
         Ok(())
     }
     fn constant(&mut self, constant: Constant, ty: Ty, span: Span) -> Result<Value> {
         let value = self.slot(ty, span)?;
-        let index = self.program.constants.len();
-        self.program.constants.push(constant);
-        self.emit_index(Opcode::Constant, value.register, index, span)?;
+        self.emit(value.id, O::Constant(constant), span);
         Ok(value)
     }
     fn declare(&mut self, name: &str, value: &Value, mutable: bool, span: Span) -> Result<()> {
@@ -323,9 +357,10 @@ impl<'a> Compiler<'a> {
         scope.insert(
             name.into(),
             Local {
-                register: value.register,
+                id: value.id,
                 ty: value.ty.clone(),
                 mutable,
+                builder: None,
             },
         );
         Ok(())
@@ -338,8 +373,9 @@ impl<'a> Compiler<'a> {
             .find_map(|scope| scope.get(name))
             .cloned()
         {
+            if local.builder.is_some() { return Err(self.error(span, "构造能力不能复制、传参或返回")); }
             return Ok(Some(Value {
-                register: local.register,
+                id: local.id,
                 ty: local.ty,
                 terminated: false,
             }));
@@ -347,20 +383,21 @@ impl<'a> Compiler<'a> {
         let Some(outer) = self.outer.get(name).cloned() else {
             return Ok(None);
         };
-        if let Some((register, index)) = self.captured.get(name).copied() {
-            self.emit_index(Opcode::Capture, register, index, span)?;
+        if outer.builder.is_some() { return Err(self.error(span, "闭包不能捕获构造能力")); }
+        if let Some((id, index)) = self.captured.get(name).copied() {
+            self.emit(id, O::Capture(index as u32), span);
             return Ok(Some(Value {
-                register,
+                id,
                 ty: outer.ty,
                 terminated: false,
             }));
         }
         let value = self.slot(outer.ty.clone(), span)?;
         let index = self.capture_sources.len();
-        self.capture_sources.push(outer.register);
+        self.capture_sources.push(outer.id);
         self.program.captures.push(outer.ty);
-        self.emit_index(Opcode::Capture, value.register, index, span)?;
-        self.captured.insert(name.into(), (value.register, index));
+        self.emit(value.id, O::Capture(index as u32), span);
+        self.captured.insert(name.into(), (value.id, index));
         Ok(Some(value))
     }
     fn function(&mut self, function: &Function) -> Result<()> {
@@ -373,10 +410,7 @@ impl<'a> Compiler<'a> {
         }
         let result_type = self.program.result.clone();
         let result = self.block(&function.body, Some(&result_type), false)?;
-        self.emit(
-            Instruction::new(Opcode::Return, result.register, 0, 0, 0),
-            function.body.span,
-        );
+        self.emit(result.id, O::Return(result.id), function.body.span);
         Ok(())
     }
     fn adapt(&mut self, mut value: Value, expected: Option<&Ty>, span: Span) -> Result<Value> {
@@ -395,10 +429,7 @@ impl<'a> Compiler<'a> {
             };
             if let Some(ty) = read_type {
                 let result = self.slot(ty, span)?;
-                self.emit(
-                    Instruction::new(Opcode::ReadTemplate, result.register, value.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::ReadTemplate(value.id), span);
                 value = result;
             }
         }
@@ -413,10 +444,7 @@ impl<'a> Compiler<'a> {
                     || matches!(&value.ty, Ty::Option(inner) if **inner == Ty::Int))
             {
                 let result = self.slot(expected.clone(), span)?;
-                self.emit(
-                    Instruction::new(Opcode::ConvertFloat, result.register, value.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::ConvertFloat(value.id), span);
                 value = result;
             }
         }
@@ -430,15 +458,12 @@ impl<'a> Compiler<'a> {
         for statement in &block.statements {
             let span = statement.span;
             match &statement.kind {
+                S::Set { target, value } => { self.builder_set(target, value, span)?; }
                 S::Variable { name, ty, value } => {
                     let ty = self.resolve_type(ty)?;
                     let initial = self.expression(value, Some(&ty))?;
-                    let local = self.slot(ty, span)?;
-                    self.emit(
-                        Instruction::new(Opcode::Move, local.register, initial.register, 0, 0),
-                        span,
-                    );
-                    self.declare(name, &local, true, span)?;
+                    // 表达式结果已有独立虚拟值，局部声明直接绑定该值。
+                    self.declare(name, &initial, true, span)?;
                     terminated |= initial.terminated;
                 }
                 S::Assign {
@@ -456,28 +481,27 @@ impl<'a> Compiler<'a> {
                     if !local.mutable {
                         return Err(self.error(span, "只能给可变局部变量赋值"));
                     }
-                    let next = if operator == "=" {
-                        self.expression(value, Some(&local.ty))?
+                    if operator == "=" {
+                        let next = self.expression(value, Some(&local.ty))?;
+                        self.emit(local.id, O::Copy(next.id), span);
+                        terminated |= next.terminated;
                     } else {
-                        let lhs = Expr {
+                        // 复合赋值更新局部绑定；SSA 阶段拆分定义，物理槽位由降低阶段决定。
+                        let left = Expr {
                             kind: E::Name(name.clone()),
                             span,
                         };
-                        let binary = Expr {
-                            kind: E::Binary {
-                                operator: operator.trim_end_matches('=').into(),
-                                left: Box::new(lhs),
-                                right: Box::new(value.clone()),
-                            },
+                        let right = self.expression(value, Some(&local.ty))?;
+                        let left = self.expression(&left, Some(&local.ty))?;
+                        let next = self.binary_values_into(
+                            operator.trim_end_matches('='),
+                            left,
+                            right,
                             span,
-                        };
-                        self.expression(&binary, Some(&local.ty))?
-                    };
-                    self.emit(
-                        Instruction::new(Opcode::Move, local.register, next.register, 0, 0),
-                        span,
-                    );
-                    terminated |= next.terminated;
+                            local.id,
+                        )?;
+                        terminated |= next.terminated;
+                    }
                     for refinements in &mut self.refinements {
                         refinements.retain(|path, _| {
                             path != name && !path.starts_with(&format!("{name}."))
@@ -488,14 +512,14 @@ impl<'a> Compiler<'a> {
                     terminated |= self.expression(expression, None)?.terminated;
                 }
                 S::While { condition, body } => {
-                    let start = self.program.instructions.len();
+                    let start = self.program.body.len();
                     self.push_scope();
                     let condition = self.condition_expression(condition)?;
-                    let exit = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
-                    self.emit_index(Opcode::Iteration, 0, 0, span)?;
-                    self.loops.push(Loop::default());
+                    let exit = self.jump(Some(condition.id), 0, span)?;
+                    self.emit(ValueId(0), O::Iteration, span);
+                    self.loops.push(Loop { scope_depth: self.scopes.len(), ..Loop::default() });
                     self.block(body, Some(&Ty::Unit), true)?;
-                    self.emit_index(Opcode::Jump, 0, start, span)?;
+                    self.jump(None, start, span)?;
                     self.end_loop(exit, start)?;
                     self.pop_scope();
                 }
@@ -508,7 +532,8 @@ impl<'a> Compiler<'a> {
                     if self.loops.is_empty() {
                         return Err(self.error(span, "break/continue 只能位于当前函数的循环中"));
                     }
-                    let jump = self.emit_index(Opcode::Jump, 0, 0, span)?;
+                    self.drop_builders(self.loops.last().unwrap().scope_depth, span)?;
+                    let jump = self.jump(None, 0, span)?;
                     if let Some(current) = self.loops.last_mut() {
                         if matches!(statement.kind, S::Break) {
                             current.breaks.push(jump);
@@ -533,7 +558,7 @@ impl<'a> Compiler<'a> {
         Ok(result)
     }
     fn end_loop(&mut self, exit: usize, continuation: usize) -> Result<()> {
-        let end = self.program.instructions.len();
+        let end = self.program.body.len();
         self.patch(exit, end)?;
         if let Some(current) = self.loops.pop() {
             for jump in current.breaks {
@@ -566,37 +591,43 @@ impl<'a> Compiler<'a> {
                 let first = self.expression(left, Some(&Ty::Int))?;
                 let last = self.expression(right, Some(&Ty::Int))?;
                 let current = self.slot(Ty::Int, span)?;
-                self.emit(
-                    Instruction::new(Opcode::Move, current.register, first.register, 0, 0),
-                    span,
-                );
+                self.emit(current.id, O::Copy(first.id), span);
                 self.declare(&bindings[0], &current, false, span)?;
-                let start = self.program.instructions.len();
-                let condition = self.binary_values(
-                    if operator == "..=" { "<=" } else { "<" },
-                    current.clone(),
-                    last.clone(),
-                    span,
-                )?;
-                let exit = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
-                self.emit_index(Opcode::Iteration, 0, 0, span)?;
-                self.loops.push(Loop::default());
-                self.block(body, Some(&Ty::Unit), true)?;
-                let continuation = self.program.instructions.len();
-                // 闭区间在最大整数处直接结束，不能为了退出而执行溢出的加一。
-                let at_end = self.binary_values("==", current.clone(), last, span)?;
-                let increment = self.emit_index(Opcode::JumpFalse, at_end.register, 0, span)?;
-                let finish = self.emit_index(Opcode::Jump, 0, 0, span)?;
-                self.patch(increment, self.program.instructions.len())?;
-                let one = self.constant(Constant::Int(1), Ty::Int, span)?;
-                let next = self.binary_values("+", current.clone(), one, span)?;
-                self.emit(
-                    Instruction::new(Opcode::Move, current.register, next.register, 0, 0),
+                // 区间语义保存在节点中；出口位置在分析完循环体后回填。
+                let exclusive = operator == "..";
+                let start = self.program.body.len();
+                let guard = self.emit(
+                    current.id,
+                    O::ForPrep {
+                        limit: last.id,
+                        target: LocationId(0),
+                        exclusive,
+                    },
                     span,
                 );
-                self.emit_index(Opcode::Jump, 0, start, span)?;
-                self.patch(finish, self.program.instructions.len())?;
-                self.end_loop(exit, continuation)?;
+                self.loops.push(Loop { scope_depth: self.scopes.len(), ..Loop::default() });
+                self.block(body, Some(&Ty::Unit), true)?;
+                // 回边：value == limit（含）或 value >= limit（排）则落出；
+                // 否则自增并跳回循环体。自增前已确认 value < limit，无溢出。
+                self.emit(
+                    current.id,
+                    O::ForLoop {
+                        limit: last.id,
+                        target: LocationId(start as u32),
+                        exclusive,
+                    },
+                    span,
+                );
+                let exit = self.program.body.len();
+                self.patch(guard, exit)?;
+                if let Some(current) = self.loops.pop() {
+                    for jump in current.breaks {
+                        self.patch(jump, exit)?;
+                    }
+                    for jump in current.continues {
+                        self.patch(jump, self.program.body.len() - 1)?;
+                    }
+                }
                 self.scopes.pop();
                 return Ok(());
             }
@@ -609,51 +640,47 @@ impl<'a> Compiler<'a> {
         };
         let index = self.constant(Constant::Int(0), Ty::Int, span)?;
         let length = self.slot(Ty::Int, span)?;
-        self.emit(
-            Instruction::new(Opcode::Length, length.register, iterable.register, 0, 0),
-            span,
-        );
-        let start = self.program.instructions.len();
+        self.emit(length.id, O::Length(iterable.id), span);
+        let start = self.program.body.len();
         let condition = self.binary_values("<", index.clone(), length, span)?;
-        let exit = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
-        self.emit_index(Opcode::Iteration, 0, 0, span)?;
+        let exit = self.jump(Some(condition.id), 0, span)?;
+        self.emit(ValueId(0), O::Iteration, span);
         let stored = self.slot(value_type, span)?;
-        self.emit(
-            Instruction::new(
-                Opcode::IteratorValue,
-                stored.register,
-                iterable.register,
-                index.register,
-                0,
-            ),
-            span,
-        );
-        let value = self.adapt(stored, None, span)?;
-        self.declare(&bindings[bindings.len() - 1], &value, false, span)?;
         if bindings.len() == 2 {
+            // 双绑定迭代在同一语义节点定义键和值，保持共同的迭代位置。
             let key = self.slot(key_type, span)?;
             self.emit(
-                Instruction::new(
-                    Opcode::IteratorKey,
-                    key.register,
-                    iterable.register,
-                    index.register,
-                    0,
-                ),
+                ValueId(0),
+                O::IterNext {
+                    collection: iterable.id,
+                    counter: index.id,
+                    key: key.id,
+                    value: stored.id,
+                },
                 span,
             );
+            let value = self.adapt(stored, None, span)?;
+            self.declare(&bindings[bindings.len() - 1], &value, false, span)?;
             self.declare(&bindings[0], &key, false, span)?;
+        } else {
+            self.emit(
+                stored.id,
+                O::IteratorValue {
+                    collection: iterable.id,
+                    index: index.id,
+                },
+                span,
+            );
+            let value = self.adapt(stored, None, span)?;
+            self.declare(&bindings[bindings.len() - 1], &value, false, span)?;
         }
-        self.loops.push(Loop::default());
+        self.loops.push(Loop { scope_depth: self.scopes.len(), ..Loop::default() });
         self.block(body, Some(&Ty::Unit), true)?;
-        let continuation = self.program.instructions.len();
+        let continuation = self.program.body.len();
         let one = self.constant(Constant::Int(1), Ty::Int, span)?;
         let next = self.binary_values("+", index.clone(), one, span)?;
-        self.emit(
-            Instruction::new(Opcode::Move, index.register, next.register, 0, 0),
-            span,
-        );
-        self.emit_index(Opcode::Jump, 0, start, span)?;
+        self.emit(index.id, O::Copy(next.id), span);
+        self.jump(None, start, span)?;
         self.end_loop(exit, continuation)?;
         self.scopes.pop();
         Ok(())
@@ -670,6 +697,7 @@ impl<'a> Compiler<'a> {
     fn expression_inner(&mut self, expression: &Expr, expected: Option<&Ty>) -> Result<Value> {
         let span = expression.span;
         let mut value = match &expression.kind {
+            E::Build { source, binding, body } => self.build_expression(source, binding, body, span)?,
             E::Unit => self.constant(Constant::Unit, Ty::Unit, span)?,
             E::None => {
                 let ty = expected
@@ -697,9 +725,7 @@ impl<'a> Compiler<'a> {
                     return Err(self.error(span, "data 不能作为记录引用"));
                 }
                 let value = self.slot(Ty::RecordRef(meta.name.clone()), span)?;
-                let index = self.program.names.len();
-                self.program.names.push(format!("{name}::{key}"));
-                self.emit_index(Opcode::Reference, value.register, index, span)?;
+                self.emit(value.id, O::Reference(format!("{name}::{key}")), span);
                 value
             }
             E::Unary { operator, value } => {
@@ -729,7 +755,11 @@ impl<'a> Compiler<'a> {
                 };
                 let result = self.slot(value.ty, span)?;
                 self.emit(
-                    Instruction::new(Opcode::Unary, result.register, value.register, 0, flags),
+                    result.id,
+                    O::Unary {
+                        operator: flags,
+                        value: value.id,
+                    },
                     span,
                 );
                 result
@@ -748,27 +778,25 @@ impl<'a> Compiler<'a> {
                     self.push_scope();
                 }
                 let result = self.slot(Ty::Bool, span)?;
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, left.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::Copy(left.id), span);
                 let condition = if operator == "||" {
                     let inverted = self.slot(Ty::Bool, span)?;
                     self.emit(
-                        Instruction::new(Opcode::Unary, inverted.register, left.register, 0, 1),
+                        inverted.id,
+                        O::Unary {
+                            operator: 1,
+                            value: left.id,
+                        },
                         span,
                     );
                     inverted
                 } else {
                     left
                 };
-                let end = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
+                let end = self.jump(Some(condition.id), 0, span)?;
                 let right = self.expression(right, Some(&Ty::Bool))?;
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, right.register, 0, 0),
-                    span,
-                );
-                self.patch(end, self.program.instructions.len())?;
+                self.emit(result.id, O::Copy(right.id), span);
+                self.patch(end, self.program.body.len())?;
                 if operator == "||" {
                     self.pop_scope();
                 }
@@ -799,6 +827,49 @@ impl<'a> Compiler<'a> {
                 self.binary_values(operator, left, right, span)?
             }
             E::Field { value, name } => {
+                if let Some(builder) = self.builder_binding(value) {
+                    let value = builder.builder.as_ref().and_then(|fields| fields.get(name)).cloned()
+                        .ok_or_else(|| self.error(span, "构造目标没有该字段"))?;
+                    let copied = self.slot(value.ty, span)?;
+                    self.emit(copied.id, O::Copy(value.id), span);
+                    return self.adapt(copied, expected, span);
+                }
+                // self 字段保留显式 owner 语义，供映像数据专化使用。
+                if let E::Name(owner) = &value.kind {
+                    if owner == "self"
+                        && self.local("self", span)?.is_none()
+                        && self.context.owner.is_some()
+                    {
+                        let owner_ty = self.context.owner.clone().unwrap();
+                        let type_name = match &owner_ty {
+                            Ty::Object(type_name) | Ty::RecordRef(type_name) => type_name,
+                            _ => return Err(self.error(span, "字段读取需要对象或记录")),
+                        };
+                        let meta = self
+                            .schema
+                            .resolve_type(type_name)
+                            .ok_or_else(|| self.error(span, "未知对象类型"))?;
+                        let (index, ty) = if name == "id" && matches!(owner_ty, Ty::RecordRef(_)) {
+                            (0, Ty::String)
+                        } else {
+                            let (index, field) = meta
+                                .all_fields()
+                                .enumerate()
+                                .find(|(_, field)| field.name.as_str() == name)
+                                .ok_or_else(|| self.error(span, format!("未知字段 {name}")))?;
+                            (
+                                index + usize::from(matches!(owner_ty, Ty::RecordRef(_))),
+                                field.runtime_value_type(),
+                            )
+                        };
+                        let index =
+                            u16::try_from(index).map_err(|_| self.error(span, "字段槽超限"))?;
+                        let result = self.slot(ty, span)?;
+                        self.emit(result.id, O::OwnerField(index.into()), span);
+                        // 融合路径同样要走尾部适配，保持与通用路径一致的类型收窄。
+                        return self.adapt(result, expected, span);
+                    }
+                }
                 let receiver = self.expression(value, None)?;
                 let type_name = match &receiver.ty {
                     Ty::Object(name) | Ty::RecordRef(name) => name,
@@ -824,29 +895,45 @@ impl<'a> Compiler<'a> {
                 let index = u16::try_from(index).map_err(|_| self.error(span, "字段槽超限"))?;
                 let result = self.slot(ty, span)?;
                 self.emit(
-                    Instruction::new(Opcode::Field, result.register, receiver.register, index, 0),
+                    result.id,
+                    O::Field {
+                        receiver: receiver.id,
+                        field: index.into(),
+                    },
                     span,
                 );
                 result
             }
             E::Index { value, index } => {
-                let value = self.expression(value, None)?;
+                let value = if let Some(builder) = self.builder_binding(value) {
+                    Value { id: builder.id, ty: builder.ty, terminated: false }
+                } else { self.expression(value, None)? };
                 let (key, ty) = match &value.ty {
                     Ty::Array(inner) => (Ty::Int, (**inner).clone()),
                     Ty::Dict(key, inner) => ((**key).clone(), (**inner).clone()),
                     Ty::String => (Ty::Int, Ty::String),
                     _ => return Err(self.error(span, "类型不支持索引")),
                 };
-                let index = self.expression(index, Some(&key))?;
                 let result = self.slot(ty, span)?;
+                // 整数字面量索引保留为语义常量，编码方式由降低阶段决定。
+                if let Some(key) = self.inline_index_key(index) {
+                    self.emit(
+                        result.id,
+                        O::IndexConstant {
+                            receiver: value.id,
+                            key: Constant::Int(key),
+                        },
+                        span,
+                    );
+                    return self.adapt(result, expected, span);
+                }
+                let index = self.expression(index, Some(&key))?;
                 self.emit(
-                    Instruction::new(
-                        Opcode::Index,
-                        result.register,
-                        value.register,
-                        index.register,
-                        0,
-                    ),
+                    result.id,
+                    O::Index {
+                        receiver: value.id,
+                        key: index.id,
+                    },
                     span,
                 );
                 result
@@ -858,7 +945,7 @@ impl<'a> Compiler<'a> {
             } => {
                 self.push_scope();
                 let condition = self.condition_expression(condition)?;
-                let branch = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
+                let branch = self.jump(Some(condition.id), 0, span)?;
                 let branch_expected = if otherwise.is_none() {
                     Some(&Ty::Unit)
                 } else {
@@ -873,23 +960,17 @@ impl<'a> Compiler<'a> {
                     },
                     span,
                 )?;
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, left.register, 0, 0),
-                    span,
-                );
-                let end = self.emit_index(Opcode::Jump, 0, 0, span)?;
-                self.patch(branch, self.program.instructions.len())?;
+                self.emit(result.id, O::Copy(left.id), span);
+                let end = self.jump(None, 0, span)?;
+                self.patch(branch, self.program.body.len())?;
                 self.pop_scope();
                 let right = if let Some(otherwise) = otherwise {
                     self.expression(otherwise, Some(&result.ty))?
                 } else {
                     self.constant(Constant::Unit, Ty::Unit, span)?
                 };
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, right.register, 0, 0),
-                    span,
-                );
-                self.patch(end, self.program.instructions.len())?;
+                self.emit(result.id, O::Copy(right.id), span);
+                self.patch(end, self.program.body.len())?;
                 Value {
                     terminated: left.terminated && right.terminated,
                     ..result
@@ -907,10 +988,7 @@ impl<'a> Compiler<'a> {
                     let unit = self.constant(Constant::Unit, Ty::Unit, span)?;
                     self.adapt(unit, Some(&result_type), span)?
                 };
-                self.emit(
-                    Instruction::new(Opcode::Return, value.register, 0, 0, 0),
-                    span,
-                );
+                self.emit(value.id, O::Return(value.id), span);
                 value.terminated = true;
                 value
             }
@@ -923,22 +1001,16 @@ impl<'a> Compiler<'a> {
                     return Err(self.error(span, "只能传播可选值"));
                 };
                 let some = self.slot(Ty::Bool, span)?;
-                self.emit(
-                    Instruction::new(Opcode::IsSome, some.register, value.register, 0, 0),
-                    span,
-                );
-                let absent = self.emit_index(Opcode::JumpFalse, some.register, 0, span)?;
-                let end = self.emit_index(Opcode::Jump, 0, 0, span)?;
-                self.patch(absent, self.program.instructions.len())?;
-                self.emit(
-                    Instruction::new(Opcode::Return, value.register, 0, 0, 0),
-                    span,
-                );
-                self.patch(end, self.program.instructions.len())?;
-                Value {
-                    ty: (**inner).clone(),
-                    ..value
-                }
+                self.emit(some.id, O::IsSome(value.id), span);
+                let absent = self.jump(Some(some.id), 0, span)?;
+                let end = self.jump(None, 0, span)?;
+                self.patch(absent, self.program.body.len())?;
+                self.emit(value.id, O::Return(value.id), span);
+                self.patch(end, self.program.body.len())?;
+                // 收窄必须产生独立类型化值，不能只修改编译器临时视图而保留可选槽类型。
+                let narrowed = self.slot((**inner).clone(), span)?;
+                self.emit(narrowed.id, O::Copy(value.id), span);
+                narrowed
             }
             E::IsType { value, name } => {
                 let path = stable_path(value);
@@ -992,12 +1064,13 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
-                let index = u16::try_from(self.program.names.len())
-                    .map_err(|_| self.error(span, "类型测试附表超限"))?;
-                self.program.names.push(name);
                 let result = self.slot(Ty::Bool, span)?;
                 self.emit(
-                    Instruction::new(Opcode::IsType, result.register, value.register, index, 0),
+                    result.id,
+                    O::IsType {
+                        value: value.id,
+                        name,
+                    },
                     span,
                 );
                 result
@@ -1009,17 +1082,11 @@ impl<'a> Compiler<'a> {
                 };
                 if self.condition {
                     let bound = self.slot((**inner).clone(), span)?;
-                    self.emit(
-                        Instruction::new(Opcode::Move, bound.register, value.register, 0, 0),
-                        span,
-                    );
+                    self.emit(bound.id, O::Copy(value.id), span);
                     self.declare(binding, &bound, false, span)?;
                 }
                 let result = self.slot(Ty::Bool, span)?;
-                self.emit(
-                    Instruction::new(Opcode::IsSome, result.register, value.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::IsSome(value.id), span);
                 result
             }
             E::Call {
@@ -1049,11 +1116,11 @@ impl<'a> Compiler<'a> {
                     *value = self.adapt(value.clone(), Some(&ty), span)?;
                 }
                 let result = self.slot(Ty::Array(Box::new(ty)), span)?;
-                let index = self.program.collections.len();
-                self.program
-                    .collections
-                    .push(values.iter().map(|v| v.register).collect());
-                self.emit_index(Opcode::Array, result.register, index, span)?;
+                self.emit(
+                    result.id,
+                    O::Array(values.iter().map(|v| v.id).collect()),
+                    span,
+                );
                 result
             }
             E::Dictionary(entries) => {
@@ -1069,16 +1136,14 @@ impl<'a> Compiler<'a> {
                     if types.is_none() {
                         types = Some((key.ty.clone(), value.ty.clone()));
                     }
-                    values.extend([key.register, value.register]);
+                    values.extend([key.id, value.id]);
                 }
                 let (key, value) = types.ok_or_else(|| self.error(span, "空字典需要明确类型"))?;
                 if !matches!(key, Ty::Int | Ty::Bool | Ty::String | Ty::Enum(_)) {
                     return Err(self.error(span, "无效的字典 key 类型"));
                 }
                 let result = self.slot(Ty::Dict(Box::new(key), Box::new(value)), span)?;
-                let index = self.program.collections.len();
-                self.program.collections.push(values);
-                self.emit_index(Opcode::Dictionary, result.register, index, span)?;
+                self.emit(result.id, O::Dictionary(values), span);
                 result
             }
             E::Object { type_name, fields } => self.object(type_name, fields, span)?,
@@ -1094,8 +1159,13 @@ impl<'a> Compiler<'a> {
                 .iter()
                 .rev()
                 .find_map(|scope| scope.get(&path))
+                .cloned()
             {
-                value.ty = ty.clone();
+                if value.ty != ty {
+                    let narrowed = self.slot(ty, span)?;
+                    self.emit(narrowed.id, O::Copy(value.id), span);
+                    value = narrowed;
+                }
             }
         }
         self.adapt(value, expected, span)
@@ -1114,6 +1184,24 @@ impl<'a> Compiler<'a> {
         let value = self.expression(expression, Some(&Ty::Bool));
         self.condition = previous;
         value
+    }
+    /// 字面量 int 键提取：`0`、`-3` 直接内联进索引附表；其余返回 None 走通用路径。
+    fn inline_index_key(&self, expression: &Expr) -> Option<i32> {
+        let parse = |number: &str| -> Option<i32> {
+            let normalized = number.replace('_', "");
+            if normalized.contains(['.', 'e', 'E']) || normalized.ends_with("inf") {
+                return None;
+            }
+            normalized.parse::<i32>().ok()
+        };
+        match &expression.kind {
+            E::Number(number) => parse(number),
+            E::Unary { operator, value } if operator == "-" => match &value.kind {
+                E::Number(number) => parse(&format!("-{number}")),
+                _ => None,
+            },
+            _ => None,
+        }
     }
     fn number(&mut self, number: &str, span: Span) -> Result<Value> {
         let normalized = number.replace('_', "");
@@ -1140,10 +1228,7 @@ impl<'a> Compiler<'a> {
                 .clone()
                 .ok_or_else(|| self.error(span, "当前函数没有 self"))?;
             let value = self.slot(ty, span)?;
-            self.emit(
-                Instruction::new(Opcode::SelfValue, value.register, 0, 0, 0),
-                span,
-            );
+            self.emit(value.id, O::Owner, span);
             return Ok(value);
         }
         let name = self.resolve_name(name);
@@ -1158,11 +1243,11 @@ impl<'a> Compiler<'a> {
                 ),
                 span,
             )?;
-            let index = self.program.names.len();
-            self.program
-                .names
-                .push("$host::Coflow::Check::require".into());
-            self.emit_index(Opcode::Reference, value.register, index, span)?;
+            self.emit(
+                value.id,
+                O::Reference("$host::Coflow::Check::require".into()),
+                span,
+            );
             return Ok(value);
         }
         if let Some((owner, variant)) = name.rsplit_once("::") {
@@ -1183,20 +1268,20 @@ impl<'a> Compiler<'a> {
         }
         if let Some(constant) = self.schema.resolve_const(&name) {
             let value = self.slot(constant.value_type.clone(), span)?;
-            let index = self.program.names.len();
-            self.program.names.push(format!("$const::{name}"));
-            self.emit_index(Opcode::Reference, value.register, index, span)?;
+            self.emit(value.id, O::Reference(format!("$const::{name}")), span);
             return Ok(value);
         }
         if let Some(meta) = self.schema.resolve_type(&name) {
             if meta.is_singleton {
                 let value = self.slot(Ty::RecordRef(meta.name.clone()), span)?;
-                let index = self.program.names.len();
-                self.program.names.push(format!(
-                    "{name}::{}",
-                    name.rsplit("::").next().unwrap_or(&name)
-                ));
-                self.emit_index(Opcode::Reference, value.register, index, span)?;
+                self.emit(
+                    value.id,
+                    O::Reference(format!(
+                        "{name}::{}",
+                        name.rsplit("::").next().unwrap_or(&name)
+                    )),
+                    span,
+                );
                 return Ok(value);
             }
         }
@@ -1205,9 +1290,20 @@ impl<'a> Compiler<'a> {
     fn binary_values(
         &mut self,
         operator: &str,
+        left: Value,
+        right: Value,
+        span: Span,
+    ) -> Result<Value> {
+        self.binary_values_dest(operator, left, right, span, None)
+    }
+    /// 带目标寄存器的二元运算：复合赋值直接写入局部寄存器，省去临时寄存器与 Move。
+    fn binary_values_dest(
+        &mut self,
+        operator: &str,
         mut left: Value,
         mut right: Value,
         span: Span,
+        dest: Option<ValueId>,
     ) -> Result<Value> {
         let flags = binary_code(operator).ok_or_else(|| self.error(span, "无效的二元运算符"))?;
         let numeric =
@@ -1238,20 +1334,57 @@ impl<'a> Compiler<'a> {
                 format!("运算符 {operator} 不适用于 {} 和 {}", left.ty, right.ty),
             ));
         }
-        let result = self.slot(if comparison { Ty::Bool } else { left.ty }, span)?;
+        let ty = if comparison { Ty::Bool } else { left.ty };
+        let result = match dest {
+            // 复合赋值：结果直接写入局部寄存器（左操作数即该寄存器，写入不影响读取）。
+            Some(dest) => {
+                if left.id != dest {
+                    return Err(self.error(span, "复合赋值的左操作数必须是目标局部变量"));
+                }
+                Value {
+                    id: dest,
+                    ty,
+                    terminated: false,
+                }
+            }
+            None => self.slot(ty, span)?,
+        };
         self.emit(
-            Instruction::new(
-                Opcode::Binary,
-                result.register,
-                left.register,
-                right.register,
-                flags,
-            ),
+            result.id,
+            O::Binary {
+                operator: flags,
+                left: left.id,
+                right: right.id,
+            },
             span,
         );
         Ok(result)
     }
+    /// 带目标寄存器的二元运算：复合赋值直接写入局部寄存器，省去临时寄存器与 Move。
+    fn binary_values_into(
+        &mut self,
+        operator: &str,
+        left: Value,
+        right: Value,
+        span: Span,
+        dest: ValueId,
+    ) -> Result<Value> {
+        // 左操作数即局部变量本身（寄存器相同），写目标寄存器不影响读取。
+        if left.id != dest {
+            return Err(self.error(span, "复合赋值的左操作数必须是目标局部变量"));
+        }
+        let original_ty = left.ty.clone();
+        let result = self.binary_values_dest(operator, left, right, span, Some(dest))?;
+        // 复合赋值不允许运算改变目标类型（如 int 局部被提升为 float）。
+        if result.ty != original_ty {
+            return Err(self.error(span, "复合赋值不允许改变局部变量类型"));
+        }
+        Ok(result)
+    }
     fn call(&mut self, target: &Expr, arguments: &[Expr], span: Span) -> Result<Value> {
+        if let E::Field { value, name } = &target.kind {
+            if let Some(builder) = self.builder_binding(value) { return self.builder_call(builder, name, arguments, span); }
+        }
         if let E::Name(name) = &target.kind {
             let resolved = self.resolve_name(name);
             if let Some(meta) = self.schema.resolve_enum(&resolved) {
@@ -1260,13 +1393,15 @@ impl<'a> Compiler<'a> {
                 };
                 let argument = self.expression(argument, Some(&Ty::Int))?;
                 let result = self.slot(Ty::Enum(meta.name.clone()), span)?;
-                let index = self.program.builtins.len();
-                self.program.builtins.push(BuiltinSite {
-                    name: format!("$enum::{resolved}"),
-                    receiver: argument.register,
-                    arguments: Vec::new(),
-                });
-                self.emit_index(Opcode::Builtin, result.register, index, span)?;
+                self.emit(
+                    result.id,
+                    O::Builtin {
+                        name: format!("$enum::{resolved}"),
+                        receiver: argument.id,
+                        arguments: Vec::new(),
+                    },
+                    span,
+                );
                 return Ok(result);
             }
             if resolved == "Coflow::Check::records" {
@@ -1291,13 +1426,15 @@ impl<'a> Compiler<'a> {
                 let result =
                     self.slot(Ty::Array(Box::new(Ty::RecordRef(meta.name.clone()))), span)?;
                 let receiver = self.constant(Constant::Unit, Ty::Unit, span)?;
-                let index = self.program.builtins.len();
-                self.program.builtins.push(BuiltinSite {
-                    name: format!("$records::{name}"),
-                    receiver: receiver.register,
-                    arguments: Vec::new(),
-                });
-                self.emit_index(Opcode::Builtin, result.register, index, span)?;
+                self.emit(
+                    result.id,
+                    O::Builtin {
+                        name: format!("$records::{name}"),
+                        receiver: receiver.id,
+                        arguments: Vec::new(),
+                    },
+                    span,
+                );
                 return Ok(result);
             }
         }
@@ -1320,7 +1457,11 @@ impl<'a> Compiler<'a> {
                 let slot = u16::try_from(slot).map_err(|_| self.error(span, "字段槽超限"))?;
                 let target = self.slot(ty, span)?;
                 self.emit(
-                    Instruction::new(Opcode::Field, target.register, receiver.register, slot, 0),
+                    target.id,
+                    O::Field {
+                        receiver: receiver.id,
+                        field: slot.into(),
+                    },
                     span,
                 );
                 target
@@ -1341,22 +1482,24 @@ impl<'a> Compiler<'a> {
             .zip(parameters)
             .map(|(arg, parameter)| {
                 self.expression(arg, Some(&parameter.value_type))
-                    .map(|v| v.register)
+                    .map(|v| v.id)
             })
             .collect::<Result<Vec<_>>>()?;
         let result = self.slot((**result).clone(), span)?;
-        let index = self.program.calls.len();
-        self.program.calls.push(CallSite {
-            target: target.register,
-            arguments,
-        });
-        self.emit_index(Opcode::Call, result.register, index, span)?;
+        self.emit(
+            result.id,
+            O::Call {
+                target: target.id,
+                arguments: arguments,
+            },
+            span,
+        );
         Ok(result)
     }
     fn capture_environment(
         &self,
         span: Span,
-    ) -> Result<(BTreeMap<String, Local>, BTreeMap<Register, String>)> {
+    ) -> Result<(BTreeMap<String, Local>, BTreeMap<ValueId, String>)> {
         let mut environment = BTreeMap::new();
         for scope in &self.scopes {
             environment.extend(scope.clone());
@@ -1366,36 +1509,38 @@ impl<'a> Compiler<'a> {
             if environment.contains_key(name) {
                 continue;
             }
-            let register = Register::try_from(self.program.registers.len() + inherited.len())
+            let id = u32::try_from(self.program.values.len() + inherited.len())
+                .map(ValueId)
                 .map_err(|_| self.error(span, "捕获候选超限"))?;
             environment.insert(
                 name.clone(),
                 Local {
-                    register,
+                    id,
                     ty: local.ty.clone(),
                     mutable: false,
+                    builder: local.builder.clone(),
                 },
             );
-            inherited.insert(register, name.clone());
+            inherited.insert(id, name.clone());
         }
         Ok((environment, inherited))
     }
     fn resolve_capture_sources(
         &mut self,
-        sources: Vec<Register>,
-        inherited: &BTreeMap<Register, String>,
+        sources: Vec<ValueId>,
+        inherited: &BTreeMap<ValueId, String>,
         span: Span,
-    ) -> Result<Vec<Register>> {
+    ) -> Result<Vec<ValueId>> {
         // 先编译子程序，再仅为实际使用的祖先变量在本层建立转发捕获。
         sources
             .into_iter()
-            .map(|register| {
-                if let Some(name) = inherited.get(&register) {
+            .map(|id| {
+                if let Some(name) = inherited.get(&id) {
                     self.local(name, span)?
-                        .map(|value| value.register)
+                        .map(|value| value.id)
                         .ok_or_else(|| self.error(span, "捕获来源丢失"))
                 } else {
-                    Ok(register)
+                    Ok(id)
                 }
             })
             .collect()
@@ -1432,14 +1577,16 @@ impl<'a> Compiler<'a> {
             )
         };
         let result = self.slot(ty, span)?;
-        let index = self.program.closures.len();
-        self.program.closures.push(ClosureSite {
-            program: std::sync::Arc::new(program),
-            captures,
-            owner: self.literal_owner.as_ref().map(|(register, _)| *register),
-            template,
-        });
-        self.emit_index(Opcode::Closure, result.register, index, span)?;
+        self.emit(
+            result.id,
+            O::Closure {
+                function: Box::new(program),
+                captures,
+                owner: self.literal_owner.as_ref().map(|(id, _)| *id),
+                template,
+            },
+            span,
+        );
         Ok(result)
     }
     fn template(&mut self, parts: &[TemplatePart], span: Span) -> Result<Value> {
@@ -1457,7 +1604,7 @@ impl<'a> Compiler<'a> {
         child.program.result = Ty::String;
         let (environment, inherited) = self.capture_environment(span)?;
         child.outer = environment;
-        let mut registers = Vec::new();
+        let mut value_ids = Vec::new();
         for part in parts {
             let value = match part {
                 TemplatePart::Text(text) => {
@@ -1477,25 +1624,23 @@ impl<'a> Compiler<'a> {
                     value
                 }
             };
-            registers.push(value.register);
+            value_ids.push(value.id);
         }
         let result = child.slot(Ty::String, span)?;
-        child.program.collections.push(registers);
-        child.emit_index(Opcode::Format, result.register, 0, span)?;
-        child.emit(
-            Instruction::new(Opcode::Return, result.register, 0, 0, 0),
+        child.emit(result.id, O::Format(value_ids), span);
+        child.emit(result.id, O::Return(result.id), span);
+        let result = self.slot(Ty::FString, span)?;
+        let captures = self.resolve_capture_sources(child.capture_sources, &inherited, span)?;
+        self.emit(
+            result.id,
+            O::Closure {
+                function: Box::new(child.program),
+                captures,
+                owner: self.literal_owner.as_ref().map(|(id, _)| *id),
+                template: true,
+            },
             span,
         );
-        let result = self.slot(Ty::FString, span)?;
-        let index = self.program.closures.len();
-        let captures = self.resolve_capture_sources(child.capture_sources, &inherited, span)?;
-        self.program.closures.push(ClosureSite {
-            program: std::sync::Arc::new(child.program),
-            captures,
-            owner: self.literal_owner.as_ref().map(|(register, _)| *register),
-            template: true,
-        });
-        self.emit_index(Opcode::Closure, result.register, index, span)?;
         Ok(result)
     }
     fn object(&mut self, name: &str, fields: &[(String, Expr)], span: Span) -> Result<Value> {
@@ -1510,23 +1655,14 @@ impl<'a> Compiler<'a> {
             return Err(self.error(span, "只能构造非 abstract data"));
         }
         let result = self.slot(Ty::Object(meta.name.clone()), span)?;
-        let site = self.program.objects.len();
-        self.program.objects.push(ObjectSite {
-            type_name: name.clone(),
-            fields: Vec::new(),
-        });
-        let reservation = self.emit_index(Opcode::Object, result.register, site, span)?;
-        let instruction = self.program.instructions[reservation];
-        self.program.instructions[reservation] = Instruction::new(
-            Opcode::Object,
-            instruction.a(),
-            instruction.b(),
-            instruction.c(),
-            1,
+        self.emit(
+            result.id,
+            O::ReserveObject {
+                type_name: name.clone(),
+            },
+            span,
         );
-        let previous_owner = self
-            .literal_owner
-            .replace((result.register, result.ty.clone()));
+        let previous_owner = self.literal_owner.replace((result.id, result.ty.clone()));
         let mut supplied = BTreeMap::new();
         let mut values = Vec::new();
         for (name, expression) in fields {
@@ -1537,7 +1673,7 @@ impl<'a> Compiler<'a> {
                 .field(name)
                 .ok_or_else(|| self.error(expression.span, "未知对象字段"))?;
             let value = self.expression(expression, Some(&field.value_type))?;
-            values.push((name.clone(), value.register));
+            values.push((name.clone(), value.id));
         }
         for field in meta.all_fields() {
             if !supplied.contains_key(&field.name.to_string())
@@ -1551,8 +1687,14 @@ impl<'a> Compiler<'a> {
             }
         }
         self.literal_owner = previous_owner;
-        self.program.objects[site].fields = values;
-        self.emit_index(Opcode::Object, result.register, site, span)?;
+        self.emit(
+            result.id,
+            O::InitializeObject {
+                type_name: name,
+                fields: values,
+            },
+            span,
+        );
         Ok(result)
     }
     fn higher_builtin(
@@ -1614,142 +1756,133 @@ impl<'a> Compiler<'a> {
         };
         let result = if let Some(initial) = initial {
             let result = self.slot(result_type, span)?;
-            self.emit(
-                Instruction::new(Opcode::Move, result.register, initial.register, 0, 0),
-                span,
-            );
+            self.emit(result.id, O::Copy(initial.id), span);
             result
         } else if matches!(name, "any" | "all") {
             self.constant(Constant::Bool(name == "all"), Ty::Bool, span)?
         } else {
             let result = self.slot(result_type, span)?;
-            let index = self.program.collections.len();
-            self.program.collections.push(Vec::new());
-            self.emit_index(
-                if matches!(result.ty, Ty::Dict(..)) {
-                    Opcode::Dictionary
-                } else {
-                    Opcode::Array
-                },
-                result.register,
-                index,
+            self.emit(
+                result.id,
+                O::Build(super::construction::BuildOp::Start { source: None }),
                 span,
-            )?;
+            );
             result
         };
         let index = self.constant(Constant::Int(0), Ty::Int, span)?;
         let length = self.slot(Ty::Int, span)?;
-        self.emit(
-            Instruction::new(Opcode::Length, length.register, receiver.register, 0, 0),
-            span,
-        );
-        let start = self.program.instructions.len();
+        self.emit(length.id, O::Length(receiver.id), span);
+        let start = self.program.body.len();
         let condition = self.binary_values("<", index.clone(), length, span)?;
-        let exit = self.emit_index(Opcode::JumpFalse, condition.register, 0, span)?;
-        self.emit_index(Opcode::Iteration, 0, 0, span)?;
+        let exit = self.jump(Some(condition.id), 0, span)?;
+        self.emit(ValueId(0), O::Iteration, span);
         let stored = self.slot(stored_type, span)?;
-        self.emit(
-            Instruction::new(
-                Opcode::IteratorValue,
-                stored.register,
-                receiver.register,
-                index.register,
-                0,
-            ),
-            span,
-        );
-        let read = self.adapt(stored.clone(), Some(&read_type), span)?;
-        let mut args = Vec::new();
-        if name == "fold" {
-            args.push(result.register);
-        }
+        // 键与值一次读出：高阶方法每元素少一次堆锁与虚调用；
+        // IterNext 必须先于 read 的转换指令发出，保证运行时先写入再读取。
         let key = if let Some(key_type) = key_type {
             let key = self.slot(key_type, span)?;
             self.emit(
-                Instruction::new(
-                    Opcode::IteratorKey,
-                    key.register,
-                    receiver.register,
-                    index.register,
-                    0,
-                ),
+                ValueId(0),
+                O::IterNext {
+                    collection: receiver.id,
+                    counter: index.id,
+                    key: key.id,
+                    value: stored.id,
+                },
                 span,
             );
-            args.push(key.register);
             Some(key)
         } else {
+            self.emit(
+                stored.id,
+                O::IteratorValue {
+                    collection: receiver.id,
+                    index: index.id,
+                },
+                span,
+            );
             None
         };
-        args.push(read.register);
+        let read = self.adapt(stored.clone(), Some(&read_type), span)?;
+        let mut args = Vec::new();
+        if name == "fold" {
+            args.push(result.id);
+        }
+        if let Some(key) = &key {
+            args.push(key.id);
+        }
+        args.push(read.id);
         let returned = self.slot((*callback_result).clone(), span)?;
-        let site = self.program.calls.len();
-        self.program.calls.push(CallSite {
-            target: callback.register,
-            arguments: args,
-        });
-        self.emit_index(Opcode::Call, returned.register, site, span)?;
+        self.emit(
+            returned.id,
+            O::Call {
+                target: callback.id,
+                arguments: args,
+            },
+            span,
+        );
         let mut short_circuit = None;
         let mut skip = None;
         match name {
             "fold" => {
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, returned.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::Copy(returned.id), span);
             }
             "any" | "all" => {
-                self.emit(
-                    Instruction::new(Opcode::Move, result.register, returned.register, 0, 0),
-                    span,
-                );
+                self.emit(result.id, O::Copy(returned.id), span);
                 if name == "all" {
-                    short_circuit =
-                        Some(self.emit_index(Opcode::JumpFalse, returned.register, 0, span)?);
+                    short_circuit = Some(self.jump(Some(returned.id), 0, span)?);
                 } else {
                     let inverted = self.slot(Ty::Bool, span)?;
                     self.emit(
-                        Instruction::new(Opcode::Unary, inverted.register, returned.register, 0, 1),
+                        inverted.id,
+                        O::Unary {
+                            operator: 1,
+                            value: returned.id,
+                        },
                         span,
                     );
-                    short_circuit =
-                        Some(self.emit_index(Opcode::JumpFalse, inverted.register, 0, span)?);
+                    short_circuit = Some(self.jump(Some(inverted.id), 0, span)?);
                 }
             }
             _ => {
                 if name == "filter" {
-                    skip = Some(self.emit_index(Opcode::JumpFalse, returned.register, 0, span)?);
+                    skip = Some(self.jump(Some(returned.id), 0, span)?);
                 }
                 let item = if name == "map" {
-                    returned.register
+                    returned.id
                 } else {
-                    stored.register
+                    stored.id
                 };
-                self.emit(
-                    Instruction::new(
-                        Opcode::Append,
-                        result.register,
-                        item,
-                        key.as_ref().map_or(index.register, |key| key.register),
-                        u8::from(matches!(result.ty, Ty::Dict(..))),
-                    ),
-                    span,
-                );
+                let unit = self.slot(Ty::Unit, span)?;
+                let operation = if matches!(result.ty, Ty::Dict(..)) {
+                    super::construction::BuildOp::Set {
+                        builder: result.id,
+                        key: key.as_ref().map_or(index.id, |key| key.id),
+                        value: item,
+                    }
+                } else {
+                    super::construction::BuildOp::Append { builder: result.id, value: item }
+                };
+                self.emit(unit.id, O::Build(operation), span);
             }
         }
         if let Some(skip) = skip {
-            self.patch(skip, self.program.instructions.len())?;
+            self.patch(skip, self.program.body.len())?;
         }
         let one = self.constant(Constant::Int(1), Ty::Int, span)?;
         let next = self.binary_values("+", index.clone(), one, span)?;
-        self.emit(
-            Instruction::new(Opcode::Move, index.register, next.register, 0, 0),
-            span,
-        );
-        self.emit_index(Opcode::Jump, 0, start, span)?;
-        let end = self.program.instructions.len();
+        self.emit(index.id, O::Copy(next.id), span);
+        self.jump(None, start, span)?;
+        let end = self.program.body.len();
         self.patch(exit, end)?;
         if let Some(jump) = short_circuit {
             self.patch(jump, end)?;
+        }
+        // 高阶集合与显式 builder 共用独占构造能力，循环结束后一次冻结。
+        if matches!(name, "map" | "filter") {
+            let frozen = self.slot(result.ty.clone(), span)?;
+            self.emit(frozen.id, O::Build(super::construction::BuildOp::Freeze { builder: result.id }), span);
+            return Ok(frozen);
         }
         Ok(result)
     }
@@ -1763,30 +1896,15 @@ impl<'a> Compiler<'a> {
         if matches!(name, "map" | "filter" | "fold" | "any" | "all") {
             return self.higher_builtin(receiver, name, arguments, span);
         }
-        let dimension = if let Ty::RecordRef(type_name) = &receiver.ty {
-            crate::schema::dimensions::dimension_field_for_marker(self.schema, type_name)
-        } else {
-            None
-        };
-        let signature = if let Some((_, field)) = dimension {
-            let read = ordinary_type(&field.value_type);
-            match name {
-                "for" => Some((vec![Ty::String], read)),
-                "default" => Some((vec![], read)),
-                "variants" => Some((vec![], Ty::Dict(Box::new(Ty::String), Box::new(read)))),
-                _ => builtin_signature(&receiver.ty, name),
-            }
-        } else {
-            builtin_signature(&receiver.ty, name)
-        };
+        let signature = builtin_signature(self.schema, &receiver.ty, name);
         let (parameters, result) =
             signature.ok_or_else(|| self.error(span, format!("{} 不提供 {name}", receiver.ty)))?;
         if arguments.len() != parameters.len() {
             return Err(self.error(span, "内建参数数量不匹配"));
         }
-        let mut registers = Vec::new();
+        let mut value_ids = Vec::new();
         for (expression, ty) in arguments.iter().zip(parameters) {
-            registers.push(self.expression(expression, Some(&ty))?.register);
+            value_ids.push(self.expression(expression, Some(&ty))?.id);
         }
         if name == "matches" {
             let Some(Expr {
@@ -1799,13 +1917,15 @@ impl<'a> Compiler<'a> {
             regex::Regex::new(pattern).map_err(|error| self.error(span, error.to_string()))?;
         }
         let result = self.slot(result, span)?;
-        let index = self.program.builtins.len();
-        self.program.builtins.push(BuiltinSite {
-            name: name.into(),
-            receiver: receiver.register,
-            arguments: registers,
-        });
-        self.emit_index(Opcode::Builtin, result.register, index, span)?;
+        self.emit(
+            result.id,
+            O::Builtin {
+                name: name.into(),
+                receiver: receiver.id,
+                arguments: value_ids,
+            },
+            span,
+        );
         Ok(result)
     }
 }
@@ -1818,7 +1938,23 @@ pub fn binary_code(operator: &str) -> Option<u8> {
     .position(|value| *value == operator)
     .map(|value| value as u8)
 }
-fn builtin_signature(ty: &Ty, name: &str) -> Option<(Vec<Ty>, Ty)> {
+pub(crate) fn builtin_signature(schema: &CftSchema, ty: &Ty, name: &str) -> Option<(Vec<Ty>, Ty)> {
+    // 前端与反序列化验证共用签名规则，维度模板必须保持相同的普通读取类型。
+    if let Ty::RecordRef(type_name) = ty {
+        if let Some((_, field)) =
+            crate::schema::dimensions::dimension_field_for_marker(schema, type_name)
+        {
+            let read = ordinary_type(&field.value_type);
+            match name {
+                "for" => return Some((vec![Ty::String], read)),
+                "default" => return Some((vec![], read)),
+                "variants" => {
+                    return Some((vec![], Ty::Dict(Box::new(Ty::String), Box::new(read))))
+                }
+                _ => {}
+            }
+        }
+    }
     Some(match (ty, name) {
         (Ty::String | Ty::Array(_) | Ty::Dict(..), "len") => (vec![], Ty::Int),
         (Ty::String, "contains" | "startsWith" | "endsWith" | "matches") => {

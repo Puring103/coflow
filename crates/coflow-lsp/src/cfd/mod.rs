@@ -7,6 +7,7 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 
 mod definition;
+mod builder_completion;
 pub use definition::{definition_field_name, definition_ref_target, definition_type_name};
 
 use coflow_core::schema::{CftSchema, CftValueType};
@@ -230,6 +231,7 @@ fn function_body_diagnostics(function_source: &str, body_start: usize, body: &st
 fn function_completion_items(signature: &str) -> Vec<Value> {
     let mut items = CFD_FUNCTION_KEYWORDS
         .iter()
+        .filter(|label| **label != "build")
         .map(|label| json!({ "label": label, "kind": 14 }))
         .chain(
             CFD_FUNCTION_TYPES
@@ -237,6 +239,7 @@ fn function_completion_items(signature: &str) -> Vec<Value> {
                 .map(|label| json!({ "label": label, "kind": 7 })),
         )
         .collect::<Vec<_>>();
+    items.push(json!({ "label": "build", "kind": 14, "insertText": "build ${1:Type} as ${2:b} {\n\t${3}\n}", "insertTextFormat": 2, "detail": "局部构造，正常结束自动冻结" }));
     items.extend(CFD_FUNCTION_BUILTINS.iter().map(|label| {
         json!({
             "label": label,
@@ -266,19 +269,52 @@ fn function_completion_items_with_locals(signature: &str, source: &str) -> Vec<V
 pub(crate) fn function_source_completion_items_at(
     source: &str,
     relative_offset: usize,
+    schema: Option<&CftSchema>,
 ) -> Option<Vec<Value>> {
     let parts = function_parts(source)?;
     (relative_offset > parts.prefix.len())
-        .then(|| function_completion_items_with_locals(parts.signature, source))
+        .then(|| function_scoped_completions(parts.signature, source.get(..relative_offset).unwrap_or(source), schema))
+}
+
+fn function_scoped_completions(signature: &str, prefix: &str, schema: Option<&CftSchema>) -> Vec<Value> {
+    if let Some(items) = schema.and_then(|schema| builder_completion::members(signature, prefix, schema)) { return items; }
+    let mut scopes = vec![Vec::<String>::new()];
+    let mut builder = None;
+    let mut declaration = None;
+    let tokens = coflow_language::lexical::tokenize_lossless(prefix).into_iter().filter(|token| !token.is_trivia());
+    for token in tokens {
+        let text = token.text(prefix);
+        if let Some(kind) = declaration.take() {
+            if text.chars().next().is_some_and(|ch| ch == '_' || ch.is_alphabetic()) {
+                if kind { builder = Some(text.to_string()); }
+                else { scopes.last_mut().unwrap().push(text.to_string()); }
+                continue;
+            }
+        }
+        match text {
+            "var" => declaration = Some(false),
+            "as" => declaration = Some(true),
+            "{" => scopes.push(builder.take().into_iter().collect()),
+            "}" if scopes.len() > 1 => { scopes.pop(); },
+            _ => {},
+        }
+    }
+    let mut items = function_completion_items(signature);
+    let mut seen = std::collections::BTreeSet::new();
+    // builder 只属于随后的构造块；关闭作用域和光标之后的声明不进入候选列表。
+    for name in scopes.into_iter().rev().flatten() {
+        if seen.insert(name.clone()) { items.push(json!({ "label": name, "kind": 6, "detail": "local variable" })); }
+    }
+    items
 }
 
 fn function_local_names(source: &str) -> Vec<String> {
     let mut names = Vec::new();
-    let mut tokens = source
-        .split(|character: char| !(character == '_' || character.is_alphanumeric()))
-        .filter(|token| !token.is_empty());
+    let mut tokens = coflow_language::lexical::tokenize_lossless(source).into_iter()
+        .filter(|token| !token.is_trivia())
+        .map(|token| token.text(source));
     while let Some(token) = tokens.next() {
-        if token == "var" {
+        if token == "var" || token == "as" {
             if let Some(name) = tokens.next() {
                 if !names.iter().any(|existing| existing == name) {
                     names.push(name.to_string());
@@ -473,7 +509,7 @@ pub(crate) fn visit_function_semantic_tokens(
                     }
                 } else if following == Some(':') {
                     (SEM_PARAMETER, MOD_DECLARATION)
-                } else if previous_function_ident(function_source, token.span.start) == Some("var")
+                } else if matches!(previous_function_ident(function_source, token.span.start), Some("var" | "as"))
                 {
                     (SEM_VARIABLE, MOD_DECLARATION)
                 } else if following == Some('(') {
@@ -653,9 +689,10 @@ pub(crate) fn completion_with_build(
             .source
             .get(..signature_end)
             .unwrap_or(&function.source);
-        return json!(function_completion_items_with_locals(
+        return json!(function_scoped_completions(
             signature,
-            &function.source
+            function.source.get(..offset.saturating_sub(function.span.start)).unwrap_or(&function.source),
+            schema
         ));
     }
     let Some(schema) = schema else {

@@ -215,7 +215,7 @@
       "patterns": [
         {
           "name": "keyword.control.cfd",
-          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn|var|return|if|else|for|while|break|continue|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn|var|return|if|else|for|while|build|as|break|continue|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         }
       ]
     },

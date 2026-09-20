@@ -1,4 +1,4 @@
-//! C# 只生成 Unity/AOT 可用的类型包装，不生成解析器、编译器或数据副本。
+//! 生成 Unity/AOT 可用的只读数据投影、静态 codec 与执行入口。
 use coflow_codegen::{
     CodeArtifactFile, CodeArtifactSet, CodeGenerator, CodegenDescriptor, CodegenError, CodegenInput,
 };
@@ -100,17 +100,7 @@ fn name(source: &str) -> String {
         .collect::<Vec<_>>()
         .join(".")
 }
-fn key_codec(ty: &CftValueType) -> Result<String, CsharpCodegenError> {
-    Ok(match ty {
-        CftValueType::Int => "DictionaryKey.Int".into(),
-        CftValueType::Bool => "DictionaryKey.Bool".into(),
-        CftValueType::String => "DictionaryKey.String".into(),
-        CftValueType::Enum(name) => {
-            format!("key => DictionaryKey.Enum({}, (uint)key)", quoted(name))
-        }
-        _ => return Err(CsharpCodegenError::new("invalid dictionary key type")),
-    })
-}
+
 fn qualified(root: &str, source: &str) -> String {
     format!("global::{}.{}", root, name(source))
 }
@@ -138,7 +128,8 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
         CftValueType::Int => "int".into(),
         CftValueType::Float => "float".into(),
         CftValueType::Bool => "bool".into(),
-        CftValueType::String | CftValueType::FString => "string".into(),
+        CftValueType::String => "string".into(),
+        CftValueType::FString => "RuntimeTemplate".into(),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => qualified(root, n),
         CftValueType::Enum(n) => qualified(root, n),
         CftValueType::Array(t) => format!("RuntimeArray<{}>", cs_type(t, root)?),
@@ -164,6 +155,13 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
         CftValueType::Unit => "Unit".into(),
     })
 }
+fn pack(ty: &CftValueType, expression: &str) -> String {
+    match ty {
+        CftValueType::Enum(name) => format!("RuntimeValue.EnumValue({}, unchecked((uint)({expression})))", quoted(name)),
+        CftValueType::Option(inner) if matches!(inner.as_ref(), CftValueType::Enum(_)) => format!("{expression}.HasValue ? {} : RuntimeValue.From(null)", pack(inner, &format!("{expression}.Value"))),
+        _ => format!("RuntimeValue.From({expression})"),
+    }
+}
 fn codec(
     schema: &CftSchema,
     ty: &CftValueType,
@@ -176,7 +174,8 @@ fn codec(
         CftValueType::Int => "ValueCodecs.Int".into(),
         CftValueType::Float => "ValueCodecs.Float".into(),
         CftValueType::Bool => "ValueCodecs.Bool".into(),
-        CftValueType::String | CftValueType::FString => "ValueCodecs.String".into(),
+        CftValueType::String => "ValueCodecs.String".into(),
+        CftValueType::FString => "v => new RuntimeTemplate(v)".into(),
         CftValueType::Enum(n) => format!("{v} => ({})ValueCodecs.Enum({v})", qualified(root, n)),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => {
             format!("{}.Wrap", qualified(root, n))
@@ -187,11 +186,10 @@ fn codec(
             codec(schema, t, root, next)?
         ),
         CftValueType::Dict(k, t) => format!(
-            "{v} => new {}({v}, {}, {}, {})",
+            "{v} => new {}({v}, {}, {})",
             cs_type(ty, root)?,
             codec(schema, k, root, next)?,
-            codec(schema, t, root, next)?,
-            key_codec(k)?
+            codec(schema, t, root, next)?
         ),
         CftValueType::Option(t) => {
             let value_type = matches!(
@@ -241,7 +239,8 @@ fn invocation_codec(
         CftValueType::Int => "ValueCodecs.IntInvocation".into(),
         CftValueType::Float => "ValueCodecs.FloatInvocation".into(),
         CftValueType::Bool => "ValueCodecs.BoolInvocation".into(),
-        CftValueType::String | CftValueType::FString => "ValueCodecs.StringInvocation".into(),
+        CftValueType::String => "ValueCodecs.StringInvocation".into(),
+        CftValueType::FString => "ValueCodecs.TemplateInvocation".into(),
         CftValueType::Enum(name) => format!(
             "ValueCodecs.EnumInvocation<{}>({}, {v} => ({}){v}, {v} => (uint){v})",
             qualified(root, name),
@@ -293,6 +292,24 @@ fn generate(
         .collect::<Vec<_>>()
         .join(".");
     let root = escaped_root.as_str();
+    // C# 的类型和命名空间共享声明空间，元数据、enum 和 Host 接口也参与冲突检查。
+    let mut symbols = BTreeSet::from(["Generated".to_string(), "GeneratedHostBindings".to_string()]);
+    let mut names = schema.all_types().map(|ty| ty.name.to_string())
+        .chain(schema.all_enums().map(|ty| ty.name.to_string())).collect::<Vec<_>>();
+    names.extend(schema.all_types().filter(|ty| ty.is_host).map(|ty| {
+        let interface = format!("I{}", short(&ty.name));
+        ty.name.rsplit_once("::").map_or_else(|| interface.clone(), |(ns, _)| format!("{ns}::{interface}"))
+    }));
+    for name in &names {
+        if !symbols.insert(name.clone()) { return Err(CsharpCodegenError::new(format!("{name} conflicts with a generated C# type"))); }
+    }
+    for name in &names {
+        let mut parent = name.as_str();
+        while let Some((namespace, _)) = parent.rsplit_once("::") {
+            if symbols.contains(namespace) { return Err(CsharpCodegenError::new(format!("{namespace} is both a C# type and namespace"))); }
+            parent = namespace;
+        }
+    }
     for ty in schema.all_types() {
         if ["Generated", "GeneratedHostBindings"].contains(&ty.name.as_str()) {
             return Err(CsharpCodegenError::new(
@@ -305,6 +322,7 @@ fn generate(
             "ActualType",
             "Dispose",
             "RuntimeValue",
+            "__CoflowCodecs",
             "ValueEquals",
             "Wrap",
         ]
@@ -319,7 +337,10 @@ fn generate(
             .all_fields()
             .filter(|field| matches!(field.value_type, CftValueType::FString))
         {
-            reserved.insert(format!("Get_{}_Template", field.name));
+            reserved.insert(format!("Render{}", field.name));
+        }
+        for field in ty.all_fields().filter(|field| matches!(field.value_type, CftValueType::Function(..)) && field.dimension.is_none()) {
+            reserved.insert(format!("{}Function", field.name));
         }
         for field in ty.all_fields() {
             if reserved.contains(field.name.as_str()) {
@@ -359,14 +380,23 @@ fn generate(
             .map_or_else(|| "RuntimeObject".into(), |p| qualified(root, p));
         let guard = format!("value.RequireContract(global::{root}.Generated.ContractIdentity);");
         let mut body = if ty.is_struct {
-            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeValue {{\nprivate readonly RuntimeValue Value;\npublic @{}(RuntimeValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<RuntimeValue,T> codec) => codec(Value.Field(field));\npublic RuntimeValue RuntimeValue => Value;\n", namespace(root, &ty.name), type_name, type_name, guard)
+            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeValue {{\nprivate readonly RuntimeValue Value;\npublic @{}(RuntimeValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<RuntimeValue,T> codec) => Value.Field(field).ReadProjected(codec);\npublic RuntimeValue RuntimeValue => Value;\n", namespace(root, &ty.name), type_name, type_name, guard)
         } else {
             format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic {}class @{} : {} {{\n{} @{}(RuntimeValue value) : base(value) {{ {} }}\n",namespace(root,&ty.name),if ty.is_abstract{"abstract "}else if ty.is_sealed||ty.is_singleton{"sealed "}else{""},type_name,base,if ty.is_abstract{"protected"}else{"public"},type_name,guard)
         };
-        if ty.kind != coflow_language::cft::syntax::ast::TypeKind::Data && ty.parent.is_none() {
-            body.push_str("public string Id => Read(\"id\", ValueCodecs.String);\n");
+        if ty.kind == coflow_language::cft::syntax::ast::TypeKind::Data && !ty.is_abstract {
+            let fields = ty.all_fields().collect::<Vec<_>>();
+            let parameters = fields.iter().map(|field| Ok(format!("{} @{}", cs_type(&field.value_type, root)?, field.name))).collect::<Result<Vec<_>, CsharpCodegenError>>()?;
+            let names = fields.iter().map(|field| quoted(&field.name)).collect::<Vec<_>>();
+            let values = fields.iter().map(|field| pack(&field.value_type, &format!("@{}", field.name))).collect::<Vec<_>>();
+            body.push_str(&format!("public @{}({}) : this(RuntimeValue.Data(global::{root}.Generated.ContractIdentity, {}, new string[] {{ {} }}, new RuntimeValue[] {{ {} }})) {{ }}\n", type_name, parameters.join(", "), quoted(&ty.name), names.join(", "), values.join(", ")));
         }
-        for field in ty.own_fields() {
+        let mut codecs = String::from("private static class __CoflowCodecs {\n");
+        if ty.kind != coflow_language::cft::syntax::ast::TypeKind::Data && ty.parent.is_none() {
+            codecs.push_str("internal static readonly Func<RuntimeValue,string> Id = ValueCodecs.String;\n");
+            body.push_str("public string Id => Read(\"id\", __CoflowCodecs.Id);\n");
+        }
+        for (field_index, field) in ty.own_fields().enumerate() {
             let property_type = if field.dimension.is_some() {
                 format!("RuntimeDimension<{}>", cs_type(&field.value_type, root)?)
             } else {
@@ -381,30 +411,44 @@ fn generate(
             } else {
                 codec(schema, &field.value_type, root, 0)?
             };
-            body.push_str(&format!(
-                "public {} @{} => Read({}, {});\n",
-                property_type,
-                field.name,
-                quoted(&field.name),
-                reader
-            ));
+            // C# 9 不缓存方法组转换；字段解码委托按生成类型初始化一次。
+            codecs.push_str(&format!("internal static readonly Func<RuntimeValue,{property_type}> F{field_index} = {reader};\n"));
+            let reader = format!("__CoflowCodecs.F{field_index}");
+            if let CftValueType::Function(parameters, result) = &field.value_type {
+                if field.dimension.is_none() {
+                    // 保留声明参数名以支持 C# 命名实参；匿名参数避开所有显式名称。
+                    let mut used = parameters.iter().filter_map(|parameter| parameter.name.clone()).collect::<BTreeSet<_>>();
+                    let names = parameters.iter().enumerate().map(|(index, parameter)| {
+                        let name = parameter.name.clone().unwrap_or_else(|| {
+                            let mut name = format!("a{index}");
+                            while used.contains(&name) { name.push('_'); }
+                            used.insert(name.clone()); name
+                        });
+                        format!("@{name}")
+                    }).collect::<Vec<_>>();
+                    let arguments = parameters.iter().zip(&names).map(|(parameter, name)| Ok(format!("{} {name}", cs_type(&parameter.value_type, root)?))).collect::<Result<Vec<_>, CsharpCodegenError>>()?;
+                    body.push_str(&format!("public {} @{}Function => Read({}, {});\npublic {} @{}({}) => this.@{}Function.Invoke({});\n", property_type, field.name, quoted(&field.name), reader, cs_type(result, root)?, field.name, arguments.join(", "), field.name, names.join(", ")));
+                    continue;
+                }
+            }
+            body.push_str(&format!("public {} @{} => Read({}, {});\n", property_type, field.name, quoted(&field.name), reader));
             if matches!(field.value_type, CftValueType::FString) {
                 if field.dimension.is_some() {
-                    // 维度字段存储记录句柄，模板句柄取自其基础值或回退后的变体。
-                    body.push_str(&format!("public RuntimeValue Get_{}_Template(string? variant = null) {{ var dimension = Value.Field({}); return variant == null ? dimension.DimensionDefault() : dimension.DimensionValue(variant); }}\n", field.name, quoted(&field.name)));
+                    body.push_str(&format!("public string Render{}(string? variant = null) => (variant == null ? @{}.Default() : @{}.For(variant)).Render();\n", field.name, field.name, field.name));
                 } else {
-                    body.push_str(&format!(
-                        "public RuntimeValue Get_{}_Template() => Value.Field({});\n",
-                        field.name,
-                        quoted(&field.name)
-                    ));
+                    body.push_str(&format!("public string Render{}() => @{}.Render();\n", field.name, field.name));
                 }
             }
         }
+
+        codecs.push_str("}\n");
+        body.push_str(&codecs);
+
         // 工厂分派由生成器静态列出，不依赖反射或运行时泛型实例生成。
         body.push_str(&format!(
-            "public {}static {} Wrap(RuntimeValue value) {{\nvalue = value.Canonical();\nswitch (value.TypeName) {{\n",
+            "public {}static {} Wrap(RuntimeValue value) {{\nvalue = value.Canonical();\nif (value.TryGetProjection<{}>(out var projected)) return projected;\nswitch (value.TypeName) {{\n",
             if ty.parent.is_some() { "new " } else { "" },
+            qualified(root, &ty.name),
             qualified(root, &ty.name)
         ));
         for child in schema
@@ -436,8 +480,12 @@ fn generate(
     let bindings = schema
         .all_types()
         .map(|ty| {
+            let initialize = ty.all_fields().map(|field| {
+                let suffix = if matches!(field.value_type, CftValueType::Function(..)) && field.dimension.is_none() { "Function" } else { "" };
+                format!("_ = value.@{}{suffix};", field.name)
+            }).collect::<Vec<_>>().join(" ");
             format!(
-                "new TypeBinding<{}>({}, {}.Wrap)",
+                "new TypeBinding<{}>({}, {}.Wrap, value => {{ {initialize} }})",
                 qualified(root, &ty.name),
                 quoted(&ty.name),
                 qualified(root, &ty.name)
@@ -563,6 +611,34 @@ fn generate(
         contents: hosts,
     });
     Ok((files, bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
+    fn generated(sources: &[&str]) -> Result<(Vec<GeneratedFile>, Vec<u8>), CsharpCodegenError> {
+        let modules = parse_modules(sources.iter().enumerate().map(|(index, source)|
+            CftFile::from_source(ModuleId::from(format!("m{index}")), *source)));
+        generate(&build_schema(&modules).unwrap(), &BTreeMap::new(), "Game.Config")
+    }
+    #[test]
+    fn rejects_metadata_namespace_and_inherited_helper_collisions() {
+        for sources in [
+            vec!["enum Generated { One }"],
+            vec!["namespace Generated; data Value { n: int; }"],
+            vec!["data Node { n: int; }", "namespace Node; data Child { n: int; }"],
+            vec!["table Base { run: fn() -> int => { 1 }; } table Child : Base { runFunction: int = 0; }"],
+            vec!["table Base { text: fstring = f\"x\"; } table Child : Base { Rendertext: int = 0; }"],
+        ] { assert!(generated(&sources).is_err(), "{sources:?}"); }
+    }
+    #[test]
+    fn named_and_anonymous_arguments_have_stable_escaped_names() {
+        let (files, _) = generated(&["table Rule { call: fn(a1: int, int, class: int) -> int; }"]).unwrap();
+        let body = &files.iter().find(|file| file.relative_path == PathBuf::from("Rule.cs")).unwrap().contents;
+        assert!(body.contains("@call(int @a1, int @a1_, int @class)"), "{body}");
+        assert!(body.contains("this.@callFunction.Invoke(@a1, @a1_, @class)"));
+    }
 }
 fn file(source: &str, contents: String) -> GeneratedFile {
     GeneratedFile {
