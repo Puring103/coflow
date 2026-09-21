@@ -8,7 +8,7 @@ using Xunit;
 
 public sealed class NativeRuntimeTests
 {
-    private const string Source = "hero: Hero { name: \"Hero\", stats: Stats { health: 100, weights: [1.25, 2.5] }, labels: { true: \"yes\", false: \"no\" }, moods: { Mood::Happy: \"happy\" }, mood: Mood::Calm, extra: Stats { health: 12, bonus: 5 } } RuntimeSettings: RuntimeSettings {}";
+    private const string Source = "hero: Hero { name: \"Hero\", stats: Stats { health: 100, weights: [1.25, 2.5] }, labels: { true: \"yes\", false: \"no\" }, moods: { Mood::Happy: \"happy\" }, mood: Mood::Calm, extra: Stats { health: 12, bonus: 5 }, profile: Profile { title: \"Leader\", stats: Stats { health: 80 }, owner: &Character::hero }, profiles: [Profile { title: \"Array\", stats: Stats { health: 70 }, owner: &Character::hero }], profilesByName: { \"main\": Profile { title: \"Map\", stats: Stats { health: 60 }, owner: &Character::hero } } } RuntimeSettings: RuntimeSettings {}";
     private static readonly Contract Contract = Generated.LoadContract(
         File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
     private static Runtime Build(IHostServices? host = null)
@@ -50,7 +50,9 @@ public sealed class NativeRuntimeTests
     {
         using var runtime = Build();
         var characters = runtime.Table<Character>();
+        long requests = Native.RequestCount;
         var hero = characters.Get("hero");
+        Assert.Equal(2, Native.RequestCount - requests);
         Assert.IsType<Hero>(hero);
         Assert.Single(characters);
         Assert.Equal(hero, characters.Single());
@@ -63,6 +65,13 @@ public sealed class NativeRuntimeTests
         Assert.False(hero.moods.TryGetValue(Mood.Calm, out _));
         Assert.Equal(Mood.Calm, hero.mood);
         Assert.Equal(5, hero.extra!.Value.bonus);
+        Assert.Equal("Leader", hero.profile!.title);
+        Assert.Equal(80, hero.profile.stats.health);
+        Assert.Same(hero, hero.profile.owner);
+        Assert.Equal("Array", hero.profiles[0].title);
+        Assert.Same(hero, hero.profiles[0].owner);
+        Assert.Equal("Map", hero.profilesByName["main"].title);
+        Assert.Same(hero, hero.profilesByName["main"].owner);
         Assert.Null(hero.friend);
         Assert.Null(hero.notes);
         Assert.Null(hero.callback);
@@ -146,6 +155,13 @@ public sealed class NativeRuntimeTests
         Assert.Equal("Hero", hero.text.Render());
         Assert.Contains("bonus", hero.scoreFunction.Source);
         Assert.Equal(123, hero.score(bonus: 23));
+        var stats = hero.hostStats(new Stats(41, new RuntimeArray<float>(Array.Empty<float>()), null));
+        Assert.Equal(41, stats.health);
+        var profile = hero.hostProfile(new Profile("Host", stats, hero));
+        Assert.Equal("Host", profile.title);
+        Assert.Equal(41, profile.stats.health);
+        Assert.Same(hero, profile.owner);
+        Assert.Same(hero, hero.hostCharacter(hero));
         runtime.Get<HostServices>().log("ready");
         Assert.Equal("ready", host.lastMessage);
     }
@@ -174,5 +190,8 @@ public sealed class NativeRuntimeTests
         public Character? favorite { get; set; }
         public Mood mood => Mood.Happy;
         public Unit log(string message) { lastMessage = message; return default; }
+        public Stats echoStats(Stats value) => value;
+        public Profile echoProfile(Profile value) => value;
+        public Character echoCharacter(Character value) => value;
     }
 }

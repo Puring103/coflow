@@ -8,4 +8,7 @@ singleton HostServices {
   favorite: Character?;
   mood: Mood;
   log: fn(message: string) -> ();
+  echoStats: fn(value: Stats) -> Stats;
+  echoProfile: fn(value: Profile) -> Profile;
+  echoCharacter: fn(value: Character) -> Character;
 }

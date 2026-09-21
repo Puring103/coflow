@@ -55,8 +55,9 @@ typedef enum CoflowOperation {
     COFLOW_RETAIN_VALUE = 44,
     COFLOW_RUN_CHECKS = 45,
     COFLOW_DIMENSION_VARIANT_KEY = 46,
-    COFLOW_PROJECT_SNAPSHOT = 47,
+    COFLOW_READ_DYNAMIC_VALUE = 47,
     COFLOW_CREATE_VALUE_LEASE = 48,
+    COFLOW_READ_RECORD = 49,
 } CoflowOperation;
 
 /* 返回 0 表示成功，1 为 UTF-8 错误消息，2 为结构化构建诊断缓冲区。

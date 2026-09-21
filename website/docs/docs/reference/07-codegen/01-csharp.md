@@ -73,7 +73,8 @@ var settings = runtime.Get<Settings>();
 维度字段通过 `Default()` 读取基础值，通过 `For("zh")` 读取回退后的变体值。
 
 对象、struct、集合和函数包装不需要单独 Dispose。只需释放契约、builder 和 Runtime。
-包装会保活所属 Runtime；显式释放 Runtime 后，已有包装不能继续读取，复制出的字符串和标量不受影响。
+显式释放 Runtime 后，已经取得的普通记录属性、struct 和集合仍可读取；函数调用、模板执行和未加载记录
+查询需要有效 Runtime。
 
 函数按签名生成为 `RuntimeFunction<T1, ..., TResult>`，通过 `Invoke(...)` 调用；无返回值使用 `Unit`。
 函数的 `Source` 提供源码。读取 fstring 属性会执行模板并返回字符串，

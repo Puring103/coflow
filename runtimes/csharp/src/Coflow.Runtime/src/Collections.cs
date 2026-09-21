@@ -8,19 +8,31 @@ namespace Coflow
     {
         private readonly Runtime runtime;
         private readonly TypeBinding<T> binding;
-        internal Table(Runtime runtime, TypeBinding<T> binding) { this.runtime = runtime; this.binding = binding; }
-        public int Count => runtime.Image.Tables[binding.Name].Length;
+        private readonly ulong[] ids;
+        private readonly Dictionary<string, T> loaded = new Dictionary<string, T>(StringComparer.Ordinal);
+        internal Table(Runtime runtime, TypeBinding<T> binding)
+        {
+            this.runtime = runtime; this.binding = binding;
+            int count = checked((int)runtime.Execute(NativeOperation.TableLength, binding.Name).Length);
+            ids = new ulong[count];
+            for (int i = 0; i < count; ++i)
+                ids[i] = runtime.Execute(NativeOperation.TableValue, binding.Name, index: (ulong)i).Handle;
+        }
+        public int Count => ids.Length;
         // 强类型表的唯一读取入口；调用方不需要接触快照或底层节点。
         public T Get(string key) => TryGet(key, out var record) ? record : throw new KeyNotFoundException(key);
         public bool TryGet(string key, out T record)
         {
             if (key == null) throw new ArgumentNullException(nameof(key));
-            if (runtime.Image.TableKeys[binding.Name].TryGetValue(key, out var id)) { record = binding.Read(new Projection(runtime, id)); return true; }
+            if (loaded.TryGetValue(key, out record!)) return true;
+            var response = runtime.Execute(NativeOperation.TryFindRecord, binding.Name, System.Text.Encoding.UTF8.GetBytes(key));
+            if (response.Handle != 0) { record = runtime.ResolveRecord<T>(response.Handle); loaded.Add(key, record); return true; }
             record = default!; return false;
         }
         public IEnumerator<T> GetEnumerator()
         {
-            foreach (ulong id in runtime.Image.Tables[binding.Name]) yield return binding.Read(new Projection(runtime, id));
+            for (int i = 0; i < ids.Length; ++i)
+                yield return runtime.ResolveRecord<T>(ids[i]);
         }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
