@@ -6,7 +6,7 @@ using System.Text;
 using Coflow;
 using Game.Config;
 
-internal static class SnapshotProbe
+internal static class RecordReadProbe
 {
     internal static void Run()
     {
@@ -34,7 +34,7 @@ internal static class SnapshotProbe
         var runtime = builder.Build();
         var built = timer.Elapsed.TotalMilliseconds;
         long loaded = GC.GetTotalMemory(true);
-        Console.WriteLine($"records=1000,build_and_projection_ms={built:F3},managed_live_delta={loaded - baseline},build_ffi_requests={Native.RequestCount - requests},process_private_bytes={PrivateBytes()}");
+        Console.WriteLine($"records=1000,build_ms={built:F3},managed_live_delta={loaded - baseline},build_ffi_requests={Native.RequestCount - requests},process_private_bytes={PrivateBytes()}");
         var hero = runtime.Table<Character>().Get("h0");
         requests = Native.RequestCount;
         // 预热属性和 JIT 后单独验证热读取不分配。
@@ -51,7 +51,7 @@ internal static class SnapshotProbe
         if (sum != 20_000) throw new Exception("VM invocation oracle failed.");
         Console.WriteLine($"vm_call_iterations=10000,vm_call_ms={timer.Elapsed.TotalMilliseconds:F3},result={sum}");
         runtime.Dispose();
-        if (hero.name != "Hero 0") throw new Exception("Disposed snapshot read failed.");
+        if (hero.name != "Hero 0") throw new Exception("Disposed record read failed.");
         return new WeakReference(runtime);
     }
     private static long PrivateBytes() { using var process = Process.GetCurrentProcess(); process.Refresh(); return process.PrivateMemorySize64; }

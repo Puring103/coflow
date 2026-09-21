@@ -5,7 +5,7 @@ using System.IO;
 using Coflow;
 using Game.Config;
 
-if (args.Length == 1 && args[0] == "--probe") SnapshotProbe.Run();
+if (args.Length == 1 && args[0] == "--probe") RecordReadProbe.Run();
 else BenchmarkRunner.Run<DataAccess>();
 [MemoryDiagnoser]
 public class DataAccess

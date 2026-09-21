@@ -6,7 +6,7 @@ using Coflow;
 using Game.Config;
 using Xunit;
 
-public sealed class SnapshotTests
+public sealed class RuntimeTests
 {
     private sealed class CountingHost : IHostServices
     {
@@ -16,6 +16,9 @@ public sealed class SnapshotTests
         public Character? favorite { get { Reads++; return Hero; } }
         public Mood mood { get { Reads++; return Mood.Happy; } }
         public Unit log(string message) => new Unit();
+        public Stats echoStats(Stats value) => value;
+        public Profile echoProfile(Profile value) => value;
+        public Character echoCharacter(Character value) => value;
     }
     [Fact]
     public void EachHostPropertyReadsExactlyOnceIncludingOptionalRecordsAndEnums()
@@ -124,7 +127,7 @@ public sealed class SnapshotTests
         Assert.Throws<ObjectDisposedException>(() => closure.Invoke());
     }
     [Fact]
-    public void FailedCandidateBuildPreservesOldSnapshotAndExecutionIsThreadAffine()
+    public void FailedCandidateBuildPreservesExistingRuntimeAndExecutionIsThreadAffine()
     {
         using var contract = Generated.LoadContract(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
         using var builder = new RuntimeBuilder(contract).AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 10 } } RuntimeSettings: RuntimeSettings {}");
@@ -132,7 +135,7 @@ public sealed class SnapshotTests
         using var invalid = new RuntimeBuilder(contract).AddSource("hero: Hero { name: \"bad\" }");
         Assert.Throws<BuildException>(() => invalid.Build());
         Assert.Equal(12, hero.score(2));
-        // 主测试必须留在创建线程；独立线程只读取快照并尝试被禁止的执行。
+        // 主测试必须留在创建线程；独立线程只读取已构造数据并尝试被禁止的执行。
         Exception? failure = null;
         var thread = new System.Threading.Thread(() => {
             try {
@@ -146,14 +149,14 @@ public sealed class SnapshotTests
     [Fact]
     public void BulkDecoderRejectsTruncationLengthsAndDanglingReferences()
     {
-        Assert.Throws<CoflowException>(() => ProjectImage.Read(Array.Empty<byte>()));
-        byte[] valid = { 67, 70, 83, 80, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-        ProjectImage.Read(valid);
+        Assert.Throws<CoflowException>(() => ValueImage.Read(Array.Empty<byte>()));
+        byte[] valid = { 67, 70, 86, 73, 1, 0, 0, 0, 0, 0, 0, 0 };
+        ValueImage.Read(valid);
         for (int length = 0; length < valid.Length; ++length)
-            Assert.Throws<CoflowException>(() => ProjectImage.Read(valid.Take(length).ToArray()));
-        var invalid = (byte[])valid.Clone(); invalid[12] = 255;
-        Assert.Throws<CoflowException>(() => ProjectImage.Read(invalid));
-        Assert.Throws<CoflowException>(() => ProjectImage.Read(valid.Concat(new byte[] { 0 }).ToArray()));
+            Assert.Throws<CoflowException>(() => ValueImage.Read(valid.Take(length).ToArray()));
+        var invalid = (byte[])valid.Clone(); invalid[8] = 255;
+        Assert.Throws<CoflowException>(() => ValueImage.Read(invalid));
+        Assert.Throws<CoflowException>(() => ValueImage.Read(valid.Concat(new byte[] { 0 }).ToArray()));
     }
     [Fact]
     public void GeneratedBusinessTypesDoNotExposeRuntimeInfrastructure()

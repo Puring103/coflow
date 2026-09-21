@@ -207,15 +207,16 @@ fn operation_codes_match_the_public_header_and_csharp_runtime() {
             Operation::BuildRuntime,
         ),
         (
-            "COFLOW_PROJECT_SNAPSHOT",
-            "ProjectSnapshot",
-            Operation::ProjectSnapshot,
+            "COFLOW_READ_DYNAMIC_VALUE",
+            "ReadDynamicValue",
+            Operation::ReadDynamicValue,
         ),
         (
             "COFLOW_CREATE_VALUE_LEASE",
             "CreateValueLease",
             Operation::CreateValueLease,
         ),
+        ("COFLOW_READ_RECORD", "ReadRecord", Operation::ReadRecord),
         ("COFLOW_RECORD_COUNT", "TableLength", Operation::TableLength),
         ("COFLOW_RECORD_AT", "TableValue", Operation::TableValue),
         ("COFLOW_FIELD", "ReadField", Operation::ReadField),
@@ -476,7 +477,7 @@ fn abi_host_function_uses_synchronous_typed_callback() {
 }
 
 #[test]
-fn projection_and_creator_thread_lease_release_preserve_dynamic_graphs() {
+fn value_image_and_creator_thread_lease_release_preserve_dynamic_graphs() {
     let contract = contract(
         "table Rule { run: fn() -> fn() -> int => { var n: int = 42; fn() -> int { n } }; }",
     );
@@ -486,13 +487,13 @@ fn projection_and_creator_thread_lease_release_preserve_dynamic_graphs() {
         0
     );
     let runtime = Handle(request(12, builder.0, &[], &[], 0).handle);
-    let projected = request(47, runtime.0, &[], &[], 0);
-    assert_eq!(projected.error, 0);
-    let bytes = take_buffer(projected.handle).unwrap();
-    assert_eq!(&bytes[..8], b"CFSP\x01\x00\x00\x00");
     let record = request(20, runtime.0, b"Rule", b"r", 0).handle;
     let function = value_request(23, runtime.0, record, b"run", &[], 0).handle;
     let closure = value_request(29, runtime.0, function, &[], &[], 0);
+    let projected = value_request(47, runtime.0, closure.length, &[], &[], 0);
+    assert_eq!(projected.error, 0);
+    let bytes = take_buffer(projected.handle).unwrap();
+    assert_eq!(&bytes[..8], b"CFVI\x01\x00\x00\x00");
     let lease = value_request(48, runtime.0, closure.length, &[], &[], 1);
     assert_eq!(lease.error, 0);
     assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);

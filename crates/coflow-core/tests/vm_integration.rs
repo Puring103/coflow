@@ -57,12 +57,12 @@ fn range_proven_hoisting_preserves_empty_loop_and_checked_faults() {
 }
 
 #[test]
-fn streaming_projection_keeps_pending_children_alive_during_reentrant_collection() {
+fn streaming_value_graph_keeps_pending_children_alive_during_reentrant_collection() {
     let runtime = build(&["table Rule { run: fn() -> [int] => { [1, 2, 3] }; }"], "r: Rule {}");
     let HostValue::Existing { value: root, .. } = invoke(&runtime, "Rule", "r", "run") else { panic!("array result"); };
     runtime.release_value(root).unwrap();
     let mut sum = 0;
-    let count = runtime.visit_projection(Some(root), |_, value| {
+    let count = runtime.visit_value_graph(Some(root), |_, value| {
         runtime.collect()?;
         if let coflow_core::runtime::Value::Int(value) = value { sum += value; }
         Ok(())

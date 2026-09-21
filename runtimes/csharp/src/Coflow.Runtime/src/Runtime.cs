@@ -11,16 +11,13 @@ namespace Coflow
         internal Type ManagedType { get; }
         internal string Name { get; }
         internal abstract object Materialize(Projection value);
-        internal abstract void Initialize(object value);
         protected TypeBinding(Type type, string name) { ManagedType = type; Name = name; }
     }
     public sealed class TypeBinding<T> : TypeBinding
     {
         internal Func<Projection, T> Read { get; }
         internal override object Materialize(Projection value) => Read(value)!;
-        private readonly Action<T>? initialize;
-        internal override void Initialize(object value) => initialize?.Invoke((T)value);
-        public TypeBinding(string name, Func<Projection, T> read, Action<T>? initialize = null) : base(typeof(T), name) { Read = read; this.initialize = initialize; }
+        public TypeBinding(string name, Func<Projection, T> read) : base(typeof(T), name) { Read = read; }
     }
     public sealed class Contract : IDisposable
     {
@@ -28,7 +25,7 @@ namespace Coflow
         private readonly byte[] identity;
         private readonly Dictionary<Type, TypeBinding> bindings = new Dictionary<Type, TypeBinding>();
         private readonly Dictionary<string, TypeBinding> namedBindings = new Dictionary<string, TypeBinding>(StringComparer.Ordinal);
-        internal TypeBinding Binding(string name) => namedBindings.TryGetValue(name, out var binding) ? binding : throw new CoflowException("Snapshot type is not registered in this contract.");
+        internal TypeBinding Binding(string name) => namedBindings.TryGetValue(name, out var binding) ? binding : throw new CoflowException("Value type is not registered in this contract.");
         public Contract(byte[] bytes, byte[] expectedIdentity, params TypeBinding[] types)
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
@@ -100,7 +97,8 @@ namespace Coflow
         private static readonly Dictionary<ulong, WeakReference<Runtime>> Registry = new Dictionary<ulong, WeakReference<Runtime>>();
         internal NativeHandle Handle { get; }
         internal Contract Contract { get; }
-        internal ProjectImage Image { get; }
+        private readonly Dictionary<ulong, object> records = new Dictionary<ulong, object>();
+        private readonly Dictionary<ulong, ulong[]> pendingAliases = new Dictionary<ulong, ulong[]>();
         private readonly int executionThread = Environment.CurrentManagedThreadId;
         internal void RequireExecution()
         {
@@ -116,8 +114,6 @@ namespace Coflow
         internal Runtime(ulong handle, Contract contract, HostBinding[] hosts)
         {
             Handle = new NativeHandle(handle); Contract = contract; this.hosts = hosts;
-            try { Image = ProjectImage.Read(Native.ReadBuffer(Native.Call(NativeOperation.ProjectSnapshot, Handle))); Image.Materialize(this); }
-            catch { Handle.Dispose(); throw; }
             lock (RegistryLock) Registry.Add(handle, new WeakReference<Runtime>(this));
         }
         ~Runtime()
@@ -136,13 +132,64 @@ namespace Coflow
         public Table<T> Table<T>()
         {
             var binding = Contract.Binding<T>();
-            if (!Image.Tables.ContainsKey(binding.Name)) throw new CoflowException("Unknown table.");
             return new Table<T>(this, binding);
         }
         public T Get<T>()
         {
             var binding = Contract.Binding<T>();
-            return binding.Read(new Projection(this, Image.Singletons.TryGetValue(binding.Name, out var id) ? id : throw new CoflowException("Unknown singleton.")));
+            var response = Execute(NativeOperation.Singleton, binding.Name);
+            return ResolveRecord<T>(response.Handle);
+        }
+        internal T ResolveRecord<T>(ulong id)
+        {
+            if (records.TryGetValue(id, out var existing))
+                return existing is T typed ? typed : throw new CoflowException("Record type mismatch.");
+            RequireExecution();
+            var image = ValueImage.Read(Native.ReadBuffer(Execute(NativeOperation.ReadRecord, value: id)));
+            return Materialize<T>(id, image);
+        }
+        internal T ResolveEmbedded<T>(ulong id, ValueImage image)
+        {
+            if (records.TryGetValue(id, out var existing))
+                return existing is T typed ? typed : throw new CoflowException("Data type mismatch.");
+            return Materialize<T>(id, image);
+        }
+        private T Materialize<T>(ulong id, ValueImage image)
+        {
+            var node = image.Get(id);
+            var aliasSet = new HashSet<ulong>();
+            var aliasQueue = new Queue<ulong>();
+            foreach (var alias in node.Bases.Values) aliasQueue.Enqueue(alias);
+            while (aliasQueue.Count != 0)
+            {
+                var alias = aliasQueue.Dequeue();
+                if (!aliasSet.Add(alias)) continue;
+                foreach (var parent in image.Get(alias).Bases.Values) aliasQueue.Enqueue(parent);
+            }
+            var aliases = new ulong[aliasSet.Count];
+            aliasSet.CopyTo(aliases);
+            pendingAliases[id] = aliases;
+            try
+            {
+                var value = Contract.Binding(node.Type).Materialize(new Projection(this, id, image));
+                if (!records.TryGetValue(id, out var existing)) { existing = value; records.Add(id, value); }
+                return existing is T result ? result : throw new CoflowException("Runtime object type mismatch.");
+            }
+            catch
+            {
+                records.Remove(id);
+                foreach (var alias in aliases) records.Remove(alias);
+                throw;
+            }
+            finally { pendingAliases.Remove(id); }
+        }
+        internal void PublishRecord(ulong id, object value)
+        {
+            if (records.TryGetValue(id, out var existing) && !ReferenceEquals(existing, value))
+                throw new CoflowException("Record was already materialized.");
+            records[id] = value;
+            if (pendingAliases.TryGetValue(id, out var aliases))
+                foreach (var alias in aliases) records[alias] = value;
         }
         public CheckResult RunChecks(CheckOptions? options = null) => CheckResult.Run(this, options ?? CheckOptions.Default);
         public void Dispose()
@@ -175,70 +222,71 @@ namespace Coflow
     {
         internal Runtime Owner { get; }
         internal ulong Id { get; }
-        private readonly ProjectImage snapshot;
-        private readonly ProjectImage.Node? detached;
+        private readonly ValueImage snapshot;
+        private readonly ValueImage.Node? detached;
         internal Projection(Runtime owner, ulong id, bool adopt = false)
         {
             Owner = owner; Id = id; detached = null;
-            if (id == 0 || owner.Image.Contains(id)) { snapshot = owner.Image; return; }
             // 先取得拥有型根，投影或解码失败也必须释放；纯内容图投影后立即解除保活。
             NativeHandle? lease = new NativeHandle(Native.Call(NativeOperation.CreateValueLease, owner.Handle, value: id, index: adopt ? 1UL : 0UL).Handle);
             try {
-                snapshot = ProjectImage.Read(Native.ReadBuffer(Native.Call(NativeOperation.ProjectSnapshot, owner.Handle, value: id)));
-                snapshot.Materialize(owner);
-                if (snapshot.NeedsLease(owner.Image)) { snapshot.Lease = lease; lease = null; }
+                snapshot = ValueImage.Read(Native.ReadBuffer(Native.Call(NativeOperation.ReadDynamicValue, owner.Handle, value: id)));
+                if (snapshot.NeedsLease()) { snapshot.Lease = lease; lease = null; }
             }
             finally { lease?.Dispose(); }
         }
-        internal Projection(Runtime owner, ulong id, ProjectImage snapshot) { Owner = owner; Id = id; this.snapshot = snapshot; detached = null; }
-        private Projection(ProjectImage.Node node) { Owner = null!; Id = 0; snapshot = null!; detached = node; }
-        private ProjectImage.Node Node => detached ?? (snapshot ?? throw new CoflowException("Uninitialized runtime value.")).Get(Id);
+        internal Projection(Runtime owner, ulong id, ValueImage snapshot) { Owner = owner; Id = id; this.snapshot = snapshot; detached = null; }
+        private Projection(ValueImage.Node node) { Owner = null!; Id = 0; snapshot = null!; detached = node; }
+        private ValueImage.Node Node => detached ?? (snapshot ?? throw new CoflowException("Uninitialized runtime value.")).Get(Id);
         public T ReadProjected<T>(Func<Projection, T> read)
         {
             if (Node.Kind == 12) {
-                if (snapshot != null && snapshot.IsMaterializing) return default!;
                 // 一个公开 getter 只读取一次 Host，再对具体结果做 None/类型/字段转换。
                 return Canonical().ReadProjected(read);
             }
-            if (Node.Views != null && Node.Views.TryGetValue(typeof(T), out var value)) return (T)value!;
-            var result = read(this);
-            if (snapshot != null && snapshot.IsMaterializing) {
-                if (Node.Views == null) Node.Views = new Dictionary<Type, object?>();
-                Node.Views.Add(typeof(T), result);
-            }
-            return result;
+            return read(this);
         }
-        public bool TryGetProjection<T>(out T value)
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public T Resolve<T>()
         {
-            if (Node.Projection is T projection) { value = projection; return true; }
-            value = default!; return false;
+            var value = Canonical();
+            if (value.Owner == null || (value.Node.Kind != 6 && value.Node.Kind != 13))
+                throw new CoflowException("Value is not a runtime record.");
+            return value.Node.Kind == 6
+                ? value.Owner.ResolveEmbedded<T>(value.Id, value.snapshot)
+                : value.Owner.ResolveRecord<T>(value.Id);
+        }
+        internal void Publish(object value)
+        {
+            // C# 主动构造的 data 没有 Runtime 身份；只有 Rust 记录参与对象缓存和循环引用发布。
+            if (Owner != null) Owner.PublishRecord(Id, value);
         }
         public static Projection From(object? value)
         {
             switch (value)
             {
-                case null: return new Projection(new ProjectImage.Node { Kind = 0 });
-                case bool v: return new Projection(new ProjectImage.Node { Kind = 1, Bits = v ? 1U : 0U });
-                case int v: return new Projection(new ProjectImage.Node { Kind = 2, Bits = unchecked((uint)v) });
-                case float v: return new Projection(new ProjectImage.Node { Kind = 3, Bits = unchecked((uint)BitConverter.SingleToInt32Bits(v)) });
-                case string v: return new Projection(new ProjectImage.Node { Kind = 4, Text = v });
+                case null: return new Projection(new ValueImage.Node { Kind = 0 });
+                case bool v: return new Projection(new ValueImage.Node { Kind = 1, Bits = v ? 1U : 0U });
+                case int v: return new Projection(new ValueImage.Node { Kind = 2, Bits = unchecked((uint)v) });
+                case float v: return new Projection(new ValueImage.Node { Kind = 3, Bits = unchecked((uint)BitConverter.SingleToInt32Bits(v)) });
+                case string v: return new Projection(new ValueImage.Node { Kind = 4, Text = v });
                 case IRuntimeArgument v: return ArgumentWriter.Capture(v);
                 default: throw new CoflowException("Unsupported managed value.");
             }
         }
-        public static Projection EnumValue(string type, uint value) => new Projection(new ProjectImage.Node { Kind = 5, Type = type, Bits = value });
+        public static Projection EnumValue(string type, uint value) => new Projection(new ValueImage.Node { Kind = 5, Type = type, Bits = value });
         public static Projection Data(byte[] identity, string type, string[] names, Projection[] values)
         {
             if (names.Length != values.Length) throw new ArgumentException("Field count mismatch.");
             var fields = new Dictionary<string, Projection>(StringComparer.Ordinal);
             for (int i = 0; i < names.Length; ++i) fields.Add(names[i], values[i]);
-            return new Projection(new ProjectImage.Node { Kind = 6, Type = type, Identity = (byte[])identity.Clone(), Members = fields });
+            return new Projection(new ValueImage.Node { Kind = 6, Type = type, Identity = (byte[])identity.Clone(), Members = fields });
         }
         internal static Projection Collection(byte kind, Projection[] values)
         {
-            var node = new ProjectImage.Node { Kind = kind, Children = (Projection[])values.Clone() };
+            var node = new ValueImage.Node { Kind = kind, Children = (Projection[])values.Clone() };
             if (kind == 8) {
-                node.Lookup = new Dictionary<SnapshotKey, int>();
+                node.Lookup = new Dictionary<ValueKey, int>();
                 for (int i = 0; i < values.Length; i += 2) node.Lookup.Add(values[i].Node.ScalarKey, i / 2);
             }
             return new Projection(node);
@@ -367,7 +415,7 @@ namespace Coflow
     public abstract class RuntimeObject : IRuntimeArgument
     {
         protected Projection Value { get; }
-        protected RuntimeObject(Projection value) { Value = value; }
+        protected RuntimeObject(Record record) { Value = record.Value; Value.Publish(this); }
         void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(Value);
         internal Projection ArgumentProjection => Value;
         public string ActualType => Value.TypeName;
@@ -377,6 +425,13 @@ namespace Coflow
         public override int GetHashCode() => Value.GetHashCode();
         public static bool operator ==(RuntimeObject? left, RuntimeObject? right) => ReferenceEquals(left, right) || (!(left is null) && left.Equals(right));
         public static bool operator !=(RuntimeObject? left, RuntimeObject? right) => !(left == right);
+    }
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public readonly struct Record
+    {
+        internal Projection Value { get; }
+        public Record(Projection value) { Value = value; }
+        public Projection Field(string name) => Value.Field(name);
     }
     public readonly struct Unit : IEquatable<Unit>
     {

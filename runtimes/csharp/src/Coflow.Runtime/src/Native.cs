@@ -34,8 +34,9 @@ namespace Coflow
         Collect = 43,
         RunChecks = 45,
         DimensionVariantKey = 46,
-        ProjectSnapshot = 47,
+        ReadDynamicValue = 47,
         CreateValueLease = 48,
+        ReadRecord = 49,
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct Response

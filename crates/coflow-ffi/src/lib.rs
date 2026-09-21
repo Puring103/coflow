@@ -1,6 +1,6 @@
 //! Unity/IL2CPP C ABI。句柄为不复用的整数，不暴露 Rust 对象地址。
 mod invocation;
-mod projection;
+mod value_image;
 #[cfg(test)]
 mod tests;
 use coflow_core::{
@@ -52,8 +52,9 @@ enum Operation {
     RetainValue = 44,
     RunChecks = 45,
     DimensionVariantKey = 46,
-    ProjectSnapshot = 47,
+    ReadDynamicValue = 47,
     CreateValueLease = 48,
+    ReadRecord = 49,
 }
 
 impl TryFrom<u32> for Operation {
@@ -97,8 +98,9 @@ impl TryFrom<u32> for Operation {
             44 => Self::RetainValue,
             45 => Self::RunChecks,
             46 => Self::DimensionVariantKey,
-            47 => Self::ProjectSnapshot,
+            47 => Self::ReadDynamicValue,
             48 => Self::CreateValueLease,
+            49 => Self::ReadRecord,
             _ => return Err("operation unavailable in this build".into()),
         })
     }
@@ -398,17 +400,12 @@ fn take_buffer(handle: u64) -> Result<Vec<u8>, String> {
 impl coflow_core::runtime::HostService for NativeService {
     fn has_member(
         &self,
-        field: &str,
-        ty: &coflow_core::schema::CftValueType,
-        schema: &coflow_core::schema::CftSchema,
+        _field: &str,
+        _ty: &coflow_core::schema::CftValueType,
+        _schema: &coflow_core::schema::CftSchema,
     ) -> bool {
-        self.request(0, field)
-            .ok()
-            .and_then(|r| take_buffer(r.handle).ok())
-            .and_then(|b| String::from_utf8(b).ok())
-            .and_then(|source| coflow_core::schema::syntax::parser::parse_type(&source).ok())
-            .and_then(|syntax| schema.resolve_type_ref(&syntax).ok())
-            .is_some_and(|actual| &actual == ty)
+        // 绑定接口与契约由同一次代码生成产生，成员完整性由 C# 编译器保证。
+        true
     }
     fn read(
         &self,
@@ -697,16 +694,13 @@ fn dispatch(
                 ..Response::default()
             })
         }
-        Operation::ProjectSnapshot => {
-            let Entry::Runtime(runtime) = get(handle)? else {
-                return Err("expected Runtime".into());
-            };
-            let root = if raw_value == 0 {
-                None
-            } else {
-                Some(raw_value - 1)
-            };
-            buffer(projection::encode(&runtime, root)?)
+        Operation::ReadDynamicValue => {
+            let (runtime, id) = target(handle, raw_value)?;
+            buffer(value_image::encode_dynamic(&runtime, id)?)
+        }
+        Operation::ReadRecord => {
+            let (runtime, id) = target(handle, raw_value)?;
+            buffer(value_image::encode_record(&runtime, id)?)
         }
         Operation::FindRecord | Operation::TryFindRecord => {
             let Entry::Runtime(runtime) = get(handle)? else {

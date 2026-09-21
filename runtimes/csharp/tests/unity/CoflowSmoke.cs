@@ -15,6 +15,9 @@ public sealed class CoflowSmoke : MonoBehaviour
         public Character favorite => Hero;
         public Mood mood => Mood.Happy;
         public Unit log(string message) { if (Hero.score(2) != 12) throw new Exception("Host reentry"); Calls++; return new Unit(); }
+        public Stats echoStats(Stats value) => value;
+        public Profile echoProfile(Profile value) => value;
+        public Character echoCharacter(Character value) => value;
     }
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
     private void Start()
@@ -28,7 +31,7 @@ public sealed class CoflowSmoke : MonoBehaviour
         var host = new Service();
         using var builder = new RuntimeBuilder(contract).BindHost(host).AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 10, weights: [1, 2] }, friend: &hero } RuntimeSettings: RuntimeSettings {}");
         using var runtime = builder.Build();
-        Require(host.Calls == 0, "Projection invoked Host");
+        Require(host.Calls == 0, "Record construction invoked Host");
         var hero = runtime.Table<Character>().Get("hero"); host.Hero = hero;
         Require(ReferenceEquals(hero, hero.friend) && hero.score(2) == 12, "Record identity or VM");
         Require(hero.Rendertext() == "Hero", "Template");
@@ -42,9 +45,9 @@ public sealed class CoflowSmoke : MonoBehaviour
         Require(hero.callbacks(new RuntimeArray<RuntimeFunction<int>>(new[] { closure }))[0].Invoke() == 15, "Returned closure graph");
         GC.Collect(); GC.WaitForPendingFinalizers(); Require(closure.Invoke() == 15, "Lease lifetime");
         Exception failure = null;
-        var thread = new Thread(() => { try { Require(hero.stats.health == 10, "Cross-thread snapshot"); try { hero.score(0); throw new Exception("Cross-thread execution accepted"); } catch (CoflowException) {} } catch (Exception error) { failure = error; } });
+        var thread = new Thread(() => { try { Require(hero.stats.health == 10, "Cross-thread record read"); try { hero.score(0); throw new Exception("Cross-thread execution accepted"); } catch (CoflowException) {} } catch (Exception error) { failure = error; } });
         thread.Start(); thread.Join(); if (failure != null) throw failure;
-        runtime.Dispose(); Require(hero.stats.health == 10 && hero.name == "Hero", "Disposed snapshot");
+        runtime.Dispose(); Require(hero.stats.health == 10 && hero.name == "Hero", "Disposed record read");
         try { closure.Invoke(); throw new Exception("Disposed execution accepted"); } catch (ObjectDisposedException) {}
     }
 }

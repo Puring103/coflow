@@ -658,7 +658,7 @@ impl Runtime {
         self.execution_equals(left, right)
     }
     /// 投影逐节点访问原始存储，不调用 Host 或模板，也不保留整张通用值副本。
-    pub fn visit_projection(
+    pub fn visit_value_graph(
         &self,
         root: Option<ValueId>,
         mut visit: impl FnMut(ValueId, &Value) -> Result<(), ExecutionError>,
@@ -720,6 +720,16 @@ impl Runtime {
             self.read_host(service, field, value_type)
         } else {
             Ok(value)
+        }
+    }
+
+    /// 为批量传输读取原始节点；HostData 保持惰性，不在序列化记录时触发回调。
+    pub fn stored_value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
+        self.ensure_alive()?;
+        if let Some(value) = self.values.get(id) {
+            Ok(Arc::new(value.into_owned()))
+        } else {
+            self.vm.value(id)
         }
     }
     pub fn field(&self, id: ValueId, name: &str) -> Result<ValueId, ExecutionError> {

@@ -122,7 +122,7 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     assert_eq!(values["third"], 4);
     let generated = fs::read_to_string(flag_dir.path().join("generated/csharp/ItemId.cs"))
         .expect("generated flag enum");
-    assert!(generated.contains("@first = 1"));
+    assert!(generated.contains("first = 1"));
 }
 
 #[test]
@@ -250,10 +250,10 @@ fn csharp_codegen_applies_namespace_option() {
         .expect("metadata");
     assert!(metadata
         .replace("\r\n", "\n")
-        .contains("namespace @Game.@Config {"));
+        .contains("namespace Game.Config\n{"));
     let item =
         fs::read_to_string(project.path().join("generated/csharp/Item.cs")).expect("type wrapper");
-    assert!(item.contains("global::@Game.@Config."));
+    assert!(item.replace("\r\n", "\n").contains("namespace Game.Config\n{"));
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn csharp_codegen_emits_dimension_metadata_without_source_paths() {
     assert!(!generated.contains("data/base.cfd"));
     let wrapper =
         fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("type wrapper");
-    assert!(wrapper.contains("RuntimeDimension<string> @welcome"));
+    assert!(wrapper.contains("RuntimeDimension<string> welcome"));
     assert!(generated.contains("new Contract("));
 }
 
@@ -452,8 +452,8 @@ fn csharp_codegen_reads_each_singleton_dimension_field() {
     ));
     let generated =
         fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("wrapper");
-    assert!(generated.contains("RuntimeDimension<string> @welcome"));
-    assert!(generated.contains("RuntimeDimension<string> @farewell"));
+    assert!(generated.contains("RuntimeDimension<string> welcome"));
+    assert!(generated.contains("RuntimeDimension<string> farewell"));
     let session = Runtime::new()
         .open_read_only_session(project)
         .expect("reload");

@@ -1,14 +1,29 @@
 using Coflow;
-namespace @Game.@Config { public static class Generated { internal static byte[] ContractIdentity { get; } = new byte[] { 183,253,175,247,140,226,35,101,179,153,116,118,248,87,168,66,113,155,163,84,52,238,148,215,221,186,237,89,99,50,248,9 }; private static TypeBinding[] Bindings { get; } = new TypeBinding[] { new TypeBinding<global::@Game.@Config.@Character>("Character", global::@Game.@Config.@Character.Wrap, value => { _ = value.@name; _ = value.@stats; _ = value.@friend; _ = value.@labels; _ = value.@moods; _ = value.@mood; _ = value.@extra; _ = value.@notes; _ = value.@callback; _ = value.@text; _ = value.@scoreFunction; _ = value.@recordIdentityFunction; _ = value.@callbacksFunction; _ = value.@templateIdentityFunction; _ = value.@roundtripFunction; _ = value.@closureFunction; }),
-new TypeBinding<global::@Game.@Config.@DimensionBase>("DimensionBase", global::@Game.@Config.@DimensionBase.Wrap, value => { _ = value.@name; _ = value.@hint; }),
-new TypeBinding<global::@Game.@Config.@DimensionChild>("DimensionChild", global::@Game.@Config.@DimensionChild.Wrap, value => { _ = value.@name; _ = value.@hint; }),
-new TypeBinding<global::@Game.@Config.@Hero>("Hero", global::@Game.@Config.@Hero.Wrap, value => { _ = value.@name; _ = value.@stats; _ = value.@friend; _ = value.@labels; _ = value.@moods; _ = value.@mood; _ = value.@extra; _ = value.@notes; _ = value.@callback; _ = value.@text; _ = value.@scoreFunction; _ = value.@recordIdentityFunction; _ = value.@callbacksFunction; _ = value.@templateIdentityFunction; _ = value.@roundtripFunction; _ = value.@closureFunction; _ = value.@level; }),
-new TypeBinding<global::@Game.@Config.@HostServices>("HostServices", global::@Game.@Config.@HostServices.Wrap, value => { _ = value.@environment; _ = value.@favorite; _ = value.@mood; _ = value.@logFunction; }),
-new TypeBinding<global::@Game.@Config.@Item>("Item", global::@Game.@Config.@Item.Wrap, value => { _ = value.@title; _ = value.@stats; _ = value.@next; _ = value.@calculateFunction; }),
-new TypeBinding<global::@Game.@Config.@ItemStats>("ItemStats", global::@Game.@Config.@ItemStats.Wrap, value => { _ = value.@value; _ = value.@transformFunction; }),
-new TypeBinding<global::@Game.@Config.@LocalizedText>("LocalizedText", global::@Game.@Config.@LocalizedText.Wrap, value => { _ = value.@value; _ = value.@optional; }),
-new TypeBinding<global::@Game.@Config.@RuntimeSettings>("RuntimeSettings", global::@Game.@Config.@RuntimeSettings.Wrap, value => { _ = value.@enabled; }),
-new TypeBinding<global::@Game.@Config.@Services>("Services", global::@Game.@Config.@Services.Wrap, value => { _ = value.@environment; _ = value.@adjustFunction; _ = value.@notifyFunction; }),
-new TypeBinding<global::@Game.@Config.@Stats>("Stats", global::@Game.@Config.@Stats.Wrap, value => { _ = value.@health; _ = value.@weights; _ = value.@bonus; }),
-new TypeBinding<global::@Game.@Config.@ThemeValue>("ThemeValue", global::@Game.@Config.@ThemeValue.Wrap, value => { _ = value.@value; }),
-new TypeBinding<global::@Game.@Config.@UiText>("UiText", global::@Game.@Config.@UiText.Wrap, value => { _ = value.@welcome; _ = value.@weights; _ = value.@theme; _ = value.@count; _ = value.@readCountFunction; _ = value.@sameThemeFunction; }) }; public static Contract LoadContract(byte[] bytes) => new Contract(bytes, ContractIdentity, Bindings); } }
+
+namespace Game.Config
+{
+public static class Generated
+{
+    internal static byte[] ContractIdentity { get; } = new byte[] { 27,123,95,65,44,59,221,217,121,104,233,202,41,206,244,212,155,71,8,206,167,156,200,53,65,171,230,64,99,78,195,200 };
+
+    private static TypeBinding[] Bindings { get; } = new TypeBinding[]
+    {
+        new TypeBinding<global::Game.Config.Character>("Character", value => new global::Game.Config.Character(new Record(value))),
+        new TypeBinding<global::Game.Config.DimensionBase>("DimensionBase", value => new global::Game.Config.DimensionBase(new Record(value))),
+        new TypeBinding<global::Game.Config.DimensionChild>("DimensionChild", value => new global::Game.Config.DimensionChild(new Record(value))),
+        new TypeBinding<global::Game.Config.Hero>("Hero", value => new global::Game.Config.Hero(new Record(value))),
+        new TypeBinding<global::Game.Config.HostServices>("HostServices", value => new global::Game.Config.HostServices(new Record(value))),
+        new TypeBinding<global::Game.Config.Item>("Item", value => new global::Game.Config.Item(new Record(value))),
+        new TypeBinding<global::Game.Config.ItemStats>("ItemStats", value => new global::Game.Config.ItemStats(value)),
+        new TypeBinding<global::Game.Config.LocalizedText>("LocalizedText", value => new global::Game.Config.LocalizedText(new Record(value))),
+        new TypeBinding<global::Game.Config.Profile>("Profile", value => new global::Game.Config.Profile(new Record(value))),
+        new TypeBinding<global::Game.Config.RuntimeSettings>("RuntimeSettings", value => new global::Game.Config.RuntimeSettings(new Record(value))),
+        new TypeBinding<global::Game.Config.Services>("Services", value => new global::Game.Config.Services(new Record(value))),
+        new TypeBinding<global::Game.Config.Stats>("Stats", value => new global::Game.Config.Stats(value)),
+        new TypeBinding<global::Game.Config.ThemeValue>("ThemeValue", value => new global::Game.Config.ThemeValue(value)),
+        new TypeBinding<global::Game.Config.UiText>("UiText", value => new global::Game.Config.UiText(new Record(value)))
+    };
+
+    public static Contract LoadContract(byte[] bytes) => new Contract(bytes, ContractIdentity, Bindings);
+}
+}

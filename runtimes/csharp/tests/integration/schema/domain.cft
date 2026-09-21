@@ -8,6 +8,12 @@ sealed data Stats {
   bonus: int?;
 }
 
+data Profile {
+  title: string;
+  stats: Stats;
+  owner: Character?;
+}
+
 @idAsEnum(CharacterId)
 table Character {
   name: string;
@@ -17,6 +23,9 @@ table Character {
   moods: {Mood: string} = {};
   mood: Mood?;
   extra: Stats?;
+  profile: Profile?;
+  profiles: [Profile] = [];
+  profilesByName: {string: Profile} = {};
   notes: [string]?;
   callback: (fn() -> int)?;
   text: fstring = f"{self.name}";
@@ -25,6 +34,10 @@ table Character {
   callbacks: fn(values: [fn() -> int]) -> [fn() -> int] => { values };
   templateIdentity: fn(value: fstring) -> fstring => { value };
   roundtrip: fn(value: Stats) -> Stats => { value };
+  profileIdentity: fn(value: Profile) -> Profile => { value };
+  hostStats: fn(value: Stats) -> Stats => { HostServices.echoStats(value) };
+  hostProfile: fn(value: Profile) -> Profile => { HostServices.echoProfile(value) };
+  hostCharacter: fn(value: Character) -> Character => { HostServices.echoCharacter(value) };
   closure: fn(seed: int) -> fn() -> int => { fn() -> int { seed + self.stats.health } };
   check Healthy { Coflow::Check::require(self.stats.health > 0, "health must be positive"); }
 }

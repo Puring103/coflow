@@ -3727,8 +3727,8 @@ mod control_flow_tests {
 
     #[cfg(feature = "cft-compiler")]
     #[test]
-    #[ignore = "与 C# 快照探针使用相同 1000 条记录，测量原生存活和峰值"]
-    fn snapshot_native_memory_probe() {
+    #[ignore = "与 C# 记录读取探针使用相同 1000 条记录，测量原生存活和峰值"]
+    fn record_read_native_memory_probe() {
         use crate::allocation_probe;
         let source = (0..1000).map(|i| format!("h{i}: Hero {{ name: \"Hero {i}\", stats: Stats {{ health: {}, weights: [1, 2, 3] }} }}\n", i + 1)).collect::<String>() + "RuntimeSettings: RuntimeSettings {}";
         let (contract, loaded) = allocation_probe::measure(|| {

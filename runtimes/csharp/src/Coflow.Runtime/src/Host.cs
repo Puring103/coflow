@@ -8,7 +8,6 @@ namespace Coflow
     {
         internal string Service { get; }
         protected HostBinding(string service) { Service = service; }
-        public abstract string MemberType(string field);
         public abstract object? Read(string field);
         public abstract void Call(string field, HostCall call);
     }
@@ -156,7 +155,6 @@ namespace Coflow
                     var call=new HostCall(bytes,position); host.Call(function,call); result=call.Result; return;
                 }
                 string name=Encoding.UTF8.GetString(bytes);
-                if(op==0){result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(host.MemberType(name)));return;}
                 switch(host.Read(name))
                 {
                     case null: result.Tag=0;break;
