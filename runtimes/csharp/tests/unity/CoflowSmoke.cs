@@ -39,10 +39,10 @@ public sealed class CoflowSmoke : MonoBehaviour
         Require(services.environment == "Unity" && services.favorite == hero && services.mood == Mood.Happy, "Host data");
         services.log("smoke"); Require(host.Calls == 2, "Host call or reentry");
         var source = new float[] { 3, 4 };
-        var data = new Stats(20, new RuntimeArray<float>(source), null); source[0] = 99;
+        var data = new Stats(20, new CoflowArray<float>(source), null); source[0] = 99;
         Require(hero.roundtrip(data).weights[0] == 3, "Immutable typed import");
         var closure = hero.closure(5);
-        Require(hero.callbacks(new RuntimeArray<RuntimeFunction<int>>(new[] { closure }))[0].Invoke() == 15, "Returned closure graph");
+        Require(hero.callbacks(new CoflowArray<CoflowFunction<int>>(new[] { closure }))[0].Invoke() == 15, "Returned closure graph");
         GC.Collect(); GC.WaitForPendingFinalizers(); Require(closure.Invoke() == 15, "Lease lifetime");
         Exception failure = null;
         var thread = new Thread(() => { try { Require(hero.stats.health == 10, "Cross-thread record read"); try { hero.score(0); throw new Exception("Cross-thread execution accepted"); } catch (CoflowException) {} } catch (Exception error) { failure = error; } });

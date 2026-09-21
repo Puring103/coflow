@@ -8,12 +8,12 @@ namespace Coflow
     public sealed class CheckOptions
     {
         public static CheckOptions Default { get; } = new CheckOptions();
-        public IReadOnlyList<RuntimeObject>? Records { get; }
+        public IReadOnlyList<CoflowObject>? Records { get; }
         public IReadOnlyList<string> Names { get; }
         public bool IncludeGlobal { get; }
         public ulong MaxWork { get; }
         public ulong MaxIterations { get; }
-        public CheckOptions(IReadOnlyList<RuntimeObject>? records = null, IReadOnlyList<string>? names = null,
+        public CheckOptions(IReadOnlyList<CoflowObject>? records = null, IReadOnlyList<string>? names = null,
             bool includeGlobal = true, ulong maxWork = 10_000_000, ulong maxIterations = 1_000_000)
         {
             Records = records;

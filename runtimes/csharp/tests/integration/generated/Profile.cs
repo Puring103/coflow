@@ -4,7 +4,7 @@ using Coflow;
 
 namespace Game.Config
 {
-public class Profile : RuntimeObject
+public class Profile : CoflowObject
 {
     public string title { get; private set; } = default!;
     public global::Game.Config.Stats stats { get; private set; } = default!;

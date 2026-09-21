@@ -49,11 +49,11 @@ Rust 在构建和投影解码时验证 table、singleton 与字段类别。table
 
 ## 函数与检查
 
-一等函数按签名生成 `RuntimeFunction<T1, ..., TResult>`，使用 `Invoke(...)` 调用；无返回值使用
+一等函数按签名生成 `CoflowFunction<T1, ..., TResult>`，使用 `Invoke(...)` 调用；无返回值使用
 `Unit`。函数包装持有所属 Runtime，不重复接受 Runtime 参数。参数、返回值、闭包与 Host 函数
 共用同一套静态 codec。C# 目标支持零到八个参数，超出范围时代码生成失败。
 
-`fstring` 字段生成 `RuntimeTemplate` 属性，获取属性不执行模板；`Render<字段名>()` 或包装的 `Render()` 显式进入执行边界。
+`fstring` 字段生成 `CoflowTemplate` 属性，获取属性不执行模板；`Render<字段名>()` 或包装的 `Render()` 显式进入执行边界。
 `Runtime.RunChecks(CheckOptions)` 显式执行检查，可选择记录、规则名称、全局规则和执行预算，返回
 `CheckResult`、结构化诊断及执行统计；C# 不缓存检查结果。
 

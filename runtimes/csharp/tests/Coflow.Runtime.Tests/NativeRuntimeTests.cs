@@ -155,7 +155,7 @@ public sealed class NativeRuntimeTests
         Assert.Equal("Hero", hero.text.Render());
         Assert.Contains("bonus", hero.scoreFunction.Source);
         Assert.Equal(123, hero.score(bonus: 23));
-        var stats = hero.hostStats(new Stats(41, new RuntimeArray<float>(Array.Empty<float>()), null));
+        var stats = hero.hostStats(new Stats(41, new CoflowArray<float>(Array.Empty<float>()), null));
         Assert.Equal(41, stats.health);
         var profile = hero.hostProfile(new Profile("Host", stats, hero));
         Assert.Equal("Host", profile.title);
@@ -176,7 +176,7 @@ public sealed class NativeRuntimeTests
         using var builder = new RuntimeBuilder(Contract).AddSource(Source.Replace("health: 100", "health: -1"));
         using var invalid = builder.Build();
         var hero = invalid.Table<Character>().Get("hero");
-        var failure = invalid.RunChecks(new CheckOptions(records: new RuntimeObject[] { hero }, includeGlobal: false));
+        var failure = invalid.RunChecks(new CheckOptions(records: new CoflowObject[] { hero }, includeGlobal: false));
         Assert.False(failure.Success);
         var diagnostic = Assert.Single(failure.Diagnostics);
         Assert.Equal("CHECK-001", diagnostic.Code);

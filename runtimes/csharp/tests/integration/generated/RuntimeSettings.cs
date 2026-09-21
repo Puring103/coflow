@@ -4,7 +4,7 @@ using Coflow;
 
 namespace Game.Config
 {
-public sealed class RuntimeSettings : RuntimeObject
+public sealed class RuntimeSettings : CoflowObject
 {
     public string Id { get; private set; } = default!;
     public bool enabled { get; private set; } = default!;

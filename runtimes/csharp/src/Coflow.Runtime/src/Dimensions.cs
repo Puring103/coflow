@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 namespace Coflow
 {
-    public sealed class RuntimeDimension<T>
+    public sealed class CoflowDimension<T>
     {
         private readonly Projection projection;
         private readonly T defaultValue;
         private readonly IReadOnlyDictionary<string, T> variants;
-        public RuntimeDimension(Projection value, Func<Projection, T> read)
+        public CoflowDimension(Projection value, Func<Projection, T> read)
         {
             projection = value;
             defaultValue = value.DimensionDefault().ReadProjected(read);

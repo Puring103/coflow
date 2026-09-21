@@ -63,11 +63,11 @@ var settings = runtime.Get<Settings>();
 | int、float、bool、string、enum | 对应 C# 值 |
 | table、singleton、data | 生成类型 |
 | `@struct sealed data` | 生成的 readonly struct |
-| `[T]` | `RuntimeArray<T>` |
-| `{K: V}` | `RuntimeDictionary<K, V>` |
+| `[T]` | `CoflowArray<T>` |
+| `{K: V}` | `CoflowDictionary<K, V>` |
 | 可选标量、enum、struct | `T?` |
 | 可选对象、字符串、集合、函数 | 可为 null 的对应包装或字符串 |
-| 维度字段 | `RuntimeDimension<T>` |
+| 维度字段 | `CoflowDimension<T>` |
 
 数组支持索引和枚举；字典支持索引、枚举及 `TryGetValue`。
 维度字段通过 `Default()` 读取基础值，通过 `For("zh")` 读取回退后的变体值。
@@ -76,7 +76,7 @@ var settings = runtime.Get<Settings>();
 显式释放 Runtime 后，已经取得的普通记录属性、struct 和集合仍可读取；函数调用、模板执行和未加载记录
 查询需要有效 Runtime。
 
-函数按签名生成为 `RuntimeFunction<T1, ..., TResult>`，通过 `Invoke(...)` 调用；无返回值使用 `Unit`。
+函数按签名生成为 `CoflowFunction<T1, ..., TResult>`，通过 `Invoke(...)` 调用；无返回值使用 `Unit`。
 函数的 `Source` 提供源码。读取 fstring 属性会执行模板并返回字符串，
 `Get_<字段名>_Template().ProgramSource` 可读取模板源码。
 

@@ -11,7 +11,7 @@ Unity 工程的 `Assets/Plugins`，并在 Plugin Inspector 中设置平台和 CP
 释放契约、builder 与 Runtime；对象、集合、函数和 struct 包装无需单独 Dispose。
 运行时显式释放后，依赖它的包装失效。Host 实现生成的强类型接口，通过 `builder.BindHost(host)` 绑定。
 
-函数使用生成的 `RuntimeFunction<..., TResult>.Invoke(...)` 强类型调用，`fstring` 字段在读取时求值。
+函数使用生成的 `CoflowFunction<..., TResult>.Invoke(...)` 强类型调用，`fstring` 字段在读取时求值。
 Host 接口同时生成数据属性和强类型函数，`Runtime.RunChecks()` 返回结构化检查结果与统计。
 
 原生构建及 IL2CPP 集成说明见仓库 `docs/2-架构/07-Unity原生集成.md`。

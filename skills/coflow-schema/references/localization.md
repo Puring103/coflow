@@ -37,6 +37,6 @@ sword: Item {
 读取基础值使用 `.default()`，读取指定变体使用 `.for("zh")`，`.variants()` 返回当前
 维度的全部有效变体值。
 
-C# 生成字段使用 `RuntimeDimension<T>`，提供对应的 `Default()`、`For(...)` 和
+C# 生成字段使用 `CoflowDimension<T>`，提供对应的 `Default()`、`For(...)` 和
 `Variants()` 读取方式。
 编辑器的维度展开视图直接编辑所属业务记录，不会生成辅助类型、记录或 CFD 文件。
