@@ -9,21 +9,32 @@ pub(super) struct Flow {
 }
 impl Function {
     /// 扩展节点后统一重定位所有控制流目标；附表在后续降低时重新生成。
-    pub(super) fn rewrite_nodes(&mut self, mut expansions: std::collections::BTreeMap<usize, Vec<super::ir::Node>>,
-        removed: &BTreeSet<usize>) {
+    pub(super) fn rewrite_nodes(
+        &mut self,
+        mut expansions: std::collections::BTreeMap<usize, Vec<super::ir::Node>>,
+        removed: &BTreeSet<usize>,
+    ) {
         let mut positions = Vec::with_capacity(self.body.len() + 1);
         let mut position = 0usize;
         for pc in 0..self.body.len() {
-            positions.push(position); position += expansions.get(&pc).map_or(1, Vec::len);
+            positions.push(position);
+            position += expansions.get(&pc).map_or(1, Vec::len);
         }
         positions.push(position);
         let mut body = Vec::with_capacity(position);
         for (pc, mut node) in std::mem::take(&mut self.body).into_iter().enumerate() {
-            if removed.contains(&pc) { node.operation = Operation::Jump(super::ir::LocationId((pc + 1) as u32)); }
+            if removed.contains(&pc) {
+                node.operation = Operation::Jump(super::ir::LocationId((pc + 1) as u32));
+            }
             for mut node in expansions.remove(&pc).unwrap_or_else(|| vec![node]) {
                 match &mut node.operation {
-                    Operation::Jump(target) | Operation::JumpFalse { target, .. } | Operation::ForPrep { target, .. } | Operation::ForLoop { target, .. } => target.0 = positions[target.0 as usize] as u32,
-                    _ => {},
+                    Operation::Jump(target)
+                    | Operation::JumpFalse { target, .. }
+                    | Operation::ForPrep { target, .. }
+                    | Operation::ForLoop { target, .. } => {
+                        target.0 = positions[target.0 as usize] as u32
+                    }
+                    _ => {}
                 }
                 body.push(node);
             }
@@ -35,12 +46,17 @@ impl Function {
         let mut pending = vec![0];
         while let Some(pc) = pending.pop() {
             let node = self.body.get(pc).ok_or("IR 控制流越界")?;
-            if !reachable.insert(pc) { continue; }
+            if !reachable.insert(pc) {
+                continue;
+            }
             match node.operation {
-                Operation::Return(_) => {},
+                Operation::Return(_) => {}
                 Operation::Jump(target) => pending.push(target.0 as usize),
-                Operation::JumpFalse { target, .. } | Operation::ForPrep { target, .. } | Operation::ForLoop { target, .. } => {
-                    pending.push(target.0 as usize); pending.push(pc + 1);
+                Operation::JumpFalse { target, .. }
+                | Operation::ForPrep { target, .. }
+                | Operation::ForLoop { target, .. } => {
+                    pending.push(target.0 as usize);
+                    pending.push(pc + 1);
                 }
                 _ => pending.push(pc + 1),
             }
@@ -76,7 +92,9 @@ impl Function {
                     input.push(*receiver)
                 }
                 O::Index { receiver, key } => input.extend([*receiver, *key]),
-                O::Binary { left, right, .. } => input.extend([*left, *right]),
+                O::Binary { left, right, .. } | O::AccumulateText { left, right } => {
+                    input.extend([*left, *right])
+                }
                 O::Jump(target) => {
                     output.clear();
                     next = vec![target.0 as usize];
@@ -101,9 +119,10 @@ impl Function {
                     input.extend(captures);
                     input.extend(owner);
                 }
-                O::Array(values) | O::Dictionary(values) | O::Format(values) | O::Concat(values) => {
-                    input.extend(values)
-                }
+                O::Array(values)
+                | O::Dictionary(values)
+                | O::Format(values)
+                | O::Concat(values) => input.extend(values),
                 O::InitializeObject { fields, .. } => {
                     input.push(node.destination);
                     input.extend(fields.iter().map(|(_, value)| *value));
@@ -162,6 +181,11 @@ impl Function {
             writes.push(output);
             successors.push(next);
         }
-        Ok(Flow { reads, writes, successors, reachable })
+        Ok(Flow {
+            reads,
+            writes,
+            successors,
+            reachable,
+        })
     }
 }

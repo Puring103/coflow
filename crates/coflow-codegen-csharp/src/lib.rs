@@ -157,9 +157,9 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
 }
 fn pack(ty: &CftValueType, expression: &str) -> String {
     match ty {
-        CftValueType::Enum(name) => format!("RuntimeValue.EnumValue({}, unchecked((uint)({expression})))", quoted(name)),
-        CftValueType::Option(inner) if matches!(inner.as_ref(), CftValueType::Enum(_)) => format!("{expression}.HasValue ? {} : RuntimeValue.From(null)", pack(inner, &format!("{expression}.Value"))),
-        _ => format!("RuntimeValue.From({expression})"),
+        CftValueType::Enum(name) => format!("Projection.EnumValue({}, unchecked((uint)({expression})))", quoted(name)),
+        CftValueType::Option(inner) if matches!(inner.as_ref(), CftValueType::Enum(_)) => format!("{expression}.HasValue ? {} : Projection.From(null)", pack(inner, &format!("{expression}.Value"))),
+        _ => format!("Projection.From({expression})"),
     }
 }
 fn codec(
@@ -321,7 +321,7 @@ fn generate(
             "Read",
             "ActualType",
             "Dispose",
-            "RuntimeValue",
+            "Projection",
             "__CoflowCodecs",
             "ValueEquals",
             "Wrap",
@@ -380,20 +380,20 @@ fn generate(
             .map_or_else(|| "RuntimeObject".into(), |p| qualified(root, p));
         let guard = format!("value.RequireContract(global::{root}.Generated.ContractIdentity);");
         let mut body = if ty.is_struct {
-            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeValue {{\nprivate readonly RuntimeValue Value;\npublic @{}(RuntimeValue value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<RuntimeValue,T> codec) => Value.Field(field).ReadProjected(codec);\npublic RuntimeValue RuntimeValue => Value;\n", namespace(root, &ty.name), type_name, type_name, guard)
+            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic readonly struct @{} : IRuntimeArgument {{\nprivate readonly Projection Value;\ninternal @{}(Projection value) {{ {} Value = value; }}\nprivate T Read<T>(string field, Func<Projection,T> codec) => Value.Field(field).ReadProjected(codec);\nvoid IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(Value);\n", namespace(root, &ty.name), type_name, type_name, guard)
         } else {
-            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic {}class @{} : {} {{\n{} @{}(RuntimeValue value) : base(value) {{ {} }}\n",namespace(root,&ty.name),if ty.is_abstract{"abstract "}else if ty.is_sealed||ty.is_singleton{"sealed "}else{""},type_name,base,if ty.is_abstract{"protected"}else{"public"},type_name,guard)
+            format!("#nullable enable\nusing System;\nusing Coflow;\nnamespace {} {{\npublic {}class @{} : {} {{\n{} @{}(Projection value) : base(value) {{ {} }}\n",namespace(root,&ty.name),if ty.is_abstract{"abstract "}else if ty.is_sealed||ty.is_singleton{"sealed "}else{""},type_name,base,if ty.is_abstract{"protected"}else{"internal"},type_name,guard)
         };
         if ty.kind == coflow_language::cft::syntax::ast::TypeKind::Data && !ty.is_abstract {
             let fields = ty.all_fields().collect::<Vec<_>>();
             let parameters = fields.iter().map(|field| Ok(format!("{} @{}", cs_type(&field.value_type, root)?, field.name))).collect::<Result<Vec<_>, CsharpCodegenError>>()?;
             let names = fields.iter().map(|field| quoted(&field.name)).collect::<Vec<_>>();
             let values = fields.iter().map(|field| pack(&field.value_type, &format!("@{}", field.name))).collect::<Vec<_>>();
-            body.push_str(&format!("public @{}({}) : this(RuntimeValue.Data(global::{root}.Generated.ContractIdentity, {}, new string[] {{ {} }}, new RuntimeValue[] {{ {} }})) {{ }}\n", type_name, parameters.join(", "), quoted(&ty.name), names.join(", "), values.join(", ")));
+            body.push_str(&format!("public @{}({}) : this(Projection.Data(global::{root}.Generated.ContractIdentity, {}, new string[] {{ {} }}, new Projection[] {{ {} }})) {{ }}\n", type_name, parameters.join(", "), quoted(&ty.name), names.join(", "), values.join(", ")));
         }
         let mut codecs = String::from("private static class __CoflowCodecs {\n");
         if ty.kind != coflow_language::cft::syntax::ast::TypeKind::Data && ty.parent.is_none() {
-            codecs.push_str("internal static readonly Func<RuntimeValue,string> Id = ValueCodecs.String;\n");
+            codecs.push_str("internal static readonly Func<Projection,string> Id = ValueCodecs.String;\n");
             body.push_str("public string Id => Read(\"id\", __CoflowCodecs.Id);\n");
         }
         for (field_index, field) in ty.own_fields().enumerate() {
@@ -412,7 +412,7 @@ fn generate(
                 codec(schema, &field.value_type, root, 0)?
             };
             // C# 9 不缓存方法组转换；字段解码委托按生成类型初始化一次。
-            codecs.push_str(&format!("internal static readonly Func<RuntimeValue,{property_type}> F{field_index} = {reader};\n"));
+            codecs.push_str(&format!("internal static readonly Func<Projection,{property_type}> F{field_index} = {reader};\n"));
             let reader = format!("__CoflowCodecs.F{field_index}");
             if let CftValueType::Function(parameters, result) = &field.value_type {
                 if field.dimension.is_none() {
@@ -446,7 +446,7 @@ fn generate(
 
         // 工厂分派由生成器静态列出，不依赖反射或运行时泛型实例生成。
         body.push_str(&format!(
-            "public {}static {} Wrap(RuntimeValue value) {{\nvalue = value.Canonical();\nif (value.TryGetProjection<{}>(out var projected)) return projected;\nswitch (value.TypeName) {{\n",
+            "internal {}static {} Wrap(Projection value) {{\nvalue = value.Canonical();\nif (value.TryGetProjection<{}>(out var projected)) return projected;\nswitch (value.TypeName) {{\n",
             if ty.parent.is_some() { "new " } else { "" },
             qualified(root, &ty.name),
             qualified(root, &ty.name)

@@ -40,7 +40,7 @@ codegen:
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
+将 `runtimes/csharp/src/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
 `coflow.contract` 作为运行时资源部署：
 
 ```csharp
@@ -51,7 +51,7 @@ using var contract = Generated.LoadContract(contractBytes);
 using var builder = new RuntimeBuilder(contract);
 builder.AddSource(itemsText);
 using var runtime = builder.Build();
-var item = runtime.Table<Item>()["sword"];
+var item = runtime.Table<Item>().Get("sword");
 ```
 
 应用向构建器提供所有互相引用的 CFD 文本。构建成功后数据只读；更新数据或 Host 绑定时创建新运行时。

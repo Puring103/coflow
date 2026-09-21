@@ -1,5 +1,6 @@
 //! 固定区整体持有类型化负载；通用值适配与投影按需物化，热路径直接借用类型化区域。
-use super::{ArrayValue, ScalarKey, Value, ValueId};
+use super::{ArrayValue, DictionaryValue, Value, ValueId};
+use super::dictionary::KeyRef as Key;
 use crate::{schema::CftValueType, vm::executor::Slot};
 use std::{borrow::Cow, collections::{BTreeMap, BTreeSet}, ops::Range, sync::Arc};
 
@@ -70,21 +71,7 @@ struct Dimension { default: ValueId, variants: Vec<(StringId, ValueId, bool)> }
 struct Function { source: Arc<str>, owner: Option<ValueId>, host: Option<(StringId, StringId)> }
 #[derive(Debug)]
 struct Host { service: StringId, field: StringId, ty: CftValueType }
-type Dictionary = indexmap::IndexMap<ScalarKey, (ValueId, ValueId)>;
-// 与 ScalarKey 保持相同变体顺序和 Hash 语义，固定字符串查询不复制 UTF-8。
-#[derive(Hash)]
-enum Key<'a> { Bool(bool), Int(i32), String(&'a str), Enum { type_name: &'a str, value: u32 } }
-impl indexmap::Equivalent<ScalarKey> for Key<'_> {
-    fn equivalent(&self, other: &ScalarKey) -> bool {
-        match (self, other) {
-            (Self::Bool(a), ScalarKey::Bool(b)) => a == b,
-            (Self::Int(a), ScalarKey::Int(b)) => a == b,
-            (Self::String(a), ScalarKey::String(b)) => *a == b,
-            (Self::Enum { type_name: a, value: av }, ScalarKey::Enum { type_name: b, value: bv }) => *a == b && av == bv,
-            _ => false,
-        }
-    }
-}
+type Dictionary = DictionaryValue;
 
 /// 固定与动态值共用只读借用视图，热路径不重建 Value、字段名或集合。
 pub(super) enum Fields<'a> { Packed { fields: &'a [FieldSpec], bytes: &'a [u8] }, Named(&'a [(String, ValueId)]) }
@@ -97,6 +84,7 @@ impl Fields<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::ScalarKey;
     #[test]
     fn fixed_pools_share_layouts_and_strings_while_preserving_cycles_and_float_bits() {
         let object = |key: &str, friend| Value::Object { type_name: "Node".into(), key: Some(key.into()),
@@ -126,7 +114,7 @@ mod tests {
             Value::Dimension { default: 1, variants: BTreeMap::from([("none".into(), 2)]), explicit: BTreeSet::from(["none".into()]) },
             Value::Function { source: "fn() => 1".into(), owner: Some(3), host: None },
             Value::Template { source: "text".into(), owner: Some(3) },
-            Value::Dict(indexmap::IndexMap::from([(ScalarKey::Int(i32::MIN), (0, 2))])),
+            Value::Dict(DictionaryValue::from([(ScalarKey::Int(i32::MIN), (0, 2))])),
         ];
         let (values, remap) = compact(values).unwrap();
         assert_eq!(values.len(), 6);
@@ -190,7 +178,7 @@ mod tests {
                 ScalarKey::String(value) => Value::String(value.clone()),
                 ScalarKey::Enum { type_name, value } => Value::Enum { type_name: type_name.clone(), value: *value },
             };
-            let (values, ids) = compact(vec![value, Value::Int(42), Value::Dict(indexmap::IndexMap::from([(key, (0, 1))]))]).unwrap();
+            let (values, ids) = compact(vec![value, Value::Int(42), Value::Dict(DictionaryValue::from([(key, (0, 1))]))]).unwrap();
             let values = FixedValues::new(values).unwrap();
             let key = values.scalar(ids[0]).unwrap_or(Slot::handle(ids[0]));
             assert_eq!(values.dictionary_index(ids[2], key), Some(Some(ids[1])));
@@ -396,7 +384,7 @@ impl FixedValues {
                 Value::Array(values) => {
                     let index = result.arrays.len(); result.arrays.push(values); (7, index as u64)
                 }
-                Value::Dict(values) => { let index = result.dictionaries.len(); result.dictionaries.push(values); (8, index as u64) }
+                Value::Dict(mut values) => { values.optimize_index(usize::MAX)?; let index = result.dictionaries.len(); result.dictionaries.push(values); (8, index as u64) }
                 Value::Dimension { default, variants, explicit } => {
                     let mut stored = Vec::with_capacity(variants.len());
                     for (name, value) in variants { let present = explicit.contains(&name); stored.push((intern(&mut result, &mut strings, name)?, value, present)); }
@@ -441,7 +429,7 @@ impl FixedValues {
             ("objects", self.objects.capacity() * size_of::<Object>() + self.objects.iter().map(|object| object.bases.capacity() * size_of::<(TypeId, ValueId)>()).sum::<usize>()),
             ("field_payloads", self.field_bytes.capacity()),
             ("arrays", self.arrays.capacity() * size_of::<ArrayValue>() + self.arrays.iter().map(ArrayValue::heap_bytes).sum::<usize>()),
-            ("dictionaries", self.dictionaries.capacity() * size_of::<Dictionary>() + self.dictionaries.iter().map(|values| values.capacity() * (size_of::<ScalarKey>() + size_of::<(ValueId, ValueId)>() + 32) + values.keys().map(|key| match key { ScalarKey::String(text) => text.capacity(), ScalarKey::Enum { type_name, .. } => type_name.capacity(), _ => 0 }).sum::<usize>()).sum::<usize>()),
+            ("dictionaries", self.dictionaries.capacity() * size_of::<Dictionary>() + self.dictionaries.iter().map(Dictionary::heap_bytes).sum::<usize>()),
             ("dimensions", self.dimensions.capacity() * size_of::<Dimension>() + self.dimensions.iter().map(|dimension| dimension.variants.capacity() * size_of::<(StringId, ValueId, bool)>()).sum::<usize>()),
             ("callables_and_hosts", self.functions.capacity() * size_of::<Function>() + self.templates.capacity() * size_of::<(Arc<str>, Option<ValueId>)>() + self.hosts.capacity() * size_of::<Host>()),
             ("enums", self.enums.capacity() * size_of::<(TypeId, u32)>()),
@@ -489,7 +477,10 @@ impl FixedValues {
     }
     pub(super) fn dictionary_index(&self, id: ValueId, key: Slot) -> Option<Option<ValueId>> {
         let (8, index) = self.cell(id)? else { return None; };
-        let key = match key {
+        Some(self.dictionaries[index].get_ref(self.key(key)?).map(|(_, value)| *value))
+    }
+    pub(super) fn key(&self, key: Slot) -> Option<Key<'_>> {
+        Some(match key {
             Slot::Bool(value) => Key::Bool(value), Slot::Int(value) => Key::Int(value),
             Slot::Handle(id) => match self.cell(id.get())? {
                 (4, index) => Key::String(self.text(StringId(index as u32))),
@@ -497,8 +488,7 @@ impl FixedValues {
                 _ => return None,
             },
             _ => return None,
-        };
-        Some(self.dictionaries[index].get(&key).map(|(_, value)| *value))
+        })
     }
     /// 通用只读适配的临时副本在创建前计费；固定热路径仍直接使用借用视图。
     pub(super) fn materialized_bytes(&self, id: ValueId) -> Option<usize> {
@@ -516,11 +506,7 @@ impl FixedValues {
                     + object.bases.iter().map(|(ty, _)| self.type_name(*ty).len()).sum::<usize>()
             }
             7 => self.arrays[payload].heap_bytes(),
-            8 => {
-                let values = &self.dictionaries[payload];
-                values.len() * (size_of::<ScalarKey>() + size_of::<(ValueId, ValueId)>() + 32)
-                    + values.keys().map(|key| match key { ScalarKey::String(text) => text.len(), ScalarKey::Enum { type_name, .. } => type_name.len(), _ => 0 }).sum::<usize>()
-            }
+            8 => self.dictionaries[payload].heap_bytes(),
             9 => self.dimensions[payload].variants.iter().map(|(name, _, explicit)| {
                 // BTree 临时节点保守按每项独立节点计费，覆盖键和显式存在性集合。
                 (self.text(*name).len() + 512) * if *explicit { 2 } else { 1 }

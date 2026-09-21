@@ -14,8 +14,10 @@ use std::{
     },
 };
 
-mod checking;
 mod array;
+mod dictionary;
+pub use dictionary::DictionaryValue;
+mod checking;
 pub use array::ArrayValue;
 mod execution;
 mod fixed;
@@ -27,8 +29,10 @@ pub type ValueId = u64;
 fn inline_value(id: ValueId) -> Option<Value> {
     use crate::vm::executor::Slot;
     Some(match Slot::from_scalar_id(id)? {
-        Slot::None => Value::None, Slot::Bool(value) => Value::Bool(value),
-        Slot::Int(value) => Value::Int(value), Slot::Float(value) => Value::Float(value),
+        Slot::None => Value::None,
+        Slot::Bool(value) => Value::Bool(value),
+        Slot::Int(value) => Value::Int(value),
+        Slot::Float(value) => Value::Float(value),
         _ => unreachable!("标量身份解码只产生标量"),
     })
 }
@@ -40,8 +44,8 @@ pub enum OptimizationProfile {
     Release,
 }
 
-/// 字典键的哈希与相等归一化表示。键类型在编译期限制为 bool/int/string/enum，
-/// 因此归一化不需要访问堆，也不存在跨类型（如 int 与 float）命中同一槽的情况。
+/// 字典键的拥有型归一化表示。键类型限制为 bool/int/string/enum，
+/// 查询借用键内容，跨类型键不会命中同一条目。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScalarKey {
     Bool(bool),
@@ -68,8 +72,8 @@ pub enum Value {
         bases: Vec<(String, ValueId)>,
     },
     Array(ArrayValue),
-    /// 插入序字典：键按 ScalarKey 归一化哈希，迭代保持插入顺序。
-    Dict(indexmap::IndexMap<ScalarKey, (ValueId, ValueId)>),
+    /// 插入序字典：条目顺序独立于按键类型和分布选择的查询索引。
+    Dict(DictionaryValue),
     Dimension {
         default: ValueId,
         variants: BTreeMap<String, ValueId>,
@@ -99,9 +103,18 @@ pub enum HostValue {
     Int(i32),
     Float(f32),
     String(String),
-    Enum { type_name: String, value: u32 },
-    Existing { runtime: u64, value: ValueId },
-    Data { type_name: String, fields: Vec<(String, HostValue)> },
+    Enum {
+        type_name: String,
+        value: u32,
+    },
+    Existing {
+        runtime: u64,
+        value: ValueId,
+    },
+    Data {
+        type_name: String,
+        fields: Vec<(String, HostValue)>,
+    },
     Array(Vec<HostValue>),
     Dictionary(Vec<(HostValue, HostValue)>),
 }
@@ -154,7 +167,9 @@ pub struct Runtime {
 }
 impl std::ops::Deref for Runtime {
     type Target = RuntimeImage;
-    fn deref(&self) -> &Self::Target { &self.image }
+    fn deref(&self) -> &Self::Target {
+        &self.image
+    }
 }
 
 #[derive(Debug)]
@@ -358,7 +373,9 @@ impl Runtime {
         let mut dimension_variants = BTreeMap::<String, BTreeSet<String>>::new();
         for (_, record) in model.records() {
             for values in record.dimension_fields.values() {
-                dimension_variants.entry(values.dimension.to_string()).or_default()
+                dimension_variants
+                    .entry(values.dimension.to_string())
+                    .or_default()
                     .extend(values.variants.keys().map(ToString::to_string));
             }
         }
@@ -416,7 +433,9 @@ impl Runtime {
                     // 全局枚举视图与显式覆盖分别保存；None 也是有效覆盖。
                     let explicit = variants.keys().cloned().collect();
                     if let Some(all) = dimension_variants.get(binding.dimension.as_str()) {
-                        for variant in all { variants.entry(variant.clone()).or_insert(base); }
+                        for variant in all {
+                            variants.entry(variant.clone()).or_insert(base);
+                        }
                     }
                     arena.push(Value::Dimension {
                         default: base,
@@ -475,12 +494,26 @@ impl Runtime {
         } = arena;
         let (values, remap) = fixed::compact(values)?;
         let map = |id: ValueId| remap[id as usize];
-        let records = records.into_iter().map(|(key, id)| (key, map(id))).collect::<BTreeMap<_, _>>();
+        let records = records
+            .into_iter()
+            .map(|(key, id)| (key, map(id)))
+            .collect::<BTreeMap<_, _>>();
         let contract_values = contract_values.into_iter().map(map).collect();
-        let function_imports = function_imports.into_iter().map(|(id, imports)| (map(id), imports)).collect();
-        let function_locations = function_locations.into_iter().map(|(id, location)| (map(id), location)).collect();
-        let check_record_ids = check_record_ids.into_iter().map(|(id, record)| (map(id), record)).collect();
-        for id in constants.values_mut() { *id = map(*id); }
+        let function_imports = function_imports
+            .into_iter()
+            .map(|(id, imports)| (map(id), imports))
+            .collect();
+        let function_locations = function_locations
+            .into_iter()
+            .map(|(id, location)| (map(id), location))
+            .collect();
+        let check_record_ids = check_record_ids
+            .into_iter()
+            .map(|(id, record)| (map(id), record))
+            .collect();
+        for id in constants.values_mut() {
+            *id = map(*id);
+        }
         let identity = NEXT_RUNTIME
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
             .map_err(|_| "Runtime identity exhausted")?;
@@ -512,9 +545,17 @@ impl Runtime {
         let runtime = Self {
             identity,
             image: Arc::new(RuntimeImage {
-                profile, contract, values: fixed::FixedValues::new(values)?,
-                records, table_values, check_record_ids, record_lookup, contract_values,
-                constants, function_imports, function_locations,
+                profile,
+                contract,
+                values: fixed::FixedValues::new(values)?,
+                records,
+                table_values,
+                check_record_ids,
+                record_lookup,
+                contract_values,
+                constants,
+                function_imports,
+                function_locations,
                 programs: std::sync::OnceLock::new(),
             }),
             bindings,
@@ -525,25 +566,47 @@ impl Runtime {
             check_reporter,
         };
         let programs = execution::ImagePrograms::build(&runtime)?;
-        runtime.image.programs.set(programs).map_err(|_| "映像已发布")?;
+        runtime
+            .image
+            .programs
+            .set(programs)
+            .map_err(|_| "映像已发布")?;
         Ok(runtime)
     }
     fn code(&self) -> &execution::ImagePrograms {
-        self.image.programs.get().expect("仅已完成链接的映像可对外发布")
+        self.image
+            .programs
+            .get()
+            .expect("仅已完成链接的映像可对外发布")
     }
-    pub fn image(&self) -> Arc<RuntimeImage> { self.image.clone() }
+    pub fn image(&self) -> Arc<RuntimeImage> {
+        self.image.clone()
+    }
     pub fn from_image(image: Arc<RuntimeImage>, bindings: HostBindings) -> Result<Self, String> {
-        if image.programs.get().is_none() { return Err("映像尚未发布".into()); }
+        if image.programs.get().is_none() {
+            return Err("映像尚未发布".into());
+        }
         let mut checked = RuntimeBuilder::new(image.contract.clone());
-        for (name, service) in bindings { checked.bind(name, service)?; }
+        for (name, service) in bindings {
+            checked.bind(name, service)?;
+        }
         let check_reporter = Arc::new(checking::CheckReporter::default());
-        checked.bindings.entry("Coflow::Check".into()).or_insert_with(|| check_reporter.clone());
-        let identity = NEXT_RUNTIME.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
+        checked
+            .bindings
+            .entry("Coflow::Check".into())
+            .or_insert_with(|| check_reporter.clone());
+        let identity = NEXT_RUNTIME
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
             .map_err(|_| "Runtime identity exhausted")?;
         Ok(Self {
-            identity, vm: execution::VmState::new(image.values.len()), image,
-            bindings: checked.bindings, released: AtomicBool::new(false),
-            creator_thread: std::thread::current().id(), execution: std::cell::Cell::new(0), check_reporter,
+            identity,
+            vm: execution::VmState::new(image.values.len()),
+            image,
+            bindings: checked.bindings,
+            released: AtomicBool::new(false),
+            creator_thread: std::thread::current().id(),
+            execution: std::cell::Cell::new(0),
+            check_reporter,
         })
     }
     pub fn identity(&self) -> u64 {
@@ -555,12 +618,25 @@ impl Runtime {
     pub fn contract(&self) -> &Contract {
         &self.contract
     }
-    pub fn release(&self) {
+    /// 只有没有活动执行边界时才能使实例失效。
+    ///
+    /// Host 同步重入期间外层帧仍持有本实例的寄存器与根，不能在回调中提前释放。
+    pub fn release(&self) -> Result<(), ExecutionError> {
+        self.ensure_alive()?;
+        if self.execution.get() != 0 {
+            return Err(ExecutionError::RuntimeBusy);
+        }
         self.released.store(true, Ordering::Release);
+        Ok(())
+    }
+    pub fn is_executing(&self) -> bool {
+        self.execution.get() != 0
     }
     pub fn ensure_alive(&self) -> Result<(), ExecutionError> {
         if self.creator_thread != std::thread::current().id() {
-            return Err(ExecutionError::InvalidAccess("Runtime 只能在创建线程访问".into()));
+            return Err(ExecutionError::InvalidAccess(
+                "Runtime 只能在创建线程访问".into(),
+            ));
         }
         if self.released.load(Ordering::Acquire) {
             Err(ExecutionError::Released)
@@ -582,23 +658,47 @@ impl Runtime {
         self.execution_equals(left, right)
     }
     /// 投影逐节点访问原始存储，不调用 Host 或模板，也不保留整张通用值副本。
-    pub fn visit_projection(&self, root: Option<ValueId>, mut visit: impl FnMut(ValueId, &Value) -> Result<(), ExecutionError>) -> Result<usize, ExecutionError> {
+    pub fn visit_projection(
+        &self,
+        root: Option<ValueId>,
+        mut visit: impl FnMut(ValueId, &Value) -> Result<(), ExecutionError>,
+    ) -> Result<usize, ExecutionError> {
         let _entry = self.enter()?;
         // 动态根的借用同时保活整张返回图，访问回调同步重入 GC 也不会丢失待访问子节点。
-        let _root = root.filter(|id| *id >= self.values.len()).map(|id| self.vm.value(id)).transpose()?;
+        let _root = root
+            .filter(|id| *id >= self.values.len())
+            .map(|id| self.vm.value(id))
+            .transpose()?;
         let mut pending = root.map_or_else(|| (0..self.values.len()).collect(), |id| vec![id]);
         let mut visited = BTreeSet::new();
         while let Some(id) = pending.pop() {
-            if !visited.insert(id) { continue; }
+            if !visited.insert(id) {
+                continue;
+            }
             self.ensure_alive()?;
-            let value = if let Some(value) = self.values.get(id) { execution::ValueAccess::Fixed { value, _memory: None } }
-                else { execution::ValueAccess::Dynamic(self.vm.value(id)?) };
+            let value = if let Some(value) = self.values.get(id) {
+                execution::ValueAccess::Fixed {
+                    value,
+                    _memory: None,
+                }
+            } else {
+                execution::ValueAccess::Dynamic(self.vm.value(id)?)
+            };
             match value.as_ref() {
-                Value::Object { fields, bases, .. } => pending.extend(fields.iter().chain(bases).map(|(_, id)| *id)),
+                Value::Object { fields, bases, .. } => {
+                    pending.extend(fields.iter().chain(bases).map(|(_, id)| *id))
+                }
                 Value::Array(items) => pending.extend(items),
-                Value::Dict(items) => pending.extend(items.values().flat_map(|(key, value)| [*key, *value])),
-                Value::Dimension { default, variants, .. } => { pending.push(*default); pending.extend(variants.values()); },
-                _ => {},
+                Value::Dict(items) => {
+                    pending.extend(items.values().flat_map(|(key, value)| [*key, *value]))
+                }
+                Value::Dimension {
+                    default, variants, ..
+                } => {
+                    pending.push(*default);
+                    pending.extend(variants.values());
+                }
+                _ => {}
             }
             visit(id, value.as_ref())?;
         }
@@ -624,7 +724,9 @@ impl Runtime {
     }
     pub fn field(&self, id: ValueId, name: &str) -> Result<ValueId, ExecutionError> {
         self.ensure_alive()?;
-        if let Some(value) = self.values.named_field(id, name) { return Ok(value); }
+        if let Some(value) = self.values.named_field(id, name) {
+            return Ok(value);
+        }
         match self.value(id)?.as_ref() {
             Value::Object { fields, .. } => fields
                 .iter()
@@ -732,15 +834,24 @@ impl Runtime {
     /// 一次 Host 读取归一为拥有型具体值；记录保留原身份，标量也不重复触发回调。
     pub fn canonical_value(&self, id: ValueId) -> Result<ValueId, ExecutionError> {
         self.ensure_value(id)?;
-        let Some((service, field, value_type)) = self.values.host(id) else { return Ok(id); };
-        let bound = self.bindings.get(service).ok_or_else(|| ExecutionError::MissingHostBinding(service.into()))?;
+        let Some((service, field, value_type)) = self.values.host(id) else {
+            return Ok(id);
+        };
+        let bound = self
+            .bindings
+            .get(service)
+            .ok_or_else(|| ExecutionError::MissingHostBinding(service.into()))?;
         // 在回调前建立共享预算，直接 Host 读取重入也不能绕过深度限制。
         let host = self.execution_host(crate::vm::executor::ExecutionLimits::default())?;
         let _boundary = host.budget.enter_host()?;
         let returned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bound.read(field)))
             .map_err(|_| ExecutionError::InvalidAccess("Host callback panicked".into()))??;
         let slot = host.import(&returned)?;
-        if !host.matches(slot, value_type)? { return Err(ExecutionError::InvalidAccess("Host data does not match declared type".into())); }
+        if !host.matches(slot, value_type)? {
+            return Err(ExecutionError::InvalidAccess(
+                "Host data does not match declared type".into(),
+            ));
+        }
         let value = host.id(slot)?;
         self.retain_value(value)?;
         Ok(value)
@@ -810,15 +921,21 @@ impl Runtime {
         let returned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bound.read(field)))
             .map_err(|_| ExecutionError::InvalidAccess("Host callback panicked".into()))??;
         if let HostValue::Existing { runtime, value } = &returned {
-            if *runtime != self.identity { return Err(ExecutionError::ForeignRuntime); }
+            if *runtime != self.identity {
+                return Err(ExecutionError::ForeignRuntime);
+            }
             // 原始占位符不能作为 Host 返回值再次触发同一读取。
             if self.values.is_host(*value) {
-                return Err(ExecutionError::InvalidAccess("Host must return a concrete value".into()));
+                return Err(ExecutionError::InvalidAccess(
+                    "Host must return a concrete value".into(),
+                ));
             }
         }
         let slot = host.import(&returned)?;
         if !host.matches(slot, value_type)? {
-            return Err(ExecutionError::InvalidAccess("Host data does not match declared type".into()));
+            return Err(ExecutionError::InvalidAccess(
+                "Host data does not match declared type".into(),
+            ));
         }
         Ok(host.value(slot)?.into_arc())
     }
@@ -952,7 +1069,7 @@ impl Arena<'_> {
                     .collect::<Result<_, _>>()?,
             ),
             C::Dictionary(values) => {
-                let mut entries = indexmap::IndexMap::with_capacity(values.len());
+                let mut entries = DictionaryValue::with_capacity(values.len());
                 for (key, value) in values {
                     let scalar = const_scalar_key(key)?;
                     let key = self.constant(key, owner)?;
@@ -1100,7 +1217,7 @@ impl Arena<'_> {
                 let CftValueType::Dict(_, inner) = ty else {
                     return Err("dictionary type mismatch".into());
                 };
-                let mut entries = indexmap::IndexMap::with_capacity(items.len());
+                let mut entries = DictionaryValue::with_capacity(items.len());
                 for (k, v) in items {
                     let scalar = match k {
                         CfdDictKey::Bool(v) => ScalarKey::Bool(*v),

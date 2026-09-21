@@ -66,38 +66,76 @@ impl Function {
                     match operation {
                         B::Start { source } => {
                             match result()? {
-                                Ty::Array(_) | Ty::Dict(..) => {},
-                                Ty::Object(name) if schema.resolve_type(name).is_some_and(|meta| meta.kind == coflow_language::cft::syntax::ast::TypeKind::Data && !meta.is_abstract) => {},
+                                Ty::Array(_) | Ty::Dict(..) => {}
+                                Ty::Object(name)
+                                    if schema.resolve_type(name).is_some_and(|meta| {
+                                        meta.kind
+                                            == coflow_language::cft::syntax::ast::TypeKind::Data
+                                            && !meta.is_abstract
+                                    }) => {}
                                 _ => return Err("IR 构造目标必须是具体 data 或集合".into()),
                             }
-                            if let Some(source) = source { same(ty(*source)?, result()?)?; }
+                            if let Some(source) = source {
+                                same(ty(*source)?, result()?)?;
+                            }
                         }
                         B::DefaultField { owner, field } => {
                             same(result()?, &field_type(ty(*owner)?, field.0)?)?;
-                            let Ty::Object(name) = ty(*owner)? else { return Err("IR 默认字段需要对象".into()); };
-                            let declaration = schema.resolve_type(name).and_then(|meta| meta.all_fields().nth(field.0 as usize)).ok_or("IR 默认字段不存在")?;
-                            if declaration.default.is_none() && !matches!(declaration.value_type, Ty::Option(_) | Ty::Array(_) | Ty::Dict(..)) {
+                            let Ty::Object(name) = ty(*owner)? else {
+                                return Err("IR 默认字段需要对象".into());
+                            };
+                            let declaration = schema
+                                .resolve_type(name)
+                                .and_then(|meta| meta.all_fields().nth(field.0 as usize))
+                                .ok_or("IR 默认字段不存在")?;
+                            if declaration.default.is_none()
+                                && !matches!(
+                                    declaration.value_type,
+                                    Ty::Option(_) | Ty::Array(_) | Ty::Dict(..)
+                                )
+                            {
                                 return Err("IR 必填字段不能读取默认值".into());
                             }
-                        },
-                        B::Set { builder, key, value } => {
+                        }
+                        B::Set {
+                            builder,
+                            key,
+                            value,
+                        } => {
                             match ty(*builder)? {
-                                Ty::Array(inner) => { same(ty(*key)?, &Ty::Int)?; assign(ty(*value)?, inner)?; }
-                                Ty::Dict(k, v) => { assign(ty(*key)?, k)?; assign(ty(*value)?, v)?; }
+                                Ty::Array(inner) => {
+                                    same(ty(*key)?, &Ty::Int)?;
+                                    assign(ty(*value)?, inner)?;
+                                }
+                                Ty::Dict(k, v) => {
+                                    assign(ty(*key)?, k)?;
+                                    assign(ty(*value)?, v)?;
+                                }
                                 _ => return Err("IR 构造索引写入需要集合".into()),
                             }
                             same(result()?, &Ty::Unit)?;
                         }
                         B::Append { builder, value } => {
-                            let Ty::Array(inner) = ty(*builder)? else { return Err("IR append 需要数组构造能力".into()); };
-                            assign(ty(*value)?, inner)?; same(result()?, &Ty::Unit)?;
+                            let Ty::Array(inner) = ty(*builder)? else {
+                                return Err("IR append 需要数组构造能力".into());
+                            };
+                            assign(ty(*value)?, inner)?;
+                            same(result()?, &Ty::Unit)?;
                         }
                         B::Remove { builder, key } => {
-                            let key_type = match ty(*builder)? { Ty::Array(_) => &Ty::Int, Ty::Dict(key, _) => key.as_ref(), _ => return Err("IR remove 需要集合构造能力".into()) };
-                            assign(ty(*key)?, key_type)?; same(result()?, &Ty::Unit)?;
+                            let key_type = match ty(*builder)? {
+                                Ty::Array(_) => &Ty::Int,
+                                Ty::Dict(key, _) => key.as_ref(),
+                                _ => return Err("IR remove 需要集合构造能力".into()),
+                            };
+                            assign(ty(*key)?, key_type)?;
+                            same(result()?, &Ty::Unit)?;
                         }
                         B::Freeze { builder } => same(result()?, ty(*builder)?)?,
-                        B::Drop { builder } => { ty(*builder)?; same(result()?, &Ty::Unit)?; }
+                        B::Drop { builder } => {
+                            ty(*builder)?;
+                            same(result()?, &Ty::Unit)?;
+                        }
                     }
                 }
                 O::Constant(constant) => match constant {
@@ -258,7 +296,14 @@ impl Function {
                 }
                 O::Concat(values) => {
                     same(result()?, &Ty::String)?;
-                    for value in values { same(ty(*value)?, &Ty::String)?; }
+                    for value in values {
+                        same(ty(*value)?, &Ty::String)?;
+                    }
+                }
+                O::AccumulateText { left, right } => {
+                    same(result()?, &Ty::String)?;
+                    same(ty(*left)?, &Ty::String)?;
+                    same(ty(*right)?, &Ty::String)?;
                 }
                 O::Format(values) => {
                     same(result()?, &Ty::String)?;
@@ -459,7 +504,12 @@ impl Function {
 
     /// 直接验证 IR 的定义/使用关系；契约读取不生成字节码或分配物理寄存器。
     fn validate_flow(&self, schema: &CftSchema, reachable: &BTreeSet<usize>) -> Result<(), String> {
-        let super::ir_flow::Flow { reads, writes, successors, .. } = self.flow()?;
+        let super::ir_flow::Flow {
+            reads,
+            writes,
+            successors,
+            ..
+        } = self.flow()?;
         self.validate_construction(&reads, &writes, &successors)?;
         self.validate_narrowing(schema, &reads, &writes, &successors)?;
         let mut live = vec![BTreeSet::<u32>::new(); self.body.len()];

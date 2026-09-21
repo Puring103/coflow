@@ -4,18 +4,36 @@ use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 #[derive(Debug)]
 struct ThreadProbe(Arc<Mutex<Vec<std::thread::ThreadId>>>);
 impl Drop for ThreadProbe {
-    fn drop(&mut self) { self.0.lock().unwrap().push(std::thread::current().id()); }
+    fn drop(&mut self) {
+        self.0.lock().unwrap().push(std::thread::current().id());
+    }
 }
 impl coflow_core::runtime::HostService for ThreadProbe {
-    fn read(&self, _: &str) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> {
+    fn read(
+        &self,
+        _: &str,
+    ) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> {
         Ok(coflow_core::runtime::HostValue::Int(1))
     }
-    fn has_member(&self, _: &str, _: &coflow_core::schema::CftValueType, _: &coflow_core::schema::CftSchema) -> bool { true }
+    fn has_member(
+        &self,
+        _: &str,
+        _: &coflow_core::schema::CftValueType,
+        _: &coflow_core::schema::CftSchema,
+    ) -> bool {
+        true
+    }
 }
 fn thread_runtime(drops: Arc<Mutex<Vec<std::thread::ThreadId>>>) -> u64 {
-    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("thread"), "@Host singleton Service { value: int; }")])).unwrap();
+    let schema = build_schema(&parse_modules([CftFile::from_source(
+        ModuleId::from("thread"),
+        "@Host singleton Service { value: int; }",
+    )]))
+    .unwrap();
     let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
-    builder.bind("Service".into(), Arc::new(ThreadProbe(drops))).unwrap();
+    builder
+        .bind("Service".into(), Arc::new(ThreadProbe(drops)))
+        .unwrap();
     let runtime = Arc::try_unwrap(builder.build().runtime.unwrap()).unwrap();
     insert(Entry::Runtime(ThreadBound::new(runtime))).unwrap()
 }
@@ -46,15 +64,126 @@ fn foreign_access_is_rejected_and_finalizer_release_runs_on_creator() {
 fn creator_thread_exit_releases_unclaimed_runtime_without_leaking_registry_entry() {
     let drops = Arc::new(Mutex::new(Vec::new()));
     let observed = drops.clone();
-    let (id, creator) = std::thread::spawn(move || (thread_runtime(observed), std::thread::current().id())).join().unwrap();
+    let (id, creator) =
+        std::thread::spawn(move || (thread_runtime(observed), std::thread::current().id()))
+            .join()
+            .unwrap();
     assert_eq!(*drops.lock().unwrap(), [creator]);
     assert!(!registry().lock().unwrap().entries.contains_key(&id));
 }
 
 #[test]
+fn explicit_drain_releases_finalized_runtime_without_another_vm_request() {
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let observed = drops.clone();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let id = thread_runtime(observed);
+        ready_tx.send(id).unwrap();
+        resume_rx.recv().unwrap();
+        assert_eq!(coflow_thread_drain(), 1);
+        assert!(!registry().lock().unwrap().entries.contains_key(&id));
+    });
+    let id = ready_rx.recv().unwrap();
+    coflow_release(id);
+    assert!(drops.lock().unwrap().is_empty());
+    resume_tx.send(()).unwrap();
+    thread.join().unwrap();
+    assert_eq!(drops.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn thread_shutdown_releases_all_local_resources_and_is_idempotent() {
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let first = thread_runtime(drops.clone());
+    let second = thread_runtime(drops.clone());
+    assert_eq!(coflow_thread_shutdown(), 0);
+    assert_eq!(drops.lock().unwrap().len(), 2);
+    let shared = registry().lock().unwrap();
+    assert!(!shared.entries.contains_key(&first));
+    assert!(!shared.entries.contains_key(&second));
+    drop(shared);
+    assert_eq!(coflow_thread_shutdown(), 0);
+}
+
+static ACTIVE_RUNTIME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static ACTIVE_DISPOSE_STATUS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static ACTIVE_SHUTDOWN_STATUS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+unsafe extern "C" fn disposing_host(
+    _context: u64,
+    op: u32,
+    data: *const u8,
+    length: usize,
+    out: *mut Response,
+) {
+    if op == 0 {
+        unsafe {
+            out.write(buffer(b"fn() -> int".to_vec()).unwrap());
+        }
+        return;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(data, length) };
+    let name_len = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+    assert_eq!(&bytes[4..4 + name_len], b"dispose");
+    let runtime = ACTIVE_RUNTIME.load(std::sync::atomic::Ordering::SeqCst);
+    ACTIVE_DISPOSE_STATUS.store(coflow_dispose(runtime), std::sync::atomic::Ordering::SeqCst);
+    ACTIVE_SHUTDOWN_STATUS.store(
+        coflow_thread_shutdown(),
+        std::sync::atomic::Ordering::SeqCst,
+    );
+    unsafe {
+        out.write(Response {
+            tag: 2,
+            integer: 7,
+            ..Response::default()
+        });
+    }
+}
+
+#[test]
+fn active_host_callback_cannot_dispose_or_shutdown_runtime() {
+    let contract = contract("@Host singleton Service { dispose: fn() -> int; } table Rule { run: fn() -> int => { Service.dispose() }; }");
+    let builder = Handle(request(10, contract.0, &[], &[], 0).handle);
+    assert_eq!(
+        unsafe {
+            coflow_bind_host(
+                builder.0,
+                b"Service".as_ptr(),
+                7,
+                0,
+                Some(disposing_host),
+                Some(release_function_host),
+            )
+        },
+        0
+    );
+    request(11, builder.0, b"data.cfd", b"r: Rule {}", 0);
+    let built = request(12, builder.0, &[], &[], 0);
+    assert_eq!(built.error, 0);
+    let runtime_id = built.handle;
+    ACTIVE_RUNTIME.store(runtime_id, std::sync::atomic::Ordering::SeqCst);
+    let record = request(20, runtime_id, b"Rule", b"r", 0).handle;
+    let function = value_request(23, runtime_id, record, b"run", &[], 0).handle;
+    let result = value_request(29, runtime_id, function, &[], &[], 0);
+    assert_eq!((result.error, result.tag, result.integer), (0, 2, 7));
+    assert_eq!(
+        ACTIVE_DISPOSE_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    assert_eq!(
+        ACTIVE_SHUTDOWN_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    assert_eq!(coflow_dispose(runtime_id), 0);
+    assert!(!registry().lock().unwrap().entries.contains_key(&runtime_id));
+}
+
+#[test]
 fn operation_codes_match_the_public_header_and_csharp_runtime() {
     let header = include_str!("../include/coflow.h");
-    let csharp = include_str!("../../../runtimes/csharp/Coflow.Runtime/src/Native.cs");
+    let csharp = include_str!("../../../runtimes/csharp/src/Coflow.Runtime/src/Native.cs");
     let operations = [
         (
             "COFLOW_LOAD_CONTRACT",
@@ -77,8 +206,16 @@ fn operation_codes_match_the_public_header_and_csharp_runtime() {
             "BuildRuntime",
             Operation::BuildRuntime,
         ),
-        ("COFLOW_PROJECT_SNAPSHOT", "ProjectSnapshot", Operation::ProjectSnapshot),
-        ("COFLOW_CREATE_VALUE_LEASE", "CreateValueLease", Operation::CreateValueLease),
+        (
+            "COFLOW_PROJECT_SNAPSHOT",
+            "ProjectSnapshot",
+            Operation::ProjectSnapshot,
+        ),
+        (
+            "COFLOW_CREATE_VALUE_LEASE",
+            "CreateValueLease",
+            Operation::CreateValueLease,
+        ),
         ("COFLOW_RECORD_COUNT", "TableLength", Operation::TableLength),
         ("COFLOW_RECORD_AT", "TableValue", Operation::TableValue),
         ("COFLOW_FIELD", "ReadField", Operation::ReadField),
@@ -340,9 +477,14 @@ fn abi_host_function_uses_synchronous_typed_callback() {
 
 #[test]
 fn projection_and_creator_thread_lease_release_preserve_dynamic_graphs() {
-    let contract = contract("table Rule { run: fn() -> fn() -> int => { var n: int = 42; fn() -> int { n } }; }");
+    let contract = contract(
+        "table Rule { run: fn() -> fn() -> int => { var n: int = 42; fn() -> int { n } }; }",
+    );
     let builder = Handle(request(10, contract.0, &[], &[], 0).handle);
-    assert_eq!(request(11, builder.0, b"data.cfd", b"r: Rule {}", 0).error, 0);
+    assert_eq!(
+        request(11, builder.0, b"data.cfd", b"r: Rule {}", 0).error,
+        0
+    );
     let runtime = Handle(request(12, builder.0, &[], &[], 0).handle);
     let projected = request(47, runtime.0, &[], &[], 0);
     assert_eq!(projected.error, 0);
@@ -354,9 +496,15 @@ fn projection_and_creator_thread_lease_release_preserve_dynamic_graphs() {
     let lease = value_request(48, runtime.0, closure.length, &[], &[], 1);
     assert_eq!(lease.error, 0);
     assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);
-    assert_eq!(value_request(29, runtime.0, closure.length, &[], &[], 0).integer, 42);
-    std::thread::spawn(move || coflow_release(lease.handle)).join().unwrap();
+    assert_eq!(
+        value_request(29, runtime.0, closure.length, &[], &[], 0).integer,
+        42
+    );
+    std::thread::spawn(move || coflow_release(lease.handle))
+        .join()
+        .unwrap();
     assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);
     let stale = value_request(29, runtime.0, closure.length, &[], &[], 0);
-    assert_ne!(stale.error, 0); take_buffer(stale.handle).unwrap();
+    assert_ne!(stale.error, 0);
+    take_buffer(stale.handle).unwrap();
 }

@@ -30,6 +30,9 @@ impl ExecutionHost for NullHost {
     fn index(&self, _: Slot, _: Slot) -> VmResult<Slot> {
         Err(err())
     }
+    fn index_array(&self, _: Slot, _: Slot) -> VmResult<Slot> { Err(err()) }
+    fn index_dict(&self, _: Slot, _: Slot) -> VmResult<Slot> { Err(err()) }
+    fn index_string(&self, _: Slot, _: Slot) -> VmResult<Slot> { Err(err()) }
     fn reference(&self, _: &str) -> VmResult<Slot> {
         Err(err())
     }
@@ -42,6 +45,9 @@ impl ExecutionHost for NullHost {
     fn concatenate(&self, _: Slot, _: Slot) -> VmResult<Slot> {
         Err(err())
     }
+    fn accumulate_text(&self, _: Slot, _: Slot) -> VmResult<Slot> {
+        Err(err())
+    }
     fn enum_unary(&self, _: Slot) -> VmResult<Slot> {
         Err(err())
     }
@@ -51,7 +57,7 @@ impl ExecutionHost for NullHost {
     fn is_type(&self, _: Slot, _: &str) -> VmResult<bool> {
         Ok(false)
     }
-    fn callable(&self, _: Slot) -> VmResult<crate::vm::executor::Callable> {
+    fn callable(&self, _: Slot) -> VmResult<crate::vm::executor::Callable<'_>> {
         Err(err())
     }
     fn call_host(&self, _: Slot, _: &[Slot]) -> VmResult<Slot> {
@@ -75,7 +81,7 @@ impl ExecutionHost for NullHost {
     fn object(&self, _: &str, _: Vec<(&str, Slot)>) -> VmResult<Slot> {
         Err(err())
     }
-    fn template(&self, _: Slot) -> VmResult<Option<Binding>> {
+    fn template(&self, _: Slot) -> VmResult<Option<crate::vm::executor::CallBinding<'_>>> {
         Ok(None)
     }
     fn format(&self, _: &[crate::vm::bytecode::FormatPart], _: &[Slot]) -> VmResult<Slot> {
@@ -133,12 +139,12 @@ fn dispatch_micro() {
     let binding = Binding {
         program: loop_program(1_000_000),
         owner: Slot::None,
-        captures: Arc::from([]),
+        captures: Box::default(),
     };
     // 预热
     let result = execute(
         &host,
-        binding.clone(),
+        &binding,
         &[],
         crate::vm::executor::Budget::new(Default::default()),
     )
@@ -147,7 +153,7 @@ fn dispatch_micro() {
     let start = Instant::now();
     let _ = execute(
         &host,
-        binding,
+        &binding,
         &[],
         crate::vm::executor::Budget::new(Default::default()),
     );
@@ -155,4 +161,28 @@ fn dispatch_micro() {
         "dispatch micro (1M iterations, ~7 instr each): {:?}",
         start.elapsed()
     );
+}
+
+/// 连续标量执行没有安全点，溢出出口仍必须报告实际指令的源码位置。
+#[test]
+fn local_pc_reports_scalar_fault_after_unsynchronized_instructions() {
+    let mut program = Program::new("fault".into(), String::new(), vec![CftValueType::Int], CftValueType::Int);
+    program.registers.push(CftValueType::Int);
+    program.instructions = vec![
+        Instruction::indexed(Opcode::Constant, 1, 1).with_flags(1),
+        Instruction::indexed(Opcode::Jump, 0, 2),
+        Instruction::new(Opcode::IntBinary, 0, 0, 1, 0),
+        Instruction::new(Opcode::Return, 0, 0, 0, 0),
+    ];
+    program.spans = vec![Default::default(); 4];
+    program.spans[2] = crate::source::Span { start: 42, end: 47 };
+    let binding = Binding {
+        program: Arc::new(crate::vm::image::ValidatedProgram::new(program).unwrap()),
+        owner: Slot::None,
+        captures: Box::default(),
+    };
+    let fault = execute(&NullHost, &binding, &[Slot::Int(i32::MAX)],
+        crate::vm::executor::Budget::new(Default::default())).unwrap_err();
+    let ExecutionError::Fault { span, .. } = fault else { panic!("expected fault"); };
+    assert_eq!(span, crate::source::Span { start: 42, end: 47 });
 }

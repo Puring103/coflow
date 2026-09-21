@@ -41,12 +41,12 @@ npm --prefix editors/cfd-editor/frontend ci
 npm --prefix editors/cfd-editor/frontend test
 npm --prefix editors/cfd-editor/frontend run build
 node editors/vscode-coflow/test/extension-unit.test.js
-dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
-dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
-dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
-cargo run -- codegen tests/csharp-runtime-integration
-dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
-dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
+dotnet build runtimes/csharp/src/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+dotnet run --project runtimes/csharp/smoke/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
+dotnet test runtimes/csharp/tests/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
+cargo run -- codegen runtimes/csharp/tests/integration
+dotnet run --project runtimes/csharp/tests/integration/app/Coflow.Runtime.Example.csproj --configuration Release
+dotnet build runtimes/csharp/benchmarks/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
 ```
 
 Major and minor releases must not be packaged or released while any full-gate command fails.

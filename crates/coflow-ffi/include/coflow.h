@@ -68,6 +68,12 @@ uint32_t coflow_request(uint32_t operation, uint64_t handle, uint64_t value,
     size_t data_length, uint64_t index, CoflowResponse *out);
 uint32_t coflow_buffer_copy(uint64_t handle, uint8_t *destination, size_t capacity);
 void coflow_release(uint64_t handle);
+/* 显式释放只允许创建线程在 Runtime 空闲时执行；返回 1 表示线程或 busy 错误且句柄保持有效。 */
+uint32_t coflow_dispose(uint64_t handle);
+/* 回收当前线程调用开始时已排队的终结请求，返回实际处理数量。 */
+uint64_t coflow_thread_drain(void);
+/* 当前线程存在活动 Runtime 时返回 1；成功时释放该线程回收域的全部本地资源。 */
+uint32_t coflow_thread_shutdown(void);
 
 /* 回调同步执行，异常须在宿主内捕获并转换为 error 和消息缓冲区。
  * operation=0 查询成员类型文本，operation=1 读取成员数据。
