@@ -1,8 +1,10 @@
 # Unity 原生集成
 
+> 新 VM 的设计与验收以 [新 VM 实施计划](../plans/new-vm-and-csharp-snapshot.zh-CN.md) 及其配套规格为准；本文冲突内容在同一次交付中同步。
+
 ## 包与 ABI
 
-Unity 包目录为 `runtimes/csharp/Coflow.Runtime`，最低 Unity 版本为 2022.1，
+Unity 包目录为 `runtimes/csharp/src/Coflow.Runtime`，最低 Unity 版本为 2022.1，
 API 级别为 .NET Standard 2.1。包装使用固定签名的 C ABI、SafeHandle、静态回调和
 `AOT.MonoPInvokeCallback`；生成类型直接调用静态工厂，不使用 Reflection.Emit 或运行时泛型代码生成。
 

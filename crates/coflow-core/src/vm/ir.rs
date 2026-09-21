@@ -15,7 +15,11 @@ pub struct LocationId(pub u32);
 /// 声明类型字段域中的语义编号，包含继承字段和记录虚拟 id；不是字节偏移或寄存器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldId(pub u16);
-impl From<u16> for FieldId { fn from(value: u16) -> Self { Self(value) } }
+impl From<u16> for FieldId {
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operation {
@@ -81,6 +85,11 @@ pub enum Operation {
     ReadTemplate(ValueId),
     Format(Vec<ValueId>),
     Concat(Vec<ValueId>),
+    /// Release 优化专用：SSA 已证明 left 是未被观察的循环携带前缀。
+    AccumulateText {
+        left: ValueId,
+        right: ValueId,
+    },
     Length(ValueId),
     IteratorValue {
         collection: ValueId,
@@ -156,7 +165,9 @@ impl Function {
 
     /// 每次降低均创建独立程序；链接、寄存器分配和后续优化不修改共享 Contract。
     pub(crate) fn lower_optimized(&self, optimize: bool) -> Result<Program, String> {
-        if !optimize { return self.lower(); }
+        if !optimize {
+            return self.lower();
+        }
         let mut function = self.clone();
         function.fuse_total_collection_stages()?;
         function.eliminate_identity_maps()?;
@@ -248,14 +259,27 @@ impl Function {
                 }
                 O::OwnerField(field) => Instruction::new(Opcode::SelfField, a, 0, field.0, 0),
                 O::Index { receiver, key } => {
-                    Instruction::new(Opcode::Index, a, register(*receiver)?, register(*key)?, 0)
+                    let receiver_register = register(*receiver)?;
+                    let opcode = match &self.values[receiver_register as usize] {
+                        CftValueType::Array(_) => Opcode::IndexArray,
+                        CftValueType::Dict(..) => Opcode::IndexDict,
+                        CftValueType::String => Opcode::IndexString,
+                        _ => Opcode::Index,
+                    };
+                    Instruction::new(opcode, a, receiver_register, register(*key)?, 0)
                 }
                 O::IndexConstant { receiver, key } => {
                     p.index_consts.push(bytecode::IndexSite {
                         receiver: register(*receiver)?,
                         key: key.clone(),
                     });
-                    indexed(Opcode::Index, p.index_consts.len() - 1)?.with_flags(1)
+                    let opcode = match &self.values[register(*receiver)? as usize] {
+                        CftValueType::Array(_) => Opcode::IndexArray,
+                        CftValueType::Dict(..) => Opcode::IndexDict,
+                        CftValueType::String => Opcode::IndexString,
+                        _ => Opcode::Index,
+                    };
+                    indexed(opcode, p.index_consts.len() - 1)?.with_flags(1)
                 }
                 O::Reference(name) => {
                     p.names.push(name.clone());
@@ -278,6 +302,9 @@ impl Function {
                         _ => Opcode::Binary,
                     };
                     Instruction::new(opcode, a, b, c, *operator)
+                }
+                O::AccumulateText { left, right } => {
+                    Instruction::new(Opcode::Binary, a, register(*left)?, register(*right)?, 0x80)
                 }
                 O::ConvertFloat(v) => {
                     Instruction::new(Opcode::ConvertFloat, a, register(*v)?, 0, 0)
@@ -318,7 +345,12 @@ impl Function {
                     indexed(Opcode::Closure, p.closures.len() - 1)?
                 }
                 O::Format(values) | O::Concat(values) => {
-                    p.formats.push(registers(values)?.into_iter().map(bytecode::FormatPart::Value).collect());
+                    p.formats.push(
+                        registers(values)?
+                            .into_iter()
+                            .map(bytecode::FormatPart::Value)
+                            .collect(),
+                    );
                     indexed(Opcode::Format, p.formats.len() - 1)?
                 }
                 O::Array(v) | O::Dictionary(v) => {

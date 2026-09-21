@@ -1,11 +1,11 @@
 //! Runtime 的执行值适配与动态区。固定配置身份和动态返回值共用 Runtime 归属。
-use super::*;
 use super::fixed::View as Stored;
+use super::*;
 use crate::vm::{
     bytecode::{Constant, FormatPart, FunctionId, Program},
     compiler::{self, CompileContext},
+    executor::{self, Binding, Budget, CallBinding, Callable, ExecutionHost, ExecutionLimits, Slot},
     image::ValidatedProgram,
-    executor::{self, Binding, Budget, Callable, ExecutionHost, ExecutionLimits, Slot},
 };
 use std::{
     cell::RefCell,
@@ -26,17 +26,17 @@ fn float_pattern() -> &'static regex::Regex {
 struct DynamicValue {
     identity: ValueId,
     value: Arc<Value>,
-    callable: Option<Binding>,
+    callable: Option<Arc<Binding>>,
 }
 #[derive(Debug, Default)]
 struct Heap {
     #[cfg(test)]
     metrics: HeapMetrics,
-    next: ValueId,
     bytes: usize,
     /// 语言身份不复用，存储槽独立回收；早期长寿命值不会阻止临时槽复用。
     values: Vec<Option<DynamicValue>>,
-    locations: HashMap<ValueId, usize>,
+    /// 代数跨回收保留；达到上限的槽永久退役，旧身份永不复用。
+    generations: Vec<u32>,
     free: Vec<usize>,
     live_values: usize,
     pinned: HashMap<ValueId, usize>,
@@ -47,38 +47,100 @@ struct Heap {
 }
 #[cfg(test)]
 #[derive(Debug, Default)]
-struct HeapMetrics { dispatches: u64, calls: u64, closures: u64, allocations: u64, allocated_payload_bytes: u64, peak_heap_bytes: usize, collections: u64, marked_values: u64, visited_edges: u64, gc_nanoseconds: u128, max_gc_nanoseconds: u128 }
+struct HeapMetrics {
+    dispatches: u64,
+    calls: u64,
+    closures: u64,
+    allocations: u64,
+    allocated_payload_bytes: u64,
+    peak_heap_bytes: usize,
+    collections: u64,
+    marked_values: u64,
+    visited_edges: u64,
+    gc_nanoseconds: u128,
+    max_gc_nanoseconds: u128,
+}
 impl Heap {
+    const DYNAMIC_TAG: u64 = 1 << 43;
+    const INDEX_BITS: u32 = 20;
+    const INDEX_MASK: u64 = (1 << Self::INDEX_BITS) - 1;
+    const MAX_GENERATION: u32 = (1 << (43 - Self::INDEX_BITS)) - 1;
     fn table_bytes<T>(capacity: usize) -> usize {
-        if capacity == 0 { 0 } else { capacity.saturating_mul(2 * (size_of::<T>() + 1)).saturating_add(16) }
+        if capacity == 0 {
+            0
+        } else {
+            capacity
+                .saturating_mul(2 * (size_of::<T>() + 1))
+                .saturating_add(16)
+        }
     }
     /// 空闲槽、索引及根缓冲仍由实例持有，不能在回收值载荷后从预算中消失。
     fn total_bytes(&self) -> usize {
         self.bytes
-            .saturating_add(self.values.capacity().saturating_mul(size_of::<Option<DynamicValue>>()))
-            .saturating_add(Self::table_bytes::<(ValueId, usize)>(self.locations.capacity()))
+            .saturating_add(
+                self.values
+                    .capacity()
+                    .saturating_mul(size_of::<Option<DynamicValue>>()),
+            )
+            .saturating_add(self.generations.capacity().saturating_mul(size_of::<u32>()))
             .saturating_add(Self::table_bytes::<ValueId>(self.builders.capacity()))
             .saturating_add(self.free.capacity().saturating_mul(size_of::<usize>()))
-            .saturating_add(Self::table_bytes::<(ValueId, usize)>(self.pinned.capacity()))
+            .saturating_add(Self::table_bytes::<(ValueId, usize)>(
+                self.pinned.capacity(),
+            ))
             .saturating_add(Self::table_bytes::<(u64, Vec<Slot>)>(self.roots.capacity()))
-            .saturating_add(self.roots.values().map(|roots| roots.capacity().saturating_mul(size_of::<Slot>())).sum::<usize>())
+            .saturating_add(
+                self.roots
+                    .values()
+                    .map(|roots| roots.capacity().saturating_mul(size_of::<Slot>()))
+                    .sum::<usize>(),
+            )
     }
     fn table_growth<T>(len: usize, capacity: usize) -> usize {
-        if len < capacity { 0 } else {
-            Self::table_bytes::<T>(len.saturating_add(1).saturating_mul(2).max(4)).saturating_sub(Self::table_bytes::<T>(capacity))
+        if len < capacity {
+            0
+        } else {
+            Self::table_bytes::<T>(len.saturating_add(1).saturating_mul(2).max(4))
+                .saturating_sub(Self::table_bytes::<T>(capacity))
         }
     }
-    fn reserve_roots(&mut self, id: u64, required: usize, limit: usize) -> Result<(), ExecutionError> {
-        let roots = self.roots.get(&id).ok_or_else(|| invalid("执行根集合不存在"))?;
-        if required <= roots.capacity() { return Ok(()); }
+    fn reserve_roots(
+        &mut self,
+        id: u64,
+        required: usize,
+        limit: usize,
+    ) -> Result<(), ExecutionError> {
+        let roots = self
+            .roots
+            .get(&id)
+            .ok_or_else(|| invalid("执行根集合不存在"))?;
+        if required <= roots.capacity() {
+            return Ok(());
+        }
         let capacity = required.max(roots.capacity().saturating_mul(2)).max(4);
-        let bytes = capacity.checked_sub(roots.capacity()).and_then(|n| n.checked_mul(size_of::<Slot>())).ok_or_else(|| invalid("执行根容量溢出"))?;
-        if bytes > limit.saturating_sub(self.total_bytes()) { return Err(invalid("动态内存预算耗尽")); }
+        let bytes = capacity
+            .checked_sub(roots.capacity())
+            .and_then(|n| n.checked_mul(size_of::<Slot>()))
+            .ok_or_else(|| invalid("执行根容量溢出"))?;
+        if bytes > limit.saturating_sub(self.total_bytes()) {
+            return Err(invalid("动态内存预算耗尽"));
+        }
         let roots = self.roots.get_mut(&id).expect("根集合已验证");
-        roots.try_reserve_exact(capacity - roots.len()).map_err(|_| invalid("执行根分配失败"))
+        roots
+            .try_reserve_exact(capacity - roots.len())
+            .map_err(|_| invalid("执行根分配失败"))
     }
     fn index(&self, id: ValueId) -> Option<usize> {
-        self.locations.get(&id).copied()
+        if id & !Slot::MAX_HEAP_HANDLE != 0 || id & Self::DYNAMIC_TAG == 0 { return None; }
+        let index = (id & Self::INDEX_MASK) as usize;
+        self.values.get(index)?.as_ref().filter(|entry| entry.identity == id).map(|_| index)
+    }
+
+    /// 身份校验由调用方完成；回收和构造器清理共用代数退休规则。
+    fn remove_slot(&mut self, index: usize) -> Option<DynamicValue> {
+        let entry = self.values[index].take()?;
+        if self.generations[index] < Self::MAX_GENERATION { self.free.push(index); }
+        Some(entry)
     }
 
     fn get(&self, id: ValueId) -> Option<&DynamicValue> {
@@ -149,8 +211,9 @@ impl ImagePrograms {
                 Value::Template { source, owner } => (source, owner, true),
                 _ => continue,
             };
-            let type_name =
-                owner.and_then(|id| runtime.values.object_type(id)).map(str::to_owned);
+            let type_name = owner
+                .and_then(|id| runtime.values.object_type(id))
+                .map(str::to_owned);
             if runtime.contract_values.contains(&id) {
                 let location = runtime
                     .function_locations
@@ -194,7 +257,7 @@ impl ImagePrograms {
                     Binding {
                         program,
                         owner: owner.map_or(Slot::None, Slot::handle),
-                        captures: Arc::from([]),
+                        captures: Box::default(),
                     },
                 );
                 continue;
@@ -245,9 +308,17 @@ impl ImagePrograms {
                         context,
                     )
                 }
-                .and_then(|function| function.lower_optimized(runtime.profile == OptimizationProfile::Release).map_err(|message| compiler::CompileError {
-                    span: function.body.first().map_or(crate::source::Span::default(), |node| node.span), message,
-                }))
+                .and_then(|function| {
+                    function
+                        .lower_optimized(runtime.profile == OptimizationProfile::Release)
+                        .map_err(|message| compiler::CompileError {
+                            span: function
+                                .body
+                                .first()
+                                .map_or(crate::source::Span::default(), |node| node.span),
+                            message,
+                        })
+                })
                 .map_err(|error| BuildDiagnostic {
                     code: "FUNCTION".into(),
                     source: location
@@ -263,7 +334,8 @@ impl ImagePrograms {
                     program.locate(None, location.path.clone(), location.span.start);
                 }
                 link_program(runtime, &mut program, &function_ids)?;
-                let program = Arc::new(ValidatedProgram::new(program).map_err(BuildDiagnostic::from)?);
+                let program =
+                    Arc::new(ValidatedProgram::new(program).map_err(BuildDiagnostic::from)?);
                 programs.insert(key, program.clone());
                 program
             };
@@ -272,7 +344,7 @@ impl ImagePrograms {
                 Binding {
                     program,
                     owner: owner.map_or(Slot::None, Slot::handle),
-                    captures: Arc::from([]),
+                    captures: Box::default(),
                 },
             );
         }
@@ -346,14 +418,31 @@ impl ImagePrograms {
         Ok(state)
     }
 
-    fn validate_direct_calls(&self, schema: &crate::schema::CftSchema, program: &Program) -> Result<(), String> {
+    fn validate_direct_calls(
+        &self,
+        schema: &crate::schema::CftSchema,
+        program: &Program,
+    ) -> Result<(), String> {
         use crate::vm::bytecode::Opcode;
         for instruction in &program.instructions {
-            if instruction.opcode() != Some(Opcode::CallDirect) { continue; }
-            let site = program.direct_calls.get(instruction.index() as usize).ok_or("直接调用附表越界")?;
-            let target = &self.direct.get(site.function.0 as usize).ok_or("直接调用程序编号越界")?.program;
-            let arguments = program.operands(site.arguments_start, site.arguments_len).ok_or("直接调用参数越界")?;
-            if arguments.len() != target.parameters.len() || program.registers[instruction.a() as usize] != target.result {
+            if instruction.opcode() != Some(Opcode::CallDirect) {
+                continue;
+            }
+            let site = program
+                .direct_calls
+                .get(instruction.index() as usize)
+                .ok_or("直接调用附表越界")?;
+            let target = &self
+                .direct
+                .get(site.function.0 as usize)
+                .ok_or("直接调用程序编号越界")?
+                .program;
+            let arguments = program
+                .operands(site.arguments_start, site.arguments_len)
+                .ok_or("直接调用参数越界")?;
+            if arguments.len() != target.parameters.len()
+                || program.registers[instruction.a() as usize] != target.result
+            {
                 return Err("直接调用签名不匹配".into());
             }
             for (argument, expected) in arguments.iter().zip(&target.parameters) {
@@ -362,7 +451,9 @@ impl ImagePrograms {
                 }
             }
         }
-        for closure in &program.closures { self.validate_direct_calls(schema, &closure.program)?; }
+        for closure in &program.closures {
+            self.validate_direct_calls(schema, &closure.program)?;
+        }
         Ok(())
     }
 
@@ -375,13 +466,15 @@ impl VmState {
         let state = Self::default();
         {
             let mut heap = state.heap.borrow_mut();
-            heap.next = fixed_count;
+            assert!(fixed_count < Heap::DYNAMIC_TAG, "固定身份不能进入动态句柄空间");
             heap.next_collection = 1024;
         }
         state
     }
     pub(super) fn value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
-        if let Some(value) = inline_value(id) { return Ok(Arc::new(value)); }
+        if let Some(value) = inline_value(id) {
+            return Ok(Arc::new(value));
+        }
         self.heap
             .borrow()
             .get(id)
@@ -400,42 +493,65 @@ impl VmState {
         }
         let bytes = dynamic_bytes(&value, callable.as_ref());
         let mut metadata = 0usize;
-        if heap.locations.len() == heap.locations.capacity() {
-            let capacity = heap.locations.len().saturating_add(1).saturating_mul(2).max(4);
-            metadata = metadata.saturating_add(Heap::table_bytes::<(ValueId, usize)>(capacity).saturating_sub(Heap::table_bytes::<(ValueId, usize)>(heap.locations.capacity())));
-        }
-        let slot_capacity = heap.values.len().saturating_add(1).max(heap.values.capacity().saturating_mul(2)).max(4);
+        let slot_capacity = heap
+            .values
+            .len()
+            .saturating_add(1)
+            .max(heap.values.capacity().saturating_mul(2))
+            .max(4);
         if heap.free.is_empty() && heap.values.len() == heap.values.capacity() {
-            metadata = metadata.saturating_add(slot_capacity.saturating_sub(heap.values.capacity()).saturating_mul(size_of::<Option<DynamicValue>>()));
-            metadata = metadata.saturating_add(slot_capacity.saturating_sub(heap.free.capacity()).saturating_mul(size_of::<usize>()));
+            metadata = metadata.saturating_add(
+                slot_capacity
+                    .saturating_sub(heap.values.capacity())
+                    .saturating_mul(size_of::<Option<DynamicValue>>()),
+            );
+            metadata = metadata.saturating_add(
+                slot_capacity
+                    .saturating_sub(heap.free.capacity())
+                    .saturating_mul(size_of::<usize>()),
+            );
+        }
+        if heap.free.is_empty() && heap.generations.len() == heap.generations.capacity() {
+            metadata = metadata.saturating_add(slot_capacity.saturating_sub(heap.generations.capacity()).saturating_mul(size_of::<u32>()));
         }
         if bytes.saturating_add(metadata) > limit.saturating_sub(heap.total_bytes()) {
             return Err(invalid("动态内存预算耗尽"));
         }
-        let id = heap.next;
-        if id > Slot::MAX_HEAP_HANDLE { return Err(invalid("动态值身份耗尽")); }
-        let next = id.checked_add(1).ok_or_else(|| invalid("动态值身份耗尽"))?;
-        // 先完成所有可失败的容量检查，再发布身份和计数；失败不能留下半个堆条目。
-        heap.locations.try_reserve(1).map_err(|_| invalid("动态索引分配失败"))?;
-        if heap.free.is_empty() && heap.values.len() == heap.values.capacity() {
-            heap.values.try_reserve_exact(slot_capacity - heap.values.len()).map_err(|_| invalid("动态槽位分配失败"))?;
-            heap.free.try_reserve_exact(slot_capacity - heap.free.len()).map_err(|_| invalid("回收槽索引分配失败"))?;
+        let index = heap.free.last().copied().unwrap_or(heap.values.len());
+        if index as u64 > Heap::INDEX_MASK { return Err(invalid("动态值身份耗尽")); }
+        let generation = heap.free.last().map_or(0, |index| heap.generations[*index] + 1);
+        let id = Heap::DYNAMIC_TAG | (u64::from(generation) << Heap::INDEX_BITS) | index as u64;
+        // 完成所有可失败的预留后才发布新代数，失败不会消耗身份或暴露半个条目。
+        if heap.free.is_empty() && heap.generations.len() == heap.generations.capacity() {
+            heap.generations.try_reserve_exact(slot_capacity - heap.generations.len())
+                .map_err(|_| invalid("动态代数分配失败"))?;
         }
-        let entry = Some(DynamicValue { identity: id, value: Arc::new(value), callable });
-        let index = if let Some(index) = heap.free.pop() {
+        if heap.free.is_empty() && heap.values.len() == heap.values.capacity() {
+            heap.values
+                .try_reserve_exact(slot_capacity - heap.values.len())
+                .map_err(|_| invalid("动态槽位分配失败"))?;
+            heap.free
+                .try_reserve_exact(slot_capacity - heap.free.len())
+                .map_err(|_| invalid("回收槽索引分配失败"))?;
+        }
+        let entry = Some(DynamicValue {
+            identity: id,
+            value: Arc::new(value),
+            callable: callable.map(Arc::new),
+        });
+        if let Some(index) = heap.free.pop() {
             heap.values[index] = entry;
-            index
+            heap.generations[index] = generation;
         } else {
-            let index = heap.values.len();
             heap.values.push(entry);
-            index
-        };
-        heap.locations.insert(id, index);
-        heap.next = next;
+            heap.generations.push(generation);
+        }
         heap.bytes += bytes;
         heap.live_values += 1;
-        #[cfg(test)] {
-            heap.metrics.allocations += 1; heap.metrics.allocated_payload_bytes += bytes as u64;
+        #[cfg(test)]
+        {
+            heap.metrics.allocations += 1;
+            heap.metrics.allocated_payload_bytes += bytes as u64;
             heap.metrics.peak_heap_bytes = heap.metrics.peak_heap_bytes.max(heap.total_bytes());
         }
         Ok(Slot::handle(id))
@@ -453,7 +569,9 @@ impl Runtime {
         let host = self.execution_host(limits)?;
         // 外部实参窗口也属于本次调用预算，并跨同步重入保持累计占用。
         let (mut imported, _arguments_memory) = host.reserve_values(arguments.len())?;
-        for value in arguments { imported.push(host.import(value)?); }
+        for value in arguments {
+            imported.push(host.import(value)?);
+        }
         let arguments = imported;
         let target = host.callable(Slot::handle(id))?;
         let result = match target {
@@ -480,11 +598,21 @@ impl Runtime {
             return Ok(());
         }
         let mut heap = self.vm.heap.borrow_mut();
-        let limit = self.vm.budget.borrow().as_ref().map_or(usize::MAX, Budget::max_heap_bytes);
+        let limit = self
+            .vm
+            .budget
+            .borrow()
+            .as_ref()
+            .map_or(usize::MAX, Budget::max_heap_bytes);
         if !heap.pinned.contains_key(&id) {
-            let growth = Heap::table_growth::<(ValueId, usize)>(heap.pinned.len(), heap.pinned.capacity());
-            if growth > limit.saturating_sub(heap.total_bytes()) { return Err(invalid("动态内存预算耗尽")); }
-            heap.pinned.try_reserve(1).map_err(|_| invalid("保活索引分配失败"))?;
+            let growth =
+                Heap::table_growth::<(ValueId, usize)>(heap.pinned.len(), heap.pinned.capacity());
+            if growth > limit.saturating_sub(heap.total_bytes()) {
+                return Err(invalid("动态内存预算耗尽"));
+            }
+            heap.pinned
+                .try_reserve(1)
+                .map_err(|_| invalid("保活索引分配失败"))?;
         }
         let count = heap.pinned.entry(id).or_default();
         *count = count
@@ -556,10 +684,8 @@ impl Runtime {
         let mut removed = 0;
         for (index, marked) in live.into_iter().enumerate() {
             if marked == 0 && heap.values[index].is_some() {
-                let entry = heap.values[index].take().expect("已检查动态槽");
+                let entry = heap.remove_slot(index).expect("已检查动态槽");
                 heap.builders.remove(&entry.identity);
-                heap.locations.remove(&entry.identity);
-                heap.free.push(index);
                 removed += 1;
             }
         }
@@ -568,12 +694,15 @@ impl Runtime {
             .values
             .iter()
             .flatten()
-            .map(|entry| dynamic_bytes(&entry.value, entry.callable.as_ref()))
+            .map(|entry| dynamic_bytes(&entry.value, entry.callable.as_deref()))
             .sum();
-        #[cfg(test)] {
+        #[cfg(test)]
+        {
             let elapsed = gc_started.elapsed().as_nanos();
-            heap.metrics.collections += 1; heap.metrics.marked_values += marked_values as u64;
-            heap.metrics.visited_edges += visited_edges.get(); heap.metrics.gc_nanoseconds += elapsed;
+            heap.metrics.collections += 1;
+            heap.metrics.marked_values += marked_values as u64;
+            heap.metrics.visited_edges += visited_edges.get();
+            heap.metrics.gc_nanoseconds += elapsed;
             heap.metrics.max_gc_nanoseconds = heap.metrics.max_gc_nanoseconds.max(elapsed);
         }
         Ok(before - heap.live_values)
@@ -592,12 +721,22 @@ impl Runtime {
         heap.next_roots = roots_id
             .checked_add(1)
             .ok_or_else(|| invalid("执行身份耗尽"))?;
-        let budget = current.as_ref().cloned().unwrap_or_else(|| Budget::new(limits));
-        let growth = Heap::table_growth::<(u64, Vec<Slot>)>(heap.roots.len(), heap.roots.capacity());
-        if growth > budget.max_heap_bytes().saturating_sub(heap.total_bytes()) { return Err(invalid("动态内存预算耗尽")); }
-        heap.roots.try_reserve(1).map_err(|_| invalid("执行根索引分配失败"))?;
+        let budget = current
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| Budget::new(limits));
+        let growth =
+            Heap::table_growth::<(u64, Vec<Slot>)>(heap.roots.len(), heap.roots.capacity());
+        if growth > budget.max_heap_bytes().saturating_sub(heap.total_bytes()) {
+            return Err(invalid("动态内存预算耗尽"));
+        }
+        heap.roots
+            .try_reserve(1)
+            .map_err(|_| invalid("执行根索引分配失败"))?;
         heap.roots.insert(roots_id, Vec::new());
-        if top { *current = Some(budget.clone()); }
+        if top {
+            *current = Some(budget.clone());
+        }
         Ok(RuntimeHost {
             runtime: self,
             budget,
@@ -613,16 +752,12 @@ impl Runtime {
     ) -> Result<(), ExecutionError> {
         let _entry = self.enter()?;
         let host = self.execution_host(ExecutionLimits::default())?;
-        let result = executor::execute(
-            &host,
-            Binding {
-                program,
-                owner: owner.map_or(Slot::None, Slot::handle),
-                captures: Arc::from([]),
-            },
-            &[],
-            budget,
-        );
+        let binding = Binding {
+            program,
+            owner: owner.map_or(Slot::None, Slot::handle),
+            captures: Box::default(),
+        };
+        let result = executor::execute(&host, &binding, &[], budget);
         drop(host);
         self.collect()?;
         result.map(|_| ())
@@ -641,7 +776,9 @@ impl Runtime {
     pub(super) fn evaluate_text(&self, id: ValueId) -> Result<String, ExecutionError> {
         let host = self.execution_host(ExecutionLimits::default())?;
         let value = if let Some(binding) = host.template(Slot::handle(id))? {
-            if let Some(Constant::String(text)) = binding.program.static_text() { return Ok(text.clone()); }
+            if let Some(Constant::String(text)) = binding.program.static_text() {
+                return Ok(text.clone());
+            }
             executor::execute(&host, binding, &[], host.budget.clone())?
         } else {
             host.slot(id)?
@@ -653,31 +790,75 @@ impl Runtime {
     }
 }
 // 所有格式片段直接写入同一输出；预算检查先于扩容。
-struct FormatOutput<'a> { text: String, budget: &'a Budget, heap: &'a RefCell<Heap>, memory: executor::TemporaryBytes, error: Option<ExecutionError> }
+struct FormatOutput<'a> {
+    text: String,
+    budget: &'a Budget,
+    heap: &'a RefCell<Heap>,
+    memory: executor::TemporaryBytes,
+    error: Option<ExecutionError>,
+}
 impl std::fmt::Write for FormatOutput<'_> {
     fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        if let Err(error) = self.budget.charge(text.len() as u64) { self.error = Some(error); return Err(std::fmt::Error); }
-        let Some(required) = self.text.len().checked_add(text.len()).and_then(|n| n.checked_add(dynamic_bytes(&Value::String(String::new()), None))) else { self.error = Some(invalid("文本容量溢出")); return Err(std::fmt::Error); };
-        if let Err(error) = self.memory.resize(required, self.heap.borrow().total_bytes()) { self.error = Some(error); return Err(std::fmt::Error); }
-        if self.text.try_reserve_exact(text.len()).is_err() { self.error = Some(invalid("文本分配失败")); return Err(std::fmt::Error); }
-        self.text.push_str(text); Ok(())
+        if let Err(error) = self.budget.charge(text.len() as u64) {
+            self.error = Some(error);
+            return Err(std::fmt::Error);
+        }
+        let Some(required) = self
+            .text
+            .len()
+            .checked_add(text.len())
+            .and_then(|n| n.checked_add(dynamic_bytes(&Value::String(String::new()), None)))
+        else {
+            self.error = Some(invalid("文本容量溢出"));
+            return Err(std::fmt::Error);
+        };
+        if let Err(error) = self
+            .memory
+            .resize(required, self.heap.borrow().total_bytes())
+        {
+            self.error = Some(error);
+            return Err(std::fmt::Error);
+        }
+        if self.text.try_reserve_exact(text.len()).is_err() {
+            self.error = Some(invalid("文本分配失败"));
+            return Err(std::fmt::Error);
+        }
+        self.text.push_str(text);
+        Ok(())
     }
 }
 /// 固定读取借用映像；动态读取持有短期 Arc，标量直接在栈上传递。
 pub(super) enum ValueAccess<'a> {
-    Fixed { value: std::borrow::Cow<'a, Value>, _memory: Option<executor::TemporaryBytes> },
+    Fixed {
+        value: std::borrow::Cow<'a, Value>,
+        _memory: Option<executor::TemporaryBytes>,
+    },
     Dynamic(Arc<Value>),
     Scalar(Value),
 }
 impl AsRef<Value> for ValueAccess<'_> {
-    fn as_ref(&self) -> &Value { match self { Self::Fixed { value, .. } => value.as_ref(), Self::Dynamic(value) => value.as_ref(), Self::Scalar(value) => value } }
+    fn as_ref(&self) -> &Value {
+        match self {
+            Self::Fixed { value, .. } => value.as_ref(),
+            Self::Dynamic(value) => value.as_ref(),
+            Self::Scalar(value) => value,
+        }
+    }
 }
 impl std::ops::Deref for ValueAccess<'_> {
     type Target = Value;
-    fn deref(&self) -> &Value { self.as_ref() }
+    fn deref(&self) -> &Value {
+        self.as_ref()
+    }
 }
 impl ValueAccess<'_> {
-    pub(super) fn into_arc(self) -> Arc<Value> { match self { Self::Dynamic(value) => value, Self::Fixed { value, .. } => Arc::new(value.into_owned()), Self::Scalar(value) => Arc::new(value) } }
+    pub(super) fn into_arc(self) -> Arc<Value> {
+        match self {
+            Self::Dynamic(value) => value,
+            Self::Fixed { value, .. } => Arc::new(value.into_owned()),
+            Self::Scalar(value) => Arc::new(value),
+        }
+    }
 }
 pub(super) struct RuntimeHost<'a> {
     runtime: &'a Runtime,
@@ -719,7 +900,7 @@ impl RuntimeHost<'_> {
         if !heap.builders.contains(&id) { return Err(invalid("构造能力已经消费")); }
         let remaining = self.budget.max_heap_bytes().saturating_sub(heap.total_bytes());
         let entry = heap.get_mut(id).ok_or(ExecutionError::InvalidHandle)?;
-        let before = dynamic_bytes(&entry.value, entry.callable.as_ref());
+        let before = dynamic_bytes(&entry.value, entry.callable.as_deref());
         let Value::Array(values) = Arc::get_mut(&mut entry.value).ok_or_else(|| invalid("构造缓冲存在非法可写别名"))? else { return Err(invalid("追加需要数组")); };
         if values.len() == values.capacity() {
             // 先检查容量增量再分配；独占缓冲禁止隐式写时复制。
@@ -730,7 +911,7 @@ impl RuntimeHost<'_> {
             values.reserve(additional).map_err(|error| invalid(&error))?;
         }
         let result = values.push(value).map_err(|error| invalid(&error));
-        let after = dynamic_bytes(&entry.value, entry.callable.as_ref());
+        let after = dynamic_bytes(&entry.value, entry.callable.as_deref());
         heap.bytes = heap.bytes - before + after;
         result
     }
@@ -745,7 +926,7 @@ impl RuntimeHost<'_> {
         let limit = self.budget.max_heap_bytes();
         let remaining = limit.saturating_sub(heap.total_bytes());
         let entry = heap.get_mut(id).ok_or(ExecutionError::InvalidHandle)?;
-        let before = dynamic_bytes(&entry.value, entry.callable.as_ref());
+        let before = dynamic_bytes(&entry.value, entry.callable.as_deref());
         let value = Arc::get_mut(&mut entry.value).ok_or_else(|| invalid("构造缓冲存在非法可写别名"))?;
         match value {
             Value::Array(values) => {
@@ -771,7 +952,7 @@ impl RuntimeHost<'_> {
             }
             _ => return Err(invalid("构造修改需要集合")),
         }
-        let after = dynamic_bytes(&entry.value, entry.callable.as_ref());
+        let after = dynamic_bytes(&entry.value, entry.callable.as_deref());
         heap.bytes = heap.bytes - before + after;
         Ok(Slot::Unit)
     }
@@ -780,7 +961,9 @@ impl RuntimeHost<'_> {
         heap: Option<&'a Heap>,
         id: ValueId,
     ) -> Result<Stored<'a>, ExecutionError> {
-        if let Some(value) = Slot::from_scalar_id(id) { return Ok(Stored::Scalar(value)); }
+        if let Some(value) = Slot::from_scalar_id(id) {
+            return Ok(Stored::Scalar(value));
+        }
         if id < self.runtime.values.len() {
             return self
                 .runtime
@@ -792,20 +975,34 @@ impl RuntimeHost<'_> {
             .map(|entry| Stored::dynamic(entry.value.as_ref()))
             .ok_or(ExecutionError::InvalidHandle)
     }
-    fn slot_in_heap(&self, heap: Option<&Heap>, id: ValueId) -> Result<Option<Slot>, ExecutionError> {
+    fn slot_in_heap(
+        &self,
+        heap: Option<&Heap>,
+        id: ValueId,
+    ) -> Result<Option<Slot>, ExecutionError> {
         Ok(match self.stored_value(heap, id)? {
-            Stored::Scalar(value) => Some(value), Stored::Host => None, _ => Some(Slot::handle(id)),
+            Stored::Scalar(value) => Some(value),
+            Stored::Host => None,
+            _ => Some(Slot::handle(id)),
         })
+    }
+    fn read_array_slot(&self, heap: Option<&Heap>, value: Slot) -> Result<Option<Slot>, ExecutionError> {
+        match value { Slot::Handle(id) => self.slot_in_heap(heap, id.get()), scalar => Ok(Some(scalar)) }
     }
     fn slot(&self, id: ValueId) -> Result<Slot, ExecutionError> {
         if let Some(view) = self.runtime.values.view(id) {
             match view {
-                Stored::Scalar(value) => return Ok(value), Stored::Host => {}, _ => return Ok(Slot::handle(id)),
+                Stored::Scalar(value) => return Ok(value),
+                Stored::Host => {}
+                _ => return Ok(Slot::handle(id)),
             }
         }
         Ok(match self.value(Slot::handle(id))?.as_ref() {
-            Value::None => Slot::None, Value::Bool(v) => Slot::Bool(*v), Value::Int(v) => Slot::Int(*v),
-            Value::Float(v) => Slot::Float(*v), _ => Slot::handle(id),
+            Value::None => Slot::None,
+            Value::Bool(v) => Slot::Bool(*v),
+            Value::Int(v) => Slot::Int(*v),
+            Value::Float(v) => Slot::Float(*v),
+            _ => Slot::handle(id),
         })
     }
     /// 归一化字典键；仅 string/enum 需要读堆内容。
@@ -817,19 +1014,37 @@ impl RuntimeHost<'_> {
             _ => Err(invalid("无效的字典 key 类型")),
         }
     }
-    fn temporary_key(&self, slot: Slot) -> Result<(ScalarKey, executor::TemporaryBytes), ExecutionError> {
+    fn temporary_key(
+        &self,
+        slot: Slot,
+    ) -> Result<(ScalarKey, executor::TemporaryBytes), ExecutionError> {
         let key = self.scalar_key(slot)?;
-        let bytes = match &key { ScalarKey::String(text) => text.capacity(), ScalarKey::Enum { type_name, .. } => type_name.capacity(), _ => 0 };
+        let bytes = match &key {
+            ScalarKey::String(text) => text.capacity(),
+            ScalarKey::Enum { type_name, .. } => type_name.capacity(),
+            _ => 0,
+        };
         // copy_text 在复制前检查剩余额度，此处将复制结果转为集合整个生命周期的累计预留。
-        let memory = self.budget.reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+        let memory = self
+            .budget
+            .reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
         Ok((key, memory))
     }
-    fn temporary_key_set(&self, count: usize) -> Result<(HashSet<ScalarKey>, executor::TemporaryBytes), ExecutionError> {
+    fn temporary_key_set(
+        &self,
+        count: usize,
+    ) -> Result<(HashSet<ScalarKey>, executor::TemporaryBytes), ExecutionError> {
         // 哈希表容量按装载因子和二次幂取整，保守覆盖桶及控制字节。
-        let bytes = count.checked_add(1).and_then(|n| n.checked_mul(4 * (size_of::<ScalarKey>() + 1))).ok_or_else(|| invalid("集合容量溢出"))?;
-        let memory = self.budget.reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+        let bytes = count
+            .checked_add(1)
+            .and_then(|n| n.checked_mul(4 * (size_of::<ScalarKey>() + 1)))
+            .ok_or_else(|| invalid("集合容量溢出"))?;
+        let memory = self
+            .budget
+            .reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
         let mut keys = HashSet::new();
-        keys.try_reserve(count).map_err(|_| invalid("集合索引分配失败"))?;
+        keys.try_reserve(count)
+            .map_err(|_| invalid("集合索引分配失败"))?;
         Ok((keys, memory))
     }
     fn scalar_key_for_id(&self, id: ValueId) -> Result<ScalarKey, ExecutionError> {
@@ -855,41 +1070,89 @@ impl RuntimeHost<'_> {
             Slot::Float(v) => ValueAccess::Scalar(Value::Float(v)),
             Slot::Handle(id) => {
                 let id = id.get();
-                if self.runtime.values.is_host(id) { ValueAccess::Dynamic(self.runtime.value(id)?) }
-                else if let Some(bytes) = self.runtime.values.materialized_bytes(id) {
-                    let memory = self.budget.reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
-                    let value = self.runtime.values.get(id).ok_or(ExecutionError::InvalidHandle)?;
-                    ValueAccess::Fixed { value, _memory: Some(memory) }
-                } else { ValueAccess::Dynamic(self.runtime.vm.value(id)?) }
+                if self.runtime.values.is_host(id) {
+                    ValueAccess::Dynamic(self.runtime.value(id)?)
+                } else if let Some(bytes) = self.runtime.values.materialized_bytes(id) {
+                    let memory = self
+                        .budget
+                        .reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+                    let value = self
+                        .runtime
+                        .values
+                        .get(id)
+                        .ok_or(ExecutionError::InvalidHandle)?;
+                    ValueAccess::Fixed {
+                        value,
+                        _memory: Some(memory),
+                    }
+                } else {
+                    ValueAccess::Dynamic(self.runtime.vm.value(id)?)
+                }
             }
             Slot::Empty => return Err(invalid("空寄存器不是语言值")),
         })
     }
     /// 外部输入的长度不能先变成分配；临时缓冲同样先检查剩余内存预算。
-    fn reserve_values<T>(&self, count: usize) -> Result<(Vec<T>, executor::TemporaryBytes), ExecutionError> {
-        let bytes = count.checked_mul(size_of::<T>()).ok_or_else(|| invalid("动态内存预算耗尽"))?;
-        let memory = self.budget.reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+    fn reserve_values<T>(
+        &self,
+        count: usize,
+    ) -> Result<(Vec<T>, executor::TemporaryBytes), ExecutionError> {
+        let bytes = count
+            .checked_mul(size_of::<T>())
+            .ok_or_else(|| invalid("动态内存预算耗尽"))?;
+        let memory = self
+            .budget
+            .reserve_temporary(bytes, self.runtime.vm.heap.borrow().total_bytes())?;
         let mut values = Vec::new();
-        values.try_reserve_exact(count).map_err(|_| invalid("动态缓冲分配失败"))?;
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| invalid("动态缓冲分配失败"))?;
         Ok((values, memory))
     }
-    fn reserve_temporary_vec<T>(&self, values: &mut Vec<T>, memory: &mut executor::TemporaryBytes, additional: usize) -> Result<(), ExecutionError> {
-        let required = values.len().checked_add(additional).ok_or_else(|| invalid("临时缓冲容量溢出"))?;
-        if required <= values.capacity() { return Ok(()); }
+    fn reserve_temporary_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        memory: &mut executor::TemporaryBytes,
+        additional: usize,
+    ) -> Result<(), ExecutionError> {
+        let required = values
+            .len()
+            .checked_add(additional)
+            .ok_or_else(|| invalid("临时缓冲容量溢出"))?;
+        if required <= values.capacity() {
+            return Ok(());
+        }
         let capacity = values.capacity().saturating_mul(2).max(required).max(4);
-        memory.resize(capacity.checked_mul(size_of::<T>()).ok_or_else(|| invalid("临时缓冲容量溢出"))?, self.runtime.vm.heap.borrow().total_bytes())?;
-        values.try_reserve_exact(capacity - values.len()).map_err(|_| invalid("临时缓冲分配失败"))
+        memory.resize(
+            capacity
+                .checked_mul(size_of::<T>())
+                .ok_or_else(|| invalid("临时缓冲容量溢出"))?,
+            self.runtime.vm.heap.borrow().total_bytes(),
+        )?;
+        values
+            .try_reserve_exact(capacity - values.len())
+            .map_err(|_| invalid("临时缓冲分配失败"))
     }
     fn preflight_bytes(&self, bytes: usize) -> Result<(), ExecutionError> {
-        if bytes > self.budget.max_heap_bytes().saturating_sub(self.runtime.vm.heap.borrow().total_bytes()) {
+        if bytes
+            > self
+                .budget
+                .max_heap_bytes()
+                .saturating_sub(self.runtime.vm.heap.borrow().total_bytes())
+        {
             return Err(invalid("动态内存预算耗尽"));
         }
         Ok(())
     }
     fn copy_text(&self, text: &str) -> Result<String, ExecutionError> {
-        self.preflight_bytes(text.len().saturating_add(dynamic_bytes(&Value::String(String::new()), None)))?;
+        self.preflight_bytes(
+            text.len()
+                .saturating_add(dynamic_bytes(&Value::String(String::new()), None)),
+        )?;
         let mut result = String::new();
-        result.try_reserve_exact(text.len()).map_err(|_| invalid("文本分配失败"))?;
+        result
+            .try_reserve_exact(text.len())
+            .map_err(|_| invalid("文本分配失败"))?;
         result.push_str(text);
         Ok(result)
     }
@@ -911,13 +1174,23 @@ impl RuntimeHost<'_> {
             heap.next_collection = 1024.max(heap.live_values.saturating_mul(2));
         }
         let root_count = heap.roots.get(&self.roots_id).map_or(0, Vec::len);
-        heap.reserve_roots(self.roots_id, root_count.saturating_add(1), self.budget.max_heap_bytes())?;
-        let slot = VmState::allocate_locked(&mut heap, value, binding, self.budget.max_heap_bytes())?;
-        heap.roots.get_mut(&self.roots_id).expect("执行根已预留").push(slot);
+        heap.reserve_roots(
+            self.roots_id,
+            root_count.saturating_add(1),
+            self.budget.max_heap_bytes(),
+        )?;
+        let slot =
+            VmState::allocate_locked(&mut heap, value, binding, self.budget.max_heap_bytes())?;
+        heap.roots
+            .get_mut(&self.roots_id)
+            .expect("执行根已预留")
+            .push(slot);
         Ok(slot)
     }
     pub(super) fn id(&self, value: Slot) -> Result<ValueId, ExecutionError> {
-        if let Some(id) = value.scalar_id() { return Ok(id); }
+        if let Some(id) = value.scalar_id() {
+            return Ok(id);
+        }
         if let Slot::Handle(id) = value {
             return Ok(id.get());
         }
@@ -927,31 +1200,58 @@ impl RuntimeHost<'_> {
         self.import_depth(value, 0)
     }
     fn import_depth(&self, value: &HostValue, depth: usize) -> Result<Slot, ExecutionError> {
-        if depth >= 128 { return Err(invalid("导入值嵌套深度超限")); }
+        if depth >= 128 {
+            return Err(invalid("导入值嵌套深度超限"));
+        }
         self.budget.charge(1)?;
         Ok(match value {
             HostValue::Array(values) => {
                 let (mut imported, _memory) = self.reserve_values(values.len())?;
-                for value in values { imported.push(self.import_depth(value, depth + 1)?); }
+                for value in values {
+                    imported.push(self.import_depth(value, depth + 1)?);
+                }
                 self.array(imported)?
             }
             HostValue::Dictionary(values) => {
                 let (mut imported, _memory) = self.reserve_values(values.len())?;
-                for (key, value) in values { imported.push((self.import_depth(key, depth + 1)?, self.import_depth(value, depth + 1)?)); }
+                for (key, value) in values {
+                    imported.push((
+                        self.import_depth(key, depth + 1)?,
+                        self.import_depth(value, depth + 1)?,
+                    ));
+                }
                 self.dictionary(imported)?
             }
             HostValue::Data { type_name, fields } => {
-                let meta = self.runtime.contract.schema().resolve_type(type_name).ok_or_else(|| invalid("导入 data 类型不存在"))?;
-                if meta.kind != coflow_language::cft::syntax::ast::TypeKind::Data || meta.is_abstract { return Err(invalid("只能导入具体 data")); }
-                if fields.len() != meta.all_fields().count() { return Err(invalid("导入 data 字段数量不匹配")); }
+                let meta = self
+                    .runtime
+                    .contract
+                    .schema()
+                    .resolve_type(type_name)
+                    .ok_or_else(|| invalid("导入 data 类型不存在"))?;
+                if meta.kind != coflow_language::cft::syntax::ast::TypeKind::Data
+                    || meta.is_abstract
+                {
+                    return Err(invalid("只能导入具体 data"));
+                }
+                if fields.len() != meta.all_fields().count() {
+                    return Err(invalid("导入 data 字段数量不匹配"));
+                }
                 let (mut names, _names_memory) = self.reserve_values(fields.len())?;
-                names.extend(fields.iter().map(|(name, _)| name.as_str())); names.sort_unstable();
-                if names.windows(2).any(|pair| pair[0] == pair[1]) { return Err(invalid("导入 data 字段重复")); }
+                names.extend(fields.iter().map(|(name, _)| name.as_str()));
+                names.sort_unstable();
+                if names.windows(2).any(|pair| pair[0] == pair[1]) {
+                    return Err(invalid("导入 data 字段重复"));
+                }
                 let (mut imported, _memory) = self.reserve_values(fields.len())?;
                 for (name, value) in fields {
-                    let field = meta.field(name).ok_or_else(|| invalid("导入 data 字段不存在"))?;
+                    let field = meta
+                        .field(name)
+                        .ok_or_else(|| invalid("导入 data 字段不存在"))?;
                     let value = self.import_depth(value, depth + 1)?;
-                    if !self.matches(value, &field.value_type)? { return Err(invalid("导入 data 字段类型不匹配")); }
+                    if !self.matches(value, &field.value_type)? {
+                        return Err(invalid("导入 data 字段类型不匹配"));
+                    }
                     imported.push((name.as_str(), value));
                 }
                 self.object(type_name, imported)?
@@ -970,7 +1270,9 @@ impl RuntimeHost<'_> {
                     return Err(ExecutionError::ForeignRuntime);
                 }
                 self.runtime.ensure_value(*value)?;
-                if self.runtime.values.is_host(*value) { return Err(invalid("Host must return a concrete value")); }
+                if self.runtime.values.is_host(*value) {
+                    return Err(invalid("Host must return a concrete value"));
+                }
                 // 导入后续参数可能触发 GC；已有动态值也必须先登记当前请求根。
                 self.root(Slot::handle(*value))?;
                 self.slot(*value)?
@@ -992,31 +1294,56 @@ impl RuntimeHost<'_> {
             if let Some((actual, record)) = self.runtime.values.object_identity(id.get()) {
                 // 固定对象的类型判定只读布局和记录标记，不复制字段及名称。
                 return Ok(match ty {
-                    CftValueType::Object(expected) => !record && self.runtime.contract.schema().is_assignable(actual, expected),
-                    CftValueType::RecordRef(expected) => record && self.runtime.contract.schema().is_assignable(actual, expected),
+                    CftValueType::Object(expected) => {
+                        !record
+                            && self
+                                .runtime
+                                .contract
+                                .schema()
+                                .is_assignable(actual, expected)
+                    }
+                    CftValueType::RecordRef(expected) => {
+                        record
+                            && self
+                                .runtime
+                                .contract
+                                .schema()
+                                .is_assignable(actual, expected)
+                    }
                     _ => false,
                 });
             }
             if matches!(ty, CftValueType::String | CftValueType::FString)
-                && matches!(self.runtime.values.view(id.get()), Some(Stored::String(_))) { return Ok(true); }
+                && matches!(self.runtime.values.view(id.get()), Some(Stored::String(_)))
+            {
+                return Ok(true);
+            }
         }
         // 集合中的闭包按已验证程序签名校验，不能重新解析共享的外层源码。
         if let CftValueType::Array(inner) = ty {
             let check = |values: &ArrayValue| -> Result<bool, ExecutionError> {
                 self.budget.charge(values.len() as u64)?;
-                for value in values { if !self.matches(self.slot(value)?, inner)? { return Ok(false); } }
+                for value in values {
+                    if !self.matches(self.slot(value)?, inner)? {
+                        return Ok(false);
+                    }
+                }
                 Ok(true)
             };
             // 固定集合校验直接借用连续负载，递归 Host 读取不持有动态堆借用。
             if let Slot::Handle(id) = value {
-                if let Some(Stored::Array(values)) = self.runtime.values.view(id.get()) { return check(values); }
+                if let Some(Stored::Array(values)) = self.runtime.values.view(id.get()) {
+                    return check(values);
+                }
             }
             let stored = self.value(value)?;
-            let Value::Array(values) = stored.as_ref() else { return Ok(false); };
+            let Value::Array(values) = stored.as_ref() else {
+                return Ok(false);
+            };
             return check(values);
         }
         if let CftValueType::Dict(key, inner) = ty {
-            let check = |values: &indexmap::IndexMap<ScalarKey, (ValueId, ValueId)>| -> Result<bool, ExecutionError> {
+            let check = |values: &DictionaryValue| -> Result<bool, ExecutionError> {
                 self.budget.charge(values.len() as u64)?;
                 for (k, v) in values.values() {
                     if !self.matches(self.slot(*k)?, key)? || !self.matches(self.slot(*v)?, inner)? { return Ok(false); }
@@ -1024,10 +1351,14 @@ impl RuntimeHost<'_> {
                 Ok(true)
             };
             if let Slot::Handle(id) = value {
-                if let Some(Stored::Dict(values)) = self.runtime.values.view(id.get()) { return check(values); }
+                if let Some(Stored::Dict(values)) = self.runtime.values.view(id.get()) {
+                    return check(values);
+                }
             }
             let stored = self.value(value)?;
-            let Value::Dict(values) = stored.as_ref() else { return Ok(false); };
+            let Value::Dict(values) = stored.as_ref() else {
+                return Ok(false);
+            };
             return check(values);
         }
         if let CftValueType::Function(parameters, result) = ty {
@@ -1095,13 +1426,17 @@ impl RuntimeHost<'_> {
                         .get(&i64::from(*value))
                         .and_then(|index| meta.variants.get(*index))
                 })
-                .map_or_else(|| Ok(value.to_string()), |variant| self.copy_text(&variant.name))?),
+                .map_or_else(
+                    || Ok(value.to_string()),
+                    |variant| self.copy_text(&variant.name),
+                )?),
             _ => Err(invalid("值不能转换为文本")),
         }
     }
     fn equal(&self, left: Slot, right: Slot) -> Result<bool, ExecutionError> {
         // 用户可以逐次构造很深的不可变数据链；结构比较使用显式工作栈。
-        self.root(left)?; self.root(right)?;
+        self.root(left)?;
+        self.root(right)?;
         let (mut pending, mut pending_memory) = self.reserve_values(1)?;
         pending.push((left, right));
         while let Some((left, right)) = pending.pop() {
@@ -1166,7 +1501,13 @@ impl RuntimeHost<'_> {
                         return Ok(false);
                     }
                     self.budget.charge(a.len() as u64)?;
-                    self.reserve_temporary_vec(&mut pending, &mut pending_memory, a.len().checked_mul(2).ok_or_else(|| invalid("比较工作栈溢出"))?)?;
+                    self.reserve_temporary_vec(
+                        &mut pending,
+                        &mut pending_memory,
+                        a.len()
+                            .checked_mul(2)
+                            .ok_or_else(|| invalid("比较工作栈溢出"))?,
+                    )?;
                     // 键已归一化为 ScalarKey：直接按键查表，值递归比较。
                     for (scalar, (key, value)) in a.iter() {
                         let Some((other_key, other_value)) = b.get(scalar) else {
@@ -1232,11 +1573,10 @@ impl ExecutionHost for RuntimeHost<'_> {
         let id = id.get();
                 let mut heap = self.runtime.vm.heap.borrow_mut();
                 if heap.builders.remove(&id) {
-                    if let Some(index) = heap.locations.remove(&id) {
-                        if let Some(entry) = heap.values[index].take() {
-                            heap.bytes -= dynamic_bytes(&entry.value, entry.callable.as_ref());
+                    if let Some(index) = heap.index(id) {
+                        if let Some(entry) = heap.remove_slot(index) {
+                            heap.bytes -= dynamic_bytes(&entry.value, entry.callable.as_deref());
                             heap.live_values -= 1;
-                            heap.free.push(index);
                         }
                     }
                 }
@@ -1248,43 +1588,80 @@ impl ExecutionHost for RuntimeHost<'_> {
                     CftValueType::Array(element) => {
                         let mut result = ArrayValue::empty(element);
                         if let Some(source) = source {
-                            let Slot::Handle(source) = source else { return Err(invalid("数组构造来源无效")); };
+                            let Slot::Handle(source) = source else {
+                                return Err(invalid("数组构造来源无效"));
+                            };
                             let heap = self.runtime.vm.heap.borrow();
-                            let Stored::Array(values) = self.stored_value(Some(&heap), source.get())? else { return Err(invalid("数组构造来源无效")); };
+                            let Stored::Array(values) =
+                                self.stored_value(Some(&heap), source.get())?
+                            else {
+                                return Err(invalid("数组构造来源无效"));
+                            };
                             // 直接借用固定或动态负载，先预留预算再复制，避免物化和二次 clone。
-                            let bytes = values.len().checked_mul(result.element_bytes()).ok_or_else(|| invalid("集合容量溢出"))?;
-                            let memory = self.budget.reserve_temporary(bytes, heap.total_bytes())?;
-                            result.reserve(values.len()).map_err(|error| invalid(&error))?;
-                            for value in values { result.push(value).map_err(|error| invalid(&error))?; }
+                            let bytes = values
+                                .len()
+                                .checked_mul(result.element_bytes())
+                                .ok_or_else(|| invalid("集合容量溢出"))?;
+                            let memory =
+                                self.budget.reserve_temporary(bytes, heap.total_bytes())?;
+                            result
+                                .reserve(values.len())
+                                .map_err(|error| invalid(&error))?;
+                            for value in values {
+                                result.push(value).map_err(|error| invalid(&error))?;
+                            }
                             drop(memory);
                         }
                         self.allocate(Value::Array(result))?
                     }
                     CftValueType::Dict(..) => {
-                        let mut result = indexmap::IndexMap::new();
+                        let mut result = DictionaryValue::new();
                         if let Some(source) = source {
-                            let Slot::Handle(source) = source else { return Err(invalid("字典构造来源无效")); };
+                            let Slot::Handle(source) = source else {
+                                return Err(invalid("字典构造来源无效"));
+                            };
                             let heap = self.runtime.vm.heap.borrow();
-                            let Stored::Dict(values) = self.stored_value(Some(&heap), source.get())? else { return Err(invalid("字典构造来源无效")); };
-                            let entry_bytes = size_of::<ScalarKey>() + size_of::<(ValueId, ValueId)>() + 32;
-                            let mut bytes = values.len().checked_mul(entry_bytes).ok_or_else(|| invalid("集合容量溢出"))?;
+                            let Stored::Dict(values) =
+                                self.stored_value(Some(&heap), source.get())?
+                            else {
+                                return Err(invalid("字典构造来源无效"));
+                            };
+                            let entry_bytes =
+                                size_of::<ScalarKey>() + size_of::<(ValueId, ValueId)>() + 32;
+                            let mut bytes = values
+                                .len()
+                                .checked_mul(entry_bytes)
+                                .ok_or_else(|| invalid("集合容量溢出"))?;
                             for key in values.keys() {
-                                let text = match key { ScalarKey::String(text) => text.len(), ScalarKey::Enum { type_name, .. } => type_name.len(), _ => 0 };
-                                bytes = bytes.checked_add(text).ok_or_else(|| invalid("集合容量溢出"))?;
+                                let text = match key {
+                                    ScalarKey::String(text) => text.len(),
+                                    ScalarKey::Enum { type_name, .. } => type_name.len(),
+                                    _ => 0,
+                                };
+                                bytes = bytes
+                                    .checked_add(text)
+                                    .ok_or_else(|| invalid("集合容量溢出"))?;
                             }
                             // 同时预留索引和所有字符串 key，固定字典无需先物化通用 Value。
-                            let memory = self.budget.reserve_temporary(bytes, heap.total_bytes())?;
-                            result.try_reserve(values.len()).map_err(|_| invalid("字典缓冲分配失败"))?;
+                            let memory =
+                                self.budget.reserve_temporary(bytes, heap.total_bytes())?;
+                            result
+                                .try_reserve(values.len())
+                                .map_err(|_| invalid("字典缓冲分配失败"))?;
                             for (key, value) in values {
                                 let copy_text = |source: &str| -> Result<String, ExecutionError> {
                                     let mut text = String::new();
-                                    text.try_reserve_exact(source.len()).map_err(|_| invalid("字典键分配失败"))?;
+                                    text.try_reserve_exact(source.len())
+                                        .map_err(|_| invalid("字典键分配失败"))?;
                                     text.push_str(source);
                                     Ok(text)
                                 };
                                 let key = match key {
                                     ScalarKey::String(text) => ScalarKey::String(copy_text(text)?),
-                                    ScalarKey::Enum { type_name, value } => ScalarKey::Enum { type_name: copy_text(type_name)?, value: *value },
+                                    ScalarKey::Enum { type_name, value } => ScalarKey::Enum {
+                                        type_name: copy_text(type_name)?,
+                                        value: *value,
+                                    },
                                     ScalarKey::Int(value) => ScalarKey::Int(*value),
                                     ScalarKey::Bool(value) => ScalarKey::Bool(*value),
                                 };
@@ -1325,7 +1702,17 @@ impl ExecutionHost for RuntimeHost<'_> {
             B::Freeze { builder } => {
                 let Slot::Handle(id) = builder else { return Err(invalid("冻结需要构造能力")); };
         let id = id.get();
-                if !self.runtime.vm.heap.borrow_mut().builders.remove(&id) { return Err(invalid("构造能力已经消费")); }
+                let mut heap = self.runtime.vm.heap.borrow_mut();
+                if !heap.builders.contains(&id) { return Err(invalid("构造能力已经消费")); }
+                let spare = self.budget.max_heap_bytes().saturating_sub(heap.total_bytes());
+                let entry = heap.get_mut(id).ok_or(ExecutionError::InvalidHandle)?;
+                let before = dynamic_bytes(&entry.value, entry.callable.as_deref());
+                if let Some(Value::Dict(values)) = Arc::get_mut(&mut entry.value) {
+                    values.optimize_index(spare).map_err(|message| invalid(&message))?;
+                }
+                let after = dynamic_bytes(&entry.value, entry.callable.as_deref());
+                heap.bytes = heap.bytes - before + after;
+                heap.builders.remove(&id);
                 // 冻结只移除写权限，缓冲与语言身份原位转交给不可变结果。
                 Ok(*builder)
             }
@@ -1399,7 +1786,6 @@ impl ExecutionHost for RuntimeHost<'_> {
         if let Some(value) = self.runtime.values.dictionary_index(id, key) {
             return self.slot(value.ok_or_else(|| invalid("字典 key 不存在"))?);
         }
-        let scalar = self.scalar_key(key).ok();
         // 固定引用不能指向动态区；纯固定读取不借用实例堆。
         let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
         match self.stored_value(heap.as_deref(), id)? {
@@ -1423,21 +1809,67 @@ impl ExecutionHost for RuntimeHost<'_> {
                 drop(heap);
                 self.allocate(Value::String(ch.to_string()))
             }
-            Stored::Dict(values) => {
-                let scalar = scalar.ok_or_else(|| invalid("无效的字典 key 类型"))?;
-                let id = *values
-                        .get(&scalar)
-                        .map(|(_, value)| value)
-                        .ok_or_else(|| invalid("字典 key 不存在"))?;
-                if let Some(value) = self.slot_in_heap(heap.as_deref(), id)? {
-                    Ok(value)
-                } else {
-                    drop(heap);
-                    self.slot(id)
-                }
+            Stored::Dict(_) => {
+                drop(heap);
+                self.index_dict(receiver, key)
             }
             _ => Err(invalid("值不支持索引")),
         }
+    }
+    fn index_array(&self, receiver: Slot, key: Slot) -> Result<Slot, ExecutionError> {
+        let Slot::Handle(id) = receiver else { return Err(invalid("索引需要集合或字符串")); };
+        let id = id.get();
+        let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
+
+        let Stored::Array(values) = self.stored_value(heap.as_deref(), id)? else {
+            return Err(invalid("数组索引需要 array"));
+        };
+        let value = values.get_slot(index(key)?).ok_or_else(|| invalid("数组索引越界"))?;
+        if let Some(slot) = self.read_array_slot(heap.as_deref(), value)? { Ok(slot) }
+        else { let Slot::Handle(id) = value else { unreachable!() }; drop(heap); self.slot(id.get()) }
+    }
+    fn index_dict(&self, receiver: Slot, key: Slot) -> Result<Slot, ExecutionError> {
+        let Slot::Handle(id) = receiver else { return Err(invalid("索引需要集合或字符串")); };
+        let id = id.get();
+        if id < self.runtime.values.len() {
+            if let Some(value) = self.runtime.values.dictionary_index(id, key) {
+                return self.slot(value.ok_or_else(|| invalid("字典 key 不存在"))?);
+            }
+        }
+        // 键借用覆盖整个查询；动态字符串只借用内容，不复制 UTF-8 或枚举类型名。
+        let owned;
+        let scalar = if let Some(key) = self.runtime.values.key(key) { key } else {
+            owned = self.value(key)?;
+            use super::dictionary::KeyRef;
+            match owned.as_ref() {
+                Value::Bool(value) => KeyRef::Bool(*value), Value::Int(value) => KeyRef::Int(*value),
+                Value::String(value) => KeyRef::String(value),
+                Value::Enum { type_name, value } => KeyRef::Enum { type_name, value: *value },
+                _ => return Err(invalid("无效的字典 key 类型")),
+            }
+        };
+        let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
+        let Stored::Dict(values) = self.stored_value(heap.as_deref(), id)? else {
+            return Err(invalid("字典索引需要 dict"));
+        };
+        let value = *values.get_ref(scalar).map(|(_, value)| value)
+            .ok_or_else(|| invalid("字典 key 不存在"))?;
+        if let Some(slot) = self.slot_in_heap(heap.as_deref(), value)? { Ok(slot) }
+        else { drop(heap); self.slot(value) }
+    }
+    fn index_string(&self, receiver: Slot, key: Slot) -> Result<Slot, ExecutionError> {
+        let Slot::Handle(id) = receiver else { return Err(invalid("索引需要集合或字符串")); };
+        let id = id.get();
+        let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
+
+        let Stored::String(value) = self.stored_value(heap.as_deref(), id)? else {
+            return Err(invalid("字符串索引需要 string"));
+        };
+        let offset = index(key)?;
+        self.budget.charge(offset as u64 + 1)?;
+        let ch = value.chars().nth(offset).ok_or_else(|| invalid("字符串索引越界"))?;
+        drop(heap);
+        self.allocate(Value::String(ch.to_string()))
     }
     fn reference(&self, name: &str) -> Result<Slot, ExecutionError> {
         if let Some(name) = name.strip_prefix("$const::") {
@@ -1508,16 +1940,92 @@ impl ExecutionHost for RuntimeHost<'_> {
             ) else {
                 return Err(invalid("连接需要 string"));
             };
-            let length = left.len().checked_add(right.len()).ok_or_else(|| invalid("动态内存预算耗尽"))?;
-            self.preflight_bytes(length.saturating_add(dynamic_bytes(&Value::String(String::new()), None)))?;
+            let length = left
+                .len()
+                .checked_add(right.len())
+                .ok_or_else(|| invalid("动态内存预算耗尽"))?;
+            self.preflight_bytes(
+                length.saturating_add(dynamic_bytes(&Value::String(String::new()), None)),
+            )?;
             self.budget.charge(length as u64)?;
             let mut text = String::new();
-            text.try_reserve_exact(length).map_err(|_| invalid("文本分配失败"))?;
+            text.try_reserve_exact(length)
+                .map_err(|_| invalid("文本分配失败"))?;
             text.push_str(left);
             text.push_str(right);
             text
         };
         self.allocate(Value::String(text))
+    }
+    fn accumulate_text(&self, left: Slot, right: Slot) -> Result<Slot, ExecutionError> {
+        let (Slot::Handle(left), Slot::Handle(right)) = (left, right) else {
+            return Err(invalid("文本累积需要 string"));
+        };
+        let (left, right) = (left.get(), right.get());
+        // 固定映像字符串不可写；第一次追加创建动态缓冲，后续回边复用该缓冲。
+        if left < self.runtime.values.len() || left == right {
+            return self.concatenate(Slot::handle(left), Slot::handle(right));
+        }
+        let right_dynamic = if right >= self.runtime.values.len() {
+            Some(
+                self.runtime
+                    .vm
+                    .heap
+                    .borrow()
+                    .get(right)
+                    .ok_or(ExecutionError::InvalidHandle)?
+                    .value
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let right_text = if let Some(value) = right_dynamic.as_deref() {
+            let Value::String(text) = value else {
+                return Err(invalid("文本累积需要 string"));
+            };
+            text.as_str()
+        } else {
+            let Some(Stored::String(text)) = self.runtime.values.view(right) else {
+                return Err(invalid("文本累积需要 string"));
+            };
+            text
+        };
+        let mut heap = self.runtime.vm.heap.borrow_mut();
+        let limit = self.budget.max_heap_bytes();
+        let total = heap.total_bytes();
+        let entry = heap.get_mut(left).ok_or(ExecutionError::InvalidHandle)?;
+        let before = dynamic_bytes(&entry.value, entry.callable.as_deref());
+        let value = Arc::get_mut(&mut entry.value)
+            .ok_or_else(|| invalid("文本累积缓冲存在非法可写别名"))?;
+        let Value::String(text) = value else {
+            return Err(invalid("文本累积需要 string"));
+        };
+        let required = text
+            .len()
+            .checked_add(right_text.len())
+            .ok_or_else(|| invalid("文本容量溢出"))?;
+        if required > text.capacity() {
+            let remaining = limit.saturating_sub(total);
+            let old_capacity = text.capacity();
+            let target = required.max(old_capacity.saturating_mul(2)).max(16);
+            let additional = target.saturating_sub(old_capacity);
+            if additional > remaining {
+                return Err(invalid("动态内存预算耗尽"));
+            }
+            text.try_reserve_exact(additional)
+                .map_err(|_| invalid("文本分配失败"))?;
+            if text.capacity().saturating_sub(old_capacity) > remaining {
+                let after = dynamic_bytes(&entry.value, entry.callable.as_deref());
+                heap.bytes = heap.bytes - before + after;
+                return Err(invalid("动态内存预算耗尽"));
+            }
+        }
+        self.budget.charge(right_text.len() as u64)?;
+        text.push_str(right_text);
+        let after = dynamic_bytes(&entry.value, entry.callable.as_deref());
+        heap.bytes = heap.bytes - before + after;
+        Ok(Slot::handle(left))
     }
     fn enum_unary(&self, value: Slot) -> Result<Slot, ExecutionError> {
         if let Value::Enum { type_name, value } = self.value(value)?.as_ref() {
@@ -1562,24 +2070,31 @@ impl ExecutionHost for RuntimeHost<'_> {
     fn is_type(&self, value: Slot, type_name: &str) -> Result<bool, ExecutionError> {
         if let Slot::Handle(id) = value {
             if let Some((actual, _)) = self.runtime.values.object_identity(id.get()) {
-                return Ok(self.runtime.contract.schema().is_assignable(actual, type_name));
+                return Ok(self
+                    .runtime
+                    .contract
+                    .schema()
+                    .is_assignable(actual, type_name));
             }
         }
         Ok(
             matches!(self.value(value)?.as_ref(),Value::Object{type_name:actual,..}if self.runtime.contract.schema().is_assignable(actual,type_name)),
         )
     }
-    fn direct_callable(&self, function: FunctionId) -> Result<Binding, ExecutionError> {
-        self.runtime.code().direct.get(function.0 as usize).cloned()
+    fn direct_callable(&self, function: FunctionId) -> Result<&Binding, ExecutionError> {
+        self.runtime
+            .code()
+            .direct
+            .get(function.0 as usize)
             .ok_or_else(|| invalid("直接调用程序编号越界"))
     }
-    fn callable(&self, value: Slot) -> Result<Callable, ExecutionError> {
+    fn callable(&self, value: Slot) -> Result<Callable<'_>, ExecutionError> {
         let Slot::Handle(id) = value else {
             return Err(invalid("需要函数"));
         };
         let id = id.get();
         if let Some(function) = self.runtime.code().functions.get(&id) {
-            return Ok(Callable::Program(self.direct_callable(*function)?));
+            return Ok(Callable::Program(self.direct_callable(*function)?.into()));
         }
         if matches!(
             self.value(Slot::handle(id))?.as_ref(),
@@ -1593,7 +2108,7 @@ impl ExecutionHost for RuntimeHost<'_> {
             .borrow()
             .get(id)
             .and_then(|entry| entry.callable.clone())
-            .map(Callable::Program)
+            .map(|binding| Callable::Program(binding.into()))
             .ok_or_else(|| invalid("函数没有实现"))
     }
     fn call_host(&self, target: Slot, args: &[Slot]) -> Result<Slot, ExecutionError> {
@@ -1630,13 +2145,21 @@ impl ExecutionHost for RuntimeHost<'_> {
             }
         }
         let (mut exported, _args_memory) = self.reserve_values(args.len())?;
-        let mut payload_memory = self.budget.reserve_temporary(0, self.runtime.vm.heap.borrow().total_bytes())?;
+        let mut payload_memory = self
+            .budget
+            .reserve_temporary(0, self.runtime.vm.heap.borrow().total_bytes())?;
         let mut payload_bytes = 0usize;
         for value in args {
             let value = self.export_value(*value, false)?;
-            let bytes = match &value { HostValue::String(text) => text.capacity(), HostValue::Enum { type_name, .. } => type_name.capacity(), _ => 0 };
+            let bytes = match &value {
+                HostValue::String(text) => text.capacity(),
+                HostValue::Enum { type_name, .. } => type_name.capacity(),
+                _ => 0,
+            };
             // 已导出的文本一直计费到同步 Host 回调及其重入全部结束。
-            payload_bytes = payload_bytes.checked_add(bytes).ok_or_else(|| invalid("Host 参数容量溢出"))?;
+            payload_bytes = payload_bytes
+                .checked_add(bytes)
+                .ok_or_else(|| invalid("Host 参数容量溢出"))?;
             payload_memory.resize(payload_bytes, self.runtime.vm.heap.borrow().total_bytes())?;
             exported.push(value);
         }
@@ -1675,11 +2198,17 @@ impl ExecutionHost for RuntimeHost<'_> {
     }
     fn array(&self, values: Vec<Slot>) -> Result<Slot, ExecutionError> {
         let (mut stored, memory) = self.reserve_values(values.len())?;
-        for value in values { stored.push(self.id(value)?); }
-        let packed_memory = self.budget.reserve_temporary(ArrayValue::packing_bytes(&stored), self.runtime.vm.heap.borrow().total_bytes())?;
+        for value in values {
+            stored.push(self.id(value)?);
+        }
+        let packed_memory = self.budget.reserve_temporary(
+            ArrayValue::packing_bytes(&stored),
+            self.runtime.vm.heap.borrow().total_bytes(),
+        )?;
         let stored = ArrayValue::pack(stored).map_err(|error| invalid(&error))?;
         // 数值转换完成后转交连续缓冲，输入向量的临时预留不再占用预算。
-        drop(memory); drop(packed_memory);
+        drop(memory);
+        drop(packed_memory);
         self.allocate(Value::Array(stored))
     }
     fn dictionary(&self, values: Vec<(Slot, Slot)>) -> Result<Slot, ExecutionError> {
@@ -1688,12 +2217,20 @@ impl ExecutionHost for RuntimeHost<'_> {
         let (mut key_guards, guards_memory) = self.reserve_values(values.len())?;
         for (key, _) in &values {
             let (key, memory) = self.temporary_key(*key)?;
-            keys.push(key); key_guards.push(memory);
+            keys.push(key);
+            key_guards.push(memory);
         }
-        let entries_bytes = values.len().checked_mul(size_of::<(ScalarKey, (ValueId, ValueId))>() + 32).ok_or_else(|| invalid("动态内存预算耗尽"))?;
-        let entries_memory = self.budget.reserve_temporary(entries_bytes, self.runtime.vm.heap.borrow().total_bytes())?;
-        let mut entries = indexmap::IndexMap::new();
-        entries.try_reserve(values.len()).map_err(|_| invalid("字典分配失败"))?;
+        let entries_bytes = values
+            .len()
+            .checked_mul(size_of::<(ScalarKey, (ValueId, ValueId))>() + 32)
+            .ok_or_else(|| invalid("动态内存预算耗尽"))?;
+        let entries_memory = self
+            .budget
+            .reserve_temporary(entries_bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+        let mut entries = DictionaryValue::new();
+        entries
+            .try_reserve(values.len())
+            .map_err(|_| invalid("字典分配失败"))?;
         for ((key, value), scalar) in values.into_iter().zip(keys) {
             if entries
                 .insert(scalar, (self.id(key)?, self.id(value)?))
@@ -1702,7 +2239,10 @@ impl ExecutionHost for RuntimeHost<'_> {
                 return Err(invalid("字典 key 重复"));
             }
         }
-        drop(keys_memory); drop(key_guards); drop(guards_memory);
+        drop(keys_memory);
+        drop(key_guards);
+        drop(guards_memory);
+        entries.optimize_index(self.budget.max_heap_bytes().saturating_sub(self.runtime.vm.heap.borrow().total_bytes())).map_err(|message| invalid(&message))?;
         drop(entries_memory);
         self.allocate(Value::Dict(entries))
     }
@@ -1733,17 +2273,33 @@ impl ExecutionHost for RuntimeHost<'_> {
         // 已求值的字段原地排序后二分查询，不额外分配临时树索引；默认值仍按声明顺序求值。
         let mut provided = fields;
         provided.sort_unstable_by(|left, right| left.0.cmp(right.0));
-        if provided.windows(2).any(|pair| pair[0].0 == pair[1].0) { return Err(invalid("data 字段重复")); }
+        if provided.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(invalid("data 字段重复"));
+        }
         let (mut stored, stored_memory) = self.reserve_values(meta.all_fields().count())?;
-        let text_bytes = meta.all_fields().try_fold(type_name.len().saturating_add(size_of::<Value>() + 2 * size_of::<usize>()), |bytes, field| bytes.checked_add(field.name.len())).ok_or_else(|| invalid("对象载荷容量溢出"))?;
-        let text_memory = self.budget.reserve_temporary(text_bytes, self.runtime.vm.heap.borrow().total_bytes())?;
+        let text_bytes = meta
+            .all_fields()
+            .try_fold(
+                type_name
+                    .len()
+                    .saturating_add(size_of::<Value>() + 2 * size_of::<usize>()),
+                |bytes, field| bytes.checked_add(field.name.len()),
+            )
+            .ok_or_else(|| invalid("对象载荷容量溢出"))?;
+        let text_memory = self
+            .budget
+            .reserve_temporary(text_bytes, self.runtime.vm.heap.borrow().total_bytes())?;
         let copy_reserved = |source: &str| -> Result<String, ExecutionError> {
             let mut text = String::new();
-            text.try_reserve_exact(source.len()).map_err(|_| invalid("对象文本分配失败"))?;
-            text.push_str(source); Ok(text)
+            text.try_reserve_exact(source.len())
+                .map_err(|_| invalid("对象文本分配失败"))?;
+            text.push_str(source);
+            Ok(text)
         };
         for field in meta.all_fields() {
-            let value = if let Ok(index) = provided.binary_search_by(|(name, _)| name.cmp(&field.name.as_str())) {
+            let value = if let Ok(index) =
+                provided.binary_search_by(|(name, _)| name.cmp(&field.name.as_str()))
+            {
                 provided[index].1
             } else if let Some(default) = &field.default {
                 let module = &self
@@ -1770,17 +2326,18 @@ impl ExecutionHost for RuntimeHost<'_> {
             fields: stored,
             bases: Vec::new(),
         };
-        drop(stored_memory); drop(text_memory);
+        drop(stored_memory);
+        drop(text_memory);
         let mut heap = self.runtime.vm.heap.borrow_mut();
         let entry = heap.get(id).ok_or(ExecutionError::InvalidHandle)?;
-        let bytes = heap.bytes - dynamic_bytes(&entry.value, entry.callable.as_ref())
+        let bytes = heap.bytes - dynamic_bytes(&entry.value, entry.callable.as_deref())
             + dynamic_bytes(&value, None);
-        if bytes.saturating_add(heap.total_bytes().saturating_sub(heap.bytes)) > self.budget.max_heap_bytes() {
+        if bytes.saturating_add(heap.total_bytes().saturating_sub(heap.bytes))
+            > self.budget.max_heap_bytes()
+        {
             return Err(invalid("动态内存预算耗尽"));
         }
-        heap.get_mut(id)
-            .ok_or(ExecutionError::InvalidHandle)?
-            .value = Arc::new(value);
+        heap.get_mut(id).ok_or(ExecutionError::InvalidHandle)?.value = Arc::new(value);
         heap.bytes = bytes;
         Ok(target)
     }
@@ -1788,7 +2345,7 @@ impl ExecutionHost for RuntimeHost<'_> {
         let target = self.reserve_object(type_name)?;
         self.initialize_object(target, type_name, fields)
     }
-    fn template(&self, value: Slot) -> Result<Option<Binding>, ExecutionError> {
+    fn template(&self, value: Slot) -> Result<Option<CallBinding<'_>>, ExecutionError> {
         if !matches!(self.value(value)?.as_ref(), Value::Template { .. }) {
             return Ok(None);
         }
@@ -1800,16 +2357,31 @@ impl ExecutionHost for RuntimeHost<'_> {
     fn format(&self, parts: &[FormatPart], values: &[Slot]) -> Result<Slot, ExecutionError> {
         use std::fmt::Write;
         // 输出与片段物化、Host 重入共享累计预留，不能各自使用同一份剩余额度。
-        let memory = self.budget.reserve_temporary(0, self.runtime.vm.heap.borrow().total_bytes())?;
-        let mut output = FormatOutput { text: String::new(), budget: &self.budget, heap: &self.runtime.vm.heap, memory, error: None };
+        let memory = self
+            .budget
+            .reserve_temporary(0, self.runtime.vm.heap.borrow().total_bytes())?;
+        let mut output = FormatOutput {
+            text: String::new(),
+            budget: &self.budget,
+            heap: &self.runtime.vm.heap,
+            memory,
+            error: None,
+        };
         for part in parts {
             let written = match part {
                 FormatPart::Text(text) => output.write_str(text),
                 FormatPart::Value(register) => {
-                    let slot = *values.get(*register as usize).ok_or_else(|| invalid("格式输入越界"))?;
+                    let slot = *values
+                        .get(*register as usize)
+                        .ok_or_else(|| invalid("格式输入越界"))?;
                     if let Slot::Handle(id) = slot {
                         if let Some(Stored::String(text)) = self.runtime.values.view(id.get()) {
-                            if output.write_str(text).is_err() { return Err(output.error.take().unwrap_or_else(|| invalid("格式化失败"))); }
+                            if output.write_str(text).is_err() {
+                                return Err(output
+                                    .error
+                                    .take()
+                                    .unwrap_or_else(|| invalid("格式化失败")));
+                            }
                             continue;
                         }
                     }
@@ -1819,14 +2391,29 @@ impl ExecutionHost for RuntimeHost<'_> {
                         Value::Float(value) => write!(output, "{value}"),
                         Value::Bool(value) => write!(output, "{value}"),
                         Value::Enum { type_name, value } => {
-                            let variant = self.runtime.contract.schema().resolve_enum(type_name).and_then(|meta| meta.variant_by_value.get(&i64::from(*value)).and_then(|index| meta.variants.get(*index)));
-                            if let Some(variant) = variant { output.write_str(&variant.name) } else { write!(output, "{value}") }
+                            let variant = self
+                                .runtime
+                                .contract
+                                .schema()
+                                .resolve_enum(type_name)
+                                .and_then(|meta| {
+                                    meta.variant_by_value
+                                        .get(&i64::from(*value))
+                                        .and_then(|index| meta.variants.get(*index))
+                                });
+                            if let Some(variant) = variant {
+                                output.write_str(&variant.name)
+                            } else {
+                                write!(output, "{value}")
+                            }
                         }
                         _ => return Err(invalid("值不能转换为文本")),
                     }
                 }
             };
-            if written.is_err() { return Err(output.error.take().unwrap_or_else(|| invalid("格式化失败"))); }
+            if written.is_err() {
+                return Err(output.error.take().unwrap_or_else(|| invalid("格式化失败")));
+            }
         }
         drop(output.memory);
         self.allocate(Value::String(output.text))
@@ -1857,12 +2444,13 @@ impl ExecutionHost for RuntimeHost<'_> {
         let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
         match self.stored_value(heap.as_deref(), id)? {
             Stored::Array(values) => {
-                let id = values.get(index).ok_or_else(|| invalid("索引越界"))?;
-                if let Some(value) = self.slot_in_heap(heap.as_deref(), id)? {
+                let stored = values.get_slot(index).ok_or_else(|| invalid("索引越界"))?;
+                if let Some(value) = self.read_array_slot(heap.as_deref(), stored)? {
                     Ok(value)
                 } else {
+                    let Slot::Handle(id) = stored else { unreachable!() };
                     drop(heap);
-                    self.slot(id)
+                    self.slot(id.get())
                 }
             }
             Stored::Dict(values) => {
@@ -1888,14 +2476,14 @@ impl ExecutionHost for RuntimeHost<'_> {
         let heap = (id >= self.runtime.values.len()).then(|| self.runtime.vm.heap.borrow());
         match self.stored_value(heap.as_deref(), id)? {
             Stored::Array(values) => {
-                let stored = values.get(index).ok_or_else(|| invalid("索引越界"))?;
+                let stored = values.get_slot(index).ok_or_else(|| invalid("索引越界"))?;
                 let key = i32::try_from(index).map_err(|_| invalid("索引超出 int"))?;
-                let value = if let Some(value) = self.slot_in_heap(heap.as_deref(), stored)? {
+                let value = if let Some(value) = self.read_array_slot(heap.as_deref(), stored)? {
                     value
                 } else {
-                    let id = stored;
+                    let Slot::Handle(id) = stored else { unreachable!() };
                     drop(heap);
-                    return Ok((Slot::Int(key), self.slot(id)?));
+                    return Ok((Slot::Int(key), self.slot(id.get())?));
                 };
                 Ok((Slot::Int(key), value))
             }
@@ -1973,13 +2561,18 @@ impl RuntimeHost<'_> {
             D::EmptyObject => self.dictionary(Vec::new()),
             D::Array(values) => {
                 let (mut items, _memory) = self.reserve_values(values.len())?;
-                for value in values { items.push(self.default_value(value, owner, module)?); }
+                for value in values {
+                    items.push(self.default_value(value, owner, module)?);
+                }
                 self.array(items)
             }
             D::Dictionary(values) => {
                 let (mut entries, _memory) = self.reserve_values(values.len())?;
                 for (key, value) in values {
-                    entries.push((self.default_value(key, owner, module)?, self.default_value(value, owner, module)?));
+                    entries.push((
+                        self.default_value(key, owner, module)?,
+                        self.default_value(value, owner, module)?,
+                    ));
                 }
                 self.dictionary(entries)
             }
@@ -2022,7 +2615,7 @@ impl RuntimeHost<'_> {
                     Binding {
                         program,
                         owner,
-                        captures: Arc::from([]),
+                        captures: Box::default(),
                     },
                     template,
                 )
@@ -2044,28 +2637,65 @@ impl RuntimeHost<'_> {
         if !regexes.contains_key(pattern) {
             let heap_bytes = self.runtime.vm.heap.borrow().total_bytes();
             let remaining = self.budget.max_heap_bytes().saturating_sub(heap_bytes);
-            let syntax_bytes = pattern.len().checked_mul(256).and_then(|n| n.checked_add(4096)).ok_or_else(|| invalid("正则容量溢出"))?;
+            let syntax_bytes = pattern
+                .len()
+                .checked_mul(256)
+                .and_then(|n| n.checked_add(4096))
+                .ok_or_else(|| invalid("正则容量溢出"))?;
             let nfa_limit = remaining.saturating_sub(syntax_bytes) / 64;
-            if nfa_limit < 1024 { return Err(invalid("动态内存预算耗尽")); }
+            if nfa_limit < 1024 {
+                return Err(invalid("动态内存预算耗尽"));
+            }
             // 无捕获 Pike VM 没有随输入增长的 DFA 缓存；编译和 NFA 状态空间先保守预留。
-            let compile_memory = self.budget.reserve_temporary(syntax_bytes + nfa_limit * 64, heap_bytes)?;
+            let compile_memory = self
+                .budget
+                .reserve_temporary(syntax_bytes + nfa_limit * 64, heap_bytes)?;
             self.budget.charge(pattern.len() as u64)?;
-            let program = PikeVM::builder().thompson(NFA::config().which_captures(WhichCaptures::None).nfa_size_limit(Some(nfa_limit)))
-                .build(pattern).map_err(|error| invalid(&format!("正则编译失败：{error}")))?;
-            let required = program.get_nfa().memory_usage().checked_mul(16)
+            let program = PikeVM::builder()
+                .thompson(
+                    NFA::config()
+                        .which_captures(WhichCaptures::None)
+                        .nfa_size_limit(Some(nfa_limit)),
+                )
+                .build(pattern)
+                .map_err(|error| invalid(&format!("正则编译失败：{error}")))?;
+            let required = program
+                .get_nfa()
+                .memory_usage()
+                .checked_mul(16)
                 .and_then(|n| n.checked_add(program.get_nfa().states().len().saturating_mul(64)))
                 .and_then(|n| n.checked_add(pattern.len() + size_of::<CachedRegex>() + 1024))
-                .and_then(|n| n.checked_add(Heap::table_growth::<(String, CachedRegex)>(regexes.len(), regexes.capacity())))
+                .and_then(|n| {
+                    n.checked_add(Heap::table_growth::<(String, CachedRegex)>(
+                        regexes.len(),
+                        regexes.capacity(),
+                    ))
+                })
                 .ok_or_else(|| invalid("正则容量溢出"))?;
             drop(compile_memory);
             let memory = self.budget.reserve_temporary(required, heap_bytes)?;
             let cache = program.create_cache();
-            let mut key = String::new(); key.try_reserve_exact(pattern.len()).map_err(|_| invalid("正则键分配失败"))?; key.push_str(pattern);
-            regexes.try_reserve(1).map_err(|_| invalid("正则索引分配失败"))?;
-            regexes.insert(key, CachedRegex { program, cache, _memory: memory });
+            let mut key = String::new();
+            key.try_reserve_exact(pattern.len())
+                .map_err(|_| invalid("正则键分配失败"))?;
+            key.push_str(pattern);
+            regexes
+                .try_reserve(1)
+                .map_err(|_| invalid("正则索引分配失败"))?;
+            regexes.insert(
+                key,
+                CachedRegex {
+                    program,
+                    cache,
+                    _memory: memory,
+                },
+            );
         }
-        let entry = regexes.get_mut(pattern).ok_or_else(|| invalid("正则缓存缺失"))?;
-        let work = (entry.program.get_nfa().states().len() as u64).saturating_mul(text.len().saturating_add(1) as u64);
+        let entry = regexes
+            .get_mut(pattern)
+            .ok_or_else(|| invalid("正则缓存缺失"))?;
+        let work = (entry.program.get_nfa().states().len() as u64)
+            .saturating_mul(text.len().saturating_add(1) as u64);
         self.budget.charge(work)?;
         Ok(entry.program.is_match(&mut entry.cache, text))
     }
@@ -2134,10 +2764,25 @@ impl RuntimeHost<'_> {
             // 记录目录属于映像，直接借用遍历，避免先复制未计费的目录。
             let records = &self.runtime.records;
             self.budget.charge(records.len() as u64)?;
-            let count = records.keys().filter(|(actual, _)| self.runtime.contract.schema().is_assignable(actual, type_name)).count();
+            let count = records
+                .keys()
+                .filter(|(actual, _)| {
+                    self.runtime
+                        .contract
+                        .schema()
+                        .is_assignable(actual, type_name)
+                })
+                .count();
             let (mut values, _memory) = self.reserve_values(count)?;
             for ((actual, _), id) in records.iter() {
-                if self.runtime.contract.schema().is_assignable(actual, type_name) { values.push(Slot::handle(*id)); }
+                if self
+                    .runtime
+                    .contract
+                    .schema()
+                    .is_assignable(actual, type_name)
+                {
+                    values.push(Slot::handle(*id));
+                }
             }
             return self.array(values);
         }
@@ -2240,7 +2885,9 @@ impl RuntimeHost<'_> {
                     let (mut key_memory, _guards_memory) = self.reserve_values(values.len())?;
                     for value in values {
                         let (key, memory) = self.temporary_key(self.slot(value)?)?;
-                        if !seen.insert(key) { return Ok(Slot::Bool(false)); }
+                        if !seen.insert(key) {
+                            return Ok(Slot::Bool(false));
+                        }
                         key_memory.push(memory);
                     }
                     return Ok(Slot::Bool(true));
@@ -2318,7 +2965,9 @@ impl RuntimeHost<'_> {
                     let (mut key_memory, _guards_memory) = self.reserve_values(right.len())?;
                     for value in right {
                         let (key, memory) = self.temporary_key(self.slot(value)?)?;
-                        if right_keys.insert(key) { key_memory.push(memory); }
+                        if right_keys.insert(key) {
+                            key_memory.push(memory);
+                        }
                     }
                     let right = right_keys;
                     for value in left {
@@ -2349,10 +2998,7 @@ impl RuntimeHost<'_> {
                         return Ok(Slot::Bool(values.contains_key(&self.scalar_key(argument)?)));
                     }
                     for (_, (_, value)) in values {
-                        if self.equal(
-                            self.slot(*value)?,
-                            argument,
-                        )? {
+                        if self.equal(self.slot(*value)?, argument)? {
                             return Ok(Slot::Bool(true));
                         }
                     }
@@ -2365,18 +3011,39 @@ impl RuntimeHost<'_> {
     }
 }
 
-fn fixed_instruction(id: ValueId, destination: u16) -> Result<crate::vm::bytecode::Instruction, String> {
+fn fixed_instruction(
+    id: ValueId,
+    destination: u16,
+) -> Result<crate::vm::bytecode::Instruction, String> {
     use crate::vm::bytecode::{Instruction, Opcode};
     Ok(match Slot::from_scalar_id(id) {
         Some(Slot::None) => Instruction::new(Opcode::Constant, destination, 1, 0, 3),
-        Some(Slot::Bool(value)) => Instruction::new(Opcode::Constant, destination, if value { 3 } else { 2 }, 0, 3),
-        Some(Slot::Int(value)) => Instruction::indexed(Opcode::Constant, destination, value as u32).with_flags(1),
-        Some(Slot::Float(value)) => Instruction::indexed(Opcode::Constant, destination, value.to_bits()).with_flags(2),
-        _ => Instruction::indexed(Opcode::LoadFixed, destination, u32::try_from(id).map_err(|_| "固定值槽超限")?),
+        Some(Slot::Bool(value)) => Instruction::new(
+            Opcode::Constant,
+            destination,
+            if value { 3 } else { 2 },
+            0,
+            3,
+        ),
+        Some(Slot::Int(value)) => {
+            Instruction::indexed(Opcode::Constant, destination, value as u32).with_flags(1)
+        }
+        Some(Slot::Float(value)) => {
+            Instruction::indexed(Opcode::Constant, destination, value.to_bits()).with_flags(2)
+        }
+        _ => Instruction::indexed(
+            Opcode::LoadFixed,
+            destination,
+            u32::try_from(id).map_err(|_| "固定值槽超限")?,
+        ),
     })
 }
 
-fn link_program(runtime: &Runtime, program: &mut Program, functions: &BTreeMap<ValueId, FunctionId>) -> Result<(), String> {
+fn link_program(
+    runtime: &Runtime,
+    program: &mut Program,
+    functions: &BTreeMap<ValueId, FunctionId>,
+) -> Result<(), String> {
     use crate::vm::bytecode::{Instruction, Opcode};
     program.tail_calls = runtime.profile == OptimizationProfile::Release;
 
@@ -2389,11 +3056,8 @@ fn link_program(runtime: &Runtime, program: &mut Program, functions: &BTreeMap<V
             .get(instruction.index() as usize)
             .ok_or_else(|| format!("{}: 引用索引越界", program.name))?;
         if name.starts_with("$host::") {
-            *instruction = Instruction::indexed(
-                Opcode::LoadHost,
-                instruction.a(),
-                instruction.index(),
-            );
+            *instruction =
+                Instruction::indexed(Opcode::LoadHost, instruction.a(), instruction.index());
             continue;
         }
         let id = if let Some(name) = name.strip_prefix("$const::") {
@@ -2432,14 +3096,23 @@ fn link_program(runtime: &Runtime, program: &mut Program, functions: &BTreeMap<V
 }
 
 /// 仅沿同一基本块传播已链接函数身份，分支入口与所有写入均杀死旧事实。
-fn link_direct_calls(program: &mut Program, functions: &BTreeMap<ValueId, FunctionId>) -> Result<(), String> {
+fn link_direct_calls(
+    program: &mut Program,
+    functions: &BTreeMap<ValueId, FunctionId>,
+) -> Result<(), String> {
     use crate::vm::bytecode::{DirectCallSite, Instruction, Opcode};
     let leaders = program.block_leaders()?;
-    let writes = program.instructions.iter().copied().map(|instruction| program.written_registers(instruction))
+    let writes = program
+        .instructions
+        .iter()
+        .copied()
+        .map(|instruction| program.written_registers(instruction))
         .collect::<Result<Vec<_>, _>>()?;
     let mut known = HashMap::new();
     for (pc, instruction) in program.instructions.iter_mut().enumerate() {
-        if leaders.contains(&pc) { known.clear(); }
+        if leaders.contains(&pc) {
+            known.clear();
+        }
         let original = *instruction;
         let linked = match original.opcode() {
             Some(Opcode::LoadFixed) => functions.get(&u64::from(original.index())).copied(),
@@ -2593,7 +3266,9 @@ fn fold_scalar_control_flow(program: &mut Program) -> Result<(), String> {
     let mut known = HashMap::new();
     let mut remove = vec![false; program.instructions.len()];
     for pc in 0..program.instructions.len() {
-        if leaders.contains(&pc) { known.clear(); }
+        if leaders.contains(&pc) {
+            known.clear();
+        }
         let instruction = program.instructions[pc];
         let a = instruction.a();
         let input = |register| known.get(&register).copied();
@@ -2661,7 +3336,9 @@ fn fold_format_plans(runtime: &Runtime, program: &mut Program) -> Result<(), Str
     let leaders = program.block_leaders()?;
     let mut known = HashMap::new();
     for pc in 0..program.instructions.len() {
-        if leaders.contains(&pc) { known.clear(); }
+        if leaders.contains(&pc) {
+            known.clear();
+        }
         let instruction = program.instructions[pc];
         let opcode = instruction.opcode().ok_or("未知操作码")?;
         let constant = match opcode {
@@ -2669,19 +3346,34 @@ fn fold_format_plans(runtime: &Runtime, program: &mut Program) -> Result<(), Str
                 0 => program.constants.get(instruction.index() as usize).cloned(),
                 1 => Some(Constant::Int(instruction.index() as i32)),
                 2 => Some(Constant::Float(f32::from_bits(instruction.index()))),
-                3 => match instruction.b() { 0 => Some(Constant::Unit), 1 => Some(Constant::None), 2 => Some(Constant::Bool(false)), _ => Some(Constant::Bool(true)) },
+                3 => match instruction.b() {
+                    0 => Some(Constant::Unit),
+                    1 => Some(Constant::None),
+                    2 => Some(Constant::Bool(false)),
+                    _ => Some(Constant::Bool(true)),
+                },
                 _ => None,
             },
             Opcode::Move => known.get(&instruction.b()).cloned(),
-            Opcode::LoadFixed => match runtime.values.get(u64::from(instruction.index())).as_deref() {
+            Opcode::LoadFixed => match runtime
+                .values
+                .get(u64::from(instruction.index()))
+                .as_deref()
+            {
                 Some(Value::String(text)) => Some(Constant::String(text.clone())),
-                Some(Value::Enum { type_name, value }) => Some(Constant::Enum { name: type_name.clone(), value: *value }),
+                Some(Value::Enum { type_name, value }) => Some(Constant::Enum {
+                    name: type_name.clone(),
+                    value: *value,
+                }),
                 _ => None,
             },
             _ => None,
         };
         if opcode == Opcode::Format {
-            let plan = program.formats.get_mut(instruction.index() as usize).ok_or("格式计划越界")?;
+            let plan = program
+                .formats
+                .get_mut(instruction.index() as usize)
+                .ok_or("格式计划越界")?;
             let mut merged = Vec::new();
             for part in std::mem::take(plan) {
                 let part = match part {
@@ -2727,7 +3419,10 @@ fn fold_fixed_reads(runtime: &Runtime, program: &mut Program) -> Result<(), Stri
     use crate::vm::bytecode::{Instruction, Opcode};
 
     let leaders = program.block_leaders()?;
-    let writes = program.instructions.iter().copied()
+    let writes = program
+        .instructions
+        .iter()
+        .copied()
         .map(|instruction| program.written_registers(instruction))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -2763,7 +3458,10 @@ fn fold_fixed_reads(runtime: &Runtime, program: &mut Program) -> Result<(), Stri
                 .get(&original.b())
                 .copied()
                 .and_then(|owner| runtime.fixed_field(owner, original.c())),
-            Opcode::Index => {
+            Opcode::Index
+            | Opcode::IndexArray
+            | Opcode::IndexDict
+            | Opcode::IndexString => {
                 let (receiver, key) = if original.flags() == 1 {
                     let site = program.index_consts.get(original.index() as usize).ok_or("索引附表越界")?;
                     let key = match site.key { Constant::Int(value) => Some(ScalarKey::Int(value)), _ => None };
@@ -2781,30 +3479,37 @@ fn fold_fixed_reads(runtime: &Runtime, program: &mut Program) -> Result<(), Stri
             fixed.remove(register);
             keys.remove(register);
         }
-        if let Some(key) = key { keys.insert(target, key); }
+        if let Some(key) = key {
+            keys.insert(target, key);
+        }
         if let Some(id) = linked {
             // Host 占位符的读取有可观察行为，不能传播为可重复使用的静态事实。
-            if runtime.values.is_host(id) { continue; }
+            if runtime.values.is_host(id) {
+                continue;
+            }
             fixed.insert(target, id);
             let key = match runtime.values.get(id).as_deref() {
                 Some(Value::Int(value)) => Some(ScalarKey::Int(*value)),
                 Some(Value::Bool(value)) => Some(ScalarKey::Bool(*value)),
                 Some(Value::String(value)) => Some(ScalarKey::String(value.clone())),
-                Some(Value::Enum { type_name, value }) => Some(ScalarKey::Enum { type_name: type_name.clone(), value: *value }),
+                Some(Value::Enum { type_name, value }) => Some(ScalarKey::Enum {
+                    type_name: type_name.clone(),
+                    value: *value,
+                }),
                 _ => None,
             };
-            if let Some(key) = key { keys.insert(target, key); }
+            if let Some(key) = key {
+                keys.insert(target, key);
+            }
             *instruction = match runtime.values.get(id).as_deref() {
                 Some(Value::None) => Instruction::new(Opcode::Constant, target, 1, 0, 3),
                 Some(Value::Bool(false)) => Instruction::new(Opcode::Constant, target, 2, 0, 3),
                 Some(Value::Bool(true)) => Instruction::new(Opcode::Constant, target, 3, 0, 3),
                 Some(Value::Int(value)) => {
-                    Instruction::indexed(Opcode::Constant, target, *value as u32)
-                        .with_flags(1)
+                    Instruction::indexed(Opcode::Constant, target, *value as u32).with_flags(1)
                 }
                 Some(Value::Float(value)) => {
-                    Instruction::indexed(Opcode::Constant, target, value.to_bits())
-                        .with_flags(2)
+                    Instruction::indexed(Opcode::Constant, target, value.to_bits()).with_flags(2)
                 }
                 _ => Instruction::indexed(
                     Opcode::LoadFixed,
@@ -2824,15 +3529,7 @@ fn dynamic_bytes(value: &Value, binding: Option<&Binding>) -> usize {
         Value::String(text) => text.capacity(),
         Value::Enum { type_name, .. } => type_name.capacity(),
         Value::Array(values) => values.heap_bytes(),
-        Value::Dict(values) => {
-            // 有序条目、哈希索引及归一化 key 的独立字符串均属于该字典。
-            values.capacity() * (size_of::<ScalarKey>() + size_of::<(ValueId, ValueId)>() + 32)
-                + values.keys().map(|key| match key {
-                    ScalarKey::String(text) => text.capacity(),
-                    ScalarKey::Enum { type_name, .. } => type_name.capacity(),
-                    _ => 0,
-                }).sum::<usize>()
-        }
+        Value::Dict(values) => values.heap_bytes(),
         Value::Object {
             type_name,
             key,
@@ -2862,7 +3559,7 @@ fn dynamic_bytes(value: &Value, binding: Option<&Binding>) -> usize {
         + size_of::<Value>()
         + 2 * size_of::<usize>()
         + payload
-        + binding.map_or(0, |binding| binding.captures.len() * size_of::<Slot>())
+        + binding.map_or(0, |binding| size_of::<Binding>() + 2 * size_of::<usize>() + binding.captures.len() * size_of::<Slot>())
 }
 
 #[cfg(test)]
@@ -2873,30 +3570,101 @@ mod control_flow_tests {
 
     #[test]
     fn failed_heap_allocation_does_not_publish_identity_or_accounting() {
-        let mut heap = Heap { next: u64::MAX, ..Heap::default() };
-        assert!(VmState::allocate_locked(&mut heap, Value::Int(1), None, usize::MAX).is_err());
+        let mut heap = Heap::default();
+        assert!(VmState::allocate_locked(&mut heap, Value::String("budget".into()), None, 0).is_err());
         assert_eq!(heap.bytes, 0);
-        assert_eq!(heap.next, u64::MAX);
         assert_eq!(heap.live_values, 0);
         assert!(heap.values.is_empty());
-        assert!(heap.locations.is_empty());
-        heap.next = 17;
-        assert!(VmState::allocate_locked(&mut heap, Value::String("budget".into()), None, 0).is_err());
-        assert_eq!(heap.next, 17);
-        assert_eq!(heap.bytes, 0);
-        assert!(heap.locations.is_empty());
+        assert!(heap.generations.is_empty());
+    }
+
+    #[test]
+    fn generational_handles_reject_stale_ids_and_retire_exhausted_slots() {
+        let mut heap = Heap::default();
+        let allocate = |heap: &mut Heap| {
+            let Slot::Handle(id) = VmState::allocate_locked(heap, Value::Int(1), None, usize::MAX).unwrap() else { panic!("handle") };
+            id.get()
+        };
+        let first = allocate(&mut heap);
+        let index = heap.index(first).unwrap();
+        heap.remove_slot(index).unwrap();
+        let second = allocate(&mut heap);
+        assert_eq!(heap.index(second), Some(index));
+        assert_ne!(first, second);
+        assert!(heap.get(first).is_none());
+        assert!(heap.get(0).is_none());
+        assert!(heap.get(Slot::Int(1).scalar_id().unwrap()).is_none());
+        heap.generations[index] = Heap::MAX_GENERATION;
+        heap.remove_slot(index).unwrap();
+        let third = allocate(&mut heap);
+        assert_ne!(heap.index(third), Some(index));
+        assert!(heap.get(second).is_none());
+    }
+
+    #[cfg(feature = "cft-compiler")]
+    #[test]
+    fn lowering_emits_typed_index_opcodes_and_preserves_results() {
+        use crate::schema::{build_schema, parse_modules, CftFile, ModuleId};
+        let schema = build_schema(&parse_modules([CftFile::from_source(
+            ModuleId::from("typed-index"),
+            r#"table Rule {
+                run: fn(array: [int], dict: {int: int}, text: string) -> int => {
+                    array[1] + dict[2] + text[1].len()
+                };
+            }"#,
+        )]))
+        .unwrap();
+        let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
+        builder.add_text("rule: Rule {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        let opcodes = runtime
+            .code()
+            .direct
+            .iter()
+            .flat_map(|binding| binding.program.instructions.iter())
+            .filter_map(|instruction| instruction.opcode())
+            .collect::<Vec<_>>();
+        assert!(opcodes.contains(&O::IndexArray));
+        assert!(opcodes.contains(&O::IndexDict));
+        assert!(opcodes.contains(&O::IndexString));
+
+        let rule = runtime.record("Rule", "rule").unwrap();
+        let run = runtime.field(rule, "run").unwrap();
+        assert!(matches!(
+            runtime
+                .invoke(
+                    run,
+                    &[
+                        HostValue::Array(vec![HostValue::Int(4), HostValue::Int(5)]),
+                        HostValue::Dictionary(vec![(HostValue::Int(2), HostValue::Int(7))]),
+                        HostValue::String("a界".into()),
+                    ],
+                    ExecutionLimits::default(),
+                )
+                .unwrap(),
+            HostValue::Int(13)
+        ));
     }
 
     #[cfg(feature = "cft-compiler")]
     #[test]
     fn regex_cache_obeys_shared_budget_and_releases_after_failure() {
         use crate::schema::{build_schema, parse_modules, CftFile, ModuleId};
-        let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("regex"), "table Rule { value: int = 1; }")])).unwrap();
+        let schema = build_schema(&parse_modules([CftFile::from_source(
+            ModuleId::from("regex"),
+            "table Rule { value: int = 1; }",
+        )]))
+        .unwrap();
         let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
         builder.add_text("rule: Rule {}", None);
         let runtime = builder.build().runtime.unwrap();
         {
-            let host = runtime.execution_host(ExecutionLimits { max_heap_bytes: 1024, ..ExecutionLimits::default() }).unwrap();
+            let host = runtime
+                .execution_host(ExecutionLimits {
+                    max_heap_bytes: 1024,
+                    ..ExecutionLimits::default()
+                })
+                .unwrap();
             assert!(host.regex_match("a+", "aaa").is_err());
             assert!(runtime.vm.regexes.borrow().is_empty());
         }
@@ -2916,8 +3684,8 @@ mod control_flow_tests {
     #[test]
     #[ignore = "原生分配与 GC 测量，release 单测试线程运行"]
     fn runtime_memory_probe() {
-        use crate::schema::{build_schema, parse_modules, CftFile, ModuleId};
         use crate::allocation_probe;
+        use crate::schema::{build_schema, parse_modules, CftFile, ModuleId};
         use std::time::Instant;
         let workloads = [
             ("transient_strings", "int", "var total: int = 0; for i in 0..20000 { total += i.string().len(); } total"),
@@ -2963,7 +3731,14 @@ mod control_flow_tests {
     fn snapshot_native_memory_probe() {
         use crate::allocation_probe;
         let source = (0..1000).map(|i| format!("h{i}: Hero {{ name: \"Hero {i}\", stats: Stats {{ health: {}, weights: [1, 2, 3] }} }}\n", i + 1)).collect::<String>() + "RuntimeSettings: RuntimeSettings {}";
-        let (contract, loaded) = allocation_probe::measure(|| Arc::new(Contract::from_bytes(include_bytes!("../../../../tests/csharp-runtime-integration/generated/coflow.contract")).unwrap()));
+        let (contract, loaded) = allocation_probe::measure(|| {
+            Arc::new(
+                Contract::from_bytes(include_bytes!(
+                    "../../../../runtimes/csharp/tests/integration/generated/coflow.contract"
+                ))
+                .unwrap(),
+            )
+        });
         let (runtime, linked) = allocation_probe::measure(|| {
             let mut builder = RuntimeBuilder::new(contract.clone());
             builder.add_text(&source, None);
@@ -2971,9 +3746,15 @@ mod control_flow_tests {
         });
         assert_eq!(runtime.records("Character").unwrap().len(), 1000);
         println!("snapshot_native records=1000,contract={loaded:?},image_and_instance={linked:?},fixed_regions={:?}", runtime.values.storage_sizes());
-        let (_, released) = allocation_probe::measure(|| { drop(runtime); drop(contract); });
+        let (_, released) = allocation_probe::measure(|| {
+            drop(runtime);
+            drop(contract);
+        });
         println!("snapshot_native released={released:?}");
-        assert_eq!(loaded.bytes_current + linked.bytes_current + released.bytes_current, 0);
+        assert_eq!(
+            loaded.bytes_current + linked.bytes_current + released.bytes_current,
+            0
+        );
     }
 
     #[cfg(feature = "cft-compiler")]
@@ -2997,12 +3778,19 @@ mod control_flow_tests {
             builder.optimization_profile(profile);
             builder.add_text("a: Rule {}", None);
             let runtime = builder.build().runtime.unwrap();
-            assert!(runtime.code().direct.iter().any(|binding| binding.program.instructions.iter()
+            assert!(runtime.code().direct.iter().any(|binding| binding
+                .program
+                .instructions
+                .iter()
                 .any(|instruction| instruction.opcode() == Some(O::CallDirect))));
-            let function = runtime.field(runtime.record("Rule", "a").unwrap(), "run").unwrap();
+            let function = runtime
+                .field(runtime.record("Rule", "a").unwrap(), "run")
+                .unwrap();
             for (input, expected) in [(0, 2), (2, 17), (8, 35)] {
-                assert!(matches!(runtime.invoke(function, &[HostValue::Int(input)], ExecutionLimits::default()).unwrap(),
-                    HostValue::Int(value) if value == expected));
+                assert!(
+                    matches!(runtime.invoke(function, &[HostValue::Int(input)], ExecutionLimits::default()).unwrap(),
+                    HostValue::Int(value) if value == expected)
+                );
             }
         }
     }
@@ -3030,9 +3818,19 @@ mod control_flow_tests {
             builder.optimization_profile(profile);
             builder.add_text("a: Rule {}", None);
             let runtime = builder.build().runtime.unwrap();
-            let function = runtime.field(runtime.record("Rule", "a").unwrap(), "run").unwrap();
-            assert!(matches!(runtime.invoke(function, &[HostValue::Int(1), HostValue::Int(2), HostValue::Int(3)], ExecutionLimits::default()).unwrap(),
-                HostValue::Int(868)));
+            let function = runtime
+                .field(runtime.record("Rule", "a").unwrap(), "run")
+                .unwrap();
+            assert!(matches!(
+                runtime
+                    .invoke(
+                        function,
+                        &[HostValue::Int(1), HostValue::Int(2), HostValue::Int(3)],
+                        ExecutionLimits::default()
+                    )
+                    .unwrap(),
+                HostValue::Int(868)
+            ));
         }
     }
 
@@ -3040,8 +3838,11 @@ mod control_flow_tests {
     #[test]
     fn fixed_field_and_collection_reads_do_not_borrow_dynamic_heap() {
         use crate::schema::{build_schema, parse_modules, CftFile, ModuleId};
-        let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("fixed"),
-            "table Rule { values: [int] = [4, 5]; mapping: {int: int} = {1: 7}; number: int = 9; }")])).unwrap();
+        let schema = build_schema(&parse_modules([CftFile::from_source(
+            ModuleId::from("fixed"),
+            "table Rule { values: [int] = [4, 5]; mapping: {int: int} = {1: 7}; number: int = 9; }",
+        )]))
+        .unwrap();
         let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
         builder.add_text("a: Rule {}", None);
         let runtime = builder.build().runtime.unwrap();
@@ -3091,7 +3892,12 @@ mod control_flow_tests {
     }
 
     fn program(instructions: Vec<I>) -> Program {
-        let mut p = Program::new("fusion".into(), String::new(), vec![CftValueType::Int; 2], CftValueType::Int);
+        let mut p = Program::new(
+            "fusion".into(),
+            String::new(),
+            vec![CftValueType::Int; 2],
+            CftValueType::Int,
+        );
         p.spans = vec![Span { start: 0, end: 0 }; instructions.len()];
         p.instructions = instructions;
         p.build_liveness().unwrap();
@@ -3151,7 +3957,11 @@ mod control_flow_tests {
         ]);
         p.instructions.insert(0, I::indexed(O::ForPrep, 0, 0));
         p.spans.insert(0, Span { start: 0, end: 0 });
-        p.for_sites.push(ForSite { limit: 1, target: 3, exclusive: true });
+        p.for_sites.push(ForSite {
+            limit: 1,
+            target: 3,
+            exclusive: true,
+        });
         fuse_int_immediates(&mut p).unwrap();
         p.validate().unwrap();
         assert_eq!(p.instructions.len(), 3);

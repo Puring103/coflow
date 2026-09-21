@@ -1,4 +1,4 @@
-//! 连续数值负载不建立逐元素堆节点；引用数组沿用稳定身份，读取统一返回 ValueId。
+//! 连续数值负载不建立逐元素堆节点；VM 直接读取槽，公开读取返回稳定 ValueId。
 use super::ValueId;
 use crate::{schema::CftValueType, vm::executor::Slot};
 
@@ -37,21 +37,39 @@ impl ArrayValue {
     pub(super) fn heap_bytes(&self) -> usize { self.capacity() * self.element_bytes() }
     pub(super) fn references(&self) -> &[ValueId] { if let Storage::References(values) = &self.0 { values } else { &[] } }
     pub fn get(&self, index: usize) -> Option<ValueId> {
-        match &self.0 {
-            Storage::Int(values) => Slot::Int(*values.get(index)?).scalar_id(),
-            Storage::Float(values) => Slot::Float(*values.get(index)?).scalar_id(),
-            Storage::Bool(values) => Slot::Bool(*values.get(index)? != 0).scalar_id(),
+        // 发布验证前的原始引用可能非法，由发布器诊断，不能先装入 VM 槽。
+        if let Storage::References(values) = &self.0 { return values.get(index).copied(); }
+        match self.get_slot(index)? {
+            Slot::Handle(id) => Some(id.get()),
+            scalar => scalar.scalar_id(),
+        }
+    }
+    /// VM 直接读取连续标量负载，避免先编码 ValueId 再解码成槽。
+    pub(crate) fn get_slot(&self, index: usize) -> Option<Slot> {
+        Some(match &self.0 {
+            Storage::Int(values) => Slot::Int(*values.get(index)?),
+            Storage::Float(values) => Slot::Float(*values.get(index)?),
+            Storage::Bool(values) => Slot::Bool(*values.get(index)? != 0),
             Storage::OptionalNumber { float, values } => {
                 let value = values.get(index)?;
-                if value.present == 0 { Slot::None.scalar_id() }
-                else if *float { Slot::Float(f32::from_bits(value.bits)).scalar_id() }
-                else { Slot::Int(value.bits as i32).scalar_id() }
+                if value.present == 0 { Slot::None }
+                else if *float { Slot::Float(f32::from_bits(value.bits)) }
+                else { Slot::Int(value.bits as i32) }
             }
-            Storage::OptionalBool(values) => { let [present, value] = *values.get(index)?; if present == 0 { Slot::None.scalar_id() } else { Slot::Bool(value != 0).scalar_id() } }
-            Storage::Nones(len) => if index < *len { Slot::None.scalar_id() } else { None },
-            Storage::FixedReferences(values) => { let id = *values.get(index)?; if id == u32::MAX { Slot::None.scalar_id() } else { Some(u64::from(id)) } }
-            Storage::References(values) => values.get(index).copied(),
-        }
+            Storage::OptionalBool(values) => {
+                let [present, value] = *values.get(index)?;
+                if present == 0 { Slot::None } else { Slot::Bool(value != 0) }
+            }
+            Storage::Nones(len) => { if index >= *len { return None; } Slot::None },
+            Storage::FixedReferences(values) => {
+                let id = *values.get(index)?;
+                if id == u32::MAX { Slot::None } else { Slot::handle(u64::from(id)) }
+            }
+            Storage::References(values) => {
+                let id = *values.get(index)?;
+                Slot::from_scalar_id(id).unwrap_or_else(|| Slot::handle(id))
+            }
+        })
     }
     pub fn iter(&self) -> ArrayIter<'_> { ArrayIter { array: self, range: 0..self.len() } }
     pub(super) fn reserve(&mut self, additional: usize) -> Result<(), String> {

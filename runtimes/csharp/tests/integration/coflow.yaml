@@ -1,0 +1,10 @@
+schema: schema/
+data:
+  - data/characters.cfd
+  - data/scenario.cfd
+  - data/api-core.cfd
+  - data/api-gameplay.cfd
+codegen:
+  - language: csharp
+    dir: generated
+    namespace: Game.Config

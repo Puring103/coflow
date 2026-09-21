@@ -28,7 +28,7 @@ using var builder = new RuntimeBuilder(contract);
 builder.AddSource("sword: Item { name: \"Sword\" }");
 using var runtime = builder.Build();
 
-var sword = runtime.Table<Item>()["sword"];
+var sword = runtime.Table<Item>().Get("sword");
 string id = sword.Id;
 string name = sword.name;
 ```
@@ -49,12 +49,12 @@ foreach (var entry in items)
     UnityEngine.Debug.Log(entry.name);
 
 // Settings 必须声明为 singleton。
-var settings = runtime.Singleton<Settings>();
+var settings = runtime.Get<Settings>();
 ```
 
 `Table<T>()` 仅接受 table，包含其派生类型记录，自动返回实际子类型包装。
 索引器查找失败抛出 `KeyNotFoundException`，`TryGet` 返回 false。
-`Singleton<T>()` 仅接受 singleton。相同 Runtime 内的同一记录包装相等，不同 Runtime 的记录不相等。
+`Get<T>()` 仅接受 singleton。相同 Runtime 内的同一记录包装相等，不同 Runtime 的记录不相等。
 
 ## 值与生命周期
 
@@ -117,4 +117,6 @@ builder.BindHost(new ServicesHost());
 
 构建失败抛出 `BuildException`，`Diagnostics` 提供错误代码、来源标签、消息和可用的 UTF-8 字节范围。
 失败不返回部分 Runtime。其他原生访问错误通过 `CoflowException` 报告；访问已释放 Runtime 的包装抛出 `ObjectDisposedException`。
-同一 Runtime 的并发执行报告忙错误，空闲后可以换线程使用。
+Runtime 遵循 Lua 式单线程约定：一个 Runtime 实例只能从创建线程访问，不提供跨线程并发访问；
+需要并发时为每个线程创建独立 Runtime。同线程同步重入沿用同一执行预算，host 回调重入读取与
+调用不阻塞。

@@ -4,8 +4,13 @@ use coflow_language::function::BuildSource;
 
 impl Compiler<'_> {
     pub(super) fn drop_builders(&mut self, depth: usize, span: Span) -> Result<()> {
-        let builders = self.scopes[depth..].iter().rev().flat_map(|scope| scope.values())
-            .filter(|local| local.builder.is_some()).map(|local| local.id).collect::<Vec<_>>();
+        let builders = self.scopes[depth..]
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.values())
+            .filter(|local| local.builder.is_some())
+            .map(|local| local.id)
+            .collect::<Vec<_>>();
         for builder in builders {
             let unit = self.slot(Ty::Unit, span)?;
             self.emit(unit.id, O::Build(B::Drop { builder }), span);
@@ -13,12 +18,24 @@ impl Compiler<'_> {
         Ok(())
     }
     pub(super) fn builder_binding(&self, expression: &Expr) -> Option<Local> {
-        let E::Name(name) = &expression.kind else { return None; };
-        self.scopes.iter().rev().find_map(|scope| scope.get(name))
-            .filter(|local| local.builder.is_some()).cloned()
+        let E::Name(name) = &expression.kind else {
+            return None;
+        };
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+            .filter(|local| local.builder.is_some())
+            .cloned()
     }
 
-    pub(super) fn build_expression(&mut self, source: &BuildSource, name: &str, body: &Block, span: Span) -> Result<Value> {
+    pub(super) fn build_expression(
+        &mut self,
+        source: &BuildSource,
+        name: &str,
+        body: &Block,
+        span: Span,
+    ) -> Result<Value> {
         let (ty, source) = match source {
             BuildSource::Type(ty) => (self.resolve_type(ty)?, None),
             BuildSource::Value(expression) => {
@@ -28,8 +45,13 @@ impl Compiler<'_> {
         };
         let metadata = match &ty {
             Ty::Object(name) => {
-                let meta = self.schema.resolve_type(name).ok_or_else(|| self.error(span, "未知构造类型"))?;
-                if meta.kind != coflow_language::cft::syntax::ast::TypeKind::Data || meta.is_abstract {
+                let meta = self
+                    .schema
+                    .resolve_type(name)
+                    .ok_or_else(|| self.error(span, "未知构造类型"))?;
+                if meta.kind != coflow_language::cft::syntax::ast::TypeKind::Data
+                    || meta.is_abstract
+                {
                     return Err(self.error(span, "只能构造具体 data 类型"));
                 }
                 Some(meta.clone())
@@ -73,11 +95,9 @@ impl Compiler<'_> {
             E::Field { value, name } => {
                 let builder = self.builder_binding(value).ok_or_else(|| self.error(span, "只有直接构造绑定允许字段写入"))?;
                 let field = builder.builder.as_ref().and_then(|fields| fields.get(name)).ok_or_else(|| self.error(span, "未知构造字段"))?.clone();
-                // 直接函数字面量绑定新对象；普通表达式仍在原词法 self 中求值。
+                // 字段 RHS 内新建的函数/模板字面量统一绑定候选对象；已有值只被读取，身份不变。
                 let previous = self.literal_owner.clone();
-                if matches!(expression.kind, E::Function(_) | E::Template(_)) {
-                    self.literal_owner = Some((builder.id, builder.ty.clone()));
-                }
+                self.literal_owner = Some((builder.id, builder.ty.clone()));
                 let value = self.expression(expression, Some(&field.ty))?;
                 self.literal_owner = previous;
                 self.emit(field.id, O::Copy(value.id), span);
@@ -92,20 +112,39 @@ impl Compiler<'_> {
                 let key = self.expression(index, Some(&key_ty))?;
                 let value = self.expression(expression, Some(&value_ty))?;
                 let unit = self.slot(Ty::Unit, span)?;
-                self.emit(unit.id, O::Build(B::Set { builder: builder.id, key: key.id, value: value.id }), span);
+                self.emit(
+                    unit.id,
+                    O::Build(B::Set {
+                        builder: builder.id,
+                        key: key.id,
+                        value: value.id,
+                    }),
+                    span,
+                );
             }
             _ => return Err(self.error(span, "构造赋值需要字段或索引")),
         }
         Ok(())
     }
 
-    pub(super) fn builder_call(&mut self, builder: Local, name: &str, arguments: &[Expr], span: Span) -> Result<Value> {
-        if name == "len" && arguments.is_empty() && matches!(builder.ty, Ty::Array(_) | Ty::Dict(..)) {
+    pub(super) fn builder_call(
+        &mut self,
+        builder: Local,
+        name: &str,
+        arguments: &[Expr],
+        span: Span,
+    ) -> Result<Value> {
+        if name == "len"
+            && arguments.is_empty()
+            && matches!(builder.ty, Ty::Array(_) | Ty::Dict(..))
+        {
             let result = self.slot(Ty::Int, span)?;
             self.emit(result.id, O::Length(builder.id), span);
             return Ok(result);
         }
-        let [argument] = arguments else { return Err(self.error(span, "构造操作需要一个参数")); };
+        let [argument] = arguments else {
+            return Err(self.error(span, "构造操作需要一个参数"));
+        };
         let expected = match (&builder.ty, name) {
             (Ty::Array(inner), "append") => (**inner).clone(),
             (Ty::Array(_), "remove") => Ty::Int,
@@ -114,8 +153,17 @@ impl Compiler<'_> {
         };
         let argument = self.expression(argument, Some(&expected))?;
         let unit = self.slot(Ty::Unit, span)?;
-        let operation = if name == "append" { B::Append { builder: builder.id, value: argument.id } }
-            else { B::Remove { builder: builder.id, key: argument.id } };
+        let operation = if name == "append" {
+            B::Append {
+                builder: builder.id,
+                value: argument.id,
+            }
+        } else {
+            B::Remove {
+                builder: builder.id,
+                key: argument.id,
+            }
+        };
         self.emit(unit.id, O::Build(operation), span);
         Ok(unit)
     }

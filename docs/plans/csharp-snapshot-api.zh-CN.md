@@ -2,6 +2,8 @@
 
 生成成员由 schema 声明决定，Debug/Release 和具体数据快照不改变公开 API。
 
+本规格细化 [新 VM 实施计划](new-vm-and-csharp-snapshot.zh-CN.md)，冲突时以主计划为准。
+
 ## 名称
 
 - 类型、字段、枚举项和显式函数参数保留声明拼写及大小写，C# 标识符统一使用 `@` 转义。
@@ -9,7 +11,7 @@
 - 函数方法保留显式参数名，支持 C# 命名实参。匿名参数按位置使用 `a0`、`a1` 等；与显式名称冲突时追加下划线。
 - fstring 字段生成 `RuntimeTemplate` 属性及 `Render<字段名>()` 方法。维度 fstring 的 Render 方法接受可选 `variant` 参数，省略时选择 default。
 - 可选函数、函数集合和维度函数使用对应的一等函数包装；可选模板和模板集合保留模板包装，不因获取属性而执行。
-- 记录提供 `Id`；所有生成类型保留 `Value`、`Read`、`ActualType`、`Dispose`、`RuntimeValue`、`ValueEquals`、`Wrap` 及类型同名成员。辅助函数/模板成员名称也保留。
+- 记录提供 `Id`；所有生成类型保留 `Value`、`Read`、`ActualType`、`Dispose`、`Projection`、`ValueEquals`、`Wrap` 及类型同名成员。辅助函数/模板成员名称也保留。
 - 生成前在完整继承字段集合上检查成员冲突，冲突作为代码生成诊断返回。根命名空间保留 `Generated` 和 `GeneratedHostBindings`。enum、类型、Host 接口和命名空间前缀共同参与冲突检查。
 
 ## 数据与执行
@@ -29,3 +31,12 @@
 候选 native 实例与托管投影均成功后，Build 才返回新门面；失败释放候选资源。旧门面不会被候选构建修改。执行固定在创建线程；纯托管快照可以跨线程读取。
 
 Host 的强所有权位于托管 builder/runtime。native 上下文仅弱引用适配器，执行期间显式保活；Host 反向引用配置对象形成的环由托管 GC 回收。Runtime 显式 Dispose 限于创建线程，终结线程不执行 VM 或 Host 业务回调。
+
+## 释放与线程回收 API
+
+- `Runtime.Dispose()` 在活动调用、Host 回调、同步重入、参数导入或结果投影期间抛出 `InvalidOperationException`，原生错误为 RuntimeBusy；实例保持可用，托管句柄保持完整。调用链退出后可再次释放；成功释放后的重复调用为无操作。未释放实例的异线程释放返回线程错误。
+- `RuntimeThread.DrainFinalizers()` 返回本次处理的请求数量，处理调用开始时的队列快照；只允许创建线程在没有活动边界时调用。正常最外层执行边界也自动驱动回收。
+- `RuntimeThread.Shutdown()` 在创建线程空闲时释放该线程回收域的全部原生资源，使现存包装的执行能力失效；纯托管数据仍可读。活动边界中调用与 Dispose 相同地拒绝且保持状态。重复关闭为无操作；再次创建实例使用新代次的回收域。
+- Unity 集成在 PlayerLoop 每帧调用回收入口，并在正常退出及域重载前 Shutdown。其他宿主在创建线程事件循环定期驱动；无事件循环的宿主在进入空闲等待前显式释放实例并 Shutdown。
+
+回收域不强引用门面或 Host。内部 lease 与实例终结仅向域提交带身份及代次的请求，提交成功即转交资源所有权；晚于 Shutdown 的请求直接判定已失效。活动调用保活门面、Host 与 lease。完整状态、竞态和验收规则见主计划第 15.3 节。

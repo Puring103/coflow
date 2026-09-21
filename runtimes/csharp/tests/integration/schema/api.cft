@@ -1,0 +1,35 @@
+@struct sealed data ItemStats {
+    value: int;
+    transform: fn(int) -> int = fn(input: int) -> int { input + self.value };
+}
+
+table Item {
+    @localized title: string = "Item";
+    stats: ItemStats;
+    next: Item? = None;
+    calculate: fn(int) -> int;
+}
+
+@struct sealed data ThemeValue { value: int; }
+
+table DimensionBase {
+    @localized name: string;
+    @dimension("platform") hint: string;
+}
+
+table DimensionChild : DimensionBase {}
+
+table UiText {
+    @localized welcome: string;
+    @dimension("language") weights: [int] = [1, 2];
+    @dimension("language") theme: ThemeValue = ThemeValue { value: 5 };
+    count: int;
+    readCount: fn() -> int = fn() -> int { self.count };
+    sameTheme: fn(ThemeValue, ThemeValue) -> bool = fn(left: ThemeValue, right: ThemeValue) -> bool { left == right };
+}
+
+@Host singleton Services {
+    environment: string;
+    adjust: fn(int) -> int;
+    notify: fn(int) -> ();
+}

@@ -629,6 +629,7 @@ dependencies = [
  "coflow-diagnostics",
  "coflow-language",
  "criterion",
+ "hashbrown 0.17.1",
  "indexmap 2.14.0",
  "regex",
  "regex-automata",

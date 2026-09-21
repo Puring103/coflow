@@ -28,7 +28,7 @@ using var builder = new RuntimeBuilder(contract);
 builder.AddSource("sword: Item { name: \"Sword\" }");
 using var runtime = builder.Build();
 
-var sword = runtime.Table<Item>()["sword"];
+var sword = runtime.Table<Item>().Get("sword");
 string id = sword.Id;
 string name = sword.name;
 ```
@@ -49,12 +49,12 @@ foreach (var entry in items)
     UnityEngine.Debug.Log(entry.name);
 
 // Settings 必须声明为 singleton。
-var settings = runtime.Singleton<Settings>();
+var settings = runtime.Get<Settings>();
 ```
 
 `Table<T>()` 仅接受 table，包含其派生类型记录，自动返回实际子类型包装。
 索引器查找失败抛出 `KeyNotFoundException`，`TryGet` 返回 false。
-`Singleton<T>()` 仅接受 singleton。相同 Runtime 内的同一记录包装相等，不同 Runtime 的记录不相等。
+`Get<T>()` 仅接受 singleton。相同 Runtime 内的同一记录包装相等，不同 Runtime 的记录不相等。
 
 ## 值与生命周期
 

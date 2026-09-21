@@ -60,7 +60,7 @@ fn namespaces_records_data_and_boolean_dictionary_keys_load_together() {
         Value::Int(7)
     ));
     assert!(runtime.records("game::Stats").is_err());
-    runtime.release();
+    runtime.release().unwrap();
     assert_eq!(
         runtime.value(a).expect_err("released"),
         ExecutionError::Released
@@ -105,21 +105,32 @@ fn functions_and_templates_are_compiled_and_read_explicitly() {
 
 #[test]
 fn immutable_image_is_shared_across_thread_owned_instances() {
-    let original = runtime("table Item { value: int; run: fn() -> int => { self.value + 1 }; }", "a: Item { value: 7 }");
+    let original = runtime(
+        "table Item { value: int; run: fn() -> int => { self.value + 1 }; }",
+        "a: Item { value: 7 }",
+    );
     let image = original.image();
     let other = Runtime::from_image(image.clone(), Default::default()).unwrap();
     assert!(Arc::ptr_eq(&original.image(), &other.image()));
     assert_ne!(original.identity(), other.identity());
-    original.release();
+    original.release().unwrap();
     let thread = std::thread::spawn(move || {
         let runtime = Runtime::from_image(image, Default::default()).unwrap();
         let record = runtime.record("Item", "a").unwrap();
         let function = runtime.field(record, "run").unwrap();
-        assert!(matches!(runtime.invoke(function, &[], Default::default()).unwrap(), HostValue::Int(8)));
+        assert!(matches!(
+            runtime.invoke(function, &[], Default::default()).unwrap(),
+            HostValue::Int(8)
+        ));
     });
     thread.join().unwrap();
     let record = other.record("Item", "a").unwrap();
-    assert!(matches!(other.invoke(other.field(record, "run").unwrap(), &[], Default::default()).unwrap(), HostValue::Int(8)));
+    assert!(matches!(
+        other
+            .invoke(other.field(record, "run").unwrap(), &[], Default::default())
+            .unwrap(),
+        HostValue::Int(8)
+    ));
 }
 
 #[derive(Debug)]

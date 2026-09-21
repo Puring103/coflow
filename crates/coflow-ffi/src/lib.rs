@@ -120,10 +120,15 @@ type ThreadBound<T> = std::rc::Rc<T>;
 
 // lease 不强持有原生实例；显式释放实例立即回收执行资源。
 #[derive(Debug)]
-struct ValueLease { runtime: std::rc::Weak<Runtime>, value: ValueId }
+struct ValueLease {
+    runtime: std::rc::Weak<Runtime>,
+    value: ValueId,
+}
 impl Drop for ValueLease {
     fn drop(&mut self) {
-        if let Some(runtime) = self.runtime.upgrade() { let _ = runtime.release_value(self.value); }
+        if let Some(runtime) = self.runtime.upgrade() {
+            let _ = runtime.release_value(self.value);
+        }
     }
 }
 #[derive(Debug)]
@@ -161,7 +166,10 @@ enum SharedEntry {
     Buffer(Arc<Vec<u8>>),
     #[cfg(feature = "cft-compiler")]
     Compiler(Arc<Mutex<Compilation>>),
-    Local { owner: std::thread::ThreadId, release_requested: bool },
+    Local {
+        owner: std::thread::ThreadId,
+        release_requested: bool,
+    },
 }
 #[derive(Debug, Default)]
 struct Registry {
@@ -179,7 +187,9 @@ impl Drop for LocalEntries {
     fn drop(&mut self) {
         // 创建线程退出也会释放未显式 Dispose 的执行资源；不把回调移交终结线程。
         if let Ok(mut shared) = registry().lock() {
-            for id in self.0.keys() { shared.entries.remove(id); }
+            for id in self.0.keys() {
+                shared.entries.remove(id);
+            }
             shared.releases.remove(&std::thread::current().id());
         }
         // 锁已释放，Host 的释放回调不会在全局锁内执行。
@@ -191,28 +201,67 @@ thread_local! {
     static LOCAL_ENTRIES: std::cell::RefCell<LocalEntries> = std::cell::RefCell::new(LocalEntries::default());
 }
 fn finish_release(entry: Entry) {
-    if let Entry::Runtime(runtime) = &entry { runtime.release(); }
+    if let Entry::Runtime(runtime) = &entry {
+        let _ = runtime.release();
+    }
     drop(entry);
 }
-fn drain_releases() -> Result<(), String> {
+fn drain_releases() -> Result<usize, String> {
     let owner = std::thread::current().id();
     let pending = {
-        let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
-        let ids = shared.releases.remove(&owner).unwrap_or_default();
-        for id in &ids { shared.entries.remove(id); }
-        ids
+        let mut shared = registry()
+            .lock()
+            .map_err(|_| "handle registry unavailable")?;
+        shared.releases.remove(&owner).unwrap_or_default()
     };
-    let removed = LOCAL_ENTRIES.try_with(|local| {
+    let (removed, deferred) = LOCAL_ENTRIES.try_with(|local| {
         let mut local = local.borrow_mut();
-        pending.into_iter().filter_map(|id| local.0.remove(&id)).collect::<Vec<_>>()
+        let mut removed = Vec::new();
+        let mut deferred = Vec::new();
+        for id in pending {
+            let busy = matches!(local.0.get(&id), Some(Entry::Runtime(runtime)) if runtime.is_executing());
+            if busy {
+                deferred.push(id);
+            } else if let Some(entry) = local.0.remove(&id) {
+                removed.push((id, entry));
+            }
+        }
+        (removed, deferred)
     }).map_err(|_| "execution thread is shutting down")?;
-    for entry in removed { finish_release(entry); }
-    Ok(())
+    {
+        let mut shared = registry()
+            .lock()
+            .map_err(|_| "handle registry unavailable")?;
+        for (id, _) in &removed {
+            shared.entries.remove(id);
+        }
+        for id in &deferred {
+            if let Some(SharedEntry::Local {
+                release_requested, ..
+            }) = shared.entries.get_mut(id)
+            {
+                *release_requested = true;
+            }
+        }
+        if !deferred.is_empty() {
+            shared.releases.entry(owner).or_default().extend(deferred);
+        }
+    }
+    let count = removed.len();
+    for (_, entry) in removed {
+        finish_release(entry);
+    }
+    Ok(count)
 }
 fn insert(entry: Entry) -> Result<u64, String> {
     let id = {
-        let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
-        shared.next = shared.next.checked_add(1).ok_or("handle identity exhausted")?;
+        let mut shared = registry()
+            .lock()
+            .map_err(|_| "handle registry unavailable")?;
+        shared.next = shared
+            .next
+            .checked_add(1)
+            .ok_or("handle identity exhausted")?;
         shared.next
     };
     let stored = match entry {
@@ -221,28 +270,50 @@ fn insert(entry: Entry) -> Result<u64, String> {
         #[cfg(feature = "cft-compiler")]
         Entry::Compiler(value) => SharedEntry::Compiler(value),
         local => {
-            LOCAL_ENTRIES.try_with(|entries| entries.borrow_mut().0.insert(id, local))
+            LOCAL_ENTRIES
+                .try_with(|entries| entries.borrow_mut().0.insert(id, local))
                 .map_err(|_| "execution thread is shutting down")?;
-            SharedEntry::Local { owner: std::thread::current().id(), release_requested: false }
+            SharedEntry::Local {
+                owner: std::thread::current().id(),
+                release_requested: false,
+            }
         }
     };
-    registry().lock().map_err(|_| "handle registry unavailable")?.entries.insert(id, stored);
+    registry()
+        .lock()
+        .map_err(|_| "handle registry unavailable")?
+        .entries
+        .insert(id, stored);
     Ok(id)
 }
 fn get(id: u64) -> Result<Entry, String> {
     drain_releases()?;
-    let shared = registry().lock().map_err(|_| "handle registry unavailable")?
-        .entries.get(&id).cloned().ok_or("invalid or released handle")?;
+    let shared = registry()
+        .lock()
+        .map_err(|_| "handle registry unavailable")?
+        .entries
+        .get(&id)
+        .cloned()
+        .ok_or("invalid or released handle")?;
     match shared {
         SharedEntry::Contract(value) => Ok(Entry::Contract(value)),
         SharedEntry::Buffer(value) => Ok(Entry::Buffer(value)),
         #[cfg(feature = "cft-compiler")]
         SharedEntry::Compiler(value) => Ok(Entry::Compiler(value)),
-        SharedEntry::Local { owner, release_requested } => {
-            if owner != std::thread::current().id() { return Err("Runtime must be accessed on its creating thread".into()); }
-            if release_requested { return Err("invalid or released handle".into()); }
-            LOCAL_ENTRIES.try_with(|entries| entries.borrow().0.get(&id).cloned())
-                .map_err(|_| "execution thread is shutting down")?.ok_or_else(|| "invalid or released handle".into())
+        SharedEntry::Local {
+            owner,
+            release_requested,
+        } => {
+            if owner != std::thread::current().id() {
+                return Err("Runtime must be accessed on its creating thread".into());
+            }
+            if release_requested {
+                return Err("invalid or released handle".into());
+            }
+            LOCAL_ENTRIES
+                .try_with(|entries| entries.borrow().0.get(&id).cloned())
+                .map_err(|_| "execution thread is shutting down")?
+                .ok_or_else(|| "invalid or released handle".into())
         }
     }
 }
@@ -312,9 +383,13 @@ impl Drop for NativeService {
     }
 }
 fn take_buffer(handle: u64) -> Result<Vec<u8>, String> {
-    let mut shared = registry().lock().map_err(|_| "handle registry unavailable")?;
+    let mut shared = registry()
+        .lock()
+        .map_err(|_| "handle registry unavailable")?;
     // 先检查种类，错误的 Host 返回句柄不能删除或析构其他线程的实例。
-    let Some(SharedEntry::Buffer(bytes)) = shared.entries.get(&handle) else { return Err("expected returned Host buffer".into()); };
+    let Some(SharedEntry::Buffer(bytes)) = shared.entries.get(&handle) else {
+        return Err("expected returned Host buffer".into());
+    };
     let bytes = bytes.as_ref().clone();
     shared.entries.remove(&handle);
     Ok(bytes)
@@ -609,12 +684,28 @@ fn dispatch(
         }
         Operation::CreateValueLease => {
             let (runtime, id) = target(handle, raw_value)?;
-            if index == 0 { runtime.retain_value(id).map_err(|error| error.to_string())?; }
-            Ok(Response { handle: insert(Entry::ValueLease(ThreadBound::new(ValueLease { runtime: ThreadBound::downgrade(&runtime), value: id })))?, ..Response::default() })
+            if index == 0 {
+                runtime
+                    .retain_value(id)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(Response {
+                handle: insert(Entry::ValueLease(ThreadBound::new(ValueLease {
+                    runtime: ThreadBound::downgrade(&runtime),
+                    value: id,
+                })))?,
+                ..Response::default()
+            })
         }
         Operation::ProjectSnapshot => {
-            let Entry::Runtime(runtime) = get(handle)? else { return Err("expected Runtime".into()); };
-            let root = if raw_value == 0 { None } else { Some(raw_value - 1) };
+            let Entry::Runtime(runtime) = get(handle)? else {
+                return Err("expected Runtime".into());
+            };
+            let root = if raw_value == 0 {
+                None
+            } else {
+                Some(raw_value - 1)
+            };
             buffer(projection::encode(&runtime, root)?)
         }
         Operation::FindRecord | Operation::TryFindRecord => {
@@ -1017,8 +1108,14 @@ pub unsafe extern "C" fn coflow_buffer_copy(
 #[no_mangle]
 pub extern "C" fn coflow_release(handle: u64) {
     let removed = {
-        let Ok(mut shared) = registry().lock() else { return; };
-        if let Some(SharedEntry::Local { owner, release_requested }) = shared.entries.get_mut(&handle) {
+        let Ok(mut shared) = registry().lock() else {
+            return;
+        };
+        if let Some(SharedEntry::Local {
+            owner,
+            release_requested,
+        }) = shared.entries.get_mut(&handle)
+        {
             if *owner != std::thread::current().id() {
                 // 终结线程只申请释放；创建线程下一次进入或退出时执行实际析构。
                 let owner = *owner;
@@ -1032,9 +1129,87 @@ pub extern "C" fn coflow_release(handle: u64) {
         shared.entries.remove(&handle)
     };
     if matches!(removed, Some(SharedEntry::Local { .. })) {
-        if let Ok(Some(entry)) = LOCAL_ENTRIES.try_with(|entries| entries.borrow_mut().0.remove(&handle)) {
+        if let Ok(Some(entry)) =
+            LOCAL_ENTRIES.try_with(|entries| entries.borrow_mut().0.remove(&handle))
+        {
             finish_release(entry);
         }
     }
     drop(removed);
+}
+
+/// 在创建线程显式释放拥有型本地句柄。活动 Runtime 返回 busy，且不改变句柄状态。
+#[no_mangle]
+pub extern "C" fn coflow_dispose(handle: u64) -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let shared = registry().lock().map_err(|_| "handle registry unavailable")?
+            .entries.get(&handle).cloned().ok_or("invalid or released handle")?;
+        let SharedEntry::Local { owner, release_requested } = shared else {
+            coflow_release(handle);
+            return Ok(());
+        };
+        if owner != std::thread::current().id() {
+            return Err("Runtime must be disposed on its creating thread".to_string());
+        }
+        if release_requested {
+            return Err("invalid or released handle".to_string());
+        }
+        let busy = LOCAL_ENTRIES.try_with(|entries| {
+            matches!(entries.borrow().0.get(&handle), Some(Entry::Runtime(runtime)) if runtime.is_executing())
+        }).map_err(|_| "execution thread is shutting down")?;
+        if busy { return Err("Runtime busy".to_string()); }
+        coflow_release(handle);
+        Ok(())
+    })).ok().and_then(Result::ok).map_or(1, |()| 0)
+}
+
+/// 处理调用开始时已经排队到当前创建线程的终结请求。
+#[no_mangle]
+pub extern "C" fn coflow_thread_drain() -> u64 {
+    catch_unwind(AssertUnwindSafe(drain_releases))
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or(0) as u64
+}
+
+/// 关闭当前线程的回收域。活动 Runtime 使关闭失败且不改变任何状态。
+#[no_mangle]
+pub extern "C" fn coflow_thread_shutdown() -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        // 关闭必须是全有或全无；先检查活动边界，不能先释放队列中的其他资源。
+        let busy =
+            LOCAL_ENTRIES
+                .try_with(|entries| {
+                    entries.borrow().0.values().any(
+                        |entry| matches!(entry, Entry::Runtime(runtime) if runtime.is_executing()),
+                    )
+                })
+                .map_err(|_| "execution thread is shutting down")?;
+        if busy {
+            return Err("Runtime busy".to_string());
+        }
+        drain_releases()?;
+        let ids = LOCAL_ENTRIES
+            .try_with(|entries| entries.borrow().0.keys().copied().collect::<Vec<_>>())
+            .map_err(|_| "execution thread is shutting down")?;
+        {
+            let mut shared = registry()
+                .lock()
+                .map_err(|_| "handle registry unavailable")?;
+            for id in &ids {
+                shared.entries.remove(id);
+            }
+            shared.releases.remove(&std::thread::current().id());
+        }
+        let entries = LOCAL_ENTRIES
+            .try_with(|entries| std::mem::take(&mut entries.borrow_mut().0))
+            .map_err(|_| "execution thread is shutting down")?;
+        for (_, entry) in entries {
+            finish_release(entry);
+        }
+        Ok(())
+    }))
+    .ok()
+    .and_then(Result::ok)
+    .map_or(1, |()| 0)
 }

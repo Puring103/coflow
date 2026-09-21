@@ -48,6 +48,9 @@ pub enum Opcode {
     /// 已链接程序编号调用，不读取动态函数值。
     CallDirect,
     Build,
+    IndexArray,
+    IndexDict,
+    IndexString,
 }
 impl Opcode {
     pub fn from_byte(value: u8) -> Option<Self> {
@@ -89,6 +92,9 @@ impl Opcode {
             34 => Self::IntBinaryImmediate,
             35 => Self::CallDirect,
             36 => Self::Build,
+            37 => Self::IndexArray,
+            38 => Self::IndexDict,
+            39 => Self::IndexString,
             _ => return None,
         })
     }
@@ -258,7 +264,10 @@ pub struct IndexSite {
     pub key: Constant,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FormatPart { Text(String), Value(Register) }
+pub enum FormatPart {
+    Text(String),
+    Value(Register),
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Program {
     /// 仅 Release 映像允许尾调用消帧，Debug 保留逻辑调用栈。
@@ -337,7 +346,8 @@ impl Program {
     }
     pub fn operands(&self, start: u32, len: u16) -> Option<&[Register]> {
         let start = usize::try_from(start).ok()?;
-        self.operands.get(start..start.checked_add(usize::from(len))?)
+        self.operands
+            .get(start..start.checked_add(usize::from(len))?)
     }
     /// 发布时把调用参数布置成连续窗口，执行器可直接复制寄存器切片。
     /// 窗口在普通槽位之后按类型签名复用，平行搬运不会覆盖任何源操作数。
@@ -345,14 +355,17 @@ impl Program {
         for closure in &mut self.closures {
             std::sync::Arc::make_mut(&mut closure.program).prepare_call_windows()?;
         }
-        if self.instructions.len() != self.spans.len() { return Err("程序缺少源码映射".into()); }
+        if self.instructions.len() != self.spans.len() {
+            return Err("程序缺少源码映射".into());
+        }
         let old_instructions = std::mem::take(&mut self.instructions);
         let old_spans = std::mem::take(&mut self.spans);
         let old_calls = std::mem::take(&mut self.calls);
         let old_direct = std::mem::take(&mut self.direct_calls);
         let mut windows: Vec<(Vec<CftValueType>, Register)> = Vec::new();
         let mut relocated = vec![0u32; old_instructions.len()];
-        for (pc, (mut instruction, span)) in old_instructions.into_iter().zip(old_spans).enumerate() {
+        for (pc, (mut instruction, span)) in old_instructions.into_iter().zip(old_spans).enumerate()
+        {
             relocated[pc] = u32::try_from(self.instructions.len()).map_err(|_| "程序过大")?;
             let opcode = instruction.opcode().ok_or("未知操作码")?;
             if matches!(opcode, Opcode::Call | Opcode::CallDirect) {
@@ -365,14 +378,31 @@ impl Program {
                     (site.arguments_start, site.arguments_len)
                 };
                 let arguments = self.operands(start, len).ok_or("调用参数越界")?.to_vec();
-                let contiguous = arguments.windows(2).all(|pair| pair[0].checked_add(1) == Some(pair[1]));
-                let (start, len) = if contiguous { (start, len) } else {
-                    let types = arguments.iter().map(|r| self.registers.get(*r as usize).cloned()
-                        .ok_or_else(|| "调用参数槽越界".to_string())).collect::<Result<Vec<_>, _>>()?;
-                    let window = if let Some((_, start)) = windows.iter().find(|(signature, _)| *signature == types) { *start }
-                    else {
-                        let start = Register::try_from(self.registers.len()).map_err(|_| "调用参数窗口超限")?;
-                        if self.registers.len() + types.len() > usize::from(u16::MAX) + 1 { return Err("调用参数窗口超限".into()); }
+                let contiguous = arguments
+                    .windows(2)
+                    .all(|pair| pair[0].checked_add(1) == Some(pair[1]));
+                let (start, len) = if contiguous {
+                    (start, len)
+                } else {
+                    let types = arguments
+                        .iter()
+                        .map(|r| {
+                            self.registers
+                                .get(*r as usize)
+                                .cloned()
+                                .ok_or_else(|| "调用参数槽越界".to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let window = if let Some((_, start)) =
+                        windows.iter().find(|(signature, _)| *signature == types)
+                    {
+                        *start
+                    } else {
+                        let start = Register::try_from(self.registers.len())
+                            .map_err(|_| "调用参数窗口超限")?;
+                        if self.registers.len() + types.len() > usize::from(u16::MAX) + 1 {
+                            return Err("调用参数窗口超限".into());
+                        }
                         self.registers.extend(types.iter().cloned());
                         windows.push((types, start));
                         start
@@ -380,7 +410,13 @@ impl Program {
                     let mut operands = Vec::with_capacity(arguments.len());
                     for (offset, source) in arguments.into_iter().enumerate() {
                         let destination = window + offset as u16;
-                        self.instructions.push(Instruction::new(Opcode::Move, destination, source, 0, 0));
+                        self.instructions.push(Instruction::new(
+                            Opcode::Move,
+                            destination,
+                            source,
+                            0,
+                            0,
+                        ));
                         self.spans.push(span);
                         operands.push(destination);
                     }
@@ -388,25 +424,39 @@ impl Program {
                 };
                 let index = if opcode == Opcode::Call {
                     let mut site = old_calls[index].clone();
-                    site.arguments_start = start; site.arguments_len = len;
-                    let index = self.calls.len(); self.calls.push(site); index
+                    site.arguments_start = start;
+                    site.arguments_len = len;
+                    let index = self.calls.len();
+                    self.calls.push(site);
+                    index
                 } else {
                     let mut site = old_direct[index].clone();
-                    site.arguments_start = start; site.arguments_len = len;
-                    let index = self.direct_calls.len(); self.direct_calls.push(site); index
+                    site.arguments_start = start;
+                    site.arguments_len = len;
+                    let index = self.direct_calls.len();
+                    self.direct_calls.push(site);
+                    index
                 };
-                instruction = Instruction::indexed(opcode, instruction.a(), u32::try_from(index).map_err(|_| "调用附表过大")?);
+                instruction = Instruction::indexed(
+                    opcode,
+                    instruction.a(),
+                    u32::try_from(index).map_err(|_| "调用附表过大")?,
+                );
             }
             self.instructions.push(instruction);
             self.spans.push(span);
         }
         for instruction in &mut self.instructions {
             if let Some(opcode @ (Opcode::Jump | Opcode::JumpFalse)) = instruction.opcode() {
-                let target = *relocated.get(instruction.index() as usize).ok_or("跳转目标越界")?;
+                let target = *relocated
+                    .get(instruction.index() as usize)
+                    .ok_or("跳转目标越界")?;
                 *instruction = Instruction::indexed(opcode, instruction.a(), target);
             }
         }
-        for site in &mut self.for_sites { site.target = *relocated.get(site.target as usize).ok_or("循环目标越界")?; }
+        for site in &mut self.for_sites {
+            site.target = *relocated.get(site.target as usize).ok_or("循环目标越界")?;
+        }
         Ok(())
     }
     /// 编译器使用局部字节偏移；发布程序时一次性映射到原始文件，闭包共享相同来源。
@@ -444,8 +494,12 @@ impl Program {
     pub(crate) fn branch_target(&self, instruction: Instruction) -> Result<Option<usize>, String> {
         let target = match instruction.opcode().ok_or("未知操作码")? {
             Opcode::Jump | Opcode::JumpFalse => instruction.index() as usize,
-            Opcode::ForPrep | Opcode::ForLoop => self.for_sites
-                .get(instruction.index() as usize).ok_or("区间循环附表越界")?.target as usize,
+            Opcode::ForPrep | Opcode::ForLoop => {
+                self.for_sites
+                    .get(instruction.index() as usize)
+                    .ok_or("区间循环附表越界")?
+                    .target as usize
+            }
             _ => return Ok(None),
         };
         if target >= self.instructions.len() {
@@ -475,7 +529,8 @@ impl Program {
                 leaders.insert(target);
             }
             if (target.is_some() || instruction.opcode() == Some(Opcode::Return))
-                && pc + 1 < self.instructions.len() {
+                && pc + 1 < self.instructions.len()
+            {
                 leaders.insert(pc + 1);
             }
         }
@@ -536,11 +591,16 @@ impl Program {
                     | Opcode::Length => {
                         next.insert(instruction.b());
                     }
-                    Opcode::Index => {
+                    Opcode::Index
+                    | Opcode::IndexArray
+                    | Opcode::IndexDict
+                    | Opcode::IndexString => {
                         if instruction.flags() == 0 {
                             next.extend([instruction.b(), instruction.c()]);
                         } else {
-                            next.insert(self.index_consts.get(index).ok_or("索引附表越界")?.receiver);
+                            next.insert(
+                                self.index_consts.get(index).ok_or("索引附表越界")?.receiver,
+                            );
                         }
                     }
                     Opcode::Binary
@@ -582,8 +642,10 @@ impl Program {
                     }
                     Opcode::CallDirect => {
                         let site = self.direct_calls.get(index).ok_or("直接调用附表越界")?;
-                        next.extend(self.operands(site.arguments_start, site.arguments_len)
-                            .ok_or("直接调用操作数范围越界")?);
+                        next.extend(
+                            self.operands(site.arguments_start, site.arguments_len)
+                                .ok_or("直接调用操作数范围越界")?,
+                        );
                     }
                     Opcode::Closure => {
                         let site = self.closures.get(index).ok_or("闭包附表越界")?;
@@ -591,7 +653,11 @@ impl Program {
                         next.extend(site.owner);
                     }
                     Opcode::Format => {
-                        for part in self.formats.get(index).ok_or("格式计划越界")? { if let FormatPart::Value(register) = part { next.insert(*register); } }
+                        for part in self.formats.get(index).ok_or("格式计划越界")? {
+                            if let FormatPart::Value(register) = part {
+                                next.insert(*register);
+                            }
+                        }
                     }
                     Opcode::Array | Opcode::Dictionary => {
                         next.extend(self.collections.get(index).ok_or("集合附表越界")?);
@@ -649,7 +715,9 @@ impl Program {
             }
             let instruction = self.instructions[pc];
             for register in self.written_registers(instruction)? {
-                let range = intervals.get_mut(usize::from(register)).ok_or("寄存器越界")?;
+                let range = intervals
+                    .get_mut(usize::from(register))
+                    .ok_or("寄存器越界")?;
                 range.0 = range.0.min(pc);
                 range.1 = range.1.max(pc);
             }
@@ -697,7 +765,12 @@ impl Program {
                 | Opcode::IsSome
                 | Opcode::ReadTemplate
                 | Opcode::Length => b = map(b),
-                Opcode::Index if instruction.flags() == 0 => {
+                Opcode::Index
+                | Opcode::IndexArray
+                | Opcode::IndexDict
+                | Opcode::IndexString
+                    if instruction.flags() == 0 =>
+                {
                     b = map(b);
                     c = map(c);
                 }
@@ -715,7 +788,9 @@ impl Program {
         for site in &mut self.calls {
             site.target = map(site.target);
         }
-        for operation in &mut self.builders { *operation = operation.map(|r| Ok(map(r)))?; }
+        for operation in &mut self.builders {
+            *operation = operation.map(|r| Ok(map(r)))?;
+        }
         for site in &mut self.closures {
             for r in &mut site.captures {
                 *r = map(*r);
@@ -732,7 +807,13 @@ impl Program {
                 *r = map(*r);
             }
         }
-        for plan in &mut self.formats { for part in plan { if let FormatPart::Value(register) = part { *register = map(*register); } } }
+        for plan in &mut self.formats {
+            for part in plan {
+                if let FormatPart::Value(register) = part {
+                    *register = map(*register);
+                }
+            }
+        }
         for site in &mut self.builtins {
             site.receiver = map(site.receiver);
         }
@@ -795,14 +876,16 @@ impl Program {
             let index = instruction.index() as usize;
             let valid_flags = match opcode {
                 Opcode::Unary => instruction.flags() <= 2,
-                Opcode::Binary | Opcode::IntBinary => instruction.flags() <= 17,
+                Opcode::Binary => instruction.flags() <= 17 || instruction.flags() == 0x80,
+                Opcode::IntBinary => instruction.flags() <= 17,
                 Opcode::IntBinaryImmediate => instruction.flags() & 0x7f <= 17,
                 Opcode::FloatBinary => matches!(instruction.flags(), 0..=3 | 6..=12),
                 Opcode::Constant => instruction.flags() <= 3,
-                Opcode::Index => instruction.flags() <= 1,
-                Opcode::Object | Opcode::ForPrep | Opcode::ForLoop => {
-                    instruction.flags() <= 1
-                }
+                Opcode::Index
+                | Opcode::IndexArray
+                | Opcode::IndexDict
+                | Opcode::IndexString => instruction.flags() <= 1,
+                Opcode::Object | Opcode::ForPrep | Opcode::ForLoop => instruction.flags() <= 1,
                 _ => instruction.flags() == 0,
             };
             if !valid_flags {
@@ -869,7 +952,10 @@ impl Program {
                     register(instruction.b())?;
                     true
                 }
-                Opcode::Index => {
+                Opcode::Index
+                | Opcode::IndexArray
+                | Opcode::IndexDict
+                | Opcode::IndexString => {
                     if instruction.flags() == 0 {
                         register(instruction.b())?;
                         register(instruction.c())?;
@@ -915,8 +1001,10 @@ impl Program {
             }
         }
         for site in &self.direct_calls {
-            for r in self.operands(site.arguments_start, site.arguments_len)
-                .ok_or("直接调用操作数范围越界")? {
+            for r in self
+                .operands(site.arguments_start, site.arguments_len)
+                .ok_or("直接调用操作数范围越界")?
+            {
                 register(*r)?;
             }
         }

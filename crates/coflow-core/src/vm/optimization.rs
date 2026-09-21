@@ -41,7 +41,13 @@ fn local(program: &Program) -> Result<(Effects, Vec<usize>), String> {
             // 内容比较可能读取模板；未知动态函数也可能进入 Host 或递归。
             Opcode::Call | Opcode::ReadTemplate | Opcode::Binary | Opcode::Builtin => Effects::UNKNOWN,
             Opcode::LoadHost | Opcode::Reference => Effects::HOST_EFFECT.union(Effects::CONTEXT).union(Effects::MAY_FAULT).union(Effects::ALLOCATES),
-            Opcode::LoadFixed | Opcode::Field | Opcode::SelfField | Opcode::Index
+            Opcode::LoadFixed
+            | Opcode::Field
+            | Opcode::SelfField
+            | Opcode::Index
+            | Opcode::IndexArray
+            | Opcode::IndexDict
+            | Opcode::IndexString
                 | Opcode::Length | Opcode::IteratorValue | Opcode::IterNext | Opcode::IsType => Effects::HOST_READ.union(Effects::MAY_FAULT),
             Opcode::Closure => Effects::ALLOCATES.union(Effects::IDENTITY).union(Effects::MAY_FAULT),
             Opcode::Array | Opcode::Dictionary | Opcode::Object | Opcode::Format => Effects::ALLOCATES.union(Effects::MAY_FAULT),
