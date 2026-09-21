@@ -216,12 +216,12 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
         CftValueType::Float => "float".into(),
         CftValueType::Bool => "bool".into(),
         CftValueType::String => "string".into(),
-        CftValueType::FString => "RuntimeTemplate".into(),
+        CftValueType::FString => "CoflowTemplate".into(),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => qualified(root, n),
         CftValueType::Enum(n) => qualified(root, n),
-        CftValueType::Array(t) => format!("RuntimeArray<{}>", cs_type(t, root)?),
+        CftValueType::Array(t) => format!("CoflowArray<{}>", cs_type(t, root)?),
         CftValueType::Dict(k, v) => format!(
-            "RuntimeDictionary<{}, {}>",
+            "CoflowDictionary<{}, {}>",
             cs_type(k, root)?,
             cs_type(v, root)?
         ),
@@ -237,7 +237,7 @@ fn cs_type(ty: &CftValueType, root: &str) -> Result<String, CsharpCodegenError> 
                 .map(|parameter| cs_type(&parameter.value_type, root))
                 .collect::<Result<Vec<_>, _>>()?;
             types.push(cs_type(result, root)?);
-            format!("RuntimeFunction<{}>", types.join(", "))
+            format!("CoflowFunction<{}>", types.join(", "))
         }
         CftValueType::Unit => "Unit".into(),
     })
@@ -268,7 +268,7 @@ fn codec(
         CftValueType::Float => "ValueCodecs.Float".into(),
         CftValueType::Bool => "ValueCodecs.Bool".into(),
         CftValueType::String => "ValueCodecs.String".into(),
-        CftValueType::FString => "v => new RuntimeTemplate(v)".into(),
+        CftValueType::FString => "v => new CoflowTemplate(v)".into(),
         CftValueType::Enum(n) => format!("{v} => ({})ValueCodecs.Enum({v})", qualified(root, n)),
         CftValueType::Object(n) | CftValueType::RecordRef(n) => match schema.resolve_type(n) {
             Some(ty) if ty.is_struct => format!("{v} => new {}({v})", qualified(root, n)),
@@ -332,7 +332,7 @@ fn decode(
         CftValueType::Float => format!("ValueCodecs.Float({value})"),
         CftValueType::Bool => format!("ValueCodecs.Bool({value})"),
         CftValueType::String => format!("ValueCodecs.String({value})"),
-        CftValueType::FString => format!("new RuntimeTemplate({value})"),
+        CftValueType::FString => format!("new CoflowTemplate({value})"),
         CftValueType::Enum(name) => {
             format!("({})ValueCodecs.Enum({value})", qualified(root, name))
         }
@@ -409,7 +409,7 @@ fn invocation_codec(
         | CftValueType::Dict(_, _)
         | CftValueType::Function(..) => {
             format!(
-                "ValueCodecs.RuntimeInvocation<{}>({})",
+                "ValueCodecs.CoflowInvocation<{}>({})",
                 cs_type(ty, root)?,
                 codec(schema, ty, root, next)?
             )
@@ -578,14 +578,14 @@ fn generate(
         let base = ty
             .parent
             .as_ref()
-            .map_or_else(|| "RuntimeObject".into(), |parent| qualified(root, parent));
+            .map_or_else(|| "CoflowObject".into(), |parent| qualified(root, parent));
         let mut body = format!(
             "#nullable enable\nusing System;\nusing Coflow;\n\nnamespace {}\n{{\n",
             namespace(root, &ty.name)
         );
         if ty.is_struct {
             body.push_str(&format!(
-                "public readonly struct {type_name} : IRuntimeArgument\n{{\n    private readonly Projection _value;\n"
+                "public readonly struct {type_name} : ICoflowValue\n{{\n    private readonly Projection _value;\n"
             ));
         } else {
             body.push_str(&format!(
@@ -624,7 +624,7 @@ fn generate(
                 field_name.clone()
             };
             let property_type = if field.dimension.is_some() {
-                format!("RuntimeDimension<{}>", cs_type(&field.value_type, root)?)
+                format!("CoflowDimension<{}>", cs_type(&field.value_type, root)?)
             } else {
                 cs_type(&field.value_type, root)?
             };
@@ -736,7 +736,7 @@ fn generate(
 
         if ty.is_struct {
             body.push_str(&format!(
-                "\n    internal {type_name}(Projection projection)\n    {{\n        projection.RequireContract(global::{root}.Generated.ContractIdentity);\n        _value = projection;\n{}    }}\n\n    void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(_value);\n",
+                "\n    internal {type_name}(Projection projection)\n    {{\n        projection.RequireContract(global::{root}.Generated.ContractIdentity);\n        _value = projection;\n{}    }}\n\n    void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(_value);\n",
                 assignments.join("")
             ));
         } else {

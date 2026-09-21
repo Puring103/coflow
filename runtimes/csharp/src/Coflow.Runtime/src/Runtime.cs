@@ -214,11 +214,11 @@ namespace Coflow
     }
     public enum ValueKind : uint { None, Bool, Int, Float, String, Enum, Object, Array, Dictionary, Function, Template, Dimension }
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public interface IRuntimeArgument { void Encode(ArgumentWriter writer); }
+    public interface ICoflowValue { void Encode(ArgumentWriter writer); }
 
     // 值 ID 只在所属 Runtime 内有效，不分配独立原生句柄，也不要求单独释放。
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public readonly struct Projection : IEquatable<Projection>, IRuntimeArgument
+    public readonly struct Projection : IEquatable<Projection>, ICoflowValue
     {
         internal Runtime Owner { get; }
         internal ulong Id { get; }
@@ -270,7 +270,7 @@ namespace Coflow
                 case int v: return new Projection(new ValueImage.Node { Kind = 2, Bits = unchecked((uint)v) });
                 case float v: return new Projection(new ValueImage.Node { Kind = 3, Bits = unchecked((uint)BitConverter.SingleToInt32Bits(v)) });
                 case string v: return new Projection(new ValueImage.Node { Kind = 4, Text = v });
-                case IRuntimeArgument v: return ArgumentWriter.Capture(v);
+                case ICoflowValue v: return ArgumentWriter.Capture(v);
                 default: throw new CoflowException("Unsupported managed value.");
             }
         }
@@ -292,7 +292,7 @@ namespace Coflow
             return new Projection(node);
         }
         private Projection Child(ulong id) => new Projection(Owner, id, snapshot);
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(this);
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(this);
         internal Response Request(NativeOperation op, string key = "", byte[]? data = null, ulong index = 0)
         {
             if (Owner == null || Id == 0) throw new CoflowException("Invalid value.");
@@ -412,19 +412,19 @@ namespace Coflow
         public override int GetHashCode() => detached != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(detached) : unchecked((Owner?.GetHashCode() ?? 0) * 397 ^ Id.GetHashCode());
         private static void Require(uint actual, uint expected) { if (actual != expected) throw new CoflowException("Value type mismatch."); }
     }
-    public abstract class RuntimeObject : IRuntimeArgument
+    public abstract class CoflowObject : ICoflowValue
     {
         protected Projection Value { get; }
-        protected RuntimeObject(Record record) { Value = record.Value; Value.Publish(this); }
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(Value);
+        protected CoflowObject(Record record) { Value = record.Value; Value.Publish(this); }
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(Value);
         internal Projection ArgumentProjection => Value;
         public string ActualType => Value.TypeName;
         protected T Read<T>(string field, Func<Projection, T> read) => Value.Field(field).ReadProjected(read);
-        public bool ValueEquals(RuntimeObject other) => other != null && Value.ValueEquals(other.Value);
-        public override bool Equals(object? other) => other is RuntimeObject value && Value.Equals(value.Value);
+        public bool ValueEquals(CoflowObject other) => other != null && Value.ValueEquals(other.Value);
+        public override bool Equals(object? other) => other is CoflowObject value && Value.Equals(value.Value);
         public override int GetHashCode() => Value.GetHashCode();
-        public static bool operator ==(RuntimeObject? left, RuntimeObject? right) => ReferenceEquals(left, right) || (!(left is null) && left.Equals(right));
-        public static bool operator !=(RuntimeObject? left, RuntimeObject? right) => !(left == right);
+        public static bool operator ==(CoflowObject? left, CoflowObject? right) => ReferenceEquals(left, right) || (!(left is null) && left.Equals(right));
+        public static bool operator !=(CoflowObject? left, CoflowObject? right) => !(left == right);
     }
     [EditorBrowsable(EditorBrowsableState.Never)]
     public readonly struct Record
@@ -468,7 +468,7 @@ namespace Coflow
             if (bytes.Count == 0) { captured = value; return; }
             value.Write(this);
         }
-        internal static Projection Capture(IRuntimeArgument value)
+        internal static Projection Capture(ICoflowValue value)
         {
             var writer = new ArgumentWriter();
             value.Encode(writer);
@@ -493,12 +493,12 @@ namespace Coflow
         }
         internal byte[] Finish() => bytes.ToArray();
     }
-    public sealed class RuntimeTemplate : IRuntimeArgument
+    public sealed class CoflowTemplate : ICoflowValue
     {
         private readonly Projection value;
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(value);
-        public RuntimeTemplate(Projection value) { this.value = value; }
-        public RuntimeTemplate(string text) { value = Projection.From(text ?? throw new ArgumentNullException(nameof(text))); }
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(value);
+        public CoflowTemplate(Projection value) { this.value = value; }
+        public CoflowTemplate(string text) { value = Projection.From(text ?? throw new ArgumentNullException(nameof(text))); }
         public string Source => value.ProgramSource;
         public string Render() { value.Owner?.RequireExecution(); return value.Text; }
     }
@@ -511,67 +511,67 @@ namespace Coflow
         internal string Source => Projection.ProgramSource;
         internal Response Invoke(byte[] arguments) => Projection.Request(NativeOperation.Invoke, data: arguments);
     }
-    public abstract class RuntimeFunction : IRuntimeArgument
+    public abstract class CoflowFunction : ICoflowValue
     {
         private readonly ExecutionTarget target;
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(target.Projection);
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(target.Projection);
         protected Runtime Owner => target.Owner;
-        protected RuntimeFunction(Projection value) { target = new ExecutionTarget(value); }
+        protected CoflowFunction(Projection value) { target = new ExecutionTarget(value); }
         public string Source => target.Source;
         internal Response InvokeCore(ArgumentWriter writer) => target.Invoke(writer.Finish());
     }
-    public sealed class RuntimeFunction<TResult> : RuntimeFunction
+    public sealed class CoflowFunction<TResult> : CoflowFunction
     {
         private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<TResult> result) : base(value) { this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<TResult> result) : base(value) { this.result = result; }
         public TResult Invoke() => result.ReadResult(Owner, InvokeCore(new ArgumentWriter(0)));
     }
-    public sealed class RuntimeFunction<T1, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.result = result; }
         public TResult Invoke(T1 a1) { var w = new ArgumentWriter(1); c1.WriteArgument(w, a1); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2) { var w = new ArgumentWriter(2); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3) { var w = new ArgumentWriter(3); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, T4, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, T4, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<T4> c4; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3, T4 a4) { var w = new ArgumentWriter(4); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); c4.WriteArgument(w, a4); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, T4, T5, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, T4, T5, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<T4> c4; private readonly InvocationCodec<T5> c5; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5) { var w = new ArgumentWriter(5); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); c4.WriteArgument(w, a4); c5.WriteArgument(w, a5); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, T4, T5, T6, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, T4, T5, T6, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<T4> c4; private readonly InvocationCodec<T5> c5; private readonly InvocationCodec<T6> c6; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6) { var w = new ArgumentWriter(6); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); c4.WriteArgument(w, a4); c5.WriteArgument(w, a5); c6.WriteArgument(w, a6); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, T4, T5, T6, T7, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, T4, T5, T6, T7, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<T4> c4; private readonly InvocationCodec<T5> c5; private readonly InvocationCodec<T6> c6; private readonly InvocationCodec<T7> c7; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<T7> c7, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.c7 = c7; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<T7> c7, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.c7 = c7; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7) { var w = new ArgumentWriter(7); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); c4.WriteArgument(w, a4); c5.WriteArgument(w, a5); c6.WriteArgument(w, a6); c7.WriteArgument(w, a7); return result.ReadResult(Owner, InvokeCore(w)); }
     }
-    public sealed class RuntimeFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult> : RuntimeFunction
+    public sealed class CoflowFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult> : CoflowFunction
     {
         private readonly InvocationCodec<T1> c1; private readonly InvocationCodec<T2> c2; private readonly InvocationCodec<T3> c3; private readonly InvocationCodec<T4> c4; private readonly InvocationCodec<T5> c5; private readonly InvocationCodec<T6> c6; private readonly InvocationCodec<T7> c7; private readonly InvocationCodec<T8> c8; private readonly InvocationCodec<TResult> result;
-        public RuntimeFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<T7> c7, InvocationCodec<T8> c8, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.c7 = c7; this.c8 = c8; this.result = result; }
+        public CoflowFunction(Projection value, InvocationCodec<T1> c1, InvocationCodec<T2> c2, InvocationCodec<T3> c3, InvocationCodec<T4> c4, InvocationCodec<T5> c5, InvocationCodec<T6> c6, InvocationCodec<T7> c7, InvocationCodec<T8> c8, InvocationCodec<TResult> result) : base(value) { this.c1 = c1; this.c2 = c2; this.c3 = c3; this.c4 = c4; this.c5 = c5; this.c6 = c6; this.c7 = c7; this.c8 = c8; this.result = result; }
         public TResult Invoke(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8) { var w = new ArgumentWriter(8); c1.WriteArgument(w, a1); c2.WriteArgument(w, a2); c3.WriteArgument(w, a3); c4.WriteArgument(w, a4); c5.WriteArgument(w, a5); c6.WriteArgument(w, a6); c7.WriteArgument(w, a7); c8.WriteArgument(w, a8); return result.ReadResult(Owner, InvokeCore(w)); }
     }
     public static class ValueCodecs
@@ -594,15 +594,15 @@ namespace Coflow
         public static InvocationCodec<string> StringInvocation { get; } = new InvocationCodec<string>(
             String, (writer, value) => { writer.WriteByte(4); writer.WriteString(value); }, (_, response) => response.Tag == 4 ? Encoding.UTF8.GetString(Native.ReadBuffer(response)) : throw TypeMismatch());
         // fstring 返回值既可以是纯文本，也可以是带执行环境的原模板。
-        public static InvocationCodec<RuntimeTemplate> TemplateInvocation { get; } = new InvocationCodec<RuntimeTemplate>(
-            value => new RuntimeTemplate(value), (writer, value) => WriteRuntime(writer, value),
+        public static InvocationCodec<CoflowTemplate> TemplateInvocation { get; } = new InvocationCodec<CoflowTemplate>(
+            value => new CoflowTemplate(value), (writer, value) => WriteRuntime(writer, value),
             (runtime, response) => response.Tag == 4
-                ? new RuntimeTemplate(Encoding.UTF8.GetString(Native.ReadBuffer(response)))
-                : new RuntimeTemplate(ReadRuntime(runtime, response)));
+                ? new CoflowTemplate(Encoding.UTF8.GetString(Native.ReadBuffer(response)))
+                : new CoflowTemplate(ReadRuntime(runtime, response)));
         public static InvocationCodec<T> EnumInvocation<T>(string typeName, Func<uint, T> read, Func<T, uint> write) => new InvocationCodec<T>(
             value => read(value.Enum), (writer, value) => { writer.WriteByte(5); writer.WriteString(typeName); writer.WriteUInt32(write(value)); },
             (_, response) => response.Tag == 5 && Encoding.UTF8.GetString(Native.ReadBuffer(response)) == typeName ? read(checked((uint)response.Integer)) : throw TypeMismatch());
-        public static InvocationCodec<T> RuntimeInvocation<T>(Func<Projection, T> read) where T : IRuntimeArgument => new InvocationCodec<T>(
+        public static InvocationCodec<T> CoflowInvocation<T>(Func<Projection, T> read) where T : ICoflowValue => new InvocationCodec<T>(
             read, (writer, value) => WriteRuntime(writer, value), (runtime, response) => read(ReadRuntime(runtime, response)));
         public static InvocationCodec<T?> OptionalValueInvocation<T>(InvocationCodec<T> inner) where T : struct => new InvocationCodec<T?>(
             value => value.IsNone ? (T?)null : inner.ReadValue(value),
@@ -612,7 +612,7 @@ namespace Coflow
             value => value.IsNone ? null : inner.ReadValue(value),
             (writer, value) => { if (value == null) writer.WriteByte(0); else inner.WriteArgument(writer, value); },
             (runtime, response) => response.Tag == 0 ? null : inner.ReadResult(runtime, response));
-        private static void WriteRuntime<T>(ArgumentWriter writer, T value) where T : IRuntimeArgument
+        private static void WriteRuntime<T>(ArgumentWriter writer, T value) where T : ICoflowValue
         {
             if (value == null) throw new ArgumentNullException(nameof(value));
             value.Encode(writer);

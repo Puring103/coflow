@@ -32,7 +32,7 @@ internal static class Program
         if (hero.profilesByName["main"].title != "Map" || !ReferenceEquals(hero, hero.profilesByName["main"].owner)) throw new Exception("Nested data dictionary mismatch.");
         var returnedProfile = hero.profileIdentity(profile);
         if (returnedProfile.title != "Leader" || returnedProfile.stats.health != 80) throw new Exception("Nested data roundtrip mismatch.");
-        var detachedProfile = new Profile("Detached", new Stats(33, new RuntimeArray<float>(Array.Empty<float>()), null), null);
+        var detachedProfile = new Profile("Detached", new Stats(33, new CoflowArray<float>(Array.Empty<float>()), null), null);
         var importedProfile = hero.profileIdentity(detachedProfile);
         if (importedProfile.title != "Detached" || importedProfile.stats.health != 33) throw new Exception("Detached data roundtrip mismatch.");
         if (!runtime.Get<RuntimeSettings>().enabled) throw new Exception("Singleton mismatch.");

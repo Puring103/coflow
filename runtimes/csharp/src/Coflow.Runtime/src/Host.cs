@@ -164,7 +164,7 @@ namespace Coflow
                     case string v: result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v));result.Tag=4;break;
                     case HostEnum v:
                         result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
-                    case IRuntimeArgument v:
+                    case ICoflowValue v:
                         var writer = new ArgumentWriter(1); v.Encode(writer);
                         result = Native.Call(NativeOperation.CreateBuffer, data: writer.Finish()); result.Tag = 12; break;
                     default: throw new CoflowException("Host data must be a scalar or a value from the same Runtime.");

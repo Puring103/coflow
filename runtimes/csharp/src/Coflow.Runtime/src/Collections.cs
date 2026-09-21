@@ -36,12 +36,12 @@ namespace Coflow
         }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
-    public sealed class RuntimeArray<T> : IReadOnlyList<T>, IRuntimeArgument
+    public sealed class CoflowArray<T> : IReadOnlyList<T>, ICoflowValue
     {
         private Projection projection;
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(projection);
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(projection);
         private readonly T[] managed;
-        public RuntimeArray(IEnumerable<T> values, Func<T, Projection>? encode = null)
+        public CoflowArray(IEnumerable<T> values, Func<T, Projection>? encode = null)
         {
             if (values == null) throw new ArgumentNullException(nameof(values));
             managed = new List<T>(values).ToArray();
@@ -49,7 +49,7 @@ namespace Coflow
             for (int i = 0; i < nodes.Length; ++i) nodes[i] = encode == null ? Coflow.Projection.From(managed[i]) : encode(managed[i]);
             projection = Coflow.Projection.Collection(7, nodes);
         }
-        public RuntimeArray(Projection value, Func<Projection, T> read)
+        public CoflowArray(Projection value, Func<Projection, T> read)
         {
             projection = value;
             managed = new T[value.Count];
@@ -60,13 +60,13 @@ namespace Coflow
         public IEnumerator<T> GetEnumerator() { int count = Count; for (int i = 0; i < count; ++i) yield return this[i]; }
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
-    public sealed class RuntimeDictionary<K, V> : IReadOnlyCollection<KeyValuePair<K, V>>, IRuntimeArgument
+    public sealed class CoflowDictionary<K, V> : IReadOnlyCollection<KeyValuePair<K, V>>, ICoflowValue
     {
         private Projection projection;
-        void IRuntimeArgument.Encode(ArgumentWriter writer) => writer.Write(projection);
+        void ICoflowValue.Encode(ArgumentWriter writer) => writer.Write(projection);
         private readonly KeyValuePair<K, V>[] managed;
         private readonly Dictionary<K, int> managedIndex;
-        public RuntimeDictionary(IEnumerable<KeyValuePair<K, V>> values, Func<K, Projection>? encodeKey = null, Func<V, Projection>? encodeValue = null)
+        public CoflowDictionary(IEnumerable<KeyValuePair<K, V>> values, Func<K, Projection>? encodeKey = null, Func<V, Projection>? encodeValue = null)
         {
             if (values == null) throw new ArgumentNullException(nameof(values));
             managed = new List<KeyValuePair<K, V>>(values).ToArray();
@@ -80,7 +80,7 @@ namespace Coflow
             }
             projection = Coflow.Projection.Collection(8, nodes);
         }
-        public RuntimeDictionary(Projection value, Func<Projection, K> key, Func<Projection, V> read)
+        public CoflowDictionary(Projection value, Func<Projection, K> key, Func<Projection, V> read)
         {
             projection = value;
             managed = new KeyValuePair<K, V>[value.Count]; managedIndex = new Dictionary<K, int>();

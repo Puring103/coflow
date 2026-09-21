@@ -34,13 +34,13 @@ public static class GeneratedHostBindings
                     call.Return(ValueCodecs.UnitInvocation, host.log(call.Argument(ValueCodecs.StringInvocation)));
                     return;
                 case "echoStats":
-                    call.Return(ValueCodecs.RuntimeInvocation<global::Game.Config.Stats>(v1 => new global::Game.Config.Stats(v1)), host.echoStats(call.Argument(ValueCodecs.RuntimeInvocation<global::Game.Config.Stats>(v1 => new global::Game.Config.Stats(v1)))));
+                    call.Return(ValueCodecs.CoflowInvocation<global::Game.Config.Stats>(v1 => new global::Game.Config.Stats(v1)), host.echoStats(call.Argument(ValueCodecs.CoflowInvocation<global::Game.Config.Stats>(v1 => new global::Game.Config.Stats(v1)))));
                     return;
                 case "echoProfile":
-                    call.Return(ValueCodecs.RuntimeInvocation<global::Game.Config.Profile>(v1 => v1.Resolve<global::Game.Config.Profile>()), host.echoProfile(call.Argument(ValueCodecs.RuntimeInvocation<global::Game.Config.Profile>(v1 => v1.Resolve<global::Game.Config.Profile>()))));
+                    call.Return(ValueCodecs.CoflowInvocation<global::Game.Config.Profile>(v1 => v1.Resolve<global::Game.Config.Profile>()), host.echoProfile(call.Argument(ValueCodecs.CoflowInvocation<global::Game.Config.Profile>(v1 => v1.Resolve<global::Game.Config.Profile>()))));
                     return;
                 case "echoCharacter":
-                    call.Return(ValueCodecs.RuntimeInvocation<global::Game.Config.Character>(v1 => v1.Resolve<global::Game.Config.Character>()), host.echoCharacter(call.Argument(ValueCodecs.RuntimeInvocation<global::Game.Config.Character>(v1 => v1.Resolve<global::Game.Config.Character>()))));
+                    call.Return(ValueCodecs.CoflowInvocation<global::Game.Config.Character>(v1 => v1.Resolve<global::Game.Config.Character>()), host.echoCharacter(call.Argument(ValueCodecs.CoflowInvocation<global::Game.Config.Character>(v1 => v1.Resolve<global::Game.Config.Character>()))));
                     return;
                 default: throw new CoflowException("Unknown Host function.");
             }

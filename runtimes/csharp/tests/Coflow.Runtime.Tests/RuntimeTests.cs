@@ -87,17 +87,17 @@ public sealed class RuntimeTests
         using var builder = new RuntimeBuilder(contract).AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 100 } } RuntimeSettings: RuntimeSettings {}");
         using var runtime = builder.Build(); var hero = runtime.Table<Character>().Get("hero");
         var input = new float[] { 1, 2 };
-        var stats = new Stats(17, new RuntimeArray<float>(input), 3);
+        var stats = new Stats(17, new CoflowArray<float>(input), 3);
         input[0] = 99;
         Assert.Equal(1, stats.weights[0]);
         var result = hero.roundtrip(stats);
         Assert.Equal(17, result.health); Assert.Equal(3, result.bonus); Assert.Equal(1, result.weights[0]);
         Native.Call(NativeOperation.Collect, runtime.Handle);
         Assert.Equal(17, hero.roundtrip(result).health);
-        Assert.Equal("literal", hero.templateIdentity(new RuntimeTemplate("literal")).Render());
+        Assert.Equal("literal", hero.templateIdentity(new CoflowTemplate("literal")).Render());
         Assert.Equal("Hero", hero.templateIdentity(hero.text).Render());
         var closure = hero.closure(7);
-        var callbacks = hero.callbacks(new RuntimeArray<RuntimeFunction<int>>(new[] { closure }));
+        var callbacks = hero.callbacks(new CoflowArray<CoflowFunction<int>>(new[] { closure }));
         Assert.Equal(107, callbacks[0].Invoke());
         Assert.Equal(107, hero.callbacks(callbacks)[0].Invoke());
         GC.Collect(); GC.WaitForPendingFinalizers();
@@ -119,7 +119,7 @@ public sealed class RuntimeTests
         Assert.Equal(10, newHero.roundtrip(oldHero.stats).health);
         Assert.Throws<CoflowException>(() => newHero.recordIdentity(oldHero));
         var closure = oldHero.closure(1);
-        Assert.Throws<CoflowException>(() => newHero.callbacks(new RuntimeArray<RuntimeFunction<int>>(new[] { closure })));
+        Assert.Throws<CoflowException>(() => newHero.callbacks(new CoflowArray<CoflowFunction<int>>(new[] { closure })));
         first.Dispose();
         Assert.Equal("old", oldHero.name);
         Assert.Equal(10, newHero.roundtrip(oldHero.stats).health);
@@ -165,7 +165,7 @@ public sealed class RuntimeTests
         foreach (var type in generated)
         {
             Assert.DoesNotContain(type.GetProperties(), property =>
-                property.PropertyType == typeof(Projection) || property.PropertyType == typeof(IRuntimeArgument));
+                property.PropertyType == typeof(Projection) || property.PropertyType == typeof(ICoflowValue));
             Assert.DoesNotContain(type.GetConstructors().SelectMany(constructor => constructor.GetParameters()), parameter =>
                 parameter.ParameterType == typeof(Projection) || parameter.ParameterType == typeof(ArgumentWriter));
         }
