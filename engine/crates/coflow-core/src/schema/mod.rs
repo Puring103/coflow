@@ -19,22 +19,17 @@ pub use compiler::{build_schema, build_schema_with_limits};
 pub use declarations::*;
 pub use names::*;
 pub use plans::{
-    ValueDependencyCycle, ValueDependencyMode, ValueDependencyPlan, ValueDependencyStep,
+    ValueDependencyCycle, ValueDependencyPlan, ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
 pub use value_type::{CftFunctionParameter, CftValueType};
 
-#[cfg(feature = "cft-compiler")]
-use self::compiler::SchemaDeclarations;
-#[cfg(feature = "cft-compiler")]
 use crate::limits::{
     BudgetExceeded, StructuralBudget, StructuralLimits, StructureKind, TraversalCursor,
 };
-#[cfg(feature = "cft-compiler")]
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode, Span};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[cfg(feature = "cft-compiler")]
 #[derive(Debug)]
 pub(super) struct LocatedBudgetError {
     pub(super) error: BudgetExceeded,
@@ -43,10 +38,8 @@ pub(super) struct LocatedBudgetError {
 }
 
 /// schema 派生图只共享深度与分析步数，不继承解析阶段的节点计数。
-#[cfg(feature = "cft-compiler")]
 pub(super) struct AnalysisBudget(StructuralBudget);
 
-#[cfg(feature = "cft-compiler")]
 impl AnalysisBudget {
     pub(super) fn new(limits: StructuralLimits) -> Self {
         Self(StructuralBudget::new(limits))
@@ -71,7 +64,6 @@ impl AnalysisBudget {
     }
 }
 
-#[cfg(feature = "cft-compiler")]
 impl LocatedBudgetError {
     fn into_diagnostics(self) -> CftDiagnostics {
         CftDiagnostics::one(CftDiagnostic::error(
@@ -83,46 +75,68 @@ impl LocatedBudgetError {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CftSchema {
     aliases: BTreeMap<String, CftValueType>,
     consts: BTreeMap<ConstName, CftConst>,
     pub(crate) types: BTreeMap<TypeName, CftType>,
+    #[serde(skip)]
     inheritance_root_by_type: BTreeMap<TypeName, TypeName>,
+    #[serde(skip)]
     ancestors_by_type: BTreeMap<TypeName, Vec<TypeName>>,
+    #[serde(skip)]
     ancestor_membership_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
     enums: BTreeMap<EnumName, CftEnum>,
     top_level_checks: BTreeMap<CheckName, CftTopLevelCheck>,
     sources: BTreeMap<ModuleId, CftSchemaSource>,
+    #[serde(skip)]
     children_by_parent: BTreeMap<TypeName, Vec<TypeName>>,
+    #[serde(skip)]
     dimensions: BTreeMap<DimensionName, CftDimension>,
+    #[serde(skip)]
     type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
+    #[serde(skip)]
     value_dependencies: ValueDependencyPlan,
 }
 
 impl CftSchema {
-    #[cfg(feature = "cft-compiler")]
     pub(in crate::schema) fn from_declarations(
         declarations: SchemaDeclarations,
         budget: &mut AnalysisBudget,
     ) -> Result<Self, CftDiagnostics> {
         let aliases = declarations.aliases;
         let consts = declarations.consts;
-        let enums = declarations.enums;
+        let mut enums = declarations.enums;
         let top_level_checks = declarations.checks;
         let sources = declarations.sources;
-        let types = declarations.types;
+        let mut types = declarations.types;
         let dimensions = dimensions::build_dimensions(&types);
 
         let mut inheritance_root_by_type = BTreeMap::new();
         let mut ancestors_by_type = BTreeMap::new();
         let mut ancestor_membership_by_type = BTreeMap::new();
-        for ty in types.values() {
+        for (key, ty) in &types {
+            if key != &ty.name {
+                return Err(CftDiagnostics::one(CftDiagnostic::error(
+                    CftErrorCode::InvalidTypeReference, ty.module.clone(), ty.span,
+                    format!("type key `{key}` differs from declaration `{}`", ty.name))));
+            }
             let mut ancestors = Vec::new();
             let mut current = ty.parent.as_ref();
+            let mut seen = BTreeSet::from([ty.name.clone()]);
             while let Some(parent) = current {
+                let invalid = |code, message: String| CftDiagnostics::one(CftDiagnostic::error(
+                    code, ty.module.clone(), ty.span, message));
+                budget.charge(StructureKind::SchemaDependency, 1)
+                    .map_err(|error| invalid(CftErrorCode::SchemaStructureLimitExceeded, error.to_string()))?;
+                budget.check_depth(TraversalCursor::root(), StructureKind::SchemaDependency, ancestors.len() as u64 + 1)
+                    .map_err(|error| invalid(CftErrorCode::SchemaStructureLimitExceeded, error.to_string()))?;
+                if !seen.insert(parent.clone()) {
+                    return Err(invalid(CftErrorCode::InheritanceCycle, format!("cyclic inheritance at `{parent}`")));
+                }
+                let meta = types.get(parent).ok_or_else(|| invalid(CftErrorCode::UnknownNamedType, format!("unknown parent `{parent}`")))?;
                 ancestors.push(parent.clone());
-                current = types.get(parent).and_then(|meta| meta.parent.as_ref());
+                current = meta.parent.as_ref();
             }
             inheritance_root_by_type.insert(
                 ty.name.clone(),
@@ -131,6 +145,26 @@ impl CftSchema {
             ancestor_membership_by_type
                 .insert(ty.name.clone(), ancestors.iter().cloned().collect());
             ancestors_by_type.insert(ty.name.clone(), ancestors);
+        }
+
+        // 所有入口共用一次索引构造；契约不保存可以从声明恢复的缓存。
+        let fields: BTreeMap<_, Vec<_>> = types.values().map(|ty| {
+            let fields = ancestors_by_type[&ty.name].iter().rev()
+                .flat_map(|name| types[name].own_fields.iter().cloned())
+                .chain(ty.own_fields.iter().cloned()).collect();
+            (ty.name.clone(), fields)
+        }).collect();
+        for (name, ty) in &mut types {
+            ty.all_fields = fields[name].clone();
+            ty.field_by_name = ty.all_fields.iter().enumerate()
+                .map(|(index, field)| (field.name.clone(), index)).collect();
+        }
+        for enumeration in enums.values_mut() {
+            enumeration.variant_by_name = enumeration.variants.iter().enumerate()
+                .map(|(index, variant)| (variant.name.clone(), index)).collect();
+            enumeration.variant_by_value = enumeration.variants.iter().enumerate()
+                .map(|(index, variant)| (variant.value, index)).collect();
+            enumeration.flag_mask = enumeration.variants.iter().fold(0, |mask, variant| mask | variant.value as u32);
         }
 
         let children_by_parent = types.values().fold(
@@ -176,5 +210,24 @@ impl CftSchema {
             type_by_id_as_enum,
             value_dependencies,
         })
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SchemaDeclarations {
+    aliases: BTreeMap<String, CftValueType>,
+    consts: BTreeMap<ConstName, CftConst>,
+    types: BTreeMap<TypeName, CftType>,
+    enums: BTreeMap<EnumName, CftEnum>,
+    #[serde(rename = "top_level_checks")]
+    checks: BTreeMap<CheckName, CftTopLevelCheck>,
+    sources: BTreeMap<ModuleId, CftSchemaSource>,
+}
+
+impl<'de> serde::Deserialize<'de> for CftSchema {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let declarations = SchemaDeclarations::deserialize(deserializer)?;
+        Self::from_declarations(declarations, &mut AnalysisBudget::new(StructuralLimits::default()))
+            .map_err(|error| serde::de::Error::custom(format!("invalid schema: {error:?}")))
     }
 }

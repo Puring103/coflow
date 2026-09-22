@@ -13,10 +13,6 @@ use crate::project::path_to_slash;
 // 这些布尔值是前端文件树协议中的独立状态，不是可互斥的模式枚举。
 #[allow(clippy::struct_excessive_bools)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FileTreeNode {
     pub name: String,
     pub path: String,

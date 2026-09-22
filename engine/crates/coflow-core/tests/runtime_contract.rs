@@ -97,7 +97,7 @@ fn functions_and_templates_are_compiled_and_read_explicitly() {
         .invoke(
             runtime.field(a, "run").expect("function"),
             &[],
-            coflow_core::vm::executor::ExecutionLimits::default(),
+            coflow_core::vm::ExecutionLimits::default(),
         )
         .expect("execute function");
     assert!(matches!(result, HostValue::Int(42)));
@@ -342,4 +342,81 @@ fn dimension_metadata_does_not_shadow_variant_names_and_unknown_variants_fall_ba
             .expect("text"),
         "base"
     );
+}
+
+#[test]
+fn static_empty_values_roundtrip_and_materialize_as_constants_and_defaults() {
+    let contract = contract(r#"
+        data Contents { values: [int] = []; labels: {string: int} = {}; }
+        const EMPTY: Contents = Contents {};
+        table Item {
+            direct: Contents = Contents {};
+            reused: Contents = EMPTY;
+            run: fn() -> int => { self.direct.values.len() + self.reused.labels.len() };
+        }
+    "#);
+    let contract = Arc::new(Contract::from_bytes(&contract.to_bytes().unwrap()).unwrap());
+    let item = contract.schema().resolve_type("Item").unwrap();
+    let empty = &contract.schema().resolve_const("EMPTY").unwrap().value;
+    // 默认对象延迟补齐字段，常量对象在编译期展开；加载后两者的内容一致。
+    assert!(matches!(
+        item.field("direct").unwrap().default.as_ref(),
+        Some(coflow_core::schema::CftStaticValue::Object { fields, .. }) if fields.is_empty()
+    ));
+    assert_eq!(item.field("reused").unwrap().default.as_ref(), Some(empty));
+    for profile in [coflow_core::runtime::OptimizationProfile::Debug, coflow_core::runtime::OptimizationProfile::Release] {
+        let mut builder = RuntimeBuilder::new(contract.clone());
+        builder.optimization_profile(profile);
+        builder.add_text("a: Item {}", None);
+        let runtime = builder.build().runtime.unwrap();
+        let item = runtime.record("Item", "a").unwrap();
+        let direct = runtime.field(item, "direct").unwrap();
+        let reused = runtime.field(item, "reused").unwrap();
+        assert!(runtime.equals(direct, reused).unwrap());
+        let result = runtime.invoke(runtime.field(item, "run").unwrap(), &[], Default::default()).unwrap();
+        assert!(matches!(result, HostValue::Int(0)));
+    }
+}
+
+#[test]
+fn previous_contract_format_is_rejected_explicitly() {
+    let mut bytes = contract("table Item { value: int; }").to_bytes().unwrap();
+    bytes[8..12].copy_from_slice(&5u32.to_le_bytes());
+    assert!(Contract::from_bytes(&bytes).unwrap_err().to_string().contains("unsupported contract version 5"));
+}
+
+#[test]
+fn contract_rebuilds_query_indexes_from_declarations() {
+    let original = contract(r#"
+        @flag enum Flags { A = 1, B = 2 }
+        data Stats { hp: int = 7; }
+        abstract table Base { stats: Stats; }
+        table Item : Base { flags: Flags = Flags::A; @localized title: string = "base"; }
+    "#);
+    let encoded = original.to_bytes().unwrap();
+    let loaded = Contract::from_bytes(&encoded).unwrap();
+    assert_eq!(encoded, loaded.to_bytes().unwrap());
+    let schema = loaded.schema();
+    assert!(schema.is_assignable("Item", "Base"));
+    assert_eq!(schema.inheritance_root("Item").unwrap().as_str(), "Base");
+    assert_eq!(schema.enum_variant_value("Flags", "B"), Some(2));
+    assert_eq!(schema.enum_value_from_int("Flags", 1).unwrap().variant.unwrap().as_str(), "A");
+    assert_eq!(schema.resolve_enum("Flags").unwrap().flag_mask, 3);
+    assert!(schema.resolve_dimension("language").is_some());
+    assert_eq!(schema.value_dependencies().materialization_order("Item").unwrap().unwrap(), original.schema().value_dependencies().materialization_order("Item").unwrap().unwrap());
+    let mut builder = RuntimeBuilder::new(Arc::new(loaded));
+    builder.add_source(SourceInput::new("data.cfd", "one: Item { stats: Stats {} }"));
+    let runtime = builder.build().runtime.unwrap();
+    let item = runtime.record("Item", "one").unwrap();
+    let stats = runtime.field(item, "stats").unwrap();
+    assert!(matches!(runtime.value(runtime.field(stats, "hp").unwrap()).unwrap().as_ref(), Value::Int(7)));
+
+    let data = serde_json::to_value(original.schema()).unwrap();
+    assert!(data.get("ancestors_by_type").is_none());
+    assert!(data["types"]["Item"].get("all_fields").is_none());
+    for parent in ["Item", "Missing"] {
+        let mut invalid = data.clone();
+        invalid["types"]["Item"]["parent"] = parent.into();
+        assert!(serde_json::from_value::<coflow_core::schema::CftSchema>(invalid).is_err());
+    }
 }

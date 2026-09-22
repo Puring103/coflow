@@ -543,3 +543,27 @@ fn busy_builder_cannot_be_disposed_or_shut_down() {
     drop(borrowed);
     assert_eq!(coflow_dispose(id), 0);
 }
+
+#[test]
+fn operation_declarations_match_native_and_managed_protocols() {
+    fn declarations<'a>(source: &'a str, marker: &str) -> std::collections::BTreeMap<&'a str, u32> {
+        source.split_once(marker).unwrap().1.split_once('{').unwrap().1
+            .split_once('}').unwrap().0.lines().filter_map(|line| {
+                let (name, value) = line.trim().trim_end_matches(',').split_once('=')?;
+                Some((name.trim(), value.trim().parse().unwrap()))
+            }).collect()
+    }
+    let header = declarations(include_str!("../include/coflow.h"), "enum CoflowOperation");
+    let managed = declarations(include_str!("../../../runtimes/csharp/src/Coflow.Runtime/src/Native.cs"), "enum NativeOperation");
+    let expected = super::OPERATIONS.iter().map(|(_, c, value)| (*c, *value)).collect();
+    assert_eq!(header, expected);
+    for (name, value) in managed {
+        assert!(super::OPERATIONS.iter().any(|(rust, _, number)| *rust == name && *number == value), "managed opcode {name}");
+    }
+    for (_, _, value) in super::OPERATIONS {
+        assert_eq!(super::Operation::try_from(*value).unwrap() as u32, *value);
+    }
+    assert!(super::Operation::try_from(5).is_err());
+    assert_eq!(std::mem::size_of::<super::Response>(), 40);
+    assert_eq!(std::mem::offset_of!(super::Response, error), 36);
+}

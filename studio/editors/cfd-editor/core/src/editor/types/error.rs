@@ -13,10 +13,6 @@ use ts_rs::TS;
 /// into the diagnostics panel without doing any string parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct EditorError {
     pub kind: EditorErrorKind,
     pub message: String,
@@ -26,10 +22,6 @@ pub struct EditorError {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(rename_all = "snake_case")]
 pub enum EditorErrorKind {
     Session,

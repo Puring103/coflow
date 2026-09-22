@@ -2,4 +2,4 @@
 
 mod codes;
 
-pub use codes::{CfdErrorCode, CfdSeverity, CfdStage};
+pub use codes::{CfdErrorCode, Severity, CfdStage};

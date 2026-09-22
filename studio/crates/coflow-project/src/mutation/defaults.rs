@@ -4,8 +4,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use crate::RecordKey;
 use coflow_core::schema::{
-    CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
-    ValueDependencyMode,
+    CftField, CftSchema, CftStaticValue, CftValueType, FieldName, TypeName,
 };
 
 use super::{
@@ -75,7 +74,7 @@ pub(super) fn create_record_draft_for_type(
 
 struct DefaultValueMaterializer<'a> {
     schema: &'a CftSchema,
-    memo: BTreeMap<(ValueDependencyMode, TypeName), BTreeMap<FieldName, CfdValue>>,
+    memo: BTreeMap<(DefaultMaterialization, TypeName), BTreeMap<FieldName, CfdValue>>,
 }
 
 impl<'a> DefaultValueMaterializer<'a> {
@@ -93,19 +92,18 @@ impl<'a> DefaultValueMaterializer<'a> {
         skip_fields: Option<&BTreeSet<String>>,
     ) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
         ensure_type_can_materialize(self.schema, type_name)?;
-        let mode = dependency_mode(materialization);
         let Some(schema_type) = self.schema.resolve_type(type_name) else {
             return Err(one_mutation_error(
                 "MUTATION-TYPE",
                 format!("unknown type `{type_name}`"),
             ));
         };
-        let memo_key = (mode, schema_type.name.clone());
+        let memo_key = (materialization, schema_type.name.clone());
         if skip_fields.is_none() {
             if let Some(fields) = self.memo.get(&memo_key) {
                 return Ok(fields.clone());
             }
-            self.ensure_acyclic(type_name, mode)?;
+            self.ensure_acyclic(type_name)?;
         }
 
         let mut fields = BTreeMap::new();
@@ -131,12 +129,11 @@ impl<'a> DefaultValueMaterializer<'a> {
     fn ensure_acyclic(
         &self,
         type_name: &str,
-        mode: ValueDependencyMode,
     ) -> Result<(), DiagnosticSet> {
         let Some(result) = self
             .schema
             .value_dependencies()
-            .materialization_order(type_name, mode)
+            .materialization_order(type_name)
         else {
             return Err(one_mutation_error(
                 "MUTATION-TYPE",
@@ -241,40 +238,28 @@ impl<'a> DefaultValueMaterializer<'a> {
     fn materialize_schema_default(
         &mut self,
         ty: &CftValueType,
-        default: &CftSchemaDefaultValue,
+        default: &CftStaticValue,
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
         match default {
-            CftSchemaDefaultValue::OptionNone => Ok(CfdValue::OptionNone),
-            CftSchemaDefaultValue::OptionSome(value) => match ty {
+            CftStaticValue::OptionNone => Ok(CfdValue::OptionNone),
+            CftStaticValue::OptionSome(value) => match ty {
                 CftValueType::Option(inner) => self
                     .materialize_schema_default(inner, value, materialization)
                     .map(|value| CfdValue::OptionSome(Box::new(value))),
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::Int(value) => Ok(CfdValue::Int(*value)),
-            CftSchemaDefaultValue::Float(value) => Ok(CfdValue::Float(*value)),
-            CftSchemaDefaultValue::Bool(value) => Ok(CfdValue::Bool(*value)),
-            CftSchemaDefaultValue::String(value) => Ok(CfdValue::String(value.clone())),
-            CftSchemaDefaultValue::FormattedString(source) => Ok(CfdValue::FormattedString(
-                crate::data_model::CfdFormattedString {
-                    from_default: true,
-                    location: Some(source.into()),
-                    imports: Default::default(),
-                    constant_origin: source.constant_origin.clone(),
-                    source: source.source.clone(),
-                },
+            CftStaticValue::Int(value) => Ok(CfdValue::Int(*value)),
+            CftStaticValue::Float(value) => Ok(CfdValue::Float(*value)),
+            CftStaticValue::Bool(value) => Ok(CfdValue::Bool(*value)),
+            CftStaticValue::String(value) => Ok(CfdValue::String(value.clone())),
+            CftStaticValue::FormattedString(source) => Ok(CfdValue::FormattedString(
+                source.into(),
             )),
-            CftSchemaDefaultValue::Function(source) => {
-                Ok(CfdValue::Function(crate::data_model::CfdFunction {
-                    from_default: true,
-                    location: Some(source.into()),
-                    imports: Default::default(),
-                    constant_origin: source.constant_origin.clone(),
-                    source: source.source.clone(),
-                }))
+            CftStaticValue::Function(source) => {
+                Ok(CfdValue::Function(source.into()))
             }
-            CftSchemaDefaultValue::Enum {
+            CftStaticValue::Enum {
                 enum_name,
                 variant,
                 value,
@@ -299,19 +284,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 }
                 Ok(CfdValue::Enum(enum_value))
             }
-            CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
-            CftSchemaDefaultValue::EmptyObject => match ty {
-                CftValueType::Object(name) => {
-                    let fields = self.fields_for_type(name, materialization, None)?;
-                    Ok(CfdValue::Object(Box::new(CfdObject::new(
-                        name.clone(),
-                        fields,
-                    ))))
-                }
-                CftValueType::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::Array(values) => match ty {
+            CftStaticValue::Array(values) => match ty {
                 CftValueType::Array(inner) => values
                     .iter()
                     .map(|value| self.materialize_schema_default(inner, value, materialization))
@@ -319,7 +292,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                     .map(CfdValue::Array),
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::Dictionary(entries) => match ty {
+            CftStaticValue::Dictionary(entries) => match ty {
                 CftValueType::Dict(key_type, value_type) => {
                     let mut values = Vec::with_capacity(entries.len());
                     for (key, value) in entries {
@@ -340,7 +313,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 }
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::Object { type_name, fields } => match ty {
+            CftStaticValue::Object { type_name, fields } => match ty {
                 CftValueType::Object(expected)
                     if self.schema.is_assignable(type_name, expected) =>
                 {
@@ -363,7 +336,7 @@ impl<'a> DefaultValueMaterializer<'a> {
                 }
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::RecordReference { type_name, key } => match ty {
+            CftStaticValue::RecordReference { type_name, key } => match ty {
                 CftValueType::RecordRef(expected)
                     if self.schema.is_assignable(type_name, expected) =>
                 {
@@ -387,7 +360,7 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Bool => Ok(CfdValue::Bool(false)),
             CftValueType::String => Ok(CfdValue::String(String::new())),
             CftValueType::FString => Ok(CfdValue::FormattedString(
-                crate::data_model::CfdFormattedString {
+                crate::CallableSource {
                     from_default: false,
                     location: None,
                     imports: Default::default(),
@@ -435,13 +408,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                 format!("no implicit editable default exists for `{ty}`"),
             )),
         }
-    }
-}
-
-const fn dependency_mode(materialization: DefaultMaterialization) -> ValueDependencyMode {
-    match materialization {
-        DefaultMaterialization::Minimal => ValueDependencyMode::Minimal,
-        DefaultMaterialization::EditableShape => ValueDependencyMode::EditableShape,
     }
 }
 

@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_core::cell_value::{
+use coflow_project::cell_value::{
     parse_cell, parse_schema_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode,
     ParsedCell,
 };

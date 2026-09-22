@@ -1,7 +1,7 @@
 use crate::diagnostics::RecordOrigin;
 use crate::model::{CfdDictKey, CfdValue};
 use crate::schema::{FieldName, TypeName};
-use crate::LoadedFormattedString;
+use crate::CallableSource;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,7 +16,7 @@ pub(crate) struct RecordDraft {
 pub(crate) enum ValueDraft {
     Value(CfdValue),
     OptionSome(Box<ValueDraft>),
-    FormattedString(LoadedFormattedString),
+    FormattedString(CallableSource),
     Object(Box<RecordDraft>),
     PendingRef {
         expected_type: TypeName,

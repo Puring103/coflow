@@ -1,3 +1,4 @@
+use crate::CallableSource;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8,8 +9,8 @@ pub enum LoadedValueDraft {
     Int(i64),
     Float(f64),
     String(String),
-    FormattedString(LoadedFormattedString),
-    Function(LoadedFunction),
+    FormattedString(CallableSource),
+    Function(CallableSource),
     EnumVariant {
         enum_name: String,
         variant: String,
@@ -25,24 +26,6 @@ pub enum LoadedValueDraft {
     RecordRef(String),
     Array(Vec<LoadedValueDraft>),
     Dict(Vec<(LoadedDictKeyDraft, LoadedValueDraft)>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoadedFunction {
-    pub imports: BTreeMap<String, String>,
-    pub from_default: bool,
-    pub location: Option<CallableLocation>,
-    pub constant_origin: Option<String>,
-    pub source: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoadedFormattedString {
-    pub imports: BTreeMap<String, String>,
-    pub from_default: bool,
-    pub location: Option<CallableLocation>,
-    pub constant_origin: Option<String>,
-    pub source: String,
 }
 
 impl LoadedValueDraft {
@@ -163,24 +146,5 @@ impl From<String> for LoadedDictKeyDraft {
 impl From<i64> for LoadedDictKeyDraft {
     fn from(value: i64) -> Self {
         Self::Int(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallableLocation {
-    pub module: Option<crate::schema::ModuleId>,
-    pub source: String,
-    pub span: crate::source::Span,
-    pub path: Option<String>,
-}
-
-impl From<&crate::schema::CftCallableSource> for CallableLocation {
-    fn from(source: &crate::schema::CftCallableSource) -> Self {
-        Self {
-            module: Some(source.module.clone()),
-            source: source.original_source.clone(),
-            span: source.span,
-            path: None,
-        }
     }
 }

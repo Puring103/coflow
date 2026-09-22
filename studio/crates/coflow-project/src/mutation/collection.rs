@@ -6,10 +6,6 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CollectionEdit {
     ArrayAppend {

@@ -112,11 +112,7 @@ pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::A
                 _ => false,
             })
     };
-    let original = program.instructions.clone();
-    let mut instructions = Vec::new(); let mut spans = Vec::new(); let mut relocation = Vec::with_capacity(original.len());
-    let mut changed = false;
-    for (pc, instruction) in original.iter().copied().enumerate() {
-        relocation.push(u32::try_from(instructions.len()).map_err(|_| "内联程序过大")?);
+    let changed = program.rewrite_instructions(|program, _pc, instruction, instructions| {
         let callee = if instruction.opcode() == Some(Opcode::CallDirect) {
             let site = program.direct_calls.get(instruction.index() as usize).ok_or("内联调用附表越界")?;
             let target = callees.get(site.function.0 as usize).ok_or("内联目标越界")?;
@@ -145,19 +141,13 @@ pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::A
                 };
                 instructions.push(rewritten);
             }
-            spans.resize(instructions.len(), program.spans[pc]); *remaining -= cost; changed = true;
-        } else { instructions.push(instruction); spans.push(program.spans[pc]); }
-    }
-    if !changed { return Ok(false); }
-    // 原分支仅指向原节点；内联片段内部不含跳转，因此所有旧目标统一重定位。
-    for (pc, original) in original.iter().enumerate() {
-        if matches!(original.opcode(), Some(Opcode::Jump | Opcode::JumpFalse)) {
-            let instruction = &mut instructions[relocation[pc] as usize];
-            *instruction = I::indexed(original.opcode().unwrap(), original.a(), *relocation.get(original.index() as usize).ok_or("内联跳转越界")?).with_flags(original.flags());
+            *remaining -= cost;
+        } else {
+            instructions.push(instruction);
         }
-    }
-    for site in &mut program.for_sites { site.target = *relocation.get(site.target as usize).ok_or("内联循环边越界")?; }
-    program.instructions = instructions; program.spans = spans;
+        Ok(())
+    })?;
+    if !changed { return Ok(false); }
     program.allocate_registers()?;
     Ok(true)
 }

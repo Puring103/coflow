@@ -1,46 +1,34 @@
-use crate::schema::CftConstValue;
-use crate::{LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction, LoadedValueDraft};
+use crate::schema::CftStaticValue;
+use crate::{LoadedDictKeyDraft, LoadedValueDraft};
 
 /// 常量复用只复制静态存储值；模板与函数始终保留原始源码。
-pub(super) fn materialize(value: &CftConstValue) -> Result<LoadedValueDraft, String> {
+pub(super) fn materialize(value: &CftStaticValue) -> Result<LoadedValueDraft, String> {
     Ok(match value {
-        CftConstValue::Int(v) => LoadedValueDraft::Int(*v),
-        CftConstValue::Float(v) => LoadedValueDraft::Float(*v),
-        CftConstValue::Bool(v) => LoadedValueDraft::Bool(*v),
-        CftConstValue::String(v) => LoadedValueDraft::String(v.clone()),
-        CftConstValue::FormattedString(source) => {
-            LoadedValueDraft::FormattedString(LoadedFormattedString {
-                from_default: true,
-                location: Some(source.into()),
-                imports: Default::default(),
-                constant_origin: source.constant_origin.clone(),
-                source: source.source.clone(),
-            })
+        CftStaticValue::Int(v) => LoadedValueDraft::Int(*v),
+        CftStaticValue::Float(v) => LoadedValueDraft::Float(*v),
+        CftStaticValue::Bool(v) => LoadedValueDraft::Bool(*v),
+        CftStaticValue::String(v) => LoadedValueDraft::String(v.clone()),
+        CftStaticValue::FormattedString(source) => {
+            LoadedValueDraft::FormattedString(source.into())
         }
-        CftConstValue::Function(source) => LoadedValueDraft::Function(LoadedFunction {
-            from_default: true,
-            location: Some(source.into()),
-            imports: Default::default(),
-            constant_origin: source.constant_origin.clone(),
-            source: source.source.clone(),
-        }),
-        CftConstValue::Enum {
+        CftStaticValue::Function(source) => LoadedValueDraft::Function(source.into()),
+        CftStaticValue::Enum {
             enum_name, value, ..
         } => LoadedValueDraft::enum_value(enum_name.to_string(), *value),
-        CftConstValue::OptionNone => LoadedValueDraft::OptionNone,
-        CftConstValue::OptionSome(v) => LoadedValueDraft::OptionSome(Box::new(materialize(v)?)),
-        CftConstValue::Array(values) => {
+        CftStaticValue::OptionNone => LoadedValueDraft::OptionNone,
+        CftStaticValue::OptionSome(v) => LoadedValueDraft::OptionSome(Box::new(materialize(v)?)),
+        CftStaticValue::Array(values) => {
             LoadedValueDraft::Array(values.iter().map(materialize).collect::<Result<_, _>>()?)
         }
-        CftConstValue::Dictionary(values) => LoadedValueDraft::Dict(
+        CftStaticValue::Dictionary(values) => LoadedValueDraft::Dict(
             values
                 .iter()
                 .map(|(key, value)| {
                     let key = match key {
-                        CftConstValue::Int(v) => LoadedDictKeyDraft::Int(*v),
-                        CftConstValue::Bool(v) => LoadedDictKeyDraft::Bool(*v),
-                        CftConstValue::String(v) => LoadedDictKeyDraft::String(v.clone()),
-                        CftConstValue::Enum {
+                        CftStaticValue::Int(v) => LoadedDictKeyDraft::Int(*v),
+                        CftStaticValue::Bool(v) => LoadedDictKeyDraft::Bool(*v),
+                        CftStaticValue::String(v) => LoadedDictKeyDraft::String(v.clone()),
+                        CftStaticValue::Enum {
                             enum_name, variant, ..
                         } => LoadedDictKeyDraft::enum_variant(
                             enum_name.to_string(),
@@ -52,14 +40,14 @@ pub(super) fn materialize(value: &CftConstValue) -> Result<LoadedValueDraft, Str
                 })
                 .collect::<Result<_, String>>()?,
         ),
-        CftConstValue::Object { type_name, fields } => LoadedValueDraft::object(
+        CftStaticValue::Object { type_name, fields } => LoadedValueDraft::object(
             type_name.to_string(),
             fields
                 .iter()
                 .map(|(name, value)| Ok((name.to_string(), materialize(value)?)))
                 .collect::<Result<Vec<_>, String>>()?,
         ),
-        CftConstValue::RecordReference { type_name, key } => {
+        CftStaticValue::RecordReference { type_name, key } => {
             LoadedValueDraft::record_ref(format!("{type_name}::{key}"))
         }
     })

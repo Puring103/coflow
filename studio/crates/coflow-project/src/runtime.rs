@@ -705,7 +705,7 @@ impl WriteProjectSession {
                     contexts: Vec::new(),
                 })
             })?;
-        Ok(coflow_core::cell_value::render_cell_value(value))
+        Ok(crate::cell_value::render_cell_value(value))
     }
 
     /// Parse CFD value text using the schema type at one field path.

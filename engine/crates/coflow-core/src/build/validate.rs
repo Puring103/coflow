@@ -22,17 +22,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Validator<'s, 'schema> {
     pub(super) schema: &'s BuildSchema<'schema>,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
-    pub(super) default_objects: BTreeMap<String, CachedDefaultObject>,
     structural_limits: StructuralLimits,
     budget: StructuralBudget,
     budget_exhausted: bool,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct CachedDefaultObject {
-    pub(super) draft: RecordDraft,
-    pub(super) nodes: u64,
-    pub(super) depth: u64,
 }
 
 impl<'s, 'schema> Validator<'s, 'schema> {
@@ -44,7 +36,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         Self {
             schema,
             diagnostics,
-            default_objects: BTreeMap::new(),
             structural_limits,
             budget: StructuralBudget::new(structural_limits),
             budget_exhausted: false,
@@ -63,7 +54,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     ) -> Option<RecordDraft> {
         self.budget = StructuralBudget::new(self.structural_limits);
         self.budget_exhausted = false;
-        self.default_objects.clear();
         let cursor = self.enter_value(TraversalCursor::root(), record, &path)?;
         self.validate_record(
             expected_type,
@@ -270,13 +260,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 Some(ValueDraft::FormattedString(value.clone()))
             }
             (CftValueType::Function(_, _), LoadedValueDraft::Function(value)) => {
-                Some(ValueDraft::Value(CfdValue::Function(crate::CfdFunction {
-                    from_default: value.from_default,
-                    location: value.location.clone(),
-                    imports: value.imports.clone(),
-                    constant_origin: value.constant_origin.clone(),
-                    source: value.source.clone(),
-                })))
+                Some(ValueDraft::Value(CfdValue::Function(value.clone())))
             }
             (
                 CftValueType::Enum(expected),
@@ -486,34 +470,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let result = self.budget.enter(parent, StructureKind::DataValue, 1);
         match result {
             Ok(cursor) => Some(cursor),
-            Err(error) => {
-                self.push_budget_error(error.to_string(), record, path.clone());
-                None
-            }
-        }
-    }
-
-    pub(super) fn charge_cached_subtree(
-        &mut self,
-        cursor: TraversalCursor,
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-        nodes: u64,
-        depth: u64,
-    ) -> Option<()> {
-        if self.budget_exhausted {
-            return None;
-        }
-        let additional_nodes = nodes.saturating_sub(1);
-        let result = self
-            .budget
-            .check_additional_depth(cursor, StructureKind::DefaultValue, depth.saturating_sub(1))
-            .and_then(|()| {
-                self.budget
-                    .charge_nodes(StructureKind::DefaultValue, additional_nodes)
-            });
-        match result {
-            Ok(()) => Some(()),
             Err(error) => {
                 self.push_budget_error(error.to_string(), record, path.clone());
                 None

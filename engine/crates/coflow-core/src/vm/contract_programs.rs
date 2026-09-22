@@ -4,7 +4,7 @@ use super::{
     compiler::{self, CompileContext},
 };
 use crate::schema::{
-    CftConstValue as C, CftSchema, CftSchemaDefaultValue as D, CftValueType as Ty, ModuleId,
+    CftStaticValue as C, CftSchema, CftValueType as Ty, ModuleId,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
@@ -55,7 +55,7 @@ impl ContractIr {
         for meta in schema.all_types() {
             for field in meta.own_fields() {
                 if let Some(default) = &field.default {
-                    programs.collect_default(
+                    programs.collect_static(
                         schema,
                         default,
                         Some(meta.name.as_str()),
@@ -74,7 +74,7 @@ impl ContractIr {
             }
         }
         for constant in schema.all_consts() {
-            programs.constant(schema, &constant.value, None, &constant.module)?;
+            programs.collect_static(schema, &constant.value, None, &constant.module)?;
         }
         for check in schema.all_checks() {
             programs.check(
@@ -181,38 +181,7 @@ impl ContractIr {
         self.functions.insert(key, Arc::new(program));
         Ok(())
     }
-    fn collect_default(
-        &mut self,
-        schema: &CftSchema,
-        value: &D,
-        owner: Option<&str>,
-        module: &ModuleId,
-    ) -> Result<(), ProgramDiagnostic> {
-        match value {
-            D::Function(source) => self.function(schema, source, false, owner, module)?,
-            D::FormattedString(source) => self.function(schema, source, true, owner, module)?,
-            D::OptionSome(value) => self.collect_default(schema, value, owner, module)?,
-            D::Array(values) => {
-                for value in values {
-                    self.collect_default(schema, value, owner, module)?;
-                }
-            }
-            D::Dictionary(values) => {
-                for (key, value) in values {
-                    self.collect_default(schema, key, owner, module)?;
-                    self.collect_default(schema, value, owner, module)?;
-                }
-            }
-            D::Object { type_name, fields } => {
-                for (_, value) in fields {
-                    self.collect_default(schema, value, Some(type_name), module)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-    fn constant(
+    fn collect_static(
         &mut self,
         schema: &CftSchema,
         value: &C,
@@ -222,21 +191,21 @@ impl ContractIr {
         match value {
             C::Function(source) => self.function(schema, source, false, owner, module)?,
             C::FormattedString(source) => self.function(schema, source, true, owner, module)?,
-            C::OptionSome(value) => self.constant(schema, value, owner, module)?,
+            C::OptionSome(value) => self.collect_static(schema, value, owner, module)?,
             C::Array(values) => {
                 for value in values {
-                    self.constant(schema, value, owner, module)?;
+                    self.collect_static(schema, value, owner, module)?;
                 }
             }
             C::Dictionary(values) => {
                 for (key, value) in values {
-                    self.constant(schema, key, owner, module)?;
-                    self.constant(schema, value, owner, module)?;
+                    self.collect_static(schema, key, owner, module)?;
+                    self.collect_static(schema, value, owner, module)?;
                 }
             }
             C::Object { type_name, fields } => {
                 for (_, value) in fields {
-                    self.constant(schema, value, Some(type_name), module)?;
+                    self.collect_static(schema, value, Some(type_name), module)?;
                 }
             }
             _ => {}

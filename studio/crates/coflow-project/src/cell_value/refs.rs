@@ -28,7 +28,7 @@ pub(super) fn parse_ref(
         return Err(syntax("reference key is missing"));
     }
     let (owner, record_key) = key.rsplit_once("::").unwrap_or((expected_type, key));
-    crate::schema::TypeName::new(owner).map_err(|error| syntax(error.to_string()))?;
+    coflow_core::schema::TypeName::new(owner).map_err(|error| syntax(error.to_string()))?;
     if let Some(reason) = record_key_ident_error(record_key) {
         return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
     }

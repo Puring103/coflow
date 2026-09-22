@@ -112,10 +112,7 @@ impl ExecutionContext<'_> {
                 .resolve_enum(type_name)
                 .ok_or_else(|| invalid("未知 enum"))?;
             if meta.is_flag {
-                let mask = meta
-                    .variants
-                    .iter()
-                    .fold(0u32, |mask, variant| mask | variant.value as u32);
+                let mask = meta.flag_mask;
                 if value & !mask != 0 {
                     return Err(invalid("flag 包含未知位"));
                 }

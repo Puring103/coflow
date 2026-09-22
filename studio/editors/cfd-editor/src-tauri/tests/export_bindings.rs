@@ -1,8 +1,7 @@
 //! Generate TypeScript bindings for the editor's wire types.
 //!
 //! Run with: `cargo test --features ts-export -p cfd-editor export_bindings`.
-//! ts-rs registers each type's export function via `inventory`; calling
-//! `<T as TS>::export_all()` on a sentinel type pulls the whole registry.
+//! 编辑器统一指定输出目录，各入口递归导出依赖类型；共享类型不持有文件路径。
 
 #[cfg(feature = "ts-export")]
 #[test]
@@ -77,7 +76,8 @@ fn export_bindings() {
 fn export_with_retry<T: ts_rs::TS + 'static>(label: &str) {
     let mut delays = [10, 20, 40, 80, 160, 320, 640].into_iter();
     loop {
-        match T::export_all() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/bindings");
+        match T::export_all_to(&directory) {
             Ok(()) => return,
             Err(error) => {
                 let Some(delay_ms) = delays.next() else {

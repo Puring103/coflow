@@ -9,10 +9,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FrontendPluginBundle {
     pub(crate) manifest_path: String,
     pub(crate) id: String,
@@ -28,11 +24,7 @@ pub struct FrontendPluginBundle {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        rename = "FrontendPluginState",
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(rename = "FrontendPluginState")
 )]
 pub struct FrontendPlugins {
     pub(crate) plugins: Vec<FrontendPluginBundle>,
@@ -41,10 +33,6 @@ pub struct FrontendPlugins {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginScope {
     Global,
@@ -53,10 +41,6 @@ pub enum PluginScope {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectPluginDefaults {
     #[serde(default)]
     pub(crate) views: BTreeMap<String, String>,
@@ -68,11 +52,7 @@ pub struct ProjectPluginDefaults {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        rename = "FrontendPluginProjectState",
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(rename = "FrontendPluginProjectState")
 )]
 pub struct ProjectFrontendPlugins {
     pub(crate) plugins: Vec<FrontendPluginBundle>,

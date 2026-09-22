@@ -8,10 +8,6 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectBootstrap {
     pub session_id: u32,
     pub revision: u32,
@@ -29,10 +25,6 @@ pub struct ProjectBootstrap {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FileTypeOption {
     pub name: String,
     pub display_name: String,
@@ -43,10 +35,6 @@ pub struct FileTypeOption {
 /// 提供给编辑器插件的只读 Schema 投影。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct PluginSchemaType {
     pub name: String,
     pub fields: Vec<PluginSchemaField>,
@@ -57,10 +45,6 @@ pub struct PluginSchemaType {
 /// 插件 Schema 投影中的字段信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct PluginSchemaField {
     pub name: String,
     pub type_label: String,
@@ -68,10 +52,6 @@ pub struct PluginSchemaField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectSearchMode {
     Key,
@@ -80,10 +60,6 @@ pub enum ProjectSearchMode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectSearchHit {
     pub file_path: String,
     pub coordinate: RecordCoordinate,
@@ -95,10 +71,6 @@ pub struct ProjectSearchHit {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectSearchResults {
     pub revision: u32,
     pub hits: Vec<ProjectSearchHit>,

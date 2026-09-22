@@ -39,7 +39,7 @@ impl From<Vec<CftDiagnostic>> for CftDiagnostics {
 pub struct CftDiagnostic {
     pub code: CftErrorCode,
     pub stage: CftStage,
-    pub severity: CftSeverity,
+    pub severity: Severity,
     pub message: String,
     pub primary: Option<CftLabel>,
     pub related: Vec<CftLabel>,
@@ -55,7 +55,7 @@ impl CftDiagnostic {
     ) -> Self {
         Self {
             stage: code.stage(),
-            severity: CftSeverity::Error,
+            severity: Severity::Error,
             code,
             message: message.into(),
             primary: Some(CftLabel {
@@ -98,7 +98,4 @@ pub struct CftLabel {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CftSeverity {
-    Error,
-}
+pub use coflow_diagnostics::Severity;

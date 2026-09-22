@@ -507,10 +507,7 @@ fn validate_enum(
         ));
     }
     if schema_enum.is_flag {
-        let declared_mask = schema_enum
-            .variants
-            .iter()
-            .fold(0_i64, |mask, variant| mask | variant.value);
+        let declared_mask = i64::from(schema_enum.flag_mask);
         if value.value < 0 || value.value & !declared_mask != 0 {
             return Err(CfdValueSemanticError::new(
                 CfdValueSemanticErrorKind::InvalidEnumVariant,

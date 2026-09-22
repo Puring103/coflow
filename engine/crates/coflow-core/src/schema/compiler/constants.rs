@@ -1,6 +1,6 @@
 use super::state::SymbolKind;
 use super::ValueResolver;
-use crate::schema::{CftConstValue, CftValueType};
+use crate::schema::{CftStaticValue, CftValueType};
 use crate::{CftErrorCode, EnumName, EnumVariantName, FieldName, ModuleId, TypeName};
 use coflow_language::cft::syntax::ast::{DefaultExpr, DefaultExprKind, NamePath};
 use std::collections::BTreeSet;
@@ -18,7 +18,7 @@ impl ValueResolver<'_, '_> {
         &mut self,
         name: &str,
         visiting: &mut Vec<String>,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         if let Some(resolved) = self.resolved_constants.get(name) {
             return Some(resolved.clone());
         }
@@ -65,7 +65,7 @@ impl ValueResolver<'_, '_> {
         expression: &DefaultExpr,
         expected: Option<&CftValueType>,
         visiting: &mut Vec<String>,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         // 可选类型的简写值仍按其明确的内部期望类型解析。
         if let Some(CftValueType::Option(inner)) = expected {
             if !matches!(expression.kind, DefaultExprKind::OptionNone) {
@@ -73,7 +73,7 @@ impl ValueResolver<'_, '_> {
                     self.resolve_static_value(module, expression, Some(inner), visiting)?;
                 return Some((
                     CftValueType::Option(inner.clone()),
-                    CftConstValue::OptionSome(Box::new(value)),
+                    CftStaticValue::OptionSome(Box::new(value)),
                 ));
             }
         }
@@ -97,23 +97,23 @@ impl ValueResolver<'_, '_> {
                     {
                         self.resolve_flag_mask(module, expression, enum_name, *value)?
                     } else {
-                        (CftValueType::Int, CftConstValue::Int(*value))
+                        (CftValueType::Int, CftStaticValue::Int(*value))
                     }
                 } else {
-                    (CftValueType::Int, CftConstValue::Int(*value))
+                    (CftValueType::Int, CftStaticValue::Int(*value))
                 }
             }
             DefaultExprKind::Float(value) => (
                 CftValueType::Float,
-                CftConstValue::Float(f64::from(*value as f32)),
+                CftStaticValue::Float(f64::from(*value as f32)),
             ),
-            DefaultExprKind::Bool(value) => (CftValueType::Bool, CftConstValue::Bool(*value)),
+            DefaultExprKind::Bool(value) => (CftValueType::Bool, CftStaticValue::Bool(*value)),
             DefaultExprKind::String(value) => {
-                (CftValueType::String, CftConstValue::String(value.clone()))
+                (CftValueType::String, CftStaticValue::String(value.clone()))
             }
             DefaultExprKind::FormattedString(source) => (
                 CftValueType::FString,
-                CftConstValue::FormattedString(crate::schema::CftCallableSource::literal(
+                CftStaticValue::FormattedString(crate::schema::CftCallableSource::literal(
                     source.clone(),
                     source.clone(),
                     module.clone(),
@@ -139,7 +139,7 @@ impl ValueResolver<'_, '_> {
                 let source = format!("{}{}", value_type, &source[parsed.span.end..]);
                 (
                     value_type,
-                    CftConstValue::Function(crate::schema::CftCallableSource::literal(
+                    CftStaticValue::Function(crate::schema::CftCallableSource::literal(
                         source,
                         original_source,
                         module.clone(),
@@ -167,8 +167,8 @@ impl ValueResolver<'_, '_> {
                 let (_, lhs) = self.resolve_static_value(module, lhs, expected, visiting)?;
                 let (_, rhs) = self.resolve_static_value(module, rhs, expected, visiting)?;
                 let (
-                    CftConstValue::Enum { value: lhs, .. },
-                    CftConstValue::Enum { value: rhs, .. },
+                    CftStaticValue::Enum { value: lhs, .. },
+                    CftStaticValue::Enum { value: rhs, .. },
                 ) = (lhs, rhs)
                 else {
                     let expected_flag = CftValueType::Enum(enum_name.clone());
@@ -192,7 +192,7 @@ impl ValueResolver<'_, '_> {
                 };
                 (
                     CftValueType::Option(inner.clone()),
-                    CftConstValue::OptionNone,
+                    CftStaticValue::OptionNone,
                 )
             }
             DefaultExprKind::StaticPath(path) => {
@@ -230,7 +230,7 @@ impl ValueResolver<'_, '_> {
                 }
                 (
                     CftValueType::Array(Box::new(item_type?)),
-                    CftConstValue::Array(values),
+                    CftStaticValue::Array(values),
                 )
             }
             DefaultExprKind::Dictionary(entries) => {
@@ -239,7 +239,7 @@ impl ValueResolver<'_, '_> {
             DefaultExprKind::Object(fields) => match expected {
                 Some(CftValueType::Dict(key, value)) if fields.is_empty() => (
                     CftValueType::Dict(key.clone(), value.clone()),
-                    CftConstValue::Dictionary(Vec::new()),
+                    CftStaticValue::Dictionary(Vec::new()),
                 ),
                 Some(CftValueType::Object(_)) => {
                     self.push_diag(
@@ -277,15 +277,15 @@ impl ValueResolver<'_, '_> {
         };
 
         if let Some(expected) = expected {
-            if let (CftValueType::Float, CftConstValue::Int(value)) = (expected, &resolved.1) {
+            if let (CftValueType::Float, CftStaticValue::Int(value)) = (expected, &resolved.1) {
                 resolved = (
                     CftValueType::Float,
-                    CftConstValue::Float(f64::from(*value as f32)),
+                    CftStaticValue::Float(f64::from(*value as f32)),
                 );
             }
             if let (
                 CftValueType::RecordRef(expected_type),
-                CftConstValue::RecordReference { type_name, .. },
+                CftStaticValue::RecordReference { type_name, .. },
             ) = (expected, &resolved.1)
             {
                 // 字面量先按静态查找域定位，最终目标的赋值类型由数据加载检查。
@@ -324,7 +324,7 @@ impl ValueResolver<'_, '_> {
         expression: &DefaultExpr,
         enum_name: &EnumName,
         value: i64,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let info = self.enums.get(enum_name.as_str())?;
         let declared_mask = info
             .values_by_name
@@ -346,7 +346,7 @@ impl ValueResolver<'_, '_> {
             .unwrap_or_else(|| format!("mask_{value}"));
         Some((
             CftValueType::Enum(enum_name.clone()),
-            CftConstValue::Enum {
+            CftStaticValue::Enum {
                 enum_name: enum_name.clone(),
                 variant: EnumVariantName::from_validated(variant),
                 value,
@@ -360,7 +360,7 @@ impl ValueResolver<'_, '_> {
         path: &NamePath,
         expected: Option<&CftValueType>,
         visiting: &mut Vec<String>,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let raw_name = path.canonical();
         let resolved_name = raw_name;
         if self.consts.contains_key(&resolved_name) {
@@ -403,7 +403,7 @@ impl ValueResolver<'_, '_> {
         enum_name: &str,
         variant_name: &str,
         span: crate::source::Span,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let Some(info) = self.enums.get(enum_name) else {
             self.push_diag(
                 CftErrorCode::EnumVariantOnNonEnum,
@@ -425,7 +425,7 @@ impl ValueResolver<'_, '_> {
         let enum_name = EnumName::from_validated(enum_name.to_string());
         Some((
             CftValueType::Enum(enum_name.clone()),
-            CftConstValue::Enum {
+            CftStaticValue::Enum {
                 enum_name,
                 variant: EnumVariantName::from_validated(variant_name.to_string()),
                 value,
@@ -437,7 +437,7 @@ impl ValueResolver<'_, '_> {
         &mut self,
         module: &ModuleId,
         path: &NamePath,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let (key, owner) = path.segments.split_last()?;
         let owner = owner
             .iter()
@@ -461,7 +461,7 @@ impl ValueResolver<'_, '_> {
         let type_name = TypeName::from_validated(type_name);
         Some((
             CftValueType::RecordRef(type_name.clone()),
-            CftConstValue::RecordReference {
+            CftStaticValue::RecordReference {
                 type_name,
                 key: key.name.clone(),
             },
@@ -475,7 +475,7 @@ impl ValueResolver<'_, '_> {
         entries: &[(DefaultExpr, DefaultExpr)],
         expected: Option<&CftValueType>,
         visiting: &mut Vec<String>,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let (mut key_type, mut value_type) = match expected {
             Some(CftValueType::Dict(key, value)) => {
                 (Some((**key).clone()), Some((**value).clone()))
@@ -537,7 +537,7 @@ impl ValueResolver<'_, '_> {
         }
         Some((
             CftValueType::Dict(Box::new(key_type?), Box::new(value_type?)),
-            CftConstValue::Dictionary(values),
+            CftStaticValue::Dictionary(values),
         ))
     }
 
@@ -548,7 +548,7 @@ impl ValueResolver<'_, '_> {
         type_name: &TypeName,
         fields: &[(coflow_language::cft::syntax::ast::NameRef, DefaultExpr)],
         visiting: &mut Vec<String>,
-    ) -> Option<(CftValueType, CftConstValue)> {
+    ) -> Option<(CftValueType, CftStaticValue)> {
         let Some(field_types) = self.full_fields.get(type_name.as_str()).cloned() else {
             self.push_diag(
                 CftErrorCode::UnknownNamedType,
@@ -634,7 +634,7 @@ impl ValueResolver<'_, '_> {
         }
         Some((
             CftValueType::Object(type_name.clone()),
-            CftConstValue::Object {
+            CftStaticValue::Object {
                 type_name: type_name.clone(),
                 fields: values,
             },

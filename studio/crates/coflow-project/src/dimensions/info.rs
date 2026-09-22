@@ -7,10 +7,6 @@ use super::sources::DimensionField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionInfo {
     pub name: String,
     pub display_name: String,
@@ -20,10 +16,6 @@ pub struct DimensionInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionFieldInfo {
     pub source_type: String,
     pub source_field: String,

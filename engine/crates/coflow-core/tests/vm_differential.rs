@@ -1,6 +1,6 @@
 //! 固定种子的受限程序生成器，以 Rust checked i32 作为独立语义 oracle。
 use coflow_core::{contract::Contract, runtime::{HostValue, OptimizationProfile, RuntimeBuilder},
-    schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::executor::ExecutionLimits};
+    schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::ExecutionLimits};
 use std::sync::Arc;
 
 #[test]

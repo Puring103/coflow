@@ -149,17 +149,7 @@ impl ExecutionHost for ExecutionContext<'_> {
                 let Value::Object { type_name, .. } = object.as_ref() else { return Err(invalid("字段默认值需要对象")); };
                 let schema = self.runtime.contract.schema();
                 let field = schema.resolve_type(type_name).and_then(|meta| meta.all_fields().nth(field.0 as usize)).ok_or_else(|| invalid("构造字段不存在"))?;
-                if let Some(default) = &field.default {
-                    let module = &schema.resolve_type(&field.declaring_type).ok_or_else(|| invalid("默认字段声明不存在"))?.module;
-                    self.default_value(default, *owner, module)
-                } else {
-                    match field.value_type {
-                        CftValueType::Option(_) => Ok(Slot::None),
-                        CftValueType::Array(_) => self.array(Vec::new()),
-                        CftValueType::Dict(..) => self.dictionary(Vec::new()),
-                        _ => Err(invalid("必填构造字段没有默认值")),
-                    }
-                }
+                self.field_default(field, *owner)
             }
             B::Freeze { builder } => {
                 let Slot::Handle(id) = builder else { return Err(invalid("冻结需要构造能力")); };
@@ -755,22 +745,8 @@ impl ExecutionHost for ExecutionContext<'_> {
                 provided.binary_search_by(|(name, _)| name.cmp(&field.name.as_str()))
             {
                 provided[index].1
-            } else if let Some(default) = &field.default {
-                let module = &self
-                    .runtime
-                    .contract
-                    .schema()
-                    .resolve_type(&field.declaring_type)
-                    .ok_or_else(|| invalid("未知字段声明类型"))?
-                    .module;
-                self.default_value(default, target, module)?
             } else {
-                match field.value_type {
-                    CftValueType::Option(_) => Slot::None,
-                    CftValueType::Array(_) => self.array(Vec::new())?,
-                    CftValueType::Dict(..) => self.dictionary(Vec::new())?,
-                    _ => return Err(invalid("缺少 data 字段")),
-                }
+                self.field_default(field, target)?
             };
             stored.push((copy_reserved(field.name.as_str())?, self.id(value)?));
         }

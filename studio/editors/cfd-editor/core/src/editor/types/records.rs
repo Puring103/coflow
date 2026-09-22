@@ -9,10 +9,6 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionFileRecords {
     pub revision: u32,
     pub file_path: String,
@@ -24,10 +20,6 @@ pub struct DimensionFileRecords {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DimensionFileRow {
     pub coordinate: RecordCoordinate,
     pub field: String,
@@ -38,10 +30,6 @@ pub struct DimensionFileRow {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FileRecords {
     pub revision: u32,
     pub file_path: String,
@@ -54,10 +42,6 @@ pub struct FileRecords {
 /// A top-level field column available in a file/type table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct RecordColumn {
     pub name: String,
     pub type_names: Vec<String>,
@@ -70,10 +54,6 @@ pub struct RecordColumn {
 /// `display_path` repeats the file path for hosts that already have a row.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct RecordRow {
     pub coordinate: RecordCoordinate,
     pub display_path: String,
@@ -91,10 +71,6 @@ pub struct RecordRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FieldDiagnostic {
     pub severity: String,
     pub field_path: String,
@@ -107,10 +83,6 @@ pub struct FieldDiagnostic {
 /// model. `annotation` carries ref-target and enum metadata.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FieldCell {
     pub name: String,
     pub value: CfdValue,
@@ -139,10 +111,6 @@ pub struct FieldCell {
 ///   values. Keys are field names, zero-based array indexes, or dict-key text.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FieldAnnotation {
     /// Optional schema display name for this field; storage continues to use the field name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,10 +169,6 @@ pub struct FieldAnnotation {
 /// Stable enum variant identity plus schema-provided presentation metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct EnumVariantOption {
     pub name: String,
     #[serde(with = "coflow_project::serde_i64")]
@@ -239,10 +203,6 @@ impl FieldAnnotation {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct WriteFieldOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -266,10 +226,6 @@ pub struct WriteFieldOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct BatchWriteFieldEditOutcome {
     pub coordinate: RecordCoordinate,
     pub final_coordinate: RecordCoordinate,
@@ -282,10 +238,6 @@ pub struct BatchWriteFieldEditOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct BatchWriteFieldInput {
     pub coordinate: RecordCoordinate,
     pub field_path: Vec<coflow_project::CfdPathSegment>,
@@ -294,10 +246,6 @@ pub struct BatchWriteFieldInput {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct BatchWriteFieldOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -309,10 +257,6 @@ pub struct BatchWriteFieldOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct WriteDimensionValueOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -327,10 +271,6 @@ pub use coflow_project::CollectionEdit;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct RenameRecordOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -341,10 +281,6 @@ pub struct RenameRecordOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct InsertRecordOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -354,10 +290,6 @@ pub struct InsertRecordOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct CreateRecordDraft {
     pub actual_type: String,
     pub fields: Vec<CreateRecordFieldDraft>,
@@ -365,10 +297,6 @@ pub struct CreateRecordDraft {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct CreateRecordFieldDraft {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,10 +310,6 @@ pub struct CreateRecordFieldDraft {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DeleteRecordOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -400,10 +324,6 @@ pub struct DeleteRecordOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ReorderRecordsOutcome {
     pub changes: EditorChangeSet,
     pub revision: u32,
@@ -417,10 +337,6 @@ pub struct ReorderRecordsOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DeletedRecordSnapshot {
     pub record: CfdRecord,
     pub display_path: String,
@@ -461,10 +377,6 @@ mod tests {
 /// 与一次提交绑定的文件增量；order 是权威顺序，records 只携带变化的行。
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct EditorChangeSet {
     pub base_revision: u32,
     pub revision: u32,
@@ -473,10 +385,6 @@ pub struct EditorChangeSet {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FileRecordsPatch {
     pub data: FileRecords,
     pub order: Vec<RecordCoordinate>,

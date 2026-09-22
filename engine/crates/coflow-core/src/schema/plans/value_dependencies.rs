@@ -1,21 +1,12 @@
-#[cfg(feature = "cft-compiler")]
+
 use crate::limits::{StructureKind, TraversalCursor};
-#[cfg(feature = "cft-compiler")]
+
 use crate::schema::{AnalysisBudget, LocatedBudgetError};
-#[cfg(feature = "cft-compiler")]
-use crate::{CftField, CftSchemaDefaultValue, CftType, CftValueType};
+
+use crate::{CftField, CftType, CftValueType};
 use crate::{FieldName, ModuleId, Span, TypeName};
 use std::collections::BTreeMap;
 use std::fmt;
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-pub enum ValueDependencyMode {
-    SchemaDefaults,
-    Minimal,
-    EditableShape,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ValueDependencyStep {
@@ -32,7 +23,7 @@ pub struct ValueDependencyCycle {
 }
 
 impl ValueDependencyCycle {
-    #[cfg(feature = "cft-compiler")]
+
     fn canonical(mut steps: Vec<ValueDependencyStep>) -> Self {
         if let Some(start) = steps
             .iter()
@@ -72,37 +63,26 @@ impl fmt::Display for ValueDependencyCycle {
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ValueDependencyPlan {
-    roots: BTreeMap<
-        ValueDependencyMode,
-        BTreeMap<TypeName, Result<Vec<TypeName>, ValueDependencyCycle>>,
-    >,
+    roots: BTreeMap<TypeName, Result<Vec<TypeName>, ValueDependencyCycle>>,
 }
 
 impl ValueDependencyPlan {
-    #[cfg(feature = "cft-compiler")]
+
     pub(in crate::schema) fn compile(
         types: &BTreeMap<TypeName, CftType>,
         budget: &mut AnalysisBudget,
     ) -> Result<Self, LocatedBudgetError> {
-        let mut roots = BTreeMap::new();
-        for mode in [
-            ValueDependencyMode::SchemaDefaults,
-            ValueDependencyMode::Minimal,
-            ValueDependencyMode::EditableShape,
-        ] {
-            let graph = dependency_graph(types, mode, budget)?;
-            let compiled = graph
-                .keys()
-                .map(|root| {
-                    compile_root(root, &graph, budget).map(|result| {
-                        let result =
-                            result.map(|order| order.into_iter().cloned().collect::<Vec<_>>());
-                        (root.clone(), result)
-                    })
+        // 显式默认值的依赖由字段级分析处理；补齐必填对象只需一份类型依赖图。
+        let graph = dependency_graph(types, budget)?;
+        let roots = graph
+            .keys()
+            .map(|root| {
+                compile_root(root, &graph, budget).map(|result| {
+                    let result = result.map(|order| order.into_iter().cloned().collect());
+                    (root.clone(), result)
                 })
-                .collect::<Result<BTreeMap<_, _>, _>>()?;
-            roots.insert(mode, compiled);
-        }
+            })
+            .collect::<Result<_, _>>()?;
         Ok(Self { roots })
     }
 
@@ -110,9 +90,8 @@ impl ValueDependencyPlan {
     pub fn materialization_order<'a>(
         &'a self,
         type_name: &str,
-        mode: ValueDependencyMode,
     ) -> Option<Result<Vec<&'a str>, ValueDependencyCycle>> {
-        let result = self.roots.get(&mode)?.get(type_name)?;
+        let result = self.roots.get(type_name)?;
         Some(match result {
             Ok(order) => Ok(order.iter().map(TypeName::as_str).collect()),
             Err(cycle) => Err(cycle.clone()),
@@ -120,10 +99,8 @@ impl ValueDependencyPlan {
     }
 }
 
-#[cfg(feature = "cft-compiler")]
 fn dependency_graph(
     types: &BTreeMap<TypeName, CftType>,
-    mode: ValueDependencyMode,
     budget: &mut AnalysisBudget,
 ) -> Result<BTreeMap<TypeName, Vec<ValueDependencyStep>>, LocatedBudgetError> {
     let mut graph = BTreeMap::new();
@@ -139,7 +116,7 @@ fn dependency_graph(
                         .map_or_else(|| meta.module.clone(), |owner| owner.module.clone()),
                     span: field.span,
                 })?;
-            let Some(target_type) = dependency_target(field, mode, types) else {
+            let Some(target_type) = dependency_target(field, types) else {
                 continue;
             };
             dependencies.push(ValueDependencyStep {
@@ -157,35 +134,19 @@ fn dependency_graph(
     Ok(graph)
 }
 
-#[cfg(feature = "cft-compiler")]
 fn dependency_target<'a>(
     field: &'a CftField,
-    mode: ValueDependencyMode,
     types: &BTreeMap<TypeName, CftType>,
 ) -> Option<&'a TypeName> {
-    let ty = match mode {
-        ValueDependencyMode::SchemaDefaults => {
-            matches!(field.default, Some(CftSchemaDefaultValue::EmptyObject))
-                .then_some(&field.value_type)?
-        }
-        ValueDependencyMode::Minimal => {
-            if field.default.is_some() {
-                return None;
-            }
-            &field.value_type
-        }
-        ValueDependencyMode::EditableShape => match field.default {
-            Some(CftSchemaDefaultValue::EmptyObject) | None => &field.value_type,
-            Some(_) => return None,
-        },
-    };
-    let CftValueType::Object(target_type) = ty else {
+    if field.default.is_some() {
+        return None;
+    }
+    let CftValueType::Object(target_type) = &field.value_type else {
         return None;
     };
     types.contains_key(target_type).then_some(target_type)
 }
 
-#[cfg(feature = "cft-compiler")]
 fn compile_root<'a>(
     root: &'a TypeName,
     graph: &'a BTreeMap<TypeName, Vec<ValueDependencyStep>>,
@@ -262,7 +223,6 @@ fn compile_root<'a>(
     Ok(Ok(order))
 }
 
-#[cfg(feature = "cft-compiler")]
 fn charge_edge(
     budget: &mut AnalysisBudget,
     edge: &ValueDependencyStep,
@@ -277,13 +237,12 @@ fn charge_edge(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "cft-compiler")]
+
 enum VisitState {
     Visiting,
     Complete,
 }
 
-#[cfg(feature = "cft-compiler")]
 struct VisitFrame<'a> {
     type_name: &'a TypeName,
     next_edge: usize,

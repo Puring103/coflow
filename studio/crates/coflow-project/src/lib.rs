@@ -19,6 +19,7 @@ mod api;
 mod artifacts;
 mod catalog;
 mod cfd_loader;
+pub mod cell_value;
 mod checks;
 pub mod commands;
 pub use coflow_codegen as codegen;
@@ -51,10 +52,10 @@ pub(crate) use coflow_core as data_model;
 pub use coflow_core::serde_i64;
 pub use coflow_core::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues,
-    CfdDimensionValue, CfdEnumValue, CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel,
-    CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable,
+    CfdDimensionValue, CfdEnumValue, CfdErrorCode, CallableSource, CfdLabel,
+    CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdStage, CfdTable,
     CfdValue, DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft,
-    DimensionValueLookup, LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction,
+    DimensionValueLookup, LoadedDictKeyDraft,
     LoadedRecordDraft, LoadedValueDraft, RecordCoordinate, RecordOrigin, TextSpan,
 };
 pub use diff::{
@@ -86,7 +87,7 @@ pub use runtime::{
     BuildProjectSession, PreparedSourceUpdate, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
 };
 pub use schema_inspect::{
-    inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,
+    inspect_schema, schema_files, SchemaConstInfo, SchemaStaticValueInfo,
     SchemaDimensionFieldInfo, SchemaDimensionInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,

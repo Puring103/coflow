@@ -8,10 +8,6 @@ use std::fmt;
 /// wire-facing references to top-level records must use this coordinate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct RecordCoordinate {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub actual_type: TypeName,

@@ -51,11 +51,7 @@ struct ProjectWatcher {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        rename = "ProjectReloadedEvent",
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(rename = "ProjectReloadedEvent")
 )]
 pub struct ProjectReloadedPayload {
     pub session_id: u32,
@@ -68,11 +64,7 @@ pub struct ProjectReloadedPayload {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        rename = "ProjectWatchErrorEvent",
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(rename = "ProjectWatchErrorEvent")
 )]
 pub struct ProjectWatchErrorPayload {
     pub session_id: u32,

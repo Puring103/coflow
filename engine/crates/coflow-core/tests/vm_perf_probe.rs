@@ -4,7 +4,7 @@ use coflow_core::{
     contract::Contract,
     runtime::{HostValue, Runtime, RuntimeBuilder},
     schema::{build_schema, parse_modules, CftFile, ModuleId},
-    vm::executor::ExecutionLimits,
+    vm::ExecutionLimits,
 };
 use std::sync::Arc;
 use std::time::Instant;

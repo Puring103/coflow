@@ -104,10 +104,6 @@ pub struct Diagnostic {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct DiagnosticContext {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -238,10 +234,6 @@ pub struct Label {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct TextPosition {
     pub line: usize,
     pub character: usize,
@@ -249,10 +241,6 @@ pub struct TextPosition {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct TextRange {
     pub start: TextPosition,
     pub end: TextPosition,
@@ -397,10 +385,6 @@ pub fn origins_of(records: &[LoadedRecordDraft]) -> Vec<RecordOrigin> {
 /// infer navigation behavior from diagnostic codes or optional coordinates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct FlatDiagnostic {
     pub id: String,
     pub severity: String,
@@ -444,10 +428,6 @@ fn diagnostic_id(
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DiagnosticTarget {
     TableField {

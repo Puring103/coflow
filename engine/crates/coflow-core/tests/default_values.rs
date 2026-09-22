@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use coflow_core::schema::{
-    build_schema, parse_modules, CftConstValue, CftFile, CftSchemaDefaultValue, ModuleId,
+    build_schema, parse_modules, CftStaticValue, CftFile, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -36,28 +36,28 @@ table Rule {
 
     assert!(matches!(
         rule.field("label").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::FormattedString(source)) if source.source == "f\"rule {self.name}\""
+        Some(CftStaticValue::FormattedString(source)) if source.source == "f\"rule {self.name}\""
     ));
     assert!(matches!(
         rule.field("braces").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::String(value)) if value == "{{ready}}"
+        Some(CftStaticValue::String(value)) if value == "{{ready}}"
     ));
     assert!(matches!(
         rule.field("permissions")
             .and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::Enum { value: 3, .. })
+        Some(CftStaticValue::Enum { value: 3, .. })
     ));
     assert!(matches!(
         rule.field("effect").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::Object { type_name, .. }) if type_name.as_str() == "Damage"
+        Some(CftStaticValue::Object { type_name, .. }) if type_name.as_str() == "Damage"
     ));
     assert!(matches!(
         rule.field("apply").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::Function(source)) if source.contains("input + 1")
+        Some(CftStaticValue::Function(source)) if source.contains("input + 1")
     ));
     assert!(matches!(
         schema.resolve_const("BRACES").map(|value| &value.value),
-        Some(CftConstValue::String(value)) if value == "{{ready}}"
+        Some(CftStaticValue::String(value)) if value == "{{ready}}"
     ));
 }
 
@@ -67,7 +67,7 @@ fn plain_strings_do_not_become_templates() {
     let schema = compile(r#"table Rule { label: string = "{self.id}"; }"#).expect("literal braces");
     assert!(
         matches!(schema.resolve_type("Rule").expect("Rule").field("label").and_then(|f| f.default.as_ref()),
-        Some(CftSchemaDefaultValue::String(value)) if value == "{self.id}")
+        Some(CftStaticValue::String(value)) if value == "{self.id}")
     );
 }
 

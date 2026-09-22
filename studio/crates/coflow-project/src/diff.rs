@@ -16,10 +16,6 @@ use crate::{Diagnostic, DiagnosticSet, Project, Runtime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectDiffChange {
     Added,
@@ -29,10 +25,6 @@ pub enum ProjectDiffChange {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectDiffValue {
     pub path: String,
     pub value: CfdValue,
@@ -40,10 +32,6 @@ pub struct ProjectDiffValue {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectRecordSnapshot {
     pub file_path: String,
     pub values: Vec<ProjectDiffValue>,
@@ -51,10 +39,6 @@ pub struct ProjectRecordSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectFieldDiff {
     pub path: String,
     pub change: ProjectDiffChange,
@@ -68,10 +52,6 @@ pub struct ProjectFieldDiff {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectRecordDiff {
     pub coordinate: RecordCoordinate,
     pub change: ProjectDiffChange,
@@ -86,10 +66,6 @@ pub struct ProjectRecordDiff {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectFileDiff {
     pub path: String,
     pub change: ProjectDiffChange,
@@ -105,10 +81,6 @@ pub struct ProjectFileDiff {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectDiffDiagnostic {
     pub endpoint: String,
     pub code: String,
@@ -117,10 +89,6 @@ pub struct ProjectDiffDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct ProjectDiff {
     pub head_oid: String,
     #[cfg_attr(feature = "ts-export", ts(type = "number"))]
@@ -369,14 +337,14 @@ fn record_states(
 
 fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
     match value {
-        CfdValue::Function(function) => CfdValue::Function(crate::CfdFunction {
+        CfdValue::Function(function) => CfdValue::Function(crate::CallableSource {
             from_default: false,
             location: None,
             imports: Default::default(),
             constant_origin: None,
             source: normalized_line_endings(&function.source),
         }),
-        CfdValue::FormattedString(value) => CfdValue::FormattedString(crate::CfdFormattedString {
+        CfdValue::FormattedString(value) => CfdValue::FormattedString(crate::CallableSource {
             from_default: false,
             location: None,
             imports: Default::default(),

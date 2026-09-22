@@ -15,24 +15,13 @@ mod types;
 pub use entry::{build_schema, build_schema_with_limits};
 
 use self::state::{CheckInfo, ConstInfo, EnumInfo, FieldInfo, Symbol, TypeAliasInfo, TypeInfo};
-use crate::schema::{
-    CftConst, CftEnum, CftTopLevelCheck, CftType, CheckName, ConstName, EnumName, TypeName,
-};
 use crate::source::Span;
 use crate::{CftDiagnostic, CftErrorCode};
 use coflow_language::cft::{CftModuleSet, ModuleId};
 use std::collections::BTreeMap;
 use std::ops::Deref;
 
-#[derive(Debug, Clone, Default)]
-pub(in crate::schema) struct SchemaDeclarations {
-    pub(super) aliases: BTreeMap<String, crate::schema::CftValueType>,
-    pub(super) consts: BTreeMap<ConstName, CftConst>,
-    pub(super) types: BTreeMap<TypeName, CftType>,
-    pub(super) enums: BTreeMap<EnumName, CftEnum>,
-    pub(super) checks: BTreeMap<CheckName, CftTopLevelCheck>,
-    pub(super) sources: BTreeMap<ModuleId, crate::schema::CftSchemaSource>,
-}
+use super::SchemaDeclarations;
 
 pub(super) struct SymbolTable<'a> {
     modules: &'a CftModuleSet,
@@ -55,15 +44,15 @@ pub(super) struct ResolvedTypes<'a> {
 
 pub(super) struct ResolvedValues<'a> {
     type_state: ResolvedTypes<'a>,
-    constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
-    defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
+    constants: BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftStaticValue)>,
+    defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftStaticValue>,
 }
 
 struct ValueResolver<'s, 'a> {
     resolved_types: &'s ResolvedTypes<'a>,
     resolved_constants:
-        BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftConstValue)>,
-    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftConstValue>,
+        BTreeMap<String, (crate::schema::CftValueType, crate::schema::CftStaticValue)>,
+    resolved_defaults: BTreeMap<(ModuleId, usize, usize), crate::schema::CftStaticValue>,
     diagnostics: Vec<CftDiagnostic>,
 }
 

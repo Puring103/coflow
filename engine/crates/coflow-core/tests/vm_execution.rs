@@ -2,7 +2,7 @@ use coflow_core::{
     contract::Contract,
     runtime::{HostValue, Runtime, RuntimeBuilder},
     schema::{build_schema, parse_modules, CftFile, ModuleId},
-    vm::executor::ExecutionLimits,
+    vm::ExecutionLimits,
 };
 use std::sync::Arc;
 fn make_runtime(body: &str, signature: &str) -> Arc<Runtime> {

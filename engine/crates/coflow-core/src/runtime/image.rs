@@ -23,7 +23,7 @@ pub(super) struct LinkContext<'a> {
     pub record_lookup: &'a BTreeMap<String, BTreeMap<String, ValueId>>,
     pub contract_values: &'a BTreeSet<ValueId>,
     pub function_imports: &'a BTreeMap<ValueId, BTreeMap<String, String>>,
-    pub function_locations: &'a BTreeMap<ValueId, crate::ingest::CallableLocation>,
+    pub function_locations: &'a BTreeMap<ValueId, crate::CallableLocation>,
 }
 impl LinkContext<'_> {
     fn fixed_field(&self, id: ValueId, slot: u16) -> Option<ValueId> { self.values.field(id, usize::from(slot)) }
@@ -520,60 +520,18 @@ pub(super) fn fuse_int_immediates(program: &mut Program) -> Result<(), String> {
 }
 
 pub(super) fn compact_instructions(program: &mut Program, remove: &[bool]) -> Result<(), String> {
-    use crate::vm::bytecode::{Instruction, Opcode};
-
+    if remove.len() != program.instructions.len() {
+        return Err("指令删除掩码长度不匹配".into());
+    }
     if !remove.iter().any(|remove| *remove) {
         return Ok(());
     }
-    let mut old_to_new = vec![0usize; remove.len() + 1];
-    let mut next = 0usize;
-    for (pc, removed) in remove.iter().copied().enumerate() {
-        old_to_new[pc] = next;
-        if !removed {
-            next += 1;
+    program.rewrite_instructions(|_, pc, instruction, output| {
+        if !remove[pc] {
+            output.push(instruction);
         }
-    }
-    old_to_new[remove.len()] = next;
-
-    let mut instructions = Vec::with_capacity(next);
-    let mut spans = Vec::with_capacity(next);
-    for (pc, (instruction, span)) in program
-        .instructions
-        .iter()
-        .copied()
-        .zip(program.spans.iter().copied())
-        .enumerate()
-    {
-        if remove[pc] {
-            continue;
-        }
-        let instruction = match instruction.opcode() {
-            Some(opcode @ (Opcode::Jump | Opcode::JumpFalse)) => {
-                let target = *old_to_new
-                    .get(instruction.index() as usize)
-                    .ok_or("跳转目标越界")?;
-                Instruction::indexed(
-                    opcode,
-                    instruction.a(),
-                    u32::try_from(target).map_err(|_| "程序过大")?,
-                )
-                .with_flags(instruction.flags())
-            }
-            _ => instruction,
-        };
-        instructions.push(instruction);
-        spans.push(span);
-    }
-    for site in &mut program.for_sites {
-        site.target = u32::try_from(
-            *old_to_new
-                .get(site.target as usize)
-                .ok_or("循环回边越界")?,
-        )
-        .map_err(|_| "程序过大")?;
-    }
-    program.instructions = instructions;
-    program.spans = spans;
+        Ok(())
+    })?;
     program.build_local_liveness()
 }
 

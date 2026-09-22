@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
 use coflow_core::schema::{
-    build_schema, parse_modules, CftConstValue, CftFile, CftValueType, ModuleId,
+    build_schema, parse_modules, CftStaticValue, CftFile, CftValueType, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -37,15 +37,15 @@ const NO_ITEM: Item? = None;
     );
     assert_eq!(
         values.value,
-        CftConstValue::Array(vec![CftConstValue::Int(10), CftConstValue::Int(20)])
+        CftStaticValue::Array(vec![CftStaticValue::Int(10), CftStaticValue::Int(20)])
     );
 
     let weights = schema.resolve_const("WEIGHTS").expect("WEIGHTS");
     assert_eq!(
         weights.value,
-        CftConstValue::Dictionary(vec![
-            (CftConstValue::String("fire".into()), CftConstValue::Int(10)),
-            (CftConstValue::String("ice".into()), CftConstValue::Int(5)),
+        CftStaticValue::Dictionary(vec![
+            (CftStaticValue::String("fire".into()), CftStaticValue::Int(10)),
+            (CftStaticValue::String("ice".into()), CftStaticValue::Int(5)),
         ])
     );
 
@@ -54,21 +54,21 @@ const NO_ITEM: Item? = None;
         .expect("DEFAULT_STATS");
     assert!(matches!(
         &stats.value,
-        CftConstValue::Object { fields, .. }
+        CftStaticValue::Object { fields, .. }
             if fields.len() == 2
-                && matches!(fields[0].1, CftConstValue::Int(10))
-                && matches!(fields[1].1, CftConstValue::Enum { value: 1, .. })
+                && matches!(fields[0].1, CftStaticValue::Int(10))
+                && matches!(fields[1].1, CftStaticValue::Enum { value: 1, .. })
     ));
 
     let maybe = schema.resolve_const("MAYBE_ITEM").expect("MAYBE_ITEM");
     assert!(matches!(
         &maybe.value,
-        CftConstValue::OptionSome(value)
-            if matches!(value.as_ref(), CftConstValue::RecordReference { key, .. } if key == "wooden_sword")
+        CftStaticValue::OptionSome(value)
+            if matches!(value.as_ref(), CftStaticValue::RecordReference { key, .. } if key == "wooden_sword")
     ));
     assert!(matches!(
         schema.resolve_const("NO_ITEM").expect("NO_ITEM").value,
-        CftConstValue::OptionNone
+        CftStaticValue::OptionNone
     ));
 }
 
@@ -100,9 +100,9 @@ const DEFAULT_STATS: Stats = Stats { hp: 10 };
     .expect("object field defaults apply to constants");
     assert!(matches!(
         &schema.resolve_const("DEFAULT_STATS").expect("DEFAULT_STATS").value,
-        CftConstValue::Object { fields, .. }
+        CftStaticValue::Object { fields, .. }
             if fields.iter().any(|(name, value)| name.as_str() == "attack" &&
-                matches!(value, CftConstValue::Int(3)))
+                matches!(value, CftStaticValue::Int(3)))
     ));
 
     let diagnostics = compile(

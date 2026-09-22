@@ -18,7 +18,7 @@ impl fmt::Display for CfdStage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CfdSeverity {
+pub enum Severity {
     Error,
 }
 
