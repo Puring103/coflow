@@ -1,7 +1,7 @@
 //! 对解码后的 Contract IR 验证类型及结构，不通过重新解析源码建立信任。
 use super::{
     bytecode::Constant,
-    ir::{Function, Operation, ValueId},
+    ir::{Function, Operation, IrValueId},
 };
 use crate::schema::{CftSchema, CftValueType as Ty};
 use std::collections::BTreeSet;
@@ -18,7 +18,7 @@ impl Function {
         if self.body.is_empty() || !self.values.starts_with(&self.parameters) {
             return Err("IR 参数布局或函数体无效".into());
         }
-        let ty = |id: ValueId| {
+        let ty = |id: IrValueId| {
             self.values
                 .get(id.0 as usize)
                 .ok_or_else(|| "IR 值编号越界".to_string())
@@ -485,7 +485,7 @@ impl Function {
                             Ty::Array(Box::new(Ty::RecordRef(meta.name.clone()))),
                         )
                     } else {
-                        let signature = super::compiler::builtin_signature(schema, receiver, name);
+                        let signature = super::builtins::builtin_signature(schema, receiver, name);
                         signature.ok_or("IR 内建操作与接收者类型不匹配")?
                     };
                     if parameters.len() != arguments.len() {

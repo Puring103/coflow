@@ -49,11 +49,19 @@ enum Index {
 }
 
 /// 顺序条目是唯一的键所有者；索引仅保存条目位置，不复制字符串或公开身份。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DictionaryValue {
     entries: Vec<Entry>,
     index: Index,
     hasher: RandomState,
+    key_bytes: usize,
+}
+impl Clone for DictionaryValue {
+    fn clone(&self) -> Self {
+        let entries = self.entries.clone();
+        let key_bytes = entries.iter().map(|(key, _)| Self::key_bytes(key)).sum();
+        Self { entries, index: self.index.clone(), hasher: self.hasher.clone(), key_bytes }
+    }
 }
 impl Default for DictionaryValue {
     fn default() -> Self {
@@ -61,11 +69,15 @@ impl Default for DictionaryValue {
     }
 }
 impl DictionaryValue {
+    fn key_bytes(key: &ScalarKey) -> usize {
+        match key { ScalarKey::String(text) => text.capacity(), ScalarKey::Enum { type_name, .. } => type_name.capacity(), _ => 0 }
+    }
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
             index: Index::Hash(HashTable::new()),
             hasher: RandomState::new(),
+            key_bytes: 0,
         }
     }
     pub fn with_capacity(capacity: usize) -> Self {
@@ -87,15 +99,7 @@ impl DictionaryValue {
     }
     pub(super) fn heap_bytes(&self) -> usize {
         self.entries.capacity() * size_of::<Entry>()
-            + self
-                .entries
-                .iter()
-                .map(|(key, _)| match key {
-                    ScalarKey::String(v) => v.capacity(),
-                    ScalarKey::Enum { type_name, .. } => type_name.capacity(),
-                    _ => 0,
-                })
-                .sum::<usize>()
+            + self.key_bytes
             + match &self.index {
                 Index::Hash(table) | Index::Enum(table) => table.allocation_size(),
                 Index::DenseInt { positions, .. } => positions.capacity() * size_of::<u32>(),
@@ -190,6 +194,7 @@ impl DictionaryValue {
         }
         let hash = KeyRef::from(&key).hash(&self.hasher);
         let index = self.entries.len();
+        self.key_bytes += Self::key_bytes(&key);
         self.entries.push((key, value));
         let Index::Hash(table) = &mut self.index else {
             unreachable!()
@@ -201,7 +206,8 @@ impl DictionaryValue {
     }
     pub fn shift_remove(&mut self, key: &ScalarKey) -> Option<Pair> {
         let index = self.position(key.into())?;
-        let (_, value) = self.entries.remove(index);
+        let (removed, value) = self.entries.remove(index);
+        self.key_bytes -= Self::key_bytes(&removed);
         // 删除保持插入顺序；重建位置只复用已有索引容量，不分配内存。
         match &mut self.index {
             Index::Hash(table) => {

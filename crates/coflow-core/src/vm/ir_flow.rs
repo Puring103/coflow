@@ -1,9 +1,9 @@
 //! 语义 IR 的统一控制流与读写集合，验证器和 SSA 共用同一解释。
-use super::ir::{Function, Operation, ValueId};
+use super::ir::{Function, Operation, IrValueId};
 use std::collections::BTreeSet;
 pub(super) struct Flow {
-    pub reads: Vec<Vec<ValueId>>,
-    pub writes: Vec<Vec<ValueId>>,
+    pub reads: Vec<Vec<IrValueId>>,
+    pub writes: Vec<Vec<IrValueId>>,
     pub successors: Vec<Vec<usize>>,
     pub reachable: BTreeSet<usize>,
 }
@@ -24,7 +24,7 @@ impl Function {
         let mut body = Vec::with_capacity(position);
         for (pc, mut node) in std::mem::take(&mut self.body).into_iter().enumerate() {
             if removed.contains(&pc) {
-                node.operation = Operation::Jump(super::ir::LocationId((pc + 1) as u32));
+                node.operation = Operation::Jump(super::ir::NodeIndex((pc + 1) as u32));
             }
             for mut node in expansions.remove(&pc).unwrap_or_else(|| vec![node]) {
                 match &mut node.operation {

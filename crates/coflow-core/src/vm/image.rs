@@ -30,6 +30,7 @@ impl SourceMap {
     pub(crate) fn storage_bytes(&self) -> usize {
         match self { Self::Dense(spans) => spans.capacity() * size_of::<coflow_language::source::Span>(), Self::Runs { entries, .. } => entries.capacity() * size_of::<(usize, coflow_language::source::Span)>() }
     }
+    #[cfg(test)]
     fn expand(&self) -> Vec<coflow_language::source::Span> {
         match self { Self::Dense(spans) => spans.clone(), Self::Runs { len, .. } => (0..*len).map(|pc| *self.get(pc).unwrap()).collect() }
     }
@@ -55,11 +56,14 @@ impl ValidatedProgram {
 
     fn publish(program: Arc<Program>) -> Result<Self, String> {
         let mut program = Arc::unwrap_or_clone(program);
-        let closures: Vec<Arc<Self>> = program
-            .closures
-            .iter()
-            .map(|site| Self::publish(site.program.clone()).map(Arc::new))
-            .collect::<Result<_, _>>()?;
+        let sites = std::mem::take(&mut program.closures);
+        let mut closures = Vec::with_capacity(sites.len());
+        for mut site in sites {
+            let closure = Arc::new(Self::publish(site.program)?);
+            site.program = closure.program.clone();
+            program.closures.push(site);
+            closures.push(closure);
+        }
         let static_text = if program.tail_calls { Self::find_static_text(&program) } else { None };
         let tail_returns = program.instructions.iter().enumerate().map(|(pc, instruction)| {
             if !program.tail_calls || !matches!(instruction.opcode(), Some(Opcode::Call | Opcode::CallDirect)) { return false; }
@@ -82,8 +86,6 @@ impl ValidatedProgram {
             }
             false
         }).collect();
-        // 子程序也仅保存已发布版本，防止父附表继续持有未压缩的映射副本。
-        for (site, closure) in program.closures.iter_mut().zip(&closures) { site.program = closure.program.clone(); }
         let spans = SourceMap::new(std::mem::take(&mut program.spans));
         Ok(Self { program: Arc::new(program), spans, closures, static_text, tail_returns })
     }
@@ -107,13 +109,6 @@ impl ValidatedProgram {
             }
         }
         None
-    }
-
-    pub(crate) fn to_editable(&self) -> Program {
-        let mut program = (*self.program).clone();
-        program.spans = self.spans.expand();
-        for (site, closure) in program.closures.iter_mut().zip(&self.closures) { site.program = Arc::new(closure.to_editable()); }
-        program
     }
 
     pub(crate) fn is_tail_call(&self, pc: usize) -> bool { self.tail_returns.get(pc).copied().unwrap_or(false) }

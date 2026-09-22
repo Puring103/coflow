@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ValueId(pub u32);
+pub struct IrValueId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LocationId(pub u32);
+pub struct NodeIndex(pub u32);
 
 /// 声明类型字段域中的语义编号，包含继承字段和记录虚拟 id；不是字节偏移或寄存器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,105 +23,105 @@ impl From<u16> for FieldId {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operation {
-    Build(super::construction::BuildOp<ValueId>),
+    Build(super::construction::BuildOp<IrValueId>),
     Constant(Constant),
-    Copy(ValueId),
+    Copy(IrValueId),
     Owner,
     Capture(u32),
     Field {
-        receiver: ValueId,
+        receiver: IrValueId,
         field: FieldId,
     },
     OwnerField(FieldId),
     Index {
-        receiver: ValueId,
-        key: ValueId,
+        receiver: IrValueId,
+        key: IrValueId,
     },
     IndexConstant {
-        receiver: ValueId,
+        receiver: IrValueId,
         key: Constant,
     },
     Reference(String),
     Unary {
         operator: u8,
-        value: ValueId,
+        value: IrValueId,
     },
     Binary {
         operator: u8,
-        left: ValueId,
-        right: ValueId,
+        left: IrValueId,
+        right: IrValueId,
     },
-    ConvertFloat(ValueId),
+    ConvertFloat(IrValueId),
     IsType {
-        value: ValueId,
+        value: IrValueId,
         name: String,
     },
-    IsSome(ValueId),
-    Jump(LocationId),
+    IsSome(IrValueId),
+    Jump(NodeIndex),
     JumpFalse {
-        condition: ValueId,
-        target: LocationId,
+        condition: IrValueId,
+        target: NodeIndex,
     },
-    Return(ValueId),
+    Return(IrValueId),
     Call {
-        target: ValueId,
-        arguments: Vec<ValueId>,
+        target: IrValueId,
+        arguments: Vec<IrValueId>,
     },
     Closure {
         function: Box<Function>,
-        captures: Vec<ValueId>,
-        owner: Option<ValueId>,
+        captures: Vec<IrValueId>,
+        owner: Option<IrValueId>,
         template: bool,
     },
-    Array(Vec<ValueId>),
-    Dictionary(Vec<ValueId>),
+    Array(Vec<IrValueId>),
+    Dictionary(Vec<IrValueId>),
     ReserveObject {
         type_name: String,
     },
     InitializeObject {
         type_name: String,
-        fields: Vec<(String, ValueId)>,
+        fields: Vec<(String, IrValueId)>,
     },
-    ReadTemplate(ValueId),
-    Format(Vec<ValueId>),
-    Concat(Vec<ValueId>),
+    ReadTemplate(IrValueId),
+    Format(Vec<IrValueId>),
+    Concat(Vec<IrValueId>),
     /// Release 优化专用：SSA 已证明 left 是未被观察的循环携带前缀。
     AccumulateText {
-        left: ValueId,
-        right: ValueId,
+        left: IrValueId,
+        right: IrValueId,
     },
-    Length(ValueId),
+    Length(IrValueId),
     IteratorValue {
-        collection: ValueId,
-        index: ValueId,
+        collection: IrValueId,
+        index: IrValueId,
     },
     Builtin {
         name: String,
-        receiver: ValueId,
-        arguments: Vec<ValueId>,
+        receiver: IrValueId,
+        arguments: Vec<IrValueId>,
     },
     Iteration,
     ForPrep {
-        limit: ValueId,
-        target: LocationId,
+        limit: IrValueId,
+        target: NodeIndex,
         exclusive: bool,
     },
     ForLoop {
-        limit: ValueId,
-        target: LocationId,
+        limit: IrValueId,
+        target: NodeIndex,
         exclusive: bool,
     },
     IterNext {
-        collection: ValueId,
-        counter: ValueId,
-        key: ValueId,
-        value: ValueId,
+        collection: IrValueId,
+        counter: IrValueId,
+        key: IrValueId,
+        value: IrValueId,
     },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
-    pub destination: ValueId,
+    pub destination: IrValueId,
     pub operation: Operation,
     pub span: Span,
 }
@@ -179,7 +179,7 @@ impl Function {
 
     pub(crate) fn lower(&self) -> Result<Program, String> {
         let mut program = self.lower_unallocated(0)?;
-        program.allocate_registers()?;
+        program.allocate_analyzed_registers()?;
         program.validate()?;
         Ok(program)
     }
@@ -188,13 +188,13 @@ impl Function {
         if depth > 256 || self.body.len() > 1_000_000 || self.values.len() > 65_536 {
             return Err("Contract IR 结构超限".into());
         }
-        let register = |value: ValueId| -> Result<Register, String> {
+        let register = |value: IrValueId| -> Result<Register, String> {
             if value.0 as usize >= self.values.len() {
                 return Err("IR 值编号越界".into());
             }
             Register::try_from(value.0).map_err(|_| "IR 值数量超限".into())
         };
-        let registers = |values: &[ValueId]| {
+        let registers = |values: &[IrValueId]| {
             values
                 .iter()
                 .map(|v| register(*v))
@@ -202,7 +202,7 @@ impl Function {
         };
         let mut p = Program::new(
             self.name.clone(),
-            self.source.to_string(),
+            self.source.clone(),
             self.parameters.clone(),
             self.result.clone(),
         );
@@ -449,8 +449,8 @@ impl Function {
             p.spans.push(node.span);
         }
         // 先验证未分配的虚拟值图，防止畸形 Contract 进入分配器的直接索引路径。
-        p.build_liveness()?;
-        p.validate()?;
+        p.build_local_liveness()?;
+        p.validate_local()?;
         Ok(p)
     }
 }

@@ -21,8 +21,6 @@ internal static class RecordReadProbe
         long managedBefore = GC.GetTotalMemory(true), allocatedBefore = GC.GetTotalAllocatedBytes(true), privateBefore = PrivateBytes();
         var weak = Measure(contract, text);
         Collect();
-        // 在创建线程触发一次原生请求，排空终结释放队列后再记录保留量。
-        Native.ReadBuffer(Native.Call(NativeOperation.CreateBuffer, data: Array.Empty<byte>()));
         Console.WriteLine($"managed_retained_delta={GC.GetTotalMemory(true) - managedBefore},total_managed_allocated={GC.GetTotalAllocatedBytes(true) - allocatedBefore},process_private_delta={PrivateBytes() - privateBefore},runtime_collected={!weak.IsAlive}");
     }
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -31,7 +29,7 @@ internal static class RecordReadProbe
         long baseline = GC.GetTotalMemory(true), requests = Native.RequestCount;
         var timer = Stopwatch.StartNew();
         using var builder = new RuntimeBuilder(contract).AddSource(source);
-        var runtime = builder.Build();
+        using var runtime = builder.Build();
         var built = timer.Elapsed.TotalMilliseconds;
         long loaded = GC.GetTotalMemory(true);
         Console.WriteLine($"records=1000,build_ms={built:F3},managed_live_delta={loaded - baseline},build_ffi_requests={Native.RequestCount - requests},process_private_bytes={PrivateBytes()}");

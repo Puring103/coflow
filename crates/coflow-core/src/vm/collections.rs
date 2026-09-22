@@ -1,12 +1,12 @@
 //! 有界集合流水线优化；融合仅重排已证明纯、有限且无计算 fault 的标量回调。
-use super::{bytecode::Constant, construction::BuildOp as B, ir::{Function, Operation as O, ValueId}};
+use super::{bytecode::Constant, construction::BuildOp as B, ir::{Function, Operation as O, IrValueId}};
 use crate::schema::CftValueType as Ty;
 use std::collections::BTreeSet;
 
 fn identity(function: &Function) -> bool {
     if function.parameters.len() != 1 || !function.captures.is_empty() || function.parameters[0] != function.result
         || !matches!(function.result, Ty::Int | Ty::Float | Ty::Bool | Ty::String) { return false; }
-    let mut aliases = BTreeSet::from([ValueId(0)]);
+    let mut aliases = BTreeSet::from([IrValueId(0)]);
     for (pc, node) in function.body.iter().enumerate() {
         match node.operation {
             O::Copy(source) if aliases.contains(&source) => { aliases.insert(node.destination); }
@@ -60,9 +60,9 @@ impl Function {
             if (start..start + 13).flat_map(|pc| &flow.writes[pc]).any(|value|
                 reads[value.0 as usize].iter().any(|pc| !(start..start + 14).contains(pc))) { continue; }
             let creation = *creation;
-            for pc in start..start + 13 { self.body[pc].operation = O::Jump(super::ir::LocationId((pc + 1) as u32)); }
+            for pc in start..start + 13 { self.body[pc].operation = O::Jump(super::ir::NodeIndex((pc + 1) as u32)); }
             self.body[start + 13].operation = O::Copy(receiver);
-            self.body[creation].operation = O::Jump(super::ir::LocationId((creation + 1) as u32));
+            self.body[creation].operation = O::Jump(super::ir::NodeIndex((creation + 1) as u32));
         }
         Ok(())
     }
@@ -108,7 +108,7 @@ mod tests {
 }
 
 #[derive(Clone, Copy)]
-struct Stage { start: usize, append: usize, end: usize, builder: ValueId, receiver: ValueId, callback: ValueId, item: ValueId }
+struct Stage { start: usize, append: usize, end: usize, builder: IrValueId, receiver: IrValueId, callback: IrValueId, item: IrValueId }
 impl Function {
     fn scalar_stage(&self, start: usize) -> Option<Stage> {
         let nodes = self.body.get(start..)?;
@@ -181,7 +181,7 @@ impl Function {
             let mut nodes = vec![call];
             let value = if second.append == second.start + 9 {
                 let mut branch = self.body[second.start + 8].clone();
-                branch.operation = O::JumpFalse { condition: self.body[second.start + 7].destination, target: super::ir::LocationId((first.append + 1) as u32) };
+                branch.operation = O::JumpFalse { condition: self.body[second.start + 7].destination, target: super::ir::NodeIndex((first.append + 1) as u32) };
                 nodes.push(branch); first.item
             } else { self.body[second.start + 7].destination };
             let mut append = self.body[first.append].clone();

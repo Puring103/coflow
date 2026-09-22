@@ -60,7 +60,8 @@ typedef enum CoflowOperation {
     COFLOW_READ_RECORD = 49,
 } CoflowOperation;
 
-/* 返回 0 表示成功，1 为 UTF-8 错误消息，2 为结构化构建诊断缓冲区。
+/* 全部句柄（包括 Contract 和缓冲区）只能由创建线程使用与释放。
+ * 返回 0 表示成功，1 为 UTF-8 错误消息，2 为结构化构建诊断缓冲区。
  * value 为 Runtime 局部值 ID；非值操作传 0。
  * 诊断：u32 数量，然后每项三个 u32 长度+UTF-8 文本（code/source/message），
  * u8 是否有范围、u64 起始/结束 UTF-8 字节偏移；所有整数为小端。 */
@@ -68,11 +69,10 @@ uint32_t coflow_request(uint32_t operation, uint64_t handle, uint64_t value,
     const uint8_t *key, size_t key_length, const uint8_t *data,
     size_t data_length, uint64_t index, CoflowResponse *out);
 uint32_t coflow_buffer_copy(uint64_t handle, uint8_t *destination, size_t capacity);
+/* 无返回值释放：无效句柄、非创建线程或 Runtime busy 时不改变资源。 */
 void coflow_release(uint64_t handle);
 /* 显式释放只允许创建线程在 Runtime 空闲时执行；返回 1 表示线程或 busy 错误且句柄保持有效。 */
 uint32_t coflow_dispose(uint64_t handle);
-/* 回收当前线程调用开始时已排队的终结请求，返回实际处理数量。 */
-uint64_t coflow_thread_drain(void);
 /* 当前线程存在活动 Runtime 时返回 1；成功时释放该线程回收域的全部本地资源。 */
 uint32_t coflow_thread_shutdown(void);
 
@@ -86,7 +86,7 @@ uint32_t coflow_thread_shutdown(void);
  * CALL 返回相同 tag，标量在 integer/number，文本在缓冲区，11 在 handle/length。
  * 返回的动态值通过 RELEASE_VALUE(42) 释放保活；COLLECT(43) 返回回收数量。
  * 借用的子值需独立存活时调用 RETAIN_VALUE(44)，每次增加的保活须配对释放。
- * 返回的缓冲区句柄所有权转移给 Rust；release 可能发生在终结线程。
+ * 返回的缓冲区句柄所有权转移给 Rust；release 始终在创建线程执行。
  * tag=11 使用 handle=Runtime 句柄、length=局部值 ID，不转移其所有权。
  */
 typedef void (*CoflowHostCallback)(uint64_t context, uint32_t operation,

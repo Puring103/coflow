@@ -1,5 +1,5 @@
 //! 区间证明只用于移动保证成功的标量计算，不改变 checked 算术的 fault 位置。
-use super::{bytecode::Constant, ir::{Function, Node, Operation as O, ValueId}};
+use super::{bytecode::Constant, ir::{Function, Node, Operation as O, IrValueId}};
 use crate::schema::CftValueType as Ty;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,9 +23,9 @@ impl Function {
         }
         false
     }
-    fn total_range(&self, node: &Node, ranges: &BTreeMap<ValueId, Range>) -> Option<Range> {
-        let range = |value: &ValueId| ranges.get(value).copied().unwrap_or(Range::INT);
-        let ty = |value: &ValueId| &self.values[value.0 as usize];
+    fn total_range(&self, node: &Node, ranges: &BTreeMap<IrValueId, Range>) -> Option<Range> {
+        let range = |value: &IrValueId| ranges.get(value).copied().unwrap_or(Range::INT);
+        let ty = |value: &IrValueId| &self.values[value.0 as usize];
         match &node.operation {
             O::Constant(Constant::Int(value)) => Some(Range { low: i64::from(*value), high: i64::from(*value) }),
             O::Constant(Constant::Bool(_) | Constant::Float(_)) | O::ConvertFloat(_) | O::IsSome(_) => Some(Range::INT),
@@ -58,7 +58,7 @@ impl Function {
         let mut writes = vec![0usize; self.values.len()];
         for values in &flow.writes { for value in values { writes[value.0 as usize] += 1; } }
         let mut prefix = self.parameters.iter().enumerate().filter(|(index, _)| writes[*index] == 0)
-            .map(|(index, _)| ValueId(index as u32)).collect::<BTreeSet<_>>();
+            .map(|(index, _)| IrValueId(index as u32)).collect::<BTreeSet<_>>();
         let mut prefix_ranges = BTreeMap::new();
         let mut prefix_end = 0;
         for (pc, node) in self.body.iter().enumerate() {

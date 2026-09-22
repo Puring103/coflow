@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Mutex;
 use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
 #[derive(Debug)]
@@ -39,7 +40,7 @@ fn thread_runtime(drops: Arc<Mutex<Vec<std::thread::ThreadId>>>) -> u64 {
 }
 
 #[test]
-fn foreign_access_is_rejected_and_finalizer_release_runs_on_creator() {
+fn foreign_access_and_release_leave_creator_resources_untouched() {
     let drops = Arc::new(Mutex::new(Vec::new()));
     let observed = drops.clone();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -48,7 +49,8 @@ fn foreign_access_is_rejected_and_finalizer_release_runs_on_creator() {
         let id = thread_runtime(observed);
         ready_tx.send((id, std::thread::current().id())).unwrap();
         resume_rx.recv().unwrap();
-        assert!(get(id).is_err());
+        assert!(get(id).is_ok());
+        assert_eq!(coflow_dispose(id), 0);
     });
     let (id, creator) = ready_rx.recv().unwrap();
     assert!(get(id).unwrap_err().contains("creating thread"));
@@ -57,7 +59,7 @@ fn foreign_access_is_rejected_and_finalizer_release_runs_on_creator() {
     resume_tx.send(()).unwrap();
     thread.join().unwrap();
     assert_eq!(*drops.lock().unwrap(), [creator]);
-    assert!(!registry().lock().unwrap().entries.contains_key(&id));
+    assert!(get(id).is_err());
 }
 
 #[test]
@@ -69,28 +71,7 @@ fn creator_thread_exit_releases_unclaimed_runtime_without_leaking_registry_entry
             .join()
             .unwrap();
     assert_eq!(*drops.lock().unwrap(), [creator]);
-    assert!(!registry().lock().unwrap().entries.contains_key(&id));
-}
-
-#[test]
-fn explicit_drain_releases_finalized_runtime_without_another_vm_request() {
-    let drops = Arc::new(Mutex::new(Vec::new()));
-    let observed = drops.clone();
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let id = thread_runtime(observed);
-        ready_tx.send(id).unwrap();
-        resume_rx.recv().unwrap();
-        assert_eq!(coflow_thread_drain(), 1);
-        assert!(!registry().lock().unwrap().entries.contains_key(&id));
-    });
-    let id = ready_rx.recv().unwrap();
-    coflow_release(id);
-    assert!(drops.lock().unwrap().is_empty());
-    resume_tx.send(()).unwrap();
-    thread.join().unwrap();
-    assert_eq!(drops.lock().unwrap().len(), 1);
+    assert!(get(id).is_err());
 }
 
 #[test]
@@ -100,10 +81,8 @@ fn thread_shutdown_releases_all_local_resources_and_is_idempotent() {
     let second = thread_runtime(drops.clone());
     assert_eq!(coflow_thread_shutdown(), 0);
     assert_eq!(drops.lock().unwrap().len(), 2);
-    let shared = registry().lock().unwrap();
-    assert!(!shared.entries.contains_key(&first));
-    assert!(!shared.entries.contains_key(&second));
-    drop(shared);
+    assert!(get(first).is_err());
+    assert!(get(second).is_err());
     assert_eq!(coflow_thread_shutdown(), 0);
 }
 
@@ -177,7 +156,7 @@ fn active_host_callback_cannot_dispose_or_shutdown_runtime() {
         1
     );
     assert_eq!(coflow_dispose(runtime_id), 0);
-    assert!(!registry().lock().unwrap().entries.contains_key(&runtime_id));
+    assert!(get(runtime_id).is_err());
 }
 
 #[test]
@@ -501,11 +480,66 @@ fn value_image_and_creator_thread_lease_release_preserve_dynamic_graphs() {
         value_request(29, runtime.0, closure.length, &[], &[], 0).integer,
         42
     );
-    std::thread::spawn(move || coflow_release(lease.handle))
-        .join()
-        .unwrap();
+    assert_eq!(coflow_dispose(lease.handle), 0);
     assert_eq!(request(43, runtime.0, &[], &[], 0).error, 0);
     let stale = value_request(29, runtime.0, closure.length, &[], &[], 0);
     assert_ne!(stale.error, 0);
     take_buffer(stale.handle).unwrap();
+}
+
+#[test]
+fn contract_and_buffer_handles_are_creator_thread_owned() {
+    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("local"), "table Item { value: int; }")])).unwrap();
+    let contract = insert(Entry::Contract(Arc::new(Contract::new(schema).unwrap()))).unwrap();
+    let bytes = vec![1, 2, 3, 4];
+    let pointer = bytes.as_ptr();
+    let buffer = insert(Entry::Buffer(ThreadBound::new(bytes))).unwrap();
+    std::thread::spawn(move || {
+        assert!(get(contract).is_err());
+        assert!(take_buffer(buffer).is_err());
+        assert_eq!(coflow_dispose(contract), 1);
+        coflow_release(buffer);
+    }).join().unwrap();
+    assert!(get(contract).is_ok());
+    let consumed = take_buffer(buffer).unwrap();
+    assert_eq!(consumed.as_ptr(), pointer, "独占缓冲消费不复制载荷");
+    assert_eq!(consumed, [1, 2, 3, 4]);
+    assert!(get(buffer).is_err());
+    assert_eq!(coflow_dispose(contract), 0);
+}
+
+#[test]
+fn shutdown_blocks_resource_creation_from_host_destructors() {
+    #[derive(Debug)]
+    struct Reenter;
+    impl coflow_core::runtime::HostService for Reenter {
+        fn read(&self, _: &str) -> Result<coflow_core::runtime::HostValue, coflow_core::vm::ExecutionError> { unreachable!() }
+        fn has_member(&self, _: &str, _: &coflow_core::schema::CftValueType, _: &coflow_core::schema::CftSchema) -> bool { true }
+    }
+    impl Drop for Reenter {
+        fn drop(&mut self) {
+            assert!(insert(Entry::Buffer(ThreadBound::new(vec![1]))).is_err());
+            assert_eq!(coflow_thread_shutdown(), 1);
+        }
+    }
+    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("shutdown"), "@Host singleton Service { value: int; }")])).unwrap();
+    let mut builder = RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap()));
+    builder.bind("Service".into(), Arc::new(Reenter)).unwrap();
+    insert(Entry::Builder(ThreadBound::new(RefCell::new(Some(builder))))).unwrap();
+    assert_eq!(coflow_thread_shutdown(), 0);
+    let buffer = insert(Entry::Buffer(ThreadBound::new(vec![2]))).unwrap();
+    assert_eq!(coflow_dispose(buffer), 0);
+}
+
+#[test]
+fn busy_builder_cannot_be_disposed_or_shut_down() {
+    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("busy"), "table Item { value: int; }")])).unwrap();
+    let builder = ThreadBound::new(RefCell::new(Some(RuntimeBuilder::new(Arc::new(Contract::new(schema).unwrap())))));
+    let id = insert(Entry::Builder(builder.clone())).unwrap();
+    let borrowed = builder.borrow_mut();
+    assert_eq!(coflow_dispose(id), 1);
+    assert_eq!(coflow_thread_shutdown(), 1);
+    assert!(get(id).is_ok());
+    drop(borrowed);
+    assert_eq!(coflow_dispose(id), 0);
 }

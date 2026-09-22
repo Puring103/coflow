@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using Coflow;
 using Game.Config;
 using Xunit;
@@ -19,6 +18,22 @@ public sealed class RuntimeTests
         public Stats echoStats(Stats value) => value;
         public Profile echoProfile(Profile value) => value;
         public Character echoCharacter(Character value) => value;
+    }
+    [Fact]
+    public void ShutdownInvalidatesExistingHandlesAndAllowsANewDomain()
+    {
+        using var contract = Generated.LoadContract(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
+        using var builder = new RuntimeBuilder(contract).AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 10 } } RuntimeSettings: RuntimeSettings {}");
+        using var runtime = builder.Build();
+        var hero = runtime.Table<Character>().Get("hero");
+        var closure = hero.closure(1);
+        RuntimeThread.Shutdown();
+        Assert.Equal(10, hero.stats.health);
+        Assert.Throws<ObjectDisposedException>(() => closure.Invoke());
+        Assert.Throws<ObjectDisposedException>(() => new RuntimeBuilder(contract));
+        runtime.Dispose(); builder.Dispose(); contract.Dispose();
+        using var next = Generated.LoadContract(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
+        using var nextBuilder = new RuntimeBuilder(next);
     }
     [Fact]
     public void EachHostPropertyReadsExactlyOnceIncludingOptionalRecordsAndEnums()
@@ -56,14 +71,14 @@ public sealed class RuntimeTests
         Assert.Equal(before, Native.RequestCount);
     }
     [Fact]
-    public async Task OrdinaryReadsRemainManagedAcrossThreadsAndDisposal()
+    public void OrdinaryReadsRemainManagedAfterDisposal()
     {
         using var contract = Generated.LoadContract(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "coflow.contract")));
         using var builder = new RuntimeBuilder(contract).AddSource("hero: Hero { name: \"Hero\", stats: Stats { health: 100, weights: [1.25, 2.5] }, friend: &hero, labels: { true: \"yes\" } } RuntimeSettings: RuntimeSettings {}");
         var runtime = builder.Build();
         var table = runtime.Table<Character>(); var hero = table.Get("hero");
         runtime.Dispose();
-        await Task.Run(() => {
+        {
             long before = Native.RequestCount;
             for (int i = 0; i < 1000; ++i) {
                 Assert.Equal("Hero", table.Get("hero").name);
@@ -77,7 +92,7 @@ public sealed class RuntimeTests
                 Assert.Same(hero, hero.friend);
             }
             Assert.Equal(before, Native.RequestCount);
-        });
+        }
         Assert.Throws<ObjectDisposedException>(() => hero.score(1));
     }
     [Fact]
@@ -141,6 +156,11 @@ public sealed class RuntimeTests
             try {
                 Assert.Equal(10, hero.stats.health);
                 Assert.Throws<CoflowException>(() => hero.score(1));
+                Assert.Throws<CoflowException>(() => new RuntimeBuilder(contract));
+                Assert.Throws<CoflowException>(() => contract.Dispose());
+                Assert.Throws<CoflowException>(() => builder.Dispose());
+                Assert.Throws<CoflowException>(() => runtime.Dispose());
+                Assert.Throws<CoflowException>(() => runtime.Table<Character>());
             } catch (Exception error) { failure = error; }
         });
         thread.Start(); thread.Join(); Assert.Null(failure);

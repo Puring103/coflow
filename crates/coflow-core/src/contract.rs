@@ -115,7 +115,7 @@ fn encode(schema: &CftSchema, ir: &crate::vm::contract_programs::ContractIr) -> 
 #[cfg(all(test, feature = "cft-compiler"))]
 mod tests {
     use super::*;
-    use crate::{runtime::{HostValue, RuntimeBuilder}, schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::{executor::ExecutionLimits, ir::{LocationId, Operation}}};
+    use crate::{runtime::{HostValue, RuntimeBuilder}, schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::{executor::ExecutionLimits, ir::{NodeIndex, Operation}}};
 
     fn contract() -> Contract {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"),
@@ -142,7 +142,7 @@ mod tests {
 
         let mut bad_branch = contract();
         let function = Arc::make_mut(bad_branch.ir.functions.values_mut().next().unwrap());
-        function.body[0].operation = Operation::Jump(LocationId(u32::MAX));
+        function.body[0].operation = Operation::Jump(NodeIndex(u32::MAX));
         assert!(Contract::from_bytes(&resign(&bad_branch)).is_err());
     }
 
@@ -152,8 +152,8 @@ mod tests {
             Operation::Reference("Missing::record".into()),
             Operation::Reference("Item::record".into()),
             Operation::Reference("$const::Missing".into()),
-            Operation::Builtin { name: "len".into(), receiver: crate::vm::ir::ValueId(0), arguments: vec![] },
-            Operation::Builtin { name: "$records::Item".into(), receiver: crate::vm::ir::ValueId(0), arguments: vec![] },
+            Operation::Builtin { name: "len".into(), receiver: crate::vm::ir::IrValueId(0), arguments: vec![] },
+            Operation::Builtin { name: "$records::Item".into(), receiver: crate::vm::ir::IrValueId(0), arguments: vec![] },
         ] {
             let mut forged = contract();
             let function = Arc::make_mut(forged.ir.functions.values_mut().next().unwrap());

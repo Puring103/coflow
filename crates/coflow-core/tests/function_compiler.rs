@@ -1,7 +1,10 @@
+#[path = "../examples/support/compact.rs"]
+mod compact;
+use compact::{decode_compact, encode_compact};
 use coflow_core::{
     schema::{build_schema, parse_modules, CftFile, CftValueType, ModuleId},
     vm::{
-        bytecode::{decode_compact, encode_compact, Instruction, Opcode},
+        bytecode::{Instruction, Opcode},
         compiler::{compile, CompileContext},
     },
 };
@@ -102,4 +105,19 @@ fn compact_encoding_handles_large_operands_flags_and_truncation() {
             instruction
         );
     }
+}
+
+#[test]
+fn long_infix_chain_compiles_on_a_normal_stack() {
+    // Windows 默认线程栈大小，禁止用扩大栈掩盖递归降低的问题。
+    std::thread::Builder::new().stack_size(1024 * 1024).spawn(|| {
+        let schema = schema();
+        let parameters = (0..128).map(|i| format!("a{i}: int")).collect::<Vec<_>>().join(",");
+        let sum = (0..128).map(|i| format!("a{i}")).collect::<Vec<_>>().join("+");
+        compile(&schema, &format!("fn({parameters}) -> int {{ {sum} }}"), "long", CompileContext::default()).unwrap();
+        for operator in ["&&", "||"] {
+            let chain = std::iter::repeat_n("a", 128).collect::<Vec<_>>().join(operator);
+            compile(&schema, &format!("fn(a: bool) -> bool {{ {chain} }}"), "logical", CompileContext::default()).unwrap();
+        }
+    }).unwrap().join().unwrap();
 }

@@ -14,8 +14,15 @@ namespace Coflow
         public override int GetHashCode() => unchecked((Kind * 397 ^ (int)Bits) * 397 ^ StringComparer.Ordinal.GetHashCode(Text));
     }
     // 节点与引用分两阶段解码；发布前验证所有边，读取不依赖原生实例存活。
+    // 动态对象身份仅在返回图内缓存，图及其循环对象可被托管 GC 整体回收。
+    internal sealed class MaterializationCache
+    {
+        internal readonly Dictionary<ulong, object> Values = new Dictionary<ulong, object>();
+        internal readonly Dictionary<ulong, ulong[]> PendingAliases = new Dictionary<ulong, ulong[]>();
+    }
     internal sealed class ValueImage
     {
+        internal MaterializationCache Objects = new MaterializationCache();
         internal sealed class Node
         {
             internal byte Kind;
@@ -40,7 +47,6 @@ namespace Coflow
             internal IReadOnlyDictionary<string, bool> Explicit = EmptyPresence;
         }
         // 整个动态返回图共享一个拥有型根，子包装保留图即保留执行环境。
-        internal NativeHandle? Lease;
         internal bool NeedsLease()
         {
             foreach (var pair in nodes)

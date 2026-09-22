@@ -118,6 +118,7 @@ builder.BindHost(new ServicesHost());
 
 构建失败抛出 `BuildException`，`Diagnostics` 提供错误代码、来源标签、消息和可用的 UTF-8 字节范围。
 失败不返回部分 Runtime。其他原生访问错误通过 `CoflowException` 报告；访问已释放 Runtime 的包装抛出 `ObjectDisposedException`。
-Runtime 遵循 Lua 式单线程约定：一个 Runtime 实例只能从创建线程访问，不提供跨线程并发访问；
+Contract、RuntimeBuilder、Runtime 和表查询均只能在创建线程使用与释放。请使用 `using` 或显式 `Dispose()` 管理资源；
+线程退出前可调用 `RuntimeThread.Shutdown()` 统一释放当前线程的资源。Runtime 不提供跨线程访问；
 需要并发时为每个线程创建独立 Runtime。同线程同步重入沿用同一执行预算，host 回调重入读取与
 调用不阻塞。
