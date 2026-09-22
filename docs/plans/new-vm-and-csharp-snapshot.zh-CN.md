@@ -381,7 +381,7 @@ GameConfig 作为生命周期门面：Dispose 后已完整物化的普通 C# 数
 | --- | --- |
 | coflow-language | builder 语法、共享 AST/词法、源码边界与结构限制 |
 | coflow-core | Contract IR、类型/effect 检查、数据布局、优化、映像验证、执行、GC、Host、check |
-| coflow-runtime | 项目输入、构建调度、缓存/发布、来源和记录索引；不复制 VM |
+| coflow-project | 项目输入、构建调度、缓存/发布、来源和记录索引；不复制 VM |
 | coflow-ffi | 版本化批量投影、调用、句柄、Host 与线程边界 |
 | coflow-codegen / csharp | 生成类型化投影解码、记录表、方法、模板和静态 Host 适配 |
 | C# Runtime | 门面、只读集合、批量解码、lease、错误及生命周期 |

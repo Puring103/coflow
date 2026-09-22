@@ -1,11 +1,11 @@
 # 面向程序员
 
 Coflow 项目由 CFT schema、`.cfd` 数据文件和一个或多个代码生成目标组成。Rust host 使用
-`coflow-runtime` 打开只读 session。
+`coflow-project` 打开只读 session。
 
 ## 目标语言生成
 
-目标语言 generator 实现 `coflow_runtime::codegen::CodeGenerator`：
+目标语言 generator 实现 `coflow_project::codegen::CodeGenerator`：
 
 ```rust
 pub trait CodeGenerator: Send + Sync + std::fmt::Debug {

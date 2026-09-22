@@ -245,14 +245,14 @@ Route = { file, typeFilter, viewId }
 
 ### 10.0 涉及文件总览
 
-后端（`editors/cfd-editor/src-tauri/src/`）：
+后端（`studio/editors/cfd-editor/src-tauri/src/`）：
 - `editor/types.rs` —— 数据类型（`FileTypeOption`、`EditorProjectSettings`、新增 `ViewConfig` 等）
 - `editor/settings.rs` —— 读写 + sanitize（拆分文件、去迁移）
 - `editor/session/mod.rs` —— session 方法（`snapshot_file_types` 加 singleton、视图 CRUD、设置读写）
 - `lib.rs` —— Tauri 命令注册
 - `bindings/*.ts` —— ts-rs 生成（`cargo test --features ts-export` 或既有 regen 流程）
 
-前端（`editors/cfd-editor/frontend/src/`）：
+前端（`studio/editors/cfd-editor/frontend/src/`）：
 - `wire.ts` —— `Route` 加 `viewId`
 - `hooks/useRouter.ts` —— 无需大改（Route 是不透明载荷），但比较逻辑改看 viewId
 - `api.ts` —— 视图 CRUD 调用，删除 `setGraphEnabledFields`、改造 `setTableColumnWidths`
@@ -358,7 +358,7 @@ sanitize 关键规则：
 // snapshot_file_types：填 is_singleton
 // 判定：session.queries().schema() 里该 type 是否 singleton
 // 现有 ProjectQueries 无直接 is_singleton，需要加一个查询：
-//   crates/coflow-runtime/src/query.rs:
+//   studio/crates/coflow-project/src/query.rs:
 //     pub fn type_is_singleton(self, type_name: &str) -> bool {
 //         self.session.schema().resolve_type(type_name)
 //             .is_some_and(|meta| meta.is_singleton)

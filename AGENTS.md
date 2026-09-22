@@ -36,17 +36,17 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test --features ts-export -p cfd-editor export_bindings
-git diff --exit-code editors/cfd-editor/frontend/src/bindings
-npm --prefix editors/cfd-editor/frontend ci
-npm --prefix editors/cfd-editor/frontend test
-npm --prefix editors/cfd-editor/frontend run build
-node editors/vscode-coflow/test/extension-unit.test.js
-dotnet build runtimes/csharp/src/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
-dotnet run --project runtimes/csharp/smoke/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
-dotnet test runtimes/csharp/tests/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
-cargo run -- codegen runtimes/csharp/tests/integration
-dotnet run --project runtimes/csharp/tests/integration/app/Coflow.Runtime.Example.csproj --configuration Release
-dotnet build runtimes/csharp/benchmarks/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
+git diff --exit-code studio/editors/cfd-editor/frontend/src/bindings
+npm --prefix studio/editors/cfd-editor/frontend ci
+npm --prefix studio/editors/cfd-editor/frontend test
+npm --prefix studio/editors/cfd-editor/frontend run build
+node studio/editors/vscode-coflow/test/extension-unit.test.js
+dotnet build engine/runtimes/csharp/src/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+dotnet run --project engine/runtimes/csharp/smoke/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
+dotnet test engine/runtimes/csharp/tests/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
+cargo run -- codegen engine/runtimes/csharp/tests/integration
+dotnet run --project engine/runtimes/csharp/tests/integration/app/Coflow.Runtime.Example.csproj --configuration Release
+dotnet build engine/runtimes/csharp/benchmarks/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
 ```
 
 Major and minor releases must not be packaged or released while any full-gate command fails.
@@ -68,7 +68,7 @@ the synced files.
 When the user specifies a version to package or release, reinstall the local Cargo CLI after the checks pass:
 
 ```powershell
-cargo install --path . --force
+cargo install --path studio/cli --force
 ```
 
 If files under `skills/` changed in that version, refresh installed skills as well. For this local
@@ -104,21 +104,25 @@ implementation constraints there.
 
 ### Internal Crate Boundaries
 
+- `engine/` contains the embeddable language engine, C ABI, and language runtimes. Its local dependencies must stay inside `engine/`; it does not discover projects or write project files.
+- `studio/` contains the shared project layer, CLI, editors, LSP, formatting, code generation, and filesystem staging. Studio depends on Engine, never the reverse.
+- The root manifest is a single virtual Cargo workspace; `studio/cli` is its default member. `cargo run` works from the root, and local CLI installation uses `cargo install --path studio/cli --force`.
+- `engine/package-runtime.ps1` builds the native runtime in an isolated workspace and packages only native libraries, the C header, C# runtime sources, and the license. `-Check` verifies isolated compilation without creating a release package. Runtime packaging follows the same version-specific release gates documented above.
 - `coflow-core` owns immutable contracts, CFT declaration compilation behind `cft-compiler`, schema-guided data construction, in-memory loading, runtime values, Host bindings, function compilation, register VM execution, closures, templates, and explicit checks.
 - `coflow-ffi` owns the C ABI, native handles, host callback adaptation, and Unity/IL2CPP boundary. It does not own project configuration or file discovery.
-- `coflow-runtime` is the shared project boundary: it owns project configuration, path resolution, schema compilation, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. Its fixed CFD reader/writer are runtime-private implementation details.
+- `coflow-project` is the shared project boundary: it owns project configuration, path resolution, schema compilation orchestration, fixed CFD resolve/load/write, project-level check planning and diagnostic integration, mutations, command orchestration, artifact publication, and source/record/file indexes. It delegates CFD parsing and conversion to `coflow-core::loading`; its filesystem reader/writer are project-private implementation details.
 - `coflow-staging` owns the internal all-or-nothing filesystem staging primitives shared by CFD writes and generated-code publication.
 - `coflow-language` owns source spans, shared lossless lexical scanning, CFT syntax, schema-free CFD syntax, and language structural limits. Semantic contracts and declaration compilation belong to `coflow-core`.
 - `coflow-format` owns canonical CFT/CFD source formatting over the lossless token stream; it does not load projects or produce LSP edits.
 - `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
-- The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-runtime`; no host registers providers.
-- `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-runtime`.
+- The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-project`; no host registers providers.
+- `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-project`.
 - `coflow-lsp` owns the standalone and embedded language server implementation used by the CLI and editor.
-- The root `coflow` package is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-runtime`; non-CLI hosts must not depend on the root package.
-- `editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
-- `editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
-- `editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
-- Code generation contracts live in `coflow-codegen` and remain re-exported through `coflow-runtime::codegen`; data export providers and serialized data artifacts are intentionally absent.
+- The `coflow` package in `studio/cli` is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-project`; non-CLI hosts must not depend on the CLI package.
+- `studio/editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
+- `studio/editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
+- `studio/editors/cfd-editor/frontend` accepts backend generations through its generation controller, serializes undo/redo through its mutation history controller, and keeps pure graph layout independent from the browser worker adapter.
+- Code generation contracts live in `coflow-codegen` and remain re-exported through `coflow-project::codegen`; data export providers and serialized data artifacts are intentionally absent.
 
 ### Website Reference Documents
 

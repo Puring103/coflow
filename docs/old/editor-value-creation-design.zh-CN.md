@@ -241,7 +241,7 @@ generation。
 
 ### 7.1 默认物化器
 
-`coflow-runtime` 保留一套 schema-guided 默认物化器，负责：
+`coflow-project` 保留一套 schema-guided 默认物化器，负责：
 
 - CFT 默认值物化；
 - 类型默认值创建；
@@ -284,10 +284,10 @@ CreateRequiredInput = Ref | AbstractObject
 
 主要涉及：
 
-- `crates/coflow-language/src/schema/compiler/types.rs`
-- `crates/coflow-language/src/schema/compiler/defaults.rs`
-- `crates/coflow-language/src/schema/plans/value_dependencies.rs`
-- `crates/coflow-language/src/diagnostics/`
+- `engine/crates/coflow-language/src/schema/compiler/types.rs`
+- `engine/crates/coflow-language/src/schema/compiler/defaults.rs`
+- `engine/crates/coflow-language/src/schema/plans/value_dependencies.rs`
+- `engine/crates/coflow-language/src/diagnostics/`
 
 ### 8.2 `coflow-model`
 
@@ -296,7 +296,7 @@ CreateRequiredInput = Ref | AbstractObject
 3. 删除针对 schema 默认物化环的模型层正常错误分支，由 schema 编译不变量替代。
 4. strict build 保持对所有缺失和非法引用诊断的拒绝。
 
-### 8.3 `coflow-runtime`
+### 8.3 `coflow-project`
 
 1. 将 `TypeSeed` 和相关注释、DTO 全量改为 `TypeDefault`。
 2. 重构 `mutation/defaults.rs`，实现统一创建优先级和缺失引用结果。

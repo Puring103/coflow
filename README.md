@@ -40,7 +40,7 @@ codegen:
 
 ## C# runtime
 
-将 `runtimes/csharp/src/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
+将 `engine/runtimes/csharp/src/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
 `coflow.contract` 作为运行时资源部署：
 
 ```csharp

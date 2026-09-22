@@ -1,8 +1,0 @@
-<Project>
-  <!-- 原生库作为测试宿主的部署内容复制；Unity 通过 Plugin Inspector 部署。 -->
-  <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)../../target/release/coflow_ffi.dll" Condition="Exists('$(MSBuildThisFileDirectory)../../target/release/coflow_ffi.dll')" Link="coflow_ffi.dll" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)../../target/release/libcoflow_ffi.so" Condition="Exists('$(MSBuildThisFileDirectory)../../target/release/libcoflow_ffi.so')" Link="libcoflow_ffi.so" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)../../target/release/libcoflow_ffi.dylib" Condition="Exists('$(MSBuildThisFileDirectory)../../target/release/libcoflow_ffi.dylib')" Link="libcoflow_ffi.dylib" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-</Project>

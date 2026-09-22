@@ -1,0 +1,126 @@
+//! Project session construction through the shared Coflow engine.
+
+use coflow_project::Project;
+use coflow_project::{DiagnosticSet, WriterCapabilities};
+use coflow_project::{FileTreeNode, ProjectQueries, ProjectRuntime, Runtime};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use super::diagnostics::diagnostics_from_store;
+use super::revision::RevisionCoordinator;
+use super::EditorSession;
+use crate::editor::types::EditorError;
+
+pub(crate) struct SessionSnapshotParts {
+    pub(crate) file_tree: Vec<FileTreeNode>,
+}
+
+type FileTypeNames = BTreeMap<String, Vec<String>>;
+type FileTypeCounts = BTreeMap<String, BTreeMap<String, usize>>;
+type TypeDisplayNames = BTreeMap<(String, String), String>;
+
+pub(crate) fn session_capabilities_for_file(
+    session: &EditorSession,
+    file_path: &str,
+) -> WriterCapabilities {
+    session.engine.writer_capabilities_for_file(file_path)
+}
+
+pub(crate) fn build_session(
+    yaml_path_in: &std::path::Path,
+) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
+    let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
+        EditorError::project(prefixed_diagnostics("failed to open project", &err))
+    })?;
+    let yaml_path = project.config_path().to_path_buf();
+    let project_root = project.root_dir().to_path_buf();
+    let schema_files = project
+        .schema_sources()
+        .map_err(|err| {
+            EditorError::project(prefixed_diagnostics("failed to discover schema", &err))
+        })?
+        .into_iter()
+        .map(|source| source.module_id)
+        .collect();
+    let runtime = Runtime::new();
+    let language_server = coflow_lsp::EmbeddedLsp::new(project.clone());
+    let mut schema_runtime = ProjectRuntime::new(project);
+    let _ = schema_runtime.refresh();
+    let schema_session = schema_runtime
+        .into_latest_attempt()
+        .ok_or_else(|| EditorError::project("failed to build project schema".to_string()))?;
+    let engine = runtime
+        .open_write_session_from_schema(schema_session)
+        .map_err(|err| {
+            EditorError::project(prefixed_diagnostics("failed to build project", &err))
+        })?;
+    let file_tree = engine.queries().file_tree();
+    let (file_type_names, file_type_counts, type_display_names) = type_navigation(engine.queries());
+    let diagnostics = diagnostics_from_store(engine.queries(), &project_root);
+
+    Ok((
+        EditorSession {
+            project_root,
+            yaml_path,
+            engine,
+            diagnostics,
+            language_server,
+            language_documents: HashSet::new(),
+            language_diagnostics: HashMap::new(),
+            schema_files,
+            file_type_names,
+            file_type_counts,
+            type_display_names,
+            ref_target_cache: HashMap::new(),
+            shape_cache: crate::editor::convert::ShapeCache::default(),
+            revisions: RevisionCoordinator::initial(),
+        },
+        SessionSnapshotParts { file_tree },
+    ))
+}
+
+/// 一次遍历同时产出每个文件的类型列表与类型记录计数，避免加载时对全部记录扫两遍。
+fn type_navigation(
+    queries: ProjectQueries<'_>,
+) -> (FileTypeNames, FileTypeCounts, TypeDisplayNames) {
+    let display_names = BTreeMap::new();
+    let mut file_type_names = BTreeMap::new();
+    let mut file_type_counts = BTreeMap::new();
+    let concrete_types = queries
+        .schema_type_names()
+        .into_iter()
+        .filter(|name| !queries.type_is_abstract(name))
+        .collect::<Vec<_>>();
+    for file_path in queries.source_files() {
+        let mut type_names = concrete_types.clone();
+        let mut type_seen = type_names.iter().cloned().collect::<HashSet<_>>();
+        let mut counts = BTreeMap::<String, usize>::new();
+        for view in queries.record_views_in_file(file_path) {
+            let type_name = view.coordinate.actual_type.to_string();
+            if type_seen.insert(type_name.clone()) {
+                type_names.push(type_name.clone());
+            }
+            *counts.entry(type_name).or_default() += 1;
+        }
+        file_type_names.insert(file_path.to_string(), type_names);
+        file_type_counts.insert(file_path.to_string(), counts);
+    }
+    (file_type_names, file_type_counts, display_names)
+}
+
+pub(crate) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
+    diagnostics
+        .diagnostics
+        .iter()
+        .map(|diagnostic| format!("[{}] {}", diagnostic.code, diagnostic.message))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn prefixed_diagnostics(prefix: &str, diagnostics: &DiagnosticSet) -> String {
+    let messages = diagnostic_messages(diagnostics);
+    if messages.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}: {messages}")
+    }
+}

@@ -17,7 +17,7 @@
 #endif
 
 #ifndef IconPath
-#define IconPath "..\..\editors\cfd-editor\src-tauri\icons\icon.ico"
+#define IconPath "..\..\studio\editors\cfd-editor\src-tauri\icons\icon.ico"
 #endif
 
 #ifndef LicensePath

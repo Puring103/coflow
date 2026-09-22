@@ -106,19 +106,19 @@ jobs:
         run: |
           cargo build -p coflow-ffi --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo run -- codegen runtimes/csharp/tests/integration
+          cargo run -- codegen engine/runtimes/csharp/tests/integration
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet build runtimes/csharp/src/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+          dotnet build engine/runtimes/csharp/src/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
 
       - name: Consume the netstandard2.1 C# runtime
         if: steps.gate.outputs.full == 'true'
-        run: dotnet run --project runtimes/csharp/smoke/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
+        run: dotnet run --project engine/runtimes/csharp/smoke/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
 
       - name: Test C# runtime with coverage
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: >-
-          dotnet test runtimes/csharp/tests/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj
+          dotnet test engine/runtimes/csharp/tests/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj
           --configuration Release
           /p:CollectCoverage=true
           /p:CoverletOutput="$env:RUNNER_TEMP/csharp-runtime-coverage/"
@@ -131,25 +131,25 @@ jobs:
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
-          cargo run -- codegen runtimes/csharp/tests/integration
-          dotnet run --project runtimes/csharp/tests/integration/app/Coflow.Runtime.Example.csproj --configuration Release
-          dotnet build runtimes/csharp/benchmarks/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
+          cargo run -- codegen engine/runtimes/csharp/tests/integration
+          dotnet run --project engine/runtimes/csharp/tests/integration/app/Coflow.Runtime.Example.csproj --configuration Release
+          dotnet build engine/runtimes/csharp/benchmarks/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
 
       - name: Check TypeScript bindings
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
           cargo test --features ts-export -p cfd-editor export_bindings
-          git diff --exit-code editors/cfd-editor/frontend/src/bindings
+          git diff --exit-code studio/editors/cfd-editor/frontend/src/bindings
 
       - name: Test and build CFD editor frontend
         if: steps.gate.outputs.full == 'true'
         run: npm ci && npm test && npm run build
-        working-directory: editors/cfd-editor/frontend
+        working-directory: studio/editors/cfd-editor/frontend
 
       - name: Test VS Code extension
         if: steps.gate.outputs.full == 'true'
-        run: node editors/vscode-coflow/test/extension-unit.test.js
+        run: node studio/editors/vscode-coflow/test/extension-unit.test.js
 
   windows-full:
     name: Windows full installer
@@ -174,11 +174,11 @@ jobs:
 
       - name: Install editor dependencies
         run: npm ci
-        working-directory: editors/cfd-editor
+        working-directory: studio/editors/cfd-editor
 
       - name: Install editor frontend dependencies
         run: npm ci
-        working-directory: editors/cfd-editor/frontend
+        working-directory: studio/editors/cfd-editor/frontend
 
       - name: Build CLI sidecar
         run: cargo build --release --target $env:TARGET -p coflow
@@ -186,13 +186,13 @@ jobs:
       - name: Prepare CLI sidecar
         shell: pwsh
         run: |
-          $destination = "editors/cfd-editor/src-tauri/binaries/coflow-$env:TARGET.exe"
+          $destination = "studio/editors/cfd-editor/src-tauri/binaries/coflow-$env:TARGET.exe"
           New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
           Copy-Item "target/$env:TARGET/release/coflow.exe" $destination -Force
 
       - name: Build full NSIS installer
         run: npm run tauri -- build --target $env:TARGET --bundles nsis --config src-tauri/tauri.release.conf.json
-        working-directory: editors/cfd-editor
+        working-directory: studio/editors/cfd-editor
 
       - name: Sign updater and stage release assets
         shell: pwsh
@@ -209,7 +209,7 @@ jobs:
             throw "Full NSIS installer was not produced"
           }
 
-          $tauriCli = "editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js"
+          $tauriCli = "studio/editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js"
           $signArgs = @($tauriCli, "signer", "sign", "--password", "", $installer.FullName)
           & node $signArgs
           if ($LASTEXITCODE -ne 0) {
@@ -437,11 +437,11 @@ jobs:
 
       - name: Install editor dependencies
         run: npm ci
-        working-directory: editors/cfd-editor
+        working-directory: studio/editors/cfd-editor
 
       - name: Install editor frontend dependencies
         run: npm ci
-        working-directory: editors/cfd-editor/frontend
+        working-directory: studio/editors/cfd-editor/frontend
 
       - name: Import Apple signing certificate
         env:
@@ -507,7 +507,7 @@ jobs:
 
       - name: Prepare CLI sidecar
         run: |
-          destination="editors/cfd-editor/src-tauri/binaries/coflow-${{ matrix.target }}"
+          destination="studio/editors/cfd-editor/src-tauri/binaries/coflow-${{ matrix.target }}"
           mkdir -p "$(dirname "$destination")"
           cp "target/${{ matrix.target }}/release/coflow" "$destination"
 
@@ -515,7 +515,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles app,dmg --config src-tauri/tauri.release.conf.json
-        working-directory: editors/cfd-editor
+        working-directory: studio/editors/cfd-editor
 
       - name: Codesign, notarize, and staple
         env:
@@ -582,7 +582,7 @@ jobs:
           tar -czf "release-assets/$updater_asset" \
             -C "$(dirname "$app_bundle")" "$(basename "$app_bundle")"
 
-          node editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js \
+          node studio/editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js \
             signer sign --password "" "release-assets/$updater_asset"
 
           if [ ! -s "release-assets/$updater_asset.sig" ]; then
@@ -626,13 +626,13 @@ jobs:
 
       - name: Package VSIX
         run: npx --yes @vscode/vsce package
-        working-directory: editors/vscode-coflow
+        working-directory: studio/editors/vscode-coflow
 
       - name: Upload VSIX
         uses: actions/upload-artifact@v4
         with:
           name: release-vsix
-          path: editors/vscode-coflow/*.vsix
+          path: studio/editors/vscode-coflow/*.vsix
 
   release:
     name: Create Release

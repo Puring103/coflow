@@ -19,15 +19,15 @@ task rejection after the static dependency refactor.
 ## Commands
 
 ```powershell
-cargo bench -p coflow-runtime --features internal-check-bench --bench check_planning
-cargo bench -p coflow-runtime --features internal-check-bench --bench check_execution
-cargo bench -p coflow-runtime --features internal-check-bench --bench check_limits
+cargo bench -p coflow-project --features internal-check-bench --bench check_planning
+cargo bench -p coflow-project --features internal-check-bench --bench check_execution
+cargo bench -p coflow-project --features internal-check-bench --bench check_limits
 ```
 
 An execution scenario can be isolated after `--`, for example:
 
 ```powershell
-cargo bench -p coflow-runtime --features internal-check-bench --bench check_execution -- direct_field:5000
+cargo bench -p coflow-project --features internal-check-bench --bench check_execution -- direct_field:5000
 ```
 
 ## Isolated Results
