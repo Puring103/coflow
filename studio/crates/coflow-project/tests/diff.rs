@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use coflow_project::{Project, ProjectDiffChange, Runtime};
+use coflow_project::{Project, ProjectDiffChange, ProjectSessionFactory};
 
 fn git(root: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -60,13 +60,10 @@ fn compares_published_session_with_heads_own_project_model() {
     .expect("update data");
 
     let project = Project::open_schema_only(Some(&project_root)).expect("open project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("open runtime session");
-    let diff = session
-        .queries()
-        .diff_against_head()
-        .expect("diff against HEAD");
+    let diff = session.diff_against_head().expect("diff against HEAD");
 
     assert_eq!(diff.head_oid.len(), 40);
     assert!(diff.semantic_available, "{:?}", diff.diagnostics);
@@ -128,13 +125,10 @@ fn excludes_ignored_untracked_project_sources() {
     .expect("write ignored data");
 
     let project = Project::open_schema_only(Some(repo.path())).expect("open project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("open runtime session");
-    let diff = session
-        .queries()
-        .diff_against_head()
-        .expect("diff against HEAD");
+    let diff = session.diff_against_head().expect("diff against HEAD");
 
     assert!(diff.files.is_empty());
     assert!(diff.records.is_empty());
@@ -160,7 +154,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     )
     .expect("write published value");
     let project = Project::open_schema_only(Some(repo.path())).expect("open project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("open runtime session");
 
@@ -176,10 +170,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
         " current: Item { value: 99, }\n",
     )
     .expect("write later disk value");
-    let diff = session
-        .queries()
-        .diff_against_head()
-        .expect("diff against HEAD");
+    let diff = session.diff_against_head().expect("diff against HEAD");
 
     let record = diff.records.first().expect("record diff");
     let after = record.fields[0].after.as_ref().expect("after value");
@@ -217,13 +208,10 @@ fn keeps_source_diff_when_head_project_is_invalid() {
     )
     .expect("fix current config");
     let project = Project::open_schema_only(Some(repo.path())).expect("open current project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("open current session");
-    let diff = session
-        .queries()
-        .diff_against_head()
-        .expect("diff against HEAD");
+    let diff = session.diff_against_head().expect("diff against HEAD");
 
     assert!(!diff.semantic_available);
     assert!(diff.records.is_empty());
@@ -256,13 +244,10 @@ fn ignores_checkout_line_ending_differences() {
     }
 
     let project = Project::open_schema_only(Some(repo.path())).expect("open current project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("open current session");
-    let diff = session
-        .queries()
-        .diff_against_head()
-        .expect("diff against HEAD");
+    let diff = session.diff_against_head().expect("diff against HEAD");
 
     assert!(diff.files.is_empty());
     assert!(diff.records.is_empty());
@@ -312,10 +297,10 @@ fn respects_nested_excludes_and_keeps_force_added_files() {
     )
     .expect("tracked data");
     let project = Project::open_schema_only(Some(repo.path())).expect("project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("session");
-    let diff = session.queries().diff_against_head().expect("diff");
+    let diff = session.diff_against_head().expect("diff");
     assert!(diff.semantic_available, "{:?}", diff.diagnostics);
     assert_eq!(
         diff.files
@@ -378,10 +363,10 @@ fn reads_packed_heads_in_detached_linked_worktrees() {
         )
         .expect("change data");
         let project = Project::open_schema_only(Some(&project_root)).expect("project");
-        let session = Runtime::new()
+        let session = ProjectSessionFactory::new()
             .open_read_only_session(project)
             .expect("session");
-        let diff = session.queries().diff_against_head().expect("diff");
+        let diff = session.diff_against_head().expect("diff");
         assert_eq!(
             diff.head_oid.len(),
             if object_format == "sha1" { 40 } else { 64 }
@@ -404,13 +389,10 @@ fn reports_git_diagnostic_for_unborn_head() {
     );
     git(repo.path(), &["init", "--quiet"]);
     let project = Project::open_schema_only(Some(repo.path())).expect("project");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("session");
-    let diagnostics = session
-        .queries()
-        .diff_against_head()
-        .expect_err("HEAD is unborn");
+    let diagnostics = session.diff_against_head().expect_err("HEAD is unborn");
     assert!(diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "GIT-DIFF"));
@@ -443,10 +425,10 @@ fn compares_inline_dimension_changes_against_snapshot() {
         "one: Item { name: dimension { default: \"Name\", zh: \"After\" } }\n",
     )
     .expect("changed business data");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
         .expect("session");
-    let diff = session.queries().diff_against_head().expect("diff");
+    let diff = session.diff_against_head().expect("diff");
     assert!(diff.semantic_available, "{:?}", diff.diagnostics);
     assert_eq!(diff.files.len(), 1);
     assert_eq!(diff.files[0].path, "data/items.cfd");
@@ -482,10 +464,10 @@ fn excludes_sources_outside_repository_with_diagnostics() {
         "base: Item { value: 3 }\n",
     )
     .expect("update");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
         .expect("session");
-    let diff = session.queries().diff_against_head().expect("diff");
+    let diff = session.diff_against_head().expect("diff");
     assert!(diff
         .diagnostics
         .iter()

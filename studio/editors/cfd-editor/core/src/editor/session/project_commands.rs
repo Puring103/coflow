@@ -9,6 +9,51 @@ use super::SessionStore;
 use crate::editor::types::{EditorError, ProjectBootstrap};
 
 impl SessionStore {
+    /// 文件已提交后重载失败，返回明确的已提交状态，避免宿主提示用户重复写入。
+    pub(super) fn reload_after_commit(
+        &self,
+        id: u32,
+        commit: coflow_project::ProjectCommit,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let refresh = || {
+            let entry = self.session(id)?;
+            if commit.generation_changed {
+                let mut state = entry.state.write();
+                state.commit_internal_write(&commit.written_files);
+                state.language.invalidate(
+                    commit
+                        .written_files
+                        .iter()
+                        .map(|p| state.project_root.join(p))
+                        .collect(),
+                );
+            } else {
+                let state = entry.state.read();
+                return Ok(super::row_build::project_bootstrap(
+                    id,
+                    &state,
+                    super::build::SessionSnapshotParts {
+                        file_tree: state.queries().file_tree(),
+                    },
+                ));
+            }
+            self.reload_session(id)
+        };
+        refresh().map_err(|error: EditorError| {
+            if !commit.generation_changed {
+                return error;
+            }
+            EditorError::new(
+                crate::editor::types::EditorErrorKind::Committed,
+                format!(
+                    "文件已保存，但会话刷新失败；请重新加载项目，不要重复执行写入。{}",
+                    error.message
+                ),
+            )
+            .with_diagnostics(error.diagnostics)
+        })
+    }
+
     pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
@@ -59,9 +104,8 @@ impl SessionStore {
 
     pub fn project_diff(&self, id: u32) -> Result<coflow_project::ProjectDiff, EditorError> {
         let entry = self.session(id)?;
-        let session = entry.state.read();
-        session
-            .queries()
+        let snapshot = entry.state.read().project_session.snapshot();
+        snapshot
             .diff_against_head()
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))
     }
@@ -73,9 +117,10 @@ impl SessionStore {
         path: &StdPath,
     ) -> Result<ProjectBootstrap, EditorError> {
         let yaml_path = self.project_action_context(id)?;
-        coflow_project::add_project_input(&yaml_path, kind, path)
+        self.session(id)?.state.read().ensure_writable()?;
+        let commit = coflow_project::add_project_input(&yaml_path, kind, path)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_after_commit(id, commit)
     }
 
     pub fn create_project_file(
@@ -86,9 +131,10 @@ impl SessionStore {
         file_name: &str,
     ) -> Result<ProjectBootstrap, EditorError> {
         let yaml_path = self.project_action_context(id)?;
-        coflow_project::create_project_file(&yaml_path, kind, parent_path, file_name)
+        self.session(id)?.state.read().ensure_writable()?;
+        let commit = coflow_project::create_project_file(&yaml_path, kind, parent_path, file_name)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_after_commit(id, commit)
     }
 
     pub fn delete_project_entry(
@@ -97,8 +143,9 @@ impl SessionStore {
         path: &StdPath,
     ) -> Result<ProjectBootstrap, EditorError> {
         let yaml_path = self.project_action_context(id)?;
-        coflow_project::delete_project_entry(&yaml_path, path)
+        self.session(id)?.state.read().ensure_writable()?;
+        let commit = coflow_project::delete_project_entry(&yaml_path, path)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_after_commit(id, commit)
     }
 }

@@ -121,7 +121,7 @@ impl SessionStore {
         let session_lock = &entry.state;
         let session = session_lock.read();
         session
-            .engine
+            .project_session
             .default_record_value(type_name, DefaultMaterialization::EditableShape)
             .map_err(api_diagnostics_to_editor_error)
     }
@@ -135,7 +135,7 @@ impl SessionStore {
         let session_lock = &entry.state;
         let session = session_lock.read();
         let draft = session
-            .engine
+            .project_session
             .create_record_draft(actual_type)
             .map_err(api_diagnostics_to_editor_error)?;
         let ctx = WireContext::new(
@@ -157,7 +157,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session = entry.state.read();
         session
-            .engine
+            .project_session
             .render_cell_text(coordinate, field_path)
             .map_err(api_diagnostics_to_editor_error)
     }
@@ -172,7 +172,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session = entry.state.read();
         session
-            .engine
+            .project_session
             .parse_cell_text(coordinate, field_path, text)
             .map_err(api_diagnostics_to_editor_error)
     }

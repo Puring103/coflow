@@ -432,7 +432,7 @@ pub struct MutationFailedOp {
 }
 
 impl MutationFailedOp {
-    pub(super) fn from_diagnostics(
+    pub(crate) fn from_diagnostics(
         index: usize,
         op: impl Into<String>,
         source_diagnostics: DiagnosticSet,

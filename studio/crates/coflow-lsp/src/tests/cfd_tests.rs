@@ -347,7 +347,7 @@ table Monster {\n  key: string;\n  stats: Stats;\n}\n";
 fn cfd_document_symbols_returns_record_entries() {
     let source = "sword: Item { }\nshield: Item { }\n";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::document_symbols(source, &ast);
+    let result = wire(cfd::document_symbols(source, &ast));
     let symbols = result.as_array().expect("array");
     assert_eq!(symbols.len(), 2);
     assert_eq!(symbols[0]["name"], "sword");
@@ -363,7 +363,7 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
     // Use a real source that has a comment followed by a record.
     let source = "# comment\nsword: Item { }";
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast, None);
+    let result = wire(cfd::semantic_tokens(source, &ast, None));
     let data = result["data"].as_array().expect("data array");
     // Walk the delta-encoded data and reconstruct absolute positions.
     let mut line = 0usize;
@@ -402,7 +402,7 @@ fn cfd_semantic_tokens_cover_project_global_types_and_function_language() {
 }\n";
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    let result = cfd::semantic_tokens(source, &ast, None);
+    let result = wire(cfd::semantic_tokens(source, &ast, None));
     let data = result["data"].as_array().expect("data");
     let token_types = data
         .chunks(5)
@@ -428,7 +428,7 @@ fn cfd_function_semantic_tokens_follow_unicode_xid_boundaries() {
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
-    let result = cfd::semantic_tokens(source, &ast, None);
+    let result = wire(cfd::semantic_tokens(source, &ast, None));
     let tokens = decode_semantic_tokens(source, &result["data"]);
 
     assert!(
@@ -446,7 +446,7 @@ fn incomplete_standalone_record_keeps_its_identity_token() {
     let source = "notebook: Product { name: \"Notebook\" }\nasd: Product {";
     let (ast, diagnostics) = parse_cfd(source);
     assert!(!diagnostics.is_empty());
-    let result = cfd::semantic_tokens(source, &ast, None);
+    let result = wire(cfd::semantic_tokens(source, &ast, None));
     let tokens = decode_semantic_tokens(source, &result["data"]);
     assert!(tokens
         .iter()
@@ -513,7 +513,7 @@ table Settings {\n\
     let complete = |source: &str, needle: &str| {
         let (ast, _) = parse_cfd(source);
         let offset = source.find(needle).expect("completion needle") + needle.len();
-        cfd::completion(source, &ast, Some(schema), offset)
+        wire(cfd::completion(source, &ast, Some(schema), offset))
     };
 
     let bool_items = complete("settings: Settings { enabled: t }", "enabled: t");
@@ -555,7 +555,7 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     let (ast, diagnostics) = parse_cfd(source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
-    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let semantic = wire(cfd::semantic_tokens(source, &ast, Some(schema)));
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
     assert!(
         tokens.contains(&DecodedSemanticToken {
@@ -567,7 +567,7 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
     );
 
     let offset = source.find("{amount}").expect("formatted reference") + 3;
-    let completions = cfd::completion(source, &ast, Some(schema), offset);
+    let completions = wire(cfd::completion(source, &ast, Some(schema), offset));
     assert_eq!(
         completion_labels(completions.as_array().expect("completion array").clone()),
         vec!["amount", "enabled", "label", "Message"]
@@ -575,12 +575,12 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
 
     let option_source = "message: Message { enabled: t }";
     let (option_ast, _) = parse_cfd(option_source);
-    let option_items = cfd::completion(
+    let option_items = wire(cfd::completion(
         option_source,
         &option_ast,
         Some(schema),
         option_source.find('t').expect("option value") + 1,
-    );
+    ));
     assert_eq!(
         completion_labels(option_items.as_array().expect("option items").clone()),
         vec!["None", "true", "false"]
@@ -598,7 +598,7 @@ table Message { details: Details; label: fstring; }\n";
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     let offset = source.find("{det}").expect("formatted path") + "{det".len();
 
-    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let items = wire(cfd::completion(source, &ast, Some(schema), offset));
     let labels = completion_labels(items.as_array().expect("formatted completions").clone());
     assert!(labels.contains(&"details".to_string()));
     assert!(labels.contains(&"details.count".to_string()));
@@ -614,7 +614,7 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
     let field_offset = source.find("&standard.v").expect("field reference") + "&standard.v".len();
-    let field_items = cfd::completion(source, &ast, Some(schema), field_offset);
+    let field_items = wire(cfd::completion(source, &ast, Some(schema), field_offset));
     let visible = field_items
         .as_array()
         .expect("field completions")
@@ -629,7 +629,7 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
     );
 
     let key_offset = source.find("&standard.v").expect("field reference") + 3;
-    let key_items = cfd::completion(source, &ast, Some(schema), key_offset);
+    let key_items = wire(cfd::completion(source, &ast, Some(schema), key_offset));
     assert!(key_items
         .as_array()
         .expect("key completions")
@@ -644,19 +644,19 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
         .find("&standard.")
         .expect("incomplete reference")
         + "&standard.".len();
-    let incomplete_items = cfd::completion(
+    let incomplete_items = wire(cfd::completion(
         incomplete_source,
         &incomplete_ast,
         Some(schema),
         incomplete_offset,
-    );
+    ));
     assert!(incomplete_items
         .as_array()
         .expect("incomplete reference completions")
         .iter()
         .any(|item| item["label"] == "&standard.visible"));
 
-    let semantic = cfd::semantic_tokens(source, &ast, Some(schema));
+    let semantic = wire(cfd::semantic_tokens(source, &ast, Some(schema)));
     let tokens = decode_semantic_tokens(source, &semantic["data"]);
     assert!(
         tokens.contains(&DecodedSemanticToken {
@@ -679,14 +679,24 @@ table Root { children: [Child]; child: Child; }\n";
     let (value_ast, diagnostics) = parse_cfd(value_source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     let value_offset = value_source.find("enabled: t").expect("nested bool") + "enabled: t".len();
-    let value_items = cfd::completion(value_source, &value_ast, Some(schema), value_offset);
+    let value_items = wire(cfd::completion(
+        value_source,
+        &value_ast,
+        Some(schema),
+        value_offset,
+    ));
     assert_eq!(
         completion_labels(value_items.as_array().expect("nested value items").clone()),
         vec!["true", "false"]
     );
 
     let field_offset = value_source.find("child: {").expect("inline object") + "child: {".len();
-    let field_items = cfd::completion(value_source, &value_ast, Some(schema), field_offset);
+    let field_items = wire(cfd::completion(
+        value_source,
+        &value_ast,
+        Some(schema),
+        field_offset,
+    ));
     let fields = field_items.as_array().expect("nested field items");
     assert_eq!(completion_labels(fields.clone()), vec!["enabled", "label"]);
     assert_eq!(fields[0]["insertText"], "enabled: ${1:true}");
@@ -703,7 +713,7 @@ fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
     let (ast, diagnostics) = parse_cfd("");
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
-    let items = cfd::completion("", &ast, Some(schema), 0);
+    let items = wire(cfd::completion("", &ast, Some(schema), 0));
     let product = items
         .as_array()
         .expect("top-level items")
@@ -727,7 +737,7 @@ table Settings { access: Access; }\n";
     let (ast, _) = parse_cfd(source);
     let offset = source.find('|').expect("flag operator") + 2;
 
-    let items = cfd::completion(source, &ast, Some(schema), offset);
+    let items = wire(cfd::completion(source, &ast, Some(schema), offset));
     let labels = completion_labels(items.as_array().expect("flag completions").clone());
     assert_eq!(labels, vec!["Write", "Execute"]);
 }
@@ -737,7 +747,7 @@ fn cfd_semantic_tokens_no_comment_token_inside_string() {
     // A URL inside a string must not be treated as a comment.
     let source = r#"r: T { url: "http://example.com" }"#;
     let (ast, _) = parse_cfd(source);
-    let result = cfd::semantic_tokens(source, &ast, None);
+    let result = wire(cfd::semantic_tokens(source, &ast, None));
     let data = result["data"].as_array().expect("data");
     // Each group of 5: [dline, dchar, len, type, modifiers]
     // SEM_COMMENT index is 10.
@@ -758,7 +768,7 @@ fn cfd_hover_returns_null_for_non_type_position() {
     let source = "sword: Item { }";
     let (ast, _) = parse_cfd(source);
     // Hover in the middle of whitespace after the record.
-    let result = cfd::hover(source, &ast, None, source.len() - 1);
+    let result = wire(cfd::hover(source, &ast, None, source.len() - 1));
     assert!(
         result.is_null() || result == Value::Null || result.get("range").is_some(),
         "hover at brace position should return null or a range-based result"
@@ -771,7 +781,7 @@ fn cfd_hover_on_type_name_returns_type_info() {
     let (ast, _) = parse_cfd(source);
     // "Item" starts at byte 7.
     let type_name_offset = source.find("Item").expect("Item");
-    let result = cfd::hover(source, &ast, None, type_name_offset + 1);
+    let result = wire(cfd::hover(source, &ast, None, type_name_offset + 1));
     // Without schema we get a backtick-quoted name.
     let contents = result["contents"]["value"].as_str().unwrap_or("");
     assert!(contents.contains("Item"), "hover should mention type name");
@@ -811,8 +821,10 @@ fn cfd_schema_field_definition_location_finds_field_name_span() {
     let source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, build) = test_lsp_build("cfd-schema-field-goto-def", source);
 
-    let result = cft_schema_field_definition_location(&build, "Item", "damage")
-        .expect("damage field definition");
+    let result = wire_optional(cft_schema_field_definition_location(
+        &build, "Item", "damage",
+    ))
+    .expect("damage field definition");
 
     assert_eq!(result["range"]["start"]["line"], 2);
     assert_eq!(result["range"]["start"]["character"], 2);
@@ -827,10 +839,10 @@ fn cfd_goto_def_continues_past_unparseable_document() {
     let cft_source = "table GoodType { level: int; }\n";
     let (_cleanup, build) = test_lsp_build("cfd-goto-def", cft_source);
     // GoodType is defined — should find it.
-    let result = cft_type_definition_location(&build, "GoodType");
+    let result = wire_optional(cft_type_definition_location(&build, "GoodType"));
     assert!(result.is_some(), "should find GoodType definition");
     // Unknown type — should return None without panicking.
-    let result2 = cft_type_definition_location(&build, "NonExistent");
+    let result2 = wire_optional(cft_type_definition_location(&build, "NonExistent"));
     assert!(result2.is_none());
 }
 
@@ -838,7 +850,7 @@ fn cfd_goto_def_continues_past_unparseable_document() {
 fn function_document_uses_cfd_parser_and_lsp_tokens() {
     let source =
         "fn(left: int, operation: fn(int, int) -> int, right: int) -> int {\nleft + right\n}";
-    let result = cfd::function_document(&json!({ "source": source }));
+    let result = function_document_result(&json!({ "source": source }));
 
     assert_eq!(
         result["signature"],
@@ -868,7 +880,7 @@ fn function_document_uses_cfd_parser_and_lsp_tokens() {
 #[test]
 fn function_document_preserves_body_without_compilation() {
     let source = "fn(value: int) -> int { value }";
-    let result = cfd::function_document(&json!({
+    let result = function_document_result(&json!({
         "source": source,
         "body": "var broken = ;",
     }));
@@ -882,7 +894,7 @@ fn function_document_preserves_body_without_compilation() {
 #[test]
 fn function_document_completion_includes_local_variables_and_snippets() {
     let source = "fn(value: int) -> int { var total = value; return total; }";
-    let result = cfd::function_document(&json!({ "source": source }));
+    let result = function_document_result(&json!({ "source": source }));
     let completions = result["completions"].as_array().expect("completions");
     assert!(completions
         .iter()
@@ -912,7 +924,7 @@ fn line_indexed_cfd_range_matches_linear_scan() {
 #[test]
 fn function_builder_completion_exposes_scope_binding_and_snippet() {
     let source = "fn() -> [int] { build [int] as items { items.append(1); } }";
-    let result = cfd::function_document(&json!({ "source": source }));
+    let result = function_document_result(&json!({ "source": source }));
     let items = result["completions"].as_array().unwrap();
     assert!(items
         .iter()
@@ -928,6 +940,7 @@ fn function_cursor_completion_excludes_closed_builders_and_future_locals() {
     let source = "fn() -> int { var values = build [int] as items { items.append(1); }; var later = 2; later }";
     let labels = |offset| {
         cfd::function_source_completion_items_at(source, offset, None)
+            .map(wire_items)
             .unwrap()
             .into_iter()
             .filter_map(|item| item["label"].as_str().map(str::to_owned))

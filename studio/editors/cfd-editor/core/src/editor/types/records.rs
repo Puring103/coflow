@@ -208,7 +208,7 @@ pub struct WriteFieldOutcome {
     pub revision: u32,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Value at the target path before the write. Captured by the backend
-    /// from engine state so undo does not depend on a stale front-end cache.
+    /// from project_session state so undo does not depend on a stale front-end cache.
     #[serde(default)]
     pub old_value: Option<CfdValue>,
     /// Value at the target path after the write. Collection edits are built

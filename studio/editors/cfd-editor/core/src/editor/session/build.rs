@@ -1,9 +1,9 @@
-//! Project session construction through the shared Coflow engine.
+//! Project session construction through the shared Coflow project_session.
 
 use coflow_project::Project;
 use coflow_project::{DiagnosticSet, WriterCapabilities};
-use coflow_project::{FileTreeNode, ProjectQueries, ProjectRuntime, Runtime};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use coflow_project::{FileTreeNode, ProjectQueries, ProjectSessionFactory, SchemaCache};
+use std::collections::{BTreeMap, HashMap};
 
 use super::diagnostics::diagnostics_from_store;
 use super::revision::RevisionCoordinator;
@@ -21,7 +21,9 @@ pub(crate) fn session_capabilities_for_file(
     session: &EditorSession,
     file_path: &str,
 ) -> WriterCapabilities {
-    session.engine.writer_capabilities_for_file(file_path)
+    session
+        .project_session
+        .writer_capabilities_for_file(file_path)
 }
 
 pub(crate) fn build_session(
@@ -40,33 +42,33 @@ pub(crate) fn build_session(
         .into_iter()
         .map(|source| source.module_id)
         .collect();
-    let runtime = Runtime::new();
-    let mut schema_runtime = ProjectRuntime::new(project.clone());
+    let runtime = ProjectSessionFactory::new();
+    let mut schema_runtime = SchemaCache::new(project.clone());
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime
         .latest_attempt()
         .cloned()
         .ok_or_else(|| EditorError::project("failed to build project schema".to_string()))?;
-    let engine = runtime
+    let project_session = runtime
         .open_write_session_from_schema(schema_session)
         .map_err(|err| {
             EditorError::project(prefixed_diagnostics("failed to build project", &err))
         })?;
-    let language_server = coflow_lsp::EmbeddedLsp::with_schema_runtime(project, schema_runtime);
-    let file_tree = engine.queries().file_tree();
-    let (schema_type_names, file_type_counts) = type_navigation(engine.queries());
-    let diagnostics = diagnostics_from_store(engine.queries(), &project_root);
+    let language = std::sync::Arc::new(super::language::LanguageSession::new(
+        coflow_lsp::service::LanguageService::with_schema_cache(project, schema_runtime),
+    ));
+    let file_tree = project_session.queries().file_tree();
+    let (schema_type_names, file_type_counts) = type_navigation(project_session.queries());
+    let diagnostics = diagnostics_from_store(project_session.queries(), &project_root);
 
     Ok((
         EditorSession {
             project_root,
             yaml_path,
-            engine,
+            project_session,
             schema_revision: 1,
             diagnostics,
-            language_server,
-            language_documents: HashSet::new(),
-            language_diagnostics: HashMap::new(),
+            language,
             schema_files,
             schema_type_names,
             file_type_counts,

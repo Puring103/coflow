@@ -27,6 +27,8 @@ pub enum EditorErrorKind {
     Session,
     Project,
     Write,
+    /// 文件事务已完成，宿主刷新未完成。
+    Committed,
     NotFound,
     Other,
 }

@@ -1,9 +1,9 @@
-use serde_json::{json, Value};
+use crate::service::*;
 use similar::{DiffTag, TextDiff};
 
 use super::position::byte_range;
 
-pub(crate) fn formatting_edits(source: &str, formatted: &str) -> Vec<Value> {
+pub(crate) fn formatting_edits(source: &str, formatted: &str) -> Vec<LanguageTextEdit> {
     if source == formatted {
         return Vec::new();
     }
@@ -23,11 +23,10 @@ pub(crate) fn formatting_edits(source: &str, formatted: &str) -> Vec<Value> {
             let new_end = formatted_offsets[new.end];
             let (start, end, new_text) =
                 shrink_edit(source, old_start, old_end, &formatted[new_start..new_end]);
-            (start != end || !new_text.is_empty()).then(|| {
-                json!({
-                    "range": byte_range(source, start, end),
-                    "newText": new_text,
-                })
+            (start != end || !new_text.is_empty()).then(|| LanguageTextEdit {
+                range: (byte_range(source, start, end)).clone(),
+                new_text: (new_text).to_string(),
+                ..Default::default()
             })
         })
         .collect()

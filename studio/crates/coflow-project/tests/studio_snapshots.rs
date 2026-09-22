@@ -1,4 +1,4 @@
-use coflow_project::{CfdPathSegment, CfdValue, Project, RecordCoordinate, Runtime};
+use coflow_project::{CfdPathSegment, CfdValue, Project, ProjectSessionFactory, RecordCoordinate};
 
 fn project() -> (tempfile::TempDir, coflow_project::WriteProjectSession) {
     let root = tempfile::tempdir().unwrap();
@@ -11,7 +11,7 @@ fn project() -> (tempfile::TempDir, coflow_project::WriteProjectSession) {
     std::fs::write(root.path().join("schema.cft"), "table Item { value: int; }").unwrap();
     std::fs::write(root.path().join("data/a.cfd"), "a: Item { value: 1 }").unwrap();
     std::fs::write(root.path().join("data/b.cfd"), "b: Item { value: 2 }").unwrap();
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_write_session(Project::open(Some(root.path())).unwrap())
         .unwrap();
     (root, session)
@@ -56,7 +56,7 @@ fn source_candidate_cannot_be_committed_to_another_session() {
     let update = session
         .prepare_source_update(&root.path().join("data/a.cfd"), "a: Item { value: 7 }")
         .unwrap();
-    let mut other = Runtime::new()
+    let mut other = ProjectSessionFactory::new()
         .open_write_session(Project::open(Some(root.path())).unwrap())
         .unwrap();
     assert!(other.commit_source_update(update).is_err());
@@ -128,7 +128,7 @@ fn unchanged_record_diagnostics_do_not_expand_an_unrelated_change_set() {
     std::fs::write(root.path().join("schema.cft"),
         "table Item { value: int; check { Coflow::Check::require(self.value > 0, \"positive\"); } }").unwrap();
     std::fs::write(root.path().join("data/b.cfd"), "b: Item { value: -1 }").unwrap();
-    let mut session = Runtime::new()
+    let mut session = ProjectSessionFactory::new()
         .open_write_session(Project::open(Some(root.path())).unwrap())
         .unwrap();
     assert!(!session
@@ -212,7 +212,7 @@ fn mutation_changes_do_not_include_unchanged_file_records() {
 fn source_diagnostics_survive_an_unrelated_cached_reload() {
     let (root, _) = project();
     std::fs::write(root.path().join("data/b.cfd"), "b: Item { value: ??? }").unwrap();
-    let mut session = Runtime::new()
+    let mut session = ProjectSessionFactory::new()
         .open_write_session(Project::open(Some(root.path())).unwrap())
         .unwrap();
     let before = session.queries().diagnostics().as_set().diagnostics.len();
@@ -229,4 +229,43 @@ fn source_diagnostics_survive_an_unrelated_cached_reload() {
         session.queries().diagnostics().as_set().diagnostics.len(),
         before
     );
+}
+
+#[test]
+fn detached_source_context_rejects_a_mutation_after_capture() {
+    let (root, mut session) = project();
+    let context = session.source_update_context();
+    let snapshot = session.snapshot();
+    session
+        .write_field(
+            "Item",
+            "b",
+            &[CfdPathSegment::Field("value".into())],
+            &CfdValue::Int(8),
+        )
+        .unwrap();
+    let update = context
+        .prepare(&root.path().join("data/a.cfd"), "a: Item { value: 7 }")
+        .unwrap();
+    assert!(session.commit_source_update(update).is_err());
+    assert_eq!(snapshot.queries().revision(), 0);
+    assert_eq!(session.queries().revision(), 1);
+    assert_eq!(
+        snapshot
+            .queries()
+            .field_value("Item", "b", &[CfdPathSegment::Field("value".into())]),
+        Some(&CfdValue::Int(2))
+    );
+}
+
+#[test]
+fn unchanged_source_commit_keeps_generation_and_reports_no_effect() {
+    let (root, mut session) = project();
+    let path = root.path().join("data/a.cfd");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let prepared = session.prepare_source_update(&path, &source).unwrap();
+    let commit = session.commit_source_update(prepared).unwrap();
+    assert!(!commit.generation_changed);
+    assert!(commit.written_files.is_empty());
+    assert_eq!(session.queries().revision(), 0);
 }

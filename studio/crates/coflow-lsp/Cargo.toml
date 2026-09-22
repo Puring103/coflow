@@ -10,9 +10,14 @@ publish = false
 workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+ts-rs = { version = "10", optional = true, features = ["serde-compat"] }
 coflow-format = { path = "../coflow-format" }
 coflow-language = { path = "../../../engine/crates/coflow-language" }
 coflow-core = { path = "../../../engine/crates/coflow-core" }
 coflow-project = { path = "../coflow-project" }
 serde_json = { version = "1", features = ["preserve_order"] }
 similar = "2"
+
+[features]
+ts-export = ["dep:ts-rs"]

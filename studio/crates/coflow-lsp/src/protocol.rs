@@ -121,3 +121,52 @@ pub(crate) fn text_document_uri(params: &Value) -> Option<String> {
         .as_str()
         .map(str::to_string)
 }
+
+/// 语言服务采用共享 Rust/编辑器字段名，LSP 仅在发送边界映射标准字段名。
+pub(crate) fn language_result(value: &impl serde::Serialize) -> Value {
+    fn rename(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                for (from, to) in [
+                    ("new_text", "newText"),
+                    ("insert_text", "insertText"),
+                    ("insert_text_format", "insertTextFormat"),
+                    ("sort_text", "sortText"),
+                    ("filter_text", "filterText"),
+                    ("text_edit", "textEdit"),
+                    ("body_range", "bodyRange"),
+                    ("selection_range", "selectionRange"),
+                    ("related_information", "relatedInformation"),
+                ] {
+                    if let Some(value) = map.remove(from) {
+                        map.insert(to.into(), value);
+                    }
+                }
+                for value in map.values_mut() {
+                    rename(value);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    rename(item);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut value = serde_json::json!(value);
+    rename(&mut value);
+    value
+}
+pub(crate) fn function_document_result(value: &crate::service::FunctionDocumentState) -> Value {
+    let mut result = language_result(value);
+    if let Some(map) = result.as_object_mut() {
+        map.remove("semantic_token_data");
+        map.remove("semantic_token_types");
+        map.insert(
+            "semanticTokens".into(),
+            serde_json::json!({"data": value.semantic_token_data}),
+        );
+    }
+    result
+}

@@ -25,6 +25,7 @@ mod hover;
 mod position;
 mod protocol;
 mod semantic_tokens;
+pub mod service;
 mod state;
 mod text;
 mod uri;
@@ -59,12 +60,14 @@ use protocol::{
 };
 use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use serde_json::{json, Value};
+use service::Location;
 pub(crate) use state::{
     current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain, field_by_chain,
     field_by_type, type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
 use std::collections::VecDeque;
 use std::io::{self, BufReader, Write};
+#[cfg(test)]
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -317,163 +320,10 @@ impl<W: Write> MessageSink for W {
     }
 }
 
-#[derive(Default)]
-struct EmbeddedMessages(Vec<Value>);
-
-impl MessageSink for EmbeddedMessages {
-    fn send(&mut self, value: &Value) -> Result<(), String> {
-        self.0.push(value.clone());
-        Ok(())
-    }
-}
-
-/// In-process transport for hosts that embed the Coflow language server.
-///
-/// Requests and notifications pass through the same [`LspServer`] dispatcher
-/// used by the stdio CLI. The returned values are ordinary JSON-RPC messages,
-/// including diagnostics published while a document is synchronized.
-pub struct EmbeddedLsp {
-    server: LspServer<EmbeddedMessages>,
-    next_request_id: u64,
-}
-
-impl std::fmt::Debug for EmbeddedLsp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EmbeddedLsp")
-            .field("next_request_id", &self.next_request_id)
-            .finish_non_exhaustive()
-    }
-}
-
-impl EmbeddedLsp {
-    /// Highlights an immutable source snapshot without opening or changing a document.
-    #[must_use]
-    pub fn highlight_source_snapshot(&mut self, path: &std::path::Path, source: &str) -> Value {
-        self.server.core.ensure_build_publications();
-        if path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("cfd"))
-        {
-            let (ast, diagnostics) = coflow_language::cfd::parse_cfd(source);
-            let mut result = cfd::semantic_tokens(source, &ast, self.server.core.schema());
-            result["x-coflow-syntax-valid"] = json!(diagnostics.is_empty());
-            return result;
-        }
-        // 快照直接解析传入文本，已删除或移出输入集合的 CFT 仍能获得语法着色。
-        let uri = Self::file_uri(path);
-        let build = self.server.core.build();
-        let module_id = build
-            .and_then(|build| build.document_by_uri(&uri))
-            .map_or_else(
-                || "__snapshot__".to_string(),
-                |document| document.module_id.clone(),
-            );
-        let ast = coflow_core::schema::syntax::parser::parse_module(
-            &coflow_core::schema::ModuleId::new(module_id.clone()),
-            source,
-        )
-        .ok()
-        .map(std::sync::Arc::new);
-        let document = LspDocument {
-            module_id,
-            uri,
-            source: source.into(),
-            ast,
-        };
-        json!({
-            "data": semantic_tokens::snapshot_token_data(build, &document),
-            "x-coflow-syntax-valid": document.ast.is_some(),
-        })
-    }
-
-    #[must_use]
-    pub fn new(project: Project) -> Self {
-        Self {
-            server: LspServer::new(project, EmbeddedMessages::default()),
-            next_request_id: 0,
-        }
-    }
-
-    /// 编辑器移交已经编译的 schema runtime，首次语言请求复用其解析和契约。
-    pub fn with_schema_runtime(project: Project, runtime: coflow_project::ProjectRuntime) -> Self {
-        let mut server = Self::new(project);
-        server.server.core.use_schema_runtime(runtime);
-        server
-    }
-
-    /// 项目事务发布后失效磁盘缓存；下一次语言查询才执行校验。
-    pub fn invalidate_files(&mut self, paths: &[PathBuf]) -> Result<(), String> {
-        let uris = paths
-            .iter()
-            .map(|path| Self::file_uri(path))
-            .collect::<Vec<_>>();
-        self.server.core.apply_watched_files(&uris)?;
-        Ok(())
-    }
-
-    #[must_use]
-    pub fn file_uri(path: &std::path::Path) -> String {
-        path_to_file_uri(path)
-    }
-
-    #[must_use]
-    pub fn semantic_token_types() -> Vec<String> {
-        SEMANTIC_TOKEN_TYPES
-            .iter()
-            .map(|token_type| (*token_type).to_string())
-            .collect()
-    }
-
-    /// Sends an LSP notification and returns every notification emitted by the server.
-    ///
-    /// # Errors
-    /// Returns an error when the LSP handler or embedded transport fails.
-    pub fn notify(&mut self, method: &str, params: &Value) -> Result<Vec<Value>, String> {
-        self.server.handle_message(&json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        }))?;
-        self.take_messages()
-    }
-
-    /// Sends an LSP request and returns its result plus notifications emitted while handling it.
-    ///
-    /// # Errors
-    /// Returns an error when the LSP handler, response, or embedded transport fails.
-    pub fn request(&mut self, method: &str, params: &Value) -> Result<(Value, Vec<Value>), String> {
-        self.next_request_id = self.next_request_id.saturating_add(1);
-        let id = self.next_request_id;
-        self.server.handle_message(&json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        }))?;
-        let messages = self.take_messages()?;
-        let mut result = None;
-        let mut notifications = Vec::new();
-        for message in messages {
-            if message.get("id").and_then(Value::as_u64) == Some(id) {
-                if let Some(error) = message.get("error") {
-                    return Err(format!("embedded LSP request `{method}` failed: {error}"));
-                }
-                result = message.get("result").cloned();
-            } else {
-                notifications.push(message);
-            }
-        }
-        result
-            .map(|result| (result, notifications))
-            .ok_or_else(|| format!("embedded LSP request `{method}` returned no response"))
-    }
-
-    fn take_messages(&mut self) -> Result<Vec<Value>, String> {
-        Ok(std::mem::take(&mut self.server.writer.0))
-    }
-}
-
-fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) -> Value {
+fn cfd_definition(
+    document: &validation::CfdRequestDocument<'_>,
+    offset: usize,
+) -> Option<Location> {
     let schema_location = cfd::definition_type_name(document.ast, offset)
         .and_then(|type_name| {
             document
@@ -489,18 +339,13 @@ fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) 
                 },
             )
         });
-    schema_location.map_or_else(
-        || {
-            cfd::definition_ref_target(document.ast, document.schema, offset)
-                .and_then(|(target_type, ref_key)| {
-                    document.build.and_then(|build| {
-                        cfd_record_definition_location(build, &target_type, &ref_key)
-                    })
-                })
-                .map_or(Value::Null, |location| json!(location))
-        },
-        |location| json!(location),
-    )
+    schema_location.or_else(|| {
+        cfd::definition_ref_target(document.ast, document.schema, offset).and_then(|(ty, key)| {
+            document
+                .build
+                .and_then(|build| cfd_record_definition_location(build, &ty, &key))
+        })
+    })
 }
 
 impl<W: MessageSink> LspServer<W> {
@@ -554,9 +399,16 @@ impl<W: MessageSink> LspServer<W> {
             (Some(id), Some(RequestMethod::DocumentSymbol), _) => self.document_symbol(&id, params),
             (Some(id), Some(RequestMethod::Formatting), _) => self.formatting(&id, params),
             (Some(id), Some(RequestMethod::SemanticTokens), _) => self.semantic_tokens(&id, params),
-            (Some(id), Some(RequestMethod::FunctionDocument), _) => {
-                self.write_response(&id, &cfd::function_document(params))
-            }
+            (Some(id), Some(RequestMethod::FunctionDocument), _) => self.write_response(
+                &id,
+                &protocol::function_document_result(&cfd::function_document(
+                    params
+                        .get("source")
+                        .and_then(Value::as_str)
+                        .ok_or("missing function source")?,
+                    params.get("body").and_then(Value::as_str),
+                )),
+            ),
             (Some(id), Some(RequestMethod::Shutdown), _) => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)
@@ -688,55 +540,32 @@ impl<W: MessageSink> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = match self.request_document(&request.uri)? {
-            LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(document.source, request.position);
-                cfd::completion_with_build(
-                    document.source,
-                    document.ast,
-                    document.schema,
-                    document.build,
-                    offset,
-                )
-            }
-            LspRequestDocument::Cft { build, document } => {
-                json!(completion_items(build, document, &request.position))
-            }
-            LspRequestDocument::Missing => json!([]),
-        };
-        self.write_response(id, &result)
+        let publications = self.core.prepare_request_document(&request.uri);
+        self.publish_diagnostic_publications(publications)?;
+        let result = self.core.completion(&request.uri, request.position);
+        self.write_response(id, &protocol::language_result(&result))
     }
 
     fn hover(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = match self.request_document(&request.uri)? {
-            LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(document.source, request.position);
-                cfd::hover(document.source, document.ast, document.schema, offset)
-            }
-            LspRequestDocument::Cft { build, document } => {
-                hover_at(build, document, &request.position).unwrap_or(Value::Null)
-            }
-            LspRequestDocument::Missing => Value::Null,
-        };
-        self.write_response(id, &result)
+        let publications = self.core.prepare_request_document(&request.uri);
+        self.publish_diagnostic_publications(publications)?;
+        let result = self.core.hover(&request.uri, request.position);
+        self.write_response(id, &protocol::language_result(&result))
     }
 
     fn definition(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = match self.request_document(&request.uri)? {
-            LspRequestDocument::Cfd(document) => {
-                let offset = byte_offset_from_position(document.source, request.position);
-                cfd_definition(&document, offset)
-            }
-            LspRequestDocument::Cft { build, document } => {
-                json!(definitions_at(build, document, &request.position))
-            }
-            LspRequestDocument::Missing => Value::Null,
+        let publications = self.core.prepare_request_document(&request.uri);
+        self.publish_diagnostic_publications(publications)?;
+        let result = self.core.definition(&request.uri, request.position);
+        let result = match self.core.request_document(&request.uri) {
+            LspRequestDocument::Cft { .. } => protocol::language_result(&result),
+            _ => protocol::language_result(&result.first()),
         };
         self.write_response(id, &result)
     }
@@ -745,77 +574,47 @@ impl<W: MessageSink> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!([]));
         };
-        let result = match self.request_document(&uri)? {
-            LspRequestDocument::Cfd(document) => {
-                cfd::document_symbols(document.source, document.ast)
-            }
-            LspRequestDocument::Cft { document, .. } => json!(document_symbols(document)),
-            LspRequestDocument::Missing => json!([]),
-        };
-        self.write_response(id, &result)
+        let publications = self.core.prepare_request_document(&uri);
+        self.publish_diagnostic_publications(publications)?;
+        let result = self.core.document_symbol(&uri);
+        self.write_response(id, &protocol::language_result(&result))
     }
 
     fn formatting(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &Value::Null);
         };
-        let result = match self.request_document(&uri)? {
-            LspRequestDocument::Cfd(document) => {
-                if !document.syntax_valid {
-                    return self.write_response(id, &json!([]));
-                }
-                let formatted = format_cfd(document.source);
-                json!(formatting_edits(document.source, &formatted))
-            }
-            LspRequestDocument::Cft { document, .. } => {
-                if document.ast().is_none() {
-                    return self.write_response(id, &json!([]));
-                }
-                let formatted = format_cft(&document.source);
-                json!(formatting_edits(&document.source, &formatted))
-            }
-            LspRequestDocument::Missing => json!([]),
-        };
-        self.write_response(id, &result)
+        let publications = self.core.prepare_request_document(&uri);
+        self.publish_diagnostic_publications(publications)?;
+        let result = self.core.formatting(&uri);
+        self.write_response(id, &protocol::language_result(&result))
     }
 
     fn semantic_tokens(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!({"data": []}));
         };
-        let result = match self.request_document(&uri)? {
-            LspRequestDocument::Cfd(document) => {
-                let mut result =
-                    cfd::semantic_tokens(document.source, document.ast, document.schema);
-                result["x-coflow-syntax-valid"] = json!(document.syntax_valid);
-                result
-            }
-            LspRequestDocument::Cft { build, document } => {
-                json!({
-                    "data": semantic_token_data(build, document),
-                    "x-coflow-syntax-valid": true
-                })
-            }
-            LspRequestDocument::Missing => json!({"data": []}),
-        };
-        self.write_response(id, &result)
-    }
-
-    fn request_document(&mut self, uri: &str) -> Result<LspRequestDocument<'_>, String> {
-        let publications = self.core.prepare_request_document(uri);
+        let publications = self.core.prepare_request_document(&uri);
         self.publish_diagnostic_publications(publications)?;
-        Ok(self.core.request_document(uri))
+        if matches!(
+            self.core.request_document(&uri),
+            LspRequestDocument::Missing
+        ) {
+            return self.write_response(id, &json!({"data": []}));
+        }
+        let result = self.core.semantic_tokens(&uri);
+        self.write_response(id, &protocol::language_result(&result))
     }
 
     fn publish_diagnostics(
         &mut self,
         uri: &str,
-        diagnostics: &[Value],
+        diagnostics: &[service::LanguageDiagnostic],
         version: Option<i64>,
     ) -> Result<(), String> {
         let params = version.map_or_else(
-            || json!({ "uri": uri, "diagnostics": diagnostics }),
-            |version| json!({ "uri": uri, "version": version, "diagnostics": diagnostics }),
+            || json!({ "uri": uri, "diagnostics": protocol::language_result(&diagnostics) }),
+            |version| json!({ "uri": uri, "version": version, "diagnostics": protocol::language_result(&diagnostics) }),
         );
         self.write_notification("textDocument/publishDiagnostics", &params)
     }
@@ -906,4 +705,5 @@ mod tests {
     mod common;
     mod protocol;
     mod semantic;
+    mod service;
 }

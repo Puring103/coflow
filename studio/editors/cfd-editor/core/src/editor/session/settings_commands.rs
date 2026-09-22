@@ -30,6 +30,7 @@ impl SessionStore {
     ) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         if let Some(name) = &field {
             if !session
                 .queries()
@@ -63,6 +64,7 @@ impl SessionStore {
         }
         let entry = self.session(id)?;
         let session = entry.state.write();
+        session.ensure_writable()?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_positions.insert(view_key, positions);
         write_project_settings(&session.project_root, &settings)
@@ -77,6 +79,7 @@ impl SessionStore {
     ) -> Result<(), EditorError> {
         let entry = self.session(id)?;
         let session = entry.state.write();
+        session.ensure_writable()?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_compact_modes.insert(view_key, compact);
         write_project_settings(&session.project_root, &settings)

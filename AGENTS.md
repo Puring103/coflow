@@ -117,7 +117,9 @@ implementation constraints there.
 - `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
 - The CLI, editor, and LSP use project sessions from `coflow-project`. Each mutation owns its fixed CFD writer workspace; session construction is independent of the writer catalog, and no host registers providers.
 - `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-project`.
-- `coflow-lsp` owns the standalone and embedded language server implementation used by the CLI and editor.
+- `coflow-lsp` owns the typed `service::LanguageService`, shared language result DTOs, and standalone LSP protocol adapter. The editor calls the typed service directly; JSON-RPC belongs only to the standalone transport.
+- `coflow-project::ProjectSessionFactory` opens capability-scoped sessions; `SchemaCache` owns schema attempts and published generations. `ProjectSnapshot` and `SourceUpdateContext` capture immutable generations for work outside host locks. `ProjectQueries` contains in-memory queries; Git comparison runs on session/snapshot command APIs.
+- `ProjectCommit` describes committed source, mutation, and structure changes. Editor publication queues language invalidation without waiting for language computation. A structure refresh failure after filesystem commit uses `EditorErrorKind::Committed`.
 - The `coflow` package in `studio/cli` is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-project`; non-CLI hosts must not depend on the CLI package.
 - `studio/editors/cfd-editor/core` is the host-independent editor backend. It owns editor wire DTOs, sessions, graph/table views, write command bridging, file watching, and host-neutral editor events; it must not depend on Tauri or another desktop shell.
 - `studio/editors/cfd-editor/src-tauri` is the thin Tauri host. It owns Tauri command/event adaptation, native window/dialog/updater integration, and host-scoped plugin storage.
@@ -149,3 +151,5 @@ Public reference documentation lives under `website/docs/docs/reference/`:
 4. 文档内容应当是正向的，只写入讨论结果，讨论过程不能进入文档
 5. 网页是对外展示的内容，不能包含实现细节，实现细节的文档单独放在docs下
 6. 禁止自行做出决策，有问题应当询问我
+
+Studio 与编辑器内部架构见 `docs/2-架构/09-Studio与编辑器实现.md`。

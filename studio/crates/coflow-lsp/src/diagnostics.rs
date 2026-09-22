@@ -1,66 +1,54 @@
 use super::uri::path_to_file_uri;
+use crate::service::{
+    LanguageDiagnostic, LanguagePosition, LanguageRange, Location, RelatedInformation,
+};
 use coflow_project::normalize_path;
-use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub fn lsp_diagnostic(diagnostic: &coflow_project::Diagnostic) -> Value {
-    let related: Vec<_> = diagnostic
+pub fn lsp_diagnostic(diagnostic: &coflow_project::Diagnostic) -> LanguageDiagnostic {
+    let related_information: Vec<_> = diagnostic
         .related
         .iter()
         .map(|related| {
             let location = lsp_label_location(&related.location);
-            json!({
-                "location": {
-                    "uri": label_uri(&location, &BTreeMap::new()),
-                    "range": lsp_range(
+            RelatedInformation {
+                location: Location {
+                    uri: label_uri(&location, &BTreeMap::new()),
+                    range: lsp_range(
                         location.start_line,
                         location.start_character,
                         location.end_line,
                         location.end_character,
-                    )
+                    ),
                 },
-                "message": related.message.as_deref().unwrap_or("")
-            })
+                message: related.message.clone().unwrap_or_default(),
+            }
         })
         .collect();
-
     let primary = diagnostic
         .primary
         .as_ref()
-        .map(|label| lsp_label_location(&label.location))
+        .map(|l| lsp_label_location(&l.location))
         .unwrap_or_default();
-    let mut out = Map::new();
-    out.insert(
-        "range".to_string(),
-        lsp_range(
-            primary.start_line,
-            primary.start_character,
-            primary.end_line,
-            primary.end_character,
-        ),
-    );
-    out.insert(
-        "severity".to_string(),
-        json!(lsp_diagnostic_severity(diagnostic.severity)),
-    );
-    out.insert("code".to_string(), json!(&diagnostic.code));
-    out.insert(
-        "source".to_string(),
-        json!(format!("coflow {}", diagnostic.stage)),
-    );
     let mut message = diagnostic.message.clone();
     for context in &diagnostic.contexts {
         message.push_str("\n上下文: ");
         message.push_str(&context.human_message());
     }
-    out.insert("message".to_string(), json!(message));
-
-    if !related.is_empty() {
-        out.insert("relatedInformation".to_string(), Value::Array(related));
+    LanguageDiagnostic {
+        range: lsp_range(
+            primary.start_line,
+            primary.start_character,
+            primary.end_line,
+            primary.end_character,
+        ),
+        severity: lsp_diagnostic_severity(diagnostic.severity),
+        code: Some(diagnostic.code.clone()),
+        source: Some(format!("coflow {}", diagnostic.stage)),
+        message,
+        related_information: (!related_information.is_empty()).then_some(related_information),
     }
-
-    Value::Object(out)
 }
 
 const fn lsp_diagnostic_severity(severity: coflow_project::Severity) -> u8 {
@@ -102,14 +90,15 @@ pub fn lsp_label_location(location: &coflow_project::SourceLocation) -> LspLabel
     }
 }
 
-pub fn lsp_error_diagnostic(code: &str, message: &str) -> Value {
-    json!({
-        "range": lsp_range(0, 0, 0, 1),
-        "severity": 2,
-        "code": code,
-        "source": "cft LSP",
-        "message": message
-    })
+pub fn lsp_error_diagnostic(code: &str, message: &str) -> LanguageDiagnostic {
+    LanguageDiagnostic {
+        range: lsp_range(0, 0, 0, 1),
+        severity: 2,
+        code: Some(code.into()),
+        source: Some("cft LSP".into()),
+        message: message.into(),
+        ..Default::default()
+    }
 }
 
 pub fn preferred_diagnostic_uri(preferred_uris: &BTreeMap<PathBuf, String>, path: &Path) -> String {
@@ -134,15 +123,15 @@ pub fn lsp_range(
     start_character: usize,
     end_line: usize,
     end_character: usize,
-) -> Value {
-    json!({
-        "start": {
-            "line": start_line,
-            "character": start_character
+) -> LanguageRange {
+    LanguageRange {
+        start: LanguagePosition {
+            line: start_line,
+            character: start_character,
         },
-        "end": {
-            "line": end_line,
-            "character": end_character
-        }
-    })
+        end: LanguagePosition {
+            line: end_line,
+            character: end_character,
+        },
+    }
 }

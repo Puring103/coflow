@@ -1,18 +1,18 @@
 mod snapshot;
 mod worker;
 
+use crate::service::LanguageDiagnostic;
 use coflow_core::schema::CftSchema;
 use coflow_language::cfd::CfdAst;
 use coflow_project::DiagnosticSet;
 use coflow_project::{normalize_path, Project};
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::path_from_file_uri;
 use super::state::{LspBuild, LspDocument};
-use coflow_project::ProjectRuntime;
+use coflow_project::SchemaCache;
 
 pub(crate) use snapshot::{
     build_snapshot, ValidationInput, ValidationRevision, ValidationSnapshot,
@@ -26,7 +26,7 @@ pub(crate) struct LspValidationCore {
     published_uris: BTreeSet<String>,
     // The worker receives a clone of this handle, so unchanged CFT input
     // reuses the runtime generation across validation revisions.
-    schema_runtime: Arc<Mutex<ProjectRuntime>>,
+    schema_runtime: Arc<Mutex<SchemaCache>>,
     revision: ValidationRevision,
     snapshot: Option<ValidationSnapshot>,
 }
@@ -40,7 +40,7 @@ pub(crate) struct OpenDocument {
 
 pub(crate) struct DiagnosticPublication {
     pub(crate) uri: String,
-    pub(crate) diagnostics: Vec<Value>,
+    pub(crate) diagnostics: Vec<LanguageDiagnostic>,
     pub(crate) version: Option<i64>,
 }
 
@@ -64,7 +64,7 @@ pub(crate) struct CfdRequestDocument<'a> {
 impl LspValidationCore {
     pub(crate) fn new(project: Project) -> Self {
         Self {
-            schema_runtime: Arc::new(Mutex::new(ProjectRuntime::new(project.clone()))),
+            schema_runtime: Arc::new(Mutex::new(SchemaCache::new(project.clone()))),
             project,
             project_diagnostics: None,
             open_documents: BTreeMap::new(),
@@ -74,11 +74,25 @@ impl LspValidationCore {
         }
     }
 
-    pub(crate) fn use_schema_runtime(&mut self, runtime: ProjectRuntime) {
+    // 重载项目基线时保留未保存文档；语义快照在下次请求时重建。
+    pub(crate) fn rebase(&mut self, project: Project) -> Result<(), String> {
+        self.schema_runtime = Arc::new(Mutex::new(SchemaCache::new(project.clone())));
+        self.project = project;
+        self.project_diagnostics = None;
+        self.mark_project_changed()
+    }
+
+    pub(crate) fn document_diagnostics(&self, uri: &str) -> &[LanguageDiagnostic] {
+        self.snapshot
+            .as_ref()
+            .and_then(|s| s.diagnostics.get(uri))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    pub(crate) fn use_schema_runtime(&mut self, runtime: SchemaCache) {
         self.schema_runtime = Arc::new(Mutex::new(runtime));
     }
 
-    #[cfg(test)]
     pub(crate) const fn open_documents(&self) -> &BTreeMap<PathBuf, OpenDocument> {
         &self.open_documents
     }
@@ -187,7 +201,7 @@ impl LspValidationCore {
 
     pub(crate) fn commit_snapshot(
         &mut self,
-        mut candidate: ValidationSnapshot,
+        candidate: ValidationSnapshot,
     ) -> Vec<DiagnosticPublication> {
         if candidate.revision != self.revision {
             return Vec::new();
@@ -198,7 +212,7 @@ impl LspValidationCore {
         let publications = publication_uris
             .into_iter()
             .map(|uri| DiagnosticPublication {
-                diagnostics: candidate.diagnostics.remove(&uri).unwrap_or_default(),
+                diagnostics: candidate.diagnostics.get(&uri).cloned().unwrap_or_default(),
                 version: candidate.document_versions.get(&uri).copied(),
                 uri,
             })
@@ -324,8 +338,7 @@ impl LspValidationCore {
                 Ok(project) => {
                     // A new configuration can select a different schema set,
                     // so its generation cache must not survive this boundary.
-                    self.schema_runtime =
-                        Arc::new(Mutex::new(ProjectRuntime::new(project.clone())));
+                    self.schema_runtime = Arc::new(Mutex::new(SchemaCache::new(project.clone())));
                     self.project = project;
                     self.project_diagnostics = None;
                 }

@@ -2,7 +2,7 @@
 
 use coflow_project::{
     DimensionValueCoordinate, DimensionValueExpectation, DimensionValueState, MutationOp,
-    MutationRequest, MutationValue, Project, Runtime,
+    MutationRequest, MutationValue, Project, ProjectSessionFactory,
 };
 use std::fs;
 
@@ -35,7 +35,7 @@ fn variants_are_discovered_from_inline_dimension_values() {
         "table Item { @localized title: string; }",
         "sword: Item { title: dimension { default: \"Sword\", zh: \"剑\", ja: \"剣\" } }",
     );
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(Project::open(Some(dir.path())).expect("project"))
         .expect("session");
     let info = session
@@ -61,7 +61,7 @@ fn dimension_mutation_updates_and_clears_the_business_record_block() {
         "table Item { @localized title: string; }",
         "sword: Item {\n  title: dimension {\n    default: \"Sword\",\n    zh: \"剑\",\n  },\n}\n",
     );
-    let runtime = Runtime::new();
+    let runtime = ProjectSessionFactory::new();
     let mut session = runtime
         .open_write_session(Project::open(Some(dir.path())).expect("project"))
         .expect("session");
@@ -97,7 +97,7 @@ fn dimension_fields_require_a_default_and_reject_plain_values() {
         "sword: Item { title: \"Sword\" }",
     ] {
         let dir = project("table Item { @localized title: string; }", data);
-        let diagnostics = Runtime::new()
+        let diagnostics = ProjectSessionFactory::new()
             .open_read_only_session(Project::open(Some(dir.path())).expect("project"))
             .map_or_else(|errors| errors, |session| session.into_diagnostics());
         assert!(!diagnostics.is_empty(), "{data}");

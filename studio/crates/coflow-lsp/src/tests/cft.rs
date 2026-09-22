@@ -19,7 +19,7 @@ table Item {\n\
   target: Monster;\n\
 }\n";
     let (_cleanup, project) = test_project("lsp-trivia", source);
-    let mut runtime = coflow_project::ProjectRuntime::new(project);
+    let mut runtime = coflow_project::SchemaCache::new(project);
     runtime.refresh().expect("compile schema");
     let build = LspBuild::new(runtime.into_latest_attempt().expect("schema attempt"));
     let document = build
@@ -33,8 +33,14 @@ table Item {\n\
     let comment_position =
         position_from_byte(source, position_inside(source, "# Monster", "Monster", 1));
 
-    assert_eq!(hover_at(&build, document, &string_position), None);
-    assert_eq!(hover_at(&build, document, &comment_position), None);
+    assert_eq!(
+        wire_optional(hover_at(&build, document, &string_position)),
+        None
+    );
+    assert_eq!(
+        wire_optional(hover_at(&build, document, &comment_position)),
+        None
+    );
     assert!(definitions_at(&build, document, &string_position).is_empty());
     assert!(definitions_at(&build, document, &comment_position).is_empty());
 }
@@ -84,8 +90,12 @@ table Item {\n\
     ];
 
     for (offset, expected) in hover_cases {
-        let hover = hover_at(&build, document, &position_from_byte(source, offset))
-            .unwrap_or_else(|| panic!("expected hover containing {expected}"));
+        let hover = wire_optional(hover_at(
+            &build,
+            document,
+            &position_from_byte(source, offset),
+        ))
+        .unwrap_or_else(|| panic!("expected hover containing {expected}"));
         assert!(
             hover["contents"]["value"]
                 .as_str()
@@ -206,11 +216,11 @@ fn incomplete_definitions_keep_contextual_completion_scopes() {
         let document = first_document(&build);
         assert!(document.ast.is_none());
         assert_eq!(completion_scope(document, source.len()), expected_scope);
-        let labels = completion_labels(completion_items(
+        let labels = completion_labels(wire_items(completion_items(
             &build,
             document,
             &position_from_byte(source, source.len()),
-        ));
+        )));
         assert!(
             labels.contains(&expected_label.to_string()),
             "{name} completions were {labels:?}"
@@ -229,7 +239,7 @@ fn named_top_level_check_uses_check_completion_scope() {
         completion_scope(document, offset),
         CompletionScope::CheckBlock
     );
-    let labels = completion_labels(top_level_completion_items(""));
+    let labels = completion_labels(wire_items(top_level_completion_items("")));
     assert!(labels.iter().any(|label| label == "check"));
     assert!(labels.iter().any(|label| label == "namespace"));
     assert!(labels.iter().any(|label| label == "use"));
@@ -244,32 +254,32 @@ check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
     let document = first_document(&build);
     let records_offset = source.find("records(Item)").expect("records query");
     let type_offset = records_offset + "records(I".len();
-    let labels = completion_labels(completion_items(
+    let labels = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, type_offset),
-    ));
+    )));
     assert_eq!(labels, vec!["Item".to_string(), "Reward".to_string()]);
 
-    let top_level_labels = completion_labels(check_expression_completion_items(
+    let top_level_labels = completion_labels(wire_items(check_expression_completion_items(
         &build,
         document,
         records_offset,
-    ));
+    )));
     assert!(top_level_labels.contains(&"records".to_string()));
     let type_local_offset = source.find("value > 0").expect("type-local check");
-    let type_local_labels = completion_labels(check_expression_completion_items(
+    let type_local_labels = completion_labels(wire_items(check_expression_completion_items(
         &build,
         document,
         type_local_offset,
-    ));
+    )));
     assert!(!type_local_labels.contains(&"records".to_string()));
 
-    let records_hover = hover_at(
+    let records_hover = wire_optional(hover_at(
         &build,
         document,
         &position_from_byte(source, records_offset + 1),
-    )
+    ))
     .expect("records hover");
     assert!(records_hover["contents"]["value"]
         .as_str()
@@ -298,10 +308,14 @@ table Item {\n\
         source.find("target is Target").expect("predicate") + "target is ".len(),
     );
 
-    assert!(completion_items(&build, document, &string_position).is_empty());
-    assert!(completion_items(&build, document, &comment_position).is_empty());
+    assert!(wire_items(completion_items(&build, document, &string_position)).is_empty());
+    assert!(wire_items(completion_items(&build, document, &comment_position)).is_empty());
 
-    let labels = completion_labels(completion_items(&build, document, &predicate_position));
+    let labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &predicate_position,
+    )));
     assert!(labels.contains(&"Target".to_string()));
     assert!(labels.contains(&"Item".to_string()));
     assert!(!labels.contains(&"null".to_string()));
@@ -329,7 +343,9 @@ table Item {\n\
     let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
     let document = first_document(&build);
 
-    let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
+    let top_labels = completion_labels(wire_items(annotation_completion_items(
+        CompletionScope::TopLevel,
+    )));
     assert!(top_labels.contains(&"@struct".to_string()));
     assert!(top_labels.contains(&"@idAsEnum".to_string()));
     assert!(top_labels.contains(&"@Host".to_string()));
@@ -339,7 +355,9 @@ table Item {\n\
     assert!(!top_labels.contains(&"@ref".to_string()));
     assert!(!top_labels.contains(&"@index".to_string()));
 
-    let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
+    let type_labels = completion_labels(wire_items(annotation_completion_items(
+        CompletionScope::TypeBody,
+    )));
     assert!(!type_labels.contains(&"@expand".to_string()));
     assert!(type_labels.contains(&"@localized".to_string()));
     assert!(type_labels.contains(&"@dimension".to_string()));
@@ -350,7 +368,9 @@ table Item {\n\
     assert!(!type_labels.contains(&"@idAsEnum".to_string()));
     assert!(!type_labels.contains(&"@struct".to_string()));
 
-    let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));
+    let enum_labels = completion_labels(wire_items(annotation_completion_items(
+        CompletionScope::EnumBody,
+    )));
     assert!(enum_labels.contains(&"@label".to_string()));
     assert!(enum_labels.contains(&"@description".to_string()));
     assert!(!enum_labels.contains(&"@id".to_string()));
@@ -358,10 +378,10 @@ table Item {\n\
     assert!(!enum_labels.contains(&"@index".to_string()));
 
     assert_eq!(
-        completion_labels(top_level_completion_items("abstract ")),
+        completion_labels(wire_items(top_level_completion_items("abstract "))),
         vec!["table".to_string(), "data".to_string()]
     );
-    let top_level_items = top_level_completion_items("");
+    let top_level_items = wire_items(top_level_completion_items(""));
     let type_item = top_level_items
         .iter()
         .find(|item| item["label"] == "type")
@@ -373,8 +393,11 @@ table Item {\n\
         source,
         source.find("target: Target").expect("target") + "target: ".len(),
     );
-    let value_type_labels =
-        completion_labels(completion_items(&build, document, &value_type_position));
+    let value_type_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &value_type_position,
+    )));
     assert!(value_type_labels.contains(&"Target".to_string()));
     assert!(value_type_labels.contains(&"Kind".to_string()));
     assert!(value_type_labels.contains(&"string".to_string()));
@@ -387,7 +410,11 @@ table Item {\n\
         source,
         source.find("const LIMIT: int = 5").expect("const") + "const LIMIT: int = ".len(),
     );
-    let const_labels = completion_labels(completion_items(&build, document, &const_position));
+    let const_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &const_position,
+    )));
     assert!(!const_labels.contains(&"true".to_string()));
     assert!(const_labels.contains(&"LIMIT".to_string()));
     assert!(!const_labels.contains(&"null".to_string()));
@@ -396,7 +423,11 @@ table Item {\n\
         source,
         source.find("enabled: bool = true").expect("bool") + "enabled: bool = ".len(),
     );
-    let bool_labels = completion_labels(completion_items(&build, document, &bool_position));
+    let bool_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &bool_position,
+    )));
     assert!(bool_labels.contains(&"true".to_string()));
     assert!(bool_labels.contains(&"false".to_string()));
     assert!(!bool_labels.contains(&"null".to_string()));
@@ -405,7 +436,11 @@ table Item {\n\
         source,
         source.find("kind: Kind = Kind::One").expect("kind") + "kind: Kind = ".len(),
     );
-    let enum_labels = completion_labels(completion_items(&build, document, &enum_position));
+    let enum_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &enum_position,
+    )));
     assert!(enum_labels.contains(&"Kind::One".to_string()));
     assert!(enum_labels.contains(&"Kind::Two".to_string()));
     assert!(!enum_labels.contains(&"LIMIT".to_string()));
@@ -414,7 +449,11 @@ table Item {\n\
         source,
         source.find("maybe: int? = None").expect("Option") + "maybe: int? = ".len(),
     );
-    let option_labels = completion_labels(completion_items(&build, document, &option_position));
+    let option_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &option_position,
+    )));
     assert!(option_labels.contains(&"None".to_string()));
     assert!(!option_labels.contains(&"Some".to_string()));
     assert!(!option_labels.contains(&"LIMIT".to_string()));
@@ -427,7 +466,11 @@ table Item {\n\
             .expect("optional constant")
             + "const OUTCOME: int? = ".len(),
     );
-    let result_labels = completion_labels(completion_items(&build, document, &result_position));
+    let result_labels = completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &result_position,
+    )));
     assert!(!result_labels.contains(&"Some".to_string()));
     assert!(result_labels.contains(&"None".to_string()));
     assert!(!result_labels.contains(&"LIMIT".to_string()));
@@ -436,26 +479,30 @@ table Item {\n\
         source,
         source.find("xs: [int] = []").expect("array") + "xs: [int] = ".len(),
     );
-    assert!(
-        completion_labels(completion_items(&build, document, &array_position))
-            .contains(&"[]".to_string())
-    );
+    assert!(completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &array_position
+    )))
+    .contains(&"[]".to_string()));
 
     let dict_position = position_from_byte(
         source,
         source.find("attrs: {string: int} = {}").expect("dict") + "attrs: {string: int} = ".len(),
     );
-    assert!(
-        completion_labels(completion_items(&build, document, &dict_position))
-            .contains(&"{}".to_string())
-    );
+    assert!(completion_labels(wire_items(completion_items(
+        &build,
+        document,
+        &dict_position
+    )))
+    .contains(&"{}".to_string()));
 
     let check_offset = source.find("value > LIMIT").expect("check body");
-    let check_labels = completion_labels(check_expression_completion_items(
+    let check_labels = completion_labels(wire_items(check_expression_completion_items(
         &build,
         document,
         check_offset,
-    ));
+    )));
     assert!(check_labels.contains(&"id".to_string()));
     // 程序体未编译，补全只使用已建立的声明信息。
     assert!(!check_labels.contains(&"value".to_string()));
@@ -468,11 +515,11 @@ table Item {\n\
     let (_method_cleanup, method_build) =
         test_lsp_build("lsp-cft-context-completion-method", &method_source);
     let method_document = first_document(&method_build);
-    let method_labels = completion_labels(check_expression_completion_items(
+    let method_labels = completion_labels(wire_items(check_expression_completion_items(
         &method_build,
         method_document,
         method_offset,
-    ));
+    )));
     assert!(method_labels.contains(&"len".to_string()));
     assert!(method_labels.contains(&"contains".to_string()));
     assert!(method_labels.contains(&"startsWith".to_string()));
@@ -490,19 +537,19 @@ table Item {\n\
         test_lsp_build("lsp-cft-enum-member-completion", &enum_member_source);
     let enum_member_document = first_document(&enum_member_build);
     assert_eq!(
-        completion_labels(completion_items(
+        completion_labels(wire_items(completion_items(
             &enum_member_build,
             enum_member_document,
             &position_from_byte(&enum_member_source, enum_member_offset),
-        )),
+        ))),
         vec!["One".to_string(), "Two".to_string()]
     );
 
-    let method_items = completion_items(
+    let method_items = wire_items(completion_items(
         &method_build,
         method_document,
         &position_from_byte(&method_source, method_offset),
-    );
+    ));
     let insert_text = |label: &str| {
         method_items
             .iter()
@@ -513,9 +560,9 @@ table Item {\n\
     assert_eq!(insert_text("contains"), Some("contains(${1:value})"));
     assert_eq!(insert_text("approxEqual"), None);
 
-    let filtered_method_labels = completion_labels(function_completion_items_for_type(
+    let filtered_method_labels = completion_labels(wire_items(function_completion_items_for_type(
         &CftValueType::Array(Box::new(CftValueType::Int)),
-    ));
+    )));
     assert!(filtered_method_labels.contains(&"len".to_string()));
     assert!(filtered_method_labels.contains(&"isSorted".to_string()));
     assert!(
@@ -526,23 +573,29 @@ table Item {\n\
     assert!(!filtered_method_labels.contains(&"approxEqual".to_string()));
 
     assert_eq!(
-        completion_labels(dot_completion_items(
+        completion_labels(wire_items(dot_completion_items(
             &build,
             document,
             check_offset,
             &[s("Kind")]
-        )),
+        ))),
         vec!["One".to_string(), "Two".to_string()]
     );
-    let ref_field_labels = completion_labels(dot_completion_items(
+    let ref_field_labels = completion_labels(wire_items(dot_completion_items(
         &build,
         document,
         check_offset,
         &[s("target")],
-    ));
+    )));
     assert!(ref_field_labels.contains(&"key".to_string()));
     assert!(ref_field_labels.contains(&"value".to_string()));
-    assert!(dot_completion_items(&build, document, check_offset, &[s("missing")]).is_empty());
+    assert!(wire_items(dot_completion_items(
+        &build,
+        document,
+        check_offset,
+        &[s("missing")]
+    ))
+    .is_empty());
 }
 
 #[test]
@@ -558,40 +611,40 @@ const LIMIT: int = 1;\n";
     let document = first_document(&build);
 
     let const_type_offset = source.find("const LIMIT: int").expect("const") + "const LIMIT: ".len();
-    let const_types = completion_labels(completion_items(
+    let const_types = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, const_type_offset),
-    ));
+    )));
     assert!(const_types.contains(&"int".to_string()));
     assert!(const_types.contains(&"Entity".to_string()));
 
     let alias_offset = source.find("type Alias = Entity").expect("alias") + "type Alias = ".len();
-    let alias_types = completion_labels(completion_items(
+    let alias_types = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, alias_offset),
-    ));
+    )));
     assert!(alias_types.contains(&"string".to_string()));
     assert!(alias_types.contains(&"Entity".to_string()));
 
     let parent_offset =
         source.find("table Child : Entity").expect("parent") + "table Child : ".len();
-    let parents = completion_labels(completion_items(
+    let parents = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, parent_offset),
-    ));
+    )));
     assert!(parents.contains(&"Entity".to_string()));
     assert!(!parents.contains(&"Child".to_string()));
     assert!(!parents.contains(&"Closed".to_string()));
 
     let annotation_offset = source.find("@idAsEnum(Kind").expect("annotation") + "@idAsEnum(".len();
-    let annotation_args = completion_labels(completion_items(
+    let annotation_args = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, annotation_offset),
-    ));
+    )));
     assert!(annotation_args.contains(&"Kind".to_string()));
 }
 
@@ -623,7 +676,13 @@ table Holder {\n\
     assert!(type_of_chain(&build, document, offset, &[s("count"), s("value")]).is_none());
     assert!(field_by_chain(&build, document, offset, &[]).is_none());
     assert!(field_by_chain(&build, document, offset, &[s("target"), s("missing")]).is_none());
-    assert!(field_location_by_chain(&build, document, offset, &[s("count"), s("value")]).is_none());
+    assert!(wire_optional(field_location_by_chain(
+        &build,
+        document,
+        offset,
+        &[s("count"), s("value")]
+    ))
+    .is_none());
 }
 
 #[test]
@@ -670,11 +729,11 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
     let document = first_document(&build);
 
     let default_offset = source.find("fn(input").expect("function default");
-    let default_items = completion_items(
+    let default_items = wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, default_offset),
-    );
+    ));
     let function_item = default_items
         .iter()
         .find(|item| item["label"] == "fn")
@@ -686,11 +745,11 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
     );
 
     let body_offset = source.find("total\n").expect("body expression");
-    let body_labels = completion_labels(completion_items(
+    let body_labels = completion_labels(wire_items(completion_items(
         &build,
         document,
         &position_from_byte(source, body_offset),
-    ));
+    )));
     assert!(
         body_labels.contains(&"input".to_string()),
         "{body_labels:?}"
@@ -724,7 +783,7 @@ fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
 fn formatter_returns_independent_local_text_edits() {
     let source = "table Item {\nname:string;\n  unchanged: string;\nvalue:int;\n}\n";
     let formatted = format_cft(source);
-    let edits = formatting_edits(source, &formatted);
+    let edits = wire_items(formatting_edits(source, &formatted));
 
     assert!(edits.len() >= 4, "expected local edits, got {edits:#?}");
     assert!(edits.iter().all(|edit| {

@@ -1,17 +1,15 @@
 //! 项目提交后的派生状态由单一入口更新，写入命令只声明影响范围。
 
-use std::collections::BTreeSet;
-
 use super::{build, Diagnostics, EditorSession};
-use crate::editor::types::EditorError;
 
 impl EditorSession {
-    pub(super) fn publish_commit(
-        &mut self,
-        written_files: &[String],
-        affected_files: Option<&BTreeSet<String>>,
-        schema_changed: bool,
-    ) -> Result<(), EditorError> {
+    pub(super) fn publish_commit(&mut self, commit: &coflow_project::ProjectCommit) {
+        if !commit.generation_changed {
+            return;
+        }
+        let written_files = &commit.written_files;
+        let affected_files = commit.affected_files.as_ref();
+        let schema_changed = commit.schema_changed;
         self.commit_internal_write(written_files);
         self.diagnostics = Diagnostics::from_queries(self.queries(), &self.project_root);
         self.ref_target_cache.clear();
@@ -34,8 +32,6 @@ impl EditorSession {
             .iter()
             .map(|file| self.project_root.join(file))
             .collect::<Vec<_>>();
-        self.language_server
-            .invalidate_files(&paths)
-            .map_err(EditorError::other)
+        self.language.invalidate(paths);
     }
 }

@@ -1,6 +1,6 @@
+use crate::service::*;
 use coflow_core::schema::syntax::ast::{Annotation, Item};
 use coflow_core::schema::{CftStaticValue, CftType};
-use serde_json::{json, Value};
 use std::fmt::Write as _;
 
 use super::documentation::{annotation_documentation, static_documentation};
@@ -14,7 +14,7 @@ pub(crate) fn hover_at(
     build: &LspBuild,
     document: &LspDocument,
     position: &LspPosition,
-) -> Option<Value> {
+) -> Option<Hover> {
     let offset = byte_offset_from_position(&document.source, *position);
     if is_trivia_position(&document.source, offset) {
         return None;
@@ -187,14 +187,16 @@ fn const_value_to_string(value: &CftStaticValue) -> String {
     }
 }
 
-fn hover_response(contents: &str, range: &Value) -> Value {
-    json!({
-        "contents": {
-            "kind": "markdown",
-            "value": contents
+fn hover_response(contents: &str, range: &LanguageRange) -> Hover {
+    Hover {
+        contents: Markup {
+            kind: ("markdown").to_string(),
+            value: (contents).to_string(),
+            ..Default::default()
         },
-        "range": range
-    })
+        range: (range).clone(),
+        ..Default::default()
+    }
 }
 
 fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {

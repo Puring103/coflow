@@ -5,10 +5,10 @@ use super::super::diagnostics::{
 use super::super::state::LspBuild;
 use super::super::uri::path_to_file_uri;
 use super::{is_cfd_path, OpenDocument};
+use crate::service::LanguageDiagnostic;
 use coflow_project::DiagnosticSet;
 use coflow_project::{normalize_path, Project};
-use coflow_project::{ProjectRuntime, SchemaTextOverride};
-use serde_json::Value;
+use coflow_project::{SchemaCache, SchemaTextOverride};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -33,7 +33,7 @@ pub(crate) struct ValidationInput {
     project: Project,
     project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
-    schema_runtime: Arc<Mutex<ProjectRuntime>>,
+    schema_runtime: Arc<Mutex<SchemaCache>>,
 }
 
 impl ValidationInput {
@@ -42,7 +42,7 @@ impl ValidationInput {
         project: &Project,
         project_diagnostics: Option<&DiagnosticSet>,
         open_documents: &BTreeMap<PathBuf, OpenDocument>,
-        schema_runtime: Arc<Mutex<ProjectRuntime>>,
+        schema_runtime: Arc<Mutex<SchemaCache>>,
     ) -> Self {
         Self {
             revision,
@@ -61,7 +61,7 @@ impl ValidationInput {
 pub(crate) struct ValidationSnapshot {
     pub(super) revision: ValidationRevision,
     pub(super) build: Option<LspBuild>,
-    pub(super) diagnostics: BTreeMap<String, Vec<Value>>,
+    pub(super) diagnostics: BTreeMap<String, Vec<LanguageDiagnostic>>,
     pub(super) active_uris: BTreeSet<String>,
     pub(super) document_versions: BTreeMap<String, i64>,
     pub(super) cfd_documents: BTreeMap<PathBuf, CfdDocumentSnapshot>,

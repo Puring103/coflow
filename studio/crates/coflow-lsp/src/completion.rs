@@ -1,10 +1,10 @@
 // `${1:name}` 是 LSP snippet 占位符，不是 Rust 格式化参数。
 #![allow(clippy::literal_string_with_formatting_args)]
 
+use crate::service::*;
 use coflow_core::schema::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
 use coflow_core::schema::syntax::lexer::{lex, TokenKind};
 use coflow_core::schema::{CftCheckBuiltin, CftStaticValue, ModuleId};
-use serde_json::{json, Map, Value};
 
 use super::documentation::{
     AnnotationCompletion, ANNOTATIONS, KEYWORDS, LITERALS, PRIMITIVE_TYPES,
@@ -37,7 +37,7 @@ pub(crate) fn completion_items(
     build: &LspBuild,
     document: &LspDocument,
     position: &LspPosition,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     let offset = byte_offset_from_position(&document.source, *position);
     let line_prefix = line_prefix_at(&document.source, offset);
     let scope = completion_scope(document, offset);
@@ -116,7 +116,7 @@ pub(crate) fn completion_items(
     }
 }
 
-pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
+pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<LanguageCompletion> {
     if top_level_needs_type_keyword(line_prefix) {
         return ["table", "data"]
             .into_iter()
@@ -158,7 +158,7 @@ pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     .collect()
 }
 
-fn type_member_completion_items() -> Vec<Value> {
+fn type_member_completion_items() -> Vec<LanguageCompletion> {
     let mut items = vec![snippet_completion_item(
         "field",
         "${1:field}: ${2:string};",
@@ -171,7 +171,7 @@ fn type_member_completion_items() -> Vec<Value> {
     items
 }
 
-fn enum_member_completion_items() -> Vec<Value> {
+fn enum_member_completion_items() -> Vec<LanguageCompletion> {
     vec![snippet_completion_item(
         "variant",
         "${1:Variant},",
@@ -184,7 +184,7 @@ pub(crate) fn check_expression_completion_items(
     build: &LspBuild,
     document: &LspDocument,
     offset: usize,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     if is_records_type_context(&document.source, offset) {
         return named_type_completion_items(build);
     }
@@ -237,7 +237,7 @@ fn is_records_type_context(source: &str, offset: usize) -> bool {
     last_ident(prefix).is_some_and(|ident| ident == "records")
 }
 
-fn literal_completion_items() -> Vec<Value> {
+fn literal_completion_items() -> Vec<LanguageCompletion> {
     LITERALS
         .iter()
         .map(|(label, documentation)| {
@@ -251,7 +251,7 @@ fn literal_completion_items() -> Vec<Value> {
         .collect()
 }
 
-fn function_completion_items() -> Vec<Value> {
+fn function_completion_items() -> Vec<LanguageCompletion> {
     CftCheckBuiltin::ALL
         .into_iter()
         .map(builtin_completion_item)
@@ -260,7 +260,7 @@ fn function_completion_items() -> Vec<Value> {
 
 pub(crate) fn function_completion_items_for_type(
     receiver: &coflow_core::schema::CftValueType,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     CftCheckBuiltin::ALL
         .into_iter()
         .filter(|builtin| builtin_supports_receiver(*builtin, receiver))
@@ -268,7 +268,7 @@ pub(crate) fn function_completion_items_for_type(
         .collect()
 }
 
-fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
+fn builtin_completion_item(builtin: CftCheckBuiltin) -> LanguageCompletion {
     let label = builtin.name();
     let mut item = completion_item(
         label,
@@ -280,12 +280,8 @@ fn builtin_completion_item(builtin: CftCheckBuiltin) -> Value {
         .map(|index| format!("${{{index}:value}}"))
         .collect::<Vec<_>>()
         .join(", ");
-    insert_object_field(
-        &mut item,
-        "insertText",
-        json!(format!("{label}({arguments})")),
-    );
-    insert_object_field(&mut item, "insertTextFormat", json!(2));
+    item.insert_text = Some(format!("{label}({arguments})").to_string());
+    item.insert_text_format = Some(2);
     item
 }
 
@@ -340,7 +336,7 @@ impl<'a> From<&'a coflow_core::schema::CftValueType> for TypeRefLike {
     }
 }
 
-fn check_structure_completion_items() -> Vec<Value> {
+fn check_structure_completion_items() -> Vec<LanguageCompletion> {
     [
         ("if", "if ${1:condition} {\n\t${2}\n}"),
         ("for", "for ${1:item} in ${2:items} {\n\t${3}\n}"),
@@ -359,7 +355,7 @@ fn is_method_completion_context(source: &str, offset: usize) -> bool {
         .is_some_and(|ch| ch == '.')
 }
 
-fn const_value_completion_items() -> Vec<Value> {
+fn const_value_completion_items() -> Vec<LanguageCompletion> {
     literal_completion_items()
 }
 
@@ -367,7 +363,7 @@ fn const_value_completion_items_for_context(
     build: &LspBuild,
     document: &LspDocument,
     offset: usize,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     let ty = document.ast().and_then(|ast| {
         ast.items.iter().find_map(|item| match item {
             Item::Const(constant)
@@ -392,7 +388,7 @@ fn const_value_completion_items_for_context(
 fn field_default_completion_items(
     build: &LspBuild,
     field: Option<&coflow_core::schema::syntax::ast::FieldDef>,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     let mut items = Vec::new();
     let Some(field) = field else {
         items.extend(literal_completion_items());
@@ -405,7 +401,11 @@ fn field_default_completion_items(
     items
 }
 
-fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
+fn collect_default_items_for_type(
+    build: &LspBuild,
+    ty: &TypeRef,
+    items: &mut Vec<LanguageCompletion>,
+) {
     match &ty.kind {
         TypeRefKind::Bool => items.extend(literal_completion_items()),
         TypeRefKind::Int
@@ -490,7 +490,7 @@ pub(crate) fn dot_completion_items(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     if chain.len() == 1 {
         if let Some(enum_def) = build.schema().and_then(|container| {
             container
@@ -537,7 +537,7 @@ pub(crate) fn dot_completion_items(
         .collect()
 }
 
-fn type_completion_items(build: &LspBuild) -> Vec<Value> {
+fn type_completion_items(build: &LspBuild) -> Vec<LanguageCompletion> {
     let mut items = Vec::new();
     for (label, documentation) in PRIMITIVE_TYPES {
         let insert_text = match *label {
@@ -551,8 +551,8 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             Some(documentation),
         );
         if let Some(insert_text) = insert_text {
-            insert_object_field(&mut item, "insertText", json!(insert_text));
-            insert_object_field(&mut item, "insertTextFormat", json!(2));
+            item.insert_text = Some(insert_text.to_string());
+            item.insert_text_format = Some(2);
         }
         items.push(item);
     }
@@ -621,7 +621,7 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     items
 }
 
-fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
+fn named_type_completion_items(build: &LspBuild) -> Vec<LanguageCompletion> {
     let mut items = Vec::new();
     if let Some(container) = build.schema() {
         for ty in container.all_types() {
@@ -691,7 +691,10 @@ fn type_ref_source(ty: &TypeRef) -> String {
     }
 }
 
-fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
+fn inheritable_type_completion_items(
+    build: &LspBuild,
+    line_prefix: &str,
+) -> Vec<LanguageCompletion> {
     let words = line_prefix.split_whitespace().collect::<Vec<_>>();
     let declaration = words
         .iter()
@@ -742,7 +745,10 @@ fn type_descends_from(
     false
 }
 
-fn annotation_argument_completion_items(build: &LspBuild, line_prefix: &str) -> Option<Vec<Value>> {
+fn annotation_argument_completion_items(
+    build: &LspBuild,
+    line_prefix: &str,
+) -> Option<Vec<LanguageCompletion>> {
     let trimmed = line_prefix.trim_end();
     let (annotation, detail, labels): (&str, &str, Vec<String>) =
         if annotation_argument_open(trimmed, "@dimension") {
@@ -784,7 +790,7 @@ fn annotation_argument_open(line_prefix: &str, annotation: &str) -> bool {
     suffix.trim_start().starts_with('(') && !suffix.contains(')')
 }
 
-fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<Value>) {
+fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<LanguageCompletion>) {
     for document in build.documents.values() {
         let Some(ast) = &document.ast else {
             continue;
@@ -802,7 +808,7 @@ fn append_type_alias_completion_items(build: &LspBuild, items: &mut Vec<Value>) 
     }
 }
 
-fn const_completion_items(build: &LspBuild) -> Vec<Value> {
+fn const_completion_items(build: &LspBuild) -> Vec<LanguageCompletion> {
     let mut items = Vec::new();
     if let Some(container) = build.schema() {
         for constant in container.all_consts() {
@@ -817,7 +823,7 @@ fn const_completion_items(build: &LspBuild) -> Vec<Value> {
     items
 }
 
-fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value> {
+fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<LanguageCompletion> {
     let mut items = Vec::new();
     let Some(container) = build.schema() else {
         return items;
@@ -850,18 +856,22 @@ fn const_value_assignable_to_type(value: &CftStaticValue, ty: &TypeRef) -> bool 
     }
 }
 
-fn completion_item(label: &str, kind: u8, detail: &str, documentation: Option<&str>) -> Value {
-    let mut item = Map::new();
-    item.insert("label".to_string(), json!(label));
-    item.insert("kind".to_string(), json!(kind));
-    item.insert("detail".to_string(), json!(detail));
-    if let Some(documentation) = documentation {
-        item.insert("documentation".to_string(), json!(documentation));
+fn completion_item(
+    label: &str,
+    kind: u8,
+    detail: &str,
+    documentation: Option<&str>,
+) -> LanguageCompletion {
+    LanguageCompletion {
+        label: label.to_owned(),
+        kind: Some(u32::from(kind)),
+        detail: Some(detail.to_owned()),
+        documentation: documentation.map(str::to_owned),
+        ..Default::default()
     }
-    Value::Object(item)
 }
 
-fn keyword_snippet_completion_item(label: &str, insert_text: &str) -> Option<Value> {
+fn keyword_snippet_completion_item(label: &str, insert_text: &str) -> Option<LanguageCompletion> {
     let documentation = KEYWORDS
         .iter()
         .find_map(|(keyword, documentation)| (*keyword == label).then_some(*documentation))?;
@@ -878,39 +888,29 @@ fn snippet_completion_item(
     insert_text: &str,
     detail: &str,
     documentation: &str,
-) -> Value {
+) -> LanguageCompletion {
     let mut item = completion_item(label, COMPLETION_KIND_FUNCTION, detail, Some(documentation));
-    insert_object_field(&mut item, "insertText", json!(insert_text));
-    insert_object_field(&mut item, "insertTextFormat", json!(2));
+    item.insert_text = Some(insert_text.to_string());
+    item.insert_text_format = Some(2);
     item
 }
 
-fn annotation_completion_item(annotation: &AnnotationCompletion) -> Value {
+fn annotation_completion_item(annotation: &AnnotationCompletion) -> LanguageCompletion {
     let mut item = completion_item(
         annotation.label,
         COMPLETION_KIND_PROPERTY,
         annotation.detail,
         Some(annotation.documentation),
     );
-    insert_object_field(&mut item, "insertText", json!(annotation.insert_text));
-    insert_object_field(
-        &mut item,
-        "sortText",
-        json!(format!("0_{}", annotation.label)),
-    );
+    item.insert_text = Some(annotation.insert_text.to_string());
+    item.sort_text = Some(format!("0_{}", annotation.label).to_string());
     if annotation.insert_text.contains('$') {
-        insert_object_field(&mut item, "insertTextFormat", json!(2));
+        item.insert_text_format = Some(2);
     }
     item
 }
 
-fn insert_object_field(object: &mut Value, key: &str, value: Value) {
-    if let Value::Object(fields) = object {
-        fields.insert(key.to_string(), value);
-    }
-}
-
-pub(crate) fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
+pub(crate) fn annotation_completion_items(scope: CompletionScope) -> Vec<LanguageCompletion> {
     ANNOTATIONS
         .iter()
         .filter(|annotation| annotation_applies_to_scope(annotation.label, scope))
@@ -1119,7 +1119,7 @@ fn enum_variant_completion_items(
     build: &LspBuild,
     document: &LspDocument,
     enum_name: &str,
-) -> Vec<Value> {
+) -> Vec<LanguageCompletion> {
     if let Some(enum_def) = build
         .schema()
         .and_then(|container| container.resolve_enum(enum_name))
@@ -1137,7 +1137,7 @@ fn enum_variant_completion_items(
         .collect()
 }
 
-fn enum_variant_completion_item(enum_name: &str, variant_name: &str) -> Value {
+fn enum_variant_completion_item(enum_name: &str, variant_name: &str) -> LanguageCompletion {
     completion_item(
         variant_name,
         COMPLETION_KIND_ENUM_MEMBER,
