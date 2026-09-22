@@ -1,35 +1,26 @@
-[package]
-name = "coflow"
-version = "0.11.0"
-edition = "2021"
-description = "Project-level command-line tools for Coflow."
-license = "Apache-2.0"
-repository = "https://github.com/Puring103/coflow"
-publish = false
-
-[lints]
-workspace = true
-
-[[bin]]
-name = "coflow"
-path = "src/main.rs"
-
 [workspace]
 members = [
-    "crates/coflow-format",
-    "crates/coflow-language",
-    "crates/coflow-diagnostics",
-    "crates/coflow-core",
-    "crates/coflow-ffi",
-    "crates/coflow-codegen",
-    "crates/coflow-lsp",
-    "crates/coflow-runtime",
-    "crates/coflow-staging",
-    "crates/coflow-codegen-csharp",
-    "editors/cfd-editor/core",
-    "editors/cfd-editor/src-tauri",
+    # Engine 的生产依赖全部位于 engine 内。
+    "engine/crates/coflow-language",
+    "engine/crates/coflow-diagnostics",
+    "engine/crates/coflow-core",
+    "engine/crates/coflow-ffi",
+    # Studio 复用 Engine，负责项目与制作工具。
+    "studio/cli",
+    "studio/crates/coflow-project",
+    "studio/crates/coflow-format",
+    "studio/crates/coflow-codegen",
+    "studio/crates/coflow-codegen-csharp",
+    "studio/crates/coflow-lsp",
+    "studio/crates/coflow-staging",
+    "studio/editors/cfd-editor/core",
+    "studio/editors/cfd-editor/src-tauri",
 ]
+default-members = ["studio/cli"]
 resolver = "2"
+
+[workspace.package]
+version = "0.11.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -52,21 +43,6 @@ unimplemented = "warn"
 unreachable = "warn"
 dbg_macro = "warn"
 redundant_pub_crate = "allow"
-
-[dependencies]
-atomicwrites = "0.4.4"
-clap = { version = "4", features = ["derive"] }
-coflow-format = { path = "crates/coflow-format" }
-coflow-lsp = { path = "crates/coflow-lsp" }
-coflow-runtime = { path = "crates/coflow-runtime" }
-dirs = "6"
-include_dir = "0.7"
-self_update = { version = "0.42", default-features = false, features = ["archive-tar", "compression-flate2", "rustls"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-
-[dev-dependencies]
-tempfile = "3"
 
 [profile.release]
 lto = "thin"

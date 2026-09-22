@@ -30,21 +30,21 @@ pretty printer，不改变 CLI 命令行为，也不改变 LSP 对外协议。
 | `coflow-checker` | check 求值、量词迭代及其 `EvaluationLimits` 执行预算 | parser/compiler 的结构限制 |
 | `coflow-lsp` | formatting capability、document snapshot、解析有效性策略、字节位置到 LSP range 转换、最小文本编辑 | 排版规则和格式化状态机 |
 | 根 `coflow` | `coflow format` 的目标发现、去重、`--check`、原子写入和终端输出 | 语言排版规则 |
-| `coflow-runtime` | 组合语言结构限制与 checker 执行预算、CFD 语义写入和规范 writer 输出 | 通用源码 formatter 和 LSP 适配 |
+| `coflow-project` | 组合语言结构限制与 checker 执行预算、CFD 语义写入和规范 writer 输出 | 通用源码 formatter 和 LSP 适配 |
 
 依赖方向固定为：
 
 ```text
 coflow-format     -> coflow-language
 coflow-checker    -> coflow-language
-coflow-runtime    -> coflow-language + coflow-checker
-coflow-lsp        -> coflow-language + coflow-runtime + coflow-format
-coflow CLI        -> coflow-runtime + coflow-lsp + coflow-format
-cfd-editor-core   -> coflow-runtime + coflow-lsp
+coflow-project    -> coflow-language + coflow-checker
+coflow-lsp        -> coflow-language + coflow-project + coflow-format
+coflow CLI        -> coflow-project + coflow-lsp + coflow-format
+cfd-editor-core   -> coflow-project + coflow-lsp
 ```
 
-`coflow-format` 不依赖 `coflow-runtime` 或 `coflow-lsp`。`coflow-language` 不反向依赖
-`coflow-format`。`coflow-runtime` 可以在测试中使用 `coflow-format` 验证 writer 的规范输出，但生产
+`coflow-format` 不依赖 `coflow-project` 或 `coflow-lsp`。`coflow-language` 不反向依赖
+`coflow-format`。`coflow-project` 可以在测试中使用 `coflow-format` 验证 writer 的规范输出，但生产
 依赖中不引入 formatter。
 
 ## 3. `coflow-language` 最终内部结构
@@ -101,7 +101,7 @@ pub struct EvaluationLimits {
 避免调用方通过调整一种含义模糊的统一计数间接改变另一类限制。checker 内部预算和超限诊断随该类型
 迁移，不再从 `coflow-language` 导入 checker 专用 `StructureKind`。
 
-`coflow-runtime` 提供项目运行时使用的组合配置，分别把 `StructuralLimits` 传给语言、model 构建路径，
+`coflow-project` 提供项目运行时使用的组合配置，分别把 `StructuralLimits` 传给语言、model 构建路径，
 把 `EvaluationLimits` 传给 checker。两组限制使用独立默认值；内部安全上限无需作为项目配置公开。
 
 共享词法层至少统一以下规则：
@@ -267,7 +267,7 @@ runtime writer 继续负责 schema-guided CFD 精确写入，并直接生成符�
    专用错误构造。
 5. 将 schema dependency 和 check index 构造改为显式去重的有界图遍历，统一消耗
    `max_analysis_steps`，并增加大图、重复边、循环依赖和预算边界测试。
-6. 由 `coflow-runtime` 组合两组默认限制；删除 runtime 和 checker 对语言层 limits 的兼容 re-export。
+6. 由 `coflow-project` 组合两组默认限制；删除 runtime 和 checker 对语言层 limits 的兼容 re-export。
 7. 拆分现有 checker budget 测试，分别验证深度、节点、总工作量和迭代次数达到边界前后的一致行为。
 
 完成条件：language 不包含求值预算概念；checker 不复用 `StructuralBudget`；runtime 调用路径明确传递两组
@@ -288,7 +288,7 @@ runtime writer 继续负责 schema-guided CFD 精确写入，并直接生成符�
 
 ### 阶段 D：建立 crate 与迁移测试所有权
 
-1. 新建 workspace member `crates/coflow-format`。
+1. 新建 workspace member `studio/crates/coflow-format`。
 2. 将完整格式化行为测试迁移到新 crate，保持期望输出不变。
 3. 先以行为等价方式迁移 formatter，切换 CLI 和 LSP 依赖。
 4. 删除 `coflow-language::format_cft`、`coflow-language::format_cfd` 及其 formatting 模块。
@@ -335,11 +335,11 @@ cargo test --workspace
 
 ```powershell
 rg -n "coflow_language::.*format_|coflow_language::\{[^}]*format_|pub.*format_cft|pub.*format_cfd" . --glob '!target/**'
-rg -n "is_alphabetic|is_alphanumeric" crates/coflow-language/src --glob '*.rs'
+rg -n "is_alphabetic|is_alphanumeric" engine/crates/coflow-language/src --glob '*.rs'
 rg -n "limits::Span|pub use crate::limits::Span" . --glob '!target/**'
-rg -n "CheckEvaluation|QuantifierIteration|BudgetAxis::Work|max_work" crates/coflow-language --glob '*.rs'
+rg -n "CheckEvaluation|QuantifierIteration|BudgetAxis::Work|max_work" engine/crates/coflow-language --glob '*.rs'
 rg -n "StructuralBudget" crates/coflow-checker --glob '*.rs'
-rg -n "fn each_type|fn each_enum|struct SchemaCompiler" crates/coflow-language/src/schema --glob '*.rs'
+rg -n "fn each_type|fn each_enum|struct SchemaCompiler" engine/crates/coflow-language/src/schema --glob '*.rs'
 cargo tree -p coflow-format
 cargo tree -p coflow-lsp
 ```

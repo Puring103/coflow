@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
-import cfdGrammar from '../../../editors/vscode-coflow/syntaxes/cfd.tmLanguage.json'
-import cftGrammar from '../../../editors/vscode-coflow/syntaxes/cft.tmLanguage.json'
+import cfdGrammar from '../../../studio/editors/vscode-coflow/syntaxes/cfd.tmLanguage.json'
+import cftGrammar from '../../../studio/editors/vscode-coflow/syntaxes/cft.tmLanguage.json'
 
 const pagesBase = process.env.VITEPRESS_BASE ?? (process.env.GITHUB_ACTIONS ? '/coflow/' : '/')
 const projectUrl = 'https://github.com/Puring103/coflow'

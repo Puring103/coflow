@@ -4,11 +4,11 @@
 
 ## 包与 ABI
 
-Unity 包目录为 `runtimes/csharp/src/Coflow.Runtime`，最低 Unity 版本为 2022.1，
+Unity 包目录为 `engine/runtimes/csharp/src/Coflow.Runtime`，最低 Unity 版本为 2022.1，
 API 级别为 .NET Standard 2.1。包装使用固定签名的 C ABI、创建线程拥有型句柄、静态回调和
 `AOT.MonoPInvokeCallback`；生成类型直接调用静态工厂，不使用 Reflection.Emit 或运行时泛型代码生成。
 
-ABI 定义位于 `crates/coflow-ffi/include/coflow.h`。所有文本为 UTF-8，长度不含结尾零。
+ABI 定义位于 `engine/crates/coflow-ffi/include/coflow.h`。所有文本为 UTF-8，长度不含结尾零。
 句柄使用 64 位整数，指针和长度使用目标平台的指针宽度；返回结构使用 C 自然对齐。
 返回缓冲区由调用方复制后释放，Host 回调返回的缓冲区所有权交给 Rust。
 

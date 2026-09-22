@@ -11,12 +11,12 @@ $unity = (Resolve-Path -LiteralPath $UnityEditor).Path
 foreach ($directory in @("Assets/Runtime", "Assets/Generated", "Assets/Editor", "Assets/Resources", "Assets/Plugins/x86_64", "Packages", "ProjectSettings")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $project $directory) | Out-Null
 }
-Copy-Item -Path "$repo/runtimes/csharp/src/Coflow.Runtime/src/*.cs" -Destination "$project/Assets/Runtime" -Force
-Copy-Item -Path "$repo/runtimes/csharp/tests/integration/generated/*.cs" -Destination "$project/Assets/Generated" -Force
-Copy-Item -LiteralPath "$repo/runtimes/csharp/tests/integration/generated/coflow.contract" -Destination "$project/Assets/Resources/coflow.bytes" -Force
+Copy-Item -Path "$repo/engine/runtimes/csharp/src/Coflow.Runtime/src/*.cs" -Destination "$project/Assets/Runtime" -Force
+Copy-Item -Path "$repo/engine/runtimes/csharp/tests/integration/generated/*.cs" -Destination "$project/Assets/Generated" -Force
+Copy-Item -LiteralPath "$repo/engine/runtimes/csharp/tests/integration/generated/coflow.contract" -Destination "$project/Assets/Resources/coflow.bytes" -Force
 Copy-Item -LiteralPath "$repo/target/release/coflow_ffi.dll" -Destination "$project/Assets/Plugins/x86_64/coflow_ffi.dll" -Force
-Copy-Item -LiteralPath "$repo/runtimes/csharp/tests/unity/CoflowSmoke.cs" -Destination "$project/Assets/CoflowSmoke.cs" -Force
-Copy-Item -LiteralPath "$repo/runtimes/csharp/tests/unity/Editor/SmokeBuild.cs" -Destination "$project/Assets/Editor/SmokeBuild.cs" -Force
+Copy-Item -LiteralPath "$repo/engine/runtimes/csharp/tests/unity/CoflowSmoke.cs" -Destination "$project/Assets/CoflowSmoke.cs" -Force
+Copy-Item -LiteralPath "$repo/engine/runtimes/csharp/tests/unity/Editor/SmokeBuild.cs" -Destination "$project/Assets/Editor/SmokeBuild.cs" -Force
 Set-Content -LiteralPath "$project/Packages/manifest.json" -Value '{"dependencies": {"com.unity.modules.jsonserialize": "1.0.0"}}' -Encoding utf8
 $editorVersion = (Get-Item -LiteralPath $unity).Directory.Parent.Name
 Set-Content -LiteralPath "$project/ProjectSettings/ProjectVersion.txt" -Value "m_EditorVersion: $editorVersion" -Encoding utf8

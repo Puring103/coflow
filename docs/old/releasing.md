@@ -6,7 +6,7 @@ installer, macOS CLI archives, and the VS Code extension.
 ## Updater signing
 
 The updater public key is committed in
-`editors/cfd-editor/src-tauri/tauri.conf.json`. The matching private key
+`studio/editors/cfd-editor/src-tauri/tauri.conf.json`. The matching private key
 must never be committed. Configure its complete contents as the repository
 secret `TAURI_SIGNING_PRIVATE_KEY`:
 
@@ -25,7 +25,7 @@ builds the NSIS installer first and then signs it explicitly:
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$HOME/.tauri/coflow-updater.key"
 $args = @(
-  "editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js",
+  "studio/editors/cfd-editor/node_modules/@tauri-apps/cli/tauri.js",
   "signer", "sign", "--password", "", "PATH_TO_INSTALLER"
 )
 & node $args
@@ -60,7 +60,7 @@ install while the full product is present.
 macOS archives have no installer hook. Users run `coflow skill install -g`
 after placing the CLI on `PATH`.
 
-Release tags must match the root Cargo package version exactly (`vX.Y.Z`).
+Release tags must match the root Cargo workspace package version exactly (`vX.Y.Z`).
 `RELEASE_NOTES.md` contains all user-visible changes for the current `X.Y`
 release series through the version being published. A series-opening `X.Y.0`
 release starts a new file, and each `X.Y.Z` patch updates that same series note

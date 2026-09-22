@@ -25,7 +25,7 @@
 | `coflow-core::vm` | 已编译程序与参数 | 返回值或带来源和调用栈的执行错误 |
 | `coflow-core::runtime` | 契约、配置数据、Host 绑定 | 值访问、调用入口、生命周期、动态值保活 |
 | `coflow-core::check` | Runtime、所选记录及规则、检查限制 | 检查报告、执行错误和完成状态 |
-| `coflow-runtime` | 项目路径与请求 | 文件发现、核心调用、诊断展示和工具命令 |
+| `coflow-project` | 项目路径与请求 | 文件发现、核心调用、诊断展示和工具命令 |
 | `coflow-ffi` | C ABI 参数和句柄 | 参数校验、Host 回调适配、核心调用和资源释放 |
 
 函数语法、类型检查和 CFD 函数编译在关闭 `cft-compiler` 时仍然可用。
@@ -229,7 +229,7 @@ Runtime 固定在创建线程执行，同线程同步重入共享当前用量。
 C ABI 的 `CALL(29)` 接收显式小端参数序列并返回带 tag 的值，Host 回调 operation 2
 传递成员名与同格式参数；`RELEASE_VALUE(42)` 释放动态返回值保活，`COLLECT(43)` 显式回收，
 `RETAIN_VALUE(44)` 为借用的子值增加独立保活。
-具体字节载荷与所有权见 `crates/coflow-ffi/include/coflow.h`，无需 C# 执行器。
+具体字节载荷与所有权见 `engine/crates/coflow-ffi/include/coflow.h`，无需 C# 执行器。
 
 ## 10. 测试层次
 
@@ -277,7 +277,7 @@ cargo test --workspace
 2026-09-16，从仓库根目录执行 `cargo check --workspace` 与 `cargo test --workspace`，
 两项均通过。工作区测试共 65 组结果、502 项通过、0 失败、0 忽略，包含现有 CFT/CFD、
 项目命令、编辑后端、LSP、格式化、契约与新增运行时测试。
-使用 `CARGO_TARGET_DIR=/tmp/coflow-runtime-target`、`CARGO_INCREMENTAL=0` 隔离共享磁盘编译缓存。
+使用 `CARGO_TARGET_DIR=/tmp/coflow-project-target`、`CARGO_INCREMENTAL=0` 隔离共享磁盘编译缓存。
 测试与构建均为 headless，没有启动或中断编辑器。
 
 ## 程序发布与线程资源

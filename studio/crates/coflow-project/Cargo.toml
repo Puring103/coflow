@@ -1,0 +1,35 @@
+[package]
+name = "coflow-project"
+version = "0.11.0"
+edition = "2021"
+description = "Shared Coflow project configuration, source workflows, and commands."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+ts-export = [
+    "dep:ts-rs",
+    "coflow-core/ts-export",
+]
+
+[dependencies]
+coflow-language = { path = "../../../engine/crates/coflow-language" }
+coflow-core = { path = "../../../engine/crates/coflow-core" }
+coflow-codegen = { path = "../coflow-codegen" }
+coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
+coflow-staging = { path = "../coflow-staging" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+ts-rs = { version = "10", optional = true }
+walkdir = "2"
+tempfile = "3"
+dunce = "1"
+gix = { version = "0.87", default-features = false, features = ["sha1", "sha256", "excludes", "blob-diff"] }
+
+[dev-dependencies]
+coflow-format = { path = "../coflow-format" }

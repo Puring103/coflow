@@ -10,7 +10,7 @@
 ## 1. 所有权边界
 
 Rust 是唯一权威 Runtime。`coflow-core` 持有不可变契约、数据模型、运行时值、函数程序、VM、check
-和 Host 抽象；`coflow-runtime` 负责项目配置、文件发现、CFT 编译、CFD 加载、诊断、写回和产物发布；
+和 Host 抽象；`coflow-project` 负责项目配置、文件发现、CFT 编译、CFD 加载、诊断、写回和产物发布；
 `coflow-ffi` 只暴露句柄式 C ABI 并适配 Host 回调。
 
 C# `Coflow.Runtime` 不解析 CFT/CFD，不保存第二份契约或记录模型，也不编译、链接或执行 Coflow 函数。
@@ -44,7 +44,7 @@ using var runtime = builder.Build();
 ```
 
 `Generated.LoadContract` 校验契约与生成绑定的 identity。`AddSource` 将文本和可选诊断标签传入 Rust；
-C# 不自行发现项目文件。项目级路径解析属于 `coflow-runtime` 和 CLI/Editor，嵌入式 C# 调用方显式
+C# 不自行发现项目文件。项目级路径解析属于 `coflow-project` 和 CLI/Editor，嵌入式 C# 调用方显式
 提供输入。
 
 Builder 累积的 CFD 来源不创建语言命名空间。Rust 在 `Build()` 时统一解析记录、引用、默认值和函数，

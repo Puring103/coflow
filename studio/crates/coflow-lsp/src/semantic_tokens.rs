@@ -1,0 +1,618 @@
+use coflow_core::schema::syntax::ast::{
+    Annotation, AnnotationArg, DefaultExpr, DefaultExprKind, Item, TypeRef, TypeRefKind,
+};
+use coflow_core::schema::syntax::lexer::{lex, TokenKind};
+use coflow_core::schema::ModuleId;
+use coflow_language::source::Span;
+
+use super::{enum_name_exists, LspBuild, LspDocument};
+
+pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
+    "recordKey",
+    "type",
+    "enum",
+    "enumMember",
+    "property",
+    "variable",
+    "function",
+    "keyword",
+    "number",
+    "string",
+    "comment",
+    "operator",
+    "decorator",
+    "parameter",
+];
+pub(crate) const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
+    &["declaration", "reference", "path", "record", "schema"];
+
+pub(crate) const SEM_RECORD_KEY: u32 = 0;
+pub(crate) const SEM_TYPE: u32 = 1;
+pub(crate) const SEM_ENUM: u32 = 2;
+pub(crate) const SEM_ENUM_MEMBER: u32 = 3;
+pub(crate) const SEM_PROPERTY: u32 = 4;
+pub(crate) const SEM_VARIABLE: u32 = 5;
+pub(crate) const SEM_FUNCTION: u32 = 6;
+pub(crate) const SEM_KEYWORD: u32 = 7;
+pub(crate) const SEM_NUMBER: u32 = 8;
+pub(crate) const SEM_STRING: u32 = 9;
+pub(crate) const SEM_COMMENT: u32 = 10;
+pub(crate) const SEM_OPERATOR: u32 = 11;
+pub(crate) const SEM_DECORATOR: u32 = 12;
+pub(crate) const SEM_PARAMETER: u32 = 13;
+
+pub(crate) const MOD_DECLARATION: u32 = 1 << 0;
+pub(crate) const MOD_REFERENCE: u32 = 1 << 1;
+pub(crate) const MOD_PATH: u32 = 1 << 2;
+pub(crate) const MOD_RECORD: u32 = 1 << 3;
+pub(crate) const MOD_SCHEMA: u32 = 1 << 4;
+
+#[derive(Clone)]
+pub(crate) struct RawSemanticToken {
+    pub(crate) line: usize,
+    pub(crate) character: usize,
+    pub(crate) length: usize,
+    pub(crate) token_type: u32,
+    pub(crate) token_modifiers: u32,
+}
+
+/// 收集阶段的字节跨度 token。
+///
+/// 逐 token 立即换算行列位置需要从文件头扫描，整体会退化成二次复杂度；这里先
+/// 存字节跨度，最后用一次行索引统一换算。
+#[derive(Clone, Copy)]
+pub(crate) struct ByteSpanToken {
+    start: usize,
+    end: usize,
+    token_type: u32,
+    token_modifiers: u32,
+}
+
+pub(crate) fn push_semantic_span(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    token_modifiers: u32,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    let end = span.end.min(source.len());
+    if end <= span.start {
+        return;
+    }
+    tokens.push(ByteSpanToken {
+        start: span.start,
+        end,
+        token_type,
+        token_modifiers,
+    });
+}
+
+pub(crate) fn push_semantic_span_plain(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    push_semantic_span(source, span, token_type, 0, tokens);
+}
+
+pub(crate) fn push_multiline_semantic_span(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    token_modifiers: u32,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    let mut start = span.start;
+    for line in source[span.start..span.end.min(source.len())].split_inclusive('\n') {
+        let content_len = line.trim_end_matches(['\r', '\n']).len();
+        if content_len != 0 {
+            push_semantic_span(
+                source,
+                Span::new(start, start + content_len),
+                token_type,
+                token_modifiers,
+                tokens,
+            );
+        }
+        start += line.len();
+    }
+}
+
+pub(crate) fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
+    tokens.sort_by_key(|token| (token.line, token.character, token.length));
+    let mut deduped = Vec::new();
+    let mut last_end = (0, 0);
+    let mut has_last = false;
+    for token in tokens {
+        if has_last && (token.line, token.character) < last_end {
+            continue;
+        }
+        last_end = (token.line, token.character + token.length);
+        has_last = true;
+        deduped.push(token);
+    }
+
+    let mut data = Vec::with_capacity(deduped.len() * 5);
+    let mut previous_line = 0;
+    let mut previous_character = 0;
+    for token in deduped {
+        let delta_line = token.line - previous_line;
+        let delta_start = if delta_line == 0 {
+            token.character - previous_character
+        } else {
+            token.character
+        };
+        data.push(usize_to_u32_saturating(delta_line));
+        data.push(usize_to_u32_saturating(delta_start));
+        data.push(usize_to_u32_saturating(token.length));
+        data.push(token.token_type);
+        data.push(token.token_modifiers);
+        previous_line = token.line;
+        previous_character = token.character;
+    }
+    data
+}
+
+fn usize_to_u32_saturating(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+/// 用一次行索引把字节跨度换算成行列 token，跨行或空跨度的 token 在此丢弃。
+pub(crate) fn byte_spans_to_raw_tokens(
+    source: &str,
+    mut tokens: Vec<ByteSpanToken>,
+) -> Vec<RawSemanticToken> {
+    tokens.sort_by_key(|token| (token.start, token.end));
+    let index = coflow_project::LineIndex::new(source);
+    tokens
+        .into_iter()
+        .filter_map(|token| {
+            let start = index.position(source, token.start);
+            let end = index.position(source, token.end);
+            if start.line != end.line || end.character <= start.character {
+                return None;
+            }
+            Some(RawSemanticToken {
+                line: start.line,
+                character: start.character,
+                length: end.character - start.character,
+                token_type: token.token_type,
+                token_modifiers: token.token_modifiers,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<ByteSpanToken>) {
+    let mut line_start = 0;
+    for line in source.split_inclusive('\n') {
+        if let Some(comment_start) = comment_start_in_line(line) {
+            let start = line_start + comment_start;
+            let end = line_start + line.trim_end_matches(['\r', '\n']).len();
+            push_semantic_span_plain(source, Span::new(start, end), SEM_COMMENT, tokens);
+        }
+        line_start += line.len();
+    }
+}
+
+pub(crate) fn comment_start_in_line(line: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+        } else if ch == '#' {
+            return Some(index);
+        }
+    }
+    None
+}
+
+pub(crate) fn semantic_token_data(build: &LspBuild, document: &LspDocument) -> Vec<u32> {
+    encode_semantic_tokens(semantic_raw_tokens(build, document))
+}
+
+pub(crate) fn semantic_raw_tokens(
+    build: &LspBuild,
+    document: &LspDocument,
+) -> Vec<RawSemanticToken> {
+    byte_spans_to_raw_tokens(&document.source, snapshot_byte_spans(Some(build), document))
+}
+
+pub(crate) fn snapshot_token_data(build: Option<&LspBuild>, document: &LspDocument) -> Vec<u32> {
+    encode_semantic_tokens(byte_spans_to_raw_tokens(
+        &document.source,
+        snapshot_byte_spans(build, document),
+    ))
+}
+
+fn snapshot_byte_spans(build: Option<&LspBuild>, document: &LspDocument) -> Vec<ByteSpanToken> {
+    let mut tokens = Vec::new();
+    add_comment_semantic_tokens(&document.source, &mut tokens);
+    if let Ok(lexed) = lex(&ModuleId::new(document.module_id.clone()), &document.source) {
+        for token in lexed {
+            add_lex_semantic_token(&document.source, &token.kind, token.span, &mut tokens);
+        }
+    }
+    if let (Some(build), Some(ast)) = (build, &document.ast) {
+        add_ast_semantic_tokens(build, document, ast, &mut tokens);
+    }
+    tokens
+}
+
+fn add_lex_semantic_token(
+    source: &str,
+    kind: &TokenKind,
+    span: Span,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    let token_type = match kind {
+        TokenKind::Const
+        | TokenKind::Enum
+        | TokenKind::Type
+        | TokenKind::Abstract
+        | TokenKind::Sealed
+        | TokenKind::Check
+        | TokenKind::When
+        | TokenKind::All
+        | TokenKind::Any
+        | TokenKind::None
+        | TokenKind::In
+        | TokenKind::Is
+        | TokenKind::True
+        | TokenKind::False => SEM_KEYWORD,
+        TokenKind::Ident(text) if matches!(text.as_str(), "fn" | "None" | "Some") => SEM_KEYWORD,
+        TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
+        TokenKind::String(_)
+        | TokenKind::FormattedStringStart
+        | TokenKind::FormattedStringText(_)
+        | TokenKind::FormattedStringEnd => SEM_STRING,
+        TokenKind::Plus
+        | TokenKind::Minus
+        | TokenKind::Star
+        | TokenKind::Slash
+        | TokenKind::SlashSlash
+        | TokenKind::Percent
+        | TokenKind::StarStar
+        | TokenKind::Less
+        | TokenKind::Greater
+        | TokenKind::Bang
+        | TokenKind::Tilde
+        | TokenKind::Amp
+        | TokenKind::Pipe
+        | TokenKind::Caret
+        | TokenKind::AmpAmp
+        | TokenKind::PipePipe
+        | TokenKind::LessEq
+        | TokenKind::GreaterEq
+        | TokenKind::LessLess
+        | TokenKind::GreaterGreater
+        | TokenKind::EqEq
+        | TokenKind::BangEq
+        | TokenKind::Equal
+        | TokenKind::Arrow
+        | TokenKind::DoubleColon => SEM_OPERATOR,
+        _ => return,
+    };
+    push_semantic_span_plain(source, span, token_type, tokens);
+}
+
+#[allow(clippy::too_many_lines)]
+fn add_ast_semantic_tokens(
+    build: &LspBuild,
+    document: &LspDocument,
+    ast: &coflow_core::schema::syntax::ast::ModuleAst,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    for annotation in &ast.dangling_annotations {
+        add_annotation_semantic(document, annotation, tokens);
+    }
+    for item in &ast.items {
+        match item {
+            Item::Const(constant) => {
+                for annotation in &constant.annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                push_semantic_span(
+                    &document.source,
+                    constant.name_span,
+                    SEM_VARIABLE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                if let Some(ty) = &constant.ty {
+                    add_value_type_semantic(build, document, ty, tokens);
+                }
+                add_default_expr_semantic(document, &constant.value, tokens);
+            }
+            Item::Enum(enum_def) => {
+                for annotation in &enum_def.annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                for annotation in &enum_def.dangling_annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                push_semantic_span(
+                    &document.source,
+                    enum_def.name_span,
+                    SEM_ENUM,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                for variant in &enum_def.variants {
+                    for annotation in &variant.annotations {
+                        add_annotation_semantic(document, annotation, tokens);
+                    }
+                    push_semantic_span(
+                        &document.source,
+                        variant.name_span,
+                        SEM_ENUM_MEMBER,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
+                    if let Some(value) = &variant.value {
+                        push_semantic_span_plain(&document.source, value.span, SEM_NUMBER, tokens);
+                    }
+                }
+            }
+            Item::Type(ty) => {
+                for annotation in &ty.annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                for annotation in &ty.dangling_annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                push_semantic_span(
+                    &document.source,
+                    ty.name_span,
+                    SEM_TYPE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                if let Some(parent) = &ty.parent {
+                    push_semantic_span(
+                        &document.source,
+                        parent.span,
+                        SEM_TYPE,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        tokens,
+                    );
+                }
+                for field in &ty.fields {
+                    for annotation in &field.annotations {
+                        add_annotation_semantic(document, annotation, tokens);
+                    }
+                    push_semantic_span(
+                        &document.source,
+                        field.name_span,
+                        SEM_PROPERTY,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
+                    add_value_type_semantic(build, document, &field.ty, tokens);
+                    if let Some(default) = &field.default {
+                        add_default_expr_semantic(document, default, tokens);
+                    }
+                }
+            }
+            Item::TypeAlias(alias) => {
+                push_semantic_span(
+                    &document.source,
+                    alias.name_span,
+                    SEM_TYPE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_value_type_semantic(build, document, &alias.target, tokens);
+            }
+            Item::Check(check) => {
+                for annotation in &check.annotations {
+                    add_annotation_semantic(document, annotation, tokens);
+                }
+                push_semantic_span(
+                    &document.source,
+                    check.name_span,
+                    SEM_FUNCTION,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+            }
+        }
+    }
+}
+
+fn add_annotation_semantic(
+    document: &LspDocument,
+    annotation: &Annotation,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    push_semantic_span_plain(
+        &document.source,
+        annotation.name_span,
+        SEM_DECORATOR,
+        tokens,
+    );
+    for arg in &annotation.args {
+        match arg {
+            AnnotationArg::Name(name) => {
+                push_semantic_span_plain(&document.source, name.span, SEM_VARIABLE, tokens);
+            }
+            AnnotationArg::String(_, span) => {
+                push_semantic_span_plain(&document.source, *span, SEM_STRING, tokens);
+            }
+            AnnotationArg::Int(_, span) | AnnotationArg::Float(_, span) => {
+                push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
+            }
+            AnnotationArg::Bool(_, span) => {
+                push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
+            }
+        }
+    }
+}
+
+fn add_value_type_semantic(
+    build: &LspBuild,
+    document: &LspDocument,
+    ty: &TypeRef,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    match &ty.kind {
+        TypeRefKind::Int
+        | TypeRefKind::Float
+        | TypeRefKind::Bool
+        | TypeRefKind::String
+        | TypeRefKind::FString => {
+            push_semantic_span(
+                &document.source,
+                ty.span,
+                SEM_TYPE,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
+        }
+        TypeRefKind::Named(name) => {
+            let token_type = if enum_name_exists(build, name) {
+                SEM_ENUM
+            } else {
+                SEM_TYPE
+            };
+            push_semantic_span(
+                &document.source,
+                ty.span,
+                token_type,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
+        }
+        TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
+            add_value_type_semantic(build, document, inner, tokens);
+        }
+        TypeRefKind::Dict(key, value) => {
+            add_value_type_semantic(build, document, key, tokens);
+            add_value_type_semantic(build, document, value, tokens);
+        }
+        TypeRefKind::Function(parameters, result) => {
+            for parameter in parameters {
+                if let Some(name) = &parameter.name {
+                    push_semantic_span(
+                        &document.source,
+                        name.span,
+                        SEM_PARAMETER,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
+                }
+                add_value_type_semantic(build, document, &parameter.value_type, tokens);
+            }
+            add_value_type_semantic(build, document, result, tokens);
+        }
+        TypeRefKind::Unit => {}
+    }
+}
+
+// 默认表达式语义着色与语法树枚举逐项对应，递归过程保持在一个分派中更易核对覆盖面。
+#[allow(clippy::too_many_lines)]
+fn add_default_expr_semantic(
+    document: &LspDocument,
+    expr: &DefaultExpr,
+    tokens: &mut Vec<ByteSpanToken>,
+) {
+    match &expr.kind {
+        DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
+            push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
+        }
+        DefaultExprKind::Bool(_) | DefaultExprKind::OptionNone => {
+            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
+        }
+        DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
+            push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
+        }
+        DefaultExprKind::Function { source, .. } => {
+            super::cfd::visit_function_semantic_tokens(
+                source,
+                expr.span.start,
+                |span, token_type, modifiers, multiline| {
+                    if multiline {
+                        push_multiline_semantic_span(
+                            &document.source,
+                            span,
+                            token_type,
+                            modifiers,
+                            tokens,
+                        );
+                    } else {
+                        push_semantic_span(&document.source, span, token_type, modifiers, tokens);
+                    }
+                },
+            );
+        }
+        DefaultExprKind::BitExpr { lhs, rhs, .. } => {
+            add_default_expr_semantic(document, lhs, tokens);
+            add_default_expr_semantic(document, rhs, tokens);
+        }
+        DefaultExprKind::StaticPath(path) | DefaultExprKind::RecordReference(path) => {
+            for segment in &path.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_VARIABLE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
+        }
+        DefaultExprKind::Array(items) => {
+            for item in items {
+                add_default_expr_semantic(document, item, tokens);
+            }
+        }
+        DefaultExprKind::Object(fields) => {
+            for (name, value) in fields {
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_PROPERTY,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::TypedObject { type_name, fields } => {
+            for segment in &type_name.segments {
+                push_semantic_span(
+                    &document.source,
+                    segment.span,
+                    SEM_TYPE,
+                    MOD_REFERENCE | MOD_SCHEMA | MOD_PATH,
+                    tokens,
+                );
+            }
+            for (name, value) in fields {
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_PROPERTY,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+        DefaultExprKind::Dictionary(entries) => {
+            for (key, value) in entries {
+                add_default_expr_semantic(document, key, tokens);
+                add_default_expr_semantic(document, value, tokens);
+            }
+        }
+    }
+}

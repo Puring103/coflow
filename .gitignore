@@ -1,6 +1,6 @@
 target/
 BenchmarkDotNet.Artifacts/
-editors/cfd-editor/src-tauri/binaries/
+studio/editors/cfd-editor/src-tauri/binaries/
 dist/
 examples/*/generated/**
 !examples/*/generated/
@@ -8,8 +8,8 @@ examples/*/generated/**
 examples/*/app/bin/
 examples/*/app/obj/
 node_modules/
-runtimes/csharp/**/bin/
-runtimes/csharp/**/obj/
+engine/runtimes/csharp/**/bin/
+engine/runtimes/csharp/**/obj/
 luac.out
 website/vitepress-dev*.log
 website/docs/.vitepress/dist/

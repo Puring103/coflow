@@ -436,7 +436,7 @@ name = "cfd-editor"
 version = "0.11.0"
 dependencies = [
  "cfd-editor-core",
- "coflow-runtime",
+ "coflow-project",
  "serde",
  "serde_json",
  "tauri",
@@ -455,7 +455,7 @@ dependencies = [
  "coflow-core",
  "coflow-language",
  "coflow-lsp",
- "coflow-runtime",
+ "coflow-project",
  "notify",
  "parking_lot",
  "serde",
@@ -593,7 +593,7 @@ dependencies = [
  "clap",
  "coflow-format",
  "coflow-lsp",
- "coflow-runtime",
+ "coflow-project",
  "dirs",
  "include_dir",
  "self_update",
@@ -675,13 +675,13 @@ dependencies = [
  "coflow-core",
  "coflow-format",
  "coflow-language",
- "coflow-runtime",
+ "coflow-project",
  "serde_json",
  "similar",
 ]
 
 [[package]]
-name = "coflow-runtime"
+name = "coflow-project"
 version = "0.11.0"
 dependencies = [
  "coflow-codegen",
