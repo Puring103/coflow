@@ -1,4 +1,4 @@
-use crate::schema::CftSchema;
+use coflow_core::schema::CftSchema;
 use crate::LoadedValueDraft;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -85,31 +85,15 @@ fn validate_actual_type(
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CellValueDiagnostics> {
-    let Some(actual_schema_type) = schema.resolve_type(actual_type) else {
-        return Err(CellValueDiagnostics {
-            diagnostics: vec![CellValueDiagnostic {
-                code: CellValueErrorCode::UnknownType,
-                message: format!("unknown type `{actual_type}`"),
-            }],
-        });
-    };
-    if actual_schema_type.is_abstract {
-        return Err(CellValueDiagnostics {
-            diagnostics: vec![CellValueDiagnostic {
-                code: CellValueErrorCode::AbstractObjectType,
-                message: format!("abstract type `{actual_type}` cannot be instantiated"),
-            }],
-        });
-    }
-    if !schema.is_assignable(actual_type, expected_type) {
-        return Err(CellValueDiagnostics {
-            diagnostics: vec![CellValueDiagnostic {
-                code: CellValueErrorCode::ObjectTypeMismatch,
-                message: format!("type `{actual_type}` is not assignable to `{expected_type}`"),
-            }],
-        });
-    }
-    Ok(())
+    coflow_core::validate_object_type_assignable(schema, expected_type, actual_type).map_err(|issue| {
+        use coflow_core::CfdValueSemanticErrorKind as Kind;
+        let code = match issue.kind() {
+            Kind::UnknownType => CellValueErrorCode::UnknownType,
+            Kind::AbstractType => CellValueErrorCode::AbstractObjectType,
+            _ => CellValueErrorCode::ObjectTypeMismatch,
+        };
+        CellValueDiagnostics { diagnostics: vec![CellValueDiagnostic { code, message: issue.message().to_owned() }] }
+    })
 }
 
 fn parse_named_object(

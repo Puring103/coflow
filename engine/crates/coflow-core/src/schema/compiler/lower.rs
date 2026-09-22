@@ -1,8 +1,8 @@
 use super::annotations::{field_dimension_name, find_annotation, has_annotation};
 use super::ValidatedSchema;
 use crate::schema::{
-    CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftDisplayMetadata, CftEnum,
-    CftEnumVariant, CftField, CftFieldDimension, CftSchemaCheckBlock, CftSchemaDefaultValue,
+    CftAnnotation, CftAnnotationValue, CftConst, CftDisplayMetadata, CftEnum,
+    CftEnumVariant, CftField, CftFieldDimension, CftSchemaCheckBlock, CftStaticValue,
     CftTopLevelCheck, CftType, CftValueType,
 };
 use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
@@ -93,28 +93,14 @@ impl ValidatedSchema<'_> {
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
-            let variant_by_name = variants
-                .iter()
-                .enumerate()
-                .map(|(index, variant)| (variant.name.clone(), index))
-                .collect();
-            let variant_by_value = variants
-                .iter()
-                .enumerate()
-                .map(|(index, variant)| (variant.value, index))
-                .collect();
-            // flag 掩码预计算；普通枚举掩码无意义，置 0。
-            let flag_mask = variants
-                .iter()
-                .fold(0u32, |mask, variant| mask | variant.value as u32);
             let name = EnumName::from_validated(name.clone());
             let schema = CftEnum {
                 module: info.module.clone(),
                 name: name.clone(),
                 variants,
-                variant_by_name,
-                variant_by_value,
-                flag_mask,
+                variant_by_name: BTreeMap::new(),
+                variant_by_value: BTreeMap::new(),
+                flag_mask: 0,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
@@ -144,12 +130,6 @@ impl ValidatedSchema<'_> {
         for (name, info) in &self.types {
             let type_name = TypeName::from_validated(name.clone());
             let fields = own_fields.get(&type_name).cloned().unwrap_or_default();
-            let all_fields = self.collect_all_schema_fields(name, &own_fields);
-            let field_by_name = all_fields
-                .iter()
-                .enumerate()
-                .map(|(index, field)| (field.name.clone(), index))
-                .collect();
             let is_singleton =
                 info.def.kind == coflow_language::cft::syntax::ast::TypeKind::Singleton;
             let is_host = has_annotation(&info.def.annotations, "Host");
@@ -177,8 +157,8 @@ impl ValidatedSchema<'_> {
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 own_fields: fields,
-                all_fields,
-                field_by_name,
+                all_fields: Vec::new(),
+                field_by_name: BTreeMap::new(),
                 check: info
                     .def
                     .check
@@ -244,79 +224,14 @@ impl ValidatedSchema<'_> {
             .collect()
     }
 
-    fn collect_all_schema_fields(
-        &self,
-        type_name: &str,
-        own_fields: &BTreeMap<TypeName, Vec<Arc<CftField>>>,
-    ) -> Vec<Arc<CftField>> {
-        self.ancestry_chain(type_name)
-            .into_iter()
-            .flat_map(|info| {
-                own_fields
-                    .get(info.name.as_str())
-                    .cloned()
-                    .unwrap_or_default()
-            })
-            .collect()
-    }
-
     fn schema_default_value(
         &self,
         module: &crate::ModuleId,
         expr: &DefaultExpr,
-    ) -> Option<CftSchemaDefaultValue> {
-        let value = self
-            .defaults
-            .get(&(module.clone(), expr.span.start, expr.span.end))?;
-        Some(const_value_as_default(value))
-    }
-}
-
-fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
-    match value {
-        CftConstValue::Int(value) => CftSchemaDefaultValue::Int(*value),
-        CftConstValue::Float(value) => CftSchemaDefaultValue::Float(*value),
-        CftConstValue::Bool(value) => CftSchemaDefaultValue::Bool(*value),
-        CftConstValue::String(value) => CftSchemaDefaultValue::String(value.clone()),
-        CftConstValue::FormattedString(source) => {
-            CftSchemaDefaultValue::FormattedString(source.clone())
-        }
-        CftConstValue::Function(source) => CftSchemaDefaultValue::Function(source.clone()),
-        CftConstValue::Enum {
-            enum_name,
-            variant,
-            value,
-        } => CftSchemaDefaultValue::Enum {
-            enum_name: enum_name.clone(),
-            variant: variant.clone(),
-            value: *value,
-        },
-        CftConstValue::OptionNone => CftSchemaDefaultValue::OptionNone,
-        CftConstValue::OptionSome(value) => {
-            CftSchemaDefaultValue::OptionSome(Box::new(const_value_as_default(value)))
-        }
-        CftConstValue::Array(values) => {
-            CftSchemaDefaultValue::Array(values.iter().map(const_value_as_default).collect())
-        }
-        CftConstValue::Dictionary(entries) => CftSchemaDefaultValue::Dictionary(
-            entries
-                .iter()
-                .map(|(key, value)| (const_value_as_default(key), const_value_as_default(value)))
-                .collect(),
-        ),
-        CftConstValue::Object { type_name, fields } => CftSchemaDefaultValue::Object {
-            type_name: type_name.clone(),
-            fields: fields
-                .iter()
-                .map(|(name, value)| (name.clone(), const_value_as_default(value)))
-                .collect(),
-        },
-        CftConstValue::RecordReference { type_name, key } => {
-            CftSchemaDefaultValue::RecordReference {
-                type_name: type_name.clone(),
-                key: key.clone(),
-            }
-        }
+    ) -> Option<CftStaticValue> {
+        self.defaults
+            .get(&(module.clone(), expr.span.start, expr.span.end))
+            .cloned()
     }
 }
 

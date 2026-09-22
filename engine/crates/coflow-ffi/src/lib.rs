@@ -13,97 +13,65 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-enum Operation {
-    LoadContract = 1,
-    CreateCompiler = 3,
-    AddSchemaSource = 4,
-    CompileContract = 6,
-    SerializeContract = 7,
-    ContractIdentity = 8,
-    RuntimeContractIdentity = 9,
-    CreateBuilder = 10,
-    AddDataSource = 11,
-    BuildRuntime = 12,
-    FindRecord = 20,
-    TableLength = 21,
-    TableValue = 22,
-    ReadField = 23,
-    InspectValue = 24,
-    ReadText = 25,
-    ArrayValue = 26,
-    DictionaryKey = 27,
-    DictionaryValue = 28,
-    Invoke = 29,
-    TypeName = 30,
-    ProgramSource = 31,
-    TryFindRecord = 32,
-    DimensionVariant = 34,
-    ValueEquals = 35,
-    DimensionDefault = 36,
-    Singleton = 37,
-    DictionaryFind = 38,
-    CanonicalValue = 39,
-    BufferLength = 40,
-    CreateBuffer = 41,
-    ReleaseValue = 42,
-    Collect = 43,
-    RetainValue = 44,
-    RunChecks = 45,
-    DimensionVariantKey = 46,
-    ReadDynamicValue = 47,
-    CreateValueLease = 48,
-    ReadRecord = 49,
+// 操作码在一张表中声明，枚举与解码保持同步；测试核对 C 和 C# 声明。
+macro_rules! operations {
+    ($($name:ident = $number:literal => $c_name:ident),* $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        enum Operation { $($name = $number),* }
+        impl TryFrom<u32> for Operation {
+            type Error = String;
+            fn try_from(value: u32) -> Result<Self, Self::Error> {
+                match value {
+                    $($number => Ok(Self::$name),)*
+                    _ => Err("operation unavailable in this build".into()),
+                }
+            }
+        }
+        #[cfg(test)]
+        const OPERATIONS: &[(&str, &str, u32)] = &[$((stringify!($name), stringify!($c_name), $number)),*];
+    };
 }
-
-impl TryFrom<u32> for Operation {
-    type Error = String;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        Ok(match value {
-            1 => Self::LoadContract,
-            3 => Self::CreateCompiler,
-            4 => Self::AddSchemaSource,
-            6 => Self::CompileContract,
-            7 => Self::SerializeContract,
-            8 => Self::ContractIdentity,
-            9 => Self::RuntimeContractIdentity,
-            10 => Self::CreateBuilder,
-            11 => Self::AddDataSource,
-            12 => Self::BuildRuntime,
-            20 => Self::FindRecord,
-            21 => Self::TableLength,
-            22 => Self::TableValue,
-            23 => Self::ReadField,
-            24 => Self::InspectValue,
-            25 => Self::ReadText,
-            26 => Self::ArrayValue,
-            27 => Self::DictionaryKey,
-            28 => Self::DictionaryValue,
-            29 => Self::Invoke,
-            30 => Self::TypeName,
-            31 => Self::ProgramSource,
-            32 => Self::TryFindRecord,
-            34 => Self::DimensionVariant,
-            35 => Self::ValueEquals,
-            36 => Self::DimensionDefault,
-            37 => Self::Singleton,
-            38 => Self::DictionaryFind,
-            39 => Self::CanonicalValue,
-            40 => Self::BufferLength,
-            41 => Self::CreateBuffer,
-            42 => Self::ReleaseValue,
-            43 => Self::Collect,
-            44 => Self::RetainValue,
-            45 => Self::RunChecks,
-            46 => Self::DimensionVariantKey,
-            47 => Self::ReadDynamicValue,
-            48 => Self::CreateValueLease,
-            49 => Self::ReadRecord,
-            _ => return Err("operation unavailable in this build".into()),
-        })
-    }
+operations! {
+    LoadContract = 1 => COFLOW_LOAD_CONTRACT,
+    CreateCompiler = 3 => COFLOW_NEW_COMPILER,
+    AddSchemaSource = 4 => COFLOW_ADD_CFT,
+    CompileContract = 6 => COFLOW_COMPILE_CONTRACT,
+    SerializeContract = 7 => COFLOW_CONTRACT_BYTES,
+    ContractIdentity = 8 => COFLOW_CONTRACT_IDENTITY,
+    RuntimeContractIdentity = 9 => COFLOW_RUNTIME_CONTRACT_IDENTITY,
+    CreateBuilder = 10 => COFLOW_NEW_BUILDER,
+    AddDataSource = 11 => COFLOW_ADD_CFD,
+    BuildRuntime = 12 => COFLOW_BUILD_RUNTIME,
+    FindRecord = 20 => COFLOW_RECORD,
+    TableLength = 21 => COFLOW_RECORD_COUNT,
+    TableValue = 22 => COFLOW_RECORD_AT,
+    ReadField = 23 => COFLOW_FIELD,
+    InspectValue = 24 => COFLOW_DESCRIBE,
+    ReadText = 25 => COFLOW_TEXT,
+    ArrayValue = 26 => COFLOW_ARRAY_AT,
+    DictionaryKey = 27 => COFLOW_DICT_KEY_AT,
+    DictionaryValue = 28 => COFLOW_DICT_VALUE_AT,
+    Invoke = 29 => COFLOW_CALL,
+    TypeName = 30 => COFLOW_TYPE_NAME,
+    ProgramSource = 31 => COFLOW_PROGRAM_SOURCE,
+    TryFindRecord = 32 => COFLOW_TRY_RECORD,
+    DimensionVariant = 34 => COFLOW_DIMENSION_VALUE,
+    ValueEquals = 35 => COFLOW_VALUE_EQUALS,
+    DimensionDefault = 36 => COFLOW_DIMENSION_DEFAULT,
+    Singleton = 37 => COFLOW_SINGLETON,
+    DictionaryFind = 38 => COFLOW_DICT_FIND,
+    CanonicalValue = 39 => COFLOW_CANONICAL_VALUE,
+    BufferLength = 40 => COFLOW_BUFFER_LENGTH,
+    CreateBuffer = 41 => COFLOW_NEW_BUFFER,
+    ReleaseValue = 42 => COFLOW_RELEASE_VALUE,
+    Collect = 43 => COFLOW_COLLECT,
+    RetainValue = 44 => COFLOW_RETAIN_VALUE,
+    RunChecks = 45 => COFLOW_RUN_CHECKS,
+    DimensionVariantKey = 46 => COFLOW_DIMENSION_VARIANT_KEY,
+    ReadDynamicValue = 47 => COFLOW_READ_DYNAMIC_VALUE,
+    CreateValueLease = 48 => COFLOW_CREATE_VALUE_LEASE,
+    ReadRecord = 49 => COFLOW_READ_RECORD,
 }
 
 #[repr(C)]
@@ -671,7 +639,7 @@ fn dispatch(
                     .invoke(
                         id,
                         &args,
-                        coflow_core::vm::executor::ExecutionLimits::default(),
+                        coflow_core::vm::ExecutionLimits::default(),
                     )
                     .map_err(|e| e.to_string())?,
             )

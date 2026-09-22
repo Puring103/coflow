@@ -1,8 +1,7 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordId, CfdValue};
+use crate::model::{CfdDictKey, CfdObject, CfdRecordId, CfdValue};
 use crate::schema::{FieldName, RecordKey, TypeName};
-use crate::LoadedFormattedString;
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
 
@@ -140,7 +139,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 .resolve_value(value, node, cursor)
                 .map(|value| CfdValue::OptionSome(Box::new(value))),
             ValueDraft::FormattedString(value) => {
-                self.resolve_formatted_string(value, node, cursor)
+                Some(CfdValue::FormattedString(value.clone()))
             }
             ValueDraft::PendingRef {
                 expected_type,
@@ -197,23 +196,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 .resolve_dict_entries(entries, node, cursor)
                 .map(CfdValue::Dict),
         }
-    }
-
-    fn resolve_formatted_string(
-        &mut self,
-        value: &LoadedFormattedString,
-        node: &ValueNode,
-        cursor: TraversalCursor,
-    ) -> Option<CfdValue> {
-        // 构建只保存模板，动态读取由未来的 VM 负责。
-        let _ = (node, cursor);
-        Some(CfdValue::FormattedString(CfdFormattedString {
-            from_default: value.from_default,
-            location: value.location.clone(),
-            imports: value.imports.clone(),
-            constant_origin: value.constant_origin.clone(),
-            source: value.source.clone(),
-        }))
     }
 
     fn resolve_ref_target(

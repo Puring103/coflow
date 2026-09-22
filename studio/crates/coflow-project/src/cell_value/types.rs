@@ -1,4 +1,4 @@
-use crate::schema::{CftField, CftSchema, CftValueType};
+use coflow_core::schema::{CftField, CftSchema, CftValueType};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,

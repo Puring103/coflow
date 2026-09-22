@@ -25,7 +25,7 @@ mod scan;
 mod strings;
 mod types;
 
-use crate::schema::{CftSchema, CftValueType};
+use coflow_core::schema::{CftSchema, CftValueType};
 use crate::LoadedValueDraft;
 use collections::{parse_array, parse_dict};
 use diagnostics::type_mismatch;

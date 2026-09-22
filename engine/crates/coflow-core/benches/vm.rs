@@ -2,7 +2,7 @@ use coflow_core::{
     contract::Contract,
     runtime::{HostValue, OptimizationProfile, Runtime, RuntimeBuilder},
     schema::{build_schema, parse_modules, CftFile, ModuleId},
-    vm::executor::ExecutionLimits,
+    vm::ExecutionLimits,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::sync::Arc;

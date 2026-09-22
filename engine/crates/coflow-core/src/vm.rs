@@ -1,11 +1,12 @@
 //! 共享静态函数编译与寄存器字节码虚拟机。
 use std::fmt;
+// 编译器、IR 和字节码供语言工具与分析使用；执行入口统一走 Runtime。
 pub mod bytecode;
 pub mod compiler;
-pub mod construction;
-pub mod contract_programs;
-pub mod executor;
-pub mod budget;
+pub(crate) mod construction;
+pub(crate) mod contract_programs;
+pub(crate) mod executor;
+pub(crate) mod budget;
 pub(crate) mod slot;
 pub(crate) mod scalar;
 pub use budget::ExecutionLimits;
@@ -92,3 +93,4 @@ pub(crate) fn error(message: &str) -> ExecutionError { ExecutionError::InvalidAc
 mod builtins;
 
 mod bytecode_analysis;
+mod bytecode_rewrite;

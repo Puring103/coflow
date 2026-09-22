@@ -2,7 +2,7 @@ use coflow_core::{
     contract::Contract,
     runtime::{HostService, HostValue, OptimizationProfile, Runtime, RuntimeBuilder},
     schema::{build_schema, parse_modules, CftFile, ModuleId},
-    vm::{executor::ExecutionLimits, ExecutionError},
+    vm::{ExecutionLimits, ExecutionError},
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},

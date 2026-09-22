@@ -1,6 +1,6 @@
 use crate::schema::{CftFunctionParameter, CftSchema, CftValueType};
 use crate::{
-    LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction, LoadedRecordDraft, LoadedValueDraft,
+    LoadedDictKeyDraft, CallableSource, LoadedRecordDraft, LoadedValueDraft,
 };
 use coflow_language::cfd::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdRecord, CfdValue,
@@ -505,9 +505,9 @@ fn lower_function(
             function.span,
         ));
     }
-    Ok(LoadedValueDraft::Function(LoadedFunction {
+    Ok(LoadedValueDraft::Function(CallableSource {
         from_default: false,
-        location: Some(crate::ingest::CallableLocation {
+        location: Some(crate::CallableLocation {
             module: None,
             source: function.source.clone(),
             span: function.span,
@@ -585,9 +585,9 @@ fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics
     match value {
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
         CfdValue::FormattedString(value) => {
-            Ok(LoadedValueDraft::FormattedString(LoadedFormattedString {
+            Ok(LoadedValueDraft::FormattedString(CallableSource {
                 from_default: false,
-                location: Some(crate::ingest::CallableLocation {
+                location: Some(crate::CallableLocation {
                     module: None,
                     source: value.source.clone(),
                     span: value.span,
@@ -718,12 +718,7 @@ fn validate_flag_mask(
     value: i64,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    let declared_mask = schema.resolve_enum(enum_name).map_or(0, |schema_enum| {
-        schema_enum
-            .variants
-            .iter()
-            .fold(0_i64, |mask, variant| mask | variant.value)
-    });
+    let declared_mask = schema.resolve_enum(enum_name).map_or(0, |enumeration| i64::from(enumeration.flag_mask));
     if value < 0 {
         return Err(error(
             CfdTextErrorCode::InvalidEnumVariant,
@@ -993,25 +988,15 @@ fn validate_actual_type(
     actual_type: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    validate_concrete_type(schema, actual_type, span)?;
-    if !schema
-        .resolve_type(actual_type)
-        .is_some_and(|ty| ty.kind == coflow_language::cft::syntax::ast::TypeKind::Data)
-    {
-        return Err(error(
-            CfdTextErrorCode::ObjectTypeMismatch,
-            "inline values require a data type",
-            span,
-        ));
-    }
-    if !schema.is_assignable(actual_type, expected_type) {
-        return Err(error(
-            CfdTextErrorCode::ObjectTypeMismatch,
-            format!("type `{actual_type}` is not assignable to `{expected_type}`"),
-            span,
-        ));
-    }
-    Ok(())
+    crate::validate_object_type_assignable(schema, expected_type, actual_type).map_err(|issue| {
+        use crate::CfdValueSemanticErrorKind as Kind;
+        let code = match issue.kind() {
+            Kind::UnknownType => CfdTextErrorCode::UnknownType,
+            Kind::AbstractType => CfdTextErrorCode::AbstractObjectType,
+            _ => CfdTextErrorCode::ObjectTypeMismatch,
+        };
+        error(code, issue.message(), span)
+    })
 }
 
 pub fn syntax_diagnostics(

@@ -82,7 +82,7 @@ fn coerce_json_value(
             coflow_language::lexical::validate_formatted_string_literal(source)
                 .map_err(|error| one_value_error(error.message))?;
             Ok(CfdValue::FormattedString(
-                crate::data_model::CfdFormattedString {
+                crate::CallableSource {
                     from_default: false,
                     location: None,
                     imports: Default::default(),

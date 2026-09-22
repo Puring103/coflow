@@ -25,6 +25,8 @@
     clippy::use_self
 )]
 
+mod callable;
+pub use callable::{CallableLocation, CallableSource};
 mod build;
 pub mod check;
 pub mod contract;
@@ -32,7 +34,6 @@ pub mod loading;
 pub mod runtime;
 pub mod schema;
 pub mod vm;
-#[cfg(feature = "cft-compiler")]
 pub(crate) use coflow_language::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 pub(crate) use coflow_language::lexical::is_cft_identifier;
 #[cfg(feature = "cft-compiler")]
@@ -40,8 +41,6 @@ pub(crate) use coflow_language::lexical::is_cft_reserved_identifier;
 pub(crate) use coflow_language::source::Span;
 pub use coflow_language::{limits, source};
 pub(crate) use schema::*;
-pub mod cell_value;
-mod dependencies;
 mod diagnostics;
 mod indexes;
 mod ingest;
@@ -54,16 +53,16 @@ pub use build::{CfdModelBuildOutput, CfdModelBuilder};
 pub use coflow_language::limits::StructuralLimits;
 pub use diagnostics::{
     format_cfd_dict_key, label_to_location, map_diagnostics, CfdDiagnostic, CfdDiagnostics,
-    CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity, CfdStage, MappedDiagnostic,
+    CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, Severity, CfdStage, MappedDiagnostic,
     MappedLabel, RecordOrigin, SourceLocation, TextSpan,
 };
 pub use ingest::{
-    DimensionValueDraft, LoadedDictKeyDraft, LoadedFormattedString, LoadedFunction,
+    DimensionValueDraft, LoadedDictKeyDraft,
     LoadedRecordDraft, LoadedValueDraft,
 };
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdFormattedString, CfdFunction, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
     RefEdge, RefSite,
 };

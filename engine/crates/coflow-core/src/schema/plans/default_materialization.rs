@@ -1,5 +1,5 @@
 use crate::{
-    CftDiagnostic, CftErrorCode, CftSchemaDefaultValue, CftType, CftValueType, FieldName, TypeName,
+    CftDiagnostic, CftErrorCode, CftStaticValue, CftType, CftValueType, FieldName, TypeName,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -82,29 +82,26 @@ pub(crate) fn validate_default_materialization(
 
 fn collect_dependencies(
     ty: &CftValueType,
-    value: &CftSchemaDefaultValue,
+    value: &CftStaticValue,
     types: &BTreeMap<TypeName, CftType>,
     out: &mut Vec<Dependency>,
 ) {
     match (ty, value) {
-        (CftValueType::Option(inner), CftSchemaDefaultValue::OptionSome(value)) => {
+        (CftValueType::Option(inner), CftStaticValue::OptionSome(value)) => {
             collect_dependencies(inner, value, types, out);
         }
-        (CftValueType::Array(inner), CftSchemaDefaultValue::Array(values)) => {
+        (CftValueType::Array(inner), CftStaticValue::Array(values)) => {
             for value in values {
                 collect_dependencies(inner, value, types, out);
             }
         }
-        (CftValueType::Dict(key_type, value_type), CftSchemaDefaultValue::Dictionary(entries)) => {
+        (CftValueType::Dict(key_type, value_type), CftStaticValue::Dictionary(entries)) => {
             for (key, value) in entries {
                 collect_dependencies(key_type, key, types, out);
                 collect_dependencies(value_type, value, types, out);
             }
         }
-        (CftValueType::Object(expected), CftSchemaDefaultValue::EmptyObject) => {
-            collect_missing_fields(expected, &BTreeSet::new(), types, out);
-        }
-        (CftValueType::Object(expected), CftSchemaDefaultValue::Object { type_name, fields })
+        (CftValueType::Object(expected), CftStaticValue::Object { type_name, fields })
             if types.contains_key(type_name) && is_assignable(types, type_name, expected) =>
         {
             let supplied = fields

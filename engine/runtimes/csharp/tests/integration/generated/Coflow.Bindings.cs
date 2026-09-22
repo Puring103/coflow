@@ -4,7 +4,7 @@ namespace Game.Config
 {
 public static class Generated
 {
-    internal static byte[] ContractIdentity { get; } = new byte[] { 27,123,95,65,44,59,221,217,121,104,233,202,41,206,244,212,155,71,8,206,167,156,200,53,65,171,230,64,99,78,195,200 };
+    internal static byte[] ContractIdentity { get; } = new byte[] { 32,102,162,141,13,147,68,107,85,214,5,14,135,137,187,195,21,8,82,130,173,127,32,36,190,140,100,132,48,180,123,194 };
 
     private static TypeBinding[] Bindings { get; } = new TypeBinding[]
     {

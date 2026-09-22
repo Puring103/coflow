@@ -1,7 +1,7 @@
 mod mapping;
 mod paths;
 
-pub use coflow_diagnostics::{CfdErrorCode, CfdSeverity, CfdStage};
+pub use coflow_diagnostics::{CfdErrorCode, Severity, CfdStage};
 pub use mapping::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,
     SourceLocation, TextSpan,
@@ -44,7 +44,7 @@ impl From<CfdDiagnostic> for CfdDiagnostics {
 pub struct CfdDiagnostic {
     pub code: CfdErrorCode,
     pub stage: CfdStage,
-    pub severity: CfdSeverity,
+    pub severity: Severity,
     pub message: String,
     pub primary: Option<CfdLabel>,
     pub related: Vec<CfdLabel>,
@@ -56,7 +56,7 @@ impl CfdDiagnostic {
         Self {
             code,
             stage: code.stage(),
-            severity: CfdSeverity::Error,
+            severity: Severity::Error,
             message: message.into(),
             primary: None,
             related: Vec::new(),

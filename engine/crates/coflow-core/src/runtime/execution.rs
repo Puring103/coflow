@@ -845,13 +845,29 @@ fn index(value: Slot) -> Result<usize, ExecutionError> {
     }
 }
 impl ExecutionContext<'_> {
+    /// 局部构造与 Host 对象导入共用字段缺省规则，默认函数始终绑定当前对象。
+    fn field_default(&self, field: &crate::schema::CftField, owner: Slot) -> Result<Slot, ExecutionError> {
+        if let Some(default) = &field.default {
+            let module = &self.runtime.contract.schema()
+                .resolve_type(&field.declaring_type)
+                .ok_or_else(|| invalid("默认字段声明不存在"))?.module;
+            return self.default_value(default, owner, module);
+        }
+        match field.value_type {
+            CftValueType::Option(_) => Ok(Slot::None),
+            CftValueType::Array(_) => self.array(Vec::new()),
+            CftValueType::Dict(..) => self.dictionary(Vec::new()),
+            _ => Err(invalid("必填构造字段没有默认值")),
+        }
+    }
+
     fn default_value(
         &self,
-        value: &crate::schema::CftSchemaDefaultValue,
+        value: &crate::schema::CftStaticValue,
         owner: Slot,
         module: &crate::schema::ModuleId,
     ) -> Result<Slot, ExecutionError> {
-        use crate::schema::CftSchemaDefaultValue as D;
+        use crate::schema::CftStaticValue as D;
         match value {
             D::OptionNone => Ok(Slot::None),
             D::OptionSome(value) => self.default_value(value, owner, module),
@@ -867,8 +883,6 @@ impl ExecutionContext<'_> {
                 type_name: self.copy_text(enum_name)?,
                 value: *value as u32,
             }),
-            D::EmptyArray => self.array(Vec::new()),
-            D::EmptyObject => self.dictionary(Vec::new()),
             D::Array(values) => {
                 let (mut items, _memory) = self.reserve_values(values.len())?;
                 for value in values {

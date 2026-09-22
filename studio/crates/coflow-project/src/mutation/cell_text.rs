@@ -1,4 +1,4 @@
-use crate::data_model::cell_value::{parse_schema_cell, ParsedCell};
+use crate::cell_value::{parse_schema_cell, ParsedCell};
 use crate::data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
 use serde_json::{Map, Number, Value};
 
@@ -38,7 +38,7 @@ pub(crate) fn parse_cell_text_value(
     };
     let input = match input {
         LoadedValueDraft::FormattedString(formatted) => {
-            return Ok(CfdValue::FormattedString(crate::CfdFormattedString {
+            return Ok(CfdValue::FormattedString(crate::CallableSource {
                 from_default: false,
                 location: None,
                 imports: Default::default(),

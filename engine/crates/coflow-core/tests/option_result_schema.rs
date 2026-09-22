@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 use coflow_core::schema::{
-    build_schema, parse_modules, CftFile, CftSchemaDefaultValue, CftValueType, ModuleId,
+    build_schema, parse_modules, CftFile, CftStaticValue, CftValueType, ModuleId,
 };
 fn compile(
     source: &str,
@@ -21,12 +21,12 @@ fn optional_fields_accept_none_and_direct_values() {
     );
     assert_eq!(
         item.field("a").expect("a").default,
-        Some(CftSchemaDefaultValue::OptionNone)
+        Some(CftStaticValue::OptionNone)
     );
     assert_eq!(
         item.field("c").expect("c").default,
-        Some(CftSchemaDefaultValue::OptionSome(Box::new(
-            CftSchemaDefaultValue::Int(3)
+        Some(CftStaticValue::OptionSome(Box::new(
+            CftStaticValue::Int(3)
         )))
     );
 }

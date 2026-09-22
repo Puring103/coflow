@@ -118,7 +118,7 @@ mod tests {
     use super::{dedupe_cft_diagnostics, diagnostic_set_from_cft};
     use crate::api::SourceLocation;
     use coflow_core::schema::ModuleId;
-    use coflow_language::diagnostics::{CftDiagnostic, CftErrorCode, CftSeverity};
+    use coflow_language::diagnostics::{CftDiagnostic, CftErrorCode, Severity};
     use coflow_language::source::Span;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -188,7 +188,7 @@ mod tests {
         let diagnostic = CftDiagnostic {
             code: CftErrorCode::UnexpectedEof,
             stage: CftErrorCode::UnexpectedEof.stage(),
-            severity: CftSeverity::Error,
+            severity: Severity::Error,
             message: "missing token".to_string(),
             primary: None,
             related: Vec::new(),

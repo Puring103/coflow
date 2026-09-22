@@ -1,7 +1,7 @@
 use crate::CftDimension;
-#[cfg(feature = "cft-compiler")]
+
 use crate::{CftType, DimensionName, TypeName};
-#[cfg(feature = "cft-compiler")]
+
 use std::collections::BTreeMap;
 
 /// VM 编译期句柄标识，不注册为 Schema 类型，也不能在 CFT/CFD 中引用。
@@ -41,7 +41,6 @@ impl crate::schema::CftSchema {
     }
 }
 
-#[cfg(feature = "cft-compiler")]
 pub(crate) fn build_dimensions(
     types: &BTreeMap<TypeName, CftType>,
 ) -> BTreeMap<DimensionName, CftDimension> {

@@ -1,4 +1,4 @@
-use crate::schema::CftSchema;
+use coflow_core::schema::CftSchema;
 use crate::{LoadedDictKeyDraft, LoadedValueDraft};
 
 use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagnostics};

@@ -7,10 +7,6 @@ use ts_rs::TS;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct GraphData {
     pub revision: u32,
     pub nodes: Vec<GraphNode>,
@@ -29,10 +25,6 @@ pub struct GraphQuery {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct GraphNode {
     pub coordinate: RecordCoordinate,
     pub file_path: String,
@@ -47,10 +39,6 @@ pub struct GraphNode {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct GraphEdge {
     pub source: RecordCoordinate,
     pub target: RecordCoordinate,
@@ -62,10 +50,6 @@ pub struct GraphEdge {
 /// in so the front-end can navigate without a follow-up query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct RefTarget {
     pub short_name: Option<String>,
     pub coordinate: RecordCoordinate,

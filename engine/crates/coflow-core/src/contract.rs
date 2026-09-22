@@ -1,11 +1,12 @@
 //! 只读类型契约及其二进制格式；可执行程序在 Runtime 绑定 CFD 时生成。
 use crate::schema::CftSchema;
+pub use crate::vm::contract_programs::ProgramDiagnostic;
 use bincode::Options;
 use sha2::{Digest, Sha256};
 use std::{fmt, sync::Arc};
 
 const MAGIC: &[u8; 8] = b"COFLOWCT";
-const VERSION: u32 = 5;
+const VERSION: u32 = 6;
 const HEADER: usize = 8 + 4 + 8 + 32;
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,7 @@ pub struct Contract {
 #[derive(Debug)]
 pub enum ContractError {
     Format(String),
-    Semantic(crate::vm::contract_programs::ProgramDiagnostic),
+    Semantic(ProgramDiagnostic),
 }
 impl fmt::Display for ContractError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -115,7 +116,7 @@ fn encode(schema: &CftSchema, ir: &crate::vm::contract_programs::ContractIr) -> 
 #[cfg(all(test, feature = "cft-compiler"))]
 mod tests {
     use super::*;
-    use crate::{runtime::{HostValue, RuntimeBuilder}, schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::{executor::ExecutionLimits, ir::{NodeIndex, Operation}}};
+    use crate::{runtime::{HostValue, RuntimeBuilder}, schema::{build_schema, parse_modules, CftFile, ModuleId}, vm::{ExecutionLimits, ir::{NodeIndex, Operation}}};
 
     fn contract() -> Contract {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"),

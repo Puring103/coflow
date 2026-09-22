@@ -1,5 +1,5 @@
 use super::diagnostics::{syntax, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
-use crate::LoadedFormattedString;
+use crate::CallableSource;
 
 pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
     let text = text.trim();
@@ -19,14 +19,14 @@ pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
 
 pub(crate) fn parse_automatic_formatted_string(
     text: &str,
-) -> Result<Option<LoadedFormattedString>, CellValueDiagnostics> {
+) -> Result<Option<CallableSource>, CellValueDiagnostics> {
     let text = text.trim();
     if !text.starts_with("f\"") {
         return Ok(None);
     }
     coflow_language::lexical::validate_formatted_string_literal(text)
         .map_err(|error| syntax(error.message))?;
-    Ok(Some(LoadedFormattedString {
+    Ok(Some(CallableSource {
         from_default: false,
         location: None,
         imports: Default::default(),

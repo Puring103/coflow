@@ -19,7 +19,7 @@ pub struct CftConst {
     pub module: ModuleId,
     pub name: ConstName,
     pub value_type: CftValueType,
-    pub value: CftConstValue,
+    pub value: CftStaticValue,
     pub span: Span,
 }
 
@@ -60,8 +60,10 @@ impl std::ops::Deref for CftCallableSource {
     }
 }
 
+/// 已解析的静态值由常量和字段默认值共用；用途与声明位置由外层结构持有。
+/// 空集合直接使用对应集合变体，不保留无类型的空值标记。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum CftConstValue {
+pub enum CftStaticValue {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -74,12 +76,12 @@ pub enum CftConstValue {
         value: i64,
     },
     OptionNone,
-    OptionSome(Box<CftConstValue>),
-    Array(Vec<CftConstValue>),
-    Dictionary(Vec<(CftConstValue, CftConstValue)>),
+    OptionSome(Box<CftStaticValue>),
+    Array(Vec<CftStaticValue>),
+    Dictionary(Vec<(CftStaticValue, CftStaticValue)>),
     Object {
         type_name: TypeName,
-        fields: Vec<(FieldName, CftConstValue)>,
+        fields: Vec<(FieldName, CftStaticValue)>,
     },
     RecordReference {
         type_name: TypeName,
@@ -103,7 +105,9 @@ pub struct CftType {
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub(crate) own_fields: Vec<Arc<CftField>>,
+    #[serde(skip)]
     pub(crate) all_fields: Vec<Arc<CftField>>,
+    #[serde(skip)]
     pub(crate) field_by_name: BTreeMap<FieldName, usize>,
     pub check: Option<CftSchemaCheckBlock>,
     pub span: Span,
@@ -120,7 +124,7 @@ pub struct CftField {
     pub declaring_type: TypeName,
     pub name: FieldName,
     pub value_type: CftValueType,
-    pub default: Option<CftSchemaDefaultValue>,
+    pub default: Option<CftStaticValue>,
     pub dimension: Option<CftFieldDimension>,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
@@ -146,35 +150,6 @@ impl CftField {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum CftSchemaDefaultValue {
-    OptionNone,
-    OptionSome(Box<CftSchemaDefaultValue>),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
-    FormattedString(CftCallableSource),
-    Function(CftCallableSource),
-    Enum {
-        enum_name: EnumName,
-        variant: EnumVariantName,
-        value: i64,
-    },
-    EmptyArray,
-    EmptyObject,
-    Array(Vec<CftSchemaDefaultValue>),
-    Dictionary(Vec<(CftSchemaDefaultValue, CftSchemaDefaultValue)>),
-    Object {
-        type_name: TypeName,
-        fields: Vec<(FieldName, CftSchemaDefaultValue)>,
-    },
-    RecordReference {
-        type_name: TypeName,
-        key: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CftSchemaCheckBlock {
     pub source: String,
     pub span: Span,
@@ -185,9 +160,12 @@ pub struct CftEnum {
     pub module: ModuleId,
     pub name: EnumName,
     pub variants: Vec<CftEnumVariant>,
+    #[serde(skip)]
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
+    #[serde(skip)]
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
     /// `@flag` 枚举的完整值掩码；预计算避免每次位取反遍历变体。
+    #[serde(skip)]
     pub flag_mask: u32,
     pub is_flag: bool,
     pub annotations: Vec<CftAnnotation>,
@@ -219,7 +197,7 @@ pub enum CftAnnotationValue {
     Bool(bool),
 }
 
-/// Human-facing metadata which never changes schema identity or stored data.
+/// 展示元数据随声明保存，并参与契约标识计算。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CftDisplayMetadata {
     pub label: Option<String>,
@@ -240,7 +218,7 @@ pub struct CftDimension {
 }
 
 #[cfg(feature = "cft-compiler")]
-impl CftConstValue {
+impl CftStaticValue {
     /// 字段名与集合下标组成稳定坐标，已有常量来源保持不变。
     pub(crate) fn assign_constant_origins(&mut self, path: &str) {
         match self {

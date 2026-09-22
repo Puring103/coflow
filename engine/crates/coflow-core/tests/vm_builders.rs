@@ -4,7 +4,7 @@ use coflow_core::{
     schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::{
         compiler::{compile, CompileContext},
-        executor::ExecutionLimits,
+        ExecutionLimits,
     },
 };
 use std::sync::Arc;

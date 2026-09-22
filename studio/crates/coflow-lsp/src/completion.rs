@@ -3,7 +3,7 @@
 
 use coflow_core::schema::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
 use coflow_core::schema::syntax::lexer::{lex, TokenKind};
-use coflow_core::schema::{CftCheckBuiltin, CftConstValue, ModuleId};
+use coflow_core::schema::{CftCheckBuiltin, CftStaticValue, ModuleId};
 use serde_json::{json, Map, Value};
 
 use super::documentation::{
@@ -836,14 +836,14 @@ fn const_completion_items_for_type(build: &LspBuild, ty: &TypeRef) -> Vec<Value>
     items
 }
 
-fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
+fn const_value_assignable_to_type(value: &CftStaticValue, ty: &TypeRef) -> bool {
     match (&ty.kind, value) {
-        (TypeRefKind::Option(_), CftConstValue::OptionNone)
-        | (TypeRefKind::Int, CftConstValue::Int(_))
-        | (TypeRefKind::Float, CftConstValue::Float(_))
-        | (TypeRefKind::Bool, CftConstValue::Bool(_))
-        | (TypeRefKind::String, CftConstValue::String(_)) => true,
-        (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
+        (TypeRefKind::Option(_), CftStaticValue::OptionNone)
+        | (TypeRefKind::Int, CftStaticValue::Int(_))
+        | (TypeRefKind::Float, CftStaticValue::Float(_))
+        | (TypeRefKind::Bool, CftStaticValue::Bool(_))
+        | (TypeRefKind::String, CftStaticValue::String(_)) => true,
+        (TypeRefKind::Option(inner), CftStaticValue::OptionSome(value)) => {
             const_value_assignable_to_type(value, inner)
         }
         _ => false,

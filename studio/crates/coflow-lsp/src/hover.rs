@@ -1,5 +1,5 @@
 use coflow_core::schema::syntax::ast::{Annotation, Item};
-use coflow_core::schema::{CftConstValue, CftType};
+use coflow_core::schema::{CftStaticValue, CftType};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 
@@ -146,21 +146,21 @@ fn type_hover_text(ty: &CftType) -> String {
     text
 }
 
-fn const_value_to_string(value: &CftConstValue) -> String {
+fn const_value_to_string(value: &CftStaticValue) -> String {
     match value {
-        CftConstValue::Int(value) => value.to_string(),
-        CftConstValue::Float(value) => (*value as f32).to_string(),
-        CftConstValue::Bool(value) => value.to_string(),
-        CftConstValue::String(value) => format!("{value:?}"),
-        CftConstValue::FormattedString(source) | CftConstValue::Function(source) => {
+        CftStaticValue::Int(value) => value.to_string(),
+        CftStaticValue::Float(value) => (*value as f32).to_string(),
+        CftStaticValue::Bool(value) => value.to_string(),
+        CftStaticValue::String(value) => format!("{value:?}"),
+        CftStaticValue::FormattedString(source) | CftStaticValue::Function(source) => {
             source.source.clone()
         }
-        CftConstValue::Enum {
+        CftStaticValue::Enum {
             enum_name, variant, ..
         } => format!("{enum_name}::{variant}"),
-        CftConstValue::OptionNone => "None".to_string(),
-        CftConstValue::OptionSome(value) => const_value_to_string(value),
-        CftConstValue::Array(values) => format!(
+        CftStaticValue::OptionNone => "None".to_string(),
+        CftStaticValue::OptionSome(value) => const_value_to_string(value),
+        CftStaticValue::Array(values) => format!(
             "[{}]",
             values
                 .iter()
@@ -168,7 +168,7 @@ fn const_value_to_string(value: &CftConstValue) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        CftConstValue::Dictionary(entries) => format!(
+        CftStaticValue::Dictionary(entries) => format!(
             "{{{}}}",
             entries
                 .iter()
@@ -180,8 +180,8 @@ fn const_value_to_string(value: &CftConstValue) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        CftConstValue::Object { type_name, .. } => format!("{type_name} {{ ... }}"),
-        CftConstValue::RecordReference { type_name, key } => {
+        CftStaticValue::Object { type_name, .. } => format!("{type_name} {{ ... }}"),
+        CftStaticValue::RecordReference { type_name, key } => {
             format!("&{type_name}::{key}")
         }
     }

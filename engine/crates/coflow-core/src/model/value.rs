@@ -1,3 +1,4 @@
+use crate::CallableSource;
 use super::ids::RecordCoordinate;
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{format_cfd_dict_key, CfdPath, CfdPathSegment};
@@ -12,10 +13,6 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct CfdRecord {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub key: RecordKey,
@@ -119,10 +116,6 @@ pub struct CfdDimensionValue {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct CfdObject {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub actual_type: TypeName,
@@ -187,10 +180,6 @@ impl CfdObject {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdValue {
     OptionNone,
@@ -210,58 +199,13 @@ pub enum CfdValue {
         f64,
     ),
     String(String),
-    FormattedString(CfdFormattedString),
-    Function(CfdFunction),
+    FormattedString(CallableSource),
+    Function(CallableSource),
     Enum(CfdEnumValue),
     Object(Box<CfdObject>),
     Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordKey),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
-}
-
-/// A schema-checked CFD function retained as executable source for runtimes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct CfdFunction {
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub imports: BTreeMap<String, String>,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub from_default: bool,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub location: Option<crate::ingest::CallableLocation>,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub constant_origin: Option<String>,
-    pub source: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct CfdFormattedString {
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub imports: BTreeMap<String, String>,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub from_default: bool,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub location: Option<crate::ingest::CallableLocation>,
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub constant_origin: Option<String>,
-    pub source: String,
 }
 
 impl CfdValue {
@@ -277,10 +221,6 @@ impl CfdValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdDictKey {
     Bool(bool),
@@ -304,10 +244,6 @@ pub enum CfdDictKey {
 /// a presentation hint that may be missing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
 pub struct CfdEnumValue {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub enum_name: EnumName,
