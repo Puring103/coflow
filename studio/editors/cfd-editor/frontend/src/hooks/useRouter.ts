@@ -1,4 +1,5 @@
 import { useReducer, useCallback, useMemo } from 'react'
+import { afterSourceSave } from '../state/sourceAutosave'
 import type { Route } from '../wire'
 
 interface State {
@@ -43,7 +44,9 @@ export interface RouterState {
 }
 
 export function useRouter(): RouterState {
-  const [s, dispatch] = useReducer(reduce, { stack: [], cursor: -1 })
+  const [s, rawDispatch] = useReducer(reduce, { stack: [], cursor: -1 })
+
+  const dispatch = useCallback((action: Action) => afterSourceSave(() => rawDispatch(action)), [])
 
   const push    = useCallback((r: Route) => dispatch({ type: 'push',    route: r }), [])
   const replace = useCallback((r: Route) => dispatch({ type: 'replace', route: r }), [])

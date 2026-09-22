@@ -26,7 +26,7 @@ fn schema_generation_is_stable_for_data_saves_and_advances_for_schema_publicatio
         .expect("load project");
     let data = fs::read_to_string(data_path).expect("read data");
     let data_saved = store
-        .write_source_text(initial.session_id, "data/units.cfd", &data)
+        .write_source_text(initial.session_id, "data/units.cfd", &data, &data)
         .expect("save data");
     assert_eq!(data_saved.revision, initial.revision);
     let data_saved = store
@@ -34,6 +34,7 @@ fn schema_generation_is_stable_for_data_saves_and_advances_for_schema_publicatio
             initial.session_id,
             "data/units.cfd",
             &format!("{data}\n// edited\n"),
+            &data,
         )
         .expect("save changed data");
     assert!(data_saved.revision > initial.revision);
@@ -44,6 +45,7 @@ fn schema_generation_is_stable_for_data_saves_and_advances_for_schema_publicatio
             initial.session_id,
             "schema.cft",
             &format!("{schema}\nenum Mode {{ First, Second }}\n"),
+            &schema,
         )
         .expect("save schema");
     assert_eq!(schema_saved.schema_revision, initial.schema_revision + 1);
@@ -967,7 +969,7 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
         "{diagnostics:#?}"
     );
     let bootstrap = store
-        .write_source_text(session_id, file_path, invalid)
+        .write_source_text(session_id, file_path, invalid, &original)
         .expect("invalid data source remains editable");
     assert!(bootstrap
         .diagnostics
@@ -984,7 +986,7 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
 
     let edited = format!("{original}\n");
     let saved = store
-        .write_source_text(session_id, file_path, &edited)
+        .write_source_text(session_id, file_path, &edited, invalid)
         .expect("save valid source text");
     assert!(saved.revision > snapshot.revision);
     assert_eq!(
@@ -1334,8 +1336,8 @@ fn cft_source_is_visible_editable_and_validated() {
         .expect("validate invalid CFT draft");
     assert!(diagnostics.iter().any(|item| item.severity == "error"));
     store
-        .write_source_text(snapshot.session_id, file_path, &invalid)
-        .expect_err("invalid CFT must not be written");
+        .write_source_text(snapshot.session_id, file_path, &invalid, &source)
+        .expect("invalid CFT remains editable");
 
     let unformatted = source.replace("  tags:", "tags:");
     let formatted = store
@@ -1348,7 +1350,7 @@ fn cft_source_is_visible_editable_and_validated() {
         formatted.text.trim_end()
     );
     let saved = store
-        .write_source_text(snapshot.session_id, file_path, &source_with_added_type)
+        .write_source_text(snapshot.session_id, file_path, &source_with_added_type, &invalid)
         .expect("save valid CFT source");
     assert!(saved.revision > snapshot.revision);
     assert!(saved
@@ -1397,5 +1399,25 @@ fn reload_preserves_unsaved_schema_versions_and_diagnostics() {
             .syntax_valid
     );
     store.close_session(id).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn source_save_checks_the_original_editor_text_and_allows_incomplete_cft() {
+    let (root, _) = array_project();
+    let store = SessionStore::new().unwrap();
+    let id = store.load_project(&root.join("coflow.yaml")).unwrap().session_id;
+    let path = root.join("schema.cft");
+    let original = fs::read_to_string(&path).unwrap();
+    let external = format!("{original}\n// external\n");
+    fs::write(&path, &external).unwrap();
+    assert!(store.write_source_text(id, "schema.cft", "table Broken {", &original).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), external);
+    let saved = store.write_source_text(id, "schema.cft", "table Broken {", &external).unwrap();
+    assert!(!saved.diagnostics.is_empty());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "table Broken {");
+    store.reload_session(id).expect("incomplete schema remains openable");
+    let repaired = store.write_source_text(id, "schema.cft", &original, "table Broken {").unwrap();
+    assert!(repaired.file_types.values().flatten().any(|ty| ty.name == "ArrayExample"));
     fs::remove_dir_all(root).unwrap();
 }

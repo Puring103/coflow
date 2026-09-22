@@ -76,6 +76,16 @@ pub struct PreparedSourceUpdate {
     file: ProjectFileUpdate,
 }
 
+impl PreparedSourceUpdate {
+    /// 对照编辑开始时的原文，而不是准备事务时读到的新内容。
+    pub fn verify_base(&self, expected: &str) -> Result<(), DiagnosticSet> {
+        if self.file.expected.as_deref() != Some(expected.as_bytes()) {
+            return Err(DiagnosticSet::one(Diagnostic::error("SOURCE-CONFLICT", "PROJECT", "文件已被其他操作修改，请选择使用磁盘内容或保留本地内容")));
+        }
+        Ok(())
+    }
+}
+
 impl WriteProjectSession {
     pub fn source_update_context(&self) -> SourceUpdateContext {
         SourceUpdateContext {
@@ -179,11 +189,12 @@ impl SourceUpdateContext {
                 )));
             }
             let mut runtime = SchemaCache::new(self.session.project.clone());
-            runtime.refresh_with_overrides(&[SchemaTextOverride {
+            let attempt = runtime.refresh_with_overrides(&[SchemaTextOverride {
                 requested_module: None,
                 normalized_path: path.clone(),
                 source: source.to_string(),
-            }])?;
+            }]);
+            if runtime.latest_attempt().is_none() { attempt?; }
             let schema = runtime.into_latest_attempt().ok_or_else(|| {
                 DiagnosticSet::one(Diagnostic::error(
                     "SOURCE-SCHEMA",

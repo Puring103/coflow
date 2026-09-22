@@ -132,6 +132,7 @@ impl SessionStore {
         id: u32,
         file_path: &str,
         source: &str,
+        expected_source: &str,
     ) -> Result<ProjectBootstrap, EditorError> {
         let path = self.source_file_path(id, file_path)?;
         let entry = self.session(id)?;
@@ -139,6 +140,7 @@ impl SessionStore {
         let candidate = context
             .prepare(&path, source)
             .map_err(api_diagnostics_to_editor_error)?;
+        candidate.verify_base(expected_source).map_err(api_diagnostics_to_editor_error)?;
         let mut session = entry.state.write();
         session.ensure_writable()?;
         let commit = session

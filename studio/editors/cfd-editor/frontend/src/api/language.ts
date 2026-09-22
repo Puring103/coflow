@@ -83,7 +83,8 @@ export async function writeSourceText(
   sessionId: number,
   filePath: string,
   source: string,
+  expectedSource: string,
 ): Promise<ProjectBootstrap> {
-  return invokeCommand<ProjectBootstrap>('write_source_text', { sessionId, filePath, source })
+  return invokeCommand<ProjectBootstrap>('write_source_text', { sessionId, filePath, source, expectedSource })
 }
 
