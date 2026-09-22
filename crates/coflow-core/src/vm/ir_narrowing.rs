@@ -1,17 +1,17 @@
 //! 解码 IR 的类型收窄必须由实际控制流守卫证明，不能信任 Copy 的目标类型。
-use super::ir::{Function, Operation as O, ValueId};
+use super::ir::{Function, Operation as O, IrValueId};
 use crate::schema::{CftSchema, CftValueType as Ty};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Fact { Some(ValueId), Type(ValueId, String), Invalid(ValueId) }
-impl Fact { fn source(&self) -> ValueId { match self { Self::Some(value) | Self::Type(value, _) | Self::Invalid(value) => *value } } }
+enum Fact { Some(IrValueId), Type(IrValueId, String), Invalid(IrValueId) }
+impl Fact { fn source(&self) -> IrValueId { match self { Self::Some(value) | Self::Type(value, _) | Self::Invalid(value) => *value } } }
 #[derive(Clone, PartialEq, Eq)]
 struct Predicate { yes: BTreeSet<Fact>, no: BTreeSet<Fact> }
 #[derive(Clone, Default, PartialEq, Eq)]
-struct State { facts: BTreeSet<Fact>, predicates: BTreeMap<ValueId, Predicate>, required: BTreeMap<ValueId, BTreeSet<Fact>> }
+struct State { facts: BTreeSet<Fact>, predicates: BTreeMap<IrValueId, Predicate>, required: BTreeMap<IrValueId, BTreeSet<Fact>> }
 impl Function {
-    pub(super) fn validate_narrowing(&self, schema: &CftSchema, reads: &[Vec<ValueId>], writes: &[Vec<ValueId>], successors: &[Vec<usize>]) -> Result<(), String> {
+    pub(super) fn validate_narrowing(&self, schema: &CftSchema, reads: &[Vec<IrValueId>], writes: &[Vec<IrValueId>], successors: &[Vec<usize>]) -> Result<(), String> {
         if !self.body.iter().any(|node| matches!(node.operation, O::Copy(source) if !schema.value_type_assignable(&self.values[source.0 as usize], &self.values[node.destination.0 as usize]))) { return Ok(()); }
         let mut incoming = vec![None::<State>; self.body.len()]; incoming[0] = Some(State::default());
         let mut pending = VecDeque::from([0]); let mut steps = 0;

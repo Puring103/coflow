@@ -2,7 +2,7 @@
 use super::{ArrayValue, DictionaryValue, Value, ValueId};
 use super::dictionary::KeyRef as Key;
 use crate::{schema::CftValueType, vm::executor::Slot};
-use std::{borrow::Cow, collections::{BTreeMap, BTreeSet}, ops::Range, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet}, ops::Range, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct TypeId(u32);
@@ -74,6 +74,7 @@ struct Host { service: StringId, field: StringId, ty: CftValueType }
 type Dictionary = DictionaryValue;
 
 /// 固定与动态值共用只读借用视图，热路径不重建 Value、字段名或集合。
+#[derive(Clone, Copy)]
 pub(super) enum Fields<'a> { Packed { fields: &'a [FieldSpec], bytes: &'a [u8] }, Named(&'a [(String, ValueId)]) }
 impl Fields<'_> {
     pub(super) fn get(&self, index: usize) -> Option<ValueId> {
@@ -102,7 +103,7 @@ mod tests {
         assert!(matches!(values.scalar(ids[5]), Some(Slot::Float(value)) if value.to_bits() == 0x7fc00001));
         assert_eq!(values.scalar(ids[6]), Some(Slot::Int(i32::MIN)));
         assert!(matches!(values.view(ids[8]), Some(View::Array(values)) if values.iter().collect::<Vec<_>>() == vec![ids[2], ids[3], ids[7]]));
-        assert!(matches!(values.get(0).as_deref(), Some(Value::Object { fields, .. }) if fields[1].1 == 1));
+        assert!(matches!(values.materialize(0).as_ref(), Some(Value::Object { fields, .. }) if fields[1].1 == 1));
     }
     #[test]
     fn compact_publication_relocates_cycles_and_all_scalar_edges() {
@@ -122,10 +123,10 @@ mod tests {
         assert_eq!(fixed.field(remap[3], 0), Some(remap[3]));
         assert_eq!(fixed.field(remap[3], 1), Some(remap[0]));
         assert!(matches!(fixed.view(remap[4]), Some(View::Array(array)) if array.references().is_empty() && array.heap_bytes() == 8));
-        assert!(matches!(fixed.get(remap[5]).as_deref(), Some(Value::Dimension { default, variants, explicit })
+        assert!(matches!(fixed.materialize(remap[5]).as_ref(), Some(Value::Dimension { default, variants, explicit })
             if *default == remap[1] && variants["none"] == remap[2] && explicit.contains("none")));
-        assert!(matches!(fixed.get(remap[6]).as_deref(), Some(Value::Function { owner: Some(owner), .. }) if *owner == remap[3]));
-        assert!(matches!(fixed.get(remap[7]).as_deref(), Some(Value::Template { owner: Some(owner), .. }) if *owner == remap[3]));
+        assert!(matches!(fixed.materialize(remap[6]).as_ref(), Some(Value::Function { owner: Some(owner), .. }) if *owner == remap[3]));
+        assert!(matches!(fixed.materialize(remap[7]).as_ref(), Some(Value::Template { owner: Some(owner), .. }) if *owner == remap[3]));
         assert_eq!(fixed.dictionary_index(remap[8], Slot::Int(i32::MIN)), Some(Some(remap[2])));
         assert!(matches!(fixed.scalar(remap[1]), Some(Slot::Float(value)) if value.to_bits() == 0x8000_0000));
         assert!(compact(vec![Value::Array(vec![u64::MAX].into())]).is_err());
@@ -251,16 +252,39 @@ mod tests {
 
     }
 }
+#[derive(Clone, Copy)]
+pub(super) struct ObjectView<'a> {
+    pub(super) type_name: &'a str,
+    pub(super) key: Option<&'a str>,
+    fields: Fields<'a>,
+}
+impl<'a> std::ops::Deref for ObjectView<'a> {
+    type Target = Fields<'a>;
+    fn deref(&self) -> &Self::Target { &self.fields }
+}
+impl<'a> Fields<'a> {
+    pub(super) fn len(self) -> usize { match self { Self::Packed { fields, .. } => fields.len(), Self::Named(fields) => fields.len() } }
+    pub(super) fn named_at(self, index: usize, fixed: &'a FixedValues) -> Option<(&'a str, ValueId)> {
+        let name = match self {
+            Self::Packed { fields, .. } => fixed.text(fixed.field_names[fields.get(index)?.name.0 as usize]),
+            Self::Named(fields) => fields.get(index)?.0.as_str(),
+        };
+        Some((name, self.get(index)?))
+    }
+}
+#[derive(Clone, Copy)]
 pub(super) enum View<'a> {
-    Scalar(Slot), String(&'a str), Object(Fields<'a>), Array(&'a ArrayValue), Dict(&'a Dictionary), Host, Other,
+    Scalar(Slot), String(&'a str), Enum(&'a str, u32), Function, Template, Object(ObjectView<'a>), Array(&'a ArrayValue), Dict(&'a Dictionary), Host, Other,
 }
 impl<'a> View<'a> {
     pub(super) fn dynamic(value: &'a Value) -> Self {
         match value {
             Value::None => Self::Scalar(Slot::None), Value::Bool(v) => Self::Scalar(Slot::Bool(*v)),
             Value::Int(v) => Self::Scalar(Slot::Int(*v)), Value::Float(v) => Self::Scalar(Slot::Float(*v)),
+            Value::Enum { type_name, value } => Self::Enum(type_name, *value),
+            Value::Function { .. } => Self::Function, Value::Template { .. } => Self::Template,
             Value::String(v) => Self::String(v), Value::Array(v) => Self::Array(v), Value::Dict(v) => Self::Dict(v),
-            Value::Object { fields, .. } => Self::Object(Fields::Named(fields)), Value::HostData { .. } => Self::Host,
+            Value::Object { type_name, key, fields, .. } => Self::Object(ObjectView { type_name, key: key.as_deref(), fields: Fields::Named(fields) }), Value::HostData { .. } => Self::Host,
             _ => Self::Other,
         }
     }
@@ -446,8 +470,10 @@ impl FixedValues {
         if let Some(scalar) = self.scalar(id) { return Some(View::Scalar(scalar)); }
         let (tag, payload) = self.cell(id)?;
         Some(match tag {
+            5 => { let (ty, value) = self.enums[payload]; View::Enum(self.type_name(ty), value) },
+            10 => View::Function, 11 => View::Template,
             4 => View::String(self.text(StringId(payload as u32))),
-            6 => { let object = &self.objects[payload]; View::Object(Fields::Packed { fields: &self.layouts[object.layout.0 as usize].fields, bytes: &self.field_bytes[object.fields.clone()] }) },
+            6 => { let object = &self.objects[payload]; View::Object(ObjectView { type_name: self.type_name(self.layouts[object.layout.0 as usize].ty), key: object.key.map(|id| self.text(id)), fields: Fields::Packed { fields: &self.layouts[object.layout.0 as usize].fields, bytes: &self.field_bytes[object.fields.clone()] } }) },
             7 => View::Array(&self.arrays[payload]),
             8 => View::Dict(&self.dictionaries[payload]), 12 => View::Host, _ => View::Other,
         })
@@ -517,10 +543,26 @@ impl FixedValues {
             _ => return None,
         })
     }
-    pub(super) fn get(&self, id: ValueId) -> Option<Cow<'_, Value>> {
-        if let Some(value) = super::inline_value(id) { return Some(Cow::Owned(value)); }
+    pub(super) fn enum_value(&self, id: ValueId) -> Option<(&str, u32)> {
+        let (5, index) = self.cell(id)? else { return None; };
+        let (ty, value) = self.enums[index];
+        Some((self.type_name(ty), value))
+    }
+    /// 编译只遍历可调用条目，绝不物化无关的记录和集合。
+    pub(super) fn callables(&self) -> impl Iterator<Item = (ValueId, &Arc<str>, Option<ValueId>, bool)> {
+        self.cells.iter().enumerate().filter_map(|(id, cell)| {
+            let index = (cell >> 4) as usize;
+            match cell & 15 {
+                10 if self.functions[index].host.is_none() => { let value = &self.functions[index]; Some((id as ValueId, &value.source, value.owner, false)) }
+                11 => { let (source, owner) = &self.templates[index]; Some((id as ValueId, source, *owner, true)) }
+                _ => None,
+            }
+        })
+    }
+    pub(super) fn materialize(&self, id: ValueId) -> Option<Value> {
+        if let Some(value) = super::inline_value(id) { return Some(value); }
         let (tag, payload) = self.cell(id)?;
-        Some(Cow::Owned(match tag {
+        Some(match tag {
             4 => Value::String(self.text(StringId(payload as u32)).into()),
             5 => { let (ty, value) = self.enums[payload]; Value::Enum { type_name: self.type_name(ty).into(), value } }
             6 => {
@@ -538,7 +580,6 @@ impl FixedValues {
             11 => { let (source, owner) = &self.templates[payload]; Value::Template { source: source.clone(), owner: *owner } }
             12 => { let host = &self.hosts[payload]; Value::HostData { service: self.text(host.service).into(), field: self.text(host.field).into(), value_type: host.ty.clone() } }
             _ => unreachable!("固定区标签在发布前构造"),
-        }))
+        })
     }
-    pub(super) fn iter(&self) -> impl Iterator<Item = Cow<'_, Value>> { (0..self.len()).map(|id| self.get(id).expect("固定身份已验证")) }
 }

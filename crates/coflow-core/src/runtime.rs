@@ -9,7 +9,7 @@ use crate::{
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
@@ -20,6 +20,9 @@ pub use dictionary::DictionaryValue;
 mod checking;
 pub use array::ArrayValue;
 mod execution;
+mod heap;
+mod state;
+mod image;
 mod fixed;
 pub use checking::CheckSelection;
 
@@ -121,7 +124,7 @@ pub enum HostValue {
 
 /// Host 服务整对象绑定；数据读取和函数调用使用同一 Runtime 生命周期。
 /// Runtime 为单线程设计（见 VM 设计文档），服务回调只会从执行线程调用。
-pub trait HostService: std::fmt::Debug + Send {
+pub trait HostService: std::fmt::Debug {
     fn call(&self, field: &str, _arguments: &[HostValue]) -> Result<HostValue, ExecutionError> {
         Err(ExecutionError::InvalidAccess(format!(
             "Host 函数未实现：{field}"
@@ -147,11 +150,8 @@ pub struct RuntimeImage {
     table_values: BTreeMap<String, Vec<ValueId>>,
     check_record_ids: BTreeMap<ValueId, crate::CfdRecordId>,
     record_lookup: BTreeMap<String, BTreeMap<String, ValueId>>,
-    contract_values: BTreeSet<ValueId>,
     constants: BTreeMap<String, ValueId>,
-    function_imports: BTreeMap<ValueId, BTreeMap<String, String>>,
-    function_locations: BTreeMap<ValueId, crate::ingest::CallableLocation>,
-    programs: std::sync::OnceLock<execution::ImagePrograms>,
+    programs: image::ProgramImage,
 }
 
 #[derive(Debug)]
@@ -159,10 +159,10 @@ pub struct Runtime {
     identity: u64,
     image: Arc<RuntimeImage>,
     bindings: HostBindings,
-    released: AtomicBool,
+    released: std::cell::Cell<bool>,
     creator_thread: std::thread::ThreadId,
     execution: std::cell::Cell<u32>,
-    vm: execution::VmState,
+    vm: state::VmState,
     check_reporter: Arc<checking::CheckReporter>,
 }
 impl std::ops::Deref for Runtime {
@@ -542,50 +542,39 @@ impl Runtime {
             .entry("Coflow::Check".into())
             .or_insert_with(|| check_reporter.clone());
         let fixed_count = values.len() as ValueId;
+        let values = fixed::FixedValues::new(values)?;
+        let programs = image::ProgramImage::build(&image::LinkContext {
+            profile, contract: &contract, values: &values, constants: &constants,
+            record_lookup: &record_lookup, contract_values: &contract_values,
+            function_imports: &function_imports, function_locations: &function_locations,
+        })?;
         let runtime = Self {
             identity,
             image: Arc::new(RuntimeImage {
                 profile,
                 contract,
-                values: fixed::FixedValues::new(values)?,
+                values,
                 records,
                 table_values,
                 check_record_ids,
                 record_lookup,
-                contract_values,
                 constants,
-                function_imports,
-                function_locations,
-                programs: std::sync::OnceLock::new(),
+                programs,
             }),
             bindings,
-            released: AtomicBool::new(false),
+            released: std::cell::Cell::new(false),
             creator_thread: std::thread::current().id(),
             execution: std::cell::Cell::new(0),
-            vm: execution::VmState::new(fixed_count),
+            vm: state::VmState::new(fixed_count),
             check_reporter,
         };
-        let programs = execution::ImagePrograms::build(&runtime)?;
-        runtime
-            .image
-            .programs
-            .set(programs)
-            .map_err(|_| "映像已发布")?;
         Ok(runtime)
     }
-    fn code(&self) -> &execution::ImagePrograms {
-        self.image
-            .programs
-            .get()
-            .expect("仅已完成链接的映像可对外发布")
-    }
+    fn code(&self) -> &image::ProgramImage { &self.image.programs }
     pub fn image(&self) -> Arc<RuntimeImage> {
         self.image.clone()
     }
     pub fn from_image(image: Arc<RuntimeImage>, bindings: HostBindings) -> Result<Self, String> {
-        if image.programs.get().is_none() {
-            return Err("映像尚未发布".into());
-        }
         let mut checked = RuntimeBuilder::new(image.contract.clone());
         for (name, service) in bindings {
             checked.bind(name, service)?;
@@ -600,10 +589,10 @@ impl Runtime {
             .map_err(|_| "Runtime identity exhausted")?;
         Ok(Self {
             identity,
-            vm: execution::VmState::new(image.values.len()),
+            vm: state::VmState::new(image.values.len()),
             image,
             bindings: checked.bindings,
-            released: AtomicBool::new(false),
+            released: std::cell::Cell::new(false),
             creator_thread: std::thread::current().id(),
             execution: std::cell::Cell::new(0),
             check_reporter,
@@ -626,7 +615,7 @@ impl Runtime {
         if self.execution.get() != 0 {
             return Err(ExecutionError::RuntimeBusy);
         }
-        self.released.store(true, Ordering::Release);
+        self.released.set(true);
         Ok(())
     }
     pub fn is_executing(&self) -> bool {
@@ -638,7 +627,7 @@ impl Runtime {
                 "Runtime 只能在创建线程访问".into(),
             ));
         }
-        if self.released.load(Ordering::Acquire) {
+        if self.released.get() {
             Err(ExecutionError::Released)
         } else {
             Ok(())
@@ -676,13 +665,13 @@ impl Runtime {
                 continue;
             }
             self.ensure_alive()?;
-            let value = if let Some(value) = self.values.get(id) {
-                execution::ValueAccess::Fixed {
+            let value = if let Some(value) = self.values.materialize(id) {
+                execution::MaterializedValue::Materialized {
                     value,
                     _memory: None,
                 }
             } else {
-                execution::ValueAccess::Dynamic(self.vm.value(id)?)
+                execution::MaterializedValue::Dynamic(self.vm.value(id)?)
             };
             match value.as_ref() {
                 Value::Object { fields, bases, .. } => {
@@ -706,8 +695,8 @@ impl Runtime {
     }
     pub fn value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
         self.ensure_alive()?;
-        let value = if let Some(value) = self.values.get(id) {
-            Arc::new(value.into_owned())
+        let value = if let Some(value) = self.values.materialize(id) {
+            Arc::new(value)
         } else {
             self.vm.value(id)?
         };
@@ -726,8 +715,8 @@ impl Runtime {
     /// 为批量传输读取原始节点；HostData 保持惰性，不在序列化记录时触发回调。
     pub fn stored_value(&self, id: ValueId) -> Result<Arc<Value>, ExecutionError> {
         self.ensure_alive()?;
-        if let Some(value) = self.values.get(id) {
-            Ok(Arc::new(value.into_owned()))
+        if let Some(value) = self.values.materialize(id) {
+            Ok(Arc::new(value))
         } else {
             self.vm.value(id)
         }
@@ -745,10 +734,6 @@ impl Runtime {
                 .ok_or_else(|| ExecutionError::InvalidAccess(format!("unknown field {name}"))),
             _ => Err(ExecutionError::InvalidAccess("expected object".into())),
         }
-    }
-    /// 链接器只读取尚未发布的固定区，不触发 HostData 或维度求值。
-    fn fixed_field(&self, id: ValueId, slot: u16) -> Option<ValueId> {
-        self.values.field(id, usize::from(slot))
     }
     pub fn dimension_default(&self, id: ValueId) -> Result<ValueId, ExecutionError> {
         match self.value(id)?.as_ref() {
@@ -873,17 +858,21 @@ impl Runtime {
         id: ValueId,
         key: HostValue,
     ) -> Result<Option<ValueId>, ExecutionError> {
-        let dictionary = self.value(id)?;
-        let Value::Dict(entries) = dictionary.as_ref() else {
-            return Err(ExecutionError::InvalidAccess("expected dictionary".into()));
-        };
-        // 键已归一化为 ScalarKey，直接按键查表。
+        self.ensure_alive()?;
+        // 查询只借用固定字典；动态字典借出的 Arc 保持载荷存活。
         let scalar = match key {
             HostValue::Bool(value) => ScalarKey::Bool(value),
             HostValue::Int(value) => ScalarKey::Int(value),
-            HostValue::String(value) => ScalarKey::String(value.clone()),
+            HostValue::String(value) => ScalarKey::String(value),
             HostValue::Enum { type_name, value } => ScalarKey::Enum { type_name, value },
             _ => return Ok(None),
+        };
+        if let Some(fixed::View::Dict(entries)) = self.values.view(id) {
+            return Ok(entries.get(&scalar).map(|(_, value)| *value));
+        }
+        let dictionary = self.value(id)?;
+        let Value::Dict(entries) = dictionary.as_ref() else {
+            return Err(ExecutionError::InvalidAccess("expected dictionary".into()));
         };
         Ok(entries.get(&scalar).map(|(_, value)| *value))
     }

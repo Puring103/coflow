@@ -7,13 +7,13 @@ use crate::{
     vm::{contract_programs::CheckProgram, executor::ExecutionLimits},
     CfdDiagnostic, CfdErrorCode,
 };
-use std::{collections::BTreeSet, sync::Mutex};
+use std::{cell::RefCell, collections::BTreeSet};
 
 #[derive(Debug, Default)]
 pub(super) struct CheckReporter {
-    // 检查报告需要 Send+Sync（作为 HostService 绑定），保留互斥锁；仅在检查调度路径触碰。
-    pub messages: Mutex<Vec<Vec<CheckMessage>>>,
-    pub location: Mutex<Option<CheckSchemaLocation>>,
+    // 报告归创建线程所有；短期借用在回调返回前结束，同线程重入不持有锁。
+    pub messages: RefCell<Vec<Vec<CheckMessage>>>,
+    pub location: RefCell<Option<CheckSchemaLocation>>,
 }
 #[derive(Debug)]
 pub(super) struct CheckMessage {
@@ -40,8 +40,7 @@ impl HostService for CheckReporter {
         }
         let mut messages = self
             .messages
-            .lock()
-            .map_err(|_| ExecutionError::RuntimeBusy)?;
+            .borrow_mut();
         let report = messages.last_mut().ok_or_else(|| {
             ExecutionError::InvalidAccess(
                 "require 报告接收器未绑定；普通调用可配置自定义 Host 服务".into(),
@@ -52,8 +51,7 @@ impl HostService for CheckReporter {
                 text: message.clone(),
                 location: self
                     .location
-                    .lock()
-                    .map_err(|_| ExecutionError::RuntimeBusy)?
+                    .borrow()
                     .clone(),
             });
         }
@@ -169,16 +167,13 @@ impl Runtime {
             if budget.remaining() == 0 {
                 break;
             }
-            if let Ok(mut reports) = self.check_reporter.messages.lock() {
-                reports.push(Vec::new());
-            }
+            self.check_reporter.messages.borrow_mut().push(Vec::new());
             let result = self.execute_check_program(program.program.clone(), owner, budget.clone());
             let messages = self
                 .check_reporter
                 .messages
-                .lock()
-                .ok()
-                .and_then(|mut reports| reports.pop())
+                .borrow_mut()
+                .pop()
                 .unwrap_or_default();
             output.statistics.executed_tasks += 1;
             let diagnostic_start = output.request_diagnostics.len();
@@ -192,7 +187,7 @@ impl Runtime {
             if let Err(error) = result {
                 let mut diagnostic = diagnostic(
                     &program,
-                    if budget.remaining() == 0 {
+                    if error.limit().is_some() {
                         CfdErrorCode::CheckBudgetExceeded
                     } else {
                         CfdErrorCode::CheckEvalTypeError

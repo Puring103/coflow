@@ -3,24 +3,14 @@ use coflow_core::runtime::{Runtime, Value, ValueId};
 use std::collections::{BTreeSet, VecDeque};
 
 pub(super) fn encode_dynamic(runtime: &Runtime, root: ValueId) -> Result<Vec<u8>, String> {
-    let mut output = Writer(b"CFVI".to_vec());
-    output.u32(1)?;
-    let count_offset = output.0.len();
-    output.u32(0)?;
-    let count = runtime.visit_value_graph(Some(root), |id, value| {
-        encode_value(&mut output, id, value).map_err(coflow_core::vm::ExecutionError::InvalidAccess)
-    }).map_err(|error| error.to_string())?;
-    let count = u32::try_from(count).map_err(|_| "value image length overflow")?;
-    output.0[count_offset..count_offset + 4].copy_from_slice(&count.to_le_bytes());
-    Ok(output.0)
+    encode_image(runtime, root, false)
 }
 
-/// 固定记录只传当前记录和内联值；其他记录保留身份，由托管端按需读取。
+/// 固定记录只展开根记录，其他记录保留身份；动态图共用同一协议和遍历。
 pub(super) fn encode_record(runtime: &Runtime, root: ValueId) -> Result<Vec<u8>, String> {
-    let mut singletons = BTreeSet::new();
-    for ty in runtime.contract().schema().all_types() {
-        if let Ok(id) = runtime.singleton(&ty.name) { singletons.insert(id); }
-    }
+    encode_image(runtime, root, true)
+}
+fn encode_image(runtime: &Runtime, root: ValueId, expand_root: bool) -> Result<Vec<u8>, String> {
     let mut output = Writer(b"CFVI".to_vec());
     output.u32(1)?;
     let count_offset = output.0.len();
@@ -31,8 +21,11 @@ pub(super) fn encode_record(runtime: &Runtime, root: ValueId) -> Result<Vec<u8>,
         if !visited.insert(id) { continue; }
         let value = runtime.stored_value(id).map_err(|error| error.to_string())?;
         output.id(id)?;
-        let reference = id != root && (singletons.contains(&id)
-            || matches!(value.as_ref(), Value::Object { key: Some(_), .. }));
+        // 类型查询使用 schema 索引，不为每张记录图扫描全部单例。
+        let reference = (!expand_root || id != root) && match value.as_ref() {
+            Value::Object { type_name, key, .. } => key.is_some() || runtime.require_record_kind(type_name, true).is_ok(),
+            _ => false,
+        };
         encode_record_value(&mut output, value.as_ref(), reference, &mut pending)?;
     }
     let count = u32::try_from(visited.len()).map_err(|_| "record image length overflow")?;
@@ -76,35 +69,6 @@ fn encode_record_value(output: &mut Writer, value: &Value, reference: bool, pend
         }
         Value::HostData { .. } => output.byte(12)?,
     }
-    Ok(())
-}
-fn encode_value(output: &mut Writer, id: ValueId, value: &Value) -> Result<(), String> {
-    output.id(id)?;
-        match value {
-            Value::None => output.byte(0)?,
-            Value::Bool(value) => { output.byte(1)?; output.byte(u8::from(*value))?; },
-            Value::Int(value) => { output.byte(2)?; output.u32(*value as u32)?; },
-            Value::Float(value) => { output.byte(3)?; output.u32(value.to_bits())?; },
-            Value::String(value) => { output.byte(4)?; output.text(value)?; },
-            Value::Enum { type_name, value } => { output.byte(5)?; output.text(type_name)?; output.u32(*value)?; },
-            Value::Object { type_name, key, fields, bases, .. } => {
-                output.byte(6)?; output.text(type_name)?;
-                output.byte(u8::from(key.is_some()))?; if let Some(key) = key { output.text(key)?; }
-                output.count(fields.len())?;
-                for (name, id) in fields { output.text(name)?; output.id(*id)?; }
-                output.count(bases.len())?;
-                for (name, id) in bases { output.text(name)?; output.id(*id)?; }
-            },
-            Value::Array(items) => { output.byte(7)?; output.count(items.len())?; for id in items { output.id(id)?; } },
-            Value::Dict(items) => { output.byte(8)?; output.count(items.len())?; for (key, value) in items.values() { output.id(*key)?; output.id(*value)?; } },
-            Value::Function { source, .. } => { output.byte(9)?; output.text(source)?; },
-            Value::Template { source, .. } => { output.byte(10)?; output.text(source)?; },
-            Value::Dimension { default, variants, explicit } => {
-                output.byte(11)?; output.id(*default)?; output.count(variants.len())?;
-                for (name, id) in variants { output.text(name)?; output.id(*id)?; output.byte(u8::from(explicit.contains(name)))?; }
-            },
-            Value::HostData { .. } => output.byte(12)?,
-        }
     Ok(())
 }
 struct Writer(Vec<u8>);

@@ -17,6 +17,8 @@ namespace Coflow
         private int position;
         private readonly int count;
         private int consumed;
+        // 返回编码只含句柄；投影必须活到原生端接收整个回调结果。
+        private ArgumentWriter? resultRoots;
         internal Response Result { get; private set; }
         internal HostCall(byte[] data, int position)
         {
@@ -38,6 +40,7 @@ namespace Coflow
             if (consumed != count) throw new CoflowException("Host argument count mismatch.");
             var writer = new ArgumentWriter(1);
             codec.WriteArgument(writer, value);
+            resultRoots = writer;
             var encoded = writer.Finish();
             if (encoded[4] == 6 || encoded[4] == 7 || encoded[4] == 8) {
                 Result = Native.Call(NativeOperation.CreateBuffer, data: encoded);
@@ -117,11 +120,10 @@ namespace Coflow
             // 强所有权留在托管 builder/runtime；原生只持弱句柄，避免 Host 反向引用
             // Runtime 时形成 GC 无法看见的跨语言强引用环。
             var context=GCHandle.Alloc(host, GCHandleType.Weak);
-            bool retained=false;
             bool submitted=false;
             try
             {
-                builder.Handle.DangerousAddRef(ref retained);
+                builder.Handle.RequireAlive();
                 var bytes=Encoding.UTF8.GetBytes(host.Service);
                 // 原生接口接管 context，绑定失败也会调用 Free。
                 uint result=Bind(builder.Handle.Id,bytes,(UIntPtr)bytes.Length,unchecked((ulong)GCHandle.ToIntPtr(context).ToInt64()),ReadCallback,FreeCallback);
@@ -131,7 +133,7 @@ namespace Coflow
             finally
             {
                 if(!submitted&&context.IsAllocated)context.Free();
-                if(retained)builder.Handle.DangerousRelease();
+                GC.KeepAlive(builder);
                 GC.KeepAlive(host);
             }
         }
@@ -152,7 +154,8 @@ namespace Coflow
                     uint fieldLength=ReadUInt32(bytes,ref position);
                     if(fieldLength>int.MaxValue||position>bytes.Length-(int)fieldLength)throw new CoflowException("Invalid Host call payload.");
                     string function=Encoding.UTF8.GetString(bytes,position,(int)fieldLength); position+=(int)fieldLength;
-                    var call=new HostCall(bytes,position); host.Call(function,call); result=call.Result; return;
+                    var call=new HostCall(bytes,position); host.Call(function,call); result=call.Result;
+                    Native.RetainCallbackResult(call); return;
                 }
                 string name=Encoding.UTF8.GetString(bytes);
                 switch(host.Read(name))
@@ -166,7 +169,8 @@ namespace Coflow
                         result=Native.Call(NativeOperation.CreateBuffer,data:Encoding.UTF8.GetBytes(v.TypeName)); result.Tag=5; result.Integer=v.Value; break;
                     case ICoflowValue v:
                         var writer = new ArgumentWriter(1); v.Encode(writer);
-                        result = Native.Call(NativeOperation.CreateBuffer, data: writer.Finish()); result.Tag = 12; break;
+                        result = Native.Call(NativeOperation.CreateBuffer, data: writer.Finish()); result.Tag = 12;
+                        Native.RetainCallbackResult(writer); break;
                     default: throw new CoflowException("Host data must be a scalar or a value from the same Runtime.");
                 }
             }
@@ -186,7 +190,7 @@ namespace Coflow
 #endif
         private static void Free(ulong context)
         {
-            // 终结线程只解除托管保活，不调用 Unity API。
+            // 回调句柄随创建线程的原生资源一起释放。
             try{GCHandle.FromIntPtr(new IntPtr(unchecked((long)context))).Free();}catch{ }
         }
     }

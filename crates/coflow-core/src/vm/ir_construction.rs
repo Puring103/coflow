@@ -1,13 +1,13 @@
 //! 构造能力与未发布 self 绑定的控制流验证；解码后的 IR 也必须满足同一边界。
-use super::{construction::BuildOp as B, ir::{Function, Operation as O, ValueId}};
+use super::{construction::BuildOp as B, ir::{Function, Operation as O, IrValueId}};
 use crate::schema::CftValueType as Ty;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct State {
-    active: BTreeSet<ValueId>,
-    possible: BTreeSet<ValueId>,
-    dependencies: BTreeMap<ValueId, BTreeSet<ValueId>>,
+    active: BTreeSet<IrValueId>,
+    possible: BTreeSet<IrValueId>,
+    dependencies: BTreeMap<IrValueId, BTreeSet<IrValueId>>,
 }
 fn carries_binding(ty: &Ty) -> bool {
     match ty {
@@ -18,12 +18,12 @@ fn carries_binding(ty: &Ty) -> bool {
     }
 }
 impl Function {
-    pub(super) fn validate_construction(&self, reads: &[Vec<ValueId>], writes: &[Vec<ValueId>], successors: &[Vec<usize>]) -> Result<(), String> {
+    pub(super) fn validate_construction(&self, reads: &[Vec<IrValueId>], writes: &[Vec<IrValueId>], successors: &[Vec<usize>]) -> Result<(), String> {
         let explicit = self.body.iter().filter_map(|node| matches!(node.operation, O::Build(B::Start { .. })).then_some(node.destination)).collect::<BTreeSet<_>>();
         let implicit = self.body.iter().filter_map(|node| matches!(node.operation, O::ReserveObject { .. }).then_some(node.destination)).collect::<BTreeSet<_>>();
         if explicit.is_empty() && implicit.is_empty() { return Ok(()); }
         // 构造身份在循环中重复执行；丢弃前禁止把依赖旧身份的绑定带到作用域外。
-        let mut live = vec![BTreeSet::<ValueId>::new(); self.body.len()];
+        let mut live = vec![BTreeSet::<IrValueId>::new(); self.body.len()];
         loop {
             let mut changed = false;
             for pc in (0..self.body.len()).rev() {

@@ -1,8 +1,11 @@
 //! 复现字节码的完整程序体积和解码成本。两种存储编码使用相同逻辑程序。
+#[path = "support/compact.rs"]
+mod compact;
+use compact::{decode_compact, encode_compact};
 use coflow_core::{
     schema::{build_schema, parse_modules, CftFile, ModuleId},
     vm::{
-        bytecode::{decode_compact, encode_compact, Instruction, Program},
+        bytecode::{Instruction, Program},
         compiler::{compile, CompileContext},
     },
 };

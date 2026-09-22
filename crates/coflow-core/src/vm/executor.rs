@@ -3,68 +3,17 @@
 //! 性能契约：普通寄存器操作（Move、算术、跳转、标量比较）不触碰 Host 与堆，
 //! 只有昂贵指令（循环回边、调用、分配、文本操作）才计预算与发布 GC 根。
 use super::{bytecode::*, ExecutionError};
-use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
+use super::{error, scalar::{integer, boolean, int_binary, float_binary}};
+pub(crate) use super::{slot::Slot, budget::{Budget, TemporaryBytes}};
+pub use super::budget::ExecutionLimits;
+pub(crate) use super::scalar::scalar_binary;
 
 const ITERATION_BUDGET_BATCH: u64 = 256;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Slot {
-    Empty,
-    Unit,
-    None,
-    Bool(bool),
-    Int(i32),
-    Float(f32),
-    Handle(HandleId),
-}
-/// 三个 16 位字使引用与 i32/f32 共用 8 字节槽，既不使用 NaN 装箱，也不截断浮点位模式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct HandleId([u16; 3]);
-impl HandleId {
-    pub(crate) fn get(self) -> u64 {
-        u64::from(self.0[0]) | u64::from(self.0[1]) << 16 | u64::from(self.0[2]) << 32
-    }
-}
-impl Slot {
-    pub(crate) const MAX_HANDLE: u64 = (1u64 << 48) - 1;
-    pub(crate) const MAX_HEAP_HANDLE: u64 = (1u64 << 44) - 1;
-    /// 标量身份只编码内容，不分配堆节点；保留 None、NaN 位模式和负零的区别。
-    pub(crate) fn scalar_id(self) -> Option<u64> {
-        let (tag, bits) = match self {
-            Self::None | Self::Unit => (1, 0),
-            Self::Bool(value) => (2, u64::from(value)),
-            Self::Int(value) => (3, u64::from(value as u32)),
-            Self::Float(value) => (4, u64::from(value.to_bits())),
-            _ => return None,
-        };
-        Some((tag << 44) | bits)
-    }
-    pub(crate) fn from_scalar_id(id: u64) -> Option<Self> {
-        let bits = id & Self::MAX_HEAP_HANDLE;
-        if bits > u64::from(u32::MAX) {
-            return None;
-        }
-        match id >> 44 {
-            1 if bits == 0 => Some(Self::None),
-            2 if bits <= 1 => Some(Self::Bool(bits != 0)),
-            3 => Some(Self::Int(bits as u32 as i32)),
-            4 => Some(Self::Float(f32::from_bits(bits as u32))),
-            _ => None,
-        }
-    }
-    pub(crate) fn handle(id: u64) -> Self {
-        assert!(id <= Self::MAX_HANDLE, "执行引用必须在发布前验证");
-        Self::Handle(HandleId([
-            id as u16,
-            (id as u64 >> 16) as u16,
-            (id as u64 >> 32) as u16,
-        ]))
-    }
-}
-const _: () = assert!(size_of::<Slot>() == 8);
 #[derive(Debug, Clone)]
-pub(crate) struct Binding {
-    pub program: Arc<super::image::ValidatedProgram>,
+pub(crate) struct FunctionBinding<P = super::image::ValidatedProgram> {
+    pub program: Arc<P>,
     pub owner: Slot,
     /// 动态绑定整体共享，捕获缓冲直接转移所有权；空捕获不分配引用计数头。
     pub captures: Box<[Slot]>,
@@ -72,18 +21,18 @@ pub(crate) struct Binding {
 /// 映像绑定借用不可变程序表；只有动态闭包携带独立的捕获所有权。
 #[derive(Debug, Clone)]
 pub(crate) enum CallBinding<'a> {
-    Fixed(&'a Binding),
-    Closure(Arc<Binding>),
+    Fixed(&'a FunctionBinding),
+    Closure(Arc<FunctionBinding>),
 }
 impl std::ops::Deref for CallBinding<'_> {
-    type Target = Binding;
-    fn deref(&self) -> &Binding { match self { Self::Fixed(value) => value, Self::Closure(value) => value } }
+    type Target = FunctionBinding;
+    fn deref(&self) -> &FunctionBinding { match self { Self::Fixed(value) => value, Self::Closure(value) => value } }
 }
-impl<'a> From<&'a Binding> for CallBinding<'a> {
-    fn from(value: &'a Binding) -> Self { Self::Fixed(value) }
+impl<'a> From<&'a FunctionBinding> for CallBinding<'a> {
+    fn from(value: &'a FunctionBinding) -> Self { Self::Fixed(value) }
 }
-impl From<Arc<Binding>> for CallBinding<'_> {
-    fn from(value: Arc<Binding>) -> Self { Self::Closure(value) }
+impl From<Arc<FunctionBinding>> for CallBinding<'_> {
+    fn from(value: Arc<FunctionBinding>) -> Self { Self::Closure(value) }
 }
 enum ActiveProgram<'a> {
     Fixed(&'a super::image::ValidatedProgram),
@@ -100,7 +49,23 @@ pub(crate) enum Callable<'a> {
 }
 
 /// 值存储和宿主适配由 Runtime 提供；解释器只负责指令、调用和错误栈。
+#[derive(Debug, Default)]
+pub(crate) struct ExecutionBuffers {
+    registers: Vec<Slot>,
+    roots: Vec<Slot>,
+    operands: Vec<Slot>,
+    frames: Vec<Frame<'static>>,
+    pub(crate) published_roots: Vec<Slot>,
+}
+impl ExecutionBuffers {
+    pub(crate) fn storage_bytes(&self) -> usize {
+        (self.registers.capacity() + self.roots.capacity() + self.operands.capacity() + self.published_roots.capacity()) * size_of::<Slot>()
+            + self.frames.capacity() * size_of::<Frame<'_>>()
+    }
+}
 pub(crate) trait ExecutionHost {
+    fn take_buffers(&self) -> ExecutionBuffers { ExecutionBuffers::default() }
+    fn return_buffers(&self, _buffers: ExecutionBuffers) {}
     /// 测试观测不进入生产派发循环。
     #[cfg(test)]
     fn observe_instruction(&self, _opcode: Opcode) {}
@@ -131,11 +96,11 @@ pub(crate) trait ExecutionHost {
     fn enum_binary(&self, operator: u8, left: Slot, right: Slot) -> Result<Slot, ExecutionError>;
     fn is_type(&self, value: Slot, type_name: &str) -> Result<bool, ExecutionError>;
     fn callable(&self, value: Slot) -> Result<Callable<'_>, ExecutionError>;
-    fn direct_callable(&self, _function: FunctionId) -> Result<&Binding, ExecutionError> {
+    fn direct_callable(&self, _function: FunctionId) -> Result<&FunctionBinding, ExecutionError> {
         Err(error("执行宿主未提供映像程序区"))
     }
     fn call_host(&self, target: Slot, args: &[Slot]) -> Result<Slot, ExecutionError>;
-    fn closure(&self, binding: Binding, template: bool) -> Result<Slot, ExecutionError>;
+    fn closure(&self, binding: FunctionBinding, template: bool) -> Result<Slot, ExecutionError>;
     fn array(&self, values: Vec<Slot>) -> Result<Slot, ExecutionError>;
     fn build(
         &self,
@@ -169,165 +134,7 @@ pub(crate) trait ExecutionHost {
     ) -> Result<Slot, ExecutionError>;
     /// 分配和调用前公布所有活跃根，Host 重入和回收可据此保留暂停的外层值。
     fn roots(&self, roots: &[Slot]) -> Result<(), ExecutionError>;
-}
-#[derive(Debug, Clone, Copy)]
-pub struct ExecutionLimits {
-    pub max_work: u64,
-    pub max_iterations: u64,
-    pub max_depth: usize,
-    pub max_registers: usize,
-    pub max_heap_bytes: usize,
-}
-impl Default for ExecutionLimits {
-    fn default() -> Self {
-        Self {
-            max_work: 10_000_000,
-            max_iterations: 1_000_000,
-            max_depth: 256,
-            max_registers: 1_000_000,
-            max_heap_bytes: 64 * 1024 * 1024,
-        }
-    }
-}
-#[derive(Debug, Default)]
-struct Usage {
-    remaining: Cell<u64>,
-    iterations: Cell<u64>,
-    depth: Cell<usize>,
-    registers: Cell<usize>,
-    temporary_bytes: Cell<usize>,
-}
-#[derive(Debug, Clone)]
-pub(crate) struct Budget {
-    limits: ExecutionLimits,
-    usage: Rc<Usage>,
-}
-/// Host 重入同样消耗共享调用深度；退出或展开时必须归还，不能依赖 VM 帧存在。
-pub(crate) struct HostBudgetGuard(Budget);
-impl Drop for HostBudgetGuard {
-    fn drop(&mut self) {
-        self.0.leave(0);
-    }
-}
-/// 同步重入与递归导入共享临时缓冲占用；归还只撤销本次预留，不重置外层预算。
-#[derive(Debug)]
-pub(crate) struct TemporaryBytes {
-    budget: Budget,
-    bytes: usize,
-}
-impl TemporaryBytes {
-    pub(crate) fn resize(&mut self, bytes: usize, heap_bytes: usize) -> Result<(), ExecutionError> {
-        if bytes > self.bytes {
-            let extra = bytes - self.bytes;
-            if extra > self.budget.max_heap_bytes().saturating_sub(heap_bytes) {
-                return Err(error("动态内存预算耗尽"));
-            }
-            self.budget
-                .usage
-                .temporary_bytes
-                .set(self.budget.usage.temporary_bytes.get() + extra);
-        } else {
-            self.budget
-                .usage
-                .temporary_bytes
-                .set(self.budget.usage.temporary_bytes.get() - (self.bytes - bytes));
-        }
-        self.bytes = bytes;
-        Ok(())
-    }
-}
-impl Drop for TemporaryBytes {
-    fn drop(&mut self) {
-        let usage = &self.budget.usage;
-        usage
-            .temporary_bytes
-            .set(usage.temporary_bytes.get() - self.bytes);
-    }
-}
-impl Budget {
-    pub(crate) fn reserve_temporary(
-        &self,
-        bytes: usize,
-        heap_bytes: usize,
-    ) -> Result<TemporaryBytes, ExecutionError> {
-        if bytes > self.max_heap_bytes().saturating_sub(heap_bytes) {
-            return Err(error("动态内存预算耗尽"));
-        }
-        self.usage
-            .temporary_bytes
-            .set(self.usage.temporary_bytes.get() + bytes);
-        Ok(TemporaryBytes {
-            budget: self.clone(),
-            bytes,
-        })
-    }
-    pub(crate) fn enter_host(&self) -> Result<HostBudgetGuard, ExecutionError> {
-        self.charge(1)?;
-        self.enter(0)?;
-        Ok(HostBudgetGuard(self.clone()))
-    }
-    pub fn new(limits: ExecutionLimits) -> Self {
-        Self {
-            limits,
-            usage: Rc::new(Usage {
-                remaining: Cell::new(limits.max_work),
-                iterations: Cell::new(limits.max_iterations),
-                depth: Cell::new(0),
-                registers: Cell::new(0),
-                temporary_bytes: Cell::new(0),
-            }),
-        }
-    }
-    /// 扣减一次加权工作量。max_work 的单位是"昂贵操作加权成本"（循环回边、
-    /// 调用、分配、文本长度），不是字节码指令数；直线代码必然终止，无需计费。
-    pub fn charge(&self, work: u64) -> Result<(), ExecutionError> {
-        let current = self.usage.remaining.get();
-        if work > current {
-            self.usage.remaining.set(0);
-            return Err(error("执行工作量预算耗尽"));
-        }
-        self.usage.remaining.set(current - work);
-        Ok(())
-    }
-    /// 批量扣减迭代预算；批次允许有限超额，避免热循环反复触碰共享计数。
-    fn iteration_batch(&self, batch: u64) -> Result<(), ExecutionError> {
-        self.charge(batch)?;
-        let current = self.usage.iterations.get();
-        if current < batch {
-            self.usage.iterations.set(0);
-            return Err(error("循环迭代预算耗尽"));
-        }
-        self.usage.iterations.set(current - batch);
-        Ok(())
-    }
-    pub fn max_heap_bytes(&self) -> usize {
-        self.limits
-            .max_heap_bytes
-            .saturating_sub(self.usage.temporary_bytes.get())
-    }
-    pub fn remaining(&self) -> u64 {
-        self.usage.remaining.get()
-    }
-    fn enter(&self, registers: usize) -> Result<(), ExecutionError> {
-        let usage = &self.usage;
-        if usage.depth.get() >= self.limits.max_depth
-            || registers
-                > self
-                    .limits
-                    .max_registers
-                    .saturating_sub(usage.registers.get())
-        {
-            return Err(error("调用深度或寄存器预算耗尽"));
-        }
-        usage.depth.set(usage.depth.get() + 1);
-        usage.registers.set(usage.registers.get() + registers);
-        Ok(())
-    }
-    fn leave(&self, registers: usize) {
-        let usage = &self.usage;
-        usage.depth.set(usage.depth.get() - 1);
-        usage.registers.set(usage.registers.get() - registers);
-    }
+    fn publish_roots(&self, roots: &mut Vec<Slot>) -> Result<(), ExecutionError> { self.roots(roots) }
 }
 #[derive(Debug)]
 struct Frame<'a> {
@@ -336,6 +143,13 @@ struct Frame<'a> {
     base: usize,
     destination: Option<usize>,
     builders: Option<Box<FrameBuilders>>,
+}
+
+/// 空帧缓冲只保存容量，借用程序及捕获在 clear 时归还。
+/// Vec 的同布局迭代收集复用分配，不延长任何活动绑定的生命周期，也无需 unsafe。
+fn recycle_frames<'a, 'b>(mut frames: Vec<Frame<'a>>) -> Vec<Frame<'b>> {
+    frames.clear();
+    frames.into_iter().map(|_| unreachable!("空闲帧不含活动绑定")).collect()
 }
 
 /// 普通标量调用无需构造器状态；仅首次 Start 分配，并将头部和根容量一起计费。
@@ -351,18 +165,27 @@ pub(crate) fn execute<'a, H: ExecutionHost>(
     arguments: &[Slot],
     budget: Budget,
 ) -> Result<Slot, ExecutionError> {
-    let buffers_memory = budget.reserve_temporary(0, host.heap_bytes())?;
+    let binding = binding.into();
+    let mut buffers = host.take_buffers();
+    // 空闲容量按本次入口窗口裁剪；不让上次大调用挤占本次帧和根的配额。
+    buffers.registers.shrink_to(binding.program.registers.len().max(4));
+    buffers.roots.shrink_to((binding.program.registers.len() + binding.captures.len() + 1).max(4));
+    buffers.operands.shrink_to(0);
+    buffers.frames.shrink_to(4);
+    // 缓存容量不改变小预算请求的可执行性；容量不足时按本次需求重新增长。
+    if buffers.storage_bytes() > budget.remaining_heap_bytes().saturating_sub(host.heap_bytes()) { buffers = ExecutionBuffers::default(); }
+    let buffers_memory = budget.reserve_temporary(buffers.storage_bytes(), host.heap_bytes())?;
     let mut execution = Execution {
         host,
         buffers_memory,
         budget,
-        registers: Vec::new(),
-        frames: Vec::new(),
-        roots_scratch: Vec::new(),
-        operands_scratch: Vec::new(),
+        registers: buffers.registers,
+        frames: recycle_frames(buffers.frames),
+        roots_scratch: buffers.roots,
+        operands_scratch: buffers.operands,
         iteration_debt: 0,
     };
-    execution.push(binding.into(), arguments, None)?;
+    execution.push(binding, arguments, None)?;
     execution.publish_roots_force()?;
     let result = execution.run();
     result.map_err(|cause| {
@@ -396,7 +219,7 @@ pub(crate) fn execute<'a, H: ExecutionHost>(
                 .copied()
                 .unwrap_or_default();
             ExecutionError::Fault {
-                message: cause.to_string(),
+                cause: Box::new(cause),
                 path: frame.binding.program.path.clone(),
                 module: frame.binding.program.module.clone(),
                 function: frame.binding.program.name.clone(),
@@ -433,6 +256,13 @@ impl<H: ExecutionHost> Drop for Execution<'_, H> {
             self.budget.leave(frame.binding.program.registers.len());
         }
         let _ = self.host.roots(&[]);
+        self.registers.clear(); self.roots_scratch.clear(); self.operands_scratch.clear();
+        self.host.return_buffers(ExecutionBuffers {
+            registers: std::mem::take(&mut self.registers), roots: std::mem::take(&mut self.roots_scratch),
+            operands: std::mem::take(&mut self.operands_scratch),
+            frames: recycle_frames(std::mem::take(&mut self.frames)),
+            published_roots: Vec::new(),
+        });
     }
 }
 impl<'a, H: ExecutionHost> Execution<'a, H> {
@@ -557,13 +387,9 @@ impl<'a, H: ExecutionHost> Execution<'a, H> {
             let base = frame.base;
             let old = frame.binding.program.registers.len();
             let new = binding.program.registers.len();
-            let remaining = self
-                .budget
-                .limits
-                .max_registers
-                .saturating_sub(self.budget.usage.registers.get() - old);
+            let remaining = self.budget.replacement_capacity(old);
             if new > remaining {
-                return Err(error("调用深度或寄存器预算耗尽"));
+                return Err(ExecutionError::LimitExceeded(super::LimitKind::Registers));
             }
             if new > old {
                 self.reserve_buffers(
@@ -577,10 +403,7 @@ impl<'a, H: ExecutionHost> Execution<'a, H> {
             self.registers.copy_within(start..start + count, base);
             self.registers.resize(base + new, Slot::Empty);
             self.registers[base + count..base + new].fill(Slot::Empty);
-            self.budget
-                .usage
-                .registers
-                .set(self.budget.usage.registers.get() - old + new);
+            self.budget.replace_registers(old, new);
             let frame = self.frames.last_mut().ok_or_else(|| error("调用栈为空"))?;
             frame.binding = binding;
             frame.pc = 0;
@@ -703,7 +526,12 @@ impl<'a, H: ExecutionHost> Execution<'a, H> {
                 .extend(frame.binding.captures.iter().copied());
         }
         // 寄存器根相同不代表宿主根相同：分配器会追加临时根，必须在安全点替换。
-        self.host.roots(&self.roots_scratch)?;
+        self.host.publish_roots(&mut self.roots_scratch)?;
+        self.roots_scratch.clear();
+        // 交换只转移容量归属；总占用不变，更新临时预算中的缓冲份额。
+        let bytes = (self.registers.capacity() + self.roots_scratch.capacity() + self.operands_scratch.capacity()) * size_of::<Slot>()
+            + self.frames.capacity() * size_of::<Frame<'_>>();
+        self.buffers_memory.resize(bytes, self.host.heap_bytes())?;
         Ok(())
     }
     /// 帧切换留在同一执行循环；局部 PC 在可观察边界或失败时写回。
@@ -1093,7 +921,7 @@ impl<'a, H: ExecutionHost> Execution<'a, H> {
                                 owner
                             };
                             self.host.closure(
-                                Binding {
+                                FunctionBinding {
                                     program: program
                                         .closure(index)
                                         .ok_or_else(|| error("闭包程序越界"))?,
@@ -1301,145 +1129,6 @@ impl<'a, H: ExecutionHost> Execution<'a, H> {
         result
     }
 }
-fn error(message: &str) -> ExecutionError {
-    ExecutionError::InvalidAccess(message.into())
-}
-fn integer(value: Slot) -> Result<i32, ExecutionError> {
-    if let Slot::Int(value) = value {
-        Ok(value)
-    } else {
-        Err(error("需要 int"))
-    }
-}
-fn boolean(value: Slot) -> Result<bool, ExecutionError> {
-    if let Slot::Bool(value) = value {
-        Ok(value)
-    } else {
-        Err(error("需要 bool"))
-    }
-}
-fn int_binary(op: u8, left: i32, right: i32) -> Result<Slot, ExecutionError> {
-    if (7..=12).contains(&op) {
-        return Ok(Slot::Bool(match op {
-            7 => left == right,
-            8 => left != right,
-            9 => left < right,
-            10 => left <= right,
-            11 => left > right,
-            _ => left >= right,
-        }));
-    }
-    let value = match op {
-        0 => left.checked_add(right),
-        1 => left.checked_sub(right),
-        2 => left.checked_mul(right),
-        4 => left.checked_div(right),
-        5 => left.checked_rem(right),
-        6 => u32::try_from(right)
-            .ok()
-            .and_then(|right| left.checked_pow(right)),
-        13 => u32::try_from(right)
-            .ok()
-            .filter(|right| *right < 32)
-            .map(|right| left.wrapping_shl(right)),
-        14 => u32::try_from(right)
-            .ok()
-            .filter(|right| *right < 32)
-            .map(|right| left >> right),
-        15 => Some(left & right),
-        16 => Some(left | right),
-        17 => Some(left ^ right),
-        _ => return Err(error("无效的 int 运算")),
-    };
-    value
-        .map(Slot::Int)
-        .ok_or_else(|| error("整数溢出、除零、负指数或非法移位"))
-}
-
-fn float_binary(op: u8, left: f32, right: f32) -> Result<Slot, ExecutionError> {
-    Ok(match op {
-        0 => Slot::Float(left + right),
-        1 => Slot::Float(left - right),
-        2 => Slot::Float(left * right),
-        3 => Slot::Float(left / right),
-        6 => Slot::Float(left.powf(right)),
-        7 => Slot::Bool(left == right),
-        8 => Slot::Bool(left != right),
-        9 => Slot::Bool(left < right),
-        10 => Slot::Bool(left <= right),
-        11 => Slot::Bool(left > right),
-        12 => Slot::Bool(left >= right),
-        _ => return Err(error("无效的 float 运算")),
-    })
-}
-/// 标量快速路径：int/float 运算、标量相等与同型顺序比较在寄存器内完成，
-/// 返回 None 表示需要 Host 语义（结构相等、连接或 flag 位运算）。
-pub(crate) fn scalar_binary(
-    op: u8,
-    left: Slot,
-    right: Slot,
-) -> Option<Result<Slot, ExecutionError>> {
-    // 相等：标量对在寄存器内比较，语义与 Host equal 的标量分支一致。
-    if op == 7 || op == 8 {
-        let equal = match (left, right) {
-            (Slot::Bool(a), Slot::Bool(b)) => a == b,
-            (Slot::Int(a), Slot::Int(b)) => a == b,
-            (Slot::Float(a), Slot::Float(b)) => a == b,
-            (Slot::Int(a), Slot::Float(b)) => a as f32 == b,
-            (Slot::Float(a), Slot::Int(b)) => a == b as f32,
-            (Slot::None, Slot::None) => true,
-            _ => return None,
-        };
-        return Some(Ok(Slot::Bool(if op == 7 { equal } else { !equal })));
-    }
-    // 顺序比较：仅同型标量在寄存器内完成，与 Host compare 语义一致。
-    if (9..=12).contains(&op) {
-        let ordering = match (left, right) {
-            (Slot::Int(a), Slot::Int(b)) => Some(a.cmp(&b)),
-            (Slot::Float(a), Slot::Float(b)) => a.partial_cmp(&b),
-            _ => return None,
-        };
-        return Some(Ok(Slot::Bool(match op {
-            9 => ordering == Some(Ordering::Less),
-            10 => matches!(ordering, Some(Ordering::Less | Ordering::Equal)),
-            11 => ordering == Some(Ordering::Greater),
-            _ => matches!(ordering, Some(Ordering::Greater | Ordering::Equal)),
-        })));
-    }
-    match (left, right) {
-        (Slot::Int(a), Slot::Int(b)) => Some(
-            match op {
-                0 => a.checked_add(b),
-                1 => a.checked_sub(b),
-                2 => a.checked_mul(b),
-                4 => a.checked_div(b),
-                5 => a.checked_rem(b),
-                6 => u32::try_from(b).ok().and_then(|b| a.checked_pow(b)),
-                13 => u32::try_from(b)
-                    .ok()
-                    .filter(|b| *b < 32)
-                    .map(|b| a.wrapping_shl(b)),
-                14 => u32::try_from(b).ok().filter(|b| *b < 32).map(|b| a >> b),
-                15 => Some(a & b),
-                16 => Some(a | b),
-                17 => Some(a ^ b),
-                _ => return Some(Err(error("无效的 int 运算"))),
-            }
-            .map(Slot::Int)
-            .ok_or_else(|| error("整数溢出、除零、负指数或非法移位")),
-        ),
-        (Slot::Float(a), Slot::Float(b)) => Some(Ok(Slot::Float(match op {
-            0 => a + b,
-            1 => a - b,
-            2 => a * b,
-            3 => a / b,
-            6 => a.powf(b),
-            _ => return Some(Err(error("无效的 float 运算"))),
-        }))),
-        _ => None,
-    }
-}
-/// Host 侧二元语义：仅在标量快速路径未命中时到达。
 fn binary<H: ExecutionHost>(
     host: &H,
     op: u8,
@@ -1481,11 +1170,11 @@ mod compact_slot_tests {
         let nested = budget.clone();
         assert!(nested.reserve_temporary(51, 10).is_err());
         let inner = nested.reserve_temporary(50, 10).unwrap();
-        assert_eq!(budget.max_heap_bytes(), 10);
+        assert_eq!(budget.remaining_heap_bytes(), 10);
         drop(inner);
-        assert_eq!(budget.max_heap_bytes(), 60);
+        assert_eq!(budget.remaining_heap_bytes(), 60);
         drop(outer);
-        assert_eq!(budget.max_heap_bytes(), 100);
+        assert_eq!(budget.remaining_heap_bytes(), 100);
     }
     #[test]
     fn slots_are_eight_bytes_and_references_round_trip_without_losing_float_bits() {
@@ -1502,5 +1191,19 @@ mod compact_slot_tests {
             };
             assert_eq!(value.to_bits(), bits);
         }
+    }
+}
+
+#[cfg(test)]
+mod buffer_tests {
+    use super::*;
+    #[test]
+    fn empty_frames_recycle_their_allocation_without_retaining_bindings() {
+        let frames: Vec<Frame<'_>> = Vec::with_capacity(8);
+        let allocation = frames.as_ptr();
+        let recycled = recycle_frames(frames);
+        assert!(recycled.is_empty());
+        assert_eq!(recycled.capacity(), 8);
+        assert_eq!(recycled.as_ptr(), allocation);
     }
 }

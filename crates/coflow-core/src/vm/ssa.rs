@@ -1,8 +1,8 @@
 //! 在语义值编号上建立 CFG/SSA 版本和循环 phi；物理寄存器分配发生在本阶段之后。
 use super::{
     bytecode::Constant,
-    executor::{scalar_binary, Slot},
-    ir::{Function, Operation as O, ValueId},
+    scalar::scalar_binary, slot::Slot,
+    ir::{Function, Operation as O, IrValueId},
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -66,7 +66,7 @@ fn constant(value: Slot) -> Option<Constant> {
         _ => return None,
     })
 }
-fn evaluate(operation: &O, input: impl Fn(ValueId) -> Fact) -> Fact {
+fn evaluate(operation: &O, input: impl Fn(IrValueId) -> Fact) -> Fact {
     match operation {
         O::Constant(value) if scalar(value).is_some() => Fact::Constant(value.clone()),
         O::Copy(value) => input(*value),
@@ -130,7 +130,7 @@ impl Function {
         }
         let mut definitions = vec![Definition::Input; self.parameters.len()];
         let parameters = (0..self.parameters.len())
-            .map(|i| (ValueId(i as u32), Version(i)))
+            .map(|i| (IrValueId(i as u32), Version(i)))
             .collect::<BTreeMap<_, _>>();
         let mut writes = vec![BTreeMap::new(); count];
         for &pc in &flow.reachable {
@@ -141,8 +141,8 @@ impl Function {
             }
         }
         let mut incoming = vec![BTreeMap::new(); count];
-        let mut outgoing = vec![None::<BTreeMap<ValueId, Version>>; count];
-        let mut phis = BTreeMap::<(usize, ValueId), Version>::new();
+        let mut outgoing = vec![None::<BTreeMap<IrValueId, Version>>; count];
+        let mut phis = BTreeMap::<(usize, IrValueId), Version>::new();
         let mut pending = VecDeque::from([0]);
         let mut queued = vec![false; count];
         queued[0] = true;
@@ -284,7 +284,7 @@ impl Function {
             };
             matches!(self.body[pc].operation, O::Copy(_))
         });
-        let mut expressions = BTreeMap::<(u8, u8, Vec<ExpressionInput>), (ValueId, Version)>::new();
+        let mut expressions = BTreeMap::<(u8, u8, Vec<ExpressionInput>), (IrValueId, Version)>::new();
         let mut previous: Option<usize> = None;
         for &pc in &flow.reachable {
             if previous.is_none_or(|previous| {
@@ -294,7 +294,7 @@ impl Function {
                 expressions.clear();
             }
             previous = Some(pc);
-            let scalar_type = |value: ValueId| {
+            let scalar_type = |value: IrValueId| {
                 matches!(
                     self.values[value.0 as usize],
                     crate::schema::CftValueType::Int
@@ -575,7 +575,7 @@ impl Function {
                 if replacement_work > 1_000_000 {
                     return Ok(());
                 }
-                let is_array = |value: ValueId| {
+                let is_array = |value: IrValueId| {
                     incoming[consumer]
                         .get(&value)
                         .is_some_and(|version| resolves(*version))
@@ -587,7 +587,7 @@ impl Function {
                     O::Copy(value) if is_array(*value) => {
                         replacements.push((
                             consumer,
-                            O::Jump(super::ir::LocationId((consumer + 1) as u32)),
+                            O::Jump(super::ir::NodeIndex((consumer + 1) as u32)),
                         ));
                         continue;
                     }
@@ -628,7 +628,7 @@ impl Function {
                 replacements.push((consumer, O::Copy(element)));
             }
             if safe {
-                self.body[pc].operation = O::Jump(super::ir::LocationId((pc + 1) as u32));
+                self.body[pc].operation = O::Jump(super::ir::NodeIndex((pc + 1) as u32));
                 for (consumer, replacement) in replacements {
                     self.body[consumer].operation = replacement;
                 }

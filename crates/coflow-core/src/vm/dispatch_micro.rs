@@ -2,7 +2,7 @@
 //! 用于隔离"指令解码 + 分发 + 寄存器读写"自身的开销。
 use crate::schema::CftValueType;
 use crate::vm::bytecode::{Constant, Instruction, Opcode, Program};
-use crate::vm::executor::{execute, Binding, ExecutionHost, Slot};
+use crate::vm::executor::{execute, FunctionBinding, ExecutionHost, Slot};
 use crate::vm::ExecutionError;
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl ExecutionHost for NullHost {
     fn call_host(&self, _: Slot, _: &[Slot]) -> VmResult<Slot> {
         Err(err())
     }
-    fn closure(&self, _: Binding, _: bool) -> VmResult<Slot> {
+    fn closure(&self, _: FunctionBinding, _: bool) -> VmResult<Slot> {
         Err(err())
     }
     fn array(&self, _: Vec<Slot>) -> VmResult<Slot> {
@@ -136,7 +136,7 @@ fn loop_program(iterations: i32) -> Arc<crate::vm::image::ValidatedProgram> {
 #[test]
 fn dispatch_micro() {
     let host = NullHost;
-    let binding = Binding {
+    let binding = FunctionBinding {
         program: loop_program(1_000_000),
         owner: Slot::None,
         captures: Box::default(),
@@ -176,7 +176,7 @@ fn local_pc_reports_scalar_fault_after_unsynchronized_instructions() {
     ];
     program.spans = vec![Default::default(); 4];
     program.spans[2] = crate::source::Span { start: 42, end: 47 };
-    let binding = Binding {
+    let binding = FunctionBinding {
         program: Arc::new(crate::vm::image::ValidatedProgram::new(program).unwrap()),
         owner: Slot::None,
         captures: Box::default(),

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -48,29 +49,50 @@ namespace Coflow
         internal uint Tag;
         internal uint Error;
     }
-    // ulong 保存完整身份，SafeHandle 的 IntPtr 只标记存活，兼容 32 位 IL2CPP。
-    internal sealed class NativeHandle : SafeHandle
+    // 原生句柄只在创建线程显式释放；托管终结线程不访问原生资源。
+    internal sealed class NativeHandle : IDisposable
     {
+        private readonly int ownerThread = Environment.CurrentManagedThreadId;
         internal ulong Id { get; }
-        internal NativeHandle(ulong id) : base(IntPtr.Zero, true)
+        private bool disposed;
+        private readonly ulong domainVersion = Native.DomainVersion;
+        internal bool IsClosed => disposed || (Environment.CurrentManagedThreadId == ownerThread && domainVersion != Native.DomainVersion);
+        internal bool IsInvalid => IsClosed;
+        internal NativeHandle(ulong id)
         {
             if (id == 0) throw new ArgumentException("Invalid native handle.", nameof(id));
             Id = id;
-            SetHandle(new IntPtr(1));
         }
-        public override bool IsInvalid => handle == IntPtr.Zero;
-        protected override bool ReleaseHandle() { Native.Release(Id); handle = IntPtr.Zero; return true; }
+        internal void RequireAlive()
+        {
+            if (Environment.CurrentManagedThreadId != ownerThread) throw new CoflowException("Native handle must be used on its creating thread.");
+            if (IsClosed) throw new ObjectDisposedException(nameof(NativeHandle));
+        }
         internal bool DisposeExplicit()
         {
-            if (IsClosed || IsInvalid) return true;
+            RequireThread();
+            if (IsClosed) return true;
             if (!Native.Dispose(Id)) return false;
-            SetHandleAsInvalid();
+            disposed = true;
             return true;
+        }
+        private void RequireThread()
+        {
+            if (Environment.CurrentManagedThreadId != ownerThread) throw new CoflowException("Native handle must be disposed on its creating thread.");
+        }
+        public void Dispose()
+        {
+            if (!DisposeExplicit()) throw new CoflowException("Native handle is busy or has already been released by thread shutdown.");
         }
     }
     internal static class Native
     {
+        // 原生请求保活回调返回值；同步重入的内层作用域不会撤销外层的根。
+        [ThreadStatic] private static List<object>? callbackRoots;
+        internal static void RetainCallbackResult(object value) =>
+            (callbackRoots ??= new List<object>()).Add(value);
         [ThreadStatic] internal static long RequestCount;
+        [ThreadStatic] internal static ulong DomainVersion;
 #if (UNITY_IOS || UNITY_WEBGL) && !UNITY_EDITOR
         private const string Library = "__Internal";
 #else
@@ -86,8 +108,6 @@ namespace Coflow
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_dispose")]
         [return: MarshalAs(UnmanagedType.I4)]
         private static extern uint DisposeNative(ulong handle);
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_thread_drain")]
-        internal static extern ulong ThreadDrain();
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "coflow_thread_shutdown")]
         [return: MarshalAs(UnmanagedType.I4)]
         internal static extern uint ThreadShutdown();
@@ -96,18 +116,25 @@ namespace Coflow
         {
             var encoded = Encoding.UTF8.GetBytes(key);
             data ??= Array.Empty<byte>();
-            bool retained = false;
+            handle?.RequireAlive();
+            var previousRoots = callbackRoots;
+            callbackRoots = null;
             try
             {
-                if (handle != null) handle.DangerousAddRef(ref retained);
-                System.Threading.Interlocked.Increment(ref RequestCount);
+                ++RequestCount;
                 uint status = Request((uint)op, handle?.Id ?? 0, value, encoded, (UIntPtr)encoded.Length,
                     data, (UIntPtr)data.Length, index, out var result);
                 if (status == 2) throw BuildException.Decode(ReadBuffer(result));
                 if (status != 0) throw new CoflowException(result.Handle == 0 ? "Native operation failed." : Encoding.UTF8.GetString(ReadBuffer(result)));
                 return result;
             }
-            finally { if (retained) handle!.DangerousRelease(); }
+            finally
+            {
+                var roots = callbackRoots;
+                callbackRoots = previousRoots;
+                GC.KeepAlive(roots);
+                GC.KeepAlive(handle);
+            }
         }
         internal static byte[] ReadBuffer(Response response)
         {

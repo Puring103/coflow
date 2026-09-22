@@ -1,6 +1,7 @@
 //! CFT/CFD 共用语义前端，直接生成类型化 IR；所有分支均检查。
+use super::builtins::builtin_signature;
 use super::bytecode::{Constant, Program};
-use super::ir::{Function as IrFunction, LocationId, Node, Operation as O, ValueId};
+use super::ir::{Function as IrFunction, NodeIndex, Node, Operation as O, IrValueId};
 use crate::{
     schema::{CftFunctionParameter, CftSchema, CftValueType as Ty},
     source::Span,
@@ -11,6 +12,10 @@ use coflow_language::{
 };
 use std::collections::BTreeMap;
 mod builder;
+mod expressions;
+mod closures;
+mod collections;
+mod inference;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileError {
@@ -45,14 +50,14 @@ pub struct CompileContext {
 }
 #[derive(Debug, Clone)]
 struct Local {
-    id: ValueId,
+    id: IrValueId,
     ty: Ty,
     mutable: bool,
     builder: Option<BTreeMap<String, Value>>,
 }
 #[derive(Debug, Clone)]
 struct Value {
-    id: ValueId,
+    id: IrValueId,
     ty: Ty,
     terminated: bool,
 }
@@ -62,18 +67,17 @@ struct Loop {
     continues: Vec<usize>,
     scope_depth: usize,
 }
-#[derive(Clone)]
 struct Compiler<'a> {
     schema: &'a CftSchema,
     context: CompileContext,
     program: IrFunction,
     scopes: Vec<BTreeMap<String, Local>>,
     outer: BTreeMap<String, Local>,
-    captured: BTreeMap<String, (ValueId, usize)>,
-    capture_sources: Vec<ValueId>,
+    captured: BTreeMap<String, (IrValueId, usize)>,
+    capture_sources: Vec<IrValueId>,
     loops: Vec<Loop>,
     condition: bool,
-    literal_owner: Option<(ValueId, Ty)>,
+    literal_owner: Option<(IrValueId, Ty)>,
     refinements: Vec<BTreeMap<String, Ty>>,
 }
 
@@ -84,23 +88,6 @@ pub fn compile(
     context: CompileContext,
 ) -> Result<Program> {
     lower_analysis(analyze(schema, source, name, context)?)
-}
-pub fn compile_template(
-    schema: &CftSchema,
-    source: &str,
-    name: &str,
-    context: CompileContext,
-) -> Result<Program> {
-    lower_analysis(analyze_template(schema, source, name, context)?)
-}
-pub fn compile_check(
-    schema: &CftSchema,
-    check: &function::Check,
-    source: &str,
-    name: &str,
-    context: CompileContext,
-) -> Result<Program> {
-    lower_analysis(analyze_check(schema, check, source, name, context)?)
 }
 fn lower_analysis(function: super::ir::Function) -> Result<Program> {
     function.lower().map_err(|message| CompileError {
@@ -211,7 +198,7 @@ pub fn module_context(
     context
 }
 impl<'a> Compiler<'a> {
-    fn new(schema: &'a CftSchema, name: &str, source: &str, context: CompileContext) -> Self {
+    fn new(schema: &'a CftSchema, name: &str, source: impl Into<std::sync::Arc<str>>, context: CompileContext) -> Self {
         let program = IrFunction {
             owner: context.owner.clone(),
             name: name.into(),
@@ -292,7 +279,7 @@ impl<'a> Compiler<'a> {
     }
     fn slot(&mut self, ty: Ty, span: Span) -> Result<Value> {
         let id = u32::try_from(self.program.values.len())
-            .map(ValueId)
+            .map(IrValueId)
             .map_err(|_| self.error(span, "函数虚拟值数量超限"))?;
         self.program.values.push(ty.clone());
         Ok(Value {
@@ -302,7 +289,7 @@ impl<'a> Compiler<'a> {
         })
     }
     /// 前端只生成语义节点，操作数编码和物理寄存器分配属于映像降低阶段。
-    fn emit(&mut self, destination: ValueId, operation: O, span: Span) -> usize {
+    fn emit(&mut self, destination: IrValueId, operation: O, span: Span) -> usize {
         let index = self.program.body.len();
         self.program.body.push(Node {
             destination,
@@ -311,10 +298,10 @@ impl<'a> Compiler<'a> {
         });
         index
     }
-    fn jump(&mut self, condition: Option<ValueId>, target: usize, span: Span) -> Result<usize> {
-        let target = LocationId(u32::try_from(target).map_err(|_| self.error(span, "函数体过大"))?);
+    fn jump(&mut self, condition: Option<IrValueId>, target: usize, span: Span) -> Result<usize> {
+        let target = NodeIndex(u32::try_from(target).map_err(|_| self.error(span, "函数体过大"))?);
         Ok(self.emit(
-            ValueId(0),
+            IrValueId(0),
             match condition {
                 Some(condition) => O::JumpFalse { condition, target },
                 None => O::Jump(target),
@@ -323,7 +310,7 @@ impl<'a> Compiler<'a> {
         ))
     }
     fn patch(&mut self, instruction: usize, target: usize) -> Result<()> {
-        let target = LocationId(
+        let target = NodeIndex(
             u32::try_from(target).map_err(|_| self.error(Span::default(), "函数体过大"))?,
         );
         match &mut self.program.body[instruction].operation {
@@ -516,7 +503,7 @@ impl<'a> Compiler<'a> {
                     self.push_scope();
                     let condition = self.condition_expression(condition)?;
                     let exit = self.jump(Some(condition.id), 0, span)?;
-                    self.emit(ValueId(0), O::Iteration, span);
+                    self.emit(IrValueId(0), O::Iteration, span);
                     self.loops.push(Loop { scope_depth: self.scopes.len(), ..Loop::default() });
                     self.block(body, Some(&Ty::Unit), true)?;
                     self.jump(None, start, span)?;
@@ -600,7 +587,7 @@ impl<'a> Compiler<'a> {
                     current.id,
                     O::ForPrep {
                         limit: last.id,
-                        target: LocationId(0),
+                        target: NodeIndex(0),
                         exclusive,
                     },
                     span,
@@ -613,7 +600,7 @@ impl<'a> Compiler<'a> {
                     current.id,
                     O::ForLoop {
                         limit: last.id,
-                        target: LocationId(start as u32),
+                        target: NodeIndex(start as u32),
                         exclusive,
                     },
                     span,
@@ -644,13 +631,13 @@ impl<'a> Compiler<'a> {
         let start = self.program.body.len();
         let condition = self.binary_values("<", index.clone(), length, span)?;
         let exit = self.jump(Some(condition.id), 0, span)?;
-        self.emit(ValueId(0), O::Iteration, span);
+        self.emit(IrValueId(0), O::Iteration, span);
         let stored = self.slot(value_type, span)?;
         if bindings.len() == 2 {
             // 双绑定迭代在同一语义节点定义键和值，保持共同的迭代位置。
             let key = self.slot(key_type, span)?;
             self.emit(
-                ValueId(0),
+                IrValueId(0),
                 O::IterNext {
                     collection: iterable.id,
                     counter: index.id,
@@ -684,491 +671,6 @@ impl<'a> Compiler<'a> {
         self.end_loop(exit, continuation)?;
         self.scopes.pop();
         Ok(())
-    }
-    fn expression(&mut self, expression: &Expr, expected: Option<&Ty>) -> Result<Value> {
-        let condition = self.condition;
-        // 只有正向测试和 && 链能向成功分支传递保证；比较、调用和取反均隔离收窄。
-        self.condition &= matches!(&expression.kind, E::IsSome { .. } | E::IsType { .. })
-            || matches!(&expression.kind,E::Binary{operator,..} if operator=="&&");
-        let result = self.expression_inner(expression, expected);
-        self.condition = condition;
-        result
-    }
-    fn expression_inner(&mut self, expression: &Expr, expected: Option<&Ty>) -> Result<Value> {
-        let span = expression.span;
-        let mut value = match &expression.kind {
-            E::Build { source, binding, body } => self.build_expression(source, binding, body, span)?,
-            E::Unit => self.constant(Constant::Unit, Ty::Unit, span)?,
-            E::None => {
-                let ty = expected
-                    .filter(|ty| matches!(ty, Ty::Option(_)))
-                    .ok_or_else(|| self.error(span, "None 需要明确的可选期望类型"))?;
-                self.constant(Constant::None, ty.clone(), span)?
-            }
-            E::Bool(value) => self.constant(Constant::Bool(*value), Ty::Bool, span)?,
-            E::String(value) => self.constant(Constant::String(value.clone()), Ty::String, span)?,
-            E::Number(number) => self.number(number, span)?,
-            E::Name(name) => self.name_value(name, span)?,
-            E::Reference { type_name, key } => {
-                let name = if let Some(name) = type_name {
-                    self.resolve_name(name)
-                } else if let Some(Ty::RecordRef(name)) = &self.context.owner {
-                    name.to_string()
-                } else {
-                    return Err(self.error(span, "裸记录引用需要静态记录上下文"));
-                };
-                let meta = self
-                    .schema
-                    .resolve_type(&name)
-                    .ok_or_else(|| self.error(span, "未知记录类型"))?;
-                if matches!(meta.kind, coflow_language::cft::syntax::ast::TypeKind::Data) {
-                    return Err(self.error(span, "data 不能作为记录引用"));
-                }
-                let value = self.slot(Ty::RecordRef(meta.name.clone()), span)?;
-                self.emit(value.id, O::Reference(format!("{name}::{key}")), span);
-                value
-            }
-            E::Unary { operator, value } => {
-                if operator == "-" {
-                    if let E::Number(number) = &value.kind {
-                        let value = self.number(&format!("-{number}"), span)?;
-                        return self.adapt(value, expected, span);
-                    }
-                }
-                let condition = self.condition;
-                self.condition = false;
-                let value = self.expression(value, None)?;
-                self.condition = condition;
-                let flags = match (operator.as_str(), &value.ty) {
-                    ("-", Ty::Int | Ty::Float) => 0,
-                    ("!", Ty::Bool) => 1,
-                    ("~", Ty::Int) => 2,
-                    ("~", Ty::Enum(name))
-                        if self
-                            .schema
-                            .resolve_enum(name)
-                            .is_some_and(|meta| meta.is_flag) =>
-                    {
-                        2
-                    }
-                    _ => return Err(self.error(span, "一元运算符与操作数类型不匹配")),
-                };
-                let result = self.slot(value.ty, span)?;
-                self.emit(
-                    result.id,
-                    O::Unary {
-                        operator: flags,
-                        value: value.id,
-                    },
-                    span,
-                );
-                result
-            }
-            E::Binary {
-                operator,
-                left,
-                right,
-            } if matches!(operator.as_str(), "&&" | "||") => {
-                if operator == "||" {
-                    self.push_scope();
-                }
-                let left = self.expression(left, Some(&Ty::Bool))?;
-                if operator == "||" {
-                    self.pop_scope();
-                    self.push_scope();
-                }
-                let result = self.slot(Ty::Bool, span)?;
-                self.emit(result.id, O::Copy(left.id), span);
-                let condition = if operator == "||" {
-                    let inverted = self.slot(Ty::Bool, span)?;
-                    self.emit(
-                        inverted.id,
-                        O::Unary {
-                            operator: 1,
-                            value: left.id,
-                        },
-                        span,
-                    );
-                    inverted
-                } else {
-                    left
-                };
-                let end = self.jump(Some(condition.id), 0, span)?;
-                let right = self.expression(right, Some(&Ty::Bool))?;
-                self.emit(result.id, O::Copy(right.id), span);
-                self.patch(end, self.program.body.len())?;
-                if operator == "||" {
-                    self.pop_scope();
-                }
-                result
-            }
-            E::Binary {
-                operator,
-                left,
-                right,
-            } => {
-                let (left, right) =
-                    if matches!(operator.as_str(), "==" | "!=") && matches!(left.kind, E::None) {
-                        let right = self.expression(right, None)?;
-                        let left = self.expression(left, Some(&right.ty))?;
-                        (left, right)
-                    } else {
-                        let left = self.expression(left, None)?;
-                        let expected = if matches!(operator.as_str(), "==" | "!=")
-                            && matches!(right.kind, E::None)
-                        {
-                            Some(&left.ty)
-                        } else {
-                            None
-                        };
-                        let right = self.expression(right, expected)?;
-                        (left, right)
-                    };
-                self.binary_values(operator, left, right, span)?
-            }
-            E::Field { value, name } => {
-                if let Some(builder) = self.builder_binding(value) {
-                    let value = builder.builder.as_ref().and_then(|fields| fields.get(name)).cloned()
-                        .ok_or_else(|| self.error(span, "构造目标没有该字段"))?;
-                    let copied = self.slot(value.ty, span)?;
-                    self.emit(copied.id, O::Copy(value.id), span);
-                    return self.adapt(copied, expected, span);
-                }
-                // self 字段保留显式 owner 语义，供映像数据专化使用。
-                if let E::Name(owner) = &value.kind {
-                    if owner == "self"
-                        && self.local("self", span)?.is_none()
-                        && self.context.owner.is_some()
-                    {
-                        let owner_ty = self.context.owner.clone().unwrap();
-                        let type_name = match &owner_ty {
-                            Ty::Object(type_name) | Ty::RecordRef(type_name) => type_name,
-                            _ => return Err(self.error(span, "字段读取需要对象或记录")),
-                        };
-                        let meta = self
-                            .schema
-                            .resolve_type(type_name)
-                            .ok_or_else(|| self.error(span, "未知对象类型"))?;
-                        let (index, ty) = if name == "id" && matches!(owner_ty, Ty::RecordRef(_)) {
-                            (0, Ty::String)
-                        } else {
-                            let (index, field) = meta
-                                .all_fields()
-                                .enumerate()
-                                .find(|(_, field)| field.name.as_str() == name)
-                                .ok_or_else(|| self.error(span, format!("未知字段 {name}")))?;
-                            (
-                                index + usize::from(matches!(owner_ty, Ty::RecordRef(_))),
-                                field.runtime_value_type(),
-                            )
-                        };
-                        let index =
-                            u16::try_from(index).map_err(|_| self.error(span, "字段槽超限"))?;
-                        let result = self.slot(ty, span)?;
-                        self.emit(result.id, O::OwnerField(index.into()), span);
-                        // 融合路径同样要走尾部适配，保持与通用路径一致的类型收窄。
-                        return self.adapt(result, expected, span);
-                    }
-                }
-                let receiver = self.expression(value, None)?;
-                let type_name = match &receiver.ty {
-                    Ty::Object(name) | Ty::RecordRef(name) => name,
-                    _ => return Err(self.error(span, "字段读取需要对象或记录")),
-                };
-                let meta = self
-                    .schema
-                    .resolve_type(type_name)
-                    .ok_or_else(|| self.error(span, "未知对象类型"))?;
-                let (index, ty) = if name == "id" && matches!(receiver.ty, Ty::RecordRef(_)) {
-                    (0, Ty::String)
-                } else {
-                    let (index, field) = meta
-                        .all_fields()
-                        .enumerate()
-                        .find(|(_, field)| field.name.as_str() == name)
-                        .ok_or_else(|| self.error(span, format!("未知字段 {name}")))?;
-                    (
-                        index + usize::from(matches!(receiver.ty, Ty::RecordRef(_))),
-                        field.runtime_value_type(),
-                    )
-                };
-                let index = u16::try_from(index).map_err(|_| self.error(span, "字段槽超限"))?;
-                let result = self.slot(ty, span)?;
-                self.emit(
-                    result.id,
-                    O::Field {
-                        receiver: receiver.id,
-                        field: index.into(),
-                    },
-                    span,
-                );
-                result
-            }
-            E::Index { value, index } => {
-                let value = if let Some(builder) = self.builder_binding(value) {
-                    Value { id: builder.id, ty: builder.ty, terminated: false }
-                } else { self.expression(value, None)? };
-                let (key, ty) = match &value.ty {
-                    Ty::Array(inner) => (Ty::Int, (**inner).clone()),
-                    Ty::Dict(key, inner) => ((**key).clone(), (**inner).clone()),
-                    Ty::String => (Ty::Int, Ty::String),
-                    _ => return Err(self.error(span, "类型不支持索引")),
-                };
-                let result = self.slot(ty, span)?;
-                // 整数字面量索引保留为语义常量，编码方式由降低阶段决定。
-                if let Some(key) = self.inline_index_key(index) {
-                    self.emit(
-                        result.id,
-                        O::IndexConstant {
-                            receiver: value.id,
-                            key: Constant::Int(key),
-                        },
-                        span,
-                    );
-                    return self.adapt(result, expected, span);
-                }
-                let index = self.expression(index, Some(&key))?;
-                self.emit(
-                    result.id,
-                    O::Index {
-                        receiver: value.id,
-                        key: index.id,
-                    },
-                    span,
-                );
-                result
-            }
-            E::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.push_scope();
-                let condition = self.condition_expression(condition)?;
-                let branch = self.jump(Some(condition.id), 0, span)?;
-                let branch_expected = if otherwise.is_none() {
-                    Some(&Ty::Unit)
-                } else {
-                    expected
-                };
-                let left = self.block(then, branch_expected, true)?;
-                let result = self.slot(
-                    if otherwise.is_none() {
-                        Ty::Unit
-                    } else {
-                        expected.cloned().unwrap_or_else(|| left.ty.clone())
-                    },
-                    span,
-                )?;
-                self.emit(result.id, O::Copy(left.id), span);
-                let end = self.jump(None, 0, span)?;
-                self.patch(branch, self.program.body.len())?;
-                self.pop_scope();
-                let right = if let Some(otherwise) = otherwise {
-                    self.expression(otherwise, Some(&result.ty))?
-                } else {
-                    self.constant(Constant::Unit, Ty::Unit, span)?
-                };
-                self.emit(result.id, O::Copy(right.id), span);
-                self.patch(end, self.program.body.len())?;
-                Value {
-                    terminated: left.terminated && right.terminated,
-                    ..result
-                }
-            }
-            E::Block(block) => self.block(block, expected, true)?,
-            E::Return(expression) => {
-                if self.context.check {
-                    return Err(self.error(span, "check 本体不能使用 return"));
-                }
-                let result_type = self.program.result.clone();
-                let mut value = if let Some(expression) = expression {
-                    self.expression(expression, Some(&result_type))?
-                } else {
-                    let unit = self.constant(Constant::Unit, Ty::Unit, span)?;
-                    self.adapt(unit, Some(&result_type), span)?
-                };
-                self.emit(value.id, O::Return(value.id), span);
-                value.terminated = true;
-                value
-            }
-            E::Propagate(expression) => {
-                if !matches!(self.program.result, Ty::Option(_)) {
-                    return Err(self.error(span, "可选传播需要可选返回类型"));
-                }
-                let value = self.expression(expression, None)?;
-                let Ty::Option(inner) = &value.ty else {
-                    return Err(self.error(span, "只能传播可选值"));
-                };
-                let some = self.slot(Ty::Bool, span)?;
-                self.emit(some.id, O::IsSome(value.id), span);
-                let absent = self.jump(Some(some.id), 0, span)?;
-                let end = self.jump(None, 0, span)?;
-                self.patch(absent, self.program.body.len())?;
-                self.emit(value.id, O::Return(value.id), span);
-                self.patch(end, self.program.body.len())?;
-                // 收窄必须产生独立类型化值，不能只修改编译器临时视图而保留可选槽类型。
-                let narrowed = self.slot((**inner).clone(), span)?;
-                self.emit(narrowed.id, O::Copy(value.id), span);
-                narrowed
-            }
-            E::IsType { value, name } => {
-                let path = stable_path(value);
-                let value = self.expression(value, None)?;
-                let name = self.resolve_name(name);
-                if !matches!(value.ty, Ty::RecordRef(_) | Ty::Object(_) | Ty::Option(_))
-                    || self.schema.resolve_type(&name).is_none()
-                {
-                    return Err(self.error(span, "is 需要对象或记录类型"));
-                }
-                if self.condition {
-                    if let Some(path) = path {
-                        let source = if let Ty::Option(inner) = &value.ty {
-                            inner.as_ref()
-                        } else {
-                            &value.ty
-                        };
-                        let narrowed = match source {
-                            Ty::RecordRef(_) => Ty::RecordRef(
-                                self.schema
-                                    .resolve_type(&name)
-                                    .ok_or_else(|| self.error(span, "未知类型"))?
-                                    .name
-                                    .clone(),
-                            ),
-                            Ty::Object(_) => Ty::Object(
-                                self.schema
-                                    .resolve_type(&name)
-                                    .ok_or_else(|| self.error(span, "未知类型"))?
-                                    .name
-                                    .clone(),
-                            ),
-                            _ => return Err(self.error(span, "is 类型判断需要对象或记录")),
-                        };
-                        if !self.schema.value_type_assignable(&narrowed, source)
-                            && !self.schema.value_type_assignable(source, &narrowed)
-                        {
-                            return Err(self.error(span, "is 两侧类型没有继承关系"));
-                        }
-                        let root = path.split('.').next().unwrap_or(&path);
-                        let local = self.scopes.iter().any(|scope| scope.contains_key(root));
-                        let dynamic_host = !local
-                            && self
-                                .schema
-                                .resolve_type(&self.resolve_name(root))
-                                .is_some_and(|meta| meta.is_host);
-                        if !dynamic_host {
-                            if let Some(scope) = self.refinements.last_mut() {
-                                scope.insert(path, narrowed);
-                            }
-                        }
-                    }
-                }
-                let result = self.slot(Ty::Bool, span)?;
-                self.emit(
-                    result.id,
-                    O::IsType {
-                        value: value.id,
-                        name,
-                    },
-                    span,
-                );
-                result
-            }
-            E::IsSome { value, binding } => {
-                let value = self.expression(value, None)?;
-                let Ty::Option(inner) = &value.ty else {
-                    return Err(self.error(span, "is Some 需要可选值"));
-                };
-                if self.condition {
-                    let bound = self.slot((**inner).clone(), span)?;
-                    self.emit(bound.id, O::Copy(value.id), span);
-                    self.declare(binding, &bound, false, span)?;
-                }
-                let result = self.slot(Ty::Bool, span)?;
-                self.emit(result.id, O::IsSome(value.id), span);
-                result
-            }
-            E::Call {
-                function,
-                arguments,
-            } => self.call(function, arguments, span)?,
-            E::Function(function) => self.closure(function, false, span)?,
-            E::Template(parts) => self.template(parts, span)?,
-            E::Array(values) => {
-                let inner = match expected {
-                    Some(Ty::Array(inner)) => Some(inner.as_ref()),
-                    Some(Ty::Option(inner)) => match inner.as_ref() {
-                        Ty::Array(inner) => Some(inner.as_ref()),
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                let mut values = values
-                    .iter()
-                    .map(|value| self.expression(value, inner))
-                    .collect::<Result<Vec<_>>>()?;
-                let ty = inner
-                    .cloned()
-                    .or_else(|| values.first().map(|value| value.ty.clone()))
-                    .ok_or_else(|| self.error(span, "空数组需要明确类型"))?;
-                for value in &mut values {
-                    *value = self.adapt(value.clone(), Some(&ty), span)?;
-                }
-                let result = self.slot(Ty::Array(Box::new(ty)), span)?;
-                self.emit(
-                    result.id,
-                    O::Array(values.iter().map(|v| v.id).collect()),
-                    span,
-                );
-                result
-            }
-            E::Dictionary(entries) => {
-                let pair = match expected {
-                    Some(Ty::Dict(key, value)) => Some((key.as_ref(), value.as_ref())),
-                    _ => None,
-                };
-                let mut values = Vec::new();
-                let mut types = pair.map(|(k, v)| (k.clone(), v.clone()));
-                for (key, value) in entries {
-                    let key = self.expression(key, types.as_ref().map(|p| &p.0))?;
-                    let value = self.expression(value, types.as_ref().map(|p| &p.1))?;
-                    if types.is_none() {
-                        types = Some((key.ty.clone(), value.ty.clone()));
-                    }
-                    values.extend([key.id, value.id]);
-                }
-                let (key, value) = types.ok_or_else(|| self.error(span, "空字典需要明确类型"))?;
-                if !matches!(key, Ty::Int | Ty::Bool | Ty::String | Ty::Enum(_)) {
-                    return Err(self.error(span, "无效的字典 key 类型"));
-                }
-                let result = self.slot(Ty::Dict(Box::new(key), Box::new(value)), span)?;
-                self.emit(result.id, O::Dictionary(values), span);
-                result
-            }
-            E::Object { type_name, fields } => self.object(type_name, fields, span)?,
-        };
-        if let Some(path) = stable_path(expression) {
-            let root = path.split('.').next().unwrap_or(&path);
-            let declaration = self
-                .scopes
-                .iter()
-                .rposition(|scope| scope.contains_key(root))
-                .unwrap_or(0);
-            if let Some(ty) = self.refinements[declaration..]
-                .iter()
-                .rev()
-                .find_map(|scope| scope.get(&path))
-                .cloned()
-            {
-                if value.ty != ty {
-                    let narrowed = self.slot(ty, span)?;
-                    self.emit(narrowed.id, O::Copy(value.id), span);
-                    value = narrowed;
-                }
-            }
-        }
-        self.adapt(value, expected, span)
     }
     fn push_scope(&mut self) {
         self.scopes.push(BTreeMap::new());
@@ -1303,7 +805,7 @@ impl<'a> Compiler<'a> {
         mut left: Value,
         mut right: Value,
         span: Span,
-        dest: Option<ValueId>,
+        dest: Option<IrValueId>,
     ) -> Result<Value> {
         let flags = binary_code(operator).ok_or_else(|| self.error(span, "无效的二元运算符"))?;
         let numeric =
@@ -1367,7 +869,7 @@ impl<'a> Compiler<'a> {
         left: Value,
         right: Value,
         span: Span,
-        dest: ValueId,
+        dest: IrValueId,
     ) -> Result<Value> {
         // 左操作数即局部变量本身（寄存器相同），写目标寄存器不影响读取。
         if left.id != dest {
@@ -1496,153 +998,6 @@ impl<'a> Compiler<'a> {
         );
         Ok(result)
     }
-    fn capture_environment(
-        &self,
-        span: Span,
-    ) -> Result<(BTreeMap<String, Local>, BTreeMap<ValueId, String>)> {
-        let mut environment = BTreeMap::new();
-        for scope in &self.scopes {
-            environment.extend(scope.clone());
-        }
-        let mut inherited = BTreeMap::new();
-        for (name, local) in &self.outer {
-            if environment.contains_key(name) {
-                continue;
-            }
-            let id = u32::try_from(self.program.values.len() + inherited.len())
-                .map(ValueId)
-                .map_err(|_| self.error(span, "捕获候选超限"))?;
-            environment.insert(
-                name.clone(),
-                Local {
-                    id,
-                    ty: local.ty.clone(),
-                    mutable: false,
-                    builder: local.builder.clone(),
-                },
-            );
-            inherited.insert(id, name.clone());
-        }
-        Ok((environment, inherited))
-    }
-    fn resolve_capture_sources(
-        &mut self,
-        sources: Vec<ValueId>,
-        inherited: &BTreeMap<ValueId, String>,
-        span: Span,
-    ) -> Result<Vec<ValueId>> {
-        // 先编译子程序，再仅为实际使用的祖先变量在本层建立转发捕获。
-        sources
-            .into_iter()
-            .map(|id| {
-                if let Some(name) = inherited.get(&id) {
-                    self.local(name, span)?
-                        .map(|value| value.id)
-                        .ok_or_else(|| self.error(span, "捕获来源丢失"))
-                } else {
-                    Ok(id)
-                }
-            })
-            .collect()
-    }
-    fn closure(&mut self, function: &Function, template: bool, span: Span) -> Result<Value> {
-        let mut context = self.context.clone();
-        context.check = false;
-        if let Some((_, ty)) = &self.literal_owner {
-            context.owner = Some(ty.clone());
-        }
-        let mut child = Compiler::new(
-            self.schema,
-            &format!("{}::<closure>", self.program.name),
-            &self.program.source,
-            context,
-        );
-        // 所有可见局部值只作为捕获候选；真正读取时才建立捕获槽。
-        let (environment, inherited) = self.capture_environment(span)?;
-        child.outer = environment;
-        child.function(function)?;
-        let captures = self.resolve_capture_sources(child.capture_sources, &inherited, span)?;
-        let program = child.program;
-        let ty = if template {
-            Ty::FString
-        } else {
-            Ty::Function(
-                program
-                    .parameters
-                    .iter()
-                    .cloned()
-                    .map(CftFunctionParameter::unnamed)
-                    .collect(),
-                Box::new(program.result.clone()),
-            )
-        };
-        let result = self.slot(ty, span)?;
-        self.emit(
-            result.id,
-            O::Closure {
-                function: Box::new(program),
-                captures,
-                owner: self.literal_owner.as_ref().map(|(id, _)| *id),
-                template,
-            },
-            span,
-        );
-        Ok(result)
-    }
-    fn template(&mut self, parts: &[TemplatePart], span: Span) -> Result<Value> {
-        let mut context = self.context.clone();
-        context.check = false;
-        if let Some((_, ty)) = &self.literal_owner {
-            context.owner = Some(ty.clone());
-        }
-        let mut child = Compiler::new(
-            self.schema,
-            &format!("{}::<template>", self.program.name),
-            &self.program.source,
-            context,
-        );
-        child.program.result = Ty::String;
-        let (environment, inherited) = self.capture_environment(span)?;
-        child.outer = environment;
-        let mut value_ids = Vec::new();
-        for part in parts {
-            let value = match part {
-                TemplatePart::Text(text) => {
-                    child.constant(Constant::String(text.clone()), Ty::String, span)?
-                }
-                TemplatePart::Expression(expression) => {
-                    let value = child.expression(expression, None)?;
-                    if !matches!(
-                        value.ty,
-                        Ty::Int | Ty::Float | Ty::Bool | Ty::String | Ty::Enum(_)
-                    ) || value.terminated
-                    {
-                        return Err(
-                            self.error(expression.span, "插值需要标量文本且不能向外转移控制流")
-                        );
-                    }
-                    value
-                }
-            };
-            value_ids.push(value.id);
-        }
-        let result = child.slot(Ty::String, span)?;
-        child.emit(result.id, O::Format(value_ids), span);
-        child.emit(result.id, O::Return(result.id), span);
-        let result = self.slot(Ty::FString, span)?;
-        let captures = self.resolve_capture_sources(child.capture_sources, &inherited, span)?;
-        self.emit(
-            result.id,
-            O::Closure {
-                function: Box::new(child.program),
-                captures,
-                owner: self.literal_owner.as_ref().map(|(id, _)| *id),
-                template: true,
-            },
-            span,
-        );
-        Ok(result)
-    }
     fn object(&mut self, name: &str, fields: &[(String, Expr)], span: Span) -> Result<Value> {
         let name = self.resolve_name(name);
         let meta = self
@@ -1697,195 +1052,6 @@ impl<'a> Compiler<'a> {
         );
         Ok(result)
     }
-    fn higher_builtin(
-        &mut self,
-        receiver: Value,
-        name: &str,
-        arguments: &[Expr],
-        span: Span,
-    ) -> Result<Value> {
-        let (key_type, stored_type) = match &receiver.ty {
-            Ty::Array(inner) => (None, (**inner).clone()),
-            Ty::Dict(key, inner) => (Some((**key).clone()), (**inner).clone()),
-            _ => return Err(self.error(span, "高阶方法需要数组或字典")),
-        };
-        let callback_index = usize::from(name == "fold");
-        if arguments.len() != callback_index + 1 {
-            return Err(self.error(span, "高阶方法参数数量不匹配"));
-        }
-        // 期望类型分析在独立编译状态中完成，不把回调的运行期求值提前到 fold 初值之前。
-        let mut analysis = self.clone();
-        let signature = analysis.expression(&arguments[callback_index], None)?.ty;
-        let Ty::Function(parameters, callback_result) = signature else {
-            return Err(self.error(span, "高阶方法需要函数回调"));
-        };
-        let read_type = match &stored_type {
-            Ty::FString => Ty::String,
-            Ty::Option(inner) if **inner == Ty::FString => Ty::Option(Box::new(Ty::String)),
-            _ => stored_type.clone(),
-        };
-        let mut expected_parameters = Vec::new();
-        if name == "fold" {
-            expected_parameters.push((*callback_result).clone());
-        }
-        if let Some(key) = &key_type {
-            expected_parameters.push(key.clone());
-        }
-        expected_parameters.push(read_type.clone());
-        if parameters
-            .iter()
-            .map(|parameter| &parameter.value_type)
-            .ne(expected_parameters.iter())
-        {
-            return Err(self.error(span, "回调签名与集合读取类型不匹配"));
-        }
-        if matches!(name, "filter" | "any" | "all") && *callback_result != Ty::Bool {
-            return Err(self.error(span, "判定回调必须返回 bool"));
-        }
-        let initial = if name == "fold" {
-            Some(self.expression(&arguments[0], Some(&callback_result))?)
-        } else {
-            None
-        };
-        let callback = self.expression(&arguments[callback_index], None)?;
-        let result_type = match name {
-            "map" => Ty::Array(callback_result.clone()),
-            "filter" => receiver.ty.clone(),
-            "fold" => (*callback_result).clone(),
-            _ => Ty::Bool,
-        };
-        let result = if let Some(initial) = initial {
-            let result = self.slot(result_type, span)?;
-            self.emit(result.id, O::Copy(initial.id), span);
-            result
-        } else if matches!(name, "any" | "all") {
-            self.constant(Constant::Bool(name == "all"), Ty::Bool, span)?
-        } else {
-            let result = self.slot(result_type, span)?;
-            self.emit(
-                result.id,
-                O::Build(super::construction::BuildOp::Start { source: None }),
-                span,
-            );
-            result
-        };
-        let index = self.constant(Constant::Int(0), Ty::Int, span)?;
-        let length = self.slot(Ty::Int, span)?;
-        self.emit(length.id, O::Length(receiver.id), span);
-        let start = self.program.body.len();
-        let condition = self.binary_values("<", index.clone(), length, span)?;
-        let exit = self.jump(Some(condition.id), 0, span)?;
-        self.emit(ValueId(0), O::Iteration, span);
-        let stored = self.slot(stored_type, span)?;
-        // 键与值一次读出：高阶方法每元素少一次堆锁与虚调用；
-        // IterNext 必须先于 read 的转换指令发出，保证运行时先写入再读取。
-        let key = if let Some(key_type) = key_type {
-            let key = self.slot(key_type, span)?;
-            self.emit(
-                ValueId(0),
-                O::IterNext {
-                    collection: receiver.id,
-                    counter: index.id,
-                    key: key.id,
-                    value: stored.id,
-                },
-                span,
-            );
-            Some(key)
-        } else {
-            self.emit(
-                stored.id,
-                O::IteratorValue {
-                    collection: receiver.id,
-                    index: index.id,
-                },
-                span,
-            );
-            None
-        };
-        let read = self.adapt(stored.clone(), Some(&read_type), span)?;
-        let mut args = Vec::new();
-        if name == "fold" {
-            args.push(result.id);
-        }
-        if let Some(key) = &key {
-            args.push(key.id);
-        }
-        args.push(read.id);
-        let returned = self.slot((*callback_result).clone(), span)?;
-        self.emit(
-            returned.id,
-            O::Call {
-                target: callback.id,
-                arguments: args,
-            },
-            span,
-        );
-        let mut short_circuit = None;
-        let mut skip = None;
-        match name {
-            "fold" => {
-                self.emit(result.id, O::Copy(returned.id), span);
-            }
-            "any" | "all" => {
-                self.emit(result.id, O::Copy(returned.id), span);
-                if name == "all" {
-                    short_circuit = Some(self.jump(Some(returned.id), 0, span)?);
-                } else {
-                    let inverted = self.slot(Ty::Bool, span)?;
-                    self.emit(
-                        inverted.id,
-                        O::Unary {
-                            operator: 1,
-                            value: returned.id,
-                        },
-                        span,
-                    );
-                    short_circuit = Some(self.jump(Some(inverted.id), 0, span)?);
-                }
-            }
-            _ => {
-                if name == "filter" {
-                    skip = Some(self.jump(Some(returned.id), 0, span)?);
-                }
-                let item = if name == "map" {
-                    returned.id
-                } else {
-                    stored.id
-                };
-                let unit = self.slot(Ty::Unit, span)?;
-                let operation = if matches!(result.ty, Ty::Dict(..)) {
-                    super::construction::BuildOp::Set {
-                        builder: result.id,
-                        key: key.as_ref().map_or(index.id, |key| key.id),
-                        value: item,
-                    }
-                } else {
-                    super::construction::BuildOp::Append { builder: result.id, value: item }
-                };
-                self.emit(unit.id, O::Build(operation), span);
-            }
-        }
-        if let Some(skip) = skip {
-            self.patch(skip, self.program.body.len())?;
-        }
-        let one = self.constant(Constant::Int(1), Ty::Int, span)?;
-        let next = self.binary_values("+", index.clone(), one, span)?;
-        self.emit(index.id, O::Copy(next.id), span);
-        self.jump(None, start, span)?;
-        let end = self.program.body.len();
-        self.patch(exit, end)?;
-        if let Some(jump) = short_circuit {
-            self.patch(jump, end)?;
-        }
-        // 高阶集合与显式 builder 共用独占构造能力，循环结束后一次冻结。
-        if matches!(name, "map" | "filter") {
-            let frozen = self.slot(result.ty.clone(), span)?;
-            self.emit(frozen.id, O::Build(super::construction::BuildOp::Freeze { builder: result.id }), span);
-            return Ok(frozen);
-        }
-        Ok(result)
-    }
     fn builtin(
         &mut self,
         receiver: Value,
@@ -1938,69 +1104,6 @@ pub fn binary_code(operator: &str) -> Option<u8> {
     .position(|value| *value == operator)
     .map(|value| value as u8)
 }
-pub(crate) fn builtin_signature(schema: &CftSchema, ty: &Ty, name: &str) -> Option<(Vec<Ty>, Ty)> {
-    // 前端与反序列化验证共用签名规则，维度模板必须保持相同的普通读取类型。
-    if let Ty::RecordRef(type_name) = ty {
-        if let Some((_, field)) =
-            crate::schema::dimensions::dimension_field_for_marker(schema, type_name)
-        {
-            let read = ordinary_type(&field.value_type);
-            match name {
-                "for" => return Some((vec![Ty::String], read)),
-                "default" => return Some((vec![], read)),
-                "variants" => {
-                    return Some((vec![], Ty::Dict(Box::new(Ty::String), Box::new(read))))
-                }
-                _ => {}
-            }
-        }
-    }
-    Some(match (ty, name) {
-        (Ty::String | Ty::Array(_) | Ty::Dict(..), "len") => (vec![], Ty::Int),
-        (Ty::String, "contains" | "startsWith" | "endsWith" | "matches") => {
-            (vec![Ty::String], Ty::Bool)
-        }
-        (Ty::String, "isBlank") => (vec![], Ty::Bool),
-        (Ty::String, "parseInt") => (vec![], Ty::Option(Box::new(Ty::Int))),
-        (Ty::String, "parseFloat") => (vec![], Ty::Option(Box::new(Ty::Float))),
-        (Ty::Int, "float") => (vec![], Ty::Float),
-        (Ty::Float, "int") => (vec![], Ty::Int),
-        (Ty::Int | Ty::Float | Ty::Bool | Ty::Enum(_), "string") => (vec![], Ty::String),
-        (Ty::Int | Ty::Float, "abs") => (vec![], ty.clone()),
-        (Ty::Float, "isFinite") => (vec![], Ty::Bool),
-        (Ty::Float, "approxEqual") => (vec![Ty::Float, Ty::Float], Ty::Bool),
-        (Ty::Option(_), "isSome" | "isNone") => (vec![], Ty::Bool),
-        (Ty::Array(inner), "contains") => (vec![ordinary_type(inner)], Ty::Bool),
-        (Ty::Array(inner), "min" | "max")
-            if matches!(**inner, Ty::Int | Ty::Float | Ty::Enum(_)) =>
-        {
-            (vec![], (**inner).clone())
-        }
-        (Ty::Array(inner), "sum") if matches!(**inner, Ty::Int | Ty::Float) => {
-            (vec![], (**inner).clone())
-        }
-        (Ty::Array(inner), "isUnique")
-            if matches!(**inner, Ty::Int | Ty::Bool | Ty::String | Ty::Enum(_)) =>
-        {
-            (vec![], Ty::Bool)
-        }
-        (Ty::Array(inner), "isSorted" | "isStrictlySorted")
-            if matches!(**inner, Ty::Int | Ty::Float | Ty::String | Ty::Enum(_)) =>
-        {
-            (vec![], Ty::Bool)
-        }
-        (Ty::Array(inner), "intersects" | "isDisjoint" | "isSubsetOf" | "isSupersetOf")
-            if matches!(**inner, Ty::Int | Ty::Bool | Ty::String | Ty::Enum(_)) =>
-        {
-            (vec![ty.clone()], Ty::Bool)
-        }
-        (Ty::Dict(key, _), "contains" | "containsKey") => (vec![(**key).clone()], Ty::Bool),
-        (Ty::Dict(_, value), "containsValue") => (vec![ordinary_type(value)], Ty::Bool),
-        (Ty::Dict(key, _), "keys") => (vec![], Ty::Array(key.clone())),
-        (Ty::Dict(_, value), "values") => (vec![], Ty::Array(value.clone())),
-        _ => return None,
-    })
-}
 
 fn stable_path(expression: &Expr) -> Option<String> {
     match &expression.kind {
@@ -2010,10 +1113,3 @@ fn stable_path(expression: &Expr) -> Option<String> {
     }
 }
 
-fn ordinary_type(ty: &Ty) -> Ty {
-    match ty {
-        Ty::FString => Ty::String,
-        Ty::Option(inner) if **inner == Ty::FString => Ty::Option(Box::new(Ty::String)),
-        _ => ty.clone(),
-    }
-}

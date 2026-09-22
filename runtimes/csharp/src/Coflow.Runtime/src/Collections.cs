@@ -18,11 +18,12 @@ namespace Coflow
             for (int i = 0; i < count; ++i)
                 ids[i] = runtime.Execute(NativeOperation.TableValue, binding.Name, index: (ulong)i).Handle;
         }
-        public int Count => ids.Length;
+        public int Count { get { runtime.RequireThread(); return ids.Length; } }
         // 强类型表的唯一读取入口；调用方不需要接触快照或底层节点。
         public T Get(string key) => TryGet(key, out var record) ? record : throw new KeyNotFoundException(key);
         public bool TryGet(string key, out T record)
         {
+            runtime.RequireThread();
             if (key == null) throw new ArgumentNullException(nameof(key));
             if (loaded.TryGetValue(key, out record!)) return true;
             var response = runtime.Execute(NativeOperation.TryFindRecord, binding.Name, System.Text.Encoding.UTF8.GetBytes(key));

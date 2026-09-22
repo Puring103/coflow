@@ -313,3 +313,18 @@ fn dictionaries_keep_insertion_order_and_normalized_keys() {
         HostValue::Int(1)
     ));
 }
+
+#[test]
+fn fold_preserves_initial_then_callback_order_and_captures() {
+    for (body, expected) in [
+        ("var x: int = 1; [2].fold(if true { x = 10; x } else { 0 }, fn(a: int, b: int) -> int { a + b + x })", 22),
+        ("var x: int = 1; [2].fold(if true { x = 10; x } else { 0 }, if true { x += 1; fn(a: int, b: int) -> int { a + b + x } } else { fn(a: int, b: int) -> int { a + b } }) + x", 34),
+        ("var x: int = 7; var outer: fn() -> int = fn() -> int { [2].fold(x, fn(a: int, b: int) -> int { a + b + x }) }; outer()", 16),
+        ("[2].fold([], fn(a: [int], b: int) -> [int] { [b] }).sum()", 2),
+        ("[2].fold(if true { 10 } else { 20 }, if false { fn(a: int, b: int) -> int { 0 } } else { fn(a: int, b: int) -> int { a + b } })", 12),
+        ("[2].fold(if true { return 17; 0 } else { 0 }, fn(a: int, b: int) -> int { a + b })", 17),
+    ] {
+        let runtime = make_runtime(body, "fn() -> int");
+        assert!(matches!(call(&runtime, &[]).unwrap(), HostValue::Int(value) if value == expected), "{body}");
+    }
+}

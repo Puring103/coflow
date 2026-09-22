@@ -2,16 +2,7 @@
 use super::*;
 use coflow_core::{runtime::HostValue, vm::ExecutionError};
 
-fn runtime_handle(identity: u64) -> Result<u64, String> {
-    LOCAL_ENTRIES.try_with(|entries| entries.borrow().0
-        .iter()
-        .find_map(|(handle, entry)| match entry {
-            Entry::Runtime(runtime) if runtime.identity() == identity => Some(*handle),
-            _ => None,
-        }))
-        .map_err(|_| "execution thread is shutting down")?
-        .ok_or_else(|| "Runtime handle is no longer registered".into())
-}
+use super::handles::runtime_handle;
 fn write_text(bytes: &mut Vec<u8>, value: &str) -> Result<(), String> {
     bytes.extend_from_slice(
         &u32::try_from(value.len())
@@ -33,12 +24,18 @@ pub(super) fn encode_arguments_into(bytes: &mut Vec<u8>, args: &[HostValue]) -> 
             .map_err(|_| "too many arguments")?
             .to_le_bytes(),
     );
-    for value in args {
+    for value in args { encode_value(bytes, value)?; }
+    Ok(())
+}
+fn encode_value(bytes: &mut Vec<u8>, value: &HostValue) -> Result<(), String> {
         match value {
             HostValue::Array(values) => { bytes.push(7); encode_arguments_into(bytes, values)?; }
             HostValue::Dictionary(values) => {
                 bytes.push(8); bytes.extend_from_slice(&u32::try_from(values.len()).map_err(|_| "too many entries")?.to_le_bytes());
-                for (key, value) in values { encode_arguments_into(bytes, &[key.clone(), value.clone()])?; }
+                for (key, value) in values {
+                    bytes.extend_from_slice(&2u32.to_le_bytes());
+                    encode_value(bytes, key)?; encode_value(bytes, value)?;
+                }
             }
             HostValue::Data { type_name, fields } => {
                 bytes.push(6); write_text(bytes, type_name)?; bytes.extend_from_slice(&u32::try_from(fields.len()).map_err(|_| "too many fields")?.to_le_bytes());
@@ -71,14 +68,25 @@ pub(super) fn encode_arguments_into(bytes: &mut Vec<u8>, args: &[HostValue]) -> 
                 bytes.extend_from_slice(&(*value as u64 + 1).to_le_bytes());
             }
         }
-    }
     Ok(())
 }
 struct Reader<'a> {
     bytes: &'a [u8],
     position: usize,
+    remaining_allocation: usize,
 }
 impl Reader<'_> {
+    // 解码图有独立上限，长度前缀不能绕过 VM 入口前的内存约束。
+    fn charge_allocation(&mut self, bytes: usize) -> Result<(), String> {
+        self.remaining_allocation = self.remaining_allocation.checked_sub(bytes).ok_or("argument allocation budget exceeded")?;
+        Ok(())
+    }
+    fn reserve<T>(&mut self, count: usize) -> Result<Vec<T>, String> {
+        self.charge_allocation(count.checked_mul(std::mem::size_of::<T>()).ok_or("argument allocation overflow")?)?;
+        let mut values = Vec::new();
+        values.try_reserve_exact(count).map_err(|_| "argument allocation failed")?;
+        Ok(values)
+    }
     fn take<const N: usize>(&mut self) -> Result<[u8; N], String> {
         let bytes = self
             .bytes
@@ -94,6 +102,7 @@ impl Reader<'_> {
     }
     fn string(&mut self) -> Result<String, String> {
         let length = u32::from_le_bytes(self.take()?) as usize;
+        self.charge_allocation(length)?;
         let end = self.position.checked_add(length).ok_or("input overflow")?;
         let value = text(
             self.bytes
@@ -107,7 +116,7 @@ impl Reader<'_> {
 }
 pub(super) fn decode_arguments(bytes: &[u8]) -> Result<Vec<HostValue>, String> {
     if bytes.is_empty() { return Ok(Vec::new()); }
-    let mut reader = Reader { bytes, position: 0 };
+    let mut reader = Reader { bytes, position: 0, remaining_allocation: coflow_core::vm::ExecutionLimits::default().max_heap_bytes };
     let values = decode_list(&mut reader, 0)?;
     if reader.position != bytes.len() { return Err("trailing argument bytes".into()); }
     Ok(values)
@@ -115,8 +124,13 @@ pub(super) fn decode_arguments(bytes: &[u8]) -> Result<Vec<HostValue>, String> {
 fn decode_list(reader: &mut Reader<'_>, depth: usize) -> Result<Vec<HostValue>, String> {
     if depth >= 128 { return Err("argument nesting limit exceeded".into()); }
     let count = reader.count()?;
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count { values.push(match reader.take::<1>()?[0] {
+    let mut values = reader.reserve(count)?;
+    for _ in 0..count { values.push(decode_value(reader, depth)?); }
+    Ok(values)
+}
+fn decode_value(reader: &mut Reader<'_>, depth: usize) -> Result<HostValue, String> {
+    if depth >= 128 { return Err("argument nesting limit exceeded".into()); }
+    Ok(match reader.take::<1>()?[0] {
             0 => HostValue::None,
             1 => match reader.take::<1>()?[0] {
                 0 => HostValue::Bool(false),
@@ -132,14 +146,14 @@ fn decode_list(reader: &mut Reader<'_>, depth: usize) -> Result<Vec<HostValue>, 
             },
             6 => {
                 let type_name = reader.string()?; let count = reader.count()?;
-                let mut fields = Vec::with_capacity(count);
-                for _ in 0..count { let name = reader.string()?; let mut values = decode_list(reader, depth + 1)?; if values.len() != 1 { return Err("invalid data field".into()); } fields.push((name, values.remove(0))); }
+                let mut fields = reader.reserve(count)?;
+                for _ in 0..count { let name = reader.string()?; if reader.count()? != 1 { return Err("invalid data field".into()); } fields.push((name, decode_value(reader, depth + 1)?)); }
                 HostValue::Data { type_name, fields }
             }
             7 => HostValue::Array(decode_list(reader, depth + 1)?),
             8 => {
-                let count = reader.count()?; let mut items = Vec::with_capacity(count);
-                for _ in 0..count { let mut values = decode_list(reader, depth + 1)?; if values.len() != 2 { return Err("invalid dictionary entry".into()); } let value = values.pop().unwrap(); items.push((values.pop().unwrap(), value)); }
+                let count = reader.count()?; let mut items = reader.reserve(count)?;
+                for _ in 0..count { if reader.count()? != 2 { return Err("invalid dictionary entry".into()); } let key = decode_value(reader, depth + 1)?; let value = decode_value(reader, depth + 1)?; items.push((key, value)); }
                 HostValue::Dictionary(items)
             }
             11 => {
@@ -151,8 +165,7 @@ fn decode_list(reader: &mut Reader<'_>, depth: usize) -> Result<Vec<HostValue>, 
                     value,
                 }
             }
-            _ => return Err("unknown argument tag".into()), }); }
-    Ok(values)
+            _ => return Err("unknown argument tag".into()), })
 }
 pub(super) fn response(value: HostValue) -> Result<Response, String> {
     Ok(match value {

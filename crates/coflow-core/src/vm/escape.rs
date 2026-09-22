@@ -1,5 +1,5 @@
 //! 有界局部逃逸证明：只有用途全部可见的标量闭包可以消除创建和间接调用。
-use super::ir::{Function, Node, Operation as O, ValueId};
+use super::ir::{Function, Node, Operation as O, IrValueId};
 use crate::schema::CftValueType as Ty;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -78,11 +78,11 @@ impl Function {
             for call in calls {
                 let O::Call { arguments, .. } = &self.body[call].operation else { unreachable!() };
                 let offset = self.values.len() as u32;
-                let map = |value: ValueId| ValueId(offset + value.0);
+                let map = |value: IrValueId| IrValueId(offset + value.0);
                 self.values.extend(function.values.iter().cloned());
                 let span = self.body[call].span;
                 let mut body = arguments.iter().enumerate().map(|(index, value)| Node {
-                    destination: map(ValueId(index as u32)), operation: O::Copy(*value), span,
+                    destination: map(IrValueId(index as u32)), operation: O::Copy(*value), span,
                 }).collect::<Vec<_>>();
                 for node in &function.body {
                     let (destination, operation) = match &node.operation {

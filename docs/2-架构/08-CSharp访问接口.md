@@ -30,7 +30,7 @@ Rust 在加载时校验格式、版本、摘要、类型化 IR 和生成绑定�
 
 契约、builder、Runtime 和临时返回缓冲区使用拥有型原生句柄。
 普通对象、记录和集合包装读取托管快照；函数、动态模板及含执行能力的动态返回图同时保存 Runtime、局部值 ID 和内部 lease。局部值 ID 从 1 编码，0 表示查询未找到。
-值包装不提供 Dispose，不参与原生全局句柄表的逐值注册。Runtime 显式 Dispose 后普通快照仍可读，执行能力失效；没有显式释放时，SafeHandle 将终结请求转交创建线程回收域。
+值包装不提供 Dispose，不参与原生全局句柄表的逐值注册。Runtime 显式 Dispose 后普通快照仍可读，执行能力失效；拥有型句柄通过创建线程的 `using`、`Dispose()` 或 `RuntimeThread.Shutdown()` 显式释放。
 
 相同 Runtime 和记录 ID 构成记录包装的 C# 相等性与哈希；不同 Runtime 的记录不相等。
 Host 返回已有记录时由 Rust 归一到原记录 ID。语言内容比较仍由 Rust `ValueEquals` 完成。
@@ -45,6 +45,7 @@ Rust 在构建和投影解码时验证 table、singleton 与字段类别。table
 每个 Host 服务生成强类型数据接口与静态适配器，`BindHost(host)` 调用生成的扩展方法。
 适配器提供固定的服务名和签名，Rust 校验契约、重复绑定及返回值归属。
 函数成员生成强类型 C# 方法，适配器按声明顺序解码参数并编码返回值，不使用反射或 `object[]`。
+Host 返回编码所引用的动态投影由当前原生请求保活，直至原生端完成结果接收。同步重入使用独立保活作用域，外层返回值持续存活。
 回调、异常边界和释放要求见 [Unity 原生集成](07-Unity原生集成.md)。
 
 ## 函数与检查
@@ -61,4 +62,4 @@ Rust 在构建和投影解码时验证 table、singleton 与字段类别。table
 
 `Runtime.Dispose()` 只允许创建线程在没有活动执行、Host 回调、同步重入、导入或投影时调用。活动边界返回 RuntimeBusy，C# 抛出 `InvalidOperationException`，实例和句柄保持可用。
 
-`RuntimeThread.DrainFinalizers()` 在创建线程处理调用开始时的终结请求快照；`RuntimeThread.Shutdown()` 在空闲时释放该线程域的全部本地资源。Unity 包通过主线程 PlayerLoop 每帧驱动回收，并在正常退出时关闭；其他宿主由创建线程事件循环驱动。重复请求、关闭后的迟到请求和重复关闭均不得双释放。
+Contract、Builder、Runtime、表查询以及全部原生句柄均归创建线程。`RuntimeThread.Shutdown()` 在空闲时释放该线程域的全部本地资源并使旧托管句柄失效；宿主在正常退出或域重载前调用。动态投影 lease 由 Runtime 弱引用登记，托管 GC 后的下一次 Runtime 请求在创建线程释放不可达投影；Dispose 和 Shutdown 释放其余 lease。重复 Dispose 和 Shutdown 为无操作。

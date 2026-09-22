@@ -162,3 +162,25 @@ fn structural_limits_cover_recursive_syntax_left_chains_and_else_if() {
             .is_err()
     );
 }
+
+#[test]
+fn nested_syntax_uses_a_bounded_native_stack() {
+    std::thread::Builder::new().stack_size(1024 * 1024).spawn(|| {
+        for (open, close, depth) in [
+            ("-", "", 200), ("1+(", ")", 100), ("[", "]", 200),
+            ("A { x:", "}", 200), ("f(", ")", 200), ("a[", "]", 200),
+            ("if true {", "} else {0}", 80), ("fn()->int {", "}", 80),
+            ("f\"{", "}\"", 80),
+        ] {
+            let source = format!("{}1{}", open.repeat(depth), close.repeat(depth));
+            assert!(parse_expression(&source).is_ok(), "{open}");
+            let source = format!("{}1{}", open.repeat(300), close.repeat(300));
+            let error = parse_expression(&source).expect_err("结构上限必须在宿主栈耗尽前生效");
+            assert!(error.message.contains("超限"), "{open}: {error}");
+        }
+        let source = format!("fn(value: {}int{}) -> int {{ 1 }}", "[".repeat(200), "]".repeat(200));
+        assert!(parse_function(&source).is_ok());
+        let source = format!("fn()->int {{ {}1{} }}", "while true {".repeat(200), "}".repeat(200));
+        assert!(parse_function(&source).is_ok());
+    }).unwrap().join().unwrap();
+}

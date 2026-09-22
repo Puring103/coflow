@@ -1,5 +1,5 @@
 //! 映像内调用图的 effect 固定点。未知调用和递归保持保守，删除依据不依赖源码猜测。
-use super::{bytecode::{Constant, Opcode, Program}, executor::Binding};
+use super::{bytecode::{Constant, Opcode, Program}, executor::FunctionBinding};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,7 +63,7 @@ fn local(program: &Program) -> Result<(Effects, Vec<usize>), String> {
 
 /// 先从叶节点证明有限调用链；剩余循环及其调用者保守标记可能不终止。
 /// effect 沿反向调用边做单调固定点传播，每一位只会从 0 变为 1。
-pub(crate) fn call_effects(bindings: &[Binding]) -> Result<Vec<Effects>, String> {
+pub(crate) fn call_effects(bindings: &[FunctionBinding<Program>]) -> Result<Vec<Effects>, String> {
     let count = bindings.len();
     let mut effects = Vec::with_capacity(count);
     let mut calls = Vec::with_capacity(count);
@@ -100,7 +100,7 @@ pub(crate) fn call_effects(bindings: &[Binding]) -> Result<Vec<Effects>, String>
 }
 
 /// 有界的直线标量内联：不复制闭包身份、Host 操作或构造能力，不改变可能 fault 的算术顺序。
-pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::Arc<super::image::ValidatedProgram>], remaining: &mut usize) -> Result<bool, String> {
+pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::Arc<Program>], remaining: &mut usize) -> Result<bool, String> {
     use super::bytecode::Instruction as I;
     let eligible = |callee: &Program| {
         callee.instructions.len() <= 16 && callee.captures.is_empty()

@@ -336,12 +336,3 @@ impl ContractIr {
 impl<P> Default for ContractPrograms<P> {
     fn default() -> Self { Self { functions: BTreeMap::new(), checks: Vec::new() } }
 }
-impl ContractPrograms {
-    pub(crate) fn publish(self) -> Result<ContractPrograms<super::image::ValidatedProgram>, String> {
-        let publish = |program: Arc<Program>| super::image::ValidatedProgram::new(Arc::unwrap_or_clone(program)).map(Arc::new);
-        Ok(ContractPrograms {
-            functions: self.functions.into_iter().map(|(key, program)| Ok((key, publish(program)?))).collect::<Result<_, String>>()?,
-            checks: self.checks.into_iter().map(|check| Ok(CheckProgram { owner: check.owner, name: check.name, module: check.module, program: publish(check.program)? })).collect::<Result<_, String>>()?,
-        })
-    }
-}
