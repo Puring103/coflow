@@ -27,6 +27,7 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
 }
 
 export const MOCK_PROJECT: ProjectBootstrap = {
+  schema_revision: 1,
   session_id: 1,
   revision: 1,
   project_root: '(mock project)',

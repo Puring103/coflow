@@ -29,7 +29,7 @@ use patch::{
     reorder_record_spans, replace_spans, serialize_record, validate_record_key, validate_values,
 };
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use crate::{DataSourceTextOverride, ProjectFileUpdate};
 
@@ -45,7 +45,7 @@ pub(crate) const CFD_WRITER_CAPABILITIES: WriterCapabilities = WriterCapabilitie
 /// Writer for `.cfd` text sources.
 #[derive(Debug, Default)]
 pub(crate) struct CfdWriter {
-    workspace: Arc<Mutex<WriteWorkspace>>,
+    workspace: Mutex<WriteWorkspace>,
 }
 
 #[derive(Debug, Default)]
@@ -64,7 +64,7 @@ impl CfdWriter {
     #[must_use]
     pub(crate) fn new() -> Self {
         Self {
-            workspace: Arc::new(Mutex::new(WriteWorkspace::default())),
+            workspace: Mutex::new(WriteWorkspace::default()),
         }
     }
 

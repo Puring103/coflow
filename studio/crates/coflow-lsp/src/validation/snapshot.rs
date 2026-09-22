@@ -5,9 +5,8 @@ use super::super::diagnostics::{
 use super::super::state::LspBuild;
 use super::super::uri::path_to_file_uri;
 use super::{is_cfd_path, OpenDocument};
-use coflow_language::cfd::parse_cfd;
 use coflow_project::DiagnosticSet;
-use coflow_project::{discover_directory_files, normalize_path, Project};
+use coflow_project::{normalize_path, Project};
 use coflow_project::{ProjectRuntime, SchemaTextOverride};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,9 +68,7 @@ pub(crate) struct ValidationSnapshot {
 }
 
 pub(super) struct CfdDocumentSnapshot {
-    pub(super) source: String,
-    pub(super) ast: coflow_language::cfd::CfdAst,
-    pub(super) syntax_valid: bool,
+    pub(super) snapshot: Arc<coflow_project::CfdSourceSnapshot>,
 }
 
 impl ValidationSnapshot {
@@ -135,7 +132,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
             overrides.push(SchemaTextOverride {
                 requested_module: Some(module_id.clone()),
                 normalized_path: normalized_path.clone(),
-                source: document.text.clone(),
+                source: document.text.to_string(),
             });
         } else if !is_cfd_path(normalized_path) {
             snapshot.diagnostics.insert(
@@ -182,10 +179,13 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
     if cfd_failures.is_empty() {
         let definitions =
             CfdDefinitionIndex::from_documents(cfd_sources.iter().filter_map(|source| {
-                snapshot
-                    .cfd_documents
-                    .get(&source.path)
-                    .map(|document| (source.uri.as_str(), document.source.as_str(), &document.ast))
+                snapshot.cfd_documents.get(&source.path).map(|document| {
+                    (
+                        source.uri.as_str(),
+                        document.snapshot.text.as_ref(),
+                        &document.snapshot.syntax,
+                    )
+                })
             }));
         snapshot.build = Some(LspBuild::new(raw_build).with_cfd_definitions(definitions));
     }
@@ -198,20 +198,16 @@ fn add_cfd_documents(
 ) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
     let (sources, failures) = collect_cfd_sources(&input.project, &input.open_documents);
     for source in &sources {
-        let (ast, errors) = parse_cfd(&source.text);
+        let parsed = Arc::clone(&source.snapshot);
         if let Some(document) = input.open_documents.get(&source.path) {
             snapshot.diagnostics.insert(
                 document.uri.clone(),
-                super::super::cfd::syntax_diagnostics(&source.text, &errors),
+                super::super::cfd::syntax_diagnostics(&parsed.text, &parsed.errors),
             );
         }
         snapshot.cfd_documents.insert(
             source.path.clone(),
-            CfdDocumentSnapshot {
-                source: source.text.clone(),
-                ast,
-                syntax_valid: errors.is_empty(),
-            },
+            CfdDocumentSnapshot { snapshot: parsed },
         );
     }
     for failure in &failures {
@@ -277,7 +273,7 @@ fn add_diagnostic_set(
 struct CfdProjectSource {
     path: PathBuf,
     uri: String,
-    text: String,
+    snapshot: Arc<coflow_project::CfdSourceSnapshot>,
 }
 
 struct CfdSourceFailure {
@@ -291,26 +287,16 @@ fn collect_cfd_sources(
 ) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
     let mut sources = Vec::new();
     let mut failures = Vec::new();
-    for source in &project.config().data {
-        let path = source.location();
-        let resolved = project.resolve_path(path);
-        if resolved.is_dir() {
-            match discover_directory_files(&resolved) {
-                Ok(paths) => {
-                    for path in paths {
-                        if is_cfd_path(&path) {
-                            collect_cfd_source(&path, open_documents, &mut sources, &mut failures);
-                        }
-                    }
-                }
-                Err(err) => failures.push(CfdSourceFailure {
-                    uri: path_to_file_uri(err.path()),
-                    message: err.to_string(),
-                }),
+    match project.data_source_files() {
+        Ok(paths) => {
+            for path in paths.iter() {
+                collect_cfd_source(project, path, open_documents, &mut sources, &mut failures);
             }
-        } else if is_cfd_path(&resolved) {
-            collect_cfd_source(&resolved, open_documents, &mut sources, &mut failures);
         }
+        Err(errors) => failures.push(CfdSourceFailure {
+            uri: path_to_file_uri(project.config_path()),
+            message: errors.to_string(),
+        }),
     }
 
     let mut indexed_paths = sources
@@ -322,7 +308,9 @@ fn collect_cfd_sources(
             sources.push(CfdProjectSource {
                 path: path.clone(),
                 uri: document.uri.clone(),
-                text: document.text.clone(),
+                snapshot: project
+                    .source_store()
+                    .overlay(path, Arc::clone(&document.text)),
             });
         }
     }
@@ -331,6 +319,7 @@ fn collect_cfd_sources(
 }
 
 fn collect_cfd_source(
+    project: &Project,
     path: &Path,
     open_documents: &BTreeMap<PathBuf, OpenDocument>,
     sources: &mut Vec<CfdProjectSource>,
@@ -341,15 +330,17 @@ fn collect_cfd_source(
         sources.push(CfdProjectSource {
             path: normalized,
             uri: document.uri.clone(),
-            text: document.text.clone(),
+            snapshot: project
+                .source_store()
+                .overlay(path, Arc::clone(&document.text)),
         });
         return;
     }
-    match std::fs::read_to_string(path) {
-        Ok(text) => sources.push(CfdProjectSource {
+    match project.source_store().cached_or_read(path) {
+        Ok(snapshot) => sources.push(CfdProjectSource {
             uri: path_to_file_uri(&normalized),
             path: normalized,
-            text,
+            snapshot,
         }),
         Err(err) => failures.push(CfdSourceFailure {
             uri: path_to_file_uri(&normalized),

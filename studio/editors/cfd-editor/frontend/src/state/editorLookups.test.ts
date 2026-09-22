@@ -28,12 +28,31 @@ function refTarget(key: string): RefTarget {
 }
 
 describe('EditorLookupController', () => {
+  it('invalidates schema values and rejects pending defaults when the same session recompiles schema', async () => {
+    const pendingDefault = deferred<FieldValue>()
+    const oldValue: FieldValue = { kind: 'int', value: 1n }
+    const newValue: FieldValue = { kind: 'int', value: 2n }
+    const getEnumVariants = vi.fn(async () => [])
+    const makeDefaultObject = vi.fn().mockImplementationOnce(() => pendingDefault.promise).mockResolvedValue(newValue)
+    const lookups = new EditorLookupController(backend({ getEnumVariants, makeDefaultObject }))
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
+    await lookups.loadEnumVariants('Mode')
+    const old = lookups.makeDefaultObject('Settings')
+    lookups.adopt({ sessionId: 1, revision: 2 }, 2)
+    expect(lookups.cachedEnumVariants('Mode')).toBeUndefined()
+    await lookups.loadEnumVariants('Mode')
+    await expect(lookups.makeDefaultObject('Settings')).resolves.toEqual({ ok: true, value: newValue })
+    pendingDefault.resolve(oldValue)
+    await expect(old).resolves.toEqual({ ok: false, reason: 'superseded' })
+    await expect(lookups.makeDefaultObject('Settings')).resolves.toEqual({ ok: true, value: newValue })
+    expect(getEnumVariants).toHaveBeenCalledTimes(2)
+  })
   it('refreshes short names after settings change without changing the data revision', async () => {
     const pending = deferred<RefTarget[]>()
     const updated = [{ ...refTarget('sword'), short_name: 'Sword' }]
     const getRefTargets = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(updated)
     const lookups = new EditorLookupController(backend({ getRefTargets }))
-    lookups.adopt({ sessionId: 1, revision: 1 })
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
     const old = lookups.loadRefTargets('Item')
     lookups.invalidateRefTargets()
     await expect(lookups.loadRefTargets('Item')).resolves.toEqual({ ok: true, value: updated })
@@ -48,9 +67,9 @@ describe('EditorLookupController', () => {
       .mockResolvedValueOnce([{ name: 'new', value: 2n, label: null, description: null }])
     const lookups = new EditorLookupController(backend({ getEnumVariants }))
 
-    lookups.adopt({ sessionId: 1, revision: 3 })
+    lookups.adopt({ sessionId: 1, revision: 3 }, 1)
     const oldResult = lookups.loadEnumVariants('Quality')
-    lookups.adopt({ sessionId: 2, revision: 0 })
+    lookups.adopt({ sessionId: 2, revision: 0 }, 1)
     const newResult = await lookups.loadEnumVariants('Quality')
     oldRequest.resolve([{ name: 'old', value: 1n, label: null, description: null }])
 
@@ -64,7 +83,7 @@ describe('EditorLookupController', () => {
     const request = deferred<{ name: string, value: bigint, label: string | null, description: string | null }[]>()
     const getEnumVariants = vi.fn(() => request.promise)
     const lookups = new EditorLookupController(backend({ getEnumVariants }))
-    lookups.adopt({ sessionId: 7, revision: 4 })
+    lookups.adopt({ sessionId: 7, revision: 4 }, 1)
 
     const first = lookups.loadEnumVariants('Quality')
     const second = lookups.loadEnumVariants('Quality')
@@ -80,9 +99,9 @@ describe('EditorLookupController', () => {
     const getEnumVariants = vi.fn(async () => variants)
     const lookups = new EditorLookupController(backend({ getEnumVariants }))
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     await expect(lookups.loadEnumVariants('Quality')).resolves.toEqual({ ok: true, value: variants })
-    lookups.adopt({ sessionId: 7, revision: 2 })
+    lookups.advanceData({ sessionId: 7, revision: 2 })
 
     expect(lookups.cachedEnumVariants('Quality')).toBe(variants)
     await expect(lookups.loadEnumVariants('Quality')).resolves.toEqual({ ok: true, value: variants })
@@ -95,9 +114,9 @@ describe('EditorLookupController', () => {
     const lookups = new EditorLookupController(backend({ getEnumVariants }))
     const variants = [{ name: 'Rare', value: 1n, label: null, description: null }]
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     const result = lookups.loadEnumVariants('Quality')
-    lookups.adopt({ sessionId: 7, revision: 2 })
+    lookups.advanceData({ sessionId: 7, revision: 2 })
     request.resolve(variants)
 
     await expect(result).resolves.toEqual({ ok: true, value: variants })
@@ -114,9 +133,9 @@ describe('EditorLookupController', () => {
       .mockImplementationOnce(() => refreshed.promise)
     const lookups = new EditorLookupController(backend({ getRefTargets }))
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     await expect(lookups.loadRefTargets('Item')).resolves.toEqual({ ok: true, value: oldTargets })
-    lookups.adopt({ sessionId: 7, revision: 2 })
+    lookups.advanceData({ sessionId: 7, revision: 2 })
 
     expect(lookups.cachedRefTargets('Item')).toBe(oldTargets)
     const refresh = lookups.loadRefTargets('Item')
@@ -135,9 +154,9 @@ describe('EditorLookupController', () => {
       .mockResolvedValueOnce([refTarget('new')])
     const lookups = new EditorLookupController(backend({ getRefTargets }))
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     const oldResult = lookups.loadRefTargets('Item')
-    lookups.adopt({ sessionId: 7, revision: 2 })
+    lookups.advanceData({ sessionId: 7, revision: 2 })
     const newResult = lookups.loadRefTargets('Item')
     oldRequest.resolve([refTarget('old')])
 
@@ -155,9 +174,9 @@ describe('EditorLookupController', () => {
       .mockResolvedValueOnce(newTargets)
     const lookups = new EditorLookupController(backend({ getRefTargets }))
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     await lookups.loadRefTargets('Item')
-    lookups.adopt({ sessionId: 7, revision: 2 })
+    lookups.advanceData({ sessionId: 7, revision: 2 })
 
     await expect(lookups.loadRefTargets('Item')).resolves.toEqual({
       ok: false,
@@ -176,10 +195,10 @@ describe('EditorLookupController', () => {
       getRefTargets: vi.fn(async () => [refTarget('sword')]),
     }))
 
-    lookups.adopt({ sessionId: 7, revision: 1 })
+    lookups.adopt({ sessionId: 7, revision: 1 }, 1)
     await lookups.loadEnumVariants('Quality')
     await lookups.loadRefTargets('Item')
-    lookups.adopt({ sessionId: 8, revision: 0 })
+    lookups.adopt({ sessionId: 8, revision: 0 }, 1)
 
     expect(lookups.cachedEnumVariants('Quality')).toBeUndefined()
     expect(lookups.cachedRefTargets('Item')).toBeUndefined()

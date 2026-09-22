@@ -15,6 +15,8 @@ use ts_rs::TS;
 pub struct ProjectBootstrap {
     pub session_id: u32,
     pub revision: u32,
+    /// schema 重建时推进，普通数据 mutation 保持不变。
+    pub schema_revision: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
     #[serde(default)]

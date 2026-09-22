@@ -4,4 +4,8 @@ import type { FileTreeNode } from "./FileTreeNode";
 import type { FileTypeOption } from "./FileTypeOption";
 import type { FlatDiagnostic } from "./FlatDiagnostic";
 
-export type ProjectBootstrap = { session_id: number, revision: number, project_root: string, file_tree: Array<FileTreeNode>, file_types: { [key in string]?: Array<FileTypeOption> }, dimensions: Array<DimensionInfo>, first_source_file: string | null, diagnostics: Array<FlatDiagnostic>, };
+export type ProjectBootstrap = { session_id: number, revision: number,
+/**
+ * schema 重建时推进，普通数据 mutation 保持不变。
+ */
+schema_revision: number, project_root: string, file_tree: Array<FileTreeNode>, file_types: { [key in string]?: Array<FileTypeOption> }, dimensions: Array<DimensionInfo>, first_source_file: string | null, diagnostics: Array<FlatDiagnostic>, };

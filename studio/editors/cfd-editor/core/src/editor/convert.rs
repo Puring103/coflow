@@ -27,9 +27,27 @@ type ShapeCacheMap = HashMap<(String, String), Option<Arc<FieldShapeInfo>>>;
 #[derive(Debug, Default)]
 pub struct ShapeCache {
     inner: RwLock<ShapeCacheMap>,
+    field_orders: RwLock<HashMap<String, Arc<[String]>>>,
 }
 
 impl ShapeCache {
+    /// 字段声明顺序只依赖 schema，每个类型构建一次，所有记录共享。
+    fn field_order(&self, queries: ProjectQueries<'_>, actual_type: &str) -> Arc<[String]> {
+        if let Some(order) = self.field_orders.read().get(actual_type) {
+            return Arc::clone(order);
+        }
+        let order: Arc<[String]> = queries
+            .schema_type_fields(actual_type)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>()
+            .into();
+        self.field_orders
+            .write()
+            .insert(actual_type.to_string(), Arc::clone(&order));
+        order
+    }
+
     /// 查询字段形状，命中缓存时返回共享句柄；未命中时构建并写入。
     #[must_use]
     pub fn get(
@@ -94,28 +112,7 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
     }
 }
 
-/// Convenience: pull the [`RecordView`] from the session, then render it.
-#[must_use]
-pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
-    let fields = record_fields(record, ctx);
-    let (field_index, field_summaries) = field_indexes(&fields);
-    let coordinate = record.coordinate();
-    let (field_diagnostics, diagnostic_severity) =
-        diagnostics_for_record(ctx.diagnostics, display_path, &coordinate);
-    RecordRow {
-        coordinate,
-        display_path: display_path.to_string(),
-        container_index: 0,
-        container_size: 1,
-        fields,
-        field_index,
-        field_summaries,
-        field_diagnostics,
-        diagnostic_severity,
-    }
-}
-
-fn diagnostics_for_record(
+pub(crate) fn diagnostics_for_record(
     diagnostics: &Diagnostics,
     file_path: &str,
     coordinate: &RecordCoordinate,
@@ -148,26 +145,12 @@ fn normalized_severity(severity: &str) -> &'static str {
     }
 }
 
-fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
+pub(crate) fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
     // `CfdRecord` stores fields in a BTreeMap for deterministic lookup, not
     // presentation. The schema retains the declared (including inherited)
     // field order, which is what users expect in the editor.
-    let declared_names = ctx
-        .queries
-        .schema_type_fields(record.actual_type())
+    record_field_names(record, ctx)
         .into_iter()
-        .map(|(name, _)| name)
-        .collect::<Vec<_>>();
-    let declared_name_set = declared_names.iter().cloned().collect::<BTreeSet<_>>();
-    let remaining_names = record
-        .fields()
-        .keys()
-        .map(ToString::to_string)
-        .filter(|name| !declared_name_set.contains(name));
-
-    declared_names
-        .into_iter()
-        .chain(remaining_names)
         .map(|name| {
             let present = record.fields().get(name.as_str());
             let missing = present.is_none();
@@ -182,6 +165,33 @@ fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
                 value,
                 missing,
             }
+        })
+        .collect()
+}
+
+fn record_field_names(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<String> {
+    let declared_names = ctx.shapes.field_order(ctx.queries, record.actual_type());
+    let declared_name_set = declared_names.iter().cloned().collect::<BTreeSet<_>>();
+    let remaining_names = record
+        .fields()
+        .keys()
+        .map(ToString::to_string)
+        .filter(|name| !declared_name_set.contains(name));
+
+    declared_names
+        .iter()
+        .cloned()
+        .chain(remaining_names)
+        .collect()
+}
+
+/// 列宽统计只读取值摘要；未变化行无需构建或复制字段值与注解。
+pub(crate) fn record_summaries(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<(String, String)> {
+    record_field_names(record, ctx)
+        .into_iter()
+        .map(|name| {
+            let summary = record.field(&name).map(value_summary).unwrap_or_default();
+            (name, summary)
         })
         .collect()
 }

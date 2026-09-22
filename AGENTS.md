@@ -115,7 +115,7 @@ implementation constraints there.
 - `coflow-language` owns source spans, shared lossless lexical scanning, CFT syntax, schema-free CFD syntax, and language structural limits. Semantic contracts and declaration compilation belong to `coflow-core`.
 - `coflow-format` owns canonical CFT/CFD source formatting over the lossless token stream; it does not load projects or produce LSP edits.
 - `coflow-diagnostics` owns the diagnostic codes, stages, and severities shared across model construction and check execution.
-- The CLI, editor, and LSP obtain the fixed CFD catalog from `coflow-project`; no host registers providers.
+- The CLI, editor, and LSP use project sessions from `coflow-project`. Each mutation owns its fixed CFD writer workspace; session construction is independent of the writer catalog, and no host registers providers.
 - `coflow-codegen` owns the data-only target-language code generation contracts. Concrete generators depend on this contract without depending on `coflow-project`.
 - `coflow-lsp` owns the standalone and embedded language server implementation used by the CLI and editor.
 - The `coflow` package in `studio/cli` is a binary-only CLI application. Shared project commands and artifact publication are exposed by `coflow-project`; non-CLI hosts must not depend on the CLI package.

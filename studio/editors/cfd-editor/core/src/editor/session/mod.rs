@@ -1,8 +1,8 @@
 //! Session state and host-facing editor operations.
 //!
 //! `SessionStore` owns a small population of `EditorSession`s — one per
-//! loaded project — and dispatches every editor command through a shared
-//! `CfdSourceCatalog`. Each session is wrapped in its own `RwLock` so reads
+//! loaded project — and dispatches editor commands through project sessions.
+//! Each session is wrapped in its own `RwLock` so reads
 //! don't block one another and a write is scoped to a single session.
 //!
 //! 模块划分（仅结构拆分，不改行为）：
@@ -22,6 +22,7 @@ mod graph;
 pub(crate) mod mutation_apply;
 mod operations;
 mod project_commands;
+mod publication;
 mod revision;
 pub(crate) mod row_build;
 mod settings_commands;
@@ -33,7 +34,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use coflow_project::{ProjectQueries, RecordCoordinate};
+use coflow_project::ProjectQueries;
 
 use crate::editor::types::{EditorError, ProjectBootstrap};
 
@@ -52,14 +53,14 @@ pub struct EditorSession {
     /// Path to the project's `coflow.yaml` used by project actions and reloads.
     pub yaml_path: std::path::PathBuf,
     pub engine: coflow_project::WriteProjectSession,
+    pub(crate) schema_revision: u32,
     pub diagnostics: Diagnostics,
     pub language_server: coflow_lsp::EmbeddedLsp,
     pub language_documents: HashSet<String>,
     pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
     pub(crate) schema_files: HashSet<String>,
-    pub(crate) file_type_names: BTreeMap<String, Vec<String>>,
+    pub(crate) schema_type_names: Vec<String>,
     pub(crate) file_type_counts: BTreeMap<String, BTreeMap<String, usize>>,
-    pub(crate) type_display_names: BTreeMap<(String, String), String>,
     pub(crate) ref_target_cache: HashMap<String, Vec<crate::editor::types::RefTarget>>,
     pub(crate) shape_cache: crate::editor::convert::ShapeCache,
     revisions: RevisionCoordinator,
@@ -83,13 +84,6 @@ impl EditorSession {
     pub(crate) fn commit_internal_write(&mut self, paths: &[String]) {
         self.revisions
             .commit_internal_write(&self.project_root, paths);
-    }
-
-    pub(crate) fn type_display_name(&self, file_path: &str, type_name: &str) -> String {
-        self.type_display_names
-            .get(&(file_path.to_string(), type_name.to_string()))
-            .cloned()
-            .unwrap_or_else(|| type_name.to_string())
     }
 }
 
@@ -229,6 +223,7 @@ impl SessionStore {
             return Ok(None);
         };
         candidate.session.revisions = revisions;
+        candidate.session.schema_revision = state.schema_revision.saturating_add(1);
         let bootstrap = project_bootstrap(id, &candidate.session, candidate.snapshot);
         *state = candidate.session;
         drop(state);
@@ -261,7 +256,3 @@ impl SessionStore {
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
 }
-
-// 仅保留坐标占位引用，避免拆分后未使用导入告警。
-#[allow(dead_code)]
-fn _coordinate_hint(_: &RecordCoordinate) {}

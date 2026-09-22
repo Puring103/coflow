@@ -255,10 +255,10 @@ describe('DataCardCompact complex previews', () => {
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
     } satisfies EditorLookupBackend)
-    lookups.adopt({ sessionId: 1, revision: 1 })
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
     await lookups.loadEnumVariants('Rarity')
     await lookups.loadRefTargets('Item')
-    lookups.adopt({ sessionId: 1, revision: 2 })
+    lookups.adopt({ sessionId: 1, revision: 2 }, 1)
 
     const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
       lookups,
@@ -636,7 +636,7 @@ describe('missing field repair', () => {
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
     } satisfies EditorLookupBackend)
-    lookups.adopt({ sessionId: 1, revision: 1 })
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
     const childBase = {
       enum_int_value: null,
       enum_type: null,
@@ -700,7 +700,7 @@ describe('missing field repair', () => {
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async (_sessionId, actualType) => ({ actual_type: actualType, fields: [] }),
     } satisfies EditorLookupBackend)
-    lookups.adopt({ sessionId: 1, revision: 1 })
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
     const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
       lookups,
       generationKey: 'test',

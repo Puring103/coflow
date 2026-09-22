@@ -405,6 +405,8 @@ impl PreparedMutationOp {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationReport {
+    /// 记录值、位置或诊断变化的文件与坐标，包含间接受影响记录。
+    pub changed_records: BTreeMap<String, Vec<RecordCoordinate>>,
     pub write_ok: bool,
     pub check_ok: bool,
     /// Whether this request published a new project generation.

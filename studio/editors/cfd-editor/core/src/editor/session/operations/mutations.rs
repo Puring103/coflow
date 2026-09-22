@@ -4,14 +4,12 @@
 
 use super::super::errors::api_diagnostics_to_editor_error;
 use super::super::{
-    mutation_apply::{apply_collection_edit, finalize_mutation, write_field_in_session},
+    mutation_apply::{finalize_mutation, write_field_in_session},
     row_build::{
-        file_records_for_session, record_container_index, record_type_index, reorder_file_path,
-        snapshot_record_before_delete,
+        record_container_index, record_type_index, reorder_file_path, snapshot_record_before_delete,
     },
     SessionStore,
 };
-use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
     DeleteRecordOutcome, EditorError, InsertRecordOutcome, RenameRecordOutcome,
@@ -75,7 +73,8 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "batch field write failed")?;
+        let (report, changes) =
+            finalize_mutation(&mut session, report, "batch field write failed")?;
         let edits = targets
             .into_iter()
             .enumerate()
@@ -105,6 +104,7 @@ impl SessionStore {
             })
             .collect();
         Ok(BatchWriteFieldOutcome {
+            changes,
             revision: session.revisions.current(),
             edits,
             diagnostics: report.diagnostics,
@@ -130,7 +130,8 @@ impl SessionStore {
             .engine
             .default_collection_item_value_for_record(coordinate, field_path)
             .ok();
-        let next = apply_collection_edit(current, edit, default_item)?;
+        let next = coflow_project::apply_collection_edit(current, edit, default_item)
+            .map_err(api_diagnostics_to_editor_error)?;
         let outcome = write_field_in_session(&mut session, coordinate, field_path, &next);
         drop(session);
         outcome
@@ -191,11 +192,10 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "insert record failed")?;
-        let file_records = file_records_for_session(&session, file_path);
+        let (report, changes) = finalize_mutation(&mut session, report, "insert record failed")?;
         Ok(InsertRecordOutcome {
+            changes,
             revision: session.revisions.current(),
-            file_records,
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
         })
@@ -222,7 +222,7 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "rename record failed")?;
+        let (report, changes) = finalize_mutation(&mut session, report, "rename record failed")?;
         let outcome = report
             .applied
             .first()
@@ -232,24 +232,9 @@ impl SessionStore {
             .renamed
             .and_then(|(old, new)| (old == *coordinate).then_some(new))
             .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
-        let view = session
-            .queries()
-            .record_view(&renamed.actual_type, &renamed.key)
-            .ok_or_else(|| {
-                EditorError::not_found(format!(
-                    "record `{}.{}` not found after rename",
-                    renamed.actual_type, renamed.key
-                ))
-            })?;
-        let ctx = WireContext::new(
-            session.queries(),
-            &session.diagnostics,
-            &session.shape_cache,
-        );
-        let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
+            changes,
             revision: session.revisions.current(),
-            row,
             diagnostics: report.diagnostics,
             renamed,
             affected_files: report.affected_files,
@@ -265,21 +250,6 @@ impl SessionStore {
         let session_lock = &entry.state;
         let mut session = session_lock.write();
         let deleted_snapshot = snapshot_record_before_delete(&session, coordinate);
-        let file_path = deleted_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.display_path.clone())
-            .or_else(|| {
-                session
-                    .queries()
-                    .file_for_record(&coordinate.actual_type, &coordinate.key)
-                    .map(str::to_string)
-            })
-            .ok_or_else(|| {
-                EditorError::not_found(format!(
-                    "record `{}.{}` not found",
-                    coordinate.actual_type, coordinate.key
-                ))
-            })?;
         let report = coflow_project::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
@@ -291,11 +261,10 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "delete record failed")?;
-        let file_records = file_records_for_session(&session, &file_path);
+        let (report, changes) = finalize_mutation(&mut session, report, "delete record failed")?;
         Ok(DeleteRecordOutcome {
+            changes,
             revision: session.revisions.current(),
-            file_records,
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
             deleted_snapshot,
@@ -323,10 +292,10 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "swap records failed")?;
+        let (report, changes) = finalize_mutation(&mut session, report, "swap records failed")?;
         Ok(ReorderRecordsOutcome {
+            changes,
             revision: session.revisions.current(),
-            file_records: file_records_for_session(&session, &file_path),
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
             old_index: None,
@@ -361,10 +330,10 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "move record failed")?;
+        let (report, changes) = finalize_mutation(&mut session, report, "move record failed")?;
         Ok(ReorderRecordsOutcome {
+            changes,
             revision: session.revisions.current(),
-            file_records: file_records_for_session(&session, &file_path),
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
             old_index: Some(old_index),
@@ -401,10 +370,10 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "transfer record failed")?;
+        let (report, changes) = finalize_mutation(&mut session, report, "transfer record failed")?;
         Ok(ReorderRecordsOutcome {
+            changes,
             revision: session.revisions.current(),
-            file_records: file_records_for_session(&session, destination_file),
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
             old_index: Some(old_index),

@@ -102,7 +102,3 @@ impl SessionStore {
         self.reload_session(id)
     }
 }
-
-// 显式复用 build 模块诊断，避免新增重复实现。
-#[allow(unused_imports)]
-use super::build as _build_reexport_guard;

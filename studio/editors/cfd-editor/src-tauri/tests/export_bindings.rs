@@ -49,6 +49,8 @@ fn export_bindings() {
     export_with_retry::<t::FieldCell>("FieldCell");
     export_with_retry::<t::FieldAnnotation>("FieldAnnotation");
     export_with_retry::<t::WriteFieldOutcome>("WriteFieldOutcome");
+    export_with_retry::<t::BatchWriteFieldInput>("BatchWriteFieldInput");
+    export_with_retry::<t::BatchWriteFieldOutcome>("BatchWriteFieldOutcome");
     export_with_retry::<t::WriteDimensionValueOutcome>("WriteDimensionValueOutcome");
     export_with_retry::<t::CollectionEdit>("CollectionEdit");
     export_with_retry::<t::RenameRecordOutcome>("RenameRecordOutcome");

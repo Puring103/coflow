@@ -17,6 +17,7 @@ export type LookupResult<T> =
 
 export class EditorLookupController {
   private generation: EditorGenerationIdentity | null = null
+  private schemaRevision: number | null = null
   private epoch = 0
   private refEpoch = 0
   private readonly values = new Map<string, unknown>()
@@ -25,15 +26,18 @@ export class EditorLookupController {
 
   constructor(private readonly backend: EditorLookupBackend) {}
 
-  adopt(generation: EditorGenerationIdentity | null): void {
+  adopt(generation: EditorGenerationIdentity | null, schemaRevision: number | null): void {
     if (
       this.generation?.sessionId === generation?.sessionId
       && this.generation?.revision === generation?.revision
+      && this.schemaRevision === schemaRevision
     ) return
     const sessionChanged = this.generation?.sessionId !== generation?.sessionId
+    const schemaChanged = this.schemaRevision !== schemaRevision
     this.generation = generation
+    this.schemaRevision = schemaRevision
 
-    if (sessionChanged) {
+    if (sessionChanged || schemaChanged) {
       this.epoch += 1
       this.refEpoch += 1
       this.values.clear()
@@ -46,6 +50,12 @@ export class EditorLookupController {
     // does not invalidate them. Reference targets are data-scoped: retain the
     // last successful value for synchronous display, but refresh it on access.
     this.invalidateRefTargets()
+  }
+
+  /** 数据提交不会改变 schema；完整快照必须显式传入 schema 代际。 */
+  advanceData(generation: EditorGenerationIdentity): void {
+    if (generation.sessionId !== this.generation?.sessionId) return
+    this.adopt(generation, this.schemaRevision)
   }
 
   invalidateRefTargets(): void {

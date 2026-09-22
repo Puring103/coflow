@@ -5,10 +5,10 @@
 use coflow_project::CfdValue;
 
 use super::errors::{api_diagnostics_to_editor_error, mutation_report_to_editor_error};
-use super::{Diagnostics, EditorSession};
-use crate::editor::convert::{annotation_for_draft_field, record_view_to_row, WireContext};
+use super::EditorSession;
+use crate::editor::convert::{annotation_for_draft_field, WireContext};
 use crate::editor::types::{
-    CollectionEdit, CreateRecordDraft, CreateRecordFieldDraft, EditorError, WriteFieldOutcome,
+    CreateRecordDraft, CreateRecordFieldDraft, EditorError, WriteFieldOutcome,
 };
 
 /// 字段写回：先取 `old_value` 供 undo 使用，再走引擎 `SetField`。
@@ -35,7 +35,7 @@ pub(crate) fn write_field_in_session(
         },
     )
     .map_err(api_diagnostics_to_editor_error)?;
-    let report = finalize_mutation(session, report, "write field failed")?;
+    let (report, changes) = finalize_mutation(session, report, "write field failed")?;
     let outcome = report
         .applied
         .first()
@@ -47,14 +47,6 @@ pub(crate) fn write_field_in_session(
         .and_then(|(old, new)| (old == coordinate).then_some(new.clone()));
     let final_coordinate = renamed.as_ref().unwrap_or(coordinate);
     let queries = session.queries();
-    let view = queries
-        .record_view(&final_coordinate.actual_type, &final_coordinate.key)
-        .ok_or_else(|| {
-            EditorError::not_found(format!(
-                "record `{}.{}` not found after write",
-                final_coordinate.actual_type, final_coordinate.key
-            ))
-        })?;
     let current_value = queries
         .field_value(
             &final_coordinate.actual_type,
@@ -62,10 +54,9 @@ pub(crate) fn write_field_in_session(
             field_path,
         )
         .cloned();
-    let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
     Ok(WriteFieldOutcome {
+        changes,
         revision: session.revisions.current(),
-        row: record_view_to_row(&view, &ctx),
         diagnostics: report.diagnostics,
         old_value,
         new_value: current_value,
@@ -79,94 +70,41 @@ pub(crate) fn finalize_mutation(
     session: &mut EditorSession,
     report: coflow_project::MutationReport,
     fallback: &str,
-) -> Result<coflow_project::MutationReport, EditorError> {
+) -> Result<
+    (
+        coflow_project::MutationReport,
+        crate::editor::types::records::EditorChangeSet,
+    ),
+    EditorError,
+> {
     if !report.write_ok {
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
-    session.diagnostics = Diagnostics::from_queries(session.queries(), &session.project_root);
+    let base_revision = session.revisions.current();
     if report.generation_changed {
-        session.commit_internal_write(&report.written_files);
-        session.ref_target_cache.clear();
+        let affected = report.changed_records.keys().cloned().collect();
+        session.publish_commit(&report.written_files, Some(&affected), false)?;
     }
-    Ok(report)
-}
-
-/// 集合字段的纯函数编辑：单层 `Option` 包装自动展开/回包，数组/字典分支各自处理。
-pub(crate) fn apply_collection_edit(
-    value: CfdValue,
-    edit: CollectionEdit,
-    default_item: Option<CfdValue>,
-) -> Result<CfdValue, EditorError> {
-    match (value, edit) {
-        (CfdValue::OptionSome(inner), edit) => {
-            if matches!(
-                inner.as_ref(),
-                CfdValue::OptionSome(_) | CfdValue::OptionNone
-            ) {
-                return Err(EditorError::write(
-                    "nested optional values are not supported",
-                ));
-            }
-            apply_collection_edit(*inner, edit, default_item)
-                .map(|value| CfdValue::OptionSome(Box::new(value)))
-        }
-        (CfdValue::OptionNone, edit @ CollectionEdit::ArrayAppend { .. }) => {
-            apply_collection_edit(CfdValue::Array(Vec::new()), edit, default_item)
-                .map(|value| CfdValue::OptionSome(Box::new(value)))
-        }
-        (CfdValue::OptionNone, edit @ CollectionEdit::DictInsert { .. }) => {
-            apply_collection_edit(CfdValue::Dict(Vec::new()), edit, default_item)
-                .map(|value| CfdValue::OptionSome(Box::new(value)))
-        }
-        (CfdValue::Array(mut items), CollectionEdit::ArrayAppend { value }) => {
-            let seed = value
-                .or(default_item)
-                .ok_or_else(|| EditorError::write("array item requires an explicit value"))?;
-            items.push(seed);
-            Ok(CfdValue::Array(items))
-        }
-        (CfdValue::Array(mut items), CollectionEdit::ArrayRemove { index }) => {
-            if index >= items.len() {
-                return Err(EditorError::write("array index out of range"));
-            }
-            items.remove(index);
-            Ok(CfdValue::Array(items))
-        }
-        (CfdValue::Array(mut items), CollectionEdit::ArrayMove { from, to }) => {
-            if from >= items.len() || to >= items.len() {
-                return Err(EditorError::write("array index out of range"));
-            }
-            if from != to {
-                let moved = items.remove(from);
-                items.insert(to, moved);
-            }
-            Ok(CfdValue::Array(items))
-        }
-        (CfdValue::Dict(mut entries), CollectionEdit::DictInsert { key, value }) => {
-            if entries.iter().any(|(entry_key, _)| entry_key == &key) {
-                return Err(EditorError::write("dict key already exists"));
-            }
-            let seed = value
-                .or(default_item)
-                .ok_or_else(|| EditorError::write("dict value requires an explicit value"))?;
-            entries.push((key, seed));
-            Ok(CfdValue::Dict(entries))
-        }
-        (CfdValue::Dict(entries), CollectionEdit::DictRemove { key }) => {
-            let original_len = entries.len();
-            let entries = entries
-                .into_iter()
-                .filter(|(entry_key, _)| entry_key != &key)
-                .collect::<Vec<_>>();
-            if entries.len() == original_len {
-                return Err(EditorError::write("dict key not found"));
-            }
-            Ok(CfdValue::Dict(entries))
-        }
-        _ => Err(EditorError::write(
-            "collection edit target is not a collection",
-        )),
-    }
+    let files = report
+        .changed_records
+        .iter()
+        .map(|(file, changed)| {
+            let order = session
+                .queries()
+                .record_views_in_file(file)
+                .map(|view| view.coordinate)
+                .collect();
+            let changed = changed.iter().collect::<std::collections::BTreeSet<_>>();
+            let data = super::row_build::file_records_selection(session, file, Some(&changed));
+            crate::editor::types::records::FileRecordsPatch { data, order }
+        })
+        .collect();
+    let changes = crate::editor::types::records::EditorChangeSet {
+        base_revision,
+        revision: session.revisions.current(),
+        files,
+    };
+    Ok((report, changes))
 }
 
 pub(crate) fn create_record_draft_to_wire(
@@ -198,29 +136,5 @@ fn create_record_field_draft_to_wire(
         source: field.source,
         required: field.required.clone(),
         annotation,
-    }
-}
-
-#[cfg(test)]
-mod collection_edit_tests {
-    #![allow(clippy::expect_used)]
-
-    use super::*;
-
-    #[test]
-    fn array_append_materializes_an_optional_collection() {
-        let next = apply_collection_edit(
-            CfdValue::OptionNone,
-            CollectionEdit::ArrayAppend {
-                value: Some(CfdValue::Int(1)),
-            },
-            None,
-        )
-        .expect("optional array edit");
-
-        assert_eq!(
-            next,
-            CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)])))
-        );
     }
 }

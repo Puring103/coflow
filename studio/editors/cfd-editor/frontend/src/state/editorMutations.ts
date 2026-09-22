@@ -1,10 +1,10 @@
+import type { EditorChangeSet } from '../bindings/EditorChangeSet'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { BatchWriteFieldOutcome } from '../bindings/BatchWriteFieldOutcome'
 import type { DimensionValueCoordinate } from '../bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
-import type { FileRecords } from '../bindings/FileRecords'
 import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -94,12 +94,6 @@ export interface EditorMutationPort {
   applyGraphPositions?: (viewKey: string, positions: GraphPositions) => Promise<MutationResult<void>>
   currentGeneration: () => EditorGenerationIdentity | null
   publish: (request: MutationPublicationRequest) => Promise<MutationResult<void>>
-  fileRecordsForRow?: (
-    filePath: string,
-    previousCoordinate: RecordCoordinate,
-    row: RecordRow,
-    revision: number,
-  ) => FileRecords | undefined
   rebindCoordinate: (
     filePath: string,
     oldCoordinate: RecordCoordinate,
@@ -139,6 +133,7 @@ export interface OptimisticDimensionWrite {
 }
 
 interface MutationOutcome {
+  changes: EditorChangeSet
   revision: number
   diagnostics: MutationPublicationRequest['diagnostics']
   affected_files: string[]
@@ -348,7 +343,6 @@ export class EditorMutationController {
       '集合编辑失败',
       filePath,
       sessionId => this.backend.editCollection(sessionId, coordinate, fieldPath, edit),
-      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
         this.applyRename(filePath, coordinate, outcome.renamed)
@@ -363,7 +357,7 @@ export class EditorMutationController {
             newValue: cloneValue(outcome.new_value),
           })
         }
-        return outcome.row
+        return changedRow(outcome.changes, outcome.renamed ?? coordinate)
       },
     )))
   }
@@ -377,7 +371,6 @@ export class EditorMutationController {
       '重命名失败',
       filePath,
       sessionId => this.backend.renameRecordKey(sessionId, coordinate, newKey),
-      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         this.applyRename(filePath, coordinate, outcome.renamed)
         this.history.record({
@@ -389,7 +382,7 @@ export class EditorMutationController {
           oldValue: { kind: 'string', value: coordinate.key },
           newValue: { kind: 'string', value: newKey },
         })
-        return outcome.row
+        return changedRow(outcome.changes, outcome.renamed ?? coordinate)
       },
     )))
   }
@@ -568,12 +561,11 @@ export class EditorMutationController {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue,
     options: MutationOptions,
-  ): Promise<MutationResult<RecordRow>> {
+  ): Promise<MutationResult<RecordRow | undefined>> {
     return this.execute(
       '写入失败',
       filePath,
       sessionId => this.backend.writeField(sessionId, coordinate, fieldPath, newValue),
-      outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         const finalCoordinate = outcome.renamed ?? coordinate
         this.applyRename(filePath, coordinate, outcome.renamed)
@@ -592,7 +584,7 @@ export class EditorMutationController {
             })
           }
         }
-        return outcome.row
+        return changedRow(outcome.changes, outcome.renamed ?? coordinate)
       },
       fieldWriteChangesTopology,
     )
@@ -608,7 +600,6 @@ export class EditorMutationController {
       '批量写入失败',
       filePath,
       sessionId => this.backend.writeFields(sessionId, writes),
-      undefined,
       outcome => {
         for (const edit of outcome.edits) {
           this.applyRename(filePath, edit.coordinate, sameCoordinateOrNull(
@@ -659,7 +650,6 @@ export class EditorMutationController {
         expectedValue,
         newValue,
       ),
-      undefined,
       outcome => {
         if (options.recordHistory) {
           this.history.record({
@@ -689,7 +679,6 @@ export class EditorMutationController {
       '新建记录失败',
       filePath,
       sessionId => this.backend.insertRecord(sessionId, filePath, recordKey, actualType, fields),
-      outcome => outcome.file_records,
       outcome => {
         if (options.recordHistory) {
           this.history.record({
@@ -713,7 +702,6 @@ export class EditorMutationController {
       '删除记录失败',
       filePath,
       sessionId => this.backend.deleteRecord(sessionId, coordinate),
-      outcome => outcome.file_records,
       outcome => {
         this.port.removeCoordinate?.(filePath, coordinate)
         if (options.recordHistory && outcome.deleted_snapshot) {
@@ -739,7 +727,6 @@ export class EditorMutationController {
       '交换记录失败',
       filePath,
       sessionId => this.backend.swapRecords(sessionId, first, second),
-      outcome => outcome.file_records,
       outcome => {
         if (options.recordHistory) {
           this.history.record({
@@ -765,7 +752,6 @@ export class EditorMutationController {
       '移动记录失败',
       filePath,
       sessionId => this.backend.moveRecord(sessionId, coordinate, targetIndex),
-      outcome => outcome.file_records,
       outcome => {
         if (
           options.recordHistory
@@ -803,7 +789,6 @@ export class EditorMutationController {
         destinationFile,
         targetIndex,
       ),
-      outcome => outcome.file_records,
       outcome => {
         if (
           options.recordHistory
@@ -829,7 +814,6 @@ export class EditorMutationController {
     errorPrefix: string,
     fallbackFile: string,
     invoke: (sessionId: number) => Promise<TOutcome>,
-    knownRecords: ((outcome: TOutcome) => FileRecords | undefined) | undefined,
     afterCommit: (outcome: TOutcome) => TValue,
     topologyChanged: (outcome: TOutcome) => boolean = () => true,
   ): Promise<MutationResult<TValue>> {
@@ -840,11 +824,11 @@ export class EditorMutationController {
       const outcome = await invoke(generation.sessionId)
       const request: MutationPublicationRequest = {
         sessionId: generation.sessionId,
+        changes: outcome.changes,
         revision: outcome.revision,
         diagnostics: outcome.diagnostics,
         affectedFiles: outcome.affected_files,
         fallbackFile,
-        knownRecords: knownRecords?.(outcome),
         topologyChanged: topologyChanged(outcome),
       }
       let publication: MutationResult<void>
@@ -889,14 +873,7 @@ export class EditorMutationController {
     this.port.rebindCoordinate(filePath, oldCoordinate, newCoordinate)
   }
 
-  private fileRecordsForRow(
-    filePath: string,
-    previousCoordinate: RecordCoordinate,
-    row: RecordRow,
-    revision: number,
-  ): FileRecords | undefined {
-    return this.port.fileRecordsForRow?.(filePath, previousCoordinate, row, revision)
-  }
+
 }
 
 interface PendingFieldWrite {
@@ -987,4 +964,14 @@ function containsReference(value: FieldValue | null): boolean {
 
 function containsDimensionReference(state: DimensionValueState): boolean {
   return state.kind === 'value' && containsReference(state.value)
+}
+
+/** 返回变更集已经构建的行；无变化操作不再制造一份完整行快照。 */
+function changedRow(changes: EditorChangeSet, coordinate: RecordCoordinate): RecordRow | undefined {
+  for (const file of changes.files) {
+    const row = file.data.records.find(row => row.coordinate.actual_type === coordinate.actual_type
+      && row.coordinate.key === coordinate.key)
+    if (row) return row
+  }
+  return undefined
 }

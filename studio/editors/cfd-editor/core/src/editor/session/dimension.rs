@@ -129,13 +129,15 @@ impl SessionStore {
             },
         )
         .map_err(api_diagnostics_to_editor_error)?;
-        let report = finalize_mutation(&mut session, report, "write dimension value failed")?;
+        let (report, changes) =
+            finalize_mutation(&mut session, report, "write dimension value failed")?;
         let new_value = session
             .queries()
             .dimension_value(coordinate)
             .ok_or_else(|| EditorError::not_found("dimension value not found after write"))?
             .state;
         Ok(WriteDimensionValueOutcome {
+            changes,
             revision: session.revisions.current(),
             coordinate: coordinate.clone(),
             old_value: expected_value.clone(),

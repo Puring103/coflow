@@ -49,12 +49,40 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct Project {
     config_path: PathBuf,
+    source_store: Arc<crate::CfdSourceStore>,
     root_dir: PathBuf,
     pub(crate) config: ProjectConfig,
     pub(crate) config_source: Arc<str>,
 }
 
 impl Project {
+    /// CFD 目录仅在文件事件后重新发现，语言请求期间复用同一来源目录。
+    pub fn data_source_files(&self) -> Result<Arc<[PathBuf]>, DiagnosticSet> {
+        let mut paths = self
+            .source_store
+            .paths
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(paths) = paths.as_ref() {
+            return Ok(Arc::clone(paths));
+        }
+        let resolver = crate::source_resolution::SourceResolver::new(self);
+        let mut files = std::collections::BTreeSet::new();
+        for source in &self.config.data {
+            for resolved in resolver.resolve_for_load(source, &resolver.configured(source))? {
+                files.insert(normalize_path(resolved.source.location.path()));
+            }
+        }
+        let files: Arc<[PathBuf]> = files.into_iter().collect::<Vec<_>>().into();
+        *paths = Some(Arc::clone(&files));
+        Ok(files)
+    }
+
+    /// 项目的磁盘与覆盖快照供加载器、编辑器和 LSP 共享。
+    pub fn source_store(&self) -> &Arc<crate::CfdSourceStore> {
+        &self.source_store
+    }
+
     #[must_use]
     pub fn config_path(&self) -> &Path {
         &self.config_path
@@ -140,6 +168,7 @@ impl Project {
             )
         })?;
         Ok(Self {
+            source_store: Arc::default(),
             config_path,
             root_dir,
             config,

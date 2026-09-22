@@ -8,7 +8,7 @@ use coflow_project::RecordOrigin;
 
 use super::build::{session_capabilities_for_file, SessionSnapshotParts};
 use super::{ColumnStats, EditorSession};
-use crate::editor::convert::{record_view_to_row, WireContext};
+use crate::editor::convert::{record_summaries, record_view_to_row, WireContext};
 use crate::editor::types::{
     DeletedRecordSnapshot, EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
 };
@@ -29,6 +29,14 @@ pub(crate) fn snapshot_record_before_delete(
 
 /// 单文件的全量行快照：列统计在单次遍历中算好，避免前端二次聚合。
 pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRecords {
+    file_records_selection(session, file_path, None)
+}
+
+pub(crate) fn file_records_selection(
+    session: &EditorSession,
+    file_path: &str,
+    selected: Option<&std::collections::BTreeSet<&coflow_project::RecordCoordinate>>,
+) -> FileRecords {
     let queries = session.queries();
     let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
     let mut records = Vec::new();
@@ -39,25 +47,46 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
     for view in queries.record_views_in_file(file_path) {
         let container = record_container_key(view.origin);
         let container_index = container_counts.entry(container.clone()).or_default();
-        let mut row = record_view_to_row(&view, &ctx);
-        row.container_index = *container_index;
+        let mut row = selected
+            .is_none_or(|set| set.contains(&view.coordinate))
+            .then(|| record_view_to_row(&view, &ctx));
+        if let Some(row) = &mut row {
+            row.container_index = *container_index;
+            row_containers.push(container);
+        }
         *container_index += 1;
-        row_containers.push(container);
-        for field in &row.fields {
-            let index = column_index.get(&field.name).copied().unwrap_or_else(|| {
+        let mut add_summary = |name: &str, summary: &str| {
+            let index = column_index.get(name).copied().unwrap_or_else(|| {
                 let index = columns.len();
-                columns.push((field.name.clone(), ColumnStats::default()));
-                column_index.insert(field.name.clone(), index);
+                columns.push((name.to_string(), ColumnStats::default()));
+                column_index.insert(name.to_string(), index);
                 index
             });
             let stats = &mut columns[index].1;
             stats
                 .type_names
-                .insert(row.coordinate.actual_type.to_string());
-            let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
-            stats.max_summary_len = stats.max_summary_len.max(summary_len);
+                .insert(view.coordinate.actual_type.to_string());
+            stats.max_summary_len = stats.max_summary_len.max(summary.len());
+        };
+        // 已转换的行直接借用摘要，只有未选中的行需要单独生成列统计摘要。
+        if let Some(row) = &row {
+            for field in &row.fields {
+                add_summary(
+                    &field.name,
+                    row.field_summaries
+                        .get(&field.name)
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                );
+            }
+        } else {
+            for (name, summary) in record_summaries(view.record, &ctx) {
+                add_summary(&name, &summary);
+            }
         }
-        records.push(row);
+        if let Some(row) = row {
+            records.push(row);
+        }
     }
     for (row, container) in records.iter_mut().zip(row_containers) {
         row.container_size = container_counts.get(&container).copied().unwrap_or(1);
@@ -70,17 +99,7 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
             max_summary_len: stats.max_summary_len,
         })
         .collect();
-    let type_names = session
-        .file_type_names
-        .get(file_path)
-        .cloned()
-        .unwrap_or_else(|| {
-            queries
-                .schema_type_names()
-                .into_iter()
-                .filter(|name| !queries.type_is_abstract(name))
-                .collect()
-        });
+    let type_names = session.schema_type_names.clone();
     FileRecords {
         revision: session.revisions.current(),
         file_path: file_path.to_string(),
@@ -178,6 +197,7 @@ pub(crate) fn project_bootstrap(
     ProjectBootstrap {
         session_id,
         revision: session.revisions.current(),
+        schema_revision: session.schema_revision,
         project_root: coflow_project::path_to_slash(&session.project_root),
         first_source_file: first_source_file(&snapshot.file_tree),
         file_tree: snapshot.file_tree,
@@ -195,17 +215,11 @@ fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileType
             // 类型计数已在 build_session 的单次遍历中算好，这里直接读取。
             let counts = session.file_type_counts.get(file_path);
             let options = session
-                .file_type_names
-                .get(file_path)
+                .schema_type_names
+                .iter()
                 .cloned()
-                .unwrap_or_else(|| {
-                    counts
-                        .map(|by_type| by_type.keys().cloned().collect())
-                        .unwrap_or_default()
-                })
-                .into_iter()
                 .map(|name| FileTypeOption {
-                    display_name: session.type_display_name(file_path, &name),
+                    display_name: name.clone(),
                     record_count: counts
                         .and_then(|by_type| by_type.get(&name))
                         .copied()

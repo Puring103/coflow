@@ -32,7 +32,7 @@ use diagnostics::type_mismatch;
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
 use objects::parse_object;
 use refs::parse_ref;
-pub use render::{render_cell_value, CellRenderError};
+pub use render::render_cell_value;
 pub(crate) use strings::parse_automatic_formatted_string;
 use strings::parse_string;
 use types::CellType;

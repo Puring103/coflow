@@ -1,3 +1,5 @@
+mod collection;
+pub use collection::{apply_collection_edit, CollectionEdit};
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use crate::data_model::CfdEnumValue;
 use coflow_core::schema::{CftField, CftSchema};
@@ -13,7 +15,7 @@ mod plan;
 mod prepare;
 mod types;
 
-pub(crate) use cell_text::{parse_cell_text_value, render_cell_text_value};
+pub(crate) use cell_text::parse_cell_text_value;
 pub use types::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,

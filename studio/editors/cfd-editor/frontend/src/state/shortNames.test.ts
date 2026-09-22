@@ -54,7 +54,7 @@ describe('short names', () => {
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async () => ({ actual_type: 'Item', fields: [] }),
     })
-    lookups.adopt({ sessionId: 1, revision: 1 })
+    lookups.adopt({ sessionId: 1, revision: 1 }, 1)
     await lookups.loadRefTargets('Item')
     const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
       lookups, generationKey: '1:1', onOpenReference: () => {},

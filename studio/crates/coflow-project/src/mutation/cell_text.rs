@@ -1,4 +1,4 @@
-use crate::data_model::cell_value::{parse_cell, render_cell_value, ParsedCell};
+use crate::data_model::cell_value::{parse_schema_cell, ParsedCell};
 use crate::data_model::{CfdPathSegment, CfdValue, LoadedDictKeyDraft, LoadedValueDraft};
 use serde_json::{Map, Number, Value};
 
@@ -21,7 +21,7 @@ pub(crate) fn parse_cell_text_value(
         "MUTATION",
     )?;
     let parsed =
-        parse_cell(session.schema(), &expected.display_label(), text).map_err(|error| {
+        parse_schema_cell(session.schema(), &expected, text).map_err(|error| {
             one_value_error(
                 error
                     .diagnostics
@@ -50,12 +50,6 @@ pub(crate) fn parse_cell_text_value(
     };
     let json = input_value_to_json(input)?;
     coerce_json_field_value(session, &expected, &json)
-}
-
-pub(crate) fn render_cell_text_value(
-    value: &CfdValue,
-) -> Result<String, crate::api::DiagnosticSet> {
-    render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
 }
 
 fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::DiagnosticSet> {

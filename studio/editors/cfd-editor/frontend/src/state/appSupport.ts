@@ -48,7 +48,7 @@ export function projectGraphRows(
         && node.diagnostic_severity === row.diagnostic_severity) return node
       return {
         ...node,
-        fields: row.fields,
+        fields: node.is_collapsed ? node.fields : row.fields,
         field_diagnostics: row.field_diagnostics,
         diagnostic_severity: row.diagnostic_severity,
       }

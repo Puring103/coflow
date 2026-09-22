@@ -3,9 +3,7 @@ import * as api from '../api'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
 import type { GraphData } from '../bindings/GraphData'
-import { queryClient } from '../queryClient'
-import { editorQueryKeys } from '../queryKeys'
-import { graphCacheKey, projectGraphRows } from '../state/appSupport'
+import { projectGraphRows } from '../state/appSupport'
 import {
   publishMutationGeneration,
   type MutationPublicationRequest,
@@ -14,9 +12,8 @@ import {
 
 interface MutationPublicationOptions {
   generation: ProjectGenerationController
-  graphDepth: number
-  graphLimit: number
   graphCacheRef: MutableRefObject<Record<string, GraphData>>
+  fileCacheRef: MutableRefObject<Record<string, FileRecords>>
   setFiles: Dispatch<SetStateAction<Record<string, FileRecords>>>
   setGraphs: Dispatch<SetStateAction<Record<string, GraphData>>>
   acceptRevision: (
@@ -28,9 +25,8 @@ interface MutationPublicationOptions {
 
 export function useMutationPublication({
   generation,
-  graphDepth,
-  graphLimit,
   graphCacheRef,
+  fileCacheRef,
   setFiles,
   setGraphs,
   acceptRevision,
@@ -39,18 +35,17 @@ export function useMutationPublication({
     acceptRevision,
     isCurrent: (sessionId, revision) => generation.isCurrent(sessionId, revision),
     getFileRecords: api.getFileRecords,
+    cachedFileRecords: file => fileCacheRef.current[file],
     publishFileRecords: records => {
-      const identity = generation.currentIdentity()
-      if (identity) {
-        for (const [file, fileRecords] of records) {
-          queryClient.setQueryData(
-            editorQueryKeys.fileRecords(identity.sessionId, identity.revision, file),
-            fileRecords,
-          )
-        }
-      }
       setFiles(current => {
         const next = { ...current }
+        // 全局版本控制提交顺序；没有进入变更集的文件直接沿用记录对象。
+        const changedFiles = new Set(request.changes.files.map(patch => patch.data.file_path))
+        for (const [file, previous] of Object.entries(current)) {
+          if (previous.revision === request.changes.base_revision && !changedFiles.has(file)) {
+            next[file] = { ...previous, revision: request.revision }
+          }
+        }
         for (const [file, fileRecords] of records) next[file] = fileRecords
         return next
       })
@@ -63,23 +58,7 @@ export function useMutationPublication({
         records.flatMap(file => file.records),
       )
       setGraphs(next)
-      const identity = generation.currentIdentity()
-      if (identity?.revision !== revision) return
-      for (const recordsForFile of records) {
-        const graph = next[graphCacheKey(recordsForFile.file_path, graphDepth, graphLimit)]
-        if (graph) {
-          queryClient.setQueryData(
-            editorQueryKeys.graph(
-              identity.sessionId,
-              revision,
-              recordsForFile.file_path,
-              graphDepth,
-              graphLimit,
-            ),
-            graph,
-          )
-        }
-      }
+
     },
-  }, request), [acceptRevision, generation, graphCacheRef, graphDepth, graphLimit, setFiles, setGraphs])
+  }, request), [acceptRevision, generation, fileCacheRef, graphCacheRef, setFiles, setGraphs])
 }
