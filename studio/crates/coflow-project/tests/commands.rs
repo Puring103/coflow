@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
-use coflow_project::{MutationOp, MutationRequest, Project, RecordCoordinate, Runtime};
+use coflow_project::{
+    MutationOp, MutationRequest, Project, ProjectSessionFactory, RecordCoordinate,
+};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -80,7 +82,7 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     assert_eq!(values["gamma"], 1);
     assert_eq!(values["alpha"], 2);
 
-    let mut session = Runtime::new()
+    let mut session = ProjectSessionFactory::new()
         .open_write_session(Project::open(Some(&config)).expect("reopen for mutation"))
         .expect("open write session");
     let old = RecordCoordinate::try_new("Item", "beta").expect("old coordinate");
@@ -140,7 +142,7 @@ fn runtime_is_cfd_only_and_loads_the_project() {
     let project = write_project();
     fs::write(project.path().join("data/ignored.json"), "{}\n").expect("ignored file");
     let opened = Project::open(Some(&project.path().join("coflow.yaml"))).expect("open data");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(opened)
         .expect("load CFD");
     assert_eq!(session.queries().record_count_for_type("Item"), 1);
@@ -253,7 +255,9 @@ fn csharp_codegen_applies_namespace_option() {
         .contains("namespace Game.Config\n{"));
     let item =
         fs::read_to_string(project.path().join("generated/csharp/Item.cs")).expect("type wrapper");
-    assert!(item.replace("\r\n", "\n").contains("namespace Game.Config\n{"));
+    assert!(item
+        .replace("\r\n", "\n")
+        .contains("namespace Game.Config\n{"));
 }
 
 #[test]
@@ -454,7 +458,7 @@ fn csharp_codegen_reads_each_singleton_dimension_field() {
         fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("wrapper");
     assert!(generated.contains("CoflowDimension<string> welcome"));
     assert!(generated.contains("CoflowDimension<string> farewell"));
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(project)
         .expect("reload");
     assert!(session.into_diagnostics().is_empty());
@@ -481,7 +485,7 @@ fn runtime_rejects_plain_values_for_dimension_fields() {
     .expect("config");
 
     let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
-    let diagnostics = match Runtime::new().open_read_only_session(project) {
+    let diagnostics = match ProjectSessionFactory::new().open_read_only_session(project) {
         Ok(session) => session.into_diagnostics(),
         Err(diagnostics) => diagnostics,
     };
@@ -532,7 +536,7 @@ fn runtime_accepts_variants_declared_only_in_business_data() {
     .expect("config");
 
     let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("open project");
-    let diagnostics = match Runtime::new().open_read_only_session(project) {
+    let diagnostics = match ProjectSessionFactory::new().open_read_only_session(project) {
         Ok(session) => session.into_diagnostics(),
         Err(diagnostics) => diagnostics,
     };

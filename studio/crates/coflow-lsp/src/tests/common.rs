@@ -54,7 +54,7 @@ pub(super) fn test_project_with_config(
 
 pub(super) fn test_lsp_build(name: &str, source: &str) -> (TempProject, LspBuild) {
     let (cleanup, project) = test_project(name, source);
-    let mut runtime = coflow_project::ProjectRuntime::new(project);
+    let mut runtime = coflow_project::SchemaCache::new(project);
     let _ = runtime.refresh();
     let build = LspBuild::new(runtime.into_latest_attempt().expect("schema attempt"));
     (cleanup, build)
@@ -227,3 +227,19 @@ pub(super) fn position_inside(
 }
 
 // ── CFD provider tests ───────────────────────────────────────────────────
+
+pub(super) fn wire(value: impl serde::Serialize) -> Value {
+    crate::protocol::language_result(&value)
+}
+pub(super) fn wire_items<T: serde::Serialize>(values: Vec<T>) -> Vec<Value> {
+    values.into_iter().map(wire).collect()
+}
+pub(super) fn wire_optional<T: serde::Serialize>(value: Option<T>) -> Option<Value> {
+    value.map(wire)
+}
+pub(super) fn function_document_result(params: &Value) -> Value {
+    crate::protocol::function_document_result(&cfd::function_document(
+        params["source"].as_str().unwrap(),
+        params.get("body").and_then(Value::as_str),
+    ))
+}

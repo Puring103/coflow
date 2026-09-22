@@ -1,6 +1,6 @@
 //! Mutation 命令：字段写回、集合编辑、记录增删改与排序。
 //!
-//! 引擎拥有校验与落盘，本层只做 MutationReport 到 wire DTO 的包装。
+//! 项目层拥有校验与落盘，本层只做 MutationReport 到 wire DTO 的包装。
 
 use super::super::errors::api_diagnostics_to_editor_error;
 use super::super::{
@@ -32,6 +32,7 @@ impl SessionStore {
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
 
@@ -42,6 +43,7 @@ impl SessionStore {
     ) -> Result<BatchWriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let mut seen = std::collections::HashSet::new();
         let targets = writes
             .iter()
@@ -58,7 +60,7 @@ impl SessionStore {
             return Err(EditorError::write("batch field write contains no changes"));
         }
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: targets
@@ -121,13 +123,14 @@ impl SessionStore {
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let current = session
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.key, field_path)
             .cloned()
             .ok_or_else(|| EditorError::not_found("collection field not found"))?;
         let default_item = session
-            .engine
+            .project_session
             .default_collection_item_value_for_record(coordinate, field_path)
             .ok();
         let next = coflow_project::apply_collection_edit(current, edit, default_item)
@@ -178,8 +181,9 @@ impl SessionStore {
             .collect();
 
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::InsertRecord {
@@ -210,8 +214,9 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::RenameRecord {
@@ -249,9 +254,10 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let deleted_snapshot = snapshot_record_before_delete(&session, coordinate);
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::DeleteRecord {
@@ -279,9 +285,10 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let file_path = reorder_file_path(&session, first)?;
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::SwapRecords {
@@ -311,6 +318,7 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let file_path = reorder_file_path(&session, coordinate)?;
         let old_index = record_container_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
@@ -319,7 +327,7 @@ impl SessionStore {
             ))
         })?;
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::MoveRecord {
@@ -350,6 +358,7 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let source_file = reorder_file_path(&session, coordinate)?;
         let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
@@ -358,7 +367,7 @@ impl SessionStore {
             ))
         })?;
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![MutationOp::TransferRecord {

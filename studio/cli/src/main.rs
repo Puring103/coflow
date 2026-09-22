@@ -20,7 +20,7 @@ use coflow_project::commands::{
 };
 use coflow_project::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
-use coflow_project::{ProjectDiffChange, ProjectRuntime, SchemaTextOverride};
+use coflow_project::{ProjectDiffChange, SchemaCache, SchemaTextOverride};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -71,8 +71,8 @@ fn run() -> Result<bool, DiagnosticSet> {
 
 fn project_diff(args: &DiffArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let session = coflow_project::Runtime::new().open_read_only_session(project)?;
-    let diff = session.queries().diff_against_head()?;
+    let session = coflow_project::ProjectSessionFactory::new().open_read_only_session(project)?;
+    let diff = session.diff_against_head()?;
     if args.json {
         let output = serde_json::to_string_pretty(&diff)
             .map_err(|error| output_error(format!("failed to serialize project diff: {error}")))?;
@@ -284,7 +284,7 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, DiagnosticSet> {
     } else {
         Vec::new()
     };
-    let mut runtime = ProjectRuntime::new(project.clone());
+    let mut runtime = SchemaCache::new(project.clone());
     let refresh = runtime.refresh_with_overrides(&overrides);
     let diagnostics = if let Some(attempt) = runtime.latest_attempt() {
         attempt.diagnostics().clone().into_set()

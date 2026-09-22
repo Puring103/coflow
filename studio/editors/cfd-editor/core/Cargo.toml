@@ -11,7 +11,7 @@ workspace = true
 
 [features]
 default = []
-ts-export = ["dep:ts-rs", "coflow-project/ts-export"]
+ts-export = ["coflow-lsp/ts-export", "dep:ts-rs", "coflow-project/ts-export"]
 
 [dependencies]
 atomicwrites = "0.4.4"

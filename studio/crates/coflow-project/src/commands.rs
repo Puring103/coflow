@@ -1,7 +1,7 @@
 use crate::artifacts::{CodeOutput, PreparedCodeRelease};
 use crate::codegen::{CodegenInput, CodegenRegistry, CodegenTarget};
 use crate::Project;
-use crate::Runtime;
+use crate::ProjectSessionFactory;
 use crate::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_codegen_csharp::CsharpCfdCodeGenerator;
 use std::path::{Path, PathBuf};
@@ -78,7 +78,7 @@ pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, D
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let session = Runtime::new().open_read_only_session(project.clone())?;
+    let session = ProjectSessionFactory::new().open_read_only_session(project.clone())?;
     if session.queries().has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {
@@ -151,7 +151,7 @@ fn prepare_project_code<T>(
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
 
-    let session = Runtime::new().open_read_only_session(project.clone())?;
+    let session = ProjectSessionFactory::new().open_read_only_session(project.clone())?;
     // 生成契约和静态包装不依赖虚拟机；执行暂不可用不属于生成输入错误。
     let mut input_diagnostics = session.queries().diagnostics().as_set().clone();
     input_diagnostics

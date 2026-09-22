@@ -1,4 +1,4 @@
-//! Runtime composition of language/model structure limits and checker limits.
+//! ProjectSessionFactory composition of language/model structure limits and checker limits.
 
 use coflow_core::check::EvaluationLimits;
 use coflow_language::limits::StructuralLimits;

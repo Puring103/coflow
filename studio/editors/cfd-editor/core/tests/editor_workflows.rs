@@ -28,6 +28,14 @@ fn schema_generation_is_stable_for_data_saves_and_advances_for_schema_publicatio
     let data_saved = store
         .write_source_text(initial.session_id, "data/units.cfd", &data)
         .expect("save data");
+    assert_eq!(data_saved.revision, initial.revision);
+    let data_saved = store
+        .write_source_text(
+            initial.session_id,
+            "data/units.cfd",
+            &format!("{data}\n// edited\n"),
+        )
+        .expect("save changed data");
     assert!(data_saved.revision > initial.revision);
     assert_eq!(data_saved.schema_revision, initial.schema_revision);
     let schema = fs::read_to_string(root.join("schema.cft")).expect("read schema");
@@ -1026,7 +1034,7 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
 }
 
 #[test]
-fn editor_language_features_are_served_by_embedded_lsp() {
+fn editor_language_features_are_served_by_typed_service() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
@@ -1355,4 +1363,39 @@ fn cft_source_is_visible_editable_and_validated() {
         .expect("ignore formatting for invalid CFT");
     assert_eq!(invalid_formatting.text, invalid_syntax);
     assert!(invalid_formatting.edits.is_empty());
+}
+
+#[test]
+fn reload_preserves_unsaved_schema_versions_and_diagnostics() {
+    let (root, _) = nested_default_collection_project();
+    let store = SessionStore::new().unwrap();
+    let id = store
+        .load_project(&root.join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    let source = "table Draft { value: Missing; }\n";
+    let before = store
+        .sync_language_document(id, "schema.cft", source, 10)
+        .unwrap();
+    assert!(!before.diagnostics.is_empty());
+    store.reload_session(id).unwrap();
+    assert!(store
+        .sync_language_document(id, "schema.cft", "", 9)
+        .is_err());
+    assert_eq!(
+        store
+            .sync_language_document(id, "schema.cft", source, 10)
+            .unwrap(),
+        before
+    );
+    store.close_language_document(id, "schema.cft").unwrap();
+    let disk = fs::read_to_string(root.join("schema.cft")).unwrap();
+    assert!(
+        store
+            .sync_language_document(id, "schema.cft", &disk, 1)
+            .unwrap()
+            .syntax_valid
+    );
+    store.close_session(id).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }

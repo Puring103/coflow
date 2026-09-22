@@ -122,7 +122,7 @@ impl SessionStore {
             },
         };
         let report = coflow_project::commands::apply_project_mutation(
-            &mut session.engine,
+            &mut session.project_session,
             MutationRequest {
                 stop_on_write_error: true,
                 ops: vec![op],

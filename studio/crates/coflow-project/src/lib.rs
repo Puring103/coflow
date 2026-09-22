@@ -18,9 +18,11 @@
 mod api;
 mod artifacts;
 mod catalog;
-mod cfd_loader;
 pub mod cell_value;
+mod cfd_loader;
 mod checks;
+mod commit;
+pub use commit::ProjectCommit;
 pub mod commands;
 pub use coflow_codegen as codegen;
 mod diff;
@@ -34,7 +36,9 @@ mod project;
 mod project_schema;
 mod query;
 mod records;
-mod runtime;
+mod schema_cache;
+mod session_api;
+pub use schema_cache::SchemaCache;
 mod schema_diagnostics;
 mod schema_inspect;
 mod search;
@@ -51,12 +55,12 @@ pub use api::*;
 pub(crate) use coflow_core as data_model;
 pub use coflow_core::serde_i64;
 pub use coflow_core::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues,
-    CfdDimensionValue, CfdEnumValue, CfdErrorCode, CallableSource, CfdLabel,
-    CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdStage, CfdTable,
-    CfdValue, DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft,
-    DimensionValueLookup, LoadedDictKeyDraft,
-    LoadedRecordDraft, LoadedValueDraft, RecordCoordinate, RecordOrigin, TextSpan,
+    CallableSource, CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey,
+    CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdErrorCode, CfdLabel, CfdObject,
+    CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdStage, CfdTable, CfdValue,
+    DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
+    LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft, RecordCoordinate, RecordOrigin,
+    TextSpan,
 };
 pub use diff::{
     ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,
@@ -71,10 +75,10 @@ pub use project::*;
 pub use coflow_core::schema::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
-    apply_collection_edit, CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
-    DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
-    MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
-    ProjectFileUpdate,
+    apply_collection_edit, CollectionEdit, CreateFieldSource, CreateRecordDraft,
+    CreateRecordFieldDraft, CreateRequiredInput, DefaultMaterialization, DimensionValueCoordinate,
+    DimensionValueExpectation, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
+    MutationReport, MutationRequest, MutationValue, ProjectFileUpdate,
 };
 pub use project_schema::SchemaTextOverride;
 pub use query::ProjectQueries;
@@ -83,16 +87,16 @@ pub use records::{
     DimensionValueView, EffectiveFieldWrite, FieldShapeInfo, IdAsEnumInfo, RecordReferenceInfo,
     RecordView, RefTargetInfo, WriteOutcome,
 };
-pub use runtime::{
-    BuildProjectSession, PreparedSourceUpdate, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
-};
 pub use schema_inspect::{
-    inspect_schema, schema_files, SchemaConstInfo, SchemaStaticValueInfo,
-    SchemaDimensionFieldInfo, SchemaDimensionInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
-    SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
-    SchemaTypeRefInfo,
+    inspect_schema, schema_files, SchemaConstInfo, SchemaDimensionFieldInfo, SchemaDimensionInfo,
+    SchemaEnumInfo, SchemaEnumVariantInfo, SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport,
+    SchemaInspectReport, SchemaStaticValueInfo, SchemaTypeInfo, SchemaTypeRefInfo,
 };
 pub use search::{RecordSearchHit, RecordSearchMode, RecordSearchOptions, RecordSearchResults};
 pub use session::ProjectSchemaSession;
 pub(crate) use session::ProjectSession;
+pub use session_api::{
+    BuildProjectSession, PreparedSourceUpdate, ProjectSessionFactory, ProjectSnapshot,
+    ReadOnlyProjectSession, SourceUpdateContext, WriteProjectSession,
+};
 pub use statistics::ProjectExecutionStats;

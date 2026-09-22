@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 
-use coflow_project::{FileTreeNode, Project, Runtime};
+use coflow_project::{FileTreeNode, Project, ProjectSessionFactory};
 use std::fs;
 
 fn count_file(nodes: &[FileTreeNode], name: &str) -> usize {
@@ -28,7 +28,7 @@ fn inline_dimensions_do_not_create_synthetic_file_tree_groups() {
         "schema: schema.cft\ndata: items.cfd\ncodegen:\n  - language: csharp\n    dir: generated\n",
     )
     .expect("config");
-    let session = Runtime::new()
+    let session = ProjectSessionFactory::new()
         .open_read_only_session(Project::open(Some(temp.path())).expect("project"))
         .expect("session");
     let tree = session.queries().file_tree();

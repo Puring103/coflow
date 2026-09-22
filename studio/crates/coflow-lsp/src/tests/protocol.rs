@@ -309,7 +309,7 @@ fn unreadable_cfd_source_invalidates_current_snapshot() {
             && publication
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic["code"] == "CFD-LSP")
+                .any(|diagnostic| diagnostic.code.as_deref() == Some("CFD-LSP"))
     }));
 }
 
@@ -685,7 +685,10 @@ fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
             contexts: Vec::new(),
         };
 
-        assert_eq!(lsp_diagnostic(&diagnostic)["severity"], json!(expected));
+        assert_eq!(
+            wire(lsp_diagnostic(&diagnostic))["severity"],
+            json!(expected)
+        );
     }
 }
 
@@ -706,7 +709,7 @@ fn lsp_diagnostic_renders_structured_context_without_mutating_message() {
     };
 
     assert_eq!(
-        lsp_diagnostic(&diagnostic)["message"],
+        wire(lsp_diagnostic(&diagnostic))["message"],
         "custom\n上下文: 在 when enabled 内"
     );
     assert_eq!(diagnostic.message, "custom");

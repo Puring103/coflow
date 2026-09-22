@@ -23,7 +23,7 @@ pub(crate) fn write_field_in_session(
         .effective_field_write(coordinate, field_path)
         .and_then(|preview| preview.old_value);
     let report = coflow_project::commands::apply_project_mutation(
-        &mut session.engine,
+        &mut session.project_session,
         coflow_project::MutationRequest {
             stop_on_write_error: true,
             ops: vec![coflow_project::MutationOp::SetField {
@@ -81,10 +81,7 @@ pub(crate) fn finalize_mutation(
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
     let base_revision = session.revisions.current();
-    if report.generation_changed {
-        let affected = report.changed_records.keys().cloned().collect();
-        session.publish_commit(&report.written_files, Some(&affected), false)?;
-    }
+    session.publish_commit(&report.commit());
     let files = report
         .changed_records
         .iter()

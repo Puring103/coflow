@@ -1,4 +1,4 @@
-//! Build editor-facing `RecordRow` / `FieldCell` views over engine records.
+//! Build editor-facing `RecordRow` / `FieldCell` views over project_session records.
 //!
 //! After spec 17, `FieldCell.value` is a `CfdValue` straight from the
 //! core model — no wire-only re-encoding. Editor-derived metadata
@@ -222,7 +222,7 @@ fn build_annotation(
     let declared_shape = ctx.field_shape(host.actual_type(), field_name);
     let annotation = annotation_for_value(value, ctx, declared_shape.as_deref());
     // Synthesized dimension records expose a `default` slot that mirrors the
-    // source record's value. Writing into it isn't blocked at the engine
+    // source record's value. Writing into it isn't blocked at the project_session
     // layer, but the editor renders it as read-only to steer users to the
     // source record instead.
     if annotation.is_empty() {

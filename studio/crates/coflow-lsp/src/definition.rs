@@ -1,8 +1,8 @@
+use crate::service::*;
 use coflow_core::schema::syntax::ast::Item;
 use coflow_core::schema::CftSchema;
 use coflow_language::cfd::CfdAst;
 use coflow_language::source::Span;
-use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 use super::{
@@ -13,14 +13,14 @@ use super::{
 
 #[derive(Debug, Default)]
 pub(crate) struct CfdDefinitionIndex {
-    records: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
+    records: BTreeMap<String, BTreeMap<String, Vec<Location>>>,
 }
 
 impl CfdDefinitionIndex {
     pub(crate) fn from_documents<'a>(
         documents: impl IntoIterator<Item = (&'a str, &'a str, &'a CfdAst)>,
     ) -> Self {
-        let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
+        let mut records = BTreeMap::<String, BTreeMap<String, Vec<Location>>>::new();
         for (uri, text, ast) in documents {
             let line_index = coflow_project::LineIndex::new(text);
             for record in &ast.records {
@@ -35,16 +35,17 @@ impl CfdDefinitionIndex {
                     .or_default()
                     .entry(record.key.clone())
                     .or_default()
-                    .push(json!({
-                        "uri": uri,
-                        "range": range,
-                    }));
+                    .push(Location {
+                        uri: (uri).to_string(),
+                        range: (range).clone(),
+                        ..Default::default()
+                    });
             }
         }
         Self { records }
     }
 
-    fn location(&self, schema: &CftSchema, expected_type: &str, key: &str) -> Option<Value> {
+    fn location(&self, schema: &CftSchema, expected_type: &str, key: &str) -> Option<Location> {
         if let Some(location) = self
             .records
             .get(expected_type)
@@ -82,7 +83,7 @@ impl CfdDefinitionIndex {
 }
 
 /// Find the LSP location (uri + range) of a CFT type definition by name.
-pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Value> {
+pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Location> {
     for document in build.documents.values() {
         let Some(ast) = document.ast() else {
             continue;
@@ -98,10 +99,11 @@ pub(crate) fn cft_type_definition_location(build: &LspBuild, type_name: &str) ->
             };
             if name == type_name {
                 let range = byte_range(document.source(), name_span.start, name_span.end);
-                return Some(json!({
-                    "uri": document.uri,
-                    "range": range,
-                }));
+                return Some(Location {
+                    uri: (document.uri).to_string(),
+                    range: (range).clone(),
+                    ..Default::default()
+                });
             }
         }
     }
@@ -113,7 +115,7 @@ pub(crate) fn cft_schema_field_definition_location(
     build: &LspBuild,
     type_name: &str,
     field_name: &str,
-) -> Option<Value> {
+) -> Option<Location> {
     field_location(build, type_name, field_name)
 }
 
@@ -121,7 +123,7 @@ pub(crate) fn definitions_at(
     build: &LspBuild,
     document: &LspDocument,
     position: &LspPosition,
-) -> Vec<Value> {
+) -> Vec<Location> {
     let offset = byte_offset_from_position(&document.source, *position);
     if is_trivia_position(&document.source, offset) {
         return Vec::new();
@@ -169,14 +171,18 @@ pub(crate) fn field_location_by_chain(
     document: &LspDocument,
     offset: usize,
     chain: &[String],
-) -> Option<Value> {
+) -> Option<Location> {
     let (field_name, receiver) = chain.split_last()?;
     let receiver_type = super::type_of_chain(build, document, offset, receiver)?;
     let type_name = super::type_name_of_schema_ref(&receiver_type)?;
     field_location(build, type_name, field_name)
 }
 
-pub(crate) fn field_location(build: &LspBuild, type_name: &str, field_name: &str) -> Option<Value> {
+pub(crate) fn field_location(
+    build: &LspBuild,
+    type_name: &str,
+    field_name: &str,
+) -> Option<Location> {
     let (owner, field) = field_by_type(build, type_name, field_name)?;
     let document = build.document_by_module(&owner.module)?;
     let span = ast_field_name_span(document, &owner.name, field_name).unwrap_or(field.span);
@@ -199,7 +205,7 @@ fn ast_field_name_span(document: &LspDocument, type_name: &str, field_name: &str
     None
 }
 
-fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
+fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Location> {
     let (enum_def, variant) = super::enum_variant_by_chain(build, chain)?;
     let document = build.document_by_module(&enum_def.module)?;
     let span =
@@ -207,7 +213,7 @@ fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<
     Some(location(document, span))
 }
 
-fn ast_enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
+fn ast_enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Location> {
     if chain.len() != 2 {
         return None;
     }
@@ -218,7 +224,7 @@ pub(crate) fn ast_enum_variant_location(
     build: &LspBuild,
     enum_name: &str,
     variant_name: &str,
-) -> Option<Value> {
+) -> Option<Location> {
     for document in build.documents.values() {
         let Some(span) = ast_enum_variant_name_span(document, enum_name, variant_name) else {
             continue;
@@ -248,7 +254,7 @@ fn ast_enum_variant_name_span(
     None
 }
 
-fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
+fn global_location(build: &LspBuild, name: &str) -> Option<Location> {
     let container = build.schema()?;
     if let Some(ty) = container.resolve_type(name) {
         let document = build.document_by_module(&ty.module)?;
@@ -274,7 +280,7 @@ fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
     None
 }
 
-fn ast_global_location(build: &LspBuild, name: &str) -> Option<Value> {
+fn ast_global_location(build: &LspBuild, name: &str) -> Option<Location> {
     for document in build.documents.values() {
         let Some(ast) = &document.ast else {
             continue;
@@ -315,11 +321,12 @@ fn ast_top_level_name_span(document: &LspDocument, name: &str) -> Option<Span> {
     })
 }
 
-fn location(document: &LspDocument, span: Span) -> Value {
-    json!({
-        "uri": document.uri,
-        "range": range_from_span(&document.source, span)
-    })
+fn location(document: &LspDocument, span: Span) -> Location {
+    Location {
+        uri: (document.uri).to_string(),
+        range: (range_from_span(&document.source, span)).clone(),
+        ..Default::default()
+    }
 }
 
 /// Finds a CFD record definition by its expected schema type and key.
@@ -327,7 +334,7 @@ pub(crate) fn cfd_record_definition_location(
     build: &LspBuild,
     expected_type: &str,
     key: &str,
-) -> Option<Value> {
+) -> Option<Location> {
     build
         .schema()
         .and_then(|schema| build.cfd_definitions.location(schema, expected_type, key))

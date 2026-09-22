@@ -1,4 +1,4 @@
-//! Editor-side view of the engine's diagnostics in wire-friendly
+//! Editor-side view of the project_session's diagnostics in wire-friendly
 //! [`coflow_project::FlatDiagnostic`] shape.
 
 use coflow_project::{DiagnosticTarget, FlatDiagnostic, ProjectQueries};
@@ -87,10 +87,10 @@ impl Diagnostics {
     }
 }
 
-/// Convert engine diagnostics + logical locations to wire shape. Used for
+/// Convert project_session diagnostics + logical locations to wire shape. Used for
 /// the initial snapshot returned by `load_project`.
 ///
-/// The engine records absolute file paths in `SourceLocation`, but the
+/// The project_session records absolute file paths in `SourceLocation`, but the
 /// editor front-end works in project-relative paths (matching what appears
 /// in `FileTreeNode` and `FileRecords`). We normalize `file_path` here so the
 /// diagnostics-panel jump buttons and per-record/field angle badges can
@@ -172,7 +172,7 @@ fn normalize_target(
     }
 }
 
-/// Best-effort conversion of an engine-emitted absolute file path back to
+/// Best-effort conversion of an project_session-emitted absolute file path back to
 /// the project-relative form used elsewhere in the wire protocol. If the
 /// path is already relative or doesn't sit under `project_root`, it's
 /// returned unchanged so we never silently strip an unrelated prefix.

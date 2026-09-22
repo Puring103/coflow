@@ -20,7 +20,7 @@ pub fn add_project_input(
     config_path: &Path,
     kind: ProjectInputKind,
     selected_path: &Path,
-) -> Result<(), DiagnosticSet> {
+) -> Result<crate::ProjectCommit, DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
     let selected = crate::canonicalize_path(selected_path).map_err(|error| {
         file_error(
@@ -44,7 +44,7 @@ pub fn add_project_input(
         super::normalized_path_identity(root) == super::normalized_path_identity(&selected)
     });
     if already_in_kind {
-        return Ok(());
+        return Ok(crate::ProjectCommit::default());
     }
     if configured_roots.iter().any(|root| {
         super::normalized_path_identity(root) == super::normalized_path_identity(&selected)
@@ -88,7 +88,7 @@ pub fn add_project_input(
         }
     };
     if !changed {
-        return Ok(());
+        return Ok(crate::ProjectCommit::default());
     }
     let diagnostics = match kind {
         ProjectInputKind::Schema => project.schema_diagnostic_set(),
@@ -98,7 +98,12 @@ pub fn add_project_input(
         return Err(diagnostics);
     }
 
-    publish_config(config_path, &project)
+    publish_config(config_path, &project)?;
+    Ok(structural_commit(
+        &project,
+        vec![config_path.to_path_buf()],
+        kind == ProjectInputKind::Schema,
+    ))
 }
 
 /// Creates an empty CFT or CFD file under a configured input root.
@@ -112,7 +117,7 @@ pub fn create_project_file(
     kind: ProjectInputKind,
     parent_path: &Path,
     file_name: &str,
-) -> Result<(), DiagnosticSet> {
+) -> Result<crate::ProjectCommit, DiagnosticSet> {
     let project = Project::open_schema_only(Some(config_path))?;
     let parent = project.resolve_path(parent_path);
     let parent = crate::canonicalize_path(&parent).map_err(|error| {
@@ -163,7 +168,11 @@ pub fn create_project_file(
         file_error(&target, "PROJECT-FILE-CREATE", "PROJECT", error.to_string())
     })?;
     staged.finish();
-    Ok(())
+    Ok(structural_commit(
+        &project,
+        vec![target],
+        kind == ProjectInputKind::Schema,
+    ))
 }
 
 /// Deletes a project file or configured input and updates the configuration.
@@ -172,7 +181,10 @@ pub fn create_project_file(
 ///
 /// Returns diagnostics when the entry is outside the project inputs or the
 /// staged deletion/configuration update cannot be published.
-pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(), DiagnosticSet> {
+pub fn delete_project_entry(
+    config_path: &Path,
+    entry_path: &Path,
+) -> Result<crate::ProjectCommit, DiagnosticSet> {
     let mut project = Project::open_schema_only(Some(config_path))?;
     let target = project.resolve_path(entry_path);
     let target = crate::canonicalize_path(&target).map_err(|error| {
@@ -184,6 +196,9 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
         )
     })?;
     let root_dir = project.root_dir().to_path_buf();
+    let schema_changed = roots_for(&project, ProjectInputKind::Schema)
+        .iter()
+        .any(|root| super::path_is_same_or_descendant(&target, root));
     let mut removed_config = false;
     project.config.schema.paths.retain(|path| {
         let keep = !same_path(&root_dir, path, &target);
@@ -227,7 +242,28 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
         }
     }
     removal.finish();
-    Ok(())
+    let mut paths = vec![target];
+    if removed_config {
+        paths.push(config_path.to_path_buf());
+    }
+    Ok(structural_commit(&project, paths, schema_changed))
+}
+
+// 结构变更使文件目录整体失效；返回值只在文件事务成功后构造。
+fn structural_commit(
+    project: &Project,
+    paths: Vec<PathBuf>,
+    schema_changed: bool,
+) -> crate::ProjectCommit {
+    crate::ProjectCommit {
+        generation_changed: true,
+        schema_changed,
+        written_files: paths
+            .iter()
+            .map(|p| crate::project_path(project.root_dir(), p))
+            .collect(),
+        affected_files: None,
+    }
 }
 
 fn roots_for(project: &Project, kind: ProjectInputKind) -> Vec<PathBuf> {

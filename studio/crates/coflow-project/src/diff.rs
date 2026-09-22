@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_model::{CfdValue, RecordCoordinate};
 use crate::session::ProjectSession;
-use crate::{Diagnostic, DiagnosticSet, Project, Runtime};
+use crate::{Diagnostic, DiagnosticSet, Project, ProjectSessionFactory};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -144,7 +144,7 @@ pub(crate) fn diff_against_head(
                     head_paths.rebase_head_inputs(&mut project, head.temp.path())?;
                     Ok(project)
                 })
-                .and_then(|project| Runtime::new().open_read_only_session(project));
+                .and_then(|project| ProjectSessionFactory::new().open_read_only_session(project));
             match head_session {
                 Ok(head_session) => {
                     let session_set = head_session.queries().diagnostics().as_set();

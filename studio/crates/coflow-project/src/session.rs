@@ -17,7 +17,7 @@ use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
 use crate::writes::record_value_at_path;
 use crate::ProjectExecutionStats;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,

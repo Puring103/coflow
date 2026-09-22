@@ -5,11 +5,11 @@
 //! Each session is wrapped in its own `RwLock` so reads
 //! don't block one another and a write is scoped to a single session.
 //!
-//! 模块划分（仅结构拆分，不改行为）：
+//! 模块职责：
 //! - `mod.rs`：会话类型 + 生命周期/重载/路径上下文；
 //! - `settings_commands.rs`：编辑器展示设置写方法；
 //! - `project_commands.rs`：check/build/diff 与项目结构变更；
-//! - `operations/`：数据查询/mutation/LSP 文档同步；
+//! - `operations/`：数据查询/mutation/类型化语言文档同步；
 //! - `row_build.rs`：行快照与排序辅助；
 //! - `mutation_apply.rs`：字段写回与集合编辑；
 //! - `errors.rs`：诊断到 `EditorError` 的统一映射。
@@ -19,6 +19,7 @@ mod diagnostics;
 mod dimension;
 pub(crate) mod errors;
 mod graph;
+mod language;
 pub(crate) mod mutation_apply;
 mod operations;
 mod project_commands;
@@ -52,12 +53,10 @@ pub struct EditorSession {
     pub project_root: std::path::PathBuf,
     /// Path to the project's `coflow.yaml` used by project actions and reloads.
     pub yaml_path: std::path::PathBuf,
-    pub engine: coflow_project::WriteProjectSession,
+    pub project_session: coflow_project::WriteProjectSession,
     pub(crate) schema_revision: u32,
     pub diagnostics: Diagnostics,
-    pub language_server: coflow_lsp::EmbeddedLsp,
-    pub language_documents: HashSet<String>,
-    pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
+    pub(crate) language: Arc<language::LanguageSession>,
     pub(crate) schema_files: HashSet<String>,
     pub(crate) schema_type_names: Vec<String>,
     pub(crate) file_type_counts: BTreeMap<String, BTreeMap<String, usize>>,
@@ -77,8 +76,19 @@ impl std::fmt::Debug for EditorSession {
 }
 
 impl EditorSession {
-    pub(crate) const fn queries(&self) -> ProjectQueries<'_> {
-        self.engine.queries()
+    /// 提交前检查生命周期与版本空间，保证落盘后的发布不会失败。
+    pub(crate) fn ensure_writable(&self) -> Result<(), EditorError> {
+        self.language.ensure_open()?;
+        if self.revisions.current() == u32::MAX || self.schema_revision == u32::MAX {
+            return Err(EditorError::session(
+                "session revision exhausted; reopen project",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn queries(&self) -> ProjectQueries<'_> {
+        self.project_session.queries()
     }
 
     pub(crate) fn commit_internal_write(&mut self, paths: &[String]) {
@@ -135,7 +145,10 @@ impl SessionStore {
     pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectBootstrap, EditorError> {
         let (session, snapshot_partial) = build_session(yaml_path)?;
         let mut inner = self.inner.write();
-        inner.next_id = inner.next_id.checked_add(1).unwrap_or(1);
+        inner.next_id = inner
+            .next_id
+            .checked_add(1)
+            .ok_or_else(|| EditorError::session("session id exhausted"))?;
         let id = inner.next_id;
         let bootstrap = project_bootstrap(id, &session, snapshot_partial);
         inner.sessions.insert(
@@ -185,12 +198,13 @@ impl SessionStore {
     }
 
     pub fn reload_session(&self, id: u32) -> Result<ProjectBootstrap, EditorError> {
-        loop {
+        for _ in 0..3 {
             let (entry, candidate) = self.build_reload_candidate(id)?;
             if let Some(snapshot) = Self::commit_reload_candidate(id, &entry, candidate)? {
                 return Ok(snapshot);
             }
         }
+        Err(EditorError::session("project kept changing during reload"))
     }
 
     fn build_reload_candidate(
@@ -219,9 +233,15 @@ impl SessionStore {
         mut candidate: ReloadCandidate,
     ) -> Result<Option<ProjectBootstrap>, EditorError> {
         let mut state = entry.state.write();
+        state.ensure_writable()?;
         let Some(revisions) = state.revisions.commit_reload(candidate.base_revision) else {
             return Ok(None);
         };
+        candidate.session.language = Arc::clone(&state.language);
+        candidate
+            .session
+            .language
+            .rebase(candidate.session.project_session.project().clone());
         candidate.session.revisions = revisions;
         candidate.session.schema_revision = state.schema_revision.saturating_add(1);
         let bootstrap = project_bootstrap(id, &candidate.session, candidate.snapshot);
@@ -243,7 +263,9 @@ impl SessionStore {
     }
 
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {
-        self.inner.write().sessions.remove(&id);
+        if let Some(entry) = self.inner.write().sessions.remove(&id) {
+            entry.state.read().language.close();
+        }
         Ok(())
     }
 
@@ -256,3 +278,6 @@ impl SessionStore {
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
 }
+
+#[cfg(test)]
+mod concurrency_tests;

@@ -1,7 +1,7 @@
+use crate::service::*;
 use coflow_core::schema::syntax::ast::Item;
 use coflow_language::source::Span;
 use coflow_project::LineIndex;
-use serde_json::{json, Value};
 
 use super::position::range_from_span_indexed;
 use super::LspDocument;
@@ -13,7 +13,7 @@ const SYMBOL_KIND_CONSTANT: u8 = 14;
 const SYMBOL_KIND_ENUM_MEMBER: u8 = 22;
 const SYMBOL_KIND_FUNCTION: u8 = 12;
 
-pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
+pub(crate) fn document_symbols(document: &LspDocument) -> Vec<DocumentSymbol> {
     let Some(ast) = &document.ast else {
         return Vec::new();
     };
@@ -113,13 +113,14 @@ fn document_symbol_item(
     kind: u8,
     span: Span,
     name_span: Span,
-    children: &[Value],
-) -> Value {
-    json!({
-        "name": name,
-        "kind": kind,
-        "range": range_from_span_indexed(index, source, span),
-        "selectionRange": range_from_span_indexed(index, source, name_span),
-        "children": children
-    })
+    children: &[DocumentSymbol],
+) -> DocumentSymbol {
+    DocumentSymbol {
+        name: (name).to_string(),
+        kind: kind,
+        range: (range_from_span_indexed(index, source, span)).clone(),
+        selection_range: (range_from_span_indexed(index, source, name_span)).clone(),
+        children: (children).to_vec(),
+        ..Default::default()
+    }
 }

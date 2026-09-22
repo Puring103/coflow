@@ -3,8 +3,8 @@ use crate::write_file::{
     read_source, read_stdin_source, write_json, write_report_human, write_source,
 };
 use coflow_project::{
-    inspect_schema, schema_files, ProjectRuntime, Runtime, SchemaFilesReport, SchemaInspectReport,
-    SchemaTextOverride, SchemaTypeRefInfo,
+    inspect_schema, schema_files, ProjectSessionFactory, SchemaCache, SchemaFilesReport,
+    SchemaInspectReport, SchemaTextOverride, SchemaTypeRefInfo,
 };
 use coflow_project::{path_to_slash, Project};
 use coflow_project::{DiagnosticSet, FlatDiagnostic};
@@ -30,7 +30,7 @@ pub fn inspect(
     human: bool,
 ) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::open_schema_session(project)?;
+    let session = ProjectSessionFactory::open_schema_session(project)?;
     let report = inspect_schema(&session, type_filter, include_derived);
     if human {
         write_schema_inspect_human(&report)?;
@@ -48,7 +48,7 @@ pub fn inspect(
 /// cannot be built, or output cannot be written.
 pub fn files(config_or_dir: Option<&Path>, human: bool) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(config_or_dir)?;
-    let session = Runtime::open_schema_session(project)?;
+    let session = ProjectSessionFactory::open_schema_session(project)?;
     let report = schema_files(&session);
     if human {
         write_schema_files_human(&report)?;
@@ -168,7 +168,7 @@ fn check_schema_source(
     source: &str,
 ) -> Result<Vec<FlatDiagnostic>, DiagnosticSet> {
     let mut diagnostics = project.schema_diagnostic_set();
-    let mut runtime = ProjectRuntime::new(project.clone());
+    let mut runtime = SchemaCache::new(project.clone());
     let refresh = runtime.refresh_with_overrides(&[SchemaTextOverride {
         requested_module: Some(target.module_id.clone()),
         normalized_path: target.canonical_path.clone(),

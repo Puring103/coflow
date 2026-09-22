@@ -3,12 +3,9 @@ use coflow_project::LineIndex;
 use serde_json::Value;
 
 use super::diagnostics::lsp_range;
+use crate::service::LanguageRange;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LspPosition {
-    pub(crate) line: usize,
-    pub(crate) character: usize,
-}
+pub(crate) use crate::service::LanguagePosition as LspPosition;
 
 impl LspPosition {
     pub(crate) fn from_value(value: &Value) -> Option<Self> {
@@ -19,7 +16,7 @@ impl LspPosition {
     }
 }
 
-pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> Value {
+pub(crate) fn byte_range(source: &str, start: usize, end: usize) -> LanguageRange {
     let index = LineIndex::new(source);
     byte_range_indexed(&index, source, start, end)
 }
@@ -30,18 +27,22 @@ pub(crate) fn byte_range_indexed(
     source: &str,
     start: usize,
     end: usize,
-) -> Value {
+) -> LanguageRange {
     let start = position_from_byte_indexed(index, source, start);
     let end = position_from_byte_indexed(index, source, end);
     lsp_range(start.line, start.character, end.line, end.character)
 }
 
-pub(crate) fn range_from_span(source: &str, span: Span) -> Value {
+pub(crate) fn range_from_span(source: &str, span: Span) -> LanguageRange {
     let index = LineIndex::new(source);
     range_from_span_indexed(&index, source, span)
 }
 
-pub(crate) fn range_from_span_indexed(index: &LineIndex, source: &str, span: Span) -> Value {
+pub(crate) fn range_from_span_indexed(
+    index: &LineIndex,
+    source: &str,
+    span: Span,
+) -> LanguageRange {
     byte_range_indexed(index, source, span.start, span.end.max(span.start + 1))
 }
 

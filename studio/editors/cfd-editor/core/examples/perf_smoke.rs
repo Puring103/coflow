@@ -156,7 +156,7 @@ fn breakdown(config: &Config) {
     println!("  [breakdown] open      : {}", format_duration(open));
 
     let (schema_runtime, compile) = timed(|| {
-        let mut runtime = coflow_project::ProjectRuntime::new(project.clone());
+        let mut runtime = coflow_project::SchemaCache::new(project.clone());
         let _ = runtime.refresh();
         runtime
     });
@@ -166,14 +166,14 @@ fn breakdown(config: &Config) {
         .into_latest_attempt()
         .expect("compiled schema");
     let (engine, data) = timed(|| {
-        coflow_project::Runtime::new()
+        coflow_project::ProjectSessionFactory::new()
             .open_write_session_from_schema(schema)
             .expect("write session")
     });
     println!("  [breakdown] data      : {}", format_duration(data));
     drop(engine);
 
-    let (_, lsp) = timed(|| coflow_lsp::EmbeddedLsp::new(project.clone()));
+    let (_, lsp) = timed(|| coflow_lsp::service::LanguageService::new(project.clone()));
     println!("  [breakdown] lsp setup : {}", format_duration(lsp));
 }
 
