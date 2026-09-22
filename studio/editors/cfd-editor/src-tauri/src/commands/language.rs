@@ -127,11 +127,12 @@ pub(crate) async fn write_source_text(
     session_id: u32,
     file_path: String,
     source: String,
+    expected_source: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
     run_host_command(host, move |host| {
         host.sessions()
-            .write_source_text(session_id, &file_path, &source)
+            .write_source_text(session_id, &file_path, &source, &expected_source)
     })
     .await
 }

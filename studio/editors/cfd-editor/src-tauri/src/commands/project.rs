@@ -58,8 +58,7 @@ pub(crate) async fn add_project_input(
 ) -> Result<ProjectBootstrap, EditorError> {
     let kind = project_input_kind(&kind)?;
     run_host_command(host, move |host| {
-        host.sessions()
-            .add_project_input(session_id, kind, &PathBuf::from(path))
+        host.add_project_input(session_id, kind, &PathBuf::from(path))
     })
     .await
 }
@@ -84,8 +83,7 @@ pub(crate) async fn create_project_file(
 ) -> Result<ProjectBootstrap, EditorError> {
     let kind = project_input_kind(&kind)?;
     run_host_command(host, move |host| {
-        host.sessions()
-            .create_project_file(session_id, kind, Path::new(&parent_path), &file_name)
+        host.create_project_file(session_id, kind, Path::new(&parent_path), &file_name)
     })
     .await
 }
@@ -97,8 +95,7 @@ pub(crate) async fn delete_project_entry(
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
     run_host_command(host, move |host| {
-        host.sessions()
-            .delete_project_entry(session_id, Path::new(&path))
+        host.delete_project_entry(session_id, Path::new(&path))
     })
     .await
 }

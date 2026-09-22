@@ -43,6 +43,7 @@ impl SessionStore {
             if !commit.generation_changed {
                 return error;
             }
+            self.mark_needs_reload(id);
             EditorError::new(
                 crate::editor::types::EditorErrorKind::Committed,
                 format!(

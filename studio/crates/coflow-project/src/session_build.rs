@@ -89,8 +89,13 @@ fn finish_project_session(
         mut diagnostics,
     } = schema_session;
 
-    let Some(schema) = schema else {
-        return Err(diagnostics.into_set());
+    // 未完成的源码也可以保存和重新打开；无有效 schema 时只提供诊断与源码目录。
+    // 空 schema 不暴露旧代际的记录，修复源码后再构建正常数据视图。
+    let schema = match schema {
+        Some(schema) => schema,
+        None => Arc::new(coflow_core::schema::build_schema(
+            &coflow_core::schema::parse_modules(std::iter::empty::<coflow_core::schema::CftFile>())
+        ).map_err(|_| diagnostics.as_set().clone())?),
     };
 
     let dimension_plan = Arc::new(DimensionRuntimePlan::compile(&schema, &project));

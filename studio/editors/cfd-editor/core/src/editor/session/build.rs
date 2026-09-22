@@ -63,6 +63,7 @@ pub(crate) fn build_session(
 
     Ok((
         EditorSession {
+            needs_reload: false,
             project_root,
             yaml_path,
             project_session,

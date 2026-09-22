@@ -50,6 +50,7 @@ pub(crate) use row_build::project_bootstrap;
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.
 pub struct EditorSession {
+    pub(crate) needs_reload: bool,
     pub project_root: std::path::PathBuf,
     /// Path to the project's `coflow.yaml` used by project actions and reloads.
     pub yaml_path: std::path::PathBuf,
@@ -79,6 +80,7 @@ impl EditorSession {
     /// 提交前检查生命周期与版本空间，保证落盘后的发布不会失败。
     pub(crate) fn ensure_writable(&self) -> Result<(), EditorError> {
         self.language.ensure_open()?;
+        if self.needs_reload { return Err(EditorError::session("项目需要重新加载后才能继续写入")); }
         if self.revisions.current() == u32::MAX || self.schema_revision == u32::MAX {
             return Err(EditorError::session(
                 "session revision exhausted; reopen project",
@@ -197,6 +199,12 @@ impl SessionStore {
         Ok(yaml_path)
     }
 
+    pub fn mark_needs_reload(&self, id: u32) {
+        if let Ok(entry) = self.session(id) { entry.state.write().needs_reload = true; }
+    }
+    pub fn finish_recovery(&self, id: u32) {
+        if let Ok(entry) = self.session(id) { entry.state.write().needs_reload = false; }
+    }
     pub fn reload_session(&self, id: u32) -> Result<ProjectBootstrap, EditorError> {
         for _ in 0..3 {
             let (entry, candidate) = self.build_reload_candidate(id)?;
@@ -233,7 +241,7 @@ impl SessionStore {
         mut candidate: ReloadCandidate,
     ) -> Result<Option<ProjectBootstrap>, EditorError> {
         let mut state = entry.state.write();
-        state.ensure_writable()?;
+        state.language.ensure_open()?;
         let Some(revisions) = state.revisions.commit_reload(candidate.base_revision) else {
             return Ok(None);
         };
@@ -242,6 +250,7 @@ impl SessionStore {
             .session
             .language
             .rebase(candidate.session.project_session.project().clone());
+        candidate.session.needs_reload = state.needs_reload;
         candidate.session.revisions = revisions;
         candidate.session.schema_revision = state.schema_revision.saturating_add(1);
         let bootstrap = project_bootstrap(id, &candidate.session, candidate.snapshot);

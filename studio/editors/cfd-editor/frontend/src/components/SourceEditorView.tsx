@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import * as api from '../api'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import type { TextRange } from '../bindings/TextRange'
-import { diagnosticFilePath, errorDiagnostics, errorMessage, type DiagnosticItem } from '../wire'
+import { diagnosticFilePath, errorMessage, type DiagnosticItem } from '../wire'
 import {
   codeMirrorDiagnostics,
   completionItem,
@@ -13,27 +14,9 @@ import {
 import {
   CfdCodeEditor,
   type CodeSemanticToken,
-  type ExternalDocumentUpdate,
 } from './CfdCodeEditor'
+import { SourceAutosave, registerSourceSave } from '../state/sourceAutosave'
 import { Icon } from './Icon'
-
-interface Draft {
-  base: string
-  text: string
-}
-
-const drafts = new Map<string, Draft>()
-
-export function normalizeSourceText(text: string): string {
-  return text.replace(/\r\n?/g, '\n')
-}
-
-export function languageTextEditChanges(source: string, edits: readonly api.LanguageTextEdit[]) {
-  return edits.map(edit => ({
-    ...rangeOffsets(source, edit.range),
-    insert: normalizeSourceText(edit.new_text),
-  })).sort((left, right) => left.from - right.from || left.to - right.to)
-}
 
 interface Props {
   sessionId: number
@@ -45,25 +28,28 @@ interface Props {
 }
 
 export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved, focus = null }: Props) {
-  const key = `${sessionId}:${filePath}`
-  const [base, setBase] = useState('')
-  const [source, setSource] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const onSavedRef = useRef(onSaved)
+  onSavedRef.current = onSaved
+  const controller = useMemo(() => new SourceAutosave({
+    read: () => api.isTauri ? api.readSourceText(sessionId, filePath) : Promise.resolve(''),
+    write: (text, expected) => api.writeSourceText(sessionId, filePath, text, expected),
+    saved: (result: ProjectBootstrap) => onSavedRef.current(result),
+    message: errorMessage,
+  }), [sessionId, filePath])
+  const state = useSyncExternalStore(controller.subscribe, controller.snapshot)
+  const { text: source, saving, error } = state
+  const loading = !state.loaded
+  const dirty = controller.dirty
+  const [languageError, setLanguageError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<api.LanguageDiagnostic[]>([])
   const [validationDiagnostics, setValidationDiagnostics] = useState<DiagnosticItem[]>([])
   const [semanticTokens, setSemanticTokens] = useState<CodeSemanticToken[]>([])
   const [replaceSemanticTokens, setReplaceSemanticTokens] = useState(true)
-  const [documentUpdate, setDocumentUpdate] = useState<ExternalDocumentUpdate | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const languageRequest = useRef(0)
   const languageVersion = useRef(0)
   const validationRequest = useRef(0)
-  const loadedKey = useRef<string | null>(null)
-  const immediateLanguageSource = useRef<string | null>(null)
   // 文档刚读取完成时立即请求一次语义着色，不等待编辑去抖；后续编辑仍去抖。
   const pendingInitialSync = useRef(false)
-  const dirty = source !== base
   const editorDiagnostics = useMemo(() => [
     ...codeMirrorDiagnostics(source, diagnostics),
     ...validationCodeMirrorDiagnostics(source, validationDiagnostics),
@@ -75,41 +61,36 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
 
   useEffect(() => {
     let alive = true
-    const changingDocument = loadedKey.current !== key
-    if (changingDocument) {
-      setLoading(true)
-      setError(null)
-      setValidationDiagnostics([])
-    }
-    const operation = api.isTauri
-      ? api.readSourceText(sessionId, filePath)
-      : Promise.resolve(drafts.get(key)?.base ?? '')
-    operation.then(rawText => {
-      if (!alive) return
-      const text = normalizeSourceText(rawText)
-      const draft = drafts.get(key)
-      setBase(text)
-      setSource(draft?.base === text ? draft.text : text)
-      setDocumentUpdate(null)
-      loadedKey.current = key
+    const baseline = controller.state.base
+    const operation = api.isTauri ? api.readSourceText(sessionId, filePath) : Promise.resolve('')
+    operation.then(text => {
+      if (!alive || controller.state.base !== baseline) return
+      controller.receiveDisk(text)
       pendingInitialSync.current = true
-      if (draft?.base !== text) drafts.delete(key)
-    }).catch(cause => {
-      if (alive) setError(errorMessage(cause))
-    }).finally(() => { if (alive && changingDocument) setLoading(false) })
+    }).catch(cause => { if (alive) controller.fail(cause) })
     return () => { alive = false }
-  }, [filePath, key, revision, sessionId])
+  }, [controller, filePath, revision, sessionId])
+
+  useEffect(() => registerSourceSave({
+    pending: () => api.isTauri && (controller.dirty || controller.state.conflict !== null),
+    flush: controller.flush,
+  }), [controller])
 
   useEffect(() => {
-    if (!dirty) drafts.delete(key)
-    else drafts.set(key, { base, text: source })
-  }, [base, dirty, key, source])
+    if (!api.isTauri || readOnly || loading || !dirty || saving || error || state.conflict !== null) return
+    const timer = window.setTimeout(() => { void controller.flush() }, 500)
+    return () => window.clearTimeout(timer)
+  }, [controller, source, readOnly, loading, dirty, saving, error, state.conflict])
 
   useEffect(() => {
-    if (immediateLanguageSource.current === source) {
-      immediateLanguageSource.current = null
-      return
+    const leave = (event: BeforeUnloadEvent) => {
+      if (controller.dirty) { event.preventDefault(); event.returnValue = '' }
     }
+    window.addEventListener('beforeunload', leave)
+    return () => window.removeEventListener('beforeunload', leave)
+  }, [controller])
+
+  useEffect(() => {
     const request = ++languageRequest.current
     if (!api.isTauri || loading) {
       setDiagnostics([])
@@ -123,6 +104,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       const version = ++languageVersion.current
       api.syncLanguageDocument(sessionId, filePath, source, version).then(next => {
         if (languageRequest.current === request) {
+          setLanguageError(null)
           setDiagnostics(next.diagnostics)
           setSemanticTokens(decodeSemanticTokens(source, next))
           setReplaceSemanticTokens(next.syntax_valid)
@@ -130,12 +112,12 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       }).catch(cause => {
         if (languageRequest.current === request) {
           setDiagnostics([])
-          setError(errorMessage(cause))
+          setLanguageError(errorMessage(cause))
         }
       })
     }, immediate ? 0 : 180)
     return () => window.clearTimeout(timer)
-  }, [filePath, loading, sessionId, source])
+  }, [controller, filePath, loading, revision, sessionId, source])
 
   useEffect(() => {
     const request = ++validationRequest.current
@@ -153,68 +135,29 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       })
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [filePath, loading, replaceSemanticTokens, sessionId, source])
+  }, [filePath, loading, revision, replaceSemanticTokens, sessionId, source])
 
   useEffect(() => () => {
     if (api.isTauri) void api.closeLanguageDocument(sessionId, filePath)
   }, [filePath, sessionId])
 
+  useEffect(() => {
+    if (!api.isTauri) return
+    const window = getCurrentWindow()
+    const stop = window.onCloseRequested(event => {
+      if (!controller.dirty) return
+      event.preventDefault()
+      void controller.flush().then(ok => { if (ok) void window.close() })
+    })
+    return () => { void stop.then(unlisten => unlisten()) }
+  }, [controller])
+
   async function save() {
-    if (readOnly || saving || !api.isTauri) return
-    setSaving(true)
-    setError(null)
-    try {
-      const sourceBeforeFormatting = source
-      const formatting = await api.formatLanguageDocument(
-        sessionId,
-        filePath,
-        sourceBeforeFormatting,
-        ++languageVersion.current,
-      )
-      const formatted = normalizeSourceText(formatting.text)
-      if (formatted !== sourceBeforeFormatting) {
-        setDocumentUpdate({
-          before: sourceBeforeFormatting,
-          after: formatted,
-          changes: languageTextEditChanges(sourceBeforeFormatting, formatting.edits),
-        })
-        immediateLanguageSource.current = formatted
-        const request = ++languageRequest.current
-        const version = ++languageVersion.current
-        setSource(formatted)
-        try {
-          const next = await api.syncLanguageDocument(sessionId, filePath, formatted, version)
-          if (languageRequest.current === request) {
-            setDiagnostics(next.diagnostics)
-            setSemanticTokens(decodeSemanticTokens(formatted, next))
-            setReplaceSemanticTokens(next.syntax_valid)
-          }
-        } catch (cause) {
-          if (languageRequest.current === request) {
-            setDiagnostics([])
-            setError(errorMessage(cause))
-          }
-        }
-      }
-      if (formatted === base) {
-        drafts.delete(key)
-        return
-      }
-      const result = await api.writeSourceText(sessionId, filePath, formatted)
-      drafts.delete(key)
-      setBase(formatted)
-      setValidationDiagnostics([])
-      await onSaved(result)
-    } catch (cause) {
-      const details = errorDiagnostics(cause).filter(item => diagnosticBelongsToFile(item, filePath))
-      setValidationDiagnostics(details)
-      setError(details.length > 0 ? null : errorMessage(cause))
-    } finally {
-      setSaving(false)
-    }
+    if (readOnly || !api.isTauri) return
+    await controller.flush()
   }
 
-  if (loading) return <div className="empty-hint">加载源码中...</div>
+  if (loading) return <div className="empty-hint">{error ?? '加载源码中...'}</div>
 
   return (
     <section className="source-editor-view">
@@ -222,22 +165,28 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
         <div className="source-editor-file">
           <Icon name="code" size={14} aria-hidden />
           <span>{filePath}</span>
+          <span>{saving ? '保存中…' : dirty ? '等待保存' : '已保存'}</span>
           {dirty && <span className="source-editor-dirty" aria-label="有未保存更改" />}
         </div>
-        {error && <span className="source-editor-error" role="alert" title={error}>{error}</span>}
+        {(error || languageError) && <span className="source-editor-error" role="alert">{error || languageError}</span>}
       </header>
-      <div className="source-editor-main">
+      {state.conflict !== null && <div role="alert">
+        磁盘文件已变化，当前输入已保留。
+        <button onClick={() => controller.useDisk()}>使用磁盘内容</button>
+        <button onClick={() => { void controller.keepLocal() }}>保留本地并覆盖</button>
+      </div>}
+      {error && state.conflict === null && <button onClick={() => { void save() }}>重试保存</button>}
+      <div className="source-editor-main" onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !readOnly && api.isTauri && !error) void controller.flush()
+      }}>
         <CfdCodeEditor
           value={source}
           onChange={next => {
-            setDocumentUpdate(null)
-            setSource(next)
+            controller.edit(next)
             setValidationDiagnostics([])
-            setError(null)
           }}
           onSave={() => { void save() }}
-          readOnly={readOnly || saving}
-          documentUpdate={documentUpdate}
+          readOnly={readOnly}
           focusRange={focusRange}
           semanticTokens={semanticTokens}
           replaceSemanticTokens={replaceSemanticTokens}

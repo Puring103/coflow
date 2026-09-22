@@ -77,10 +77,10 @@ fn schema_source_commit_rebuilds_data_against_the_candidate_schema() {
             .field_value("Item", "b", &[CfdPathSegment::Field("added".into())]),
         Some(&CfdValue::Int(9))
     );
-    assert!(session
-        .prepare_source_update(&path, "table Item { value: Missing; }")
-        .is_err());
-    assert_eq!(session.queries().revision(), 1);
+    let invalid = session.prepare_source_update(&path, "table Item { value: Missing; }").unwrap();
+    session.commit_source_update(invalid).unwrap();
+    assert!(!session.queries().diagnostics().as_set().is_empty());
+    assert_eq!(session.queries().revision(), 2);
 }
 
 #[test]

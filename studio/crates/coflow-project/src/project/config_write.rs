@@ -1,7 +1,6 @@
 use super::{diagnostics::file_error, Project, SourceConfig};
 use crate::api::DiagnosticSet;
 use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,14 +293,7 @@ fn same_path(root: &Path, configured: &Path, target: &Path) -> bool {
 }
 
 fn publish_config(config_path: &Path, project: &Project) -> Result<(), DiagnosticSet> {
-    let original = fs::read(config_path).map_err(|error| {
-        file_error(
-            config_path,
-            "PROJECT-CONFIG-WRITE",
-            "PROJECT",
-            format!("failed to read project config: {error}"),
-        )
-    })?;
+    let original = project.config_source.as_bytes().to_vec();
     let output = serde_yaml::to_string(&project.config).map_err(|error| {
         file_error(
             config_path,
@@ -335,4 +327,22 @@ fn portable_config_path(project_root: &Path, selected: &Path) -> PathBuf {
     selected
         .strip_prefix(project_root)
         .map_or_else(|_| selected.to_path_buf(), Path::to_path_buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_publication_uses_the_original_parse_baseline() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("coflow.yaml");
+        std::fs::write(&path, "schema: schema/\ndata: data/\n").unwrap();
+        let mut project = Project::open_schema_only(Some(&path)).unwrap();
+        project.config.schema.paths.push("extra/".into());
+        let external = "schema: external/\ndata: data/\n";
+        std::fs::write(&path, external).unwrap();
+        assert!(publish_config(&path, &project).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), external);
+    }
 }

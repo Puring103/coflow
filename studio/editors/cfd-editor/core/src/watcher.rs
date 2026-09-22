@@ -72,6 +72,11 @@ pub struct ProjectWatchErrorPayload {
 }
 
 impl ProjectWatchRegistry {
+    #[cfg(test)]
+    pub(crate) fn watches(&self, id: u32, path: &Path) -> bool {
+        self.watchers.lock().get(&id).is_some_and(|entry| entry.roots.iter().any(|root| coflow_project::normalize_path(root) == coflow_project::normalize_path(path)))
+    }
+
     pub(crate) fn watch_session(
         self: &Arc<Self>,
         sessions: Arc<SessionStore>,
@@ -120,7 +125,7 @@ impl ProjectWatchRegistry {
         self.watchers.lock().remove(&session_id);
     }
 
-    fn refresh_session(&self, session_id: u32, project_root: &Path) -> Result<(), EditorError> {
+    pub(crate) fn refresh_session(&self, session_id: u32, project_root: &Path) -> Result<(), EditorError> {
         let project = Project::open_schema_only(Some(project_root)).map_err(|diagnostics| {
             EditorError::project(format!(
                 "failed to refresh project watch paths: {diagnostics}"
@@ -135,17 +140,14 @@ impl ProjectWatchRegistry {
             return Ok(());
         }
 
-        // 先注册新增路径；注册失败时保留原监听集合，避免会话失去文件更新。
-        for path in next_roots.iter().filter(|path| !entry.roots.contains(path)) {
-            watch_path(&mut entry.watcher, path)?;
+        // 每一步同步实际监听集合；部分失败后重试不会重复注册或注销。
+        for path in next_roots.iter().filter(|path| !entry.roots.contains(path)).cloned().collect::<Vec<_>>() {
+            watch_path(&mut entry.watcher, &path)?;
+            entry.roots.push(path);
         }
-        for path in entry.roots.iter().filter(|path| !next_roots.contains(path)) {
-            entry.watcher.unwatch(path).map_err(|err| {
-                EditorError::other(format!(
-                    "failed to unwatch project source `{}`: {err}",
-                    path.display()
-                ))
-            })?;
+        for path in entry.roots.iter().filter(|path| !next_roots.contains(path)).cloned().collect::<Vec<_>>() {
+            entry.watcher.unwatch(&path).map_err(|err| EditorError::other(format!("failed to unwatch project source `{}`: {err}", path.display())))?;
+            entry.roots.retain(|root| root != &path);
         }
         entry.roots = next_roots;
         drop(watchers);

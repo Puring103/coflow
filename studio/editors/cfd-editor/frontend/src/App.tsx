@@ -1,3 +1,4 @@
+import { afterSourceSave, deferSourceNavigation, flushSourceChanges } from './state/sourceAutosave'
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
 import { CreateRecordDialog } from './components/CreateRecordDialog'
@@ -70,6 +71,7 @@ import {
   diagnosticFilePath,
   diagnosticMatchesAnchor,
   errorMessage,
+  isEditorError,
   recordActualType,
     coordinateId,
     sameCoordinate,
@@ -211,6 +213,7 @@ export default function App() {
     | null
   >(null)
   const [fileActionBusy, setFileActionBusy] = useState(false)
+  const [recoverySession, setRecoverySession] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const {
     settings: projectSettings,
@@ -340,7 +343,8 @@ export default function App() {
     setPluginPageTabs(current => current.filter(tab => tab.key !== key))
     setActivePluginPageKey(current => current === key ? null : current)
   }, [])
-  const openPluginPageTab = useCallback((pluginId: string, pageId: string) => {
+  const openPluginPageTab = useCallback((pluginId: string, pageId: string): void => {
+    if (deferSourceNavigation(() => openPluginPageTab(pluginId, pageId))) return
     const page = pluginRegistrySnapshot().pages.find(item => item.pluginId === pluginId && item.id === pageId)
     if (!page) {
       setErrorMsg(`插件页面 ${pluginId}/${pageId} 不可用`)
@@ -536,7 +540,8 @@ export default function App() {
   const navigateWorkspaceTab = useCallback((
     tab: WorkspaceTab,
     coordinate?: RecordCoordinate,
-  ) => {
+  ): void => {
+    if (deferSourceNavigation(() => navigateWorkspaceTab(tab, coordinate))) return
     finishActiveDataEdit()
     setGitDiffActive(false)
     setActivePluginPageKey(null)
@@ -708,6 +713,7 @@ export default function App() {
   })
 
   const openProject = useCallback(async () => {
+    if (!await flushSourceChanges()) return
     if (!api.isTauri) {
       generation.adopt(MOCK_PROJECT)
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision }, MOCK_PROJECT.schema_revision)
@@ -848,6 +854,7 @@ export default function App() {
   // refuses to clobber an existing `coflow.yaml` and that diagnostic
   // surfaces here as a clear error banner.
   const newProject = useCallback(async () => {
+    if (!await flushSourceChanges()) return
     if (!api.isTauri) {
       setErrorMsg('新建工程仅在桌面环境可用')
       return
@@ -890,7 +897,8 @@ export default function App() {
   }, [router.current?.view])
 
   const openFile = useCallback(
-    (filePath: string, requestedType = '') => {
+    (filePath: string, requestedType = ''): void => {
+      if (deferSourceNavigation(() => openFile(filePath, requestedType))) return
       setDocumentSearch('')
       const options = project?.file_types[filePath] ?? []
       const typeName = requestedType || options[0]?.name || ''
@@ -1366,7 +1374,7 @@ export default function App() {
         e.preventDefault()
         finishActiveDataEdit()
         setGitDiffOpen(true)
-        setGitDiffActive(true)
+        afterSourceSave(() => setGitDiffActive(true))
         setActivePluginPageKey(null)
         setActivePane('changes')
       }
@@ -1702,7 +1710,8 @@ export default function App() {
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
   const activeGraph = activeGraphKey ? graphCache[activeGraphKey] ?? dataQueries.mockGraph : null
-  const readOnly = activeSchemaFile ? false : !isEditableFile(activeFileData)
+  const recoveryRequired = recoverySession !== null && recoverySession === project?.session_id
+  const readOnly = recoveryRequired || (activeSchemaFile ? false : !isEditableFile(activeFileData))
   const fileCapabilities = useMemo(() => {
     const map: Record<string, WriterCapabilities> = {}
     for (const [file, records] of Object.entries(fileDataCache)) {
@@ -1952,7 +1961,8 @@ export default function App() {
     [currentRoute?.view, currentRoute?.file, mutations],
   )
 
-  const closeWorkspaceTab = useCallback((id: string) => {
+  const closeWorkspaceTab = useCallback((id: string): void => {
+    if (deferSourceNavigation(() => closeWorkspaceTab(id))) return
     const index = workspaceTabs.findIndex(tab => tab.id === id)
     if (index < 0) return
     pluginDefaultPendingTabsRef.current.delete(id)
@@ -2078,16 +2088,36 @@ export default function App() {
       setErrorMsg(`打开源文件失败: ${errorMessage(error)}`)
     }
   }, [generation])
+  function structureError(sessionId: number, prefix: string, error: unknown) {
+    if (generation.currentSession() !== sessionId) return
+    if (isEditorError(error) && error.kind === 'committed') {
+      setFileActionDialog(null)
+      setRecoverySession(sessionId)
+      setErrorMsg(`操作已完成，项目刷新失败。${errorMessage(error)}`)
+    } else setErrorMsg(`${prefix}: ${errorMessage(error)}`)
+  }
+  async function recoverProject() {
+    const id = generation.currentSession()
+    if (id === null) return
+    try {
+      const snapshot = await api.reloadSession(id)
+      await refreshFromBootstrap(snapshot)
+      setRecoverySession(null)
+      setErrorMsg(null)
+    } catch (error) { setErrorMsg(`重新加载失败: ${errorMessage(error)}`) }
+  }
+
   const addProjectInput = useCallback(async (kind: 'schema' | 'data', directory: boolean) => {
     const identity = generation.currentIdentity()
     if (!identity) return
+    if (!await flushSourceChanges()) return
     const path = await api.pickProjectInput(kind, directory)
     if (!path || !generation.isCurrent(identity.sessionId, identity.revision)) return
     try {
       const bootstrap = await api.addProjectInput(identity.sessionId, kind, path)
       await refreshFromBootstrap(bootstrap)
     } catch (error) {
-      setErrorMsg(`添加${kind === 'schema' ? '类型' : '数据'}来源失败: ${errorMessage(error)}`)
+      structureError(identity.sessionId, '添加来源失败', error)
     }
   }, [generation, refreshFromBootstrap])
   const createRecordFromTree = useCallback(async (filePath: string, actualType: string) => {
@@ -2231,7 +2261,8 @@ export default function App() {
     if (nextType !== activeType) setActiveType(nextType)
   }, [activeFileData?.file_path, activeFileData?.type_names, currentRoute, activeType])
 
-  function switchView(tab: ViewTab) {
+  function switchView(tab: ViewTab): void {
+    if (deferSourceNavigation(() => switchView(tab))) return
     if (!currentRoute) return
     if (tab.kind === 'table') {
       setFirstRecordFocusRequest(0)
@@ -2260,7 +2291,8 @@ export default function App() {
     router.replace(routeForWorkspaceTab(nextTab, firstCoordinate))
   }
 
-  function switchPluginView(key: string) {
+  function switchPluginView(key: string): void {
+    if (deferSourceNavigation(() => switchPluginView(key))) return
     if (!currentRoute || !activeFile || !activeType) return
     const view = pluginViews.find(candidate => candidate.key === key)
     if (!view) return
@@ -2361,10 +2393,11 @@ export default function App() {
     }
   }, [currentRoute, activeFileData, graphSupported, activeType, isSingletonType, router])
 
-  function activateDocumentTab(id: string) {
+  function activateDocumentTab(id: string): void {
+    if (deferSourceNavigation(() => activateDocumentTab(id))) return
     if (id === GIT_DIFF_TAB_ID) {
       finishActiveDataEdit()
-      setGitDiffActive(true)
+      afterSourceSave(() => setGitDiffActive(true))
       setActivePluginPageKey(null)
       setActivePane('changes')
       return
@@ -2455,13 +2488,14 @@ export default function App() {
         </div>
       </div>
 
-      {errorMsg && (
+      {(errorMsg || recoveryRequired) && (
         <div className="error-banner" role="alert">
           <Icon name="error" size={13} />
-          {errorMsg}
-          <button className="btn btn-icon" onClick={() => setErrorMsg(null)} aria-label="关闭错误提示">
+          {errorMsg ?? '项目需要重新加载后才能继续写入'}
+          {recoveryRequired && <button className="btn" onClick={() => { void recoverProject() }}>重新加载项目</button>}
+          {!recoveryRequired && <button className="btn btn-icon" onClick={() => setErrorMsg(null)} aria-label="关闭错误提示">
             <Icon name="close" size={12} />
-          </button>
+          </button>}
         </div>
       )}
 
@@ -2479,7 +2513,7 @@ export default function App() {
             finishActiveDataEdit()
             setActivePane('changes')
             setGitDiffOpen(true)
-            setGitDiffActive(true)
+            afterSourceSave(() => setGitDiffActive(true))
             setActivePluginPageKey(null)
           }}
           onToggleTheme={toggleTheme}
@@ -2570,7 +2604,7 @@ export default function App() {
               onSelectionChange={selection => {
                 setGitDiffSelection(selection)
                 setGitDiffOpen(true)
-                setGitDiffActive(true)
+                afterSourceSave(() => setGitDiffActive(true))
                 setActivePluginPageKey(null)
               }}
               onRefresh={() => void loadProjectDiff()}
@@ -2762,10 +2796,11 @@ export default function App() {
           ) : currentRoute && activeSchemaFile && project ? (
             <div className="view-container" ref={viewContainerRef}>
               <SourceEditorView
+                key={`${project.session_id}:${currentRoute.file}`}
                 sessionId={project.session_id}
                 revision={project.revision}
                 filePath={currentRoute.file}
-                readOnly={false}
+                readOnly={recoveryRequired}
                 onSaved={refreshFromBootstrap}
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
@@ -2996,6 +3031,7 @@ export default function App() {
                 )}
                 {activeViewKind === 'source' && project && currentRoute && (
                   <SourceEditorView
+                    key={`${project.session_id}:${currentRoute.file}`}
                     sessionId={project.session_id}
                     revision={project.revision}
                     filePath={currentRoute.file}
@@ -3155,13 +3191,14 @@ export default function App() {
               ? entered.slice(0, -extension.length)
               : entered
             const fileName = `${baseName}${extension}`
+            if (!await flushSourceChanges()) return
             setFileActionBusy(true)
             try {
               const bootstrap = await api.createProjectFile(identity.sessionId, fileActionDialog.sourceKind, fileActionDialog.parentPath, fileName)
               await refreshFromBootstrap(bootstrap)
               setFileActionDialog(null)
             } catch (error) {
-              setErrorMsg(`新建文件失败: ${errorMessage(error)}`)
+              structureError(identity.sessionId, '新建文件失败', error)
             } finally {
               setFileActionBusy(false)
             }
@@ -3179,6 +3216,7 @@ export default function App() {
           onConfirm={async () => {
             const identity = generation.currentIdentity()
             if (!identity) return
+            if (!await flushSourceChanges()) return
             setFileActionBusy(true)
             try {
               const bootstrap = await api.deleteProjectEntry(identity.sessionId, fileActionDialog.path)
@@ -3186,7 +3224,7 @@ export default function App() {
               await refreshFromBootstrap(bootstrap)
               setFileActionDialog(null)
             } catch (error) {
-              setErrorMsg(`删除失败: ${errorMessage(error)}`)
+              structureError(identity.sessionId, '删除失败', error)
             } finally {
               setFileActionBusy(false)
             }
