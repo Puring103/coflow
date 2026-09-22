@@ -15,13 +15,28 @@ use crate::api::{
     CfdSource, CfdSourcePath, DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation,
     ReorderRecordsRequest, WriteCellRequest, WriteFieldPathSegment, WriteRecordRef,
 };
-use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
+use crate::{CfdDataModel, CfdObject, CfdValue, LoadedRecordDraft};
+use coflow_core::loading::{self, CfdTextLoadError, SourceInput};
 use crate::{RecordOrigin, TextSpan};
 use coflow_core::schema::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_format::format_cfd;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+// 写回验证直接使用 Engine 的公开加载入口，不经过项目层的测试专用 API。
+fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
+    loading::load(schema, [SourceInput::new("writer-test.cfd", source)]).1
+}
+
+fn parse_cfd_input_records(
+    schema: &CftSchema,
+    source: &str,
+) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
+    loading::parse_records(schema, source, Default::default())
+        .map(|records| records.into_iter().map(|record| record.record).collect())
+        .map_err(CfdTextLoadError::Text)
+}
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 

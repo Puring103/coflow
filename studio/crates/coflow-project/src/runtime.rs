@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity, WriterCapabilities};
-use crate::catalog::CfdSourceCatalog;
 use crate::data_model::CfdDataModel;
 use crate::data_model::{CfdPathSegment, CfdValue};
 use crate::indexes::SessionIndexBuilder;
@@ -19,7 +18,7 @@ use crate::project_schema::{
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{
     open_project_session, open_project_session_from_schema,
-    open_project_session_with_source_overrides, SessionOpenOptions,
+    open_project_session_with_source_overrides,
 };
 use crate::{
     CreateRecordDraft, DataSourceTextOverride, DefaultMaterialization, DimensionValueCoordinate,
@@ -28,10 +27,9 @@ use crate::{
     WriteOutcome,
 };
 
+/// 无状态的项目会话入口；写入工作区由每次 mutation 独立创建。
 #[derive(Debug, Clone)]
-pub struct Runtime {
-    catalog: CfdSourceCatalog,
-}
+pub struct Runtime;
 
 /// Owns the published schema generation for one project.
 ///
@@ -340,9 +338,7 @@ fn schema_input_fingerprint(
 impl Runtime {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            catalog: fixed_cfd_catalog(),
-        }
+        Self
     }
 
     /// Builds a schema-only session without loading project data.
@@ -363,8 +359,7 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
-            .map(ReadOnlyProjectSession::new)
+        open_project_session(project).map(ReadOnlyProjectSession::new)
     }
 
     /// Opens read-only data using host-provided text for selected source files.
@@ -377,13 +372,8 @@ impl Runtime {
         project: Project,
         source_overrides: &[DataSourceTextOverride],
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session_with_source_overrides(
-            project,
-            &self.catalog,
-            SessionOpenOptions::read_only(),
-            source_overrides,
-        )
-        .map(ReadOnlyProjectSession::new)
+        open_project_session_with_source_overrides(project, source_overrides)
+            .map(ReadOnlyProjectSession::new)
     }
 
     /// Builds data for the normal build pipeline. This may write generated
@@ -396,12 +386,11 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<BuildProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::build())
-            .map(BuildProjectSession::new)
+        open_project_session(project).map(BuildProjectSession::new)
     }
 
     /// Opens a mutation-capable session over the configured business CFD files.
-    /// The session owns the CFD catalog used by every command and rebuild.
+    /// Each mutation creates its own staged write workspace.
     ///
     /// # Errors
     ///
@@ -410,8 +399,7 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
-            .map(WriteProjectSession::new)
+        open_project_session(project).map(WriteProjectSession::new)
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
@@ -423,8 +411,7 @@ impl Runtime {
         &self,
         schema: ProjectSchemaSession,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
-            .map(WriteProjectSession::new)
+        open_project_session_from_schema(schema).map(WriteProjectSession::new)
     }
 
     /// Opens a mutation-capable candidate using host-provided text for
@@ -438,18 +425,9 @@ impl Runtime {
         project: Project,
         source_overrides: &[DataSourceTextOverride],
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_with_source_overrides(
-            project,
-            &self.catalog,
-            SessionOpenOptions::read_only(),
-            source_overrides,
-        )
-        .map(WriteProjectSession::new)
+        open_project_session_with_source_overrides(project, source_overrides)
+            .map(WriteProjectSession::new)
     }
-}
-
-fn fixed_cfd_catalog() -> CfdSourceCatalog {
-    CfdSourceCatalog::default()
 }
 
 /// Read capability for a built project.
@@ -537,6 +515,7 @@ impl BuildProjectSession {
 
 #[derive(Debug)]
 pub struct WriteProjectSession {
+    identity: Arc<()>,
     session: ProjectSession,
     revision: u64,
 }
@@ -578,9 +557,19 @@ impl SourceValidationContext {
     }
 }
 
+/// 已校验的源码事务；提交同时验证会话版本和原始磁盘内容。
+#[derive(Debug)]
+pub struct PreparedSourceUpdate {
+    identity: Arc<()>,
+    revision: u64,
+    candidate: ProjectSession,
+    file: ProjectFileUpdate,
+}
+
 impl WriteProjectSession {
-    const fn new(session: ProjectSession) -> Self {
+    fn new(session: ProjectSession) -> Self {
         Self {
+            identity: Arc::new(()),
             session,
             revision: 0,
         }
@@ -596,12 +585,107 @@ impl WriteProjectSession {
         &self.session.project
     }
 
+    /// 在当前数据代际上准备源码替换；候选只构建一次，提交时直接发布。
+    pub fn prepare_source_update(
+        &self,
+        path: &std::path::Path,
+        source: &str,
+    ) -> Result<PreparedSourceUpdate, DiagnosticSet> {
+        let path = crate::normalize_path(path);
+        let expected = std::fs::read(&path).map_err(|error| {
+            DiagnosticSet::one(Diagnostic::error(
+                "SOURCE-READ",
+                "PROJECT",
+                error.to_string(),
+            ))
+        })?;
+        let candidate = if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cft"))
+        {
+            if !self
+                .project()
+                .schema_files()?
+                .iter()
+                .any(|file| crate::normalize_path(&file.canonical_path) == path)
+            {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "SOURCE-PATH",
+                    "PROJECT",
+                    "source is not part of the project schema",
+                )));
+            }
+            let mut runtime = ProjectRuntime::new(self.project().clone());
+            runtime.refresh_with_overrides(&[SchemaTextOverride {
+                requested_module: None,
+                normalized_path: path.clone(),
+                source: source.to_string(),
+            }])?;
+            let schema = runtime.into_latest_attempt().ok_or_else(|| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "SOURCE-SCHEMA",
+                    "PROJECT",
+                    "candidate schema unavailable",
+                ))
+            })?;
+            open_project_session_from_schema(schema)?
+        } else {
+            let display_path = crate::project_path(self.project().root_dir(), &path);
+            if !self.queries().has_source_file(&display_path) {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "SOURCE-PATH",
+                    "PROJECT",
+                    "source is not part of the project data",
+                )));
+            }
+            let mut impact = crate::writes::MutationImpact::default();
+            impact.affected_files.insert(display_path);
+            crate::session_build::rebuild_project_session_from_generation(
+                &self.session,
+                &impact,
+                &[DataSourceTextOverride {
+                    normalized_path: path.clone(),
+                    source: source.to_string(),
+                    deleted: false,
+                }],
+            )?
+            .session
+        };
+        Ok(PreparedSourceUpdate {
+            identity: Arc::clone(&self.identity),
+            revision: self.revision,
+            candidate,
+            file: ProjectFileUpdate::new(path, Some(expected), source.as_bytes().to_vec()),
+        })
+    }
+
+    /// 文件冲突或代际冲突均不发布候选，也不覆盖外部编辑。
+    pub fn commit_source_update(
+        &mut self,
+        update: PreparedSourceUpdate,
+    ) -> Result<(), DiagnosticSet> {
+        if !Arc::ptr_eq(&update.identity, &self.identity) || update.revision != self.revision {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "SOURCE-CONFLICT",
+                "PROJECT",
+                "project changed while source update was prepared",
+            )));
+        }
+        let writer = crate::cfd_loader::CfdWriter::new();
+        let path = update.file.path.clone();
+        writer.add_project_file_updates(vec![update.file])?;
+        writer.publish()?;
+        self.project().source_store().invalidate(&path);
+        self.session = update.candidate;
+        self.revision += 1;
+        Ok(())
+    }
+
     /// Render one effective field value using the CFD value grammar.
     ///
     /// # Errors
     ///
-    /// Returns diagnostics when the field path does not exist or its value
-    /// cannot be represented by the CFD value grammar.
+    /// Returns diagnostics when the field path does not exist.
     pub fn render_cell_text(
         &self,
         coordinate: &RecordCoordinate,
@@ -621,7 +705,7 @@ impl WriteProjectSession {
                     contexts: Vec::new(),
                 })
             })?;
-        crate::mutation::render_cell_text_value(value)
+        Ok(coflow_core::cell_value::render_cell_value(value))
     }
 
     /// Parse CFD value text using the schema type at one field path.
@@ -715,8 +799,7 @@ impl WriteProjectSession {
             .default_collection_item_value_for_record(coordinate, path)
     }
 
-    /// Apply a batch of mutation commands using the CFD catalog owned by this
-    /// capability.
+    /// Apply a batch of mutation commands in its own staged write workspace.
     pub fn apply_mutation(&mut self, request: MutationRequest) -> MutationReport {
         self.apply_mutation_with_project_files(request, |_, _| Ok(Vec::new()))
     }

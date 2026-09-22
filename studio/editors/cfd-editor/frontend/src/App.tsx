@@ -70,7 +70,6 @@ import {
   diagnosticFilePath,
   diagnosticMatchesAnchor,
   errorMessage,
-  cloneValue,
   recordActualType,
     coordinateId,
     sameCoordinate,
@@ -93,7 +92,7 @@ import {
   type EditorMutationPort,
 } from './state/editorMutations'
 import { historyShortcutFor } from './state/editorShortcuts'
-import { projectFieldValue, projectFieldValueAtRevision } from './state/fieldProjection'
+import { useOptimisticProjection } from './hooks/useOptimisticProjection'
 import {
   recordSelection,
   rebindSelection,
@@ -149,7 +148,6 @@ import {
   graphCacheKey,
   graphViewKey,
   onToolbarKeyDown,
-  projectGraphRows,
   projectYamlPath,
   readLastProjectPath,
   rememberLastProject,
@@ -202,7 +200,7 @@ export default function App() {
     setFiles: setFileDataCache,
     setGraphs: setGraphCache,
     reset: resetProjections,
-  } = useEditorProjections()
+  } = useEditorProjections(generation)
   const projectDimensions = project?.dimensions ?? []
   const [dimensionView, setDimensionView] = useState<'table' | 'record'>('table')
   const [showHelp, setShowHelp] = useState(false)
@@ -609,7 +607,7 @@ export default function App() {
     if (!api.isTauri && !mockProjectInitializedRef.current) {
       mockProjectInitializedRef.current = true
       generation.adopt(MOCK_PROJECT)
-      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
+      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision }, MOCK_PROJECT.schema_revision)
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
       setProjectSettings(MOCK_EDITOR_SETTINGS)
@@ -628,7 +626,7 @@ export default function App() {
       if (previousSession !== null && previousSession !== bootstrap.session_id) {
         removeSessionQueries(queryClient, previousSession)
       }
-      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision }, bootstrap.schema_revision)
       setProject(prev => {
         // Fire-and-forget close of the outgoing session. We read prev here
         // (not `project` from the closure) so we always close exactly the
@@ -712,7 +710,7 @@ export default function App() {
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
       generation.adopt(MOCK_PROJECT)
-      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
+      lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision }, MOCK_PROJECT.schema_revision)
       history.clear()
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
@@ -737,7 +735,8 @@ export default function App() {
   const refreshFromBootstrap = useCallback(
     async (bootstrap: ProjectBootstrap) => {
       if (!generation.acceptSnapshot(bootstrap)) return
-      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision })
+      resetProjections()
+      lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision }, bootstrap.schema_revision)
       const dimensions = bootstrap.dimensions
       const current = router.current
       const sourceFiles = collectSourceFiles(bootstrap)
@@ -815,7 +814,7 @@ export default function App() {
     diagnostics: FlatDiagnostic[],
   ) => {
     if (!generation.acceptMutation(sessionId, revision)) return false
-    lookups.adopt({ sessionId, revision })
+    lookups.advanceData({ sessionId, revision })
     setProject(current => (
       current && current.session_id === sessionId && current.revision <= revision
         ? { ...current, revision, diagnostics }
@@ -826,9 +825,8 @@ export default function App() {
 
   const publishMutation = useMutationPublication({
     generation,
-    graphDepth: GRAPH_DEPTH,
-    graphLimit: GRAPH_LIMIT,
     graphCacheRef,
+    fileCacheRef: fileDataCacheRef,
     setFiles: setFileDataCache,
     setGraphs: setGraphCache,
     acceptRevision: commitProjectRevision,
@@ -868,17 +866,6 @@ export default function App() {
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
     }
   }, [adoptSnapshot, generation])
-
-  // React Query 负责读取去重和竞态；本地缓存继续承载乐观编辑投影。
-  useEffect(() => {
-    const records = dataQueries.fileQuery.data
-    if (records) setFileDataCache(cache => ({ ...cache, [dataQueries.file]: records }))
-  }, [dataQueries.file, dataQueries.fileQuery.data])
-
-  useEffect(() => {
-    const graph = dataQueries.graphQuery.data ?? dataQueries.mockGraph
-    if (graph) setGraphCache(cache => ({ ...cache, [dataQueries.graphKey]: graph }))
-  }, [dataQueries.graphKey, dataQueries.graphQuery.data, dataQueries.mockGraph])
 
   useEffect(() => {
     if (!project) return
@@ -1094,98 +1081,14 @@ export default function App() {
     setInspectorSelection(current => removeSelection(current, filePath, coordinate))
   }, [])
 
-  const fileRecordsForRow = useCallback(
-    (
-      filePath: string,
-      previousCoordinate: RecordCoordinate,
-      row: RecordRow,
-      revision: number,
-    ): FileRecords | undefined => {
-      const current = fileDataCacheRef.current[filePath]
-      if (!current || current.revision !== revision - 1) return undefined
-      let found = false
-      const records = current.records.map(existing => {
-        if (!sameCoordinate(existing.coordinate, previousCoordinate)) return existing
-        found = true
-        return row
-      })
-      return found ? { ...current, revision, records } : undefined
-    },
-    [],
-  )
-
-  const optimisticWriteField = useCallback((
-    filePath: string,
-    coordinate: RecordCoordinate,
-    fieldPath: FieldPathSegment[],
-    newValue: FieldValue,
-  ) => {
-    let appliedIdentity = generation.currentIdentity()
-    let oldValue: FieldValue | undefined
-    const optimisticValue = cloneValue(newValue)
-    const apply = () => {
-      const identity = generation.currentIdentity()
-      const current = fileDataCacheRef.current[filePath]
-      if (!identity || !current) return { changed: true }
-      const projection = projectFieldValueAtRevision(
-        current,
-        identity.revision,
-        coordinate,
-        fieldPath,
-        optimisticValue,
-      )
-      if (!projection) return { changed: true }
-      if (!projection.changed) {
-        if (appliedIdentity?.sessionId === identity.sessionId) appliedIdentity = identity
-        return { changed: false, row: projection.row }
-      }
-      if (!projection.row || !projection.oldValue) return { changed: true }
-      appliedIdentity = identity
-      oldValue = projection.oldValue
-      const projectedCache = { ...fileDataCacheRef.current, [filePath]: projection.records }
-      setFileDataCache(projectedCache)
-      const projectedGraphs = projectGraphRows(
-        graphCacheRef.current,
-        current.revision,
-        [projection.row],
-      )
-      setGraphCache(projectedGraphs)
-      return { changed: true, row: projection.row }
-    }
-    const initial = apply()
-    return {
-      ...initial,
-      reapply: () => { apply() },
-      rollback: () => {
-        if (
-          !appliedIdentity
-          || !oldValue
-          || !generation.isCurrent(appliedIdentity.sessionId, appliedIdentity.revision)
-        ) return
-        const latest = fileDataCacheRef.current[filePath]
-        if (!latest) return
-        const stillOptimistic = projectFieldValue(latest, coordinate, fieldPath, optimisticValue)
-        if (stillOptimistic.changed) return
-        const rollback = projectFieldValue(latest, coordinate, fieldPath, oldValue)
-        if (!rollback.changed || !rollback.row) return
-        const nextCache = { ...fileDataCacheRef.current, [filePath]: rollback.records }
-        setFileDataCache(nextCache)
-        const nextGraphs = projectGraphRows(
-          graphCacheRef.current,
-          latest.revision,
-          [rollback.row],
-        )
-        setGraphCache(nextGraphs)
-        appliedIdentity = null
-      },
-    }
-  }, [generation])
+  const { optimisticWriteField } = useOptimisticProjection({
+    generation, fileDataCacheRef, graphCacheRef, setFileDataCache, setGraphCache,
+  })
 
   const mutationPort = useMemo<EditorMutationPort>(() => ({
     applyGraphPositions,
     currentGeneration: () => api.isTauri ? generation.currentIdentity() : null,
     publish: publishMutation,
-    fileRecordsForRow,
     rebindCoordinate,
     removeCoordinate,
     recoverPublication: (request, error) => {
@@ -1208,7 +1111,7 @@ export default function App() {
       reportSessionError(sessionId, prefix, error, expectedRevision)
     },
     optimisticWriteField,
-  }), [applyGraphPositions, commitProjectRevision, fileRecordsForRow, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
+  }), [applyGraphPositions, commitProjectRevision, generation, optimisticWriteField, publishMutation, rebindCoordinate, removeCoordinate, reportSessionError])
   const mutations = useMemo(
     () => new EditorMutationController(api, mutationPort, history),
     [history, mutationPort],
@@ -1798,7 +1701,7 @@ export default function App() {
   const activeGraphKey = activeFile
     ? graphCacheKey(activeFile, GRAPH_DEPTH, GRAPH_LIMIT)
     : null
-  const activeGraph = activeGraphKey ? graphCache[activeGraphKey] : null
+  const activeGraph = activeGraphKey ? graphCache[activeGraphKey] ?? dataQueries.mockGraph : null
   const readOnly = activeSchemaFile ? false : !isEditableFile(activeFileData)
   const fileCapabilities = useMemo(() => {
     const map: Record<string, WriterCapabilities> = {}

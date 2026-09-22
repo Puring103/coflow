@@ -1,6 +1,6 @@
 export const editorQueryKeys = {
-  fileRecords: (sessionId: number, revision: number, file: string) => (
-    ['file-records', sessionId, revision, file] as const
+  fileRecords: (sessionId: number, file: string) => (
+    ['file-records', sessionId, file] as const
   ),
   dimensionRecords: (sessionId: number, revision: number, file: string) => (
     ['dimension-records', sessionId, revision, file] as const

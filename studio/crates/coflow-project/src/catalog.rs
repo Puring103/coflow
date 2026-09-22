@@ -20,14 +20,6 @@ impl std::fmt::Debug for CfdSourceCatalog {
     }
 }
 
-impl Default for CfdSourceCatalog {
-    fn default() -> Self {
-        Self {
-            writer: Arc::new(CfdWriter::new()),
-        }
-    }
-}
-
 impl CfdSourceCatalog {
     pub(crate) fn staged_writes() -> Self {
         Self {

@@ -9,12 +9,8 @@ use crate::editor::types::{
     LanguageDocumentState, LanguageFormattingResult, LanguagePosition, LanguageRange,
     LanguageTextEdit, ProjectBootstrap,
 };
-use atomicwrites::{AllowOverwrite, AtomicFile};
-use coflow_project::{
-    DataSourceTextOverride, FlatDiagnostic, Project, ProjectRuntime, Runtime, SchemaTextOverride,
-};
+use coflow_project::{DataSourceTextOverride, FlatDiagnostic, ProjectRuntime, SchemaTextOverride};
 use serde_json::{json, Value};
-use std::io::Write;
 
 fn has_extension(path: &str, expected: &str) -> bool {
     std::path::Path::new(path)
@@ -491,49 +487,29 @@ impl SessionStore {
         source: &str,
     ) -> Result<ProjectBootstrap, EditorError> {
         let path = self.source_file_path(id, file_path)?;
-        let normalized_path = coflow_project::normalize_path(&path);
-        if has_extension(file_path, "cft") {
-            let yaml_path = self.project_action_context(id)?;
-            let project = Project::open_schema_only(Some(&yaml_path))
-                .map_err(api_diagnostics_to_editor_error)?;
-            let mut schema_runtime = ProjectRuntime::new(project);
-            let schema_override = SchemaTextOverride {
-                requested_module: None,
-                normalized_path,
-                source: source.to_string(),
-            };
-            schema_runtime
-                .refresh_with_overrides(&[schema_override])
-                .map_err(api_diagnostics_to_editor_error)?;
-            let schema_session = schema_runtime
-                .into_latest_attempt()
-                .ok_or_else(|| EditorError::project("candidate schema disappeared"))?;
-            let _candidate = Runtime::new()
-                .open_write_session_from_schema(schema_session)
-                .map_err(api_diagnostics_to_editor_error)?;
-        } else {
-            let source_override = DataSourceTextOverride {
-                normalized_path,
-                source: source.to_string(),
-                deleted: false,
-            };
-            let yaml_path = self.project_action_context(id)?;
-            let project = Project::open_schema_only(Some(&yaml_path))
-                .map_err(api_diagnostics_to_editor_error)?;
-            let _candidate = Runtime::new()
-                .open_write_session_with_source_overrides(project, &[source_override])
-                .map_err(api_diagnostics_to_editor_error)?;
-        }
-
-        AtomicFile::new(&path, AllowOverwrite)
-            .write(|file| file.write_all(source.as_bytes()))
-            .map_err(|error| {
-                EditorError::write(format!("failed to write {}: {error}", path.display()))
-            })?;
         let entry = self.session(id)?;
+        // 候选在读锁下构建，提交只持有短写锁；版本校验阻止覆盖并发 mutation。
+        let candidate = entry
+            .state
+            .read()
+            .engine
+            .prepare_source_update(&path, source)
+            .map_err(api_diagnostics_to_editor_error)?;
         let mut session = entry.state.write();
-        session.commit_internal_write(&[file_path.to_string()]);
-        drop(session);
-        self.reload_session(id)
+        session
+            .engine
+            .commit_source_update(candidate)
+            .map_err(api_diagnostics_to_editor_error)?;
+        session.publish_commit(
+            &[file_path.to_string()],
+            None,
+            has_extension(file_path, "cft"),
+        )?;
+        let snapshot = super::super::build::SessionSnapshotParts {
+            file_tree: session.queries().file_tree(),
+        };
+        Ok(super::super::row_build::project_bootstrap(
+            id, &session, snapshot,
+        ))
     }
 }

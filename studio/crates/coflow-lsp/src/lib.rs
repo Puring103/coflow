@@ -64,9 +64,7 @@ pub(crate) use state::{
     field_by_type, type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
 use std::collections::VecDeque;
-use std::io::Cursor as EmbeddedCursor;
 use std::io::{self, BufReader, Write};
-#[cfg(test)]
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -301,13 +299,41 @@ struct LspServer<W> {
     should_exit: bool,
 }
 
+/// 传输只负责发送消息；嵌入式宿主直接接收值，不经过字节编码和反解析。
+trait MessageSink {
+    fn send(&mut self, value: &Value) -> Result<(), String>;
+}
+
+impl<W: Write> MessageSink for W {
+    fn send(&mut self, value: &Value) -> Result<(), String> {
+        let body = serde_json::to_vec(value)
+            .map_err(|err| format!("failed to serialize LSP message: {err}"))?;
+        write!(self, "Content-Length: {}\r\n\r\n", body.len())
+            .map_err(|err| format!("failed to write LSP header: {err}"))?;
+        self.write_all(&body)
+            .map_err(|err| format!("failed to write LSP body: {err}"))?;
+        self.flush()
+            .map_err(|err| format!("failed to flush LSP message: {err}"))
+    }
+}
+
+#[derive(Default)]
+struct EmbeddedMessages(Vec<Value>);
+
+impl MessageSink for EmbeddedMessages {
+    fn send(&mut self, value: &Value) -> Result<(), String> {
+        self.0.push(value.clone());
+        Ok(())
+    }
+}
+
 /// In-process transport for hosts that embed the Coflow language server.
 ///
 /// Requests and notifications pass through the same [`LspServer`] dispatcher
 /// used by the stdio CLI. The returned values are ordinary JSON-RPC messages,
 /// including diagnostics published while a document is synchronized.
 pub struct EmbeddedLsp {
-    server: LspServer<Vec<u8>>,
+    server: LspServer<EmbeddedMessages>,
     next_request_id: u64,
 }
 
@@ -363,9 +389,26 @@ impl EmbeddedLsp {
     #[must_use]
     pub fn new(project: Project) -> Self {
         Self {
-            server: LspServer::new(project, Vec::new()),
+            server: LspServer::new(project, EmbeddedMessages::default()),
             next_request_id: 0,
         }
+    }
+
+    /// 编辑器移交已经编译的 schema runtime，首次语言请求复用其解析和契约。
+    pub fn with_schema_runtime(project: Project, runtime: coflow_project::ProjectRuntime) -> Self {
+        let mut server = Self::new(project);
+        server.server.core.use_schema_runtime(runtime);
+        server
+    }
+
+    /// 项目事务发布后失效磁盘缓存；下一次语言查询才执行校验。
+    pub fn invalidate_files(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+        let uris = paths
+            .iter()
+            .map(|path| Self::file_uri(path))
+            .collect::<Vec<_>>();
+        self.server.core.apply_watched_files(&uris)?;
+        Ok(())
     }
 
     #[must_use]
@@ -426,16 +469,7 @@ impl EmbeddedLsp {
     }
 
     fn take_messages(&mut self) -> Result<Vec<Value>, String> {
-        let bytes = std::mem::take(&mut self.server.writer);
-        let mut reader = EmbeddedCursor::new(bytes);
-        let mut messages = Vec::new();
-        while let Some(body) = read_message(&mut reader)? {
-            messages.push(
-                serde_json::from_slice(&body)
-                    .map_err(|error| format!("failed to parse embedded LSP response: {error}"))?,
-            );
-        }
-        Ok(messages)
+        Ok(std::mem::take(&mut self.server.writer.0))
     }
 }
 
@@ -469,7 +503,7 @@ fn cfd_definition(document: &validation::CfdRequestDocument<'_>, offset: usize) 
     )
 }
 
-impl<W: Write> LspServer<W> {
+impl<W: MessageSink> LspServer<W> {
     fn new(project: Project, writer: W) -> Self {
         Self {
             core: LspValidationCore::new(project),
@@ -849,16 +883,7 @@ impl<W: Write> LspServer<W> {
     }
 
     fn write_json(&mut self, value: &Value) -> Result<(), String> {
-        let body = serde_json::to_vec(value)
-            .map_err(|err| format!("failed to serialize LSP message: {err}"))?;
-        write!(self.writer, "Content-Length: {}\r\n\r\n", body.len())
-            .map_err(|err| format!("failed to write LSP header: {err}"))?;
-        self.writer
-            .write_all(&body)
-            .map_err(|err| format!("failed to write LSP body: {err}"))?;
-        self.writer
-            .flush()
-            .map_err(|err| format!("failed to flush LSP message: {err}"))
+        self.writer.send(value)
     }
 }
 

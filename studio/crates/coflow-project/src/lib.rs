@@ -40,15 +40,13 @@ mod search;
 mod session;
 mod session_build;
 mod source_resolution;
+mod source_snapshot;
+pub use source_snapshot::{CfdSourceSnapshot, CfdSourceStore};
 mod statistics;
 mod write_rules;
 mod writes;
 
 pub use api::*;
-pub use cfd_loader::{
-    load_cfd_model, parse_cfd_input_records, CfdTextDiagnostic, CfdTextDiagnostics,
-    CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
-};
 pub(crate) use coflow_core as data_model;
 pub use coflow_core::serde_i64;
 pub use coflow_core::{
@@ -72,7 +70,7 @@ pub use project::*;
 pub use coflow_core::schema::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
-    CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
+    apply_collection_edit, CollectionEdit, CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,
     DefaultMaterialization, DimensionValueCoordinate, DimensionValueExpectation, MutationAppliedOp,
     MutationFailedOp, MutationFields, MutationOp, MutationReport, MutationRequest, MutationValue,
     ProjectFileUpdate,
@@ -85,7 +83,7 @@ pub use records::{
     RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
-    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
+    BuildProjectSession, PreparedSourceUpdate, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
 };
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,

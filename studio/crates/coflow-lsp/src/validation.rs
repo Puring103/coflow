@@ -34,7 +34,7 @@ pub(crate) struct LspValidationCore {
 #[derive(Debug, Clone)]
 pub(crate) struct OpenDocument {
     pub(crate) uri: String,
-    pub(crate) text: String,
+    pub(crate) text: Arc<str>,
     pub(crate) version: Option<i64>,
 }
 
@@ -74,6 +74,10 @@ impl LspValidationCore {
         }
     }
 
+    pub(crate) fn use_schema_runtime(&mut self, runtime: ProjectRuntime) {
+        self.schema_runtime = Arc::new(Mutex::new(runtime));
+    }
+
     #[cfg(test)]
     pub(crate) const fn open_documents(&self) -> &BTreeMap<PathBuf, OpenDocument> {
         &self.open_documents
@@ -98,8 +102,14 @@ impl LspValidationCore {
         let Some(path) = path_from_file_uri(&uri) else {
             return Ok(false);
         };
-        self.open_documents
-            .insert(normalize_path(&path), OpenDocument { uri, text, version });
+        self.open_documents.insert(
+            normalize_path(&path),
+            OpenDocument {
+                uri,
+                text: text.into(),
+                version,
+            },
+        );
         self.advance_revision()?;
         Ok(true)
     }
@@ -123,12 +133,16 @@ impl LspValidationCore {
             .entry(normalized)
             .and_modify(|document| {
                 document.uri.clone_from(&uri);
-                document.text.clone_from(&text);
+                document.text = Arc::from(text.as_str());
                 if version.is_some() {
                     document.version = version;
                 }
             })
-            .or_insert(OpenDocument { uri, text, version });
+            .or_insert(OpenDocument {
+                uri,
+                text: text.into(),
+                version,
+            });
         self.advance_revision()?;
         Ok(true)
     }
@@ -140,11 +154,14 @@ impl LspValidationCore {
         if self.open_documents.remove(&normalize_path(&path)).is_none() {
             return Ok(false);
         }
+        // 关闭覆盖后重新读取磁盘，保存与文件监听事件的先后顺序不影响基线。
+        self.project.source_store().invalidate(&path);
         self.advance_revision()?;
         Ok(true)
     }
 
     pub(crate) fn mark_project_changed(&mut self) -> Result<(), String> {
+        self.project.source_store().clear();
         self.advance_revision()
     }
 
@@ -254,9 +271,9 @@ impl LspValidationCore {
     pub(crate) fn request_document(&self, uri: &str) -> LspRequestDocument<'_> {
         if let Some(document) = self.cfd_document_by_uri(uri) {
             return LspRequestDocument::Cfd(CfdRequestDocument {
-                source: &document.source,
-                ast: &document.ast,
-                syntax_valid: document.syntax_valid,
+                source: &document.snapshot.text,
+                ast: &document.snapshot.syntax,
+                syntax_valid: document.snapshot.errors.is_empty(),
                 schema: self.schema(),
                 build: self.build(),
             });
@@ -288,6 +305,7 @@ impl LspValidationCore {
             let Some(path) = path_from_file_uri(uri).map(|path| normalize_path(&path)) else {
                 continue;
             };
+            self.project.source_store().invalidate(&path);
             if !self.project.tracks_path(&path) {
                 continue;
             }

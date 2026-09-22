@@ -19,8 +19,11 @@ export function fetchFileRecords(
   filePath: string,
   load: () => Promise<FileRecords>,
 ): Promise<FileRecords> {
+  const key = editorQueryKeys.fileRecords(sessionId, filePath)
+  const cached = client.getQueryData<FileRecords>(key)
+  if (cached && cached.revision !== revision) client.removeQueries({ queryKey: key, exact: true })
   return client.fetchQuery({
-    queryKey: editorQueryKeys.fileRecords(sessionId, revision, filePath),
+    queryKey: editorQueryKeys.fileRecords(sessionId, filePath),
     queryFn: async () => {
       return validateQueryRevision(await load(), revision)
     },

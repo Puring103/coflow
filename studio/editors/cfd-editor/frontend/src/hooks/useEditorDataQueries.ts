@@ -33,7 +33,7 @@ export function useEditorDataQueries(
   }
 
   const fileQuery = useQuery({
-    queryKey: editorQueryKeys.fileRecords(sessionId, revision, file),
+    queryKey: editorQueryKeys.fileRecords(sessionId, file),
     enabled: isDataFile && api.isTauri,
     queryFn: async () => validateRevision(await api.getFileRecords(sessionId, file)),
   })

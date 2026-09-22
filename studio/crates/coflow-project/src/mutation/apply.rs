@@ -186,6 +186,14 @@ where
         }
         return report_without_publish(session, false, failed);
     }
+    // 发布成功后统一失效共享磁盘基线，CLI、编辑器和 LSP 使用相同规则。
+    for file in &written_files {
+        session
+            .project
+            .source_store()
+            .invalidate(&session.project.root_dir().join(file));
+    }
+    let changed_records = changed_records(session, &new_session, &affected_files);
     *session = new_session;
     staged.sort_by_key(|applied| applied.index);
     failed.sort_by_key(|failure| failure.index);
@@ -194,6 +202,7 @@ where
             .iter()
             .all(|diagnostic| diagnostic.severity != "error");
     MutationReport {
+        changed_records,
         write_ok,
         check_ok,
         generation_changed: true,
@@ -231,6 +240,7 @@ fn stage_without_generation(
             .iter()
             .all(|diagnostic| diagnostic.severity != "error");
     MutationReport {
+        changed_records: Default::default(),
         write_ok: write_ok && failed.is_empty(),
         check_ok,
         generation_changed: false,
@@ -281,6 +291,7 @@ fn report_without_publish(
 ) -> MutationReport {
     failed.sort_by_key(|failure| failure.index);
     MutationReport {
+        changed_records: Default::default(),
         write_ok,
         check_ok: false,
         generation_changed: false,
@@ -294,4 +305,95 @@ fn report_without_publish(
 
 fn project_display_path(session: &ProjectSession, path: &std::path::Path) -> String {
     crate::project_path(session.project.root_dir(), path)
+}
+
+/// 比较完整发布结果，因此引用、维度和诊断变化不局限于写入目标文件。
+fn changed_records(
+    previous: &ProjectSession,
+    next: &ProjectSession,
+    affected: &[String],
+) -> std::collections::BTreeMap<String, Vec<crate::RecordCoordinate>> {
+    let before = crate::ProjectQueries::new(previous, 0);
+    let after = crate::ProjectQueries::new(next, 0);
+    let mut changes = affected
+        .iter()
+        .cloned()
+        .map(|file| (file, BTreeSet::new()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    // 同一坐标只比较一次；移动记录同时使旧文件和新文件进入变更集。
+    let mut compared = BTreeSet::new();
+    for queries in [before, after] {
+        for file in queries.source_files() {
+            for view in queries.record_views_in_file(file) {
+                if !compared.insert(view.coordinate.clone()) {
+                    continue;
+                }
+                let old = before.record_view(&view.coordinate.actual_type, &view.coordinate.key);
+                let new = after.record_view(&view.coordinate.actual_type, &view.coordinate.key);
+                let unchanged = old.as_ref().zip(new.as_ref()).is_some_and(|(old, new)| {
+                    old.display_path == new.display_path
+                        && old.record.object == new.record.object
+                        && old.record.dimension_fields == new.record.dimension_fields
+                });
+                if !unchanged {
+                    for changed in old.iter().chain(new.iter()) {
+                        changes
+                            .entry(changed.display_path.to_string())
+                            .or_default()
+                            .insert(view.coordinate.clone());
+                    }
+                }
+            }
+        }
+    }
+    // 仅更新诊断实际变化的行，同时包含已消失的诊断以清除旧标记。
+    let old_diagnostics = record_diagnostics(before);
+    let new_diagnostics = record_diagnostics(after);
+    let keys = old_diagnostics
+        .keys()
+        .chain(new_diagnostics.keys())
+        .collect::<BTreeSet<_>>();
+    for key in keys {
+        if old_diagnostics.get(key) != new_diagnostics.get(key) {
+            changes
+                .entry(key.0.clone())
+                .or_default()
+                .insert(key.1.clone());
+        }
+    }
+    changes
+        .into_iter()
+        .map(|(file, records)| (file, records.into_iter().collect()))
+        .collect()
+}
+
+fn record_diagnostics(
+    queries: crate::ProjectQueries<'_>,
+) -> std::collections::BTreeMap<(String, crate::RecordCoordinate), Vec<crate::FlatDiagnostic>> {
+    let mut records = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for diagnostic in queries.diagnostics().flat_diagnostics() {
+        let (file_path, coordinate) = match &diagnostic.target {
+            crate::DiagnosticTarget::Record {
+                file_path,
+                coordinate,
+            }
+            | crate::DiagnosticTarget::TableField {
+                file_path,
+                coordinate,
+                ..
+            } => (file_path, coordinate),
+            _ => continue,
+        };
+        let file = queries
+            .file_for_record(&coordinate.actual_type, &coordinate.key)
+            .unwrap_or(file_path);
+        records
+            .entry((file.to_string(), coordinate.clone()))
+            .or_default()
+            .push(diagnostic);
+    }
+    for diagnostics in records.values_mut() {
+        diagnostics.sort_by(|a, b| a.id.cmp(&b.id));
+    }
+    records
 }

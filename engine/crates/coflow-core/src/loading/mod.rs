@@ -4,9 +4,9 @@ mod diagnostics;
 mod lower;
 use crate::schema::CftSchema;
 use crate::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use coflow_language::cfd::{parse_cfd_with_options, CfdAst, CfdParseOptions};
 pub use diagnostics::*;
 pub use lower::ParsedLoadedRecordDraft;
-use coflow_language::cfd::{parse_cfd_with_options, CfdAst, CfdParseOptions};
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Debug, Clone)]
@@ -50,10 +50,20 @@ pub fn analyze_records(
     options: CfdParseOptions,
 ) -> (CfdAst, Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
     let (syntax, errors) = parse_cfd_with_options(source, options);
-    let mut diagnostics = lower::syntax_diagnostics(errors).diagnostics;
-    let (records, errors) = lower::lower_records_partial(schema, &syntax);
-    diagnostics.extend(errors);
+    let (records, diagnostics) = lower_syntax(schema, &syntax, &errors);
     (syntax, records, diagnostics)
+}
+
+/// 对已有语法快照进行类型转换，宿主不需要为了数据构建重新解析文本。
+pub fn lower_syntax(
+    schema: &CftSchema,
+    syntax: &CfdAst,
+    errors: &[coflow_language::cfd::CfdSyntaxDiagnostic],
+) -> (Vec<ParsedLoadedRecordDraft>, Vec<CfdTextDiagnostic>) {
+    let mut diagnostics = lower::syntax_diagnostics(errors.to_vec()).diagnostics;
+    let (records, errors) = lower::lower_records_partial(schema, syntax);
+    diagnostics.extend(errors);
+    (records, diagnostics)
 }
 
 pub fn analyze(schema: &CftSchema, input: SourceInput) -> (SourceAnalysis, Vec<LoadedRecordDraft>) {

@@ -1,3 +1,5 @@
+import type { EditorChangeSet } from '../bindings/EditorChangeSet'
+import { applyFileRecordsPatch } from './fileChanges'
 import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
@@ -81,16 +83,17 @@ export class ProjectGenerationController {
 }
 
 export interface MutationPublicationRequest {
+  changes: EditorChangeSet
   sessionId: number
   revision: number
   diagnostics: FlatDiagnostic[]
   affectedFiles: readonly string[]
   fallbackFile: string
-  knownRecords?: FileRecords
   topologyChanged?: boolean
 }
 
 export interface MutationPublicationPort {
+  cachedFileRecords?: (file: string) => FileRecords | undefined
   acceptRevision: (
     sessionId: number,
     revision: number,
@@ -120,14 +123,21 @@ export async function publishMutationGeneration(
     diagnostics,
     affectedFiles,
     fallbackFile,
-    knownRecords,
     topologyChanged = true,
   } = request
-  const files = Array.from(new Set([...affectedFiles, fallbackFile]))
+  if (request.changes.revision !== revision
+    || request.changes.base_revision > revision) return superseded()
+  const patches = new Map(request.changes.files.map(patch => [patch.data.file_path, patch]))
+  const files = Array.from(new Set([...affectedFiles, ...patches.keys(), fallbackFile]))
   const refreshedFiles = await Promise.all(files.map(async file => {
-    const records = knownRecords?.file_path === file && knownRecords.revision === revision
-      ? knownRecords
-      : await port.getFileRecords(sessionId, file)
+    const patch = patches.get(file)
+    const previous = port.cachedFileRecords?.(file)
+    const patched = patch
+      ? applyFileRecordsPatch(previous, patch, request.changes.base_revision)
+      : previous?.revision === request.changes.base_revision
+        ? (previous.revision === revision ? previous : { ...previous, revision })
+        : undefined
+    const records = patched ?? await port.getFileRecords(sessionId, file)
     return [file, records] as const
   }))
   if (

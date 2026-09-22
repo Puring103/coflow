@@ -40,6 +40,7 @@ pub struct DataSourceTextOverride {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SourceDataCache {
     batches: Vec<CachedSourceBatch>,
+    store: Arc<crate::CfdSourceStore>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +48,7 @@ struct CachedSourceBatch {
     entry: CfdSourceEntry,
     source: Arc<str>,
     records: Arc<[LoadedRecordDraft]>,
+    diagnostics: DiagnosticSet,
 }
 
 impl SourceDataCache {
@@ -72,12 +74,6 @@ pub(crate) struct LoadProjectDataOptions {
 pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) load: LoadProjectDataOptions,
     pub(crate) source_overrides: &'a [DataSourceTextOverride],
-}
-
-struct LoadState<'a> {
-    indexes: &'a mut SessionIndexBuilder,
-    records: Vec<LoadedRecordDraft>,
-    source_data: SourceDataCache,
 }
 
 struct PartialModelBuild {
@@ -106,10 +102,9 @@ pub(crate) fn load_project_data(
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
-    let mut state = LoadState {
-        indexes,
-        records: Vec::new(),
-        source_data: SourceDataCache::default(),
+    let mut source_data = SourceDataCache {
+        store: Arc::clone(project.source_store()),
+        ..SourceDataCache::default()
     };
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project);
@@ -129,18 +124,218 @@ pub(crate) fn load_project_data(
         diagnostics.extend(load_resolved_sources(
             project,
             schema,
-            &mut state,
+            &mut source_data,
             resolved_sources,
             source_overrides,
         ));
     }
 
-    let draft_record_count = state.records.len();
-    let partial = build_partial_model(schema, &state.records)?;
+    build_output_from_cache(
+        schema,
+        indexes,
+        source_data,
+        options,
+        statistics,
+        diagnostics,
+    )
+}
+
+// 缓存重载需要统一维护来源批次、诊断与统计，保持单一事务流程便于验证状态一致性。
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(crate) fn reload_project_data_from_cache(
+    schema: &CftSchema,
+    indexes: &mut SessionIndexBuilder,
+    previous: &SourceDataCache,
+    reload_paths: &BTreeSet<String>,
+    options: ReloadProjectDataOptions<'_>,
+) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut statistics = ProjectExecutionStats::default();
+    let mut source_data = SourceDataCache {
+        store: Arc::clone(&previous.store),
+        batches: previous
+            .batches
+            .iter()
+            .filter(|batch| {
+                !is_deleted_override(batch.entry.source.location.path(), options.source_overrides)
+            })
+            .cloned()
+            .collect(),
+    };
+    let reload_indexes = source_data
+        .batches
+        .iter()
+        .enumerate()
+        .filter_map(|(index, batch)| {
+            reload_paths
+                .contains(&batch.entry.display_path)
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    statistics.sources_reloaded = reload_indexes.len();
+
+    for index in reload_indexes {
+        let batch = &mut source_data.batches[index];
+        match CfdLoader::load_cached(
+            CfdLoadContext {
+                schema,
+                source_text: source_override_text(&batch.entry.source, options.source_overrides),
+            },
+            &batch.entry.source,
+            &source_data.store,
+        ) {
+            Ok(loaded) => {
+                batch.diagnostics = loaded.diagnostics;
+                batch.source = loaded.source;
+                batch.records = loaded.records.into();
+            }
+            Err(err) => {
+                batch.records = Arc::default();
+                batch.diagnostics = err;
+            }
+        }
+    }
+
+    build_output_from_cache(
+        schema,
+        indexes,
+        source_data,
+        options.load,
+        statistics,
+        DiagnosticSet::empty(),
+    )
+}
+
+fn load_resolved_sources(
+    project: &Project,
+    schema: &CftSchema,
+    cache: &mut SourceDataCache,
+    resolved_sources: Vec<ResolvedLoaderSource>,
+    source_overrides: &[DataSourceTextOverride],
+) -> DiagnosticSet {
+    let diagnostics = DiagnosticSet::empty();
+    for resolved in resolved_sources {
+        let spec = resolved.source;
+        if is_deleted_override(spec.location.path(), source_overrides) {
+            continue;
+        }
+        let display_path = display_path_for(project, &spec);
+        let entry = CfdSourceEntry {
+            source: spec.clone(),
+            display_path,
+        };
+        match CfdLoader::load_cached(
+            CfdLoadContext {
+                schema,
+                source_text: source_override_text(&spec, source_overrides),
+            },
+            &spec,
+            &cache.store,
+        ) {
+            Ok(batch) => cache.batches.push(CachedSourceBatch {
+                entry,
+                source: batch.source,
+                records: batch.records.into(),
+                diagnostics: batch.diagnostics,
+            }),
+            Err(err) => cache.batches.push(CachedSourceBatch {
+                entry,
+                source: Arc::from(""),
+                records: Arc::default(),
+                diagnostics: err,
+            }),
+        }
+    }
+    diagnostics
+}
+
+fn source_override_text<'a>(
+    source: &CfdSource,
+    overrides: &'a [DataSourceTextOverride],
+) -> Option<&'a str> {
+    let source_path = crate::project::normalize_path(source.location.path());
+    overrides
+        .iter()
+        .rev()
+        .find(|source_override| source_override.normalized_path == source_path)
+        .map(|source_override| source_override.source.as_str())
+}
+
+fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverride]) -> bool {
+    let normalized_path = crate::normalize_path(path);
+    overrides.iter().rev().any(|source_override| {
+        source_override.normalized_path == normalized_path && source_override.deleted
+    })
+}
+
+fn push_loaded_records<'a>(
+    records: &mut Vec<&'a LoadedRecordDraft>,
+    records_index: &mut RecordIndexBuilder,
+    source_id: SourceId,
+    display_path: &str,
+    loaded_records: &'a [LoadedRecordDraft],
+) {
+    for record in loaded_records {
+        records_index.push(PendingRecordRef {
+            actual_type: record.actual_type.clone(),
+            key: record.key.clone(),
+            origin: record.origin.clone(),
+            source_id,
+            display_path: display_path.to_string(),
+        });
+        records.push(record);
+    }
+}
+
+impl SourceDataCache {
+    /// 返回与给定规范化路径匹配的批次 display path。
+    ///
+    /// 用于按“宿主覆盖了哪些文件”精确选择需要重载的批次，其余文件复用缓存。
+    pub(crate) fn display_paths_for_paths(
+        &self,
+        normalized_paths: &BTreeSet<PathBuf>,
+    ) -> BTreeSet<String> {
+        self.batches
+            .iter()
+            .filter(|batch| {
+                normalized_paths.contains(&crate::project::normalize_path(
+                    batch.entry.source.location.path(),
+                ))
+            })
+            .map(|batch| batch.entry.display_path.clone())
+            .collect()
+    }
+}
+
+fn build_output_from_cache(
+    schema: &CftSchema,
+    indexes: &mut SessionIndexBuilder,
+    source_data: SourceDataCache,
+    options: LoadProjectDataOptions,
+    mut statistics: ProjectExecutionStats,
+    mut source_diagnostics: DiagnosticSet,
+) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    let mut records = Vec::new();
+    for batch in &source_data.batches {
+        source_diagnostics.extend(batch.diagnostics.clone());
+        let source_id = SourceId(indexes.sources.entries.len());
+        indexes.sources.push(batch.entry.clone());
+        indexes
+            .files
+            .add_source_file(batch.entry.display_path.clone(), source_id);
+        push_loaded_records(
+            &mut records,
+            &mut indexes.records,
+            source_id,
+            &batch.entry.display_path,
+            &batch.records,
+        );
+    }
+    let draft_record_count = records.len();
+    let partial = build_partial_model(schema, &records)?;
     let model = partial.model;
     let origins = partial.accepted_origins;
     let mut model_logical_locations = partial.logical_locations;
-    let mut model_diagnostics = diagnostics;
+    let mut model_diagnostics = source_diagnostics;
     let model_offset = model_diagnostics.diagnostics.len();
     model_diagnostics.extend(partial.diagnostics);
     model_logical_locations = model_logical_locations
@@ -169,249 +364,6 @@ pub(crate) fn load_project_data(
         model,
         diagnostics: model_diagnostics,
         logical_locations: model_logical_locations,
-        source_data: state.source_data,
-        statistics,
-    })
-}
-
-// 缓存重载需要统一维护来源批次、诊断与统计，保持单一事务流程便于验证状态一致性。
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-pub(crate) fn reload_project_data_from_cache(
-    schema: &CftSchema,
-    indexes: &mut SessionIndexBuilder,
-    previous: &SourceDataCache,
-    reload_paths: &BTreeSet<String>,
-    options: ReloadProjectDataOptions<'_>,
-) -> Result<ProjectLoadOutput, LoadDiagnostics> {
-    let mut statistics = ProjectExecutionStats::default();
-    let mut source_data = SourceDataCache {
-        batches: previous
-            .batches
-            .iter()
-            .filter(|batch| {
-                !is_deleted_override(batch.entry.source.location.path(), options.source_overrides)
-            })
-            .cloned()
-            .collect(),
-    };
-    let mut diagnostics = DiagnosticSet::empty();
-    let reload_indexes = source_data
-        .batches
-        .iter()
-        .enumerate()
-        .filter_map(|(index, batch)| {
-            (reload_paths.contains(&batch.entry.display_path)
-                || !previous.contains_source(&batch.entry))
-            .then_some(index)
-        })
-        .collect::<Vec<_>>();
-    statistics.sources_reloaded = reload_indexes.len();
-
-    for index in reload_indexes {
-        let batch = &mut source_data.batches[index];
-        match CfdLoader::load_partial(
-            CfdLoadContext {
-                schema,
-                source_text: source_override_text(&batch.entry.source, options.source_overrides),
-            },
-            &batch.entry.source,
-        ) {
-            Ok(loaded) => {
-                diagnostics.extend(loaded.diagnostics);
-                batch.source = loaded.source;
-                batch.records = loaded.records.into();
-            }
-            Err(err) => {
-                batch.records = Arc::default();
-                diagnostics.extend(err);
-            }
-        }
-    }
-
-    build_output_from_cache(
-        schema,
-        indexes,
-        source_data,
-        &options,
-        statistics,
-        diagnostics,
-    )
-}
-
-fn load_resolved_sources(
-    project: &Project,
-    schema: &CftSchema,
-    state: &mut LoadState<'_>,
-    resolved_sources: Vec<ResolvedLoaderSource>,
-    source_overrides: &[DataSourceTextOverride],
-) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    for resolved in resolved_sources {
-        let spec = resolved.source;
-        if is_deleted_override(spec.location.path(), source_overrides) {
-            continue;
-        }
-        let display_path = display_path_for(project, &spec);
-        let source_id = SourceId(state.indexes.sources.entries.len());
-        state
-            .indexes
-            .files
-            .add_source_file(display_path.clone(), source_id);
-        let entry = CfdSourceEntry {
-            source: spec.clone(),
-            display_path: display_path.clone(),
-        };
-        state.indexes.sources.push(entry.clone());
-        match CfdLoader::load_partial(
-            CfdLoadContext {
-                schema,
-                source_text: source_override_text(&spec, source_overrides),
-            },
-            &spec,
-        ) {
-            Ok(batch) => {
-                diagnostics.extend(batch.diagnostics);
-                let cached_records: Arc<[LoadedRecordDraft]> = batch.records.into();
-                push_loaded_records(
-                    &mut state.records,
-                    &mut state.indexes.records,
-                    source_id,
-                    &display_path,
-                    &cached_records,
-                );
-                state.source_data.batches.push(CachedSourceBatch {
-                    entry,
-                    source: batch.source,
-                    records: cached_records,
-                });
-            }
-            Err(err) => diagnostics.extend(err),
-        }
-    }
-    diagnostics
-}
-
-fn source_override_text<'a>(
-    source: &CfdSource,
-    overrides: &'a [DataSourceTextOverride],
-) -> Option<&'a str> {
-    let source_path = crate::project::normalize_path(source.location.path());
-    overrides
-        .iter()
-        .rev()
-        .find(|source_override| source_override.normalized_path == source_path)
-        .map(|source_override| source_override.source.as_str())
-}
-
-fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverride]) -> bool {
-    let normalized_path = crate::normalize_path(path);
-    overrides.iter().rev().any(|source_override| {
-        source_override.normalized_path == normalized_path && source_override.deleted
-    })
-}
-
-fn push_loaded_records(
-    records: &mut Vec<LoadedRecordDraft>,
-    records_index: &mut RecordIndexBuilder,
-    source_id: SourceId,
-    display_path: &str,
-    loaded_records: &[LoadedRecordDraft],
-) {
-    for record in loaded_records {
-        records_index.push(PendingRecordRef {
-            actual_type: record.actual_type.clone(),
-            key: record.key.clone(),
-            origin: record.origin.clone(),
-            source_id,
-            display_path: display_path.to_string(),
-        });
-        records.push(record.clone());
-    }
-}
-
-impl SourceDataCache {
-    fn contains_source(&self, entry: &CfdSourceEntry) -> bool {
-        self.batches
-            .iter()
-            .any(|batch| batch.entry.source.location == entry.source.location)
-    }
-
-    /// 返回与给定规范化路径匹配的批次 display path。
-    ///
-    /// 用于按“宿主覆盖了哪些文件”精确选择需要重载的批次，其余文件复用缓存。
-    pub(crate) fn display_paths_for_paths(
-        &self,
-        normalized_paths: &BTreeSet<PathBuf>,
-    ) -> BTreeSet<String> {
-        self.batches
-            .iter()
-            .filter(|batch| {
-                normalized_paths.contains(&crate::project::normalize_path(
-                    batch.entry.source.location.path(),
-                ))
-            })
-            .map(|batch| batch.entry.display_path.clone())
-            .collect()
-    }
-}
-
-fn build_output_from_cache(
-    schema: &CftSchema,
-    indexes: &mut SessionIndexBuilder,
-    source_data: SourceDataCache,
-    options: &ReloadProjectDataOptions<'_>,
-    mut statistics: ProjectExecutionStats,
-    source_diagnostics: DiagnosticSet,
-) -> Result<ProjectLoadOutput, LoadDiagnostics> {
-    let mut records = Vec::new();
-    for batch in &source_data.batches {
-        let source_id = SourceId(indexes.sources.entries.len());
-        indexes.sources.push(batch.entry.clone());
-        indexes
-            .files
-            .add_source_file(batch.entry.display_path.clone(), source_id);
-        push_loaded_records(
-            &mut records,
-            &mut indexes.records,
-            source_id,
-            &batch.entry.display_path,
-            &batch.records,
-        );
-    }
-    let draft_record_count = records.len();
-    let partial = build_partial_model(schema, &records)?;
-    let model = partial.model;
-    let origins = partial.accepted_origins;
-    let mut model_logical_locations = partial.logical_locations;
-    let mut model_diagnostics = source_diagnostics;
-    let model_offset = model_diagnostics.diagnostics.len();
-    model_diagnostics.extend(partial.diagnostics);
-    model_logical_locations = model_logical_locations
-        .into_iter()
-        .map(|(index, location)| (model_offset + index, location))
-        .collect();
-    let check = if options.load.run_checks {
-        run_project_checks(schema, &model, &origins, &mut statistics)
-    } else {
-        ProjectCheckOutput {
-            diagnostics: DiagnosticSet::empty(),
-            logical_locations: BTreeMap::new(),
-            statistics: coflow_core::check::CheckExecutionStats::default(),
-        }
-    };
-    record_model_work(&mut statistics, draft_record_count, &model, &check);
-    let check_offset = model_diagnostics.diagnostics.len();
-    model_diagnostics.extend(check.diagnostics);
-    model_logical_locations.extend(
-        check
-            .logical_locations
-            .into_iter()
-            .map(|(index, location)| (check_offset + index, location)),
-    );
-    Ok(ProjectLoadOutput {
-        model,
-        diagnostics: model_diagnostics,
-        logical_locations: model_logical_locations,
         source_data,
         statistics,
     })
@@ -419,10 +371,9 @@ fn build_output_from_cache(
 
 fn build_partial_model(
     schema: &CftSchema,
-    records: &[LoadedRecordDraft],
+    records: &[&LoadedRecordDraft],
 ) -> Result<PartialModelBuild, LoadDiagnostics> {
-    // 只保留候选下标，成功路径下每条草稿仅克隆一次送入构建器；失败重试时
-    // 按诊断剔除候选，不必先整体克隆一遍记录。
+    // 候选只保存引用和下标；重试时也直接借用源缓存，不复制草稿值树。
     let mut candidates = (0..records.len()).collect::<Vec<usize>>();
     let mut diagnostics = DiagnosticSet::empty();
     let mut logical_locations = BTreeMap::new();
@@ -441,7 +392,7 @@ fn build_partial_model(
         let mut builder = CfdDataModel::builder(schema)
             .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
         for &index in &candidates {
-            builder.add_loaded_record(records[index].clone());
+            builder.add_loaded_record_ref(records[index]);
         }
         match builder.build_partial() {
             Ok(output) => {
@@ -513,15 +464,6 @@ fn build_partial_model(
             }
         }
     }
-}
-
-fn run_project_checks(
-    schema: &CftSchema,
-    model: &CfdDataModel,
-    origins: &[RecordOrigin],
-    _statistics: &mut ProjectExecutionStats,
-) -> ProjectCheckOutput {
-    run_full_project_checks(schema, model, origins)
 }
 
 fn record_model_work(

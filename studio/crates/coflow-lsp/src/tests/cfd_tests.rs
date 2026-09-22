@@ -10,6 +10,29 @@ use super::*;
 use coflow_language::cfd::parse_cfd;
 
 #[test]
+fn closing_overlay_observes_disk_save_without_a_watcher_event() {
+    let (_cleanup, project) = test_project("lsp-close-disk-baseline", "table Item { value: int; }");
+    let path = project.root_dir().join("items.cfd");
+    std::fs::write(&path, "a: Item { value: 1 }").expect("initial disk");
+    let store = std::sync::Arc::clone(project.source_store());
+    store.read(&path).expect("cache disk baseline");
+    let uri = path_to_file_uri(&path);
+    let mut core = LspValidationCore::new(project);
+    core.apply_open_document(uri.clone(), "a: Item { value: 2 }".into(), Some(1))
+        .expect("open overlay");
+    std::fs::write(&path, "a: Item { value: 3 }").expect("external save");
+    core.apply_close_document(&uri).expect("close overlay");
+    assert_eq!(
+        store
+            .cached_or_read(&path)
+            .expect("fresh disk")
+            .text
+            .as_ref(),
+        "a: Item { value: 3 }"
+    );
+}
+
+#[test]
 fn cfd_definition_request_returns_schema_field_location() {
     let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
@@ -891,20 +914,31 @@ fn function_builder_completion_exposes_scope_binding_and_snippet() {
     let source = "fn() -> [int] { build [int] as items { items.append(1); } }";
     let result = cfd::function_document(&json!({ "source": source }));
     let items = result["completions"].as_array().unwrap();
-    assert!(items.iter().any(|item| item["label"] == "build" && item["insertTextFormat"] == 2));
-    assert!(items.iter().any(|item| item["label"] == "items" && item["detail"] == "local variable"));
+    assert!(items
+        .iter()
+        .any(|item| item["label"] == "build" && item["insertTextFormat"] == 2));
+    assert!(items
+        .iter()
+        .any(|item| item["label"] == "items" && item["detail"] == "local variable"));
     assert!(result["diagnostics"].as_array().unwrap().is_empty());
 }
 
 #[test]
 fn function_cursor_completion_excludes_closed_builders_and_future_locals() {
     let source = "fn() -> int { var values = build [int] as items { items.append(1); }; var later = 2; later }";
-    let labels = |offset| cfd::function_source_completion_items_at(source, offset, None).unwrap().into_iter()
-        .filter_map(|item| item["label"].as_str().map(str::to_owned)).collect::<Vec<_>>();
+    let labels = |offset| {
+        cfd::function_source_completion_items_at(source, offset, None)
+            .unwrap()
+            .into_iter()
+            .filter_map(|item| item["label"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>()
+    };
     let inside = labels(source.find("items.append").unwrap());
     assert!(inside.iter().any(|label| label == "items"));
     assert!(!inside.iter().any(|label| label == "later"));
     let after = labels(source.find("var later").unwrap());
     assert!(after.iter().any(|label| label == "values"));
-    assert!(!after.iter().any(|label| label == "items" || label == "later"));
+    assert!(!after
+        .iter()
+        .any(|label| label == "items" || label == "later"));
 }

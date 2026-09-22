@@ -20,82 +20,13 @@ use crate::api::{
 };
 
 mod diagnostics;
-use coflow_core::loading::{analyze_records, parse_records, ParsedLoadedRecordDraft};
+use coflow_core::loading::lower_syntax;
 mod writer;
-use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
-use coflow_core::schema::CftSchema;
-use coflow_language::cfd::CfdParseOptions;
-use diagnostics::{cfd_error_to_diagnostics, text_span};
-pub use diagnostics::{
-    CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
-};
-use std::borrow::Cow;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::data_model::RecordOrigin;
+use diagnostics::{cfd_text_diagnostics, text_span};
+use std::path::Path;
 use std::sync::Arc;
 pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
-
-/// Parses `.cfd` text into source-neutral input records.
-///
-/// The returned records use the top-level CFD record name as
-/// [`LoadedRecordDraft::key`]. No `id` field is emitted.
-///
-/// # Errors
-///
-/// Returns text diagnostics when parsing or schema-guided conversion fails.
-pub fn parse_cfd_input_records(
-    schema: &CftSchema,
-    source: &str,
-) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
-    parse_cfd_input_records_with_spans(schema, source).map(|records| {
-        records
-            .into_iter()
-            .map(|record| record.record)
-            .collect::<Vec<_>>()
-    })
-}
-
-fn parse_cfd_input_records_with_spans(
-    schema: &CftSchema,
-    source: &str,
-) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
-    parse_records(
-        schema,
-        source,
-        CfdParseOptions {
-            structural_limits: crate::limits::RuntimeLimits::default().structural,
-        },
-    )
-    .map_err(CfdTextLoadError::Text)
-}
-
-/// Parses `.cfd` text and builds a validated [`CfdDataModel`].
-///
-/// # Errors
-///
-/// Returns text diagnostics for CFD syntax/conversion errors or data-model
-/// diagnostics for schema/data/reference errors.
-pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
-    let records = parse_cfd_input_records_with_spans(schema, source)?;
-    let mut builder = CfdDataModel::builder(schema)
-        .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
-    let line_index = LineIndex::new(source);
-    let mut origins = Vec::with_capacity(records.len());
-    for record in records {
-        let origin = RecordOrigin::File {
-            path: PathBuf::new(),
-            span: Some(text_span(&line_index, source, record.span)),
-        };
-        origins.push(origin.clone());
-        builder.add_loaded_record(record.record.with_origin(origin));
-    }
-    builder
-        .build()
-        .map_err(|diagnostics| CfdTextLoadError::DataModel {
-            diagnostics,
-            origins,
-        })
-}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct CfdLoader;
@@ -129,28 +60,32 @@ impl CfdLoader {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn load_partial(
         ctx: CfdLoadContext<'_>,
         source: &CfdSource,
     ) -> Result<LoadedCfdSource, DiagnosticSet> {
+        Self::load_cached(ctx, source, &crate::CfdSourceStore::default())
+    }
+
+    pub(crate) fn load_cached(
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+        store: &crate::CfdSourceStore,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
         let file = source.location.path();
-        let contents = match ctx.source_text {
-            Some(source) => Cow::Borrowed(source),
-            None => Cow::Owned(fs::read_to_string(file).map_err(|err| {
+        let snapshot = match ctx.source_text {
+            Some(text) => store.overlay(file, Arc::from(text)),
+            None => store.read(file).map_err(|error| {
                 DiagnosticSet::one(Diagnostic::error(
                     "CFD-READ",
                     "CFD",
-                    format!("failed to read CFD source `{}`: {err}", file.display()),
+                    format!("failed to read CFD source `{}`: {error}", file.display()),
                 ))
-            })?),
+            })?,
         };
-        let (_, lowered, errors) = analyze_records(
-            ctx.schema,
-            &contents,
-            CfdParseOptions {
-                structural_limits: crate::limits::RuntimeLimits::default().structural,
-            },
-        );
+        let contents = &snapshot.text;
+        let (lowered, errors) = lower_syntax(ctx.schema, &snapshot.syntax, &snapshot.errors);
         // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
         let line_index = LineIndex::new(&contents);
         let records = lowered
@@ -163,17 +98,11 @@ impl CfdLoader {
                 })
             })
             .collect();
-        let diagnostics = cfd_error_to_diagnostics(
-            file,
-            &contents,
-            CfdTextLoadError::Text(CfdTextDiagnostics {
-                diagnostics: errors,
-            }),
-        );
+        let diagnostics = cfd_text_diagnostics(file, &contents, errors);
         Ok(LoadedCfdSource {
             records,
             diagnostics,
-            source: Arc::from(contents.as_ref()),
+            source: Arc::clone(&snapshot.text),
         })
     }
 }
@@ -185,8 +114,9 @@ fn is_cfd_path(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
-
     use std::fs;
+
+    use std::path::PathBuf;
 
     use coflow_core::schema::{build_schema, parse_modules, CftFile, ModuleId};
 
@@ -221,11 +151,24 @@ mod tests {
             "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
         )
         .expect("write source");
+        assert_record_text_spans(source_path, None);
+    }
+
+    #[test]
+    fn source_overrides_preserve_record_text_spans() {
+        // 内存来源走真实的项目加载入口，诊断仍保留来源路径和记录范围。
+        assert_record_text_spans(
+            PathBuf::from("memory.cfd"),
+            Some("first: Item { value: 1 }\n\nsecond: Item {\n}\n"),
+        );
+    }
+
+    fn assert_record_text_spans(source_path: PathBuf, source_text: Option<&str>) {
         let schema = schema();
         let loaded = CfdLoader::load(
             CfdLoadContext {
                 schema: &schema,
-                source_text: None,
+                source_text,
             },
             &CfdSource {
                 location: CfdSourcePath::new(source_path.clone()),

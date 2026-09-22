@@ -1,90 +1,64 @@
 use crate::{CfdDictKey, CfdEnumValue, CfdValue};
-use std::fmt;
 
 use super::strings::string_needs_quotes;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CellRenderError {
-    AnonymousEnum,
-    NestedObject,
-}
-
-impl fmt::Display for CellRenderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AnonymousEnum => {
-                write!(f, "anonymous enum values cannot be rendered as CFD values")
-            }
-            Self::NestedObject => {
-                write!(f, "nested object values cannot be rendered as CFD values")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CellRenderError {}
-
 /// Renders a runtime value into the same CFD text grammar accepted by
 /// [`super::parse_cell`].
-///
-/// # Errors
-///
-/// Returns an error when the runtime value cannot be represented without
-/// schema context.
-pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
+/// 所有值分支都有文本表示，渲染过程不产生可恢复错误。
+pub fn render_cell_value(value: &CfdValue) -> String {
     match value {
-        CfdValue::OptionNone => Ok("None".to_string()),
+        CfdValue::OptionNone => "None".to_string(),
         CfdValue::OptionSome(value) => render_cell_value(value),
-        CfdValue::Bool(value) => Ok(value.to_string()),
-        CfdValue::Int(value) => Ok(value.to_string()),
-        CfdValue::Float(value) => Ok((*value as f32).to_string()),
-        CfdValue::String(value) => Ok(render_string(value)),
-        CfdValue::FormattedString(value) => Ok(value.source.clone()),
-        CfdValue::Function(value) => Ok(value.source.clone()),
+        CfdValue::Bool(value) => value.to_string(),
+        CfdValue::Int(value) => value.to_string(),
+        CfdValue::Float(value) => (*value as f32).to_string(),
+        CfdValue::String(value) => render_string(value),
+        CfdValue::FormattedString(value) => value.source.clone(),
+        CfdValue::Function(value) => value.source.clone(),
         CfdValue::Enum(value) => render_enum_value(value),
-        CfdValue::Ref(target_key) => Ok(format!("&{target_key}")),
+        CfdValue::Ref(target_key) => format!("&{target_key}"),
         CfdValue::Array(items) => render_array(items),
         CfdValue::Dict(entries) => render_dict(entries),
         CfdValue::Object(record) => render_object(record),
     }
 }
 
-fn render_array(items: &[CfdValue]) -> Result<String, CellRenderError> {
+fn render_array(items: &[CfdValue]) -> String {
     let mut out = String::from("[");
     for (idx, item) in items.iter().enumerate() {
         if idx > 0 {
             out.push_str(" | ");
         }
-        out.push_str(&render_cell_value(item)?);
+        out.push_str(&render_cell_value(item));
     }
     out.push(']');
-    Ok(out)
+    out
 }
 
-fn render_dict(entries: &[(CfdDictKey, CfdValue)]) -> Result<String, CellRenderError> {
+fn render_dict(entries: &[(CfdDictKey, CfdValue)]) -> String {
     let mut out = String::from("{");
     for (idx, (key, value)) in entries.iter().enumerate() {
         if idx > 0 {
             out.push_str(", ");
         }
-        out.push_str(&render_dict_key(key)?);
+        out.push_str(&render_dict_key(key));
         out.push_str(": ");
-        out.push_str(&render_cell_value(value)?);
+        out.push_str(&render_cell_value(value));
     }
     out.push('}');
-    Ok(out)
+    out
 }
 
-fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
+fn render_dict_key(key: &CfdDictKey) -> String {
     match key {
-        CfdDictKey::String(value) => Ok(render_string(value)),
-        CfdDictKey::Int(value) => Ok(value.to_string()),
-        CfdDictKey::Bool(value) => Ok(value.to_string()),
+        CfdDictKey::String(value) => render_string(value),
+        CfdDictKey::Int(value) => value.to_string(),
+        CfdDictKey::Bool(value) => value.to_string(),
         CfdDictKey::Enum(value) => render_enum_value(value),
     }
 }
 
-fn render_object(record: &crate::CfdObject) -> Result<String, CellRenderError> {
+fn render_object(record: &crate::CfdObject) -> String {
     let mut out = String::new();
     if !record.actual_type().is_empty() {
         out.push_str(record.actual_type());
@@ -96,18 +70,17 @@ fn render_object(record: &crate::CfdObject) -> Result<String, CellRenderError> {
         }
         out.push_str(field.as_str());
         out.push_str(": ");
-        out.push_str(&render_cell_value(value)?);
+        out.push_str(&render_cell_value(value));
     }
     out.push('}');
-    Ok(out)
+    out
 }
 
-fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {
+fn render_enum_value(value: &CfdEnumValue) -> String {
     value
         .variant
         .as_ref()
-        .map(ToString::to_string)
-        .map_or_else(|| Ok(value.value.to_string()), Ok)
+        .map_or_else(|| value.value.to_string(), ToString::to_string)
 }
 
 pub(super) fn render_string(value: &str) -> String {

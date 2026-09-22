@@ -75,6 +75,7 @@ describe('ProjectGenerationController', () => {
 const fileRecords = (revision: number, filePath = 'data/items.cfd') => ({
   revision,
   file_path: filePath,
+  records: [], type_names: [], columns: [], capabilities: {} as FileRecords['capabilities'],
 }) as FileRecords
 
 describe('publishMutationGeneration', () => {
@@ -89,13 +90,14 @@ describe('publishMutationGeneration', () => {
         return true
       },
       isCurrent: (_sessionId, revision) => currentRevision === revision,
-      getFileRecords: async (_sessionId, filePath) => new Promise(resolve => {
+      getFileRecords: async (_sessionId, filePath) => resolveOldRead ? fileRecords(2, filePath) : new Promise(resolve => {
         resolveOldRead = records => resolve(records.file_path === filePath ? records : fileRecords(1, filePath))
       }),
       publishFileRecords: records => published.push(records),
     }
 
     const older = publishMutationGeneration(port, {
+      changes: { base_revision: 0, revision: 1, files: [] },
       sessionId: 1,
       revision: 1,
       diagnostics: [],
@@ -104,12 +106,12 @@ describe('publishMutationGeneration', () => {
     })
     const newerRecords = fileRecords(2)
     const newer = await publishMutationGeneration(port, {
+      changes: { base_revision: 0, revision: 2, files: [] },
       sessionId: 1,
       revision: 2,
       diagnostics: [],
       affectedFiles: ['data/items.cfd'],
       fallbackFile: 'data/items.cfd',
-      knownRecords: newerRecords,
     })
     resolveOldRead?.(fileRecords(1))
 
@@ -128,6 +130,7 @@ describe('publishMutationGeneration', () => {
     }
 
     await expect(publishMutationGeneration(port, {
+      changes: { base_revision: 0, revision: 2, files: [] },
       sessionId: 1,
       revision: 2,
       diagnostics: [],
@@ -149,6 +152,7 @@ describe('publishMutationGeneration', () => {
     }
 
     await publishMutationGeneration(port, {
+      changes: { base_revision: 0, revision: 2, files: [] },
       sessionId: 1,
       revision: 2,
       diagnostics: [],
@@ -172,6 +176,7 @@ describe('publishMutationGeneration', () => {
       acceptRevision: vi.fn(() => true),
       isCurrent: vi.fn(() => true),
       getFileRecords,
+      cachedFileRecords: file => file === host.file_path ? fileRecords(1, file) : undefined,
       publishFileRecords,
       publishGraphProjection,
     }
@@ -182,7 +187,7 @@ describe('publishMutationGeneration', () => {
       diagnostics: [],
       affectedFiles: [source.file_path],
       fallbackFile: host.file_path,
-      knownRecords: host,
+      changes: { base_revision: 1, revision: 2, files: [{ data: host, order: [] }] },
       topologyChanged: false,
     })
 

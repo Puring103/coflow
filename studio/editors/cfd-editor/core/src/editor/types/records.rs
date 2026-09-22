@@ -1,5 +1,5 @@
 //! record row wire types.
-use coflow_project::{CfdDictKey, CfdRecord, CfdValue, DimensionValueState, RecordCoordinate};
+use coflow_project::{CfdRecord, CfdValue, DimensionValueState, RecordCoordinate};
 pub use coflow_project::{CreateFieldSource, CreateRequiredInput};
 use coflow_project::{FlatDiagnostic, WriterCapabilities};
 use serde::{Deserialize, Serialize};
@@ -244,8 +244,8 @@ impl FieldAnnotation {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriteFieldOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
-    pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Value at the target path before the write. Captured by the backend
     /// from engine state so undo does not depend on a stale front-end cache.
@@ -299,6 +299,7 @@ pub struct BatchWriteFieldInput {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct BatchWriteFieldOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
     pub edits: Vec<BatchWriteFieldEditOutcome>,
     pub diagnostics: Vec<FlatDiagnostic>,
@@ -313,6 +314,7 @@ pub struct BatchWriteFieldOutcome {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriteDimensionValueOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
     pub coordinate: coflow_project::DimensionValueCoordinate,
     pub old_value: DimensionValueState,
@@ -321,36 +323,7 @@ pub struct WriteDimensionValueOutcome {
     pub affected_files: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CollectionEdit {
-    ArrayAppend {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-export", ts(optional))]
-        value: Option<CfdValue>,
-    },
-    ArrayRemove {
-        index: usize,
-    },
-    ArrayMove {
-        from: usize,
-        to: usize,
-    },
-    DictInsert {
-        key: CfdDictKey,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-export", ts(optional))]
-        value: Option<CfdValue>,
-    },
-    DictRemove {
-        key: CfdDictKey,
-    },
-}
+pub use coflow_project::CollectionEdit;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
@@ -359,8 +332,8 @@ pub enum CollectionEdit {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct RenameRecordOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
-    pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub renamed: RecordCoordinate,
     pub affected_files: Vec<String>,
@@ -373,8 +346,8 @@ pub struct RenameRecordOutcome {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct InsertRecordOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
-    pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
 }
@@ -414,8 +387,8 @@ pub struct CreateRecordFieldDraft {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DeleteRecordOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
-    pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
     /// Authoritative snapshot of the deleted record so the front-end's undo
@@ -432,8 +405,8 @@ pub struct DeleteRecordOutcome {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct ReorderRecordsOutcome {
+    pub changes: EditorChangeSet,
     pub revision: u32,
-    pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
     #[serde(default)]
@@ -483,4 +456,28 @@ mod tests {
             Some(&serde_json::Value::Null)
         );
     }
+}
+
+/// 与一次提交绑定的文件增量；order 是权威顺序，records 只携带变化的行。
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct EditorChangeSet {
+    pub base_revision: u32,
+    pub revision: u32,
+    pub files: Vec<FileRecordsPatch>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct FileRecordsPatch {
+    pub data: FileRecords,
+    pub order: Vec<RecordCoordinate>,
 }

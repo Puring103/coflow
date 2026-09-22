@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::api::{CfdSourceCatalog, DiagnosticSet};
+use crate::api::DiagnosticSet;
 use crate::data_model::CfdDataModel;
 use crate::project::Project;
 use coflow_core::schema::{CftModuleSet, CftSchema};
@@ -18,74 +18,33 @@ use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::writes::MutationImpact;
 use crate::ProjectExecutionStats;
 
-/// Opens a project into a reusable runtime session using explicit side-effect
-/// intent.
-///
-/// [`SessionOpenOptions::read_only`] is for editor, inspection, and background
-/// tasks that must not mutate project files.
+/// 从源码构建不可变项目快照；读写能力由公开会话包装类型约束。
 ///
 /// # Errors
 ///
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub(crate) fn open_project_session(
-    project: Project,
-    catalog: &CfdSourceCatalog,
-    options: SessionOpenOptions,
-) -> Result<ProjectSession, DiagnosticSet> {
-    build_project_session_with_effects(project, catalog, options).map(|output| output.session)
+pub(crate) fn open_project_session(project: Project) -> Result<ProjectSession, DiagnosticSet> {
+    finish_project_session(open_schema_session(project)?, &[]).map(|output| output.session)
 }
 
 pub(crate) fn open_project_session_with_source_overrides(
     project: Project,
-    catalog: &CfdSourceCatalog,
-    options: SessionOpenOptions,
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<ProjectSession, DiagnosticSet> {
-    finish_project_session(
-        open_schema_session(project)?,
-        catalog,
-        options,
-        source_overrides,
-    )
-    .map(|output| output.session)
+    finish_project_session(open_schema_session(project)?, source_overrides)
+        .map(|output| output.session)
 }
 
 pub(crate) fn open_project_session_from_schema(
     schema_session: ProjectSchemaSession,
-    catalog: &CfdSourceCatalog,
-    options: SessionOpenOptions,
 ) -> Result<ProjectSession, DiagnosticSet> {
-    finish_project_session(schema_session, catalog, options, &[]).map(|output| output.session)
+    finish_project_session(schema_session, &[]).map(|output| output.session)
 }
 
 pub(crate) struct SessionBuildOutput {
     pub(crate) session: ProjectSession,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionOpenOptions {
-    Build,
-    ReadOnly,
-}
-
-impl SessionOpenOptions {
-    pub(crate) const fn build() -> Self {
-        Self::Build
-    }
-
-    pub(crate) const fn read_only() -> Self {
-        Self::ReadOnly
-    }
-}
-
-pub(crate) fn build_project_session_with_effects(
-    project: Project,
-    catalog: &CfdSourceCatalog,
-    options: SessionOpenOptions,
-) -> Result<SessionBuildOutput, DiagnosticSet> {
-    finish_project_session(open_schema_session(project)?, catalog, options, &[])
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
@@ -93,13 +52,12 @@ pub(crate) fn rebuild_project_session_from_generation(
     impact: &MutationImpact,
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
-    let mut ctx = SessionBuildContext {
+    let ctx = SessionBuildContext {
         project: session.project.clone(),
         modules: Arc::clone(&session.modules),
         schema: session.schema.clone(),
-        mode: SessionOpenOptions::Build,
         dimension_plan: Arc::clone(&session.dimension_plan),
-        source_overrides: source_overrides.to_vec(),
+        source_overrides,
     };
     let mut diagnostics = DiagnosticsStore::empty();
     let LoadedSessionData {
@@ -107,7 +65,7 @@ pub(crate) fn rebuild_project_session_from_generation(
         indexes,
         source_data,
         execution_stats,
-    } = rebuild_data_pipeline(&mut ctx, session, impact, &mut diagnostics)?;
+    } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
     Ok(SessionBuildOutput {
         session: assemble_session(
             ctx,
@@ -122,8 +80,6 @@ pub(crate) fn rebuild_project_session_from_generation(
 
 fn finish_project_session(
     schema_session: ProjectSchemaSession,
-    _catalog: &CfdSourceCatalog,
-    options: SessionOpenOptions,
     source_overrides: &[DataSourceTextOverride],
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let ProjectSchemaSession {
@@ -138,13 +94,12 @@ fn finish_project_session(
     };
 
     let dimension_plan = Arc::new(DimensionRuntimePlan::compile(&schema, &project));
-    let mut ctx = SessionBuildContext {
+    let ctx = SessionBuildContext {
         project,
         modules,
         schema,
-        mode: options,
         dimension_plan,
-        source_overrides: source_overrides.to_vec(),
+        source_overrides,
     };
 
     let LoadedSessionData {
@@ -153,7 +108,7 @@ fn finish_project_session(
         source_data,
         execution_stats,
     } = if diagnostics.is_empty() {
-        build_data_pipeline(&mut ctx, &mut diagnostics)?
+        build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
         LoadedSessionData::empty(&ctx.schema)?
     };
@@ -176,13 +131,12 @@ fn open_schema_session(project: Project) -> Result<ProjectSchemaSession, Diagnos
     open_project_schema_attempt(project, initial_diagnostics, &[])
 }
 
-struct SessionBuildContext {
+struct SessionBuildContext<'a> {
     project: Project,
     modules: Arc<CftModuleSet>,
     schema: Arc<CftSchema>,
-    mode: SessionOpenOptions,
     dimension_plan: Arc<DimensionRuntimePlan>,
-    source_overrides: Vec<DataSourceTextOverride>,
+    source_overrides: &'a [DataSourceTextOverride],
 }
 
 struct LoadedSessionData {
@@ -204,54 +158,39 @@ impl LoadedSessionData {
 }
 
 fn build_data_pipeline(
-    ctx: &mut SessionBuildContext,
+    ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
-    if ctx.mode == SessionOpenOptions::ReadOnly {
-        return build_read_only_data(ctx, diagnostics);
-    }
-    let (output, indexes) = match load_data(ctx, true) {
-        Ok(loaded) => loaded,
-        Err(load_failure) => {
-            diagnostics.extend_with_logical_locations(
-                load_failure.diagnostics.diagnostics,
-                load_failure.diagnostics.logical_locations,
-            );
-            return Ok(LoadedSessionData {
-                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
-                indexes: load_failure.indexes.finalize_rejected(),
-                source_data: SourceDataCache::default(),
-                execution_stats: ProjectExecutionStats::default(),
-            });
-        }
-    };
-
-    let indexes = indexes.finalize_with_model(&output.model);
-    diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
-
-    Ok(LoadedSessionData {
-        model: output.model,
-        indexes,
-        source_data: output.source_data,
-        execution_stats: output.statistics,
-    })
+    finish_data_load(ctx, diagnostics, load_data(ctx, true))
 }
 
-#[allow(clippy::too_many_lines)]
 fn rebuild_data_pipeline(
-    ctx: &mut SessionBuildContext,
+    ctx: &SessionBuildContext<'_>,
     previous: &ProjectSession,
     impact: &MutationImpact,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
-    let (output, indexes) = match load_cached_data(
+    finish_data_load(
         ctx,
-        &previous.source_data,
-        CachedLoadOptions {
-            reload_paths: &impact.affected_files,
-            run_checks: true,
-        },
-    ) {
+        diagnostics,
+        load_cached_data(
+            ctx,
+            &previous.source_data,
+            CachedLoadOptions {
+                reload_paths: &impact.affected_files,
+                run_checks: true,
+            },
+        ),
+    )
+}
+
+/// 首次加载与缓存重建共用诊断归属和索引发布规则。
+fn finish_data_load(
+    ctx: &SessionBuildContext<'_>,
+    diagnostics: &mut DiagnosticsStore,
+    result: Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>>,
+) -> Result<LoadedSessionData, DiagnosticSet> {
+    let (output, indexes) = match result {
         Ok(loaded) => loaded,
         Err(load_failure) => {
             diagnostics.extend_with_logical_locations(
@@ -266,7 +205,6 @@ fn rebuild_data_pipeline(
             });
         }
     };
-
     let indexes = indexes.finalize_with_model(&output.model);
     diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
     Ok(LoadedSessionData {
@@ -285,7 +223,7 @@ fn diagnostic_fallback_output(
 }
 
 fn load_data(
-    ctx: &SessionBuildContext,
+    ctx: &SessionBuildContext<'_>,
     run_checks: bool,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
@@ -294,7 +232,7 @@ fn load_data(
         &ctx.schema,
         &mut indexes,
         LoadProjectDataOptions { run_checks },
-        &ctx.source_overrides,
+        ctx.source_overrides,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {
@@ -314,7 +252,7 @@ struct CachedLoadOptions<'a> {
 }
 
 fn load_cached_data(
-    ctx: &SessionBuildContext,
+    ctx: &SessionBuildContext<'_>,
     previous: &SourceDataCache,
     options: CachedLoadOptions<'_>,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
@@ -328,7 +266,7 @@ fn load_cached_data(
             load: LoadProjectDataOptions {
                 run_checks: options.run_checks,
             },
-            source_overrides: &ctx.source_overrides,
+            source_overrides: ctx.source_overrides,
         },
     ) {
         Ok(output) => output,
@@ -347,37 +285,8 @@ struct DataLoadFailure {
     indexes: SessionIndexBuilder,
 }
 
-fn build_read_only_data(
-    ctx: &SessionBuildContext,
-    diagnostics: &mut DiagnosticsStore,
-) -> Result<LoadedSessionData, DiagnosticSet> {
-    let (output, indexes) = match load_data(ctx, true) {
-        Ok(loaded) => loaded,
-        Err(load_failure) => {
-            diagnostics.extend_with_logical_locations(
-                load_failure.diagnostics.diagnostics,
-                load_failure.diagnostics.logical_locations,
-            );
-            return Ok(LoadedSessionData {
-                model: diagnostic_fallback_output(&ctx.schema, diagnostics)?.model,
-                indexes: load_failure.indexes.finalize_rejected(),
-                source_data: SourceDataCache::default(),
-                execution_stats: ProjectExecutionStats::default(),
-            });
-        }
-    };
-    let indexes = indexes.finalize_with_model(&output.model);
-    diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
-    Ok(LoadedSessionData {
-        model: output.model,
-        indexes,
-        source_data: output.source_data,
-        execution_stats: output.statistics,
-    })
-}
-
 fn assemble_session(
-    ctx: SessionBuildContext,
+    ctx: SessionBuildContext<'_>,
     model: CfdDataModel,
     diagnostics: DiagnosticsStore,
     indexes: SessionIndexes,

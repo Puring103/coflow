@@ -28,18 +28,18 @@ describe('editor queries', () => {
 
   it('removes only queries owned by the selected session', () => {
     const client = new QueryClient()
-    client.setQueryData(editorQueryKeys.fileRecords(7, 1, 'a.cfd'), records(1))
-    client.setQueryData(editorQueryKeys.fileRecords(8, 7, 'b.cfd'), records(7))
+    client.setQueryData(editorQueryKeys.fileRecords(7, 'a.cfd'), records(1))
+    client.setQueryData(editorQueryKeys.fileRecords(8, 'b.cfd'), records(7))
     removeSessionQueries(client, 7)
-    expect(client.getQueryData(editorQueryKeys.fileRecords(7, 1, 'a.cfd'))).toBeUndefined()
-    expect(client.getQueryData(editorQueryKeys.fileRecords(8, 7, 'b.cfd'))).toBeDefined()
+    expect(client.getQueryData(editorQueryKeys.fileRecords(7, 'a.cfd'))).toBeUndefined()
+    expect(client.getQueryData(editorQueryKeys.fileRecords(8, 'b.cfd'))).toBeDefined()
   })
 
   it('does not cache a response from another revision', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     await expect(fetchFileRecords(client, 7, 3, 'data.cfd', async () => records(4)))
       .rejects.toThrow('期望 3，收到 4')
-    expect(client.getQueryData(editorQueryKeys.fileRecords(7, 3, 'data.cfd'))).toBeUndefined()
+    expect(client.getQueryData(editorQueryKeys.fileRecords(7, 'data.cfd'))).toBeUndefined()
   })
 
   it('uses one revision validator for every query response', () => {

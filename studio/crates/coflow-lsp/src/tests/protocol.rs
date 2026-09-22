@@ -193,7 +193,7 @@ fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
             .core
             .open_documents()
             .get(&normalized)
-            .map(|document| document.text.as_str()),
+            .map(|document| document.text.as_ref()),
         Some(changed)
     );
 
@@ -330,7 +330,7 @@ fn stale_document_version_does_not_replace_newer_text() {
         .values()
         .next()
         .expect("open document state");
-    assert_eq!(document.text, "table Newer {}\n");
+    assert_eq!(document.text.as_ref(), "table Newer {}\n");
     assert_eq!(document.version, Some(7));
 }
 

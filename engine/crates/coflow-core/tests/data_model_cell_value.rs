@@ -8,7 +8,8 @@
 )]
 
 use coflow_core::cell_value::{
-    parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
+    parse_cell, parse_schema_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode,
+    ParsedCell,
 };
 use coflow_core::schema::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_core::{
@@ -192,6 +193,28 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
 }
 
 #[test]
+fn schema_cell_parsing_preserves_values_and_diagnostics() -> TestResult {
+    for case in error_code_cases() {
+        let schema = compile_schema(case.schema_source)?;
+        let syntax = coflow_core::schema::syntax::parser::parse_type(
+            case.adjacent_valid_declared_type,
+        )
+        .map_err(|error| format!("valid declared type: {error:?}"))?;
+        let ty = schema.resolve_type_ref(&syntax)?;
+        // 已编译类型入口保持正常值、错误输入和省略输入的语义。
+        for text in [case.adjacent_valid_text, case.invalid_text, "", "_"] {
+            assert_eq!(
+                parse_schema_cell(&schema, &ty, text),
+                parse_cell(&schema, case.adjacent_valid_declared_type, text),
+                "type={}, text={text}",
+                case.adjacent_valid_declared_type,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn every_cell_value_error_code_has_negative_and_adjacent_valid_coverage() -> TestResult {
     let declared = declared_error_code_names();
     let covered = error_code_cases()
@@ -347,7 +370,7 @@ fn flag_enum_cells_use_integer_masks() -> TestResult {
     };
     assert_eq!(flag.variant, None);
     assert_eq!(
-        render_cell_value(value).map_err(|err| err.to_string())?,
+        render_cell_value(value),
         "1"
     );
     Ok(())
@@ -374,7 +397,7 @@ fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
     let role = model.records().next().expect("role").1;
     let limits = role.field("limits").expect("limits");
     assert_eq!(
-        render_cell_value(limits).map_err(|err| err.to_string())?,
+        render_cell_value(limits),
         "{Read: 3}"
     );
     Ok(())
@@ -1075,7 +1098,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         CfdValue::String("weapon".to_string()),
         CfdValue::String("melee, close".to_string()),
     ]);
-    let rendered_names = render_cell_value(&names).map_err(|err| err.to_string())?;
+    let rendered_names = render_cell_value(&names);
     assert_eq!(rendered_names, r#"[weapon | "melee, close"]"#);
     assert_eq!(
         parse_value(&schema, "[string]", &rendered_names)?,
@@ -1086,7 +1109,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     );
 
     let reference = CfdValue::record_ref("sword_01").map_err(|err| err.to_string())?;
-    let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
+    let rendered_reference = render_cell_value(&reference);
     assert_eq!(rendered_reference, "&sword_01");
     assert_eq!(
         parse_value(&schema, "Item", &rendered_reference)?,
@@ -1095,7 +1118,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
 
     let optional_reference = CfdValue::OptionSome(Box::new(reference));
     let rendered_optional =
-        render_cell_value(&optional_reference).map_err(|err| err.to_string())?;
+        render_cell_value(&optional_reference);
     assert_eq!(rendered_optional, "&sword_01");
     assert_eq!(
         parse_value(&schema, "Item?", &rendered_optional)?,
@@ -1106,7 +1129,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         CfdDictKey::String("rare:drop".to_string()),
         CfdValue::Int(10),
     )]);
-    let rendered_dict = render_cell_value(&dict).map_err(|err| err.to_string())?;
+    let rendered_dict = render_cell_value(&dict);
     assert_eq!(rendered_dict, r#"{"rare:drop": 10}"#);
     assert_eq!(
         parse_value(&schema, "{string: int}", &rendered_dict)?,
@@ -1120,7 +1143,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         CfdEnumValue::try_new("Rarity", Some("Rare"), 10).map_err(|err| err.to_string())?,
     );
     assert_eq!(
-        render_cell_value(&enum_value).map_err(|err| err.to_string())?,
+        render_cell_value(&enum_value),
         "Rare"
     );
 
@@ -1134,7 +1157,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         )
         .map_err(|err| err.to_string())?,
     ));
-    let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
+    let rendered_stats = render_cell_value(&stats);
     assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
     let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
     let mut builder = CfdDataModel::builder(&schema);
@@ -1167,7 +1190,7 @@ fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
         )
         .map_err(|err| err.to_string())?,
     ));
-    let rendered = render_cell_value(&nested).map_err(|err| err.to_string())?;
+    let rendered = render_cell_value(&nested);
 
     assert_eq!(rendered, "ItemReward{count: 1, item: &sword}".to_string());
     Ok(())

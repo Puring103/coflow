@@ -18,6 +18,36 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
+fn schema_generation_is_stable_for_data_saves_and_advances_for_schema_publication() {
+    let (root, data_path) = nested_default_collection_project();
+    let store = SessionStore::new().expect("session store");
+    let initial = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let data = fs::read_to_string(data_path).expect("read data");
+    let data_saved = store
+        .write_source_text(initial.session_id, "data/units.cfd", &data)
+        .expect("save data");
+    assert!(data_saved.revision > initial.revision);
+    assert_eq!(data_saved.schema_revision, initial.schema_revision);
+    let schema = fs::read_to_string(root.join("schema.cft")).expect("read schema");
+    let schema_saved = store
+        .write_source_text(
+            initial.session_id,
+            "schema.cft",
+            &format!("{schema}\nenum Mode {{ First, Second }}\n"),
+        )
+        .expect("save schema");
+    assert_eq!(schema_saved.schema_revision, initial.schema_revision + 1);
+    let reloaded = store
+        .reload_session(initial.session_id)
+        .expect("reload project");
+    assert!(reloaded.schema_revision > schema_saved.schema_revision);
+    assert!(reloaded.revision > schema_saved.revision);
+    fs::remove_dir_all(root).expect("remove test project");
+}
+
+#[test]
 fn configured_external_sources_can_be_opened() {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("cfd-editor-external-source-{id}"));
@@ -472,7 +502,15 @@ fn editor_field_write_preserves_a_self_referencing_record() {
         )
         .expect("write self reference");
     assert!(outcome.diagnostics.is_empty());
-    assert_eq!(outcome.row.coordinate, coordinate);
+    assert!(outcome
+        .changes
+        .files
+        .iter()
+        .flat_map(|file| &file.data.records)
+        .any(|row| row.coordinate == coordinate));
+    let wire = serde_json::to_value(&outcome).expect("serialize mutation");
+    assert!(wire.get("row").is_none());
+    assert!(wire.get("file_records").is_none());
 
     let records = store
         .get_file_records(snapshot.session_id, "data/quests.cfd")

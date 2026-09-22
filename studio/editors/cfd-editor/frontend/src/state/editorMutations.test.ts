@@ -25,8 +25,11 @@ function deferred<T>() {
 
 function writeOutcome(revision: number, oldValue: string, newValue: string): WriteFieldOutcome {
   return {
+    changes: { base_revision: revision - 1, revision, files: [{
+      data: { revision, file_path: 'data/items.cfd', records: [row] } as FileRecords,
+      order: [coordinate],
+    }] },
     revision,
-    row,
     diagnostics: [],
     old_value: { kind: 'string', value: oldValue },
     new_value: { kind: 'string', value: newValue },
@@ -64,15 +67,8 @@ const dimensionCoordinate = {
 
 function recordsOutcome(revision: number) {
   return {
+    changes: { base_revision: revision - 1, revision, files: [] },
     revision,
-    file_records: {
-      revision,
-      file_path: 'data/items.cfd',
-      type_names: ['Item'],
-      columns: [],
-      records: [],
-      capabilities: {} as never,
-    },
     diagnostics: [],
     affected_files: ['data/items.cfd'],
   }
@@ -84,6 +80,7 @@ function dimensionOutcome(
   newValue: string | null,
 ): WriteDimensionValueOutcome {
   return {
+    changes: { base_revision: revision - 1, revision, files: [] },
     revision,
     coordinate: dimensionCoordinate,
     old_value: oldValue === null
@@ -196,6 +193,7 @@ describe('EditorMutationController', () => {
       revision: number,
       values: Array<[typeof coordinate, string, string]>,
     ): BatchWriteFieldOutcome => ({
+      changes: { base_revision: revision - 1, revision, files: [] },
       revision,
       edits: values.map(([item, oldValue, newValue]) => ({
         coordinate: item,
@@ -247,6 +245,7 @@ describe('EditorMutationController', () => {
   it('submits heterogeneous field writes in one batch history entry', async () => {
     const hpPath = [{ kind: 'field' as const, value: 'hp' }]
     const writeFields = vi.fn().mockResolvedValue({
+      changes: { base_revision: 1, revision: 2, files: [] },
       revision: 2,
       edits: [
         {
@@ -384,8 +383,8 @@ describe('EditorMutationController', () => {
     const removeCoordinate = vi.fn()
     const mutationBackend = backend(vi.fn())
     mutationBackend.deleteRecord = vi.fn(async () => ({
+      changes: { base_revision: 1, revision: 2, files: [] },
       revision: 2,
-      file_records: { revision: 2, file_path: 'data/items.cfd' } as FileRecords,
       diagnostics: [],
       affected_files: ['data/items.cfd'],
       deleted_snapshot: null,
@@ -412,10 +411,8 @@ describe('EditorMutationController', () => {
     expect(removeCoordinate).toHaveBeenCalledWith('data/items.cfd', coordinate)
   })
 
-  it('publishes a cached row projection without requiring a full file reload', async () => {
+  it('publishes the change set and returns its row without building a second snapshot', async () => {
     let generation = { sessionId: 1, revision: 1 }
-    const projected = { revision: 2, file_path: 'data/items.cfd' } as FileRecords
-    const fileRecordsForRow = vi.fn(() => projected)
     const publish = vi.fn(async request => {
       generation = { sessionId: request.sessionId, revision: request.revision }
       return committed(undefined)
@@ -423,7 +420,6 @@ describe('EditorMutationController', () => {
     const port: EditorMutationPort = {
       currentGeneration: () => generation,
       publish,
-      fileRecordsForRow,
       rebindCoordinate: vi.fn(),
       recoverPublication: vi.fn(() => false),
       reportError: vi.fn(),
@@ -436,8 +432,8 @@ describe('EditorMutationController', () => {
 
     await mutations.writeField('data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' })
 
-    expect(fileRecordsForRow).toHaveBeenCalledWith('data/items.cfd', coordinate, row, 2)
-    expect(publish.mock.calls[0][0].knownRecords).toBe(projected)
+    expect(publish.mock.calls[0][0].changes.files[0].data.records[0]).toBe(row)
+    expect(publish.mock.calls[0][0]).not.toHaveProperty('knownRecords')
     expect(publish.mock.calls[0][0].topologyChanged).toBe(false)
   })
 
