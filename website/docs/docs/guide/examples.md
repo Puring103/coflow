@@ -6,12 +6,12 @@
 ```powershell
 coflow cft check examples/showcase
 coflow check examples/showcase
-coflow build examples/showcase
+coflow codegen examples/showcase
 ```
 
 - `cft check` 只检查 CFT schema。
 - `check` 加载 `.cfd`，构建数据模型并执行业务规则。
-- `build` 在检查成功后发布 C# 等目标语言源文件。
+- `codegen` 发布 C# 等目标语言源文件，不执行 `check {}`；交付前先运行 `check`。
 
 输出目录是 `examples/showcase/generated/csharp`。该目录由 Coflow 整体接管，不要放入手写文件。
 

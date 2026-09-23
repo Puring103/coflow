@@ -356,7 +356,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   font-size: var(--fs-ui);
   box-shadow: none;
 }
-.topbar-center .btn-build {
+.topbar-center .btn-codegen {
   width: var(--h-input);
   padding: 0;
   justify-content: center;
@@ -905,7 +905,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   color: var(--text-mute);
   flex-shrink: 0;
 }
-.topbar-left .btn-build {
+.topbar-left .btn-codegen {
   position: relative;
   width: var(--h-input);
   min-width: var(--h-input);
@@ -913,7 +913,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   padding: 0;
   justify-content: center;
 }
-.build-pending-indicator {
+.codegen-pending-indicator {
   position: absolute;
   top: 2px;
   right: 2px;

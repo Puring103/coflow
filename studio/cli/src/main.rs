@@ -16,7 +16,7 @@
 use clap::Parser;
 use cli_output::{display_path, project_path, write_json_diagnostics, write_project_diagnostics};
 use coflow_project::commands::{
-    build_project, check_project, generate_project_code, CommandOutcome,
+    check_project, generate_project_code, CommandOutcome,
 };
 use coflow_project::DiagnosticSet;
 use coflow_project::{normalize_path, path_to_slash, Project};
@@ -37,31 +37,33 @@ mod write_file;
 use diagnostics::cli_error;
 
 use cli::{
-    BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, DiffArgs, FormatArgs,
+    CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, Command, DiffArgs, FormatArgs,
     InitArgs, LspArgs, ProjectCheckArgs, SchemaArgs, SchemaCommand, SelfUpdateArgs, SkillArgs,
     SkillCommand, SkillScopeArgs,
 };
 
 fn main() -> ExitCode {
-    match run() {
+    let cli = Cli::parse();
+    let json = cli.json_output();
+    match run(cli) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(diagnostics) => {
-            let _ = write_project_diagnostics(diagnostics, false, PathBuf::from(".").as_path());
+            // 命令执行前的项目打开错误也必须遵循调用者选择的输出格式。
+            let _ = write_project_diagnostics(diagnostics, json, PathBuf::from(".").as_path());
             ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> Result<bool, DiagnosticSet> {
-    match Cli::parse().command {
+fn run(cli: Cli) -> Result<bool, DiagnosticSet> {
+    match cli.command {
         Command::Init(args) => init_project(args),
         Command::Format(args) => format_project(&args),
         Command::Cft(command) => run_cft(&command),
         Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
         Command::Diff(args) => project_diff(&args),
-        Command::Build(args) => project_build(&args),
         Command::Codegen(args) => generate_code(&args),
         Command::Schema(command) => run_schema(&command),
         Command::Skill(command) => run_skill(&command),
@@ -77,7 +79,7 @@ fn project_diff(args: &DiffArgs) -> Result<bool, DiagnosticSet> {
         let output = serde_json::to_string_pretty(&diff)
             .map_err(|error| output_error(format!("failed to serialize project diff: {error}")))?;
         println!("{output}");
-        return Ok(true);
+        return Ok(diff.semantic_available);
     }
 
     println!("HEAD {}", &diff.head_oid[..diff.head_oid.len().min(12)]);
@@ -132,7 +134,8 @@ fn project_diff(args: &DiffArgs) -> Result<bool, DiagnosticSet> {
             );
         }
     }
-    Ok(true)
+    // 源码差异仍可展示，但语义比较不可用时不能报告完整成功。
+    Ok(diff.semantic_available)
 }
 
 const fn change_mark(change: ProjectDiffChange) -> &'static str {
@@ -328,32 +331,6 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, DiagnosticSet> {
         }
         CommandOutcome::Diagnostics(diagnostics) => {
             write_project_diagnostics(diagnostics, args.json, &root_dir).map_err(output_error)?;
-            Ok(false)
-        }
-    }
-}
-
-fn project_build(args: &BuildArgs) -> Result<bool, DiagnosticSet> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir().to_path_buf();
-    let config_path = project.config_path().to_path_buf();
-    match build_project(&project)? {
-        CommandOutcome::Success(report) => {
-            for target in report.targets {
-                println!(
-                    "{} code generated to {}",
-                    target.code.display_name,
-                    display_path(&target.code.dir.display().to_string(), Some(&root_dir))
-                );
-            }
-            println!(
-                "Build completed: {}",
-                display_path(&config_path.display().to_string(), Some(&root_dir))
-            );
-            Ok(true)
-        }
-        CommandOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &root_dir).map_err(output_error)?;
             Ok(false)
         }
     }

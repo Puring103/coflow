@@ -82,13 +82,16 @@ pub fn write_file(
         Vec::new()
     };
     let dry_run = matches!(options.mode, SchemaWriteMode::DryRun);
-    if !dry_run {
+    // 校验失败时保留磁盘原文件，报告候选内容的诊断即可。
+    let check_passed = diagnostics.is_empty();
+    let written = !dry_run && check_passed;
+    if written {
         write_source(&target.absolute_path, &source)?;
     }
     let check_ok = matches!(options.check, SchemaWriteCheck::Run).then_some(diagnostics.is_empty());
     let report = SchemaWriteFileReport {
         file: target.project_path,
-        written: !dry_run,
+        written,
         dry_run,
         changed,
         check_ok,

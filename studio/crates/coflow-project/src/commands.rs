@@ -29,17 +29,6 @@ pub struct CodegenProjectReport {
     pub targets: Vec<CodegenReport>,
 }
 
-#[derive(Debug)]
-pub struct BuildReport {
-    pub targets: Vec<BuildTargetReport>,
-}
-
-#[derive(Debug)]
-pub struct BuildTargetReport {
-    pub target_index: usize,
-    pub code: CodegenReport,
-}
-
 /// Applies a validated mutation and stages related project-file updates.
 ///
 /// # Errors
@@ -86,31 +75,12 @@ pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, D
     }
 }
 
-/// Builds all configured generated-code targets.
-///
-/// # Errors
-///
-/// Returns diagnostics when code generation or artifact publication fails.
-pub fn build_project(project: &Project) -> Result<CommandOutcome<BuildReport>, DiagnosticSet> {
-    match generate_project_code(project)? {
-        CommandOutcome::Success(report) => Ok(CommandOutcome::Success(BuildReport {
-            targets: report
-                .targets
-                .into_iter()
-                .enumerate()
-                .map(|(target_index, code)| BuildTargetReport { target_index, code })
-                .collect(),
-        })),
-        CommandOutcome::Diagnostics(diagnostics) => Ok(CommandOutcome::Diagnostics(diagnostics)),
-    }
-}
-
-/// Reports whether a build would change generated artifacts.
+/// Reports whether code generation would change generated artifacts.
 ///
 /// # Errors
 ///
 /// Returns diagnostics when inputs or existing artifacts cannot be read.
-pub fn build_project_status(project: &Project) -> Result<CommandOutcome<bool>, DiagnosticSet> {
+pub fn codegen_project_status(project: &Project) -> Result<CommandOutcome<bool>, DiagnosticSet> {
     prepare_project_code(project, |prepared, _| prepared.has_changes())
 }
 

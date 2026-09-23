@@ -30,7 +30,7 @@ text: "推荐 <b>{&Item::sword_fire.name}</b>，售价 <color=#ffb347>{&Item::sw
 
 ## VS Code 与 LSP
 
-Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转和语义高亮。LSP 适合文本编辑和快速导航，但完整项目交付仍应运行 `coflow check` 或 `coflow build`。
+Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转和语义高亮。LSP 适合文本编辑和快速导航，但完整项目交付仍应运行 `coflow check`，需要生成源文件时再运行 `coflow codegen`。
 
 ## 与 CLI 的分工
 

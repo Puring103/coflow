@@ -1,4 +1,4 @@
-//! 会话项目命令：check/build/diff 与项目结构变更入口。
+//! 会话项目命令：check/codegen/diff 与项目结构变更入口。
 //!
 //! 结构变更（add/create/delete input）走 `coflow-project` 后触发会话重载。
 
@@ -69,19 +69,19 @@ impl SessionStore {
         }
     }
 
-    pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
+    pub fn generate_project_code(&self, id: u32) -> Result<String, EditorError> {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow_project::commands::build_project(&project)
+        match coflow_project::commands::generate_project_code(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow_project::commands::CommandOutcome::Success(report) => {
                 let mut outputs = Vec::new();
                 for target in report.targets {
-                    outputs.push(target.code.dir.display().to_string());
+                    outputs.push(target.dir.display().to_string());
                 }
-                Ok(format!("Build completed: {}", outputs.join(", ")))
+                Ok(format!("Codegen completed: {}", outputs.join(", ")))
             }
             coflow_project::commands::CommandOutcome::Diagnostics(diagnostics) => {
                 Err(project_diagnostics_to_editor_error(&diagnostics))
@@ -89,11 +89,11 @@ impl SessionStore {
         }
     }
 
-    pub fn build_project_status(&self, id: u32) -> Result<bool, EditorError> {
+    pub fn codegen_project_status(&self, id: u32) -> Result<bool, EditorError> {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_project::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow_project::commands::build_project_status(&project)
+        match coflow_project::commands::codegen_project_status(&project)
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
         {
             coflow_project::commands::CommandOutcome::Success(changed) => Ok(changed),

@@ -1,19 +1,11 @@
 # 项目流水线
 
-项目执行只有一条输入链路：
-
-```text
-coflow.yaml -> CFT compiler -> fixed CFD loader -> parser/lowerer
-            -> CfdDataModel -> checks -> CodegenInput -> language source files
-```
-
-runtime 负责文件发现、文本读取、schema/data/check 诊断和不可变 generation。CLI、LSP 和编辑器共享这条 pipeline。
+`coflow.yaml` 指定 CFT schema、CFD 数据和代码生成目标。项目加载后，可以分别检查数据或生成目标语言源文件。
 
 ## 命令
 
-- `coflow cft check` 只编译 schema。
-- `coflow check` 加载全部 CFD、执行引用解析和 check，不写产物。
-- `coflow codegen` 加载 schema 和 CFD 数据模型，但不执行 `check {}`；没有 schema、数据模型或生成诊断时，按每个 `codegen` target 发布源文件。
-- `coflow build` 等价于 check 加全部 codegen target 的原子发布。
+- `coflow cft check` 只检查 schema。
+- `coflow check` 加载全部 CFD、解析引用并执行 `check {}`，不写产物。
+- `coflow codegen` 加载 schema 和 CFD 数据，但不执行 `check {}`；输入与生成均无诊断时，原子发布所有配置的目标语言源文件。
 
-任意阶段失败都不会替换上一次成功的 generation 或代码目录。发布前会校验相对路径、重复文件和内容清单。
+交付前先运行 `coflow check`，通过后再运行 `coflow codegen`。生成失败不会替换已有代码目录。

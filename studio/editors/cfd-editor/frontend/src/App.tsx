@@ -303,15 +303,15 @@ export default function App() {
       setShortNameSaving(false)
     }
   }, [generation, lookups, projectSettings?.short_name_fields, setProjectSettings])
-  const [projectAction, setProjectAction] = useState<'build' | null>(null)
-  const [buildPending, setBuildPending] = useState(false)
+  const [projectAction, setProjectAction] = useState<'codegen' | null>(null)
+  const [codegenPending, setCodegenPending] = useState(false)
 
   useEffect(() => {
     const showNotice = (event: Event) => setErrorMsg((event as CustomEvent<string>).detail)
     window.addEventListener('cfd-editor-notice', showNotice)
     return () => window.removeEventListener('cfd-editor-notice', showNotice)
   }, [])
-  const buildStatusRequestRef = useRef(0)
+  const codegenStatusRequestRef = useRef(0)
   const [projectActionNotice, setProjectActionNotice] = useState<{
     message: string
     tone: 'success' | 'error'
@@ -2020,22 +2020,22 @@ export default function App() {
     setFirstRecordFocusRequest(current => current === request ? 0 : current)
   }, [])
 
-  const runBuild = useCallback(async () => {
+  const runCodegen = useCallback(async () => {
     const identity = generation.currentIdentity()
     if (!identity || projectAction) return
-    setProjectAction('build')
+    setProjectAction('codegen')
     setProjectActionNotice(null)
     setErrorMsg(null)
     try {
-      const result = await api.buildProject(identity.sessionId)
-      buildStatusRequestRef.current += 1
-      setBuildPending(false)
+      const result = await api.generateProjectCode(identity.sessionId)
+      codegenStatusRequestRef.current += 1
+      setCodegenPending(false)
       setProjectActionNotice({
-        message: result.replace('Build completed:', '构建完成：'),
+        message: result.replace('Codegen completed:', '代码生成完成：'),
         tone: 'success',
       })
     } catch (error) {
-      const message = `构建失败: ${errorMessage(error)}`
+      const message = `代码生成失败: ${errorMessage(error)}`
       setErrorMsg(message)
       setProjectActionNotice({ message, tone: 'error' })
     } finally {
@@ -2044,17 +2044,17 @@ export default function App() {
   }, [generation, projectAction])
 
   useEffect(() => {
-    const request = ++buildStatusRequestRef.current
+    const request = ++codegenStatusRequestRef.current
     if (!project || !api.isTauri) {
-      setBuildPending(false)
+      setCodegenPending(false)
       return
     }
-    setBuildPending(false)
+    setCodegenPending(false)
     const timer = window.setTimeout(() => {
-      api.buildProjectStatus(project.session_id).then(changed => {
-        if (buildStatusRequestRef.current === request) setBuildPending(changed)
+      api.codegenProjectStatus(project.session_id).then(changed => {
+        if (codegenStatusRequestRef.current === request) setCodegenPending(changed)
       }).catch(() => {
-        if (buildStatusRequestRef.current === request) setBuildPending(false)
+        if (codegenStatusRequestRef.current === request) setCodegenPending(false)
       })
     }, 200)
     return () => window.clearTimeout(timer)
@@ -2435,14 +2435,14 @@ export default function App() {
           </button>
           {project && (
             <button
-              className="btn btn-primary btn-icon btn-build"
-              onClick={runBuild}
+              className="btn btn-primary btn-icon btn-codegen"
+              onClick={runCodegen}
               disabled={projectAction !== null}
-              title={buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}
-              aria-label={buildPending ? '构建项目，有待生成的变更' : '构建项目'}
+              title={codegenPending ? '生成内容已变更，需要重新生成' : '生成代码'}
+              aria-label={codegenPending ? '生成代码，有待生成的变更' : '生成代码'}
             >
-              <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-              {buildPending && <span className="build-pending-indicator" aria-hidden />}
+              <Icon name={projectAction === 'codegen' ? 'refresh' : 'build'} size={15} className={projectAction === 'codegen' ? 'icon-spin' : undefined} />
+              {codegenPending && <span className="codegen-pending-indicator" aria-hidden />}
             </button>
           )}
           <span className="topbar-divider" />

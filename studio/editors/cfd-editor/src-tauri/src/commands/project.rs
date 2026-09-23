@@ -1,4 +1,4 @@
-//! 项目生命周期、构建、设置与源码打开命令。
+//! 项目生命周期、代码生成、设置与源码打开命令。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -263,20 +263,20 @@ pub(crate) async fn check_project(
 }
 
 #[tauri::command]
-pub(crate) async fn build_project(
+pub(crate) async fn generate_project_code(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<String, EditorError> {
-    run_host_command(host, move |host| host.sessions().build_project(session_id)).await
+    run_host_command(host, move |host| host.sessions().generate_project_code(session_id)).await
 }
 
 #[tauri::command]
-pub(crate) async fn build_project_status(
+pub(crate) async fn codegen_project_status(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<bool, EditorError> {
     run_host_command(host, move |host| {
-        host.sessions().build_project_status(session_id)
+        host.sessions().codegen_project_status(session_id)
     })
     .await
 }

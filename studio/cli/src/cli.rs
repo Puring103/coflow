@@ -12,6 +12,30 @@ pub(crate) struct Cli {
     pub(crate) command: Command,
 }
 
+impl Cli {
+    // 顶层失败处理需提前知道子命令请求的输出格式。
+    pub(crate) fn json_output(&self) -> bool {
+        match &self.command {
+            Command::Check(args) => args.json,
+            Command::Diff(args) => args.json,
+            Command::Cft(args) => match &args.command {
+                CftCommand::Check(args) => args.json,
+            },
+            Command::Schema(args) => match &args.command {
+                SchemaCommand::Inspect(args) => args.json,
+                SchemaCommand::Files(args) => args.json,
+                SchemaCommand::WriteFile(args) => args.json,
+            },
+            Command::Skill(args) => match &args.command {
+                SkillCommand::Install(args)
+                | SkillCommand::Uninstall(args)
+                | SkillCommand::Status(args) => args.json,
+            },
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     Init(InitArgs),
@@ -20,7 +44,6 @@ pub(crate) enum Command {
     Lsp(LspArgs),
     Check(ProjectCheckArgs),
     Diff(DiffArgs),
-    Build(BuildArgs),
     Codegen(CodegenArgs),
     Schema(SchemaArgs),
     Skill(SkillArgs),
@@ -113,12 +136,6 @@ pub(crate) struct ProjectCheckArgs {
     pub(crate) config_or_dir: Option<PathBuf>,
     #[arg(long)]
     pub(crate) json: bool,
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct BuildArgs {
-    #[arg(value_name = "CONFIG_OR_DIR")]
-    pub(crate) config_or_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
