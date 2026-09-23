@@ -93,4 +93,5 @@ pub(crate) fn error(message: &str) -> ExecutionError { ExecutionError::InvalidAc
 mod builtins;
 
 mod bytecode_analysis;
+pub(crate) mod bytecode_optimization;
 mod bytecode_rewrite;

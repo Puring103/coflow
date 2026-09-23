@@ -39,13 +39,25 @@ impl Program {
                 ).with_flags(instruction.flags());
             }
         }
-        for site in &mut self.for_sites {
-            site.target = relocate(site.target)?;
+        let targets = self.for_sites.iter().map(|site| relocate(site.target)).collect::<Result<Vec<_>, _>>()?;
+        for (site, target) in self.for_sites.iter_mut().zip(targets) {
+            site.target = target;
         }
         self.instructions = instructions;
         self.spans = spans;
-        // 调用者必须根据改写阶段重建活跃性或分配寄存器，再使用分析结果。
+        // 改写后的旧活跃集合已失效，任何读取方必须先重新分析。
+        self.live.clear();
         Ok(true)
+    }
+
+    /// 保证指令改写后的局部活跃信息已重建；未改写时复用原分析结果。
+    pub(crate) fn rewrite_with_liveness(
+        &mut self,
+        rewrite: impl FnMut(&mut Self, usize, Instruction, &mut Vec<Instruction>) -> Result<(), String>,
+    ) -> Result<bool, String> {
+        let changed = self.rewrite_instructions(rewrite)?;
+        if changed { self.build_local_liveness()?; }
+        Ok(changed)
     }
 }
 
@@ -53,6 +65,53 @@ impl Program {
 mod tests {
     use super::*;
     use crate::{schema::CftValueType, source::Span, vm::bytecode::ForSite};
+
+    #[test]
+    fn rewrite_invalidates_liveness_until_rebuilt() {
+        let mut program = Program::new("live".into(), String::new(), vec![CftValueType::Int], CftValueType::Int);
+        program.instructions = vec![Instruction::new(Opcode::Return, 0, 0, 0, 0)];
+        program.spans = vec![Span::new(0, 1)];
+        program.build_liveness().unwrap();
+        assert!(program.rewrite_instructions(|_, _, instruction, output| {
+            output.push(Instruction::new(Opcode::Move, 0, 0, 0, 0));
+            output.push(instruction);
+            Ok(())
+        }).unwrap());
+        assert!(program.live.is_empty());
+        assert!(program.validate().is_err());
+        program.build_liveness().unwrap();
+        program.validate().unwrap();
+    }
+
+    #[test]
+    fn rewriting_with_liveness_publishes_valid_analysis() {
+        let mut program = Program::new("live".into(), String::new(), vec![CftValueType::Int], CftValueType::Int);
+        program.instructions = vec![Instruction::new(Opcode::Return, 0, 0, 0, 0)];
+        program.spans = vec![Span::new(0, 1)];
+        program.build_liveness().unwrap();
+        assert!(program.rewrite_with_liveness(|_, _, instruction, output| {
+            output.push(Instruction::new(Opcode::Move, 0, 0, 0, 0));
+            output.push(instruction);
+            Ok(())
+        }).unwrap());
+        program.validate().unwrap();
+    }
+
+    #[test]
+    fn invalid_branch_rewrite_preserves_original_program() {
+        let mut program = Program::new("branch".into(), String::new(), vec![CftValueType::Int], CftValueType::Int);
+        program.instructions = vec![Instruction::new(Opcode::Return, 0, 0, 0, 0)];
+        program.spans = vec![Span::new(0, 1)];
+        program.build_liveness().unwrap();
+        let original = program.instructions.clone();
+        let live = program.live.clone();
+        assert!(program.rewrite_instructions(|_, _, _, output| {
+            output.push(Instruction::indexed(Opcode::Jump, 0, 10));
+            Ok(())
+        }).is_err());
+        assert_eq!(program.instructions, original);
+        assert_eq!(program.live, live);
+    }
 
     #[test]
     fn expansion_and_removal_relocate_branches_loops_and_source_spans() {

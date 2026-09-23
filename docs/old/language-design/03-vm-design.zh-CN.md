@@ -119,6 +119,9 @@ fault 记录当前函数、源模块、UTF-8 span 和精简调用栈。内部寄
 - `vm/slot.rs`、`vm/budget.rs`、`vm/scalar.rs`：执行槽、共享预算与统一标量运算语义。
 - `vm/bytecode.rs`：字节码格式、附表与调用窗口。
 - `vm/bytecode_analysis.rs`：发布验证、寄存器读写集合、控制流与工作队列存活分析。
+- `vm/bytecode_rewrite.rs`、`vm/bytecode_optimization.rs`：不依赖固定快照的指令重定位、压缩、标量控制流折叠与立即数融合；改写后清除旧活跃信息，需重新分析才能验证或读取。
+- `vm/optimization.rs`：映像内调用图 effect 与有界内联；候选程序完成寄存器重分配后才替换原程序。
+- `runtime/image.rs`：固定值链接与专化、跨程序调用优化和签名验证按顺序完成，最后统一发布不可变程序。
 - `vm/builtins.rs`：编译器与 IR 验证器共享的内建签名契约。
 
 每个 Runtime 缓存已清空的寄存器、调用帧、根和操作数缓冲。调用帧归还前清除程序借用和捕获；缓存仅保留容量。
