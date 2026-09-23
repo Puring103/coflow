@@ -34,6 +34,6 @@ pub use records::{
 };
 pub use records::{CreateFieldSource, CreateRequiredInput};
 pub use settings::{
-    EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab, ViewConfig,
+    EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab, ViewConfig,
     ViewKind, WorkspaceViewKind,
 };

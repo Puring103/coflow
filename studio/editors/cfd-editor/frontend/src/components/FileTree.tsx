@@ -5,11 +5,14 @@ import type { DimensionInfo } from '../bindings/DimensionInfo'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { cssEscape } from '../utils/dom'
+import { buildDimensionTree, dimensionTargetId, type DimensionTarget, type DimensionTreeNode } from '../state/dimensionNavigation'
 
 interface Props {
   nodes: FileTreeNode[]
   dimensions: DimensionInfo[]
   fileTypes: Record<string, FileTypeOption[] | undefined>
+  selectedDimension?: DimensionTarget | null
+  onSelectDimension?: (target: DimensionTarget) => void
   selectedFile: string | null
   selectedType: string
   onSelectFile: (path: string, typeName: string) => void
@@ -47,15 +50,20 @@ function saveCollapsed(set: Set<string>) {
 type FlatItem =
   | { kind: 'node'; node: FileTreeNode; depth: number }
   | { kind: 'type'; filePath: string; type: FileTypeOption; depth: number }
+  | { kind: 'dimension'; node: DimensionTreeNode; depth: number }
 
 export interface FileTreeGroup {
   key: string
   label: string
   icon: 'data' | 'localization' | 'dimension' | 'code'
   nodes: FileTreeNode[]
+  dimensionNodes?: DimensionTreeNode[]
 }
 
-export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: DimensionInfo[]): FileTreeGroup[] {
+export function buildFileTreeGroups(
+  nodes: FileTreeNode[], dimensions: DimensionInfo[],
+  fileTypes: Record<string, FileTypeOption[] | undefined> = {},
+): FileTreeGroup[] {
   const groups: FileTreeGroup[] = [{
     key: '__schema__',
     label: '类型',
@@ -81,16 +89,8 @@ export function buildFileTreeGroups(nodes: FileTreeNode[], dimensions: Dimension
       key: `__dimension__:${dimension.name}`,
       label: dimension.display_name,
       icon: dimension.name === 'language' ? 'localization' : 'dimension',
-      nodes: [{
-        name: '全部记录',
-        path: `@dimension/${dimension.name}`,
-        is_dir: false,
-        in_sources: false,
-        in_schema: false,
-        in_data: false,
-        first_source_descendant: null,
-        children: [],
-      }],
+      nodes: [],
+      dimensionNodes: buildDimensionTree(nodes, dimension, fileTypes),
     })
   }
   return groups
@@ -134,6 +134,63 @@ function visibleFlatItems(
   return out
 }
 
+function countDimensionFiles(nodes: DimensionTreeNode[]): number {
+  // 文件节点即使是单例入口，也应按业务文件计数；类型节点不重复计数。
+  return nodes.reduce((count, node) => count + (node.kind === 'file'
+    || node.kind === 'singleton' && (node.target?.ownerFile.endsWith('/' + node.label) || node.target?.ownerFile === node.label) ? 1 : 0)
+    + countDimensionFiles(node.children), 0)
+}
+
+function visibleDimensionItems(nodes: DimensionTreeNode[], collapsed: ReadonlySet<string>, depth = 0): FlatItem[] {
+  return nodes.flatMap(node => [
+    { kind: 'dimension' as const, node, depth },
+    ...(collapsed.has(node.id) ? [] : visibleDimensionItems(node.children, collapsed, depth + 1)),
+  ])
+}
+
+function expandDimensionAncestors(nodes: DimensionTreeNode[], selectedId: string, collapsed: Set<string>): boolean {
+  const path = (items: DimensionTreeNode[]): string[] | null => {
+    for (const node of items) {
+      if (node.id === selectedId) return [node.id]
+      const child = path(node.children)
+      if (child) return [node.id, ...child]
+    }
+    return null
+  }
+  const ancestors = path(nodes)?.slice(0, -1) ?? []
+  return ancestors.reduce((changed, id) => collapsed.delete(id) || changed, false)
+}
+
+function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect }: {
+  node: DimensionTreeNode
+  depth: number
+  collapsed: ReadonlySet<string>
+  selectedId: string | null
+  onToggle: (id: string) => void
+  onSelect?: (target: DimensionTarget) => void
+}) {
+  const expanded = !collapsed.has(node.id)
+  const branch = node.children.length > 0
+  const selected = !!node.target && selectedId === node.id
+  const activate = () => branch ? onToggle(node.id) : node.target && onSelect?.(node.target)
+  return <div role="group">
+    <div role="treeitem" aria-level={depth + 1} aria-expanded={branch ? expanded : undefined}
+      aria-selected={selected} tabIndex={0} data-path={node.id} title={node.label}
+      className={node.kind === 'directory' ? 'tree-dir-label' : `tree-file${selected ? ' selected' : ''}${branch ? ' tree-file-parent' : ''}`}
+      style={{ paddingLeft: (depth + 1) * 12 + 8 }}
+      onClick={activate} onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault(); event.stopPropagation(); activate()
+        }
+      }}>
+      <Icon name={branch ? (expanded ? 'chevron-down' : 'chevron-right') : node.kind === 'field' ? 'code' : 'file-cfd'} size={14} aria-hidden />
+      <span className="tree-item-label">{node.label}</span>
+    </div>
+    {branch && expanded && node.children.map(child => <DimensionNode key={child.id} node={child}
+      depth={depth + 1} collapsed={collapsed} selectedId={selectedId} onToggle={onToggle} onSelect={onSelect} />)}
+  </div>
+}
+
 function countSourceFiles(nodes: FileTreeNode[]): number {
   let count = 0
   for (const n of nodes) {
@@ -143,7 +200,7 @@ function countSourceFiles(nodes: FileTreeNode[]): number {
   return count
 }
 
-export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
+export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSelectDimension, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
   const [contextMenu, setContextMenu] = useState<{
@@ -151,7 +208,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
     isDir?: boolean; sourceKind?: 'schema' | 'data'; canManage?: boolean
   } | null>(null)
   const contextReturnPath = useRef<string | null>(null)
-  const groups = buildFileTreeGroups(nodes, dimensions)
+  const groups = buildFileTreeGroups(nodes, dimensions, fileTypes)
 
   const toggle = (path: string) => {
     setCollapsed(prev => {
@@ -183,8 +240,9 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
       && e.key !== 'ArrowRight'
       && e.key !== 'Enter'
     ) return
-    const flat = groups.flatMap(group => collapsed.has(group.key)
-      ? []
+    // 维度目录与普通文件树共享键盘导航顺序，但选择目标是字段或单例。
+    const flat = groups.flatMap(group => collapsed.has(group.key) ? [] : group.dimensionNodes
+      ? visibleDimensionItems(group.dimensionNodes, collapsed)
       : visibleFlatItems(group.nodes, collapsed, fileTypes, 0))
     if (flat.length === 0) return
     const cur = document.activeElement as HTMLElement | null
@@ -193,12 +251,12 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
       e.preventDefault()
       const next = flat[Math.min(idx + 1, flat.length - 1)]
       focusByPath(rootRef.current, flatItemPath(next))
-      activateFlatItem(next, fileTypes, onSelectFile)
+      activateFlatItem(next, fileTypes, onSelectFile, onSelectDimension)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       const prev = flat[Math.max(idx - 1, 0)]
       focusByPath(rootRef.current, flatItemPath(prev))
-      activateFlatItem(prev, fileTypes, onSelectFile)
+      activateFlatItem(prev, fileTypes, onSelectFile, onSelectDimension)
     } else if (e.key === 'ArrowRight') {
       const item = flat[idx]
       if (!item) return
@@ -206,16 +264,16 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
       if (item.kind === 'type') {
         onExitRight?.()
       } else {
-        const expandable = item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1
+        const expandable = item.kind === 'dimension' ? item.node.children.length > 0 : item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1
         if (!expandable) {
           onExitRight?.()
-        } else if (collapsed.has(item.node.path)) {
-          toggle(item.node.path)
+        } else if (collapsed.has(item.kind === 'dimension' ? item.node.id : item.node.path)) {
+          toggle(item.kind === 'dimension' ? item.node.id : item.node.path)
         } else {
           const child = flat[idx + 1]
           if (child && child.depth > item.depth) {
             focusByPath(rootRef.current, flatItemPath(child))
-            activateFlatItem(child, fileTypes, onSelectFile)
+            activateFlatItem(child, fileTypes, onSelectFile, onSelectDimension)
           }
         }
       }
@@ -226,10 +284,10 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
       if (item.kind === 'type') {
         focusByPath(rootRef.current, item.filePath)
       } else if (
-        (item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1)
-        && !collapsed.has(item.node.path)
+        (item.kind === 'dimension' ? item.node.children.length > 0 : item.node.is_dir || (fileTypes[item.node.path]?.length ?? 0) > 1)
+        && !collapsed.has(item.kind === 'dimension' ? item.node.id : item.node.path)
       ) {
-        toggle(item.node.path)
+        toggle(item.kind === 'dimension' ? item.node.id : item.node.path)
       } else {
         const parent = findVisibleParent(flat, idx)
         if (parent) focusByPath(rootRef.current, flatItemPath(parent))
@@ -240,12 +298,12 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
       if (targetItem) {
         e.preventDefault()
         if (
-          targetItem.kind === 'node'
-          && (targetItem.node.is_dir || (fileTypes[targetItem.node.path]?.length ?? 0) > 1)
+          targetItem.kind !== 'type'
+          && (targetItem.kind === 'dimension' ? targetItem.node.children.length > 0 : targetItem.node.is_dir || (fileTypes[targetItem.node.path]?.length ?? 0) > 1)
         ) {
-          toggle(targetItem.node.path)
+          toggle(targetItem.kind === 'dimension' ? targetItem.node.id : targetItem.node.path)
         } else {
-          activateFlatItem(targetItem, fileTypes, onSelectFile)
+          activateFlatItem(targetItem, fileTypes, onSelectFile, onSelectDimension)
         }
       }
     }
@@ -257,19 +315,26 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
   // the currently-selected file would be immediately undone, which is the
   // bug that made top-level folders feel "uncollapsible".
   useEffect(() => {
-    if (!selectedFile) return
+    if (!selectedFile && !selectedDimension) return
     setCollapsed(prev => {
       let changed = false
       const next = new Set(prev)
-      for (const n of nodes) {
-        if (walkExpandIfParent(n, selectedFile, next)) changed = true
+      if (selectedFile) {
+        for (const n of nodes) {
+          if (walkExpandIfParent(n, selectedFile, next)) changed = true
+        }
+        if ((fileTypes[selectedFile]?.length ?? 0) > 1 && next.delete(selectedFile)) changed = true
       }
-      if ((fileTypes[selectedFile]?.length ?? 0) > 1 && next.delete(selectedFile)) changed = true
+      if (selectedDimension) {
+        const group = groups.find(item => item.key === `__dimension__:${selectedDimension.dimension}`)
+        if (group && next.delete(group.key)) changed = true
+        if (group?.dimensionNodes && expandDimensionAncestors(group.dimensionNodes, dimensionTargetId(selectedDimension), next)) changed = true
+      }
       if (!changed) return prev
       saveCollapsed(next)
       return next
     })
-  }, [selectedFile, nodes, fileTypes])
+  }, [selectedFile, selectedDimension, nodes, fileTypes, dimensions])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -308,10 +373,15 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedFile, selectedT
             />
             <Icon name={group.icon} size={17} className={`tree-heading-icon ${group.icon}`} aria-hidden />
             <strong>{group.label}</strong>
-            <span className="tree-heading-count">{countSourceFiles(group.nodes)}</span>
+            <span className="tree-heading-count">{group.dimensionNodes ? countDimensionFiles(group.dimensionNodes) : countSourceFiles(group.nodes)}</span>
           </button>
           {!collapsed.has(group.key) && (
             <div className="tree-content" role="group">
+              {group.dimensionNodes?.map(node => (
+                <DimensionNode key={node.id} node={node} depth={0} collapsed={collapsed}
+                  selectedId={selectedDimension ? dimensionTargetId(selectedDimension) : null}
+                  onToggle={toggle} onSelect={onSelectDimension} />
+              ))}
               {group.nodes.map(n => (
                 <TreeNode
                   key={n.path}
@@ -412,7 +482,7 @@ function findVisibleParent(
 }
 
 function flatItemPath(item: FlatItem): string {
-  return item.kind === 'node' ? item.node.path : typeItemPath(item.filePath, item.type.name)
+  return item.kind === 'dimension' ? item.node.id : item.kind === 'node' ? item.node.path : typeItemPath(item.filePath, item.type.name)
 }
 
 function typeItemPath(filePath: string, typeName: string): string {
@@ -423,9 +493,14 @@ function activateFlatItem(
   item: FlatItem,
   fileTypes: Record<string, FileTypeOption[] | undefined>,
   onSelectFile: (path: string, typeName: string) => void,
+  onSelectDimension?: (target: DimensionTarget) => void,
 ) {
   if (item.kind === 'type') {
     onSelectFile(item.filePath, item.type.name)
+    return
+  }
+  if (item.kind === 'dimension') {
+    if (item.node.target) onSelectDimension?.(item.node.target)
     return
   }
   if (!item.node.is_dir && (fileTypes[item.node.path]?.length ?? 0) <= 1) {

@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { buildFileTreeGroups } from './FileTree'
 
 const emptyDiff: ProjectDiff = { head_oid: 'abc', target_revision: 0, semantic_available: true, files: [], records: [], diagnostics: [] }
-const fileTypes = { 'data/items.cfd': [{ name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false }] }
+const fileTypes = { 'data/items.cfd': [{ name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false, dimension_fields: {} }] }
 
 describe('Git Diff available views and tree', () => {
   it('hides semantic views for a selected source-only file even when another file has records', () => {
@@ -20,7 +20,7 @@ describe('Git Diff available views and tree', () => {
 
   it('shows record and source views for singleton types without a table view', () => {
     const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', key: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
-    const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true }] }
+    const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true, dimension_fields: {} }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes: singletonTypes, loading: false, error: null, selection: { filePath: 'data/settings.cfd', typeName: 'Settings', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
     expect(html).toContain('>记录</button>')
     expect(html).not.toContain('>表格</button>')
@@ -33,7 +33,7 @@ describe('Git Diff available views and tree', () => {
     expect(groups[0].nodes[0].children[0].path).toBe('schema/old.cft')
     expect(JSON.stringify(groups[1].nodes)).toContain('data/nested/old.cfd')
     expect(JSON.stringify(groups[1].nodes)).toContain('generated/lang/old.cfd')
-    expect(groups[2].nodes[0].path).toBe('@dimension/language')
+    expect(groups[2].dimensionNodes).toEqual([])
   })
 
   it('keeps only changed files in the file tree', () => {
@@ -59,8 +59,8 @@ describe('Git Diff available views and tree', () => {
     ]
     const multiTypes = {
       'dimensions/language/Item_name.cfd': [
-        { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
-        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false },
+        { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false, dimension_fields: {} },
+        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false, dimension_fields: {} },
       ],
     }
     const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
@@ -96,8 +96,8 @@ describe('Git Diff available views and tree', () => {
     ]
     const mixedTypes = {
       'data/mixed.cfd': [
-        { name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false },
-        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false },
+        { name: 'Item', display_name: 'Items', record_count: 1, is_singleton: false, dimension_fields: {} },
+        { name: 'Weapon', display_name: 'Weapons', record_count: 0, is_singleton: false, dimension_fields: {} },
       ],
     }
     const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
