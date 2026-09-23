@@ -201,6 +201,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('初级药水'),
+        default_previews: {}, variant_previews: {},
         values: {
           'zh-CN': { kind: 'value', value: stringValue('初级药水') },
           'en-US': { kind: 'value', value: stringValue('Minor Potion') },
@@ -211,6 +212,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('中级药水'),
+        default_previews: {}, variant_previews: {},
         values: {
           'zh-CN': { kind: 'value', value: stringValue('中级药水') },
           'en-US': { kind: 'missing' },
@@ -278,6 +280,7 @@ function row(
     fields: fields.map(field => ({ ...field, missing: false })),
     field_index,
     field_summaries,
+    formatted_previews: {},
     field_diagnostics: [],
     diagnostic_severity: null,
   }

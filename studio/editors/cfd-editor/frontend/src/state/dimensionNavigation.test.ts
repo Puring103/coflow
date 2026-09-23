@@ -9,7 +9,7 @@ describe('维度行定位', () => {
       ['data/b.cfd', 'Item', 'name'], ['data/a.cfd', 'Weapon', 'name'],
     ].map(([owner_file_path, actual_type, field]) => ({
       owner_file_path, coordinate: { actual_type, key: 'id' }, field,
-      default_value: { kind: 'string' as const, value: 'default' }, values: {},
+      default_value: { kind: 'string' as const, value: 'default' }, default_previews: {}, variant_previews: {}, values: {},
     }))
     const data = { revision: 1, file_path: '@dimension/language', dimension: 'language',
       display_name: '本地化', variants: ['en'], rows } as DimensionFileRecords

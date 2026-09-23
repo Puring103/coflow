@@ -6,7 +6,7 @@ import { graphCacheKey, projectGraphRows } from './appSupport'
 
 const row = (actualType: string, key: string): RecordRow => ({
   coordinate: { actual_type: actualType, key }, display_path: 'data/items.cfd',
-  container_index: 0, container_size: 1, fields: [], field_index: {}, field_summaries: {},
+  container_index: 0, container_size: 1, fields: [], field_index: {}, formatted_previews: {}, field_summaries: {},
   field_diagnostics: [], diagnostic_severity: null,
 })
 

@@ -544,7 +544,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
                   {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
                 </th>
-                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} /></td>
+                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} formattedPreviews={item.row.default_previews} /></td>
                 {data.variants.map((variant, variantIndex) => {
                   const colIndex = variantIndex + 2
                   const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
@@ -591,7 +591,7 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
       <header><strong>{row.coordinate.key}</strong></header>
       <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
         <span>default</span>
-        <DataCardCompact value={row.default_value} />
+        <DataCardCompact value={row.default_value} formattedPreviews={row.default_previews} />
       </div>
       {variants.map((variant, index) => (
         <div className={`dimension-record-row${selectedField === index + 1 ? ' keyboard-selected' : ''}`} key={variant} data-dimension-record-field={index + 1} onMouseDown={() => onSelectField(index + 1)}>
@@ -727,7 +727,8 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
   }
   return (
     <div className={`dimension-cell-editor${busy ? ' busy' : ''}`}>
-      <DirectEditor value={state.value} onCommit={commit} />
+      <DirectEditor value={state.value} preview={row.variant_previews[variant]?.[JSON.stringify([])]}
+        formattedPreviews={row.variant_previews[variant]} onCommit={commit} />
       <button
         type="button"
         className="dimension-cell-clear"

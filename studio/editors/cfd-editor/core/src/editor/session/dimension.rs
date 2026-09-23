@@ -3,8 +3,10 @@ use coflow_project::{
     DimensionValueView, FieldName, MutationOp, MutationRequest, MutationValue, VariantName,
 };
 
+use crate::editor::convert::template_error_paths;
 use crate::editor::types::{
-    DimensionFileRecords, DimensionFileRow, EditorError, WriteDimensionValueOutcome,
+    DimensionFileRecords, DimensionFileRow, EditorError, TemplatePreviewValue,
+    WriteDimensionValueOutcome,
 };
 
 use super::errors::api_diagnostics_to_editor_error;
@@ -29,6 +31,8 @@ impl SessionStore {
             .ok_or_else(|| EditorError::not_found("dimension view not found"))?;
         let dimension_name = DimensionName::new(dimension.name.clone())
             .map_err(|error| EditorError::other(error.to_string()))?;
+        // 一个维度页面共享同代际运行时；没有模板时不构建 VM。
+        let mut preview = None;
         let mut rows = Vec::new();
         for field in fields {
             let field_name = FieldName::new(field.source_field.clone())
@@ -60,7 +64,52 @@ impl SessionStore {
                         .map_or(DimensionValueState::Missing, |value| value.state);
                     values.insert(variant.clone(), state);
                 }
+                let mut render = |value: &coflow_project::CfdValue, variant: Option<&str>| {
+                    if !coflow_project::contains_template(value) {
+                        return std::collections::BTreeMap::new();
+                    }
+                    let renderer = preview.get_or_insert_with(|| queries.template_preview());
+                    let results = match renderer {
+                        Ok(renderer) => {
+                            renderer.dimension(view.record, &field.source_field, value, variant)
+                        }
+                        Err(error) => {
+                            let mut errors = std::collections::BTreeMap::new();
+                            template_error_paths(value, &mut Vec::new(), error, &mut errors);
+                            return errors;
+                        }
+                    };
+                    results
+                        .into_iter()
+                        .map(|(path, result)| {
+                            let value = match result {
+                                Ok(text) => TemplatePreviewValue {
+                                    text: Some(text),
+                                    error: None,
+                                },
+                                Err(error) => TemplatePreviewValue {
+                                    text: None,
+                                    error: Some(error),
+                                },
+                            };
+                            (path, value)
+                        })
+                        .collect()
+                };
+                let default_previews = render(&default_value, None);
+                let variant_previews = values
+                    .iter()
+                    .filter_map(|(variant, state)| {
+                        let DimensionValueState::Value(value) = state else {
+                            return None;
+                        };
+                        let rendered = render(value, Some(variant));
+                        (!rendered.is_empty()).then(|| (variant.clone(), rendered))
+                    })
+                    .collect();
                 rows.push(DimensionFileRow {
+                    default_previews,
+                    variant_previews,
                     owner_file_path: queries
                         .file_for_record(&target.coordinate.actual_type, &target.coordinate.key)
                         .unwrap_or_default()

@@ -1421,3 +1421,122 @@ fn source_save_checks_the_original_editor_text_and_allows_incomplete_cft() {
     assert!(repaired.file_types.values().flatten().any(|ty| ty.name == "ArrayExample"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn formatted_previews_evaluate_rich_text_and_nested_values_without_changing_sources() {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-template-preview-{id}"));
+    fs::create_dir_all(root.join("data")).expect("create project");
+    fs::write(root.join("coflow.yaml"), "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n").expect("config");
+    fs::write(root.join("schema.cft"), concat!(
+        "data Detail { text: fstring; }\n",
+        "table Message { count: int = 3; plain: string; title: fstring = f\"<b>default {self.count}</b>\"; ",
+        "detail: Detail; items: [fstring]; labels: {string: fstring}; optional: fstring?; }\n",
+    )).expect("schema");
+    fs::write(
+        root.join("data/messages.cfd"),
+        concat!(
+            "one: Message { plain: \"{self.count} <i>literal</i>\", ",
+            "detail: Detail { text: f\"<b>nested {&Message::one.count}</b>\" }, ",
+            "items: [f\"<i>array {&Message::one.count}</i>\"], ",
+            "labels: {\"key\": f\"<u>dict {&Message::one.count}</u>\"}, ",
+            "optional: f\"<color=#ff0000>option {&Message::one.count}</color>\" }\n",
+        ),
+    )
+    .expect("data");
+
+    let store = SessionStore::new().expect("store");
+    let snapshot = store.load_project(&root.join("coflow.yaml")).expect("load");
+    assert!(
+        snapshot.diagnostics.iter().all(|d| d.severity != "error"),
+        "{:?}",
+        snapshot.diagnostics
+    );
+    let records = store
+        .get_file_records(snapshot.session_id, "data/messages.cfd")
+        .expect("records");
+    let row = &records.records[0];
+    let preview = |path: Vec<CfdPathSegment>| -> String {
+        let key = serde_json::to_string(&path).expect("path");
+        let result = row
+            .formatted_previews
+            .get(&key)
+            .unwrap_or_else(|| panic!("missing {key}: {:?}", row.formatted_previews));
+        result
+            .text
+            .clone()
+            .unwrap_or_else(|| panic!("preview error: {:?}", result.error))
+    };
+    assert_eq!(preview(vec![field("title")]), "<b>default 3</b>");
+    assert_eq!(
+        preview(vec![field("detail"), field("text")]),
+        "<b>nested 3</b>"
+    );
+    assert_eq!(
+        preview(vec![field("items"), CfdPathSegment::Index(0)]),
+        "<i>array 3</i>"
+    );
+    assert_eq!(
+        preview(vec![
+            field("labels"),
+            CfdPathSegment::DictKey("\"key\"".into())
+        ]),
+        "<u>dict 3</u>"
+    );
+    assert_eq!(
+        preview(vec![field("optional")]),
+        "<color=#ff0000>option 3</color>"
+    );
+    assert!(row
+        .formatted_previews
+        .keys()
+        .all(|key| !key.contains("plain")));
+    assert!(
+        matches!(&row.fields[*row.field_index.get("plain").expect("plain")].value,
+        CfdValue::String(value) if value == "{self.count} <i>literal</i>")
+    );
+    assert!(
+        matches!(&row.fields[*row.field_index.get("title").expect("title")].value,
+        CfdValue::FormattedString(value) if value.source.contains("{self.count}"))
+    );
+    // 写入依赖字段后，下一代际的预览必须重新由 VM 求值，而非沿用旧文本。
+    let source = fs::read_to_string(root.join("data/messages.cfd")).expect("source");
+    let changed = source.replace("plain: ", "count: 7, plain: ");
+    store
+        .write_source_text(snapshot.session_id, "data/messages.cfd", &changed, &source)
+        .expect("update dependency");
+    let updated = store
+        .get_file_records(snapshot.session_id, "data/messages.cfd")
+        .expect("refreshed records");
+    let title_key = serde_json::to_string(&[field("title")]).expect("path");
+    assert_eq!(
+        updated.records[0].formatted_previews[&title_key]
+            .text
+            .as_deref(),
+        Some("<b>default 7</b>")
+    );
+    assert!(updated.records[0].field_summaries["title"].contains("default 7"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn dimension_formatted_previews_evaluate_default_and_variants() {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-dimension-preview-{id}"));
+    fs::create_dir_all(root.join("data")).expect("create project");
+    fs::write(root.join("coflow.yaml"), "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n").expect("config");
+    fs::write(root.join("schema.cft"), "table Message { count: int = 2; @localized text: fstring; }\n").expect("schema");
+    fs::write(root.join("data/messages.cfd"), concat!(
+        "one: Message { count: 2, text: dimension { ",
+        "default: f\"<b>default {self.count}</b>\", ",
+        "zh: f\"<i>中文 {self.count}</i>\" } }\n",
+    )).expect("data");
+    let store = SessionStore::new().expect("store");
+    let snapshot = store.load_project(&root.join("coflow.yaml")).expect("load");
+    assert!(snapshot.diagnostics.iter().all(|d| d.severity != "error"), "{:?}", snapshot.diagnostics);
+    let dimension = store.get_dimension_file_records(snapshot.session_id, "@dimension/language").expect("dimension");
+    let row = dimension.rows.iter().find(|row| row.coordinate.key.as_str() == "one").expect("row");
+    assert_eq!(row.default_previews["[]"].text.as_deref(), Some("<b>default 2</b>"));
+    assert_eq!(row.variant_previews["zh"]["[]"].text.as_deref(), Some("<i>中文 2</i>"));
+    fs::remove_dir_all(root).expect("cleanup");
+}

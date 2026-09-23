@@ -174,7 +174,8 @@ impl RuntimeBuilder {
 }
 
 impl Runtime {
-    pub(crate) fn from_model(
+    /// 从已验证模型构建同代际的可执行快照，供只读宿主预览使用。
+    pub fn from_model(
         contract: Arc<Contract>,
         model: CfdDataModel,
         bindings: HostBindings,

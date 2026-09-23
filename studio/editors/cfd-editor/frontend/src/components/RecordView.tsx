@@ -596,6 +596,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         </div>
         <DataCardExpanded
           fields={fields}
+          formattedPreviews={record.formatted_previews}
           filePath={data.file_path}
           coordinate={record.coordinate}
           expandedPaths={expandedPaths}

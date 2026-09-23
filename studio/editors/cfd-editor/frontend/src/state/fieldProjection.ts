@@ -55,6 +55,7 @@ export function projectFieldValue(
   const nextRow: RecordRow = {
     ...row,
     fields,
+    formatted_previews: {},
     field_summaries: {
       ...row.field_summaries,
       [fieldName]: summaryOf(projected),

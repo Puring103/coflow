@@ -30,7 +30,8 @@ pub use records::{
     CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
     DimensionFileRecords, DimensionFileRow, EnumVariantOption, FieldAnnotation, FieldCell,
     FieldDiagnostic, FileRecords, InsertRecordOutcome, RecordColumn, RecordRow,
-    RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    RenameRecordOutcome, ReorderRecordsOutcome, TemplatePreviewValue, WriteDimensionValueOutcome,
+    WriteFieldOutcome,
 };
 pub use records::{CreateFieldSource, CreateRequiredInput};
 pub use settings::{

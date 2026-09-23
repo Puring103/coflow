@@ -198,27 +198,30 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, refTargetType, annotation, highlightQuery }: { value: FieldValue; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string }) {
-  const fallback = isComplexValue(value)
+export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, preview, formattedPreviews, fieldPath = [] }: { value: FieldValue; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string; preview?: { text: string | null; error: string | null }; formattedPreviews?: Record<string, { text: string | null; error: string | null } | undefined>; fieldPath?: FieldPathSegment[] }) {
+  const shownValue = presentationValue(value)
+  const fallback = isComplexValue(shownValue)
     ? (
       <HighlightQueryCtx.Provider value={highlightQuery}>
-        <div className="dc-inspector dc-inspector-compact">
-          <ComplexValueChildren value={value} depth={0} fieldPath={[]} valueAnnotation={annotation} />
-        </div>
+        <FormattedPreviewCtx.Provider value={formattedPreviews ?? {}}>
+          <div className="dc-inspector dc-inspector-compact">
+            <ComplexValueChildren value={shownValue} depth={0} fieldPath={fieldPath} valueAnnotation={annotation} />
+          </div>
+        </FormattedPreviewCtx.Provider>
       </HighlightQueryCtx.Provider>
     )
-    : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
+    : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} preview={preview ?? formattedPreviews?.[JSON.stringify(fieldPath)]} />
   return fallback
 }
 
-function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
+function ValueChip({ value, refTargetType, highlightQuery, preview }: { value: FieldValue; refTargetType?: string; highlightQuery?: string; preview?: { text: string | null; error: string | null } }) {
   const navigation = useEditorNavigation()
   const shortName = useReferenceShortName(value.kind === 'ref' ? refTargetType : undefined, value.kind === 'ref' ? referenceKeyText(value.value) : '')
   switch (value.kind) {
     case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
     case 'option_some':
-      return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
+      return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} preview={preview} />
     case 'bool':
       return (
         <span className={`vc vc-bool${value.value ? ' on' : ''}`}>
@@ -231,7 +234,9 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'string':
       return <span className="vc vc-str"><RichTextString text={value.value} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'formatted_string':
-      return <span className="vc vc-str"><code>{highlightSearchText(value.value.source, highlightQuery)}</code></span>
+      return preview?.text !== undefined && preview.text !== null
+        ? <span className="vc vc-str" title={value.value.source}><RichTextString text={preview.text} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
+        : <span className="vc vc-str" title={preview?.error ?? value.value.source}><code>{highlightSearchText(value.value.source, highlightQuery)}</code>{preview?.error && <span className="dc-fstring-error">预览失败</span>}</span>
     case 'enum':
       return (
         <span className="vc vc-enum">
@@ -307,6 +312,7 @@ const NodeRelationsCtx = createContext<{
   appendPaths: ReadonlySet<string>
 } | null>(null)
 const HighlightQueryCtx = createContext<string | undefined>(undefined)
+const FormattedPreviewCtx = createContext<Record<string, { text: string | null; error: string | null } | undefined>>({})
 const DiffPathCtx = createContext<ReadonlySet<string> | null>(null)
 const PluginRecordCtx = createContext<{
   identity: PluginIdentity
@@ -386,6 +392,7 @@ function buildDiagCtx(
 
 export interface ExpandedProps {
   fields: FieldCell[]
+  formattedPreviews?: Record<string, { text: string | null; error: string | null } | undefined>
   actualType?: string
   filePath?: string
   coordinate?: RecordCoordinate
@@ -417,6 +424,7 @@ export interface ExpandedProps {
 
 export function DataCardExpanded({
   fields,
+  formattedPreviews,
   actualType,
   filePath,
   coordinate,
@@ -554,13 +562,15 @@ export function DataCardExpanded({
     </div>
   )
   const wrapped = (
-    <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
-      <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
-        <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
-          <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
-        </ControlledExpansionCtx.Provider>
-      </ValueRowSelectionCtx.Provider>
-    </DiffPathCtx.Provider>
+    <FormattedPreviewCtx.Provider value={formattedPreviews ?? {}}>
+      <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
+        <ValueRowSelectionCtx.Provider value={{ selectedFieldPath, selectedActionPathWire, onSelectValue, onSelectAction, onEditingFinished }}>
+          <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+            <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+          </ControlledExpansionCtx.Provider>
+        </ValueRowSelectionCtx.Provider>
+      </DiffPathCtx.Provider>
+    </FormattedPreviewCtx.Provider>
   )
   const identity = currentPluginIdentity()
   const pluginRecord = identity && filePath && coordinate && actualType
@@ -1081,6 +1091,7 @@ function ScalarFieldRow({
   const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
+  const preview = useContext(FormattedPreviewCtx)[JSON.stringify(fieldPath)]
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
   const numericValue = value.kind === 'int' || value.kind === 'float' ? value : null
   const numericScrubEnabled = !!numericValue && canEdit && !dragProps
@@ -1156,9 +1167,9 @@ function ScalarFieldRow({
           ) : missing ? (
             <MissingValueRepair value={value} onRepair={onCommit ? () => onCommit(value) : undefined} />
           ) : canEdit ? (
-            <DirectEditor value={displayedValue} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
+            <DirectEditor value={displayedValue} preview={preview} onCommit={onCommit!} declaredType={declaredType} refTargetType={resolvedRefTarget} enumType={enumType} enumIsFlag={enumIsFlag} nullable={dropdownNullable} />
           ) : (
-            <DataCardCompact value={displayedValue} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
+            <DataCardCompact value={displayedValue} preview={preview} refTargetType={resolvedRefTarget} highlightQuery={highlightQuery} />
           )}
         </div>
       </div>
@@ -1229,6 +1240,8 @@ function topLevelSegmentOfPathKey(pathKey: string): string {
 
 export function DirectEditor({
   value,
+  preview,
+  formattedPreviews,
   onCommit,
   declaredType,
   refTargetType,
@@ -1237,6 +1250,8 @@ export function DirectEditor({
   nullable,
 }: {
   value: FieldValue
+  preview?: { text: string | null; error: string | null }
+  formattedPreviews?: Record<string, { text: string | null; error: string | null } | undefined>
   onCommit: (next: FieldValue) => void
   declaredType?: string
   refTargetType?: string
@@ -1261,26 +1276,55 @@ export function DirectEditor({
   if (value.kind === 'ref' || (value.kind === 'option_none' && refTargetType)) {
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
-  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
+  if (value.kind === 'formatted_string') {
+    return <FormattedTextDirectInput value={value} preview={preview} onCommit={onCommit} />
+  }
+  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
   if (value.kind === 'function') {
     return <FunctionEditorButton value={value} onCommit={onCommit} />
   }
-  return <ValueChip value={value} />
+  if (isComplexValue(presentationValue(value))) {
+    return <DataCardCompact value={value} formattedPreviews={formattedPreviews} />
+  }
+  return <ValueChip value={value} preview={preview} />
+}
+
+function FormattedTextDirectInput({ value, preview, onCommit }: {
+  value: FieldValue & { kind: 'formatted_string' }
+  preview?: { text: string | null; error: string | null }
+  onCommit: (next: FieldValue) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  if (editing) return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('fstring')} autoFocus onEditingFinished={() => setEditing(false)} />
+  return (
+    <span className="dc-fstring-preview" role="button" tabIndex={0}
+      title={preview?.error ?? value.value.source}
+      onClick={() => setEditing(true)}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditing(true) } }}>
+      {preview?.text != null ? <RichTextString text={preview.text} /> : <code>{value.value.source}</code>}
+      {preview?.error && <span className="dc-fstring-error">预览失败</span>}
+    </span>
+  )
 }
 
 function TextDirectInput({
   value,
   onCommit,
   color,
+  onEditingFinished,
+  autoFocus = false,
 }: {
+  onEditingFinished?: () => void
+  autoFocus?: boolean
   value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
   onCommit: (next: FieldValue) => void
   color: string
 }) {
   const initial = plainFieldValueText(value)
   const [text, setText] = useState(initial)
+  const cancelled = useRef(false)
   const rowSelection = useContext(ValueRowSelectionCtx)
   useEffect(() => { setText(initial) }, [initial])
 
@@ -1297,6 +1341,7 @@ function TextDirectInput({
         className="dc-input dc-input-flat dc-input-textarea"
         value={text}
         rows={1}
+        autoFocus={autoFocus}
         onValueChange={value => {
           setText(value)
           const el = document.activeElement as HTMLTextAreaElement | null
@@ -1305,7 +1350,9 @@ function TextDirectInput({
           el.style.height = el.scrollHeight + 'px'
         }}
         onBlur={() => {
-          commit()
+          if (!cancelled.current) commit()
+          cancelled.current = false
+          onEditingFinished?.()
           requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
         }}
         onKeyDown={e => {
@@ -1313,7 +1360,7 @@ function TextDirectInput({
             e.preventDefault();
             (e.target as HTMLTextAreaElement).blur()
           }
-          if (e.key === 'Escape') { setText(initial); (e.target as HTMLTextAreaElement).blur() }
+          if (e.key === 'Escape') { cancelled.current = true; setText(initial); (e.target as HTMLTextAreaElement).blur() }
         }}
       />
     )

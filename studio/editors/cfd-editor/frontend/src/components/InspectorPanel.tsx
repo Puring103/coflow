@@ -487,6 +487,7 @@ export function InspectorPanel({
               {!inspectingValue || inspectorFields.length > 0 ? (
                 <DataCardExpanded
                   fields={inspectorFields}
+                  formattedPreviews={record.formatted_previews}
                   filePath={data.file_path}
                   coordinate={record.coordinate}
                   expandedPaths={expandedPaths}
