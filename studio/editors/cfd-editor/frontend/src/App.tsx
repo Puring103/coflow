@@ -119,7 +119,7 @@ import {
   renameRecordGroup,
   replaceGroupedCoordinate,
 } from './state/manualRecordGroups'
-import { recordsSupportGraph, relationFieldNames } from './state/graphSupport'
+import { graphSupportForFile, relationFieldNames } from './state/graphSupport'
 import { reachableGraph } from './state/graphFilter'
 import { queryClient } from './queryClient'
 import { editorQueryKeys } from './queryKeys'
@@ -169,9 +169,6 @@ const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 // 共享空数组，避免每次渲染产生新引用而让下游 useMemo 失效。
 const EMPTY_RECORD_GROUPS: never[] = []
-// graphSupported 只依赖文件内容代际；来回切文件时复用，避免重复全量扫描。
-const GRAPH_SUPPORT_CACHE = new Map<string, boolean>()
-const GRAPH_SUPPORT_CACHE_LIMIT = 128
 export default function App() {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
@@ -1744,21 +1741,11 @@ export default function App() {
     () => activeFile && project ? project.diagnostics.filter(d => diagnosticFilePath(d) === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
-  // Prefer schema annotations, but also inspect values because older sessions
-  // and browser mocks may contain refs without derived annotation metadata.
-  const graphSupported = useMemo(() => {
-    if (!activeFileData) return false
-    const key = `${activeFileData.file_path}\u001f${activeFileData.revision}`
-    const cached = GRAPH_SUPPORT_CACHE.get(key)
-    if (cached !== undefined) return cached
-    const value = recordsSupportGraph(activeFileData.records)
-    GRAPH_SUPPORT_CACHE.set(key, value)
-    if (GRAPH_SUPPORT_CACHE.size > GRAPH_SUPPORT_CACHE_LIMIT) {
-      const oldest = GRAPH_SUPPORT_CACHE.keys().next().value
-      if (oldest !== undefined) GRAPH_SUPPORT_CACHE.delete(oldest)
-    }
-    return value
-  }, [activeFileData])
+  // 图能力按文件快照引用缓存；会话切换不会复用同路径、同版本的旧项目结果。
+  const graphSupported = useMemo(
+    () => activeFileData ? graphSupportForFile(activeFileData) : false,
+    [activeFileData],
+  )
   // View tabs (default + custom) for the active (file, type).
   const viewTabs = useMemo(
     () => activeFile

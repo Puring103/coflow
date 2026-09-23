@@ -261,7 +261,3 @@ impl Project {
         schema_sources::schema_sources(&self.config.schema, &self.root_dir)
     }
 }
-
-fn resolve_project_relative(root_dir: &Path, path: &Path) -> PathBuf {
-    paths::resolve_project_relative(root_dir, path)
-}
