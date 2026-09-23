@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::project::{
-    normalize_path, path_is_same_or_descendant, resolve_project_relative,
-    schema_path_policy::SchemaPathPolicy, OutputConfig, ProjectConfig, SchemaConfig, SourceConfig,
+    normalize_path, path_is_same_or_descendant, schema_path_policy::SchemaPathPolicy,
+    OutputConfig, ProjectConfig, SchemaConfig, SourceConfig,
 };
 
 pub(super) struct ProjectDiagnostic {
@@ -69,7 +69,7 @@ pub(super) fn validate_sources_collecting(
         let source_label = format!("data[{source_index}]");
         let source_index_key = source_index.to_string();
         let path = source.location();
-        let resolved = resolve_project_relative(root_dir, path);
+        let resolved = super::paths::resolve_project_relative(root_dir, path);
         if !resolved.is_file() && !resolved.is_dir() {
             diagnostics.push(ProjectDiagnostic::new(
                 format!("{source_label}.path `{}` does not exist", path.display()),

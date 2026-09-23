@@ -1,5 +1,5 @@
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
-import { sameCoordinate, type FieldPathSegment } from '../wire'
+import { coordinateId, sameCoordinate, type FieldPathSegment } from '../wire'
 
 export type EditorSelection = RecordSelection | ValueSelection
 
@@ -38,25 +38,17 @@ function fieldPathIdentity(fieldPath: readonly FieldPathSegment[]): string {
  * 带草稿的编辑器，避免旧选择的临时状态流入新选择。
  */
 export function editorSelectionIdentity(selection: EditorSelection): string {
-  const record = `${selection.filePath}:${coordinateIdForSelection(selection.coordinate)}`
   if (selection.kind === 'value') {
-    return `value:${record}:${fieldPathIdentity(selection.fieldPath)}`
+    return JSON.stringify(['value', selection.filePath, coordinateId(selection.coordinate), fieldPathIdentity(selection.fieldPath)])
   }
-  return `records:${selection.filePath}:${selection.coordinates
-    .map(coordinateIdForSelection)
-    .sort()
-    .join('|')}`
+  return JSON.stringify(['records', selection.filePath, selection.coordinates.map(coordinateId).sort()])
 }
 
 export function cellAnchorsIdentity(filePath: string, anchors: readonly CellAnchor[]): string {
-  return `cells:${filePath}:${anchors
-    .map(anchor => `${coordinateIdForSelection(anchor.coordinate)}:${fieldPathIdentity(anchor.fieldPath)}`)
-    .sort()
-    .join('|')}`
-}
-
-function coordinateIdForSelection(coordinate: RecordCoordinate): string {
-  return JSON.stringify([coordinate.actual_type, coordinate.key])
+  // 批量目标按结构化元组排序，避免文件名或字段路径中的分隔符造成身份碰撞。
+  const targets = anchors.map(anchor => [coordinateId(anchor.coordinate), fieldPathIdentity(anchor.fieldPath)])
+  targets.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+  return JSON.stringify(['cells', filePath, targets])
 }
 
 export type ValueSelectionMode = 'replace' | 'range'

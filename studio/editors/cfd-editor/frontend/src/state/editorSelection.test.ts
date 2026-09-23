@@ -152,6 +152,14 @@ describe('editor selection', () => {
     expect(editorSelectionIdentity(name)).not.toBe(editorSelectionIdentity(merchant))
   })
 
+  it('keeps files and field paths with separators distinct', () => {
+    const a = valueSelection('data:a', coordinate, [fieldPathField('x:y')])
+    const b = valueSelection('data', { actual_type: 'a:Npc', key: 'guard' }, [fieldPathField('x:y')])
+    expect(editorSelectionIdentity(a)).not.toBe(editorSelectionIdentity(b))
+    expect(cellAnchorsIdentity('data:a', [{ coordinate, fieldPath: [fieldPathField('x:y')] }]))
+      .not.toBe(cellAnchorsIdentity('data', [{ coordinate, fieldPath: [fieldPathField('a:x:y')] }]))
+  })
+
   it('uses an order-independent identity for batch record and cell targets', () => {
     const merchant = { actual_type: 'Npc', key: 'merchant' }
     const first = updateRecordSelection(

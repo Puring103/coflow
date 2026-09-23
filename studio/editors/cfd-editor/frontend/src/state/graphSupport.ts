@@ -1,6 +1,18 @@
+import type { FileRecords } from '../bindings/FileRecords'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { RecordRow } from '../bindings/RecordRow'
 import { annotationChildren, type FieldValue } from '../wire'
+
+// 缓存只依赖不可变文件快照对象，不用相对路径和版本冒充跨会话身份。
+const graphSupportCache = new WeakMap<FileRecords, boolean>()
+
+export function graphSupportForFile(file: FileRecords): boolean {
+  const cached = graphSupportCache.get(file)
+  if (cached !== undefined) return cached
+  const supported = recordsSupportGraph(file.records)
+  graphSupportCache.set(file, supported)
+  return supported
+}
 
 export function recordsSupportGraph(records: readonly RecordRow[]): boolean {
   return records.some(record => record.fields.some(field => (

@@ -115,10 +115,8 @@ export class EditorProjectionReader {
     if (!identity) return
     const next = resolveState(action, this.read().graphs)
     for (const [cacheKey, data] of Object.entries(next)) {
-      const parts = cacheKey.split('::')
-      const limit = Number(parts.pop())
-      const depth = Number(parts.pop())
-      const file = parts.join('::')
+      // 图投影键是结构化三元组，文件路径不参与分隔符解析。
+      const [file, depth, limit] = JSON.parse(cacheKey) as [string, number, number]
       const key = editorQueryKeys.graph(identity.sessionId, data.revision, file, depth, limit)
       if (queryClient.getQueryData(key) !== data) {
         // 取消旧请求但不回滚缓存，防止迟到的完整快照覆盖已发布的增量或乐观编辑。

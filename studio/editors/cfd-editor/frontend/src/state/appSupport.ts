@@ -18,7 +18,7 @@ export function sameValueCells(left: readonly CellAnchor[], right: readonly Cell
 }
 
 export function graphCacheKey(filePath: string, depth: number, limit: number): string {
-  return `${filePath}::${depth}::${limit}`
+  return JSON.stringify([filePath, depth, limit])
 }
 
 export function graphViewKey(filePath: string, viewId: string, actualType: string): string {
@@ -31,7 +31,7 @@ export function projectGraphRows(
   rows: RecordRow[],
 ): Record<string, GraphData> {
   const rowByCoordinate = new Map(
-    rows.map(row => [`${row.coordinate.actual_type}\u001f${row.coordinate.key}`, row]),
+    rows.map(row => [coordinateId(row.coordinate), row]),
   )
   let changed = false
   const next: Record<string, GraphData> = {}
@@ -41,7 +41,7 @@ export function projectGraphRows(
       continue
     }
     const nodes = graph.nodes.map(node => {
-      const row = rowByCoordinate.get(`${node.coordinate.actual_type}\u001f${node.coordinate.key}`)
+      const row = rowByCoordinate.get(coordinateId(node.coordinate))
       if (!row) return node
       // 乐观编辑和确认回写沿用未变化节点，避免全图重建字段与端口。
       if (node.fields === row.fields && node.field_diagnostics === row.field_diagnostics
