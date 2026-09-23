@@ -51,6 +51,10 @@ impl<'a> ProjectQueries<'a> {
         self.session.files()
     }
 
+    pub fn template_preview(self) -> Result<crate::TemplatePreview, String> {
+        crate::TemplatePreview::new(self.session.schema(), self.session.model())
+    }
+
     #[must_use]
     pub fn source_file_count(self) -> usize {
         self.session.files().source_files().len()

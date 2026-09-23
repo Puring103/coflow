@@ -2,5 +2,10 @@
 import type { CfdValue } from "./CfdValue";
 import type { DimensionValueState } from "./DimensionValueState";
 import type { RecordCoordinate } from "./RecordCoordinate";
+import type { TemplatePreviewValue } from "./TemplatePreviewValue";
 
-export type DimensionFileRow = { coordinate: RecordCoordinate, field: string, owner_file_path: string, default_value: CfdValue, values: { [key in string]?: DimensionValueState }, };
+export type DimensionFileRow = { coordinate: RecordCoordinate, field: string, owner_file_path: string, default_value: CfdValue,
+/**
+ * 相对于字段值的 JSON 路径；基础值与各变体独立求值。
+ */
+default_previews: { [key in string]?: TemplatePreviewValue }, values: { [key in string]?: DimensionValueState }, variant_previews: { [key in string]?: { [key in string]?: TemplatePreviewValue } }, };

@@ -9,13 +9,14 @@ use coflow_project::{
     dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
 };
 use coflow_project::{CfdRecord, CfdValue};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::Arc;
+use std::{cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap}, sync::Arc};
 
 use parking_lot::RwLock;
 
 use crate::editor::session::Diagnostics;
-use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow};
+use crate::editor::types::{
+    FieldAnnotation, FieldCell, FieldDiagnostic, RecordRow, TemplatePreviewValue,
+};
 
 /// 按 `(实际类型, 字段名)` 缓存 schema 派生的 [`FieldShapeInfo`]。
 ///
@@ -71,6 +72,7 @@ pub struct WireContext<'a> {
     pub queries: ProjectQueries<'a>,
     pub diagnostics: &'a Diagnostics,
     pub shapes: &'a ShapeCache,
+    preview: RefCell<Option<Result<coflow_project::TemplatePreview, String>>>,
 }
 
 impl<'a> WireContext<'a> {
@@ -84,7 +86,62 @@ impl<'a> WireContext<'a> {
             queries,
             diagnostics,
             shapes,
+            preview: RefCell::new(None),
         }
+    }
+
+    fn formatted_previews(
+        &self,
+        record: &CfdRecord,
+        fields: &[FieldCell],
+    ) -> BTreeMap<String, TemplatePreviewValue> {
+        if !fields
+            .iter()
+            .any(|field| coflow_project::contains_template(&field.value))
+        {
+            return BTreeMap::new();
+        }
+        // 同一次行转换共享 VM 快照；失败保留每个模板的诊断，不伪装成源码预览。
+        let mut preview = self.preview.borrow_mut();
+        let renderer = preview.get_or_insert_with(|| self.queries.template_preview());
+        renderer.as_ref().map_or_else(
+            |error| {
+                let mut errors = BTreeMap::new();
+                for field in fields {
+                    template_error_paths(
+                        &field.value,
+                        &mut vec![coflow_project::CfdPathSegment::Field(field.name.clone())],
+                        error,
+                        &mut errors,
+                    );
+                }
+                errors
+            },
+            |renderer| {
+                renderer
+                    .record(
+                        record,
+                        fields
+                            .iter()
+                            .map(|field| (field.name.as_str(), &field.value)),
+                    )
+                    .into_iter()
+                    .map(|(path, result)| {
+                        let value = match result {
+                            Ok(text) => TemplatePreviewValue {
+                                text: Some(text),
+                                error: None,
+                            },
+                            Err(error) => TemplatePreviewValue {
+                                text: None,
+                                error: Some(error),
+                            },
+                        };
+                        (path, value)
+                    })
+                    .collect()
+            },
+        )
     }
 
     fn field_shape(&self, actual_type: &str, field_name: &str) -> Option<Arc<FieldShapeInfo>> {
@@ -92,11 +149,70 @@ impl<'a> WireContext<'a> {
     }
 }
 
+// 运行时构建失败也要为每个嵌套模板建立路径，避免错误被误认为普通源码。
+pub(crate) fn template_error_paths(
+    value: &CfdValue,
+    path: &mut Vec<coflow_project::CfdPathSegment>,
+    error: &str,
+    out: &mut BTreeMap<String, TemplatePreviewValue>,
+) {
+    use coflow_project::CfdPathSegment;
+    match value {
+        CfdValue::FormattedString(_) => {
+            out.insert(
+                serde_json::to_string(path).expect("path"),
+                TemplatePreviewValue {
+                    text: None,
+                    error: Some(error.to_string()),
+                },
+            );
+        }
+        CfdValue::OptionSome(inner) => template_error_paths(inner, path, error, out),
+        CfdValue::Object(object) => {
+            for (name, child) in object.fields() {
+                path.push(CfdPathSegment::Field(name.to_string()));
+                template_error_paths(child, path, error, out);
+                path.pop();
+            }
+        }
+        CfdValue::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                path.push(CfdPathSegment::Index(index));
+                template_error_paths(child, path, error, out);
+                path.pop();
+            }
+        }
+        CfdValue::Dict(items) => {
+            for (key, child) in items {
+                path.push(CfdPathSegment::DictKey(dict_key_path_text(key)));
+                template_error_paths(child, path, error, out);
+                path.pop();
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Translate a [`RecordView`] into a wire [`RecordRow`].
 #[must_use]
 pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record_fields(view.record, ctx);
-    let (field_index, field_summaries) = field_indexes(&fields);
+    let (field_index, mut field_summaries) = field_indexes(&fields);
+    let formatted_previews = ctx.formatted_previews(view.record, &fields);
+    for field in &fields {
+        let path =
+            serde_json::to_string(&[coflow_project::CfdPathSegment::Field(field.name.clone())])
+                .expect("path");
+        if let Some(text) = formatted_previews
+            .get(&path)
+            .and_then(|preview| preview.text.as_ref())
+        {
+            field_summaries.insert(
+                field.name.clone(),
+                value_summary(&CfdValue::String(text.clone())),
+            );
+        }
+    }
     let (field_diagnostics, diagnostic_severity) =
         diagnostics_for_record(ctx.diagnostics, view.display_path, &view.coordinate);
     RecordRow {
@@ -107,6 +223,7 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
         fields,
         field_index,
         field_summaries,
+        formatted_previews,
         field_diagnostics,
         diagnostic_severity,
     }

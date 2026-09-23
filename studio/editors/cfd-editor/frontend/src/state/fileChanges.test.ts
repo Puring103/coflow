@@ -12,7 +12,7 @@ import { graphCacheKey } from './appSupport'
 
 const row = (key: string, index: number): RecordRow => ({
   coordinate: { actual_type: 'Item', key }, display_path: 'items.cfd',
-  container_index: index, container_size: 2, field_diagnostics: [], diagnostic_severity: null, fields: [], field_index: {}, field_summaries: {},
+  container_index: index, container_size: 2, field_diagnostics: [], diagnostic_severity: null, fields: [], field_index: {}, formatted_previews: {}, field_summaries: {},
 })
 const records = (rows: RecordRow[], revision = 1): FileRecords => ({
   revision, file_path: 'items.cfd', type_names: ['Item'], columns: [], records: rows,

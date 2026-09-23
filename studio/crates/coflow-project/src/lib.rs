@@ -48,6 +48,7 @@ mod source_resolution;
 mod source_snapshot;
 pub use source_snapshot::{CfdSourceSnapshot, CfdSourceStore};
 mod statistics;
+mod template_preview;
 mod write_rules;
 mod writes;
 
@@ -100,3 +101,4 @@ pub use session_api::{
     ReadOnlyProjectSession, SourceUpdateContext, WriteProjectSession,
 };
 pub use statistics::ProjectExecutionStats;
+pub use template_preview::{contains_template, TemplatePreview};

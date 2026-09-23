@@ -25,7 +25,10 @@ pub struct DimensionFileRow {
     pub field: String,
     pub owner_file_path: String,
     pub default_value: CfdValue,
+    /// 相对于字段值的 JSON 路径；基础值与各变体独立求值。
+    pub default_previews: BTreeMap<String, TemplatePreviewValue>,
     pub values: BTreeMap<String, DimensionValueState>,
+    pub variant_previews: BTreeMap<String, BTreeMap<String, TemplatePreviewValue>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -63,10 +66,19 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
     pub field_index: BTreeMap<String, usize>,
     pub field_summaries: BTreeMap<String, String>,
+    /// 已求值模板预览，按 JSON 字段路径索引；源码仍保存在 fields 中。
+    pub formatted_previews: BTreeMap<String, TemplatePreviewValue>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_diagnostics: Vec<FieldDiagnostic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic_severity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+pub struct TemplatePreviewValue {
+    pub text: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

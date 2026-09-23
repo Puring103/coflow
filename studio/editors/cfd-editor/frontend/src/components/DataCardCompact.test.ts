@@ -801,3 +801,59 @@ describe('Option value controls', () => {
   })
 
 })
+
+describe('formatted text previews', () => {
+  const value: FieldValue = { kind: 'formatted_string', value: { source: 'f"<b>{self.count}</b>"' } }
+  const preview = { text: '<b>3</b> <color=#ff0000>ready</color>', error: null }
+
+  it('renders evaluated rich text but retains the template as the source', () => {
+    const html = renderToStaticMarkup(createElement(DataCardCompact, { value, preview }))
+    expect(html).toContain('<strong><span>3</span></strong>')
+    expect(html).toContain('ready')
+    expect(html).toContain('title="f&quot;&lt;b&gt;{self.count}&lt;/b&gt;&quot;"')
+    expect(html).not.toContain('<code>f&quot;')
+  })
+
+  it('keeps ordinary strings literal without interpolating them', () => {
+    const html = renderToStaticMarkup(createElement(DataCardCompact, {
+      value: { kind: 'string', value: '<i>{self.count}</i>' }, preview,
+    }))
+    expect(html).toContain('<em><span>{self.count}</span></em>')
+    expect(html).not.toContain('<strong><span>3</span></strong>')
+  })
+
+  it('uses the nested field path in the inspector', () => {
+    const path = JSON.stringify([{ kind: 'field', value: 'detail' }, { kind: 'field', value: 'text' }])
+    const html = renderToStaticMarkup(createElement(DataCardExpanded, {
+      fields: [{ name: 'detail', missing: false, annotation: null,
+        value: { kind: 'object', value: { actual_type: 'Detail', fields: { text: value } } },
+      }],
+      formattedPreviews: { [path]: preview },
+      expandedPaths: new Set(['detail']),
+      actualType: 'Message',
+    }))
+    expect(html).toContain('<strong><span>3</span></strong>')
+    expect(html).toContain('f&quot;&lt;b&gt;{self.count}&lt;/b&gt;&quot;')
+  })
+
+  it('renders nested template previews in compact table and dimension values', () => {
+    const nested: FieldValue = { kind: 'object', value: {
+      actual_type: 'Detail', fields: { text: value },
+    } }
+    const path = [{ kind: 'field' as const, value: 'detail' }, { kind: 'field' as const, value: 'text' }]
+    const html = renderToStaticMarkup(createElement(DataCardCompact, {
+      value: nested,
+      fieldPath: [{ kind: 'field', value: 'detail' }],
+      formattedPreviews: { [JSON.stringify(path)]: preview },
+    }))
+    expect(html).toContain('<strong><span>3</span></strong>')
+  })
+
+  it('shows an explicit preview error instead of silently treating the source as output', () => {
+    const html = renderToStaticMarkup(createElement(DataCardCompact, {
+      value, preview: { text: null, error: 'unknown field' },
+    }))
+    expect(html).toContain('预览失败')
+    expect(html).toContain('title="unknown field"')
+  })
+})

@@ -25,6 +25,7 @@ describe('organizeDimensionRows', () => {
     field: 'name',
     owner_file_path: owner,
     default_value: { kind: 'string', value: key },
+    default_previews: {}, variant_previews: {},
     values: {},
   })
 

@@ -63,7 +63,7 @@ export function DimensionSingletonView({ data, onWrite, onExitLeft, onExitUp, fo
             <span>{row.field}</span>
             <div className="dimension-singleton-value">
               <DimensionCellEditor row={row} variant={variant} onWrite={onWrite} />
-              <div className="dimension-singleton-default"><span>default</span><DataCardCompact value={row.default_value} /></div>
+              <div className="dimension-singleton-default"><span>default</span><DataCardCompact value={row.default_value} formattedPreviews={row.default_previews} /></div>
             </div>
           </div>)}
         </div> : <div className="empty-hint">尚无变体</div>}

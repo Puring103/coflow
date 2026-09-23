@@ -1,6 +1,6 @@
 # Feature: omitted fields receive their schema defaults.
 
 standard: DefaultSettings {
-  title: "<b><i>{&standard.visible}</i></b>",
+  title: f"<b>默认设置预览</b>：<color=#38a169>当前启用状态为 {&DefaultSettings::standard.visible}</color>，最多尝试 <i>{&DefaultSettings::standard.retries}</i> 次。<u>这是一段同时包含记录引用插值、粗体、斜体、颜色和下划线的较长富文本格式化字符串，用来检查表格与记录视图的完整求值预览。</u>",
   visible: true,
 }

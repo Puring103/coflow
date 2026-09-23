@@ -30,6 +30,7 @@ const row = (key: string, fields: FieldCell[]): RecordRow => ({
   container_size: 1,
   fields,
   field_index: {},
+  formatted_previews: {},
   field_summaries: {},
   field_diagnostics: [],
   diagnostic_severity: null,

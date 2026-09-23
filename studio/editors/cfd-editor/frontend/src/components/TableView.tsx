@@ -677,6 +677,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   coordinate={row.original.coordinate}
                   fieldPath={[fieldPathField(name)]}
                   value={f.value}
+                  preview={row.original.formatted_previews[JSON.stringify([fieldPathField(name)])]}
+                  formattedPreviews={row.original.formatted_previews}
                   editable={cellEditable}
                   annotation={f.annotation}
                   refTargetType={cellRefTargetType(f)}
@@ -1723,6 +1725,8 @@ interface EditableCellProps {
   coordinate: RecordCoordinate
   fieldPath: FieldPathSegment[]
   value: FieldValue
+  preview?: { text: string | null; error: string | null }
+  formattedPreviews?: Record<string, { text: string | null; error: string | null } | undefined>
   editable: boolean
   annotation?: RecordRow['fields'][number]['annotation']
   refTargetType?: string
@@ -1766,7 +1770,7 @@ function EditableCell(props: EditableCellProps) {
 }
 
 function EditableCellBuiltIn({
-  value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished,
+  value, preview, formattedPreviews, fieldPath, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const shownValue = presentationValue(value)
@@ -1861,6 +1865,9 @@ function EditableCellBuiltIn({
     >
       <DataCardCompact
         value={shownValue}
+        preview={preview}
+        formattedPreviews={formattedPreviews}
+        fieldPath={fieldPath}
         annotation={annotation}
         refTargetType={refTargetType}
         highlightQuery={highlightQuery}

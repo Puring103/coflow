@@ -2,6 +2,7 @@
 import type { FieldCell } from "./FieldCell";
 import type { FieldDiagnostic } from "./FieldDiagnostic";
 import type { RecordCoordinate } from "./RecordCoordinate";
+import type { TemplatePreviewValue } from "./TemplatePreviewValue";
 
 /**
  * One top-level record's view inside a file.
@@ -13,4 +14,8 @@ export type RecordRow = { coordinate: RecordCoordinate, display_path: string,
 /**
  * Zero-based position inside the record's physical file or table sheet.
  */
-container_index: number, container_size: number, fields: Array<FieldCell>, field_index: { [key in string]?: number }, field_summaries: { [key in string]?: string }, field_diagnostics: Array<FieldDiagnostic>, diagnostic_severity: string | null, };
+container_index: number, container_size: number, fields: Array<FieldCell>, field_index: { [key in string]?: number }, field_summaries: { [key in string]?: string },
+/**
+ * 已求值模板预览，按 JSON 字段路径索引；源码仍保存在 fields 中。
+ */
+formatted_previews: { [key in string]?: TemplatePreviewValue }, field_diagnostics: Array<FieldDiagnostic>, diagnostic_severity: string | null, };

@@ -2,6 +2,6 @@
 
 table DefaultSettings {
   retries: int = 3;
-  title: string = "Untitled";
+  title: fstring = f"Untitled";
   visible: bool = true;
 }

@@ -3035,6 +3035,9 @@ body.record-drag-active * { cursor: grabbing !important; user-select: none !impo
 .vc-bool.on { color: var(--green); }
 .vc-num { color: var(--text); font-variant-numeric: tabular-nums; }
 .vc-str { color: var(--text-dim); }
+/* fstring 的求值只影响展示；源码进入编辑态后仍可直接修改。 */
+.dc-fstring-preview { cursor: text; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.dc-fstring-error { color: var(--red); margin-left: 6px; font-size: var(--fs-xs); }
 .rich-text-string {
   display: inline;
   white-space: pre-wrap;

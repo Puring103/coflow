@@ -12,6 +12,7 @@ function record(value: RecordRow['fields'][number]['value'], annotation: FieldAn
     container_size: 1,
     fields: [{ name: 'reward', value, missing: false, annotation }],
     field_index: { reward: 0 },
+    formatted_previews: {},
     field_summaries: { reward: '' },
     field_diagnostics: [],
     diagnostic_severity: null,

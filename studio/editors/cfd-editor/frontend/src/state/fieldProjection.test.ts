@@ -20,6 +20,7 @@ const records = {
       annotation: null,
     }],
     field_index: { values: 0 },
+    formatted_previews: {},
     field_summaries: { values: '[1]' },
     field_diagnostics: [],
     diagnostic_severity: null,
