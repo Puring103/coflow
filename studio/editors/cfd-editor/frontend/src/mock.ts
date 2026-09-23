@@ -34,30 +34,6 @@ export const MOCK_PROJECT: ProjectBootstrap = {
   first_source_file: 'data/item.cfd',
   file_tree: [
     {
-      name: '本地化',
-      path: 'data/dimensions/language',
-      is_dir: true,
-      in_sources: true,
-      in_schema: false,
-      in_data: false,
-      first_source_descendant: null,
-      children: [
-        { name: 'Item_name.cfd', path: '@dimension/language', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: '@dimension/language', children: [] },
-      ],
-    },
-    {
-      name: '平台',
-      path: 'data/dimensions/platform',
-      is_dir: true,
-      in_sources: true,
-      in_schema: false,
-      in_data: false,
-      first_source_descendant: null,
-      children: [
-        { name: 'Item_icon.cfd', path: '@dimension/platform', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: '@dimension/platform', children: [] },
-      ],
-    },
-    {
       name: 'data',
       path: 'data',
       is_dir: true,
@@ -74,19 +50,19 @@ export const MOCK_PROJECT: ProjectBootstrap = {
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
-    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [] },
-    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], fields: [] },
+    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
+    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
   ],
   file_types: {
     'data/item.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false },
-      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false },
+      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false, dimension_fields: { language: ['name'], platform: ['icon'] } },
+      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false, dimension_fields: {} },
     ],
     'data/npc.cfd': [
-      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false },
+      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false, dimension_fields: {} },
     ],
     'data/archive.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
+      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false, dimension_fields: {} },
     ],
   },
   diagnostics: [

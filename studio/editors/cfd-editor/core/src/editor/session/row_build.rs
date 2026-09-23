@@ -208,27 +208,40 @@ pub(crate) fn project_bootstrap(
 }
 
 fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileTypeOption>> {
-    session
-        .queries()
-        .source_files()
-        .map(|file_path| {
-            // 类型计数已在 build_session 的单次遍历中算好，这里直接读取。
-            let counts = session.file_type_counts.get(file_path);
-            let options = session
-                .schema_type_names
-                .iter()
-                .cloned()
-                .map(|name| FileTypeOption {
-                    display_name: name.clone(),
-                    record_count: counts
-                        .and_then(|by_type| by_type.get(&name))
-                        .copied()
-                        .unwrap_or_default(),
-                    is_singleton: session.queries().type_is_singleton(&name),
-                    name,
-                })
-                .collect();
-            (file_path.to_string(), options)
-        })
-        .collect()
+    let queries = session.queries();
+    // 先按实际记录与维度字段构建索引，避免每个文件/类型重复扫描继承关系。
+    let mut fields_by_file = BTreeMap::<String, BTreeMap<String, BTreeMap<String, std::collections::BTreeSet<String>>>>::new();
+    for dimension in queries.dimensions() {
+        if let Some((_, fields)) = queries.dimension_fields(&dimension.name) {
+            for field in fields {
+                for target in queries.ref_targets(&field.source_type) {
+                    if queries.record_view(&target.coordinate.actual_type, &target.coordinate.key)
+                        .and_then(|view| view.record.field(&field.source_field).cloned()).is_none() {
+                        continue;
+                    }
+                    fields_by_file.entry(target.file_path).or_default()
+                        .entry(target.coordinate.actual_type.to_string()).or_default()
+                        .entry(dimension.name.clone()).or_default()
+                        .insert(field.source_field.clone());
+                }
+            }
+        }
+    }
+    queries.source_files().map(|file_path| {
+        let counts = session.file_type_counts.get(file_path);
+        let options = session.schema_type_names.iter().cloned().map(|name| {
+            let dimension_fields = fields_by_file.get(file_path).and_then(|types| types.get(&name))
+                .map(|dimensions| dimensions.iter().map(|(dimension, fields)|
+                    (dimension.clone(), fields.iter().cloned().collect())).collect())
+                .unwrap_or_default();
+            FileTypeOption {
+                display_name: name.clone(),
+                record_count: counts.and_then(|by_type| by_type.get(&name)).copied().unwrap_or_default(),
+                is_singleton: queries.type_is_singleton(&name),
+                dimension_fields,
+                name,
+            }
+        }).collect();
+        (file_path.to_string(), options)
+    }).collect()
 }

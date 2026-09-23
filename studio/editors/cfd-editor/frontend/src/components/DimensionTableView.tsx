@@ -684,7 +684,7 @@ function DimensionInlineEditor({ row, variant, initialText, onWrite, onParseCell
   )
 }
 
-function DimensionCellEditor({ row, variant, onWrite }: {
+export function DimensionCellEditor({ row, variant, onWrite }: {
   row: DimensionFileRow
   variant: string
   onWrite: Props['onWrite']

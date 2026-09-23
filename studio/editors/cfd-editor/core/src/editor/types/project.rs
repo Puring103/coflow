@@ -30,6 +30,8 @@ pub struct FileTypeOption {
     pub display_name: String,
     pub record_count: usize,
     pub is_singleton: bool,
+    /// 该实际类型在各维度下可编辑的字段，已包含继承字段。
+    pub dimension_fields: BTreeMap<String, Vec<String>>,
 }
 
 /// 提供给编辑器插件的只读 Schema 投影。

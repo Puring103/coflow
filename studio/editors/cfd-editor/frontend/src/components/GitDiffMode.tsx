@@ -87,7 +87,7 @@ export function GitDiffSidebar({ diff, loading, error, selection, onSelectionCha
   // 左侧文件树与主界面共用分组/图标/排序，仅保留变化文件及其祖先目录，不显示记录节点。
   const index = useMemo(() => buildDiffIndex(diff), [diff])
   const filtered = useMemo(() => buildDiffTree(diff, nodes, index.changedPaths), [diff, nodes, index])
-  const groups = useMemo(() => buildFileTreeGroups(filtered, dimensions).filter(group => group.nodes.length > 0), [filtered, dimensions])
+  const groups = useMemo(() => buildFileTreeGroups(filtered, []).filter(group => group.nodes.length > 0), [filtered, dimensions])
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const toggle = (path: string) => setCollapsed(previous => {
     const next = new Set(previous)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   defaultWorkspaceTab,
+  dimensionWorkspaceTab,
   routeForWorkspaceTab,
   sanitizeProjectWorkspace,
   workspaceTabWithView,
@@ -9,8 +10,8 @@ import {
 } from './workspaceTabs'
 
 const fileTypes = {
-  'data/item.cfd': [{ name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false }],
-  'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true }],
+  'data/item.cfd': [{ name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false, dimension_fields: {} }],
+  'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true, dimension_fields: {} }],
 }
 
 describe('project workspace tabs', () => {
@@ -125,6 +126,7 @@ describe('project workspace tabs', () => {
         view_id: '__default_table',
         view_kind: 'table',
         coordinate: null,
+        dimension_target: null,
       }],
     })
   })
@@ -154,5 +156,28 @@ describe('project workspace tabs', () => {
       typeName: '',
       viewKind: 'record',
     })
+  })
+})
+
+
+describe('维度工作区', () => {
+  it('恢复字段与单例两个独立标签，并固定单例为记录视图', () => {
+    const types = {
+      'data/mixed.cfd': [
+        { name: 'Item', display_name: '物品', record_count: 1, is_singleton: false, dimension_fields: { language: ['name'] } },
+        { name: 'Settings', display_name: '设置', record_count: 1, is_singleton: true, dimension_fields: { language: ['title'] } },
+      ],
+    }
+    const field = dimensionWorkspaceTab({ dimension: 'language', ownerFile: 'data/mixed.cfd', typeName: 'Item', field: 'name', singleton: false })
+    const singleton = dimensionWorkspaceTab({ dimension: 'language', ownerFile: 'data/mixed.cfd', typeName: 'Settings', field: null, singleton: true })
+    const wire = workspaceToWire([field, singleton], singleton.id)
+    const restored = sanitizeProjectWorkspace(wire, types,
+      new Set(['data/mixed.cfd']), [{ name: 'language', display_name: '本地化', variants: ['en'], fields: [] }],
+      new Set(['data/mixed.cfd']))
+    expect(restored?.tabs.map(tab => tab.id)).toEqual([field.id, singleton.id])
+    expect(restored?.activeTabId).toBe(singleton.id)
+    expect(restored?.tabs[1]?.viewKind).toBe('record')
+    expect(restored?.tabs[1]?.dimensionTarget).toEqual(singleton.dimensionTarget)
+    expect(routeForWorkspaceTab(field).file).toBe('@dimension/language')
   })
 })

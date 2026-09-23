@@ -122,6 +122,7 @@ import {
 import { graphSupportForFile, relationFieldNames } from './state/graphSupport'
 import { reachableGraph } from './state/graphFilter'
 import { queryClient } from './queryClient'
+import { dimensionTargetId, selectDimensionRows, type DimensionTarget } from './state/dimensionNavigation'
 import { editorQueryKeys } from './queryKeys'
 import { fetchFileRecords, removeSessionQueries } from './editorQueries'
 import {
@@ -136,8 +137,10 @@ import {
 } from './state/views'
 import {
   defaultWorkspaceTab,
+  dimensionWorkspaceTab,
   routeForWorkspaceTab,
   sanitizeProjectWorkspace,
+  workspaceToWire,
   workspaceTabId,
   workspaceTabWithView,
   type WorkspaceTab,
@@ -161,6 +164,7 @@ const GraphView = lazy(() => import('./components/GraphView').then(module => ({ 
 const SourceEditorView = lazy(() => import('./components/SourceEditorView').then(module => ({ default: module.SourceEditorView })))
 const TableView = lazy(() => import('./components/TableView').then(module => ({ default: module.TableView })))
 const RecordView = lazy(() => import('./components/RecordView').then(module => ({ default: module.RecordView })))
+const DimensionSingletonView = lazy(() => import('./components/DimensionSingletonView').then(module => ({ default: module.DimensionSingletonView })))
 const DimensionTableView = lazy(() => import('./components/DimensionTableView').then(module => ({ default: module.DimensionTableView })))
 const GitDiffMode = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffMode })))
 const GitDiffSidebar = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffSidebar })))
@@ -553,14 +557,9 @@ export default function App() {
       })
       return
     }
-    if (!tab.typeName) {
-      setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
-      router.push({
-        view: 'table',
-        file: tab.filePath,
-        viewId: DEFAULT_TABLE_VIEW_ID,
-        typeFilter: '',
-      })
+    if (tab.dimensionTarget || !tab.typeName) {
+      if (tab.dimensionTarget) setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
+      router.push(routeForWorkspaceTab(tab))
       return
     }
     const fallbackCoordinate = coordinate ?? fileDataCacheRef.current[tab.filePath]?.records.find(
@@ -578,6 +577,10 @@ export default function App() {
       settings.workspace,
       bootstrap.file_types,
       new Set(sourceFiles),
+      bootstrap.dimensions,
+      new Set(bootstrap.file_tree.flatMap(function collect(node): string[] {
+        return node.is_dir ? node.children.flatMap(collect) : node.in_data ? [node.path] : []
+      })),
     )
     let tabs = restored?.tabs ?? []
     let activeTabId = restored?.activeTabId ?? null
@@ -741,9 +744,25 @@ export default function App() {
       resetProjections()
       lookups.adopt({ sessionId: bootstrap.session_id, revision: bootstrap.revision }, bootstrap.schema_revision)
       const dimensions = bootstrap.dimensions
+      const validWorkspace = sanitizeProjectWorkspace(
+        workspaceToWire(workspaceTabsRef.current, activeWorkspaceTabId), bootstrap.file_types,
+        new Set(collectSourceFiles(bootstrap)), bootstrap.dimensions,
+        new Set(bootstrap.file_tree.flatMap(function collect(node): string[] {
+          return node.is_dir ? node.children.flatMap(collect) : node.in_data ? [node.path] : []
+        })),
+      )
+      const validTabs = validWorkspace?.tabs ?? []
+      workspaceTabsRef.current = validTabs
+      setWorkspaceTabs(validTabs)
       const current = router.current
       const sourceFiles = collectSourceFiles(bootstrap)
-      const keepFile = current && sourceFiles.includes(current.file)
+      const currentTarget = validTabs.find(tab => tab.id === activeWorkspaceTabId)?.dimensionTarget
+      const validDimension = currentTarget && bootstrap.dimensions.some(dimension => dimension.name === currentTarget.dimension)
+        && bootstrap.file_types[currentTarget.ownerFile]?.some(type => type.name === currentTarget.typeName
+          && type.record_count > 0 && type.is_singleton === currentTarget.singleton
+          && (currentTarget.singleton ? (type.dimension_fields[currentTarget.dimension] ?? []).length > 0
+            : (type.dimension_fields[currentTarget.dimension] ?? []).includes(currentTarget.field!)))
+      const keepFile = current && (sourceFiles.includes(current.file) || (!!validDimension && current.file === `@dimension/${currentTarget?.dimension}`))
       const nextFile = keepFile ? current.file : sourceFiles[0]
       history.clear()
       setHighlightField(null)
@@ -758,7 +777,7 @@ export default function App() {
         const tab = defaultWorkspaceTab(nextFile, option?.name ?? '', option?.is_singleton ?? false)
         setWorkspaceTabs(existing => {
           const next = [
-            ...existing.filter(item => sourceFiles.includes(item.filePath) && item.id !== tab.id),
+            ...existing.filter(item => item.id !== tab.id),
             tab,
           ]
           workspaceTabsRef.current = next
@@ -767,9 +786,9 @@ export default function App() {
         navigateWorkspaceTab(tab)
         return
       }
-      if (dimensionForFile(dimensions, nextFile)) {
+      if (dimensionForFile(dimensions, nextFile) && validDimension) {
         setProject(bootstrap)
-        router.replace(current)
+        router.replace(current.view === 'table' ? { ...current, dimensionTargetId: currentTarget ? dimensionTargetId(currentTarget) : undefined } : current)
         return
       }
       try {
@@ -808,7 +827,7 @@ export default function App() {
         }
       }
     },
-    [generation, history, lookups, navigateWorkspaceTab, reportSessionError, resetProjections, router],
+    [activeWorkspaceTabId, generation, history, lookups, navigateWorkspaceTab, reportSessionError, resetProjections, router],
   )
 
   const commitProjectRevision = useCallback((
@@ -941,6 +960,18 @@ export default function App() {
       if (active) navigateWorkspaceTab(active)
     }
   }, [activePluginPageKey, activeWorkspaceTabId, navigateWorkspaceTab, pluginRegistry.revision, pluginsReady, workspaceReadySessionId])
+
+  const openDimension = useCallback((target: DimensionTarget) => {
+    if (deferSourceNavigation(() => openDimension(target))) return
+    const tab = dimensionWorkspaceTab(target)
+    const existing = workspaceTabsRef.current.find(candidate => candidate.id === tab.id)
+    if (!existing) {
+      const next = [...workspaceTabsRef.current, tab]
+      workspaceTabsRef.current = next
+      setWorkspaceTabs(next)
+    }
+    navigateWorkspaceTab(existing ?? tab)
+  }, [navigateWorkspaceTab])
 
   const openRecord = useCallback(
     (filePath: string, coordinate: RecordCoordinate) => {
@@ -1407,16 +1438,19 @@ export default function App() {
   const activeSchemaFile = activeFile?.endsWith('.cft') ?? false
   useEffect(() => {
     if (!currentRoute) return
-    const routedType = currentRoute.view === 'record'
-      ? currentRoute.coordinate.actual_type
-      : currentRoute.typeFilter ?? ''
     const tab = workspaceTabsRef.current.find(
-      candidate => candidate.id === workspaceTabId(currentRoute.file, routedType),
+      candidate => candidate.id === (currentRoute.view === 'table' ? currentRoute.dimensionTargetId ?? activeWorkspaceTabId : activeWorkspaceTabId)
+        && candidate.filePath === currentRoute.file,
     )
-    setDimensionView(!tab?.typeName && tab?.viewKind === 'record' ? 'record' : 'table')
-  }, [currentRoute])
+    if (tab?.dimensionTarget) setDimensionView(tab.viewKind === 'record' ? 'record' : 'table')
+  }, [currentRoute, activeWorkspaceTabId])
   useEffect(() => {
     if (!currentRoute) return
+    if (currentRoute.view === 'table' && currentRoute.dimensionTargetId) {
+      const tab = workspaceTabsRef.current.find(item => item.id === currentRoute.dimensionTargetId)
+      if (tab?.dimensionTarget && tab.filePath === currentRoute.file) setActiveWorkspaceTabId(tab.id)
+      return
+    }
     if (!pluginsReady && currentRoute.viewId.includes('/')) return
     const typeName = currentRoute.view === 'record'
       ? currentRoute.coordinate.actual_type
@@ -1455,15 +1489,19 @@ export default function App() {
     })
   }, [currentRoute, pluginRegistry.views, pluginsReady, project?.file_types, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
+  const activeDimensionTarget = workspaceTabs.find(tab => tab.id === (currentRoute?.view === 'table' ? currentRoute.dimensionTargetId : undefined))?.dimensionTarget
   const activeDimensionData = activeFile
     ? dataQueries.dimensionQuery.data ?? dataQueries.mockDimension ?? null
     : null
+  const selectedDimensionData = activeDimensionData && activeDimensionTarget
+    ? selectDimensionRows(activeDimensionData, activeDimensionTarget) : null
   useEffect(() => {
-    if (!activeDimensionData || !activeWorkspaceTabId) return
+    if (!activeDimensionData || !activeWorkspaceTabId || currentRoute?.view !== 'table'
+      || activeWorkspaceTabId !== currentRoute.dimensionTargetId) return
     setWorkspaceTabs(current => {
       let changed = false
       const next = current.map(tab => {
-        if (tab.id !== activeWorkspaceTabId || tab.typeName) return tab
+        if (tab.id !== activeWorkspaceTabId || !tab.dimensionTarget || tab.dimensionTarget.singleton) return tab
         const viewId = dimensionView === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID
         if (tab.viewKind === dimensionView && tab.viewId === viewId) return tab
         changed = true
@@ -1473,7 +1511,7 @@ export default function App() {
       workspaceTabsRef.current = next
       return next
     })
-  }, [activeDimensionData, activeWorkspaceTabId, dimensionView])
+  }, [activeDimensionData, activeWorkspaceTabId, currentRoute, dimensionView])
   const recordGroups = projectSettings?.record_groups[activeFile ?? '']?.[activeType] ?? EMPTY_RECORD_GROUPS
   const activeTypeOption = useMemo(
     () => project?.file_types[activeFile ?? '']?.find(option => option.name === activeType) ?? null,
@@ -1969,7 +2007,7 @@ export default function App() {
       }
       setActiveWorkspaceTabId(next.id)
       setActiveType(next.typeName)
-      if (!next.typeName) setDimensionView(next.viewKind === 'record' ? 'record' : 'table')
+      if (next.dimensionTarget) setDimensionView(next.viewKind === 'record' ? 'record' : 'table')
       const fallbackCoordinate = fileDataCacheRef.current[next.filePath]?.records.find(
         row => recordActualType(row) === next.typeName,
       )?.coordinate
@@ -2435,7 +2473,7 @@ export default function App() {
           </button>
           {project && (
             <button
-              className="btn btn-primary btn-icon btn-codegen"
+              className="btn btn-primary btn-icon btn-build"
               onClick={runCodegen}
               disabled={projectAction !== null}
               title={codegenPending ? '生成内容已变更，需要重新生成' : '生成代码'}
@@ -2514,7 +2552,9 @@ export default function App() {
                   nodes={project.file_tree}
                   dimensions={projectDimensions}
                   fileTypes={navigationFileTypes}
-                  selectedFile={activeFile}
+                  selectedDimension={activeDimensionTarget ?? null}
+                  onSelectDimension={openDimension}
+                  selectedFile={activeDimensionTarget ? null : activeFile}
                   selectedType={activeType}
                   onSelectFile={openFile}
                   onExitRight={focusFirstRecord}
@@ -2625,6 +2665,7 @@ export default function App() {
         <div className="content-area">
           <DocumentTabs
             fileTypes={project?.file_types}
+            dimensions={projectDimensions}
             workspaceTabs={workspaceTabs}
             activeWorkspaceTabId={activeWorkspaceTabId}
             pluginTabs={pluginPageTabs}
@@ -2657,7 +2698,7 @@ export default function App() {
             ) : activeDimensionData ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  {(['record', 'table'] as const).map(view => (
+                  {(activeDimensionTarget?.singleton ? ['record'] as const : ['record', 'table'] as const).map(view => (
                     <button
                       key={view}
                       className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
@@ -2792,15 +2833,27 @@ export default function App() {
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
             </div>
-          ) : currentRoute && activeDimensionData ? (
+          ) : currentRoute && selectedDimensionData && activeDimensionTarget?.singleton ? (
+            <DimensionSingletonView
+              key={activeWorkspaceTabId}
+              data={selectedDimensionData}
+              onExitLeft={focusFileTree}
+              onExitUp={focusDocumentTabs}
+              focusRequest={firstRecordFocusRequest}
+              onFocusRequestConsumed={consumeFirstRecordFocusRequest}
+              onWrite={(row, variant, expected, next) =>
+                writeDimensionCell(activeDimensionData!, row, variant, expected, next)}
+            />
+          ) : currentRoute && selectedDimensionData ? (
             <DimensionTableView
-              data={activeDimensionData}
+              key={activeWorkspaceTabId}
+              data={selectedDimensionData}
               mode={dimensionView}
               recordGroupsByFile={projectSettings?.record_groups}
               onRenameGroup={renameDimensionRecordGroup}
               onColorGroup={colorDimensionRecordGroup}
               onWrite={(row, variant, expected, next) =>
-                writeDimensionCell(activeDimensionData, row, variant, expected, next)}
+                writeDimensionCell(activeDimensionData!, row, variant, expected, next)}
               onRenderCellText={tableOnRenderCellText}
               onParseCellText={tableOnParseCellText}
               onExitLeft={focusFileTree}

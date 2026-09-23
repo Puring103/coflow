@@ -16,12 +16,6 @@
   "workspace": {
     "tabs": [
       {
-        "file_path": "data/dimensions/language/UiText_text.cfd",
-        "type_name": "ArrayExample",
-        "view_id": "__default_table",
-        "view_kind": "table"
-      },
-      {
         "file_path": "schema/07-inheritance.cft",
         "type_name": "",
         "view_id": "__default_source",
@@ -98,8 +92,38 @@
         "type_name": "QuantifierRule",
         "view_id": "__default_table",
         "view_kind": "table"
+      },
+      {
+        "file_path": "data/08-references.cfd",
+        "type_name": "Category",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/14-dimensions.cfd",
+        "type_name": "UiText",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/13-functions.cfd",
+        "type_name": "Calculator",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/11-conditional-checks.cfd",
+        "type_name": "ConditionalRule",
+        "view_id": "__default_table",
+        "view_kind": "table"
+      },
+      {
+        "file_path": "data/10-checks.cfd",
+        "type_name": "RangeRule",
+        "view_id": "__default_table",
+        "view_kind": "table"
       }
     ],
-    "active_tab_id": "data/01-records.cfd\u001fProduct"
+    "active_tab_id": "data/09-options.cfd\u001fOptionExample"
   }
 }

@@ -44,6 +44,19 @@ pub struct EditorWorkspaceState {
     pub active_tab_id: Option<String>,
 }
 
+/// 维度导航目标是业务文件中的类型/字段，不对应独立 CFD 文件。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+pub struct EditorDimensionTarget {
+    pub dimension: String,
+    #[serde(rename = "ownerFile")]
+    pub owner_file: String,
+    #[serde(rename = "typeName")]
+    pub type_name: String,
+    pub field: Option<String>,
+    pub singleton: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 pub struct EditorWorkspaceTab {
@@ -53,6 +66,8 @@ pub struct EditorWorkspaceTab {
     pub view_kind: WorkspaceViewKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinate: Option<RecordCoordinate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimension_target: Option<EditorDimensionTarget>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

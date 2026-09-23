@@ -1,13 +1,13 @@
 //! 会话设置命令：编辑器展示设置读写，不推进数据版本。
 //!
-//! 图坐标/视图/分组/workspace 全部落到 `editor-setting/editor.json`。
+//! 共享视图/图坐标写项目文件，workspace/列宽等个人状态写本机文件。
 
 use std::collections::BTreeMap;
 
 use super::SessionStore;
 use crate::editor::settings_store::{
     read_project_settings, sanitized_column_widths, sanitized_record_groups, sanitized_views,
-    sanitized_workspace, write_project_settings,
+    sanitized_workspace, write_local_settings, write_project_settings,
 };
 use crate::editor::types::{
     EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, ViewConfig,
@@ -82,7 +82,7 @@ impl SessionStore {
         session.ensure_writable()?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_compact_modes.insert(view_key, compact);
-        write_project_settings(&session.project_root, &settings)
+        write_local_settings(&session.project_root, &settings)
     }
 
     /// 只更新指定文件和类型的标签顺序，保留其他编辑器设置。
@@ -100,7 +100,7 @@ impl SessionStore {
             .entry(file_path)
             .or_default()
             .insert(actual_type, order);
-        write_project_settings(&project_root, &settings)?;
+        write_local_settings(&project_root, &settings)?;
         Ok(settings)
     }
 
@@ -120,7 +120,7 @@ impl SessionStore {
             .entry(file_path)
             .or_default()
             .insert(actual_type, sanitized_column_widths(widths));
-        write_project_settings(&project_root, &settings)?;
+        write_local_settings(&project_root, &settings)?;
         Ok(settings)
     }
 
@@ -141,11 +141,16 @@ impl SessionStore {
             .and_then(|by_type| by_type.get(&actual_type))
             .map(|groups| groups.iter().map(|group| group.id.clone()).collect())
             .unwrap_or_default();
-        settings
-            .views
-            .entry(file_path)
-            .or_default()
-            .insert(actual_type, sanitized_views(views, &valid_group_ids));
+        let previous = settings.views.get(&file_path).and_then(|by_type| by_type.get(&actual_type));
+        let mut next = sanitized_views(views, &valid_group_ids);
+        for view in &mut next {
+            if view.column_widths.is_empty() {
+                if let Some(old) = previous.and_then(|entries| entries.iter().find(|old| old.id == view.id)) {
+                    view.column_widths = old.column_widths.clone();
+                }
+            }
+        }
+        settings.views.entry(file_path).or_default().insert(actual_type, next);
         write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }
@@ -169,7 +174,7 @@ impl SessionStore {
             .and_then(|views| views.iter_mut().find(|view| view.id == view_id))
         {
             view.column_widths = sanitized_column_widths(widths);
-            write_project_settings(&project_root, &settings)?;
+            write_local_settings(&project_root, &settings)?;
         }
         Ok(settings)
     }
@@ -200,7 +205,7 @@ impl SessionStore {
         let project_root = self.project_root_for(id)?;
         let mut settings = read_project_settings(&project_root)?;
         settings.workspace = sanitized_workspace(workspace);
-        write_project_settings(&project_root, &settings)?;
+        write_local_settings(&project_root, &settings)?;
         Ok(settings)
     }
 }
