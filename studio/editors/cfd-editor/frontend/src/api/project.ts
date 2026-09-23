@@ -34,12 +34,12 @@ export async function checkProject(sessionId: number): Promise<string> {
   return invokeCommand<string>('check_project', { sessionId })
 }
 
-export async function buildProject(sessionId: number): Promise<string> {
-  return invokeCommand<string>('build_project', { sessionId })
+export async function generateProjectCode(sessionId: number): Promise<string> {
+  return invokeCommand<string>('generate_project_code', { sessionId })
 }
 
-export async function buildProjectStatus(sessionId: number): Promise<boolean> {
-  return invokeCommand<boolean>('build_project_status', { sessionId })
+export async function codegenProjectStatus(sessionId: number): Promise<boolean> {
+  return invokeCommand<boolean>('codegen_project_status', { sessionId })
 }
 
 export async function getProjectDiff(sessionId: number): Promise<ProjectDiff> {

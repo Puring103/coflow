@@ -1,4 +1,5 @@
 use crate::diagnostics::{cli_error, cli_file_error};
+use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_project::{DiagnosticSet, FlatDiagnostic};
 use serde::Serialize;
 use std::io::{self, Read, Write};
@@ -59,13 +60,16 @@ pub(crate) fn read_stdin_source() -> Result<String, DiagnosticSet> {
 }
 
 pub(crate) fn write_source(path: &Path, source: &str) -> Result<(), DiagnosticSet> {
-    std::fs::write(path, source).map_err(|err| {
-        cli_file_error(
-            path,
-            "CLI-FILE-WRITE",
-            format!("failed to write `{}`: {err}", path.display()),
-        )
-    })
+    // 单文件原子替换，写入失败不能截断已有 schema。
+    AtomicFile::new(path, AllowOverwrite)
+        .write(|file| file.write_all(source.as_bytes()))
+        .map_err(|err| {
+            cli_file_error(
+                path,
+                "CLI-FILE-WRITE",
+                format!("failed to write `{}`: {err}", path.display()),
+            )
+        })
 }
 
 pub(crate) fn write_json(value: &impl Serialize) -> Result<(), DiagnosticSet> {

@@ -8,7 +8,7 @@
 //! 模块职责：
 //! - `mod.rs`：会话类型 + 生命周期/重载/路径上下文；
 //! - `settings_commands.rs`：编辑器展示设置写方法；
-//! - `project_commands.rs`：check/build/diff 与项目结构变更；
+//! - `project_commands.rs`：check/codegen/diff 与项目结构变更；
 //! - `operations/`：数据查询/mutation/类型化语言文档同步；
 //! - `row_build.rs`：行快照与排序辅助；
 //! - `mutation_apply.rs`：字段写回与集合编辑；

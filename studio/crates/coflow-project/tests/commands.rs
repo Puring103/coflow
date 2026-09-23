@@ -281,7 +281,7 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
         Project::open(Some(&project_dir.path().join("coflow.yaml"))).expect("open project");
 
     let status =
-        coflow_project::commands::build_project_status(&project).expect("inspect build status");
+        coflow_project::commands::codegen_project_status(&project).expect("inspect build status");
     assert!(matches!(
         status,
         coflow_project::commands::CommandOutcome::Success(true)
@@ -291,7 +291,7 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
 
     coflow_project::commands::generate_project_code(&project).expect("generate code");
     let status =
-        coflow_project::commands::build_project_status(&project).expect("inspect clean status");
+        coflow_project::commands::codegen_project_status(&project).expect("inspect clean status");
     assert!(matches!(
         status,
         coflow_project::commands::CommandOutcome::Success(false)
@@ -305,7 +305,7 @@ fn build_status_is_read_only_and_tracks_generated_contents() {
     )
     .expect("change generated output");
     let status =
-        coflow_project::commands::build_project_status(&project).expect("inspect changed status");
+        coflow_project::commands::codegen_project_status(&project).expect("inspect changed status");
     assert!(matches!(
         status,
         coflow_project::commands::CommandOutcome::Success(true)
@@ -328,7 +328,7 @@ fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
     ] {
         fs::write(&output, &text).expect("rewrite endings");
         assert!(matches!(
-            coflow_project::commands::build_project_status(&project).expect("status"),
+            coflow_project::commands::codegen_project_status(&project).expect("status"),
             coflow_project::commands::CommandOutcome::Success(false)
         ));
         coflow_project::commands::generate_project_code(&project).expect("generate again");
@@ -343,7 +343,7 @@ fn generated_status_ignores_line_endings_and_preserves_equivalent_files() {
     }
     fs::write(&output, original.replacen('\n', " \n", 1)).expect("trailing space change");
     assert!(matches!(
-        coflow_project::commands::build_project_status(&project).expect("status"),
+        coflow_project::commands::codegen_project_status(&project).expect("status"),
         coflow_project::commands::CommandOutcome::Success(true)
     ));
 }
@@ -359,7 +359,7 @@ fn generated_status_compares_binary_artifacts_exactly() {
     fs::write(output, bytes).expect("change generated contract");
 
     assert!(matches!(
-        coflow_project::commands::build_project_status(&project).expect("status"),
+        coflow_project::commands::codegen_project_status(&project).expect("status"),
         coflow_project::commands::CommandOutcome::Success(true)
     ));
 }

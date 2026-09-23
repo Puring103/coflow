@@ -23,7 +23,7 @@ coflow skill install -g
 
 | Skill | 使用场景 |
 | --- | --- |
-| `coflow-workflow` | 项目流程、`coflow.yaml`、`check/build`、CI、诊断处理和最佳实践 |
+| `coflow-workflow` | 项目流程、`coflow.yaml`、`check/codegen`、CI、诊断处理和最佳实践 |
 | `coflow-schema` | CFT schema、类型/字段/默认值、引用、多态、`check {}`、本地化和数据结构设计 |
 
 ## Agent 工作流
