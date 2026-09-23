@@ -1,7 +1,7 @@
 //! Runtime 的执行值适配与动态区。固定配置身份和动态返回值共用 Runtime 归属。
 use super::fixed::View as Stored;
 use super::heap::{Heap, dynamic_bytes};
-#[cfg(test)] use super::image::{fold_scalar_control_flow, fuse_int_immediates};
+#[cfg(test)] use crate::vm::bytecode_optimization::{fold_scalar_control_flow, fuse_int_immediates};
 use super::*;
 mod builtins;
 mod comparison;

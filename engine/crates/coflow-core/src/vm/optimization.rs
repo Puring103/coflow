@@ -112,12 +112,15 @@ pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::A
                 _ => false,
             })
     };
-    let changed = program.rewrite_instructions(|program, _pc, instruction, instructions| {
+    // 改写在候选程序上完成；失败时不向调用者暴露半成品指令和寄存器表。
+    let mut candidate = program.clone();
+    let mut spent = 0usize;
+    let changed = candidate.rewrite_instructions(|program, _pc, instruction, instructions| {
         let callee = if instruction.opcode() == Some(Opcode::CallDirect) {
             let site = program.direct_calls.get(instruction.index() as usize).ok_or("内联调用附表越界")?;
             let target = callees.get(site.function.0 as usize).ok_or("内联目标越界")?;
             let cost = target.instructions.len() + target.parameters.len();
-            (cost <= *remaining && program.registers.len() + target.registers.len() <= 65_536 && eligible(target))
+            (cost <= (*remaining).saturating_sub(spent) && program.registers.len() + target.registers.len() <= 65_536 && eligible(target))
                 .then_some((target, site, cost))
         } else { None };
         if let Some((callee, site, cost)) = callee {
@@ -141,13 +144,16 @@ pub(crate) fn inline_scalar_calls(program: &mut Program, callees: &[std::sync::A
                 };
                 instructions.push(rewritten);
             }
-            *remaining -= cost;
+            spent += cost;
         } else {
             instructions.push(instruction);
         }
         Ok(())
     })?;
     if !changed { return Ok(false); }
-    program.allocate_registers()?;
+    // 内联扩展寄存器窗口后，分配器统一重建控制流活跃集合。
+    candidate.allocate_registers()?;
+    *remaining -= spent;
+    *program = candidate;
     Ok(true)
 }

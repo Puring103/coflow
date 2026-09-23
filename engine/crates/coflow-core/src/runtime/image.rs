@@ -1,7 +1,8 @@
 //! 构建期固定数据链接、快照优化和程序映像的一次性发布。
 use super::{fixed, BuildDiagnostic, Contract, OptimizationProfile, ValueId, ScalarKey};
 use crate::{schema::CftValueType, vm::{bytecode::{Constant, FormatPart, FunctionId, Program},
-    compiler::{self, CompileContext}, executor::{self, FunctionBinding, Slot}, image::ValidatedProgram}};
+    bytecode_optimization::{compact_instructions, fold_scalar_control_flow, fuse_int_immediates},
+    compiler::{self, CompileContext}, executor::{FunctionBinding, Slot}, image::ValidatedProgram}};
 use std::{collections::{BTreeMap, BTreeSet, HashMap}, sync::Arc};
 use super::fixed::View as Stored;
 /// 程序区只保存相对固定区的绑定，不包含实例堆或 Host 地址。
@@ -198,75 +199,92 @@ impl ProgramImage {
         // 固定 owner 的专化只属于当前映像；代码预算耗尽后保留通用程序。
         // 不改写嵌套闭包，它们可能显式绑定新构造对象的 self。
         if runtime.profile == OptimizationProfile::Release {
-            let mut remaining = 65_536usize;
-            for binding in bindings.values_mut() {
-                use crate::vm::bytecode::Opcode;
-                let Slot::Handle(owner) = binding.owner else { continue; };
-        let owner = owner.get();
-                let count = binding.program.instructions.len();
-                if count > remaining || !binding.program.instructions.iter().any(|i| matches!(i.opcode(), Some(Opcode::SelfValue | Opcode::SelfField))) { continue; }
-                let mut specialized = (*binding.program).clone();
-                let mut changed = false;
-                for instruction in &mut specialized.instructions {
-                    let id = match instruction.opcode() {
-                        Some(Opcode::SelfValue) => Some(owner),
-                        Some(Opcode::SelfField) => runtime.fixed_field(owner, instruction.c()),
-                        _ => None,
-                    };
-                    if let Some(id) = id {
-                        *instruction = fixed_instruction(id, instruction.a())?;
-                        changed = true;
-                    }
-                }
-                if changed {
-                    fold_fixed_reads(runtime, &mut specialized)?;
-                    fold_scalar_control_flow(&mut specialized)?;
-                    fold_format_plans(runtime, &mut specialized)?;
-                    link_direct_calls(&mut specialized, &function_ids)?;
-                    binding.program = Arc::new(specialized);
-                    remaining -= count;
-                }
-            }
+            specialize_owners(runtime, &function_ids, &mut bindings)?;
         }
         // 编号在链接前统一分配，实际绑定在全部程序完成后一次发布；递归不形成 Arc 环。
         if !function_ids.keys().eq(bindings.keys()) { return Err("程序编号没有对应绑定".into()); }
         state.direct = bindings.into_values().collect();
         if runtime.profile == OptimizationProfile::Release {
-            let effects = crate::vm::optimization::call_effects(&state.direct)?;
-            let callees = state.direct.iter().map(|binding| binding.program.clone()).collect::<Vec<_>>();
-            let mut inline_budget = 65_536;
-            for binding in &mut state.direct {
-                use crate::vm::bytecode::Opcode;
-                if !binding.program.instructions.iter().any(|i| i.opcode() == Some(Opcode::CallDirect)) { continue; }
-                let mut program = (*binding.program).clone();
-                let inlined = crate::vm::optimization::inline_scalar_calls(&mut program, &callees, &mut inline_budget)?;
-                if inlined { fold_scalar_control_flow(&mut program)?; fold_format_plans(runtime, &mut program)?; }
-                program.build_local_liveness()?;
-                let remove = program.instructions.iter().enumerate().map(|(pc, instruction)| {
-                    instruction.opcode() == Some(Opcode::CallDirect)
-                        && effects[program.direct_calls[instruction.index() as usize].function.0 as usize].discardable()
-                        && program.live.get(pc + 1).is_some_and(|live| !live.contains(&instruction.a()))
-                }).collect::<Vec<_>>();
-                if inlined || remove.iter().any(|removed| *removed) {
-                    compact_instructions(&mut program, &remove)?;
-                    binding.program = Arc::new(program);
-                }
-            }
+            optimize_direct_calls(runtime, &mut state)?;
         }
         state.functions = function_ids;
-        for binding in &state.direct {
-            state.validate_direct_calls(runtime.contract.schema(), &binding.program)?;
-        }
-        for program in state.programs.functions.values() {
-            state.validate_direct_calls(runtime.contract.schema(), program)?;
-        }
-        for check in &state.programs.checks {
-            state.validate_direct_calls(runtime.contract.schema(), &check.program)?;
-        }
+        state.validate_image(runtime.contract.schema())?;
         state.publish().map_err(BuildDiagnostic::from)
     }
 }
+
+/// 快照绑定的 self 专化仅作用于固定 owner 的直接程序。
+fn specialize_owners(
+    runtime: &LinkContext<'_>,
+    function_ids: &BTreeMap<ValueId, FunctionId>,
+    bindings: &mut BTreeMap<ValueId, FunctionBinding<Program>>,
+) -> Result<(), String> {
+    let mut remaining = 65_536usize;
+    for binding in bindings.values_mut() {
+        use crate::vm::bytecode::Opcode;
+        let Slot::Handle(owner) = binding.owner else { continue; };
+        let owner = owner.get();
+        let count = binding.program.instructions.len();
+        if count > remaining || !binding.program.instructions.iter().any(|i| matches!(i.opcode(), Some(Opcode::SelfValue | Opcode::SelfField))) { continue; }
+        let mut specialized = (*binding.program).clone();
+        let mut changed = false;
+        for instruction in &mut specialized.instructions {
+            let id = match instruction.opcode() {
+                Some(Opcode::SelfValue) => Some(owner),
+                Some(Opcode::SelfField) => runtime.fixed_field(owner, instruction.c()),
+                _ => None,
+            };
+            if let Some(id) = id {
+                *instruction = fixed_instruction(id, instruction.a())?;
+                changed = true;
+            }
+        }
+        if changed {
+            fold_fixed_reads(runtime, &mut specialized)?;
+            fold_scalar_control_flow(&mut specialized)?;
+            fold_format_plans(runtime, &mut specialized)?;
+            link_direct_calls(&mut specialized, &function_ids)?;
+            binding.program = Arc::new(specialized);
+            remaining -= count;
+        }
+    }
+    Ok(())
+}
+
+/// 已链接的直接程序在独立预算内完成跨程序优化。
+fn optimize_direct_calls(runtime: &LinkContext<'_>, state: &mut ProgramImage<Program>) -> Result<(), String> {
+    let effects = crate::vm::optimization::call_effects(&state.direct)?;
+    let callees = state.direct.iter().map(|binding| binding.program.clone()).collect::<Vec<_>>();
+    let mut inline_budget = 65_536;
+    for binding in &mut state.direct {
+        use crate::vm::bytecode::Opcode;
+        if !binding.program.instructions.iter().any(|i| i.opcode() == Some(Opcode::CallDirect)) { continue; }
+        let mut program = (*binding.program).clone();
+        let inlined = crate::vm::optimization::inline_scalar_calls(&mut program, &callees, &mut inline_budget)?;
+        if inlined { fold_scalar_control_flow(&mut program)?; fold_format_plans(runtime, &mut program)?; }
+        program.build_local_liveness()?;
+        let remove = program.instructions.iter().enumerate().map(|(pc, instruction)| {
+            instruction.opcode() == Some(Opcode::CallDirect)
+                && effects[program.direct_calls[instruction.index() as usize].function.0 as usize].discardable()
+                && program.live.get(pc + 1).is_some_and(|live| !live.contains(&instruction.a()))
+        }).collect::<Vec<_>>();
+        if inlined || remove.iter().any(|removed| *removed) {
+            compact_instructions(&mut program, &remove)?;
+            binding.program = Arc::new(program);
+        }
+    }
+    Ok(())
+}
+
 impl ProgramImage<Program> {
+    /// 所有链接及跨程序优化结束后，再统一验证整张映像的调用签名。
+    fn validate_image(&self, schema: &crate::schema::CftSchema) -> Result<(), String> {
+        for binding in &self.direct { self.validate_direct_calls(schema, &binding.program)?; }
+        for program in self.programs.functions.values() { self.validate_direct_calls(schema, program)?; }
+        for check in &self.programs.checks { self.validate_direct_calls(schema, &check.program)?; }
+        Ok(())
+    }
+
     fn validate_direct_calls(
         &self,
         schema: &crate::schema::CftSchema,
@@ -468,144 +486,6 @@ fn link_direct_calls(
         }
     }
     Ok(())
-}
-
-pub(super) fn fuse_int_immediates(program: &mut Program) -> Result<(), String> {
-    use crate::vm::bytecode::{Instruction, Opcode};
-
-    // 其他前驱可能绕过常量写入；只在同一基本块中融合。
-    program.build_local_liveness()?;
-    let leaders = program.block_leaders()?;
-    let mut remove = vec![false; program.instructions.len()];
-    for pc in 0..program.instructions.len().saturating_sub(1) {
-        if leaders.contains(&(pc + 1)) {
-            continue;
-        }
-        let constant = program.instructions[pc];
-        let binary = program.instructions[pc + 1];
-        if constant.opcode() != Some(Opcode::Constant)
-            || constant.flags() != 1
-            || binary.opcode() != Some(Opcode::IntBinary)
-        {
-            continue;
-        }
-        let temporary = constant.a();
-        let (current, immediate_left) = if binary.b() == temporary && binary.a() == binary.c() {
-            (binary.c(), true)
-        } else if binary.c() == temporary && binary.a() == binary.b() {
-            (binary.b(), false)
-        } else {
-            continue;
-        };
-        if current == temporary {
-            continue;
-        }
-        if program
-            .live
-            .get(pc + 2)
-            .is_some_and(|live| live.contains(&temporary))
-        {
-            continue;
-        }
-        let flags = binary.flags() | if immediate_left { 0x80 } else { 0 };
-        program.instructions[pc + 1] = Instruction::indexed(
-            Opcode::IntBinaryImmediate,
-            current,
-            constant.index(),
-        )
-        .with_flags(flags);
-        remove[pc] = true;
-    }
-    compact_instructions(program, &remove)
-}
-
-pub(super) fn compact_instructions(program: &mut Program, remove: &[bool]) -> Result<(), String> {
-    if remove.len() != program.instructions.len() {
-        return Err("指令删除掩码长度不匹配".into());
-    }
-    if !remove.iter().any(|remove| *remove) {
-        return Ok(());
-    }
-    program.rewrite_instructions(|_, pc, instruction, output| {
-        if !remove[pc] {
-            output.push(instruction);
-        }
-        Ok(())
-    })?;
-    program.build_local_liveness()
-}
-
-/// 只折叠实际成功的标量计算，随后按真实跳转边删除不可达节点。
-/// 调用者须先链接所有符号，未执行分支里的非法引用仍然阻止发布。
-pub(super) fn fold_scalar_control_flow(program: &mut Program) -> Result<(), String> {
-    use crate::vm::bytecode::{Instruction, Opcode};
-    let leaders = program.block_leaders()?;
-    let mut known = HashMap::new();
-    let mut remove = vec![false; program.instructions.len()];
-    for pc in 0..program.instructions.len() {
-        if leaders.contains(&pc) {
-            known.clear();
-        }
-        let instruction = program.instructions[pc];
-        let a = instruction.a();
-        let input = |register| known.get(&register).copied();
-        let result = match instruction.opcode().ok_or("未知操作码")? {
-            Opcode::Constant => match instruction.flags() {
-                1 => Some(Slot::Int(instruction.index() as i32)),
-                2 => Some(Slot::Float(f32::from_bits(instruction.index()))),
-                3 => Some(match instruction.b() { 0 => Slot::Unit, 1 => Slot::None, 2 => Slot::Bool(false), _ => Slot::Bool(true) }),
-                0 => match program.constants.get(instruction.index() as usize) {
-                    Some(Constant::Int(value)) => Some(Slot::Int(*value)), Some(Constant::Float(value)) => Some(Slot::Float(*value)),
-                    Some(Constant::Bool(value)) => Some(Slot::Bool(*value)), Some(Constant::None) => Some(Slot::None), Some(Constant::Unit) => Some(Slot::Unit), _ => None,
-                }, _ => None,
-            },
-            Opcode::Move => input(instruction.b()),
-            Opcode::Binary | Opcode::IntBinary | Opcode::FloatBinary => input(instruction.b()).zip(input(instruction.c()))
-                .and_then(|(left, right)| executor::scalar_binary(instruction.flags(), left, right)).and_then(Result::ok),
-            Opcode::IntBinaryImmediate => input(a).and_then(|value| {
-                let immediate = Slot::Int(instruction.index() as i32);
-                let (left, right) = if instruction.flags() & 0x80 != 0 { (immediate, value) } else { (value, immediate) };
-                executor::scalar_binary(instruction.flags() & 0x7f, left, right)?.ok()
-            }),
-            Opcode::ConvertFloat => input(instruction.b()).and_then(|value| if let Slot::Int(value) = value { Some(Slot::Float(value as f32)) } else { None }),
-            Opcode::IsSome => input(instruction.b()).map(|value| Slot::Bool(value != Slot::None)),
-            Opcode::Unary => input(instruction.b()).and_then(|value| match (instruction.flags(), value) {
-                (0, Slot::Int(value)) => value.checked_neg().map(Slot::Int), (0, Slot::Float(value)) => Some(Slot::Float(-value)),
-                (1, Slot::Bool(value)) => Some(Slot::Bool(!value)), (2, Slot::Int(value)) => Some(Slot::Int(!value)), _ => None,
-            }),
-            Opcode::JumpFalse => {
-                if let Some(Slot::Bool(condition)) = input(a) {
-                    if condition { remove[pc] = true; }
-                    else { program.instructions[pc] = Instruction::indexed(Opcode::Jump, 0, instruction.index()); }
-                }
-                None
-            }
-            _ => None,
-        };
-        for register in program.written_registers(instruction)? { known.remove(&register); }
-        if let Some(value) = result {
-            let replacement = match value {
-                Slot::Int(value) => Instruction::indexed(Opcode::Constant, a, value as u32).with_flags(1),
-                Slot::Float(value) => Instruction::indexed(Opcode::Constant, a, value.to_bits()).with_flags(2),
-                Slot::Unit => Instruction::new(Opcode::Constant, a, 0, 0, 3),
-                Slot::None => Instruction::new(Opcode::Constant, a, 1, 0, 3),
-                Slot::Bool(value) => Instruction::new(Opcode::Constant, a, if value { 3 } else { 2 }, 0, 3),
-                _ => continue,
-            };
-            program.instructions[pc] = replacement; known.insert(a, value);
-        }
-    }
-    compact_instructions(program, &remove)?;
-    let mut reachable = vec![false; program.instructions.len()];
-    let mut pending = vec![0];
-    while let Some(pc) = pending.pop() {
-        if reachable[pc] { continue; } reachable[pc] = true;
-        let instruction = program.instructions[pc];
-        if let Some(target) = program.branch_target(instruction)? { pending.push(target); }
-        if !matches!(instruction.opcode(), Some(Opcode::Jump | Opcode::Return)) && pc + 1 < reachable.len() { pending.push(pc + 1); }
-    }
-    let remove = reachable.iter().map(|reachable| !reachable).collect::<Vec<_>>();
-    compact_instructions(program, &remove)
 }
 
 fn fold_format_plans(runtime: &LinkContext<'_>, program: &mut Program) -> Result<(), String> {
