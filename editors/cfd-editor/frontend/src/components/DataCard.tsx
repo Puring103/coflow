@@ -233,7 +233,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'string':
       return <span className="vc vc-str"><RichTextString text={value.value} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'formatted_string':
-      return <span className="vc vc-str"><RichTextString text={value.value.rendered} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
+      return <span className="vc vc-str" title={value.value.source}><RichTextString text={value.value.rendered} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'enum':
       return (
         <span className="vc vc-enum">
@@ -1301,7 +1301,10 @@ export function DirectEditor({
   if (value.kind === 'ref' || (value.kind === 'option_none' && refTargetType)) {
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
-  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string' || value.kind === 'formatted_string') {
+  if (value.kind === 'formatted_string') {
+    return <FormattedTextDirectInput value={value} onCommit={onCommit} />
+  }
+  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
   if (value.kind === 'function') {
@@ -1310,17 +1313,39 @@ export function DirectEditor({
   return <ValueChip value={value} />
 }
 
+// 预览使用基础核心已解析的文本；进入编辑时才展示格式化字符串源码。
+function FormattedTextDirectInput({ value, onCommit }: {
+  value: FieldValue & { kind: 'formatted_string' }
+  onCommit: (next: FieldValue) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  if (editing) return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('fstring')} autoFocus onEditingFinished={() => setEditing(false)} />
+  return (
+    <span className="dc-fstring-preview" role="button" tabIndex={0}
+      title={value.value.source}
+      onClick={() => setEditing(true)}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditing(true) } }}>
+      <RichTextString text={value.value.rendered} />
+    </span>
+  )
+}
+
 function TextDirectInput({
   value,
   onCommit,
   color,
+  onEditingFinished,
+  autoFocus = false,
 }: {
+  onEditingFinished?: () => void
+  autoFocus?: boolean
   value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
   onCommit: (next: FieldValue) => void
   color: string
 }) {
   const initial = plainFieldValueText(value)
   const [text, setText] = useState(initial)
+  const cancelled = useRef(false)
   const rowSelection = useContext(ValueRowSelectionCtx)
   useEffect(() => { setText(initial) }, [initial])
 
@@ -1337,6 +1362,7 @@ function TextDirectInput({
         className="dc-input dc-input-flat dc-input-textarea"
         value={text}
         rows={1}
+        autoFocus={autoFocus}
         onValueChange={value => {
           setText(value)
           const el = document.activeElement as HTMLTextAreaElement | null
@@ -1345,7 +1371,9 @@ function TextDirectInput({
           el.style.height = el.scrollHeight + 'px'
         }}
         onBlur={() => {
-          commit()
+          if (!cancelled.current) commit()
+          cancelled.current = false
+          onEditingFinished?.()
           requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
         }}
         onKeyDown={e => {
@@ -1353,7 +1381,7 @@ function TextDirectInput({
             e.preventDefault();
             (e.target as HTMLTextAreaElement).blur()
           }
-          if (e.key === 'Escape') { setText(initial); (e.target as HTMLTextAreaElement).blur() }
+          if (e.key === 'Escape') { cancelled.current = true; setText(initial); (e.target as HTMLTextAreaElement).blur() }
         }}
       />
     )

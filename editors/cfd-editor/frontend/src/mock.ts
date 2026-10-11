@@ -2,11 +2,11 @@
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
 import type { ProjectBootstrap } from './bindings/ProjectBootstrap'
-import type { DimensionInfo } from './bindings/DimensionInfo'
 import type { EditorProjectSettings } from './bindings/EditorProjectSettings'
 import type { RecordRow } from './bindings/RecordRow'
 import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import type { DimensionFileRecords } from './api'
+import { summaryOf } from './value/fieldValue'
 import {
   boolValue,
   enumValue,
@@ -26,37 +26,14 @@ const MOCK_CFD_CAPS: WriterCapabilities = {
   requires_full_refresh_after_write: true,
 }
 
-export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = {
+export const MOCK_PROJECT: ProjectBootstrap = {
   session_id: 1,
   revision: 1,
   project_root: '(mock project)',
   first_source_file: 'data/item.cfd',
   file_tree: [
     {
-      name: '本地化',
-      path: 'data/dimensions/language',
-      is_dir: true,
-      in_sources: true,
-      in_schema: false,
-      in_data: false,
-      first_source_descendant: null,
-      children: [
-        { name: 'Item_name.cfd', path: 'data/dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/language/Item_name.cfd', children: [] },
-      ],
-    },
-    {
-      name: '平台',
-      path: 'data/dimensions/platform',
-      is_dir: true,
-      in_sources: true,
-      in_schema: false,
-      in_data: false,
-      first_source_descendant: null,
-      children: [
-        { name: 'Item_icon.cfd', path: 'data/dimensions/platform/Item_icon.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: false, first_source_descendant: 'data/dimensions/platform/Item_icon.cfd', children: [] },
-      ],
-    },
-    {
+
       name: 'data',
       path: 'data',
       is_dir: true,
@@ -73,19 +50,19 @@ export const MOCK_PROJECT: ProjectBootstrap & { dimensions: DimensionInfo[] } = 
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
-    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], out_dir: 'data/dimensions/language', fields: [] },
-    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], out_dir: 'data/dimensions/platform', fields: [] },
+    { name: 'language', display_name: '本地化', out_dir: 'data/dimensions/language', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
+    { name: 'platform', display_name: '平台', out_dir: 'data/dimensions/platform', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
   ],
   file_types: {
     'data/item.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false },
-      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false },
+      { name: 'Item', display_name: 'Items', record_count: 2, is_singleton: false, dimension_fields: { language: ['name'], platform: ['icon'] } },
+      { name: 'Weapon', display_name: 'Weapons', record_count: 1, is_singleton: false, dimension_fields: {} },
     ],
     'data/npc.cfd': [
-      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false },
+      { name: 'Npc', display_name: 'Npc', record_count: 2, is_singleton: false, dimension_fields: {} },
     ],
     'data/archive.cfd': [
-      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false },
+      { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false, dimension_fields: {} },
     ],
   },
   diagnostics: [
@@ -190,6 +167,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 
 export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
   graph_positions: {},
+  graph_compact_modes: {},
   view_order: {},
   short_name_fields: {},
     views: {},
@@ -290,7 +268,7 @@ function row(
   const field_summaries: Record<string, string> = {}
   fields.forEach((field, index) => {
     field_index[field.name] = index
-    field_summaries[field.name] = mockSummary(field.value)
+    field_summaries[field.name] = summaryOf(field.value)
   })
   return {
     coordinate: { actual_type: actualType, key },
@@ -322,26 +300,6 @@ function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
       type_names: Array.from(column.type_names),
       max_summary_len: column.max_summary_len,
     })),
-  }
-}
-
-function mockSummary(value: FieldValue): string {
-  switch (value.kind) {
-    case 'option_none': return '-'
-    case 'option_some': return mockSummary(value.value)
-    case 'result_ok': return `Ok(${mockSummary(value.value)})`
-    case 'result_err': return `Err(${mockSummary(value.value)})`
-    case 'bool': return value.value ? 'true' : 'false'
-    case 'int':
-    case 'float': return String(value.value)
-    case 'string': return value.value
-    case 'formatted_string': return value.value.rendered
-    case 'function': return value.value.source
-    case 'enum': return value.value.variant ?? String(value.value.value)
-    case 'ref': return value.value
-    case 'object': return value.value.actual_type
-    case 'array': return value.value.length ? `array[${value.value.length}]` : '[]'
-    case 'dict': return value.value.length ? `dict(${value.value.length})` : '{}'
   }
 }
 

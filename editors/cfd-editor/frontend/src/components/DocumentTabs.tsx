@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
+import type { DimensionInfo } from '../bindings/DimensionInfo'
 import type { WorkspaceTab } from '../state/workspaceTabs'
 import { Icon } from './Icon'
 
@@ -12,6 +13,7 @@ export interface PluginPageTab {
 
 interface Props {
   fileTypes: ProjectBootstrap['file_types'] | undefined
+  dimensions: DimensionInfo[]
   workspaceTabs: WorkspaceTab[]
   activeWorkspaceTabId: string | null
   pluginTabs: PluginPageTab[]
@@ -27,6 +29,7 @@ interface Props {
 
 export function DocumentTabs({
   fileTypes,
+  dimensions,
   workspaceTabs,
   activeWorkspaceTabId,
   pluginTabs,
@@ -111,10 +114,13 @@ export function DocumentTabs({
           />
         )}
         {workspaceTabs.map(tab => {
-          const fileName = tab.filePath.split('/').pop() ?? tab.filePath
-          const type = fileTypes?.[tab.filePath]?.find(option => option.name === tab.typeName)
-          const label = type ? `${fileName} / ${type.display_name}` : fileName
-          const title = type && type.display_name !== type.name
+          const fileName = tab.dimensionTarget?.ownerFile.split('/').pop() ?? tab.filePath.split('/').pop() ?? tab.filePath
+          const type = fileTypes?.[tab.dimensionTarget?.ownerFile ?? tab.filePath]?.find(option => option.name === (tab.dimensionTarget?.typeName ?? tab.typeName))
+          const dimensionName = dimensions.find(item => item.name === tab.dimensionTarget?.dimension)?.display_name ?? tab.dimensionTarget?.dimension
+          const multipleTypes = (fileTypes?.[tab.dimensionTarget?.ownerFile ?? ''] ?? []).filter(option => option.record_count > 0).length > 1
+          const dimensionPath = [dimensionName, fileName, ...(multipleTypes ? [type?.display_name ?? tab.dimensionTarget?.typeName] : []), tab.dimensionTarget?.field].filter(Boolean).join(' / ')
+          const label = tab.dimensionTarget ? dimensionPath : type ? `${fileName} / ${type.display_name}` : fileName
+          const title = tab.dimensionTarget ? `${dimensionName} / ${tab.dimensionTarget.ownerFile}${multipleTypes ? ` / ${type?.display_name ?? tab.dimensionTarget.typeName}` : ''}${tab.dimensionTarget.field ? ` / ${tab.dimensionTarget.field}` : ''}` : type && type.display_name !== type.name
             ? `${tab.filePath} / ${type.display_name} (${type.name})`
             : `${tab.filePath}${tab.typeName ? ` / ${tab.typeName}` : ''}`
           return (
@@ -161,13 +167,13 @@ export function DocumentTabs({
                 <OverflowItem id={GIT_DIFF_TAB_ID} label="Git Diff" icon="git-branch" active={gitDiffActive} onActivate={activateFromMenu} />
               )}
               {workspaceTabs.map(tab => {
-                const fileName = tab.filePath.split('/').pop() ?? tab.filePath
+                const fileName = tab.dimensionTarget?.ownerFile.split('/').pop() ?? tab.filePath.split('/').pop() ?? tab.filePath
                 const type = fileTypes?.[tab.filePath]?.find(option => option.name === tab.typeName)
                 return (
                   <OverflowItem
                     key={tab.id}
                     id={tab.id}
-                    label={type ? `${fileName} / ${type.display_name}` : fileName}
+                    label={tab.dimensionTarget ? `${tab.dimensionTarget.dimension} / ${fileName} / ${tab.dimensionTarget.field ?? tab.dimensionTarget.typeName}` : type ? `${fileName} / ${type.display_name}` : fileName}
                     icon="file"
                     active={!gitDiffActive && !activePluginTabKey && tab.id === activeWorkspaceTabId}
                     onActivate={activateFromMenu}

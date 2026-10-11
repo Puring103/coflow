@@ -10,22 +10,22 @@ use super::revision::RevisionCoordinator;
 use super::EditorSession;
 use crate::editor::types::EditorError;
 
-pub(super) struct SessionSnapshotParts {
-    pub(super) file_tree: Vec<FileTreeNode>,
+pub(crate) struct SessionSnapshotParts {
+    pub(crate) file_tree: Vec<FileTreeNode>,
 }
 
 type FileTypeNames = BTreeMap<String, Vec<String>>;
 type FileTypeCounts = BTreeMap<String, BTreeMap<String, usize>>;
 type TypeDisplayNames = BTreeMap<(String, String), String>;
 
-pub(super) fn session_capabilities_for_file(
+pub(crate) fn session_capabilities_for_file(
     session: &EditorSession,
     file_path: &str,
 ) -> WriterCapabilities {
     session.engine.writer_capabilities_for_file(file_path)
 }
 
-pub(super) fn build_session(
+pub(crate) fn build_session(
     yaml_path_in: &std::path::Path,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
     let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
@@ -107,7 +107,7 @@ fn type_navigation(
     (file_type_names, file_type_counts, display_names)
 }
 
-pub(super) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
+pub(crate) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
     diagnostics
         .diagnostics
         .iter()

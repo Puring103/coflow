@@ -1,4 +1,6 @@
+import { dimensionTargetId, type DimensionTarget } from './dimensionNavigation'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
+import type { DimensionInfo } from '../bindings/DimensionInfo'
 import type { EditorWorkspaceState } from '../bindings/EditorWorkspaceState'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { Route } from '../wire'
@@ -16,6 +18,7 @@ export interface WorkspaceTab {
   viewId: string
   viewKind: ViewRenderKind
   coordinate?: RecordCoordinate
+  dimensionTarget?: DimensionTarget
 }
 
 export interface ProjectWorkspace {
@@ -25,6 +28,13 @@ export interface ProjectWorkspace {
 
 export function workspaceTabId(filePath: string, typeName: string): string {
   return `${filePath}\u001f${typeName}`
+}
+
+export function dimensionWorkspaceTab(target: DimensionTarget): WorkspaceTab {
+  const filePath = `@dimension/${target.dimension}`
+  return { id: dimensionTargetId(target), filePath, typeName: '',
+    viewId: target.singleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
+    viewKind: target.singleton ? 'record' : 'table', dimensionTarget: target }
 }
 
 export function defaultWorkspaceTab(
@@ -46,6 +56,9 @@ export function routeForWorkspaceTab(
   tab: WorkspaceTab,
   fallbackCoordinate?: RecordCoordinate,
 ): Route {
+  if (tab.dimensionTarget) {
+    return { view: 'table', file: tab.filePath, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: '', dimensionTargetId: tab.id }
+  }
   if (tab.viewKind === 'record') {
     const coordinate = isCoordinate(tab.coordinate, tab.typeName)
       ? tab.coordinate
@@ -91,18 +104,28 @@ export function sanitizeProjectWorkspace(
   value: unknown,
   fileTypes: { [file: string]: FileTypeOption[] | undefined },
   sourceFiles?: ReadonlySet<string>,
+  dimensions: DimensionInfo[] = [],
+  dimensionFiles: ReadonlySet<string> = new Set(),
 ): ProjectWorkspace | null {
   if (!isObject(value) || !Array.isArray(value.tabs)) return null
   const tabs: WorkspaceTab[] = []
   const seen = new Set<string>()
   for (const candidate of value.tabs) {
     if (!isObject(candidate)) continue
-    const filePath = stringProperty(candidate, 'file_path', 'filePath')
-    const typeName = stringProperty(candidate, 'type_name', 'typeName')
+    const filePath = stringProperty(candidate, 'file_path')
+    const typeName = stringProperty(candidate, 'type_name')
+    const target = isObject(candidate.dimension_target) ? readDimensionTarget(candidate.dimension_target) : null
+    const dimension = target && dimensions.find(item => item.name === target.dimension)
+    const validTarget = target && dimension && filePath === `@dimension/${target.dimension}`
+      && dimensionFiles.has(target.ownerFile) && (fileTypes[target.ownerFile] ?? [])
+        .some(item => item.name === target.typeName && item.record_count > 0
+          && item.is_singleton === target.singleton
+          && (target.singleton ? (item.dimension_fields[target.dimension] ?? []).length > 0
+            : (item.dimension_fields[target.dimension] ?? []).includes(target.field!))) ? target : null
     const option = fileTypes[filePath]?.find(type => type.name === typeName)
-    const isDimensionFile = !typeName && (sourceFiles?.has(filePath) ?? false)
-    if (!option && !isDimensionFile) continue
-    const id = workspaceTabId(filePath, typeName)
+    const isDimensionFile = !target && !typeName && (sourceFiles?.has(filePath) ?? false)
+    if (!option && !isDimensionFile && !validTarget) continue
+    const id = validTarget ? dimensionTargetId(validTarget) : workspaceTabId(filePath, typeName)
     if (seen.has(id)) continue
     seen.add(id)
 
@@ -110,12 +133,12 @@ export function sanitizeProjectWorkspace(
     const requestedKind = isViewKind(rawKind) ? rawKind : 'table'
     const requestedId = stringProperty(candidate, 'view_id', 'viewId')
     const pluginView = requestedId.includes('/')
-    const viewKind: ViewRenderKind = pluginView
+    const viewKind: ViewRenderKind = validTarget ? (validTarget.singleton ? 'record' : requestedKind === 'record' ? 'record' : 'table') : pluginView
       ? 'table'
       : option?.is_singleton
       ? requestedKind === 'source' ? 'source' : 'record'
       : isDimensionFile && requestedKind === 'graph' ? 'table' : requestedKind
-    const viewId = pluginView
+    const viewId = validTarget ? (validTarget.singleton || viewKind === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID) : pluginView
       ? requestedId
       : option?.is_singleton
       ? viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_RECORD_VIEW_ID
@@ -125,7 +148,7 @@ export function sanitizeProjectWorkspace(
     const coordinate = viewKind === 'record' && isCoordinate(candidate.coordinate, typeName)
       ? candidate.coordinate
       : undefined
-    tabs.push({ id, filePath, typeName, viewId, viewKind, coordinate })
+    tabs.push({ id, filePath, typeName, viewId, viewKind, coordinate, dimensionTarget: validTarget ?? undefined })
   }
   if (tabs.length === 0) return null
   const requestedActiveId = typeof value.active_tab_id === 'string'
@@ -148,6 +171,7 @@ export function workspaceToWire(
       view_id: tab.viewId,
       view_kind: tab.viewKind,
       coordinate: isCoordinate(tab.coordinate, tab.typeName) ? tab.coordinate : null,
+      dimension_target: tab.dimensionTarget ?? null,
     })),
     active_tab_id: activeTabId,
   }
@@ -171,8 +195,20 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function stringProperty(
   value: Record<string, unknown>,
   wireName: string,
-  legacyName: string,
+  legacyName: string = wireName,
 ): string {
   const candidate = value[wireName] ?? value[legacyName]
   return typeof candidate === 'string' ? candidate : ''
+}
+
+function readDimensionTarget(value: Record<string, unknown>): DimensionTarget | null {
+  const dimension = stringProperty(value, 'dimension')
+  const ownerFile = stringProperty(value, 'ownerFile')
+  const typeName = stringProperty(value, 'typeName')
+  const field = value.field
+  const singleton = value.singleton
+  if (!dimension || !ownerFile || !typeName || typeof singleton !== 'boolean'
+    || !(typeof field === 'string' || field === null)
+    || (singleton ? field !== null : !field)) return null
+  return { dimension, ownerFile, typeName, field, singleton }
 }

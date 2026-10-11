@@ -416,15 +416,15 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
         .expect("load project");
     let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
     store
-        .set_graph_positions(project.session_id, "first-view".into(), positions.clone())
+        .set_graph_positions(project.session_id, r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#.into(), positions.clone())
         .expect("save positions");
     store
-        .set_graph_positions(project.session_id, "second-view".into(), BTreeMap::new())
+        .set_graph_positions(project.session_id, r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#.into(), BTreeMap::new())
         .expect("save second view");
     assert!(store
         .set_graph_positions(
             project.session_id,
-            "first-view".into(),
+            r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#.into(),
             BTreeMap::from([("Item::one".to_string(), [f64::NAN, 0.0])])
         )
         .is_err());
@@ -441,8 +441,8 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
     let settings = store
         .get_project_settings(reopened.session_id)
         .expect("read positions");
-    assert_eq!(settings.graph_positions["first-view"], positions);
-    assert!(settings.graph_positions["second-view"].is_empty());
+    assert_eq!(settings.graph_positions[r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#], positions);
+    assert!(settings.graph_positions[r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#].is_empty());
     fs::remove_dir_all(root).expect("remove project");
 }
 
@@ -912,8 +912,14 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
         )),
         "{diagnostics:#?}"
     );
+    // 外部修改与编辑基线不一致时禁止覆盖磁盘内容。
+    fs::write(&data_file, format!("{original}\n")).expect("external source write");
+    store.write_source_text(session_id, file_path, invalid, &original)
+        .expect_err("stale source baseline must conflict");
+    assert_eq!(fs::read_to_string(&data_file).expect("read disk"), format!("{original}\n"));
+    fs::write(&data_file, &original).expect("restore source baseline");
     let bootstrap = store
-        .write_source_text(session_id, file_path, invalid)
+        .write_source_text(session_id, file_path, invalid, &original)
         .expect("invalid data source remains editable");
     assert!(bootstrap
         .diagnostics
@@ -930,7 +936,7 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
 
     let edited = format!("{original}\n");
     let saved = store
-        .write_source_text(session_id, file_path, &edited)
+        .write_source_text(session_id, file_path, &edited, invalid)
         .expect("save valid source text");
     assert!(saved.revision > snapshot.revision);
     assert_eq!(
@@ -1280,8 +1286,8 @@ fn cft_source_is_visible_editable_and_validated() {
         .expect("validate invalid CFT draft");
     assert!(diagnostics.iter().any(|item| item.severity == "error"));
     store
-        .write_source_text(snapshot.session_id, file_path, &invalid)
-        .expect_err("invalid CFT must not be written");
+        .write_source_text(snapshot.session_id, file_path, &invalid, &source)
+        .expect_err("invalid CFT remains in the editing draft");
 
     let unformatted = source.replace("  tags:", "tags:");
     let formatted = store
@@ -1294,7 +1300,7 @@ fn cft_source_is_visible_editable_and_validated() {
         formatted.text.trim_end()
     );
     let saved = store
-        .write_source_text(snapshot.session_id, file_path, &source_with_added_type)
+        .write_source_text(snapshot.session_id, file_path, &source_with_added_type, &source)
         .expect("save valid CFT source");
     assert!(saved.revision > snapshot.revision);
     assert!(saved

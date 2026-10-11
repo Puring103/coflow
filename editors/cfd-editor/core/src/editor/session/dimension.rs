@@ -7,7 +7,9 @@ use crate::editor::types::{
     DimensionFileRecords, DimensionFileRow, EditorError, WriteDimensionValueOutcome,
 };
 
-use super::{finalize_mutation, SessionStore};
+use super::SessionStore;
+use super::mutation_apply::finalize_mutation;
+use super::errors::api_diagnostics_to_editor_error;
 
 impl SessionStore {
     pub fn get_dimension_file_records(
@@ -16,15 +18,19 @@ impl SessionStore {
         file_path: &str,
     ) -> Result<DimensionFileRecords, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         let queries = session.queries();
         let normalized_path = file_path.replace('\\', "/");
-        let (dimension, fields) = queries
-            .dimension_fields_for_file(&normalized_path)
-            .ok_or_else(|| EditorError::not_found("managed dimension file not found"))?;
+        // 虚拟导航聚合整个维度，物理辅助文件仍按其原有范围查询。
+        let (dimension, fields) = if let Some(name) = normalized_path.strip_prefix("@dimension/") {
+            let dimension = queries.dimensions().into_iter().find(|item| item.name == name)
+                .ok_or_else(|| EditorError::not_found("dimension not found"))?;
+            let fields = dimension.fields.clone();
+            (dimension, fields)
+        } else {
+            queries.dimension_fields_for_file(&normalized_path)
+                .ok_or_else(|| EditorError::not_found("managed dimension file not found"))?
+        };
         let dimension_name = DimensionName::new(dimension.name.clone())
             .map_err(|error| EditorError::other(error.to_string()))?;
         let mut rows = Vec::new();
@@ -86,10 +92,7 @@ impl SessionStore {
         coordinate: &DimensionValueCoordinate,
     ) -> Result<DimensionValueView, EditorError> {
         let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let session = entry.state.read();
         session
             .queries()
             .dimension_value(coordinate)
@@ -104,10 +107,7 @@ impl SessionStore {
         new_value: &DimensionValueState,
     ) -> Result<WriteDimensionValueOutcome, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry
-            .state
-            .write()
-            .map_err(|_| EditorError::session("session poisoned"))?;
+        let mut session = entry.state.write();
         let expected = match expected_value {
             DimensionValueState::Missing => DimensionValueExpectation::Missing,
             DimensionValueState::Value(value) => {
@@ -132,7 +132,7 @@ impl SessionStore {
                 ops: vec![op],
             },
         )
-        .map_err(super::api_diagnostics_to_editor_error)?;
+        .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "write dimension value failed")?;
         let new_value = session
             .queries()
