@@ -68,4 +68,3 @@ export function useRouter(): RouterState {
     clear,
   }), [s, push, replace, back, forward, clear])
 }
-
