@@ -133,8 +133,25 @@ pub struct ProjectDiff {
 
 #[derive(Debug, Clone, PartialEq)]
 struct RecordState {
-    snapshot: ProjectRecordSnapshot,
+    // 文件路径与语义值分开存放，快照仅在确认变化后构造，
+    // 避免为海量未变化记录重复克隆 CfdValue。
+    file_path: String,
     values: BTreeMap<String, CfdValue>,
+}
+
+// HEAD 分支在作用域线程内独立计算的结果；Loaded 携带的诊断已按
+// “会话诊断在前、来源附注在后”排好序，合并点直接追加以保持原有诊断顺序。
+enum HeadOutcome {
+    Loaded {
+        sources: BTreeMap<String, String>,
+        records: BTreeMap<RecordCoordinate, RecordState>,
+        valid: bool,
+        head_diagnostics: Vec<ProjectDiffDiagnostic>,
+        session_diagnostics: Vec<ProjectDiffDiagnostic>,
+    },
+    Failed {
+        error: DiagnosticSet,
+    },
 }
 
 pub(crate) fn diff_against_head(
@@ -144,38 +161,76 @@ pub(crate) fn diff_against_head(
     let git = GitProject::open(&session.project)?;
     let head = git.materialize_head()?;
     let mut diagnostics = Vec::new();
-    let current_sources = session_sources(session, &git, None, &mut diagnostics);
+    let current_sources = session_sources(session, &git.diff_paths(), None, &mut diagnostics);
     let ignored = git.ignored_paths(current_sources.keys())?;
 
-    // HEAD 必须使用提交内自己的 coflow.yaml 与 CFT/CFD，不能套用当前 schema。
-    let head_session = Project::open_schema_only(Some(&head.config_path))
-        .and_then(|mut project| {
-            git.rebase_head_inputs(&mut project, head.temp.path())?;
-            Ok(project)
-        })
-        .and_then(|project| Runtime::new().open_read_only_session(project));
+    // HEAD 分支（快照重载 + HEAD 记录）与当前记录计算相互独立，
+    // 用作用域线程并行执行；gix Repository 非 Sync，线程内仅使用纯路径
+    // 快照 GitDiffPaths，合并点后保持原有诊断顺序。
+    let head_paths = git.diff_paths();
+    let (head_outcome, mut current_records) = std::thread::scope(|scope| {
+        let head_handle = scope.spawn(|| {
+            // HEAD 必须使用提交内自己的 coflow.yaml 与 CFT/CFD，不能套用当前 schema。
+            let head_session = Project::open_schema_only(Some(&head.config_path))
+                .and_then(|mut project| {
+                    head_paths.rebase_head_inputs(&mut project, head.temp.path())?;
+                    Ok(project)
+                })
+                .and_then(|project| Runtime::new().open_read_only_session(project));
+            match head_session {
+                Ok(head_session) => {
+                    let session_set = head_session.queries().diagnostics().as_set();
+                    let valid = session_set.is_empty();
+                    let session_diagnostics = session_set
+                        .iter()
+                        .map(|diagnostic| ProjectDiffDiagnostic {
+                            endpoint: "head".to_string(),
+                            code: diagnostic.code.clone(),
+                            message: diagnostic.message.clone(),
+                        })
+                        .collect::<Vec<_>>();
+                    let mut head_diagnostics = Vec::new();
+                    let sources = session_sources(
+                        &head_session.session,
+                        &head_paths,
+                        Some(head.temp.path()),
+                        &mut head_diagnostics,
+                    );
+                    let records =
+                        record_states(&head_session.session, &head_paths, Some(head.temp.path()));
+                    HeadOutcome::Loaded {
+                        sources,
+                        records,
+                        valid,
+                        head_diagnostics,
+                        session_diagnostics,
+                    }
+                }
+                Err(error) => HeadOutcome::Failed { error },
+            }
+        });
+        let current_records = record_states(session, &git.diff_paths(), None);
+        // HEAD 会话打开失败属于可恢复路径，直接展开；线程本身无 fallible 操作。
+        let head_outcome = head_handle.join().unwrap_or_else(|_| HeadOutcome::Failed {
+            error: git_error("HEAD 比较线程异常结束"),
+        });
+        (head_outcome, current_records)
+    });
 
     append_diagnostics(&mut diagnostics, "current", session.diagnostics.as_set());
-    let (head_sources, head_records, head_valid) = match head_session {
-        Ok(head_session) => {
-            append_diagnostics(
-                &mut diagnostics,
-                "head",
-                head_session.queries().diagnostics().as_set(),
-            );
-            let valid = head_session.queries().diagnostics().as_set().is_empty();
-            (
-                session_sources(
-                    &head_session.session,
-                    &git,
-                    Some(head.temp.path()),
-                    &mut diagnostics,
-                ),
-                record_states(&head_session.session, &git, Some(head.temp.path())),
-                valid,
-            )
+    let (head_sources, head_records, head_valid) = match head_outcome {
+        HeadOutcome::Loaded {
+            sources,
+            records,
+            valid,
+            head_diagnostics,
+            session_diagnostics,
+        } => {
+            diagnostics.extend(session_diagnostics);
+            diagnostics.extend(head_diagnostics);
+            (sources, records, valid)
         }
-        Err(error) => {
+        HeadOutcome::Failed { error } => {
             append_diagnostics(&mut diagnostics, "head", &error);
             (head.sources, BTreeMap::new(), false)
         }
@@ -184,7 +239,6 @@ pub(crate) fn diff_against_head(
     let current_valid = session.diagnostics.as_set().is_empty();
     let files = source_diffs(&ignored, &head_sources, &current_sources)?;
     let records = if head_valid && current_valid {
-        let mut current_records = record_states(session, &git, None);
         filter_ignored_additions(&ignored, &head_sources, &mut current_records);
         record_diffs(&head_records, &current_records)
     } else {
@@ -206,9 +260,9 @@ fn filter_ignored_additions(
     head_sources: &BTreeMap<String, String>,
     records: &mut BTreeMap<RecordCoordinate, RecordState>,
 ) {
+    // 仅保留 HEAD 已跟踪或未被忽略的新增记录，避免忽略文件放大语义差异。
     records.retain(|_, record| {
-        head_sources.contains_key(&record.snapshot.file_path)
-            || !ignored.contains(&record.snapshot.file_path)
+        head_sources.contains_key(&record.file_path) || !ignored.contains(&record.file_path)
     });
 }
 
@@ -226,7 +280,7 @@ fn append_diagnostics(
 
 fn session_sources(
     session: &ProjectSession,
-    git: &GitProject,
+    git: &GitDiffPaths,
     snapshot: Option<&Path>,
     diagnostics: &mut Vec<ProjectDiffDiagnostic>,
 ) -> BTreeMap<String, String> {
@@ -272,17 +326,26 @@ fn session_sources(
 
 fn record_states(
     session: &ProjectSession,
-    git: &GitProject,
+    git: &GitDiffPaths,
     snapshot: Option<&Path>,
 ) -> BTreeMap<RecordCoordinate, RecordState> {
     let mut records = BTreeMap::new();
+    // diff_path 内部多次访问文件系统（symlink_metadata + canonicalize），
+    // 同一文件的每条记录结果完全相同，按文件路径记忆化，将万次系统调用降为文件数级别。
+    let mut file_path_cache: std::collections::HashMap<String, Option<String>> =
+        std::collections::HashMap::new();
+    let root = session.project.root_dir();
     for (_, record) in session.model.records() {
         let coordinate = record.coordinate();
-        let Some(file_path) = session.file_for_record(coordinate.actual_type(), coordinate.key())
+        let Some(source_path) = session.file_for_record(coordinate.actual_type(), coordinate.key())
         else {
             continue;
         };
-        let Some(file_path) = git.diff_path(session.project.root_dir(), file_path, snapshot) else {
+        let Some(file_path) = file_path_cache
+            .entry(source_path.to_string())
+            .or_insert_with(|| git.diff_path(root, source_path, snapshot))
+            .clone()
+        else {
             continue;
         };
         let mut values = record
@@ -298,17 +361,8 @@ fn record_states(
                 );
             }
         }
-        let snapshot = ProjectRecordSnapshot {
-            file_path: file_path.clone(),
-            values: values
-                .iter()
-                .map(|(path, value)| ProjectDiffValue {
-                    path: path.clone(),
-                    value: value.clone(),
-                })
-                .collect(),
-        };
-        records.insert(coordinate, RecordState { snapshot, values });
+        // 此处只保存归一化后的值映射，快照在 record_diffs 确认变化后按需构造。
+        records.insert(coordinate, RecordState { file_path, values });
     }
     records
 }
@@ -362,6 +416,8 @@ fn record_diffs(
         .chain(after.keys())
         .cloned()
         .collect::<BTreeSet<_>>();
+    // 先比较值映射与文件路径，仅对新增/删除/修改的记录构造快照，
+    // 未变化记录零克隆，直接跳过。
     coordinates
         .into_iter()
         .filter_map(
@@ -370,25 +426,24 @@ fn record_diffs(
                     coordinate,
                     change: ProjectDiffChange::Added,
                     before: None,
-                    after: Some(after.snapshot.clone()),
+                    after: Some(snapshot_of(after)),
                     fields: field_diffs(&BTreeMap::new(), &after.values),
                 }),
                 (Some(before), None) => Some(ProjectRecordDiff {
                     coordinate,
                     change: ProjectDiffChange::Deleted,
-                    before: Some(before.snapshot.clone()),
+                    before: Some(snapshot_of(before)),
                     after: None,
                     fields: field_diffs(&before.values, &BTreeMap::new()),
                 }),
                 (Some(before), Some(after))
-                    if before.values != after.values
-                        || before.snapshot.file_path != after.snapshot.file_path =>
+                    if before.values != after.values || before.file_path != after.file_path =>
                 {
                     Some(ProjectRecordDiff {
                         coordinate,
                         change: ProjectDiffChange::Modified,
-                        before: Some(before.snapshot.clone()),
-                        after: Some(after.snapshot.clone()),
+                        before: Some(snapshot_of(before)),
+                        after: Some(snapshot_of(after)),
                         fields: field_diffs(&before.values, &after.values),
                     })
                 }
@@ -396,6 +451,21 @@ fn record_diffs(
             },
         )
         .collect()
+}
+
+fn snapshot_of(state: &RecordState) -> ProjectRecordSnapshot {
+    // 变化记录的唯一克隆点，由值映射生成有序快照。
+    ProjectRecordSnapshot {
+        file_path: state.file_path.clone(),
+        values: state
+            .values
+            .iter()
+            .map(|(path, value)| ProjectDiffValue {
+                path: path.clone(),
+                value: value.clone(),
+            })
+            .collect(),
+    }
 }
 
 fn field_diffs(
@@ -697,6 +767,22 @@ impl GitProject {
         Ok(ignored)
     }
 
+    fn diff_paths(&self) -> GitDiffPaths {
+        // 仅克隆两个路径，可跨线程传递；gix Repository 本身非 Sync。
+        GitDiffPaths {
+            repo_root: self.repo_root.clone(),
+            project_relative: self.project_relative.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GitDiffPaths {
+    repo_root: PathBuf,
+    project_relative: PathBuf,
+}
+
+impl GitDiffPaths {
     fn diff_path(&self, root: &Path, path: &str, snapshot: Option<&Path>) -> Option<String> {
         let absolute = crate::normalize_path(&root.join(path));
         let absolute = match snapshot {

@@ -5,15 +5,15 @@ import type { PluginSchemaType } from '../bindings/PluginSchemaType'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { FieldPathSegment, FieldValue } from '../wire'
+import type { GenerationIdentity } from '../state/core-identity'
+
+export type { GenerationIdentity } from '../state/core-identity'
 
 export type PluginOrigin = 'built-in' | 'global' | 'project'
 export type PluginPresentationSlot = 'cell' | 'inspector' | 'summary'
 export type PluginSidebarIcon = 'extensions' | 'search'
 
-export interface PluginIdentity {
-  sessionId: number
-  revision: number
-}
+export interface PluginIdentity extends GenerationIdentity {}
 
 export interface PluginOutlet {
   element: HTMLElement
@@ -44,9 +44,8 @@ export interface PluginPageContribution extends PluginContributionBase {
   mount(context: PluginPageContext, outlet: PluginOutlet): PluginMountResult<PluginPageContext>
 }
 
-export interface PluginRecordData {
+export type PluginRecordData = Pick<RecordRow, 'coordinate'> & {
   filePath: string
-  coordinate: RecordCoordinate
   fields?: RecordRow['fields']
 }
 

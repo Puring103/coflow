@@ -1,296 +1,39 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+//! Editor settings: 项目共享设置与按项目隔离的本机设置。
+//!
+//! 按职责拆分：
+//! - `model`：版本化磁盘结构与常量；
+//! - `io`：共享/本机原子读写、迁移与版本校验；
+//! - `sanitize`：workspace/列宽/分组/视图归一化。
 
-use atomicwrites::{AllowOverwrite, AtomicFile};
-use serde::{Deserialize, Serialize};
+#[path = "settings/io.rs"]
+pub(crate) mod io;
+#[path = "settings/model.rs"]
+pub(crate) mod model;
+#[path = "settings/sanitize.rs"]
+pub(crate) mod sanitize;
 
-use super::{
-    EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState,
-    EditorWorkspaceTab, ViewConfig, ViewKind,
+pub(crate) use io::{read_project_settings, write_local_settings, write_project_settings};
+pub(crate) use sanitize::{
+    sanitized_column_widths, sanitized_record_groups, sanitized_views, sanitized_workspace,
 };
-
-const SETTINGS_FILE: &str = "editor.json";
-const SETTINGS_VERSION: u8 = 1;
-const MIN_COLUMN_WIDTH: f64 = 48.0;
-const MAX_VIEW_NAME_LEN: usize = 80;
-const MAX_FIELD_LEN: usize = 160;
-/// Reserved id prefix for implicit default views. User views cannot use it.
-pub(super) const RESERVED_VIEW_ID_PREFIX: &str = "__";
-const RECORD_GROUP_COLORS: &[&str] = &[
-    "red", "orange", "yellow", "green", "cyan", "blue", "purple", "gray",
-];
-
-/// Versioned on-disk shape of `editor-setting/editor.json`.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct SettingsFile {
-    version: u8,
-    #[serde(default)]
-    graph_positions: BTreeMap<String, BTreeMap<String, [f64; 2]>>,
-    #[serde(default)]
-    short_name_fields: BTreeMap<String, String>,
-    #[serde(default)]
-    view_order: BTreeMap<String, BTreeMap<String, Vec<String>>>,
-    #[serde(default)]
-    views: BTreeMap<String, BTreeMap<String, Vec<ViewConfig>>>,
-    #[serde(default)]
-    default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
-    #[serde(default)]
-    record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
-    #[serde(default)]
-    workspace: EditorWorkspaceState,
-}
-
-fn settings_path(project_root: &Path) -> PathBuf {
-    project_root.join("editor-setting").join(SETTINGS_FILE)
-}
-
-fn read_json<T: Default + for<'de> Deserialize<'de>>(path: &Path) -> Result<T, EditorError> {
-    if !path.exists() {
-        return Ok(T::default());
-    }
-    let bytes = fs::read(path).map_err(|error| {
-        EditorError::other(format!("failed to read {}: {error}", path.display()))
-    })?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))
-}
-
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), EditorError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| EditorError::other("editor settings path has no parent"))?;
-    fs::create_dir_all(parent).map_err(|error| {
-        EditorError::other(format!("failed to create {}: {error}", parent.display()))
-    })?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(|error| {
-        EditorError::other(format!("failed to encode editor settings: {error}"))
-    })?;
-    AtomicFile::new(path, AllowOverwrite)
-        .write(|file| file.write_all(&bytes))
-        .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
-}
-
-/// Read the single versioned editor settings file.
-pub(super) fn read_project_settings(
-    project_root: &Path,
-) -> Result<EditorProjectSettings, EditorError> {
-    let path = settings_path(project_root);
-    if !path.exists() {
-        return Ok(EditorProjectSettings::default());
-    }
-    let settings: SettingsFile = read_json(&path)?;
-    if settings.version != SETTINGS_VERSION {
-        return Err(EditorError::other(format!(
-            "unsupported editor settings version {}",
-            settings.version
-        )));
-    }
-    Ok(EditorProjectSettings {
-        graph_positions: settings.graph_positions,
-        short_name_fields: settings.short_name_fields,
-        view_order: settings.view_order,
-        views: settings.views,
-        default_table_column_widths: settings.default_table_column_widths,
-        record_groups: settings.record_groups,
-        workspace: settings.workspace,
-    })
-}
-
-pub(super) fn write_project_settings(
-    project_root: &Path,
-    settings: &EditorProjectSettings,
-) -> Result<(), EditorError> {
-    write_json(
-        &settings_path(project_root),
-        &SettingsFile {
-            version: SETTINGS_VERSION,
-            graph_positions: settings.graph_positions.clone(),
-            short_name_fields: settings.short_name_fields.clone(),
-            view_order: settings.view_order.clone(),
-            views: settings.views.clone(),
-            default_table_column_widths: settings.default_table_column_widths.clone(),
-            record_groups: settings.record_groups.clone(),
-            workspace: settings.workspace.clone(),
-        },
-    )
-}
-
-pub(super) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWorkspaceState {
-    const MAX_TABS: usize = 100;
-    const MAX_ID_LEN: usize = 512;
-    let mut ids = BTreeSet::new();
-    let tabs = workspace
-        .tabs
-        .into_iter()
-        .filter_map(|tab| {
-            let file_path = tab.file_path.trim().chars().take(MAX_ID_LEN).collect::<String>();
-            let type_name = tab.type_name.trim().chars().take(MAX_FIELD_LEN).collect::<String>();
-            let view_id = tab.view_id.trim().chars().take(MAX_ID_LEN).collect::<String>();
-            if file_path.is_empty() || view_id.is_empty() {
-                return None;
-            }
-            let id = format!("{file_path}\u{1f}{type_name}");
-            if !ids.insert(id) {
-                return None;
-            }
-            Some(EditorWorkspaceTab {
-                file_path,
-                type_name,
-                view_id,
-                view_kind: tab.view_kind,
-                coordinate: tab.coordinate,
-            })
-        })
-        .take(MAX_TABS)
-        .collect::<Vec<_>>();
-    let retained_ids = tabs
-        .iter()
-        .map(|tab| format!("{}\u{1f}{}", tab.file_path, tab.type_name))
-        .collect::<BTreeSet<_>>();
-    let active_tab_id = workspace
-        .active_tab_id
-        .filter(|active| retained_ids.contains(active));
-    EditorWorkspaceState { tabs, active_tab_id }
-}
-
-pub(super) fn sanitized_column_widths(widths: BTreeMap<String, f64>) -> BTreeMap<String, f64> {
-    widths
-        .into_iter()
-        .filter_map(|(column, width)| {
-            width
-                .is_finite()
-                .then(|| (column, width.max(MIN_COLUMN_WIDTH)))
-        })
-        .collect()
-}
-
-pub(super) fn sanitized_record_groups(groups: Vec<EditorRecordGroup>) -> Vec<EditorRecordGroup> {
-    let mut ids = BTreeSet::new();
-    let mut assigned_records = BTreeSet::new();
-    groups
-        .into_iter()
-        .filter_map(|group| {
-            let id = group.id.trim().to_string();
-            if id.is_empty() || !ids.insert(id.clone()) {
-                return None;
-            }
-            let name = group
-                .name
-                .trim()
-                .chars()
-                .take(MAX_VIEW_NAME_LEN)
-                .collect::<String>();
-            let mut group_records = BTreeSet::new();
-            let records = group
-                .records
-                .into_iter()
-                .filter(|coordinate| {
-                    !assigned_records.contains(coordinate)
-                        && group_records.insert(coordinate.clone())
-                })
-                .collect::<Vec<_>>();
-            if records.len() < 2 {
-                return None;
-            }
-            assigned_records.extend(records.iter().cloned());
-            Some(EditorRecordGroup {
-                id,
-                name: if name.is_empty() {
-                    "未命名分组".to_string()
-                } else {
-                    name
-                },
-                color: group
-                    .color
-                    .filter(|color| RECORD_GROUP_COLORS.contains(&color.as_str())),
-                records,
-            })
-        })
-        .collect()
-}
-
-/// Trim/dedupe an ordered list of field-like strings, preserving first-seen order.
-fn sanitized_field_list(fields: Vec<String>) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    fields
-        .into_iter()
-        .map(|field| field.trim().chars().take(MAX_FIELD_LEN).collect::<String>())
-        .filter(|field| !field.is_empty() && seen.insert(field.clone()))
-        .collect()
-}
-
-/// Sanitize a (filePath, actualType)'s custom view list:
-/// - drop empty / duplicate ids, and ids using the reserved `__` prefix
-/// - trim + truncate names (fallback to a default)
-/// - clear `group_filter` when it does not point at a valid group id
-/// - trim/dedupe columns/relations/fields; clamp column widths
-/// - clear fields unused by the view's `kind`
-pub(super) fn sanitized_views(
-    views: Vec<ViewConfig>,
-    valid_group_ids: &BTreeSet<String>,
-) -> Vec<ViewConfig> {
-    let mut ids = BTreeSet::new();
-    views
-        .into_iter()
-        .filter_map(|view| {
-            let id = view.id.trim().to_string();
-            if id.is_empty() || id.starts_with(RESERVED_VIEW_ID_PREFIX) || !ids.insert(id.clone()) {
-                return None;
-            }
-            let name = view
-                .name
-                .trim()
-                .chars()
-                .take(MAX_VIEW_NAME_LEN)
-                .collect::<String>();
-            let group_filter = view
-                .group_filter
-                .filter(|group_id| valid_group_ids.contains(group_id));
-            let sanitized = match view.kind {
-                ViewKind::Table => ViewConfig {
-                    id,
-                    name: if name.is_empty() {
-                        "未命名视图".to_string()
-                    } else {
-                        name
-                    },
-                    kind: ViewKind::Table,
-                    group_filter,
-                    columns: sanitized_field_list(view.columns),
-                    column_widths: sanitized_column_widths(view.column_widths),
-                    relations: Vec::new(),
-                    fields: Vec::new(),
-                },
-                ViewKind::Graph => ViewConfig {
-                    id,
-                    name: if name.is_empty() {
-                        "未命名视图".to_string()
-                    } else {
-                        name
-                    },
-                    kind: ViewKind::Graph,
-                    group_filter,
-                    columns: Vec::new(),
-                    column_widths: BTreeMap::new(),
-                    relations: sanitized_field_list(view.relations),
-                    fields: sanitized_field_list(view.fields),
-                },
-            };
-            Some(sanitized)
-        })
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use coflow_language::cft::{RecordKey, TypeName};
+    use coflow_runtime::{RecordKey, TypeName};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::*;
+    use super::model::MIN_COLUMN_WIDTH;
+    use super::model::SETTINGS_FILE;
+    use super::{read_project_settings, write_project_settings};
+    use super::{sanitized_column_widths, sanitized_record_groups, sanitized_views};
+    use crate::editor::types::{
+        EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab,
+        ViewConfig, ViewKind,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
 
     fn coordinate(key: &str) -> coflow_runtime::RecordCoordinate {
         coflow_runtime::RecordCoordinate::new(
@@ -306,11 +49,15 @@ mod tests {
             .expect("clock")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("coflow-editor-settings-{nonce}"));
+        fs::create_dir_all(&root).expect("create project root");
         let mut settings = EditorProjectSettings::default();
         settings.graph_positions.insert(
-            "items-view".to_string(),
+            r#"["data/items.cfd","view-1","Item"]"#.to_string(),
             BTreeMap::from([("Item::a".to_string(), [-240.5, 360.25])]),
         );
+        settings
+            .graph_compact_modes
+            .insert(r#"["data/items.cfd","view-1","Item"]"#.to_string(), false);
         settings.view_order.insert(
             "data/items.cfd".to_string(),
             BTreeMap::from([(
@@ -363,6 +110,7 @@ mod tests {
                 view_id: "view-1".to_string(),
                 view_kind: crate::editor::WorkspaceViewKind::Table,
                 coordinate: Some(coordinate("a")),
+                dimension_target: None,
             }],
             active_tab_id: Some(tab_id),
         };
@@ -372,6 +120,7 @@ mod tests {
 
         assert_eq!(loaded.views, settings.views);
         assert_eq!(loaded.graph_positions, settings.graph_positions);
+        assert_eq!(loaded.graph_compact_modes, settings.graph_compact_modes);
         assert_eq!(loaded.view_order, settings.view_order);
         assert_eq!(
             loaded.default_table_column_widths,
@@ -379,7 +128,101 @@ mod tests {
         );
         assert_eq!(loaded.record_groups, settings.record_groups);
         assert_eq!(loaded.workspace, settings.workspace);
+        assert_eq!(loaded.views["data/items.cfd"]["Item"][0].column_widths, settings.views["data/items.cfd"]["Item"][0].column_widths);
+        let shared = fs::read_to_string(root.join("editor-setting").join(SETTINGS_FILE)).expect("shared settings");
+        for field in ["workspace", "view_order", "graph_compact_modes", "default_table_column_widths", "column_widths"] {
+            assert!(!shared.contains(&format!("\"{field}\"")), "personal field {field} leaked into shared settings");
+        }
         assert!(root.join("editor-setting").join(SETTINGS_FILE).is_file());
+        let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn settings_store_project_and_external_files_as_relative_paths() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("coflow-editor-relative-settings-{nonce}"));
+        let root = base.join("project");
+        let external = base.join("shared").join("items.cfd");
+        fs::create_dir_all(&root).expect("create project root");
+
+        let mut settings = EditorProjectSettings::default();
+        let external_runtime = coflow_runtime::path_to_slash(&external);
+        settings
+            .view_order
+            .insert(external_runtime.clone(), BTreeMap::new());
+        settings.workspace = EditorWorkspaceState {
+            tabs: vec![EditorWorkspaceTab {
+                file_path: external_runtime.clone(),
+                type_name: "Item".to_string(),
+                view_id: "__default_table".to_string(),
+                view_kind: crate::editor::WorkspaceViewKind::Table,
+                coordinate: None,
+                dimension_target: None,
+            }],
+            active_tab_id: Some(format!("{external_runtime}\u{1f}Item")),
+        };
+
+        write_project_settings(&root, &settings).expect("write relative settings");
+        let raw = fs::read_to_string(super::io::local_settings_path(&root).expect("local path"))
+            .expect("read local settings json");
+        assert!(raw.contains("../shared/items.cfd"));
+        assert!(!raw.contains(&external_runtime));
+
+        let loaded = read_project_settings(&root).expect("read relative settings");
+        assert!(loaded.view_order.contains_key(&external_runtime));
+        assert_eq!(loaded.workspace.tabs[0].file_path, external_runtime);
+        let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
+        fs::remove_dir_all(base).expect("remove fixture");
+    }
+
+    #[test]
+    fn dimension_workspace_round_trip_and_path_migration() {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let root = std::env::temp_dir().join(format!("coflow-editor-dimension-settings-{nonce}"));
+        fs::create_dir_all(&root).expect("create project root");
+        let owner = coflow_runtime::path_to_slash(&root.join("data").join("mixed.cfd"));
+        let target = EditorDimensionTarget {
+            dimension: "language".to_string(), owner_file: owner.clone(),
+            type_name: "Item".to_string(), field: Some("name".to_string()), singleton: false,
+        };
+        let id = serde_json::to_string(&["language", &owner, "Item", "name"]).expect("id");
+        let mut settings = EditorProjectSettings::default();
+        settings.workspace = EditorWorkspaceState {
+            tabs: vec![EditorWorkspaceTab {
+                file_path: "@dimension/language".to_string(), type_name: String::new(),
+                view_id: "__default_table".to_string(), view_kind: crate::editor::WorkspaceViewKind::Table,
+                coordinate: None, dimension_target: Some(target),
+            }], active_tab_id: Some(id),
+        };
+        write_project_settings(&root, &settings).expect("write settings");
+        let raw = fs::read_to_string(super::io::local_settings_path(&root).expect("local path"))
+            .expect("read local json");
+        assert!(raw.contains("data/mixed.cfd"));
+        let loaded = read_project_settings(&root).expect("read settings");
+        assert_eq!(loaded.workspace.tabs[0].dimension_target.as_ref().expect("target").owner_file, "data/mixed.cfd");
+        assert_eq!(loaded.workspace.active_tab_id.as_deref(), Some("[\"language\",\"data/mixed.cfd\",\"Item\",\"name\"]"));
+        let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn legacy_personal_settings_migrate_without_rewriting_shared_file() {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let root = std::env::temp_dir().join(format!("coflow-legacy-settings-{nonce}"));
+        let path = root.join("editor-setting").join(SETTINGS_FILE);
+        fs::create_dir_all(path.parent().expect("parent")).expect("create root");
+        let raw = r#"{"version":1,"unknown_setting":42,"workspace":{"tabs":[],"active_tab_id":null},"views":{"data/items.cfd":{"Item":[{"id":"view-1","name":"List","kind":"table","columns":["name"],"column_widths":{"name":120},"unknown_view_setting":true}]}}}"#;
+        fs::write(&path, raw).expect("write old settings");
+        let loaded = read_project_settings(&root).expect("migrate personal settings");
+        assert_eq!(loaded.views[&coflow_runtime::project_path(&root, std::path::Path::new("data/items.cfd"))]["Item"][0].column_widths["name"], 120.0);
+        assert_eq!(fs::read_to_string(&path).expect("unchanged shared file"), raw);
+        let local = super::io::local_settings_path(&root).expect("local path");
+        assert!(local.is_file());
+        let _ = fs::remove_file(local);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
@@ -398,6 +241,7 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported editor settings version"));
+        let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

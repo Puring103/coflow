@@ -4,10 +4,10 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 
 ## 特性
 
-- CFT 类型、默认值、枚举、引用、多态、维度和 check。
+- CFT 记录与 data 类型、默认值、枚举、引用、多态和维度。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
-- C# 生成代码通过 `Coflow.Runtime` 从内存中的 CFD 文本构造并编译运行时实例。
+- Unity 2022+ / IL2CPP 宿主通过 `Coflow.Runtime` 加载契约与 CFD，构建只读运行时。
 - 代码生成接口支持继续增加其他目标语言；数据格式不再扩展。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
 
@@ -36,32 +36,23 @@ codegen:
     dir: generated/csharp
 ```
 
-`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。`codegen` 是唯一产物配置；C# 目标不接受额外选项，生成类型位于全局命名空间。
+`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。C# 目标可设置 `namespace`，默认使用 `Coflow.Generated`。
 
 ## C# runtime
 
-将 `runtimes/csharp/Coflow.Runtime` 引入生成代码所在项目，并使用生成的 `Schema` 入口：
+将 `engine/runtimes/csharp/src/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
+`coflow.contract` 作为运行时资源部署：
 
 ```csharp
-var coflow = Schema.Create();
-coflow.LoadModule(new CoflowSource("items.cfd", File.ReadAllText("data/items.cfd")));
-coflow.LoadModule(new CoflowSource("rules.cfd", File.ReadAllText("data/rules.cfd")));
-var result = coflow.Compile();
+using Coflow.Generated;
+using Coflow;
 
-if (!result.Success)
-    throw new CoflowLoadException(result.Diagnostics);
-
-var item = coflow.Table(Item.Table).Get(ItemId.Sword);
+using var contract = Generated.LoadContract(contractBytes);
+using var builder = new RuntimeBuilder(contract);
+builder.AddSource(itemsText);
+using var runtime = builder.Build();
+var item = runtime.Table<Item>().Get("sword");
 ```
 
-Runtime 接受带逻辑路径的 CFD 文本，不扫描目录、不读取 CFT，也不保存文件加载策略。一个 `Coflow`
-可以加载多个互相引用的 Module；替换或移除 Module 后，再次调用 `Compile` 发布新的完整快照。
-
-## 开发
-
-```powershell
-cargo check --workspace
-cargo test --workspace
-```
-
-编辑器进程不属于构建验证的一部分；测试和检查均使用无头方式运行。
+应用向构建器提供所有互相引用的 CFD 文本。构建成功后数据只读；更新数据或 Host 绑定时创建新运行时。
+使用结束后释放运行时，记录和集合无需单独释放。完整用法见 [C# 接入文档](website/docs/docs/reference/07-codegen/01-csharp.md)。

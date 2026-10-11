@@ -1,17 +1,22 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use coflow_runtime::FlatDiagnostic;
 use coflow_runtime::Project;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::editor::{EditorError, ProjectBootstrap, SessionStore};
 
 const DEBOUNCE: Duration = Duration::from_millis(350);
+
+/// 前端监听的 Tauri 事件名。核心定义一次，主机层与前端只引用此处。
+pub const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
+pub const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
@@ -43,6 +48,15 @@ struct ProjectWatcher {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        rename = "ProjectReloadedEvent",
+        export,
+        export_to = "../../frontend/src/bindings/"
+    )
+)]
 pub struct ProjectReloadedPayload {
     pub session_id: u32,
     pub changed_paths: Vec<String>,
@@ -51,6 +65,15 @@ pub struct ProjectReloadedPayload {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        rename = "ProjectWatchErrorEvent",
+        export,
+        export_to = "../../frontend/src/bindings/"
+    )
+)]
 pub struct ProjectWatchErrorPayload {
     pub session_id: u32,
     pub message: String,
@@ -85,7 +108,6 @@ impl ProjectWatchRegistry {
 
         self.watchers
             .lock()
-            .map_err(|_| EditorError::session("project watcher registry poisoned"))?
             .insert(session_id, ProjectWatcher { watcher, roots });
 
         let registry = Arc::downgrade(self);
@@ -103,9 +125,7 @@ impl ProjectWatchRegistry {
     }
 
     pub(crate) fn unwatch_session(&self, session_id: u32) {
-        if let Ok(mut watchers) = self.watchers.lock() {
-            watchers.remove(&session_id);
-        }
+        self.watchers.lock().remove(&session_id);
     }
 
     fn refresh_session(&self, session_id: u32, project_root: &Path) -> Result<(), EditorError> {
@@ -115,10 +135,7 @@ impl ProjectWatchRegistry {
             ))
         })?;
         let next_roots = watch_roots(&project);
-        let mut watchers = self
-            .watchers
-            .lock()
-            .map_err(|_| EditorError::session("project watcher registry poisoned"))?;
+        let mut watchers = self.watchers.lock();
         let Some(entry) = watchers.get_mut(&session_id) else {
             return Ok(());
         };

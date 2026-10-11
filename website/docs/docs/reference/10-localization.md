@@ -1,58 +1,42 @@
 # 本地化与维度
 
-维度为同一个字段提供多组变体值。配置声明变体和目录：
-
-```yaml
-dimensions:
-  language:
-    variants: [en, zh]
-    out_dir: data/dimensions/language
-```
-
-字段通过 `@localized` 使用 `language` 维度，也可以通过 `@dimension("维度名")` 指定其他维度：
+维度为同一记录字段提供基础值和任意数量的变体值。字段使用 `@localized` 绑定
+`language` 维度，或使用 `@dimension("name")` 绑定其他维度。
 
 ```cft
-type UiText {
-  @localized text: string;
+table Item {
+  @localized
+  name: string;
+
+  @dimension("region")
+  price: int;
 }
 ```
 
-基础文件保存默认值：
+维度值直接写在业务 CFD 中：
 
 ```cfd
-welcome: UiText { text: "Welcome" }
-```
-
-维度文件使用 `__coflow_<维度名>_<类型名>_<字段名>` 作为记录类型，记录 key 与基础记录一致：
-
-```cfd
-welcome: __coflow_language_UiText_text {
-  en: "Welcome",
-  zh: "欢迎",
+sword: Item {
+  name: dimension {
+    default: "Sword",
+    zh: "剑",
+    ja: "剣",
+  },
+  price: dimension {
+    default: 100,
+    cn: 90,
+  },
 }
 ```
 
-每份 `.cfd` 维度文件可包含多个变体。普通类型的文件位于维度目录中的 `<bucket>_<字段名>.cfd`，未指定 bucket 时使用类型名；singleton 使用 `<类型名>.cfd`，每行的 key 是字段名，记录类型仍包含对应字段名。继承字段使用声明该字段的类型名。
+维度字段必须使用 `dimension { ... }`，其中 `default` 必填。其他字段名即变体名，
+值类型与原字段一致；只有 `T?` 字段的变体可以显式写 `None`。
 
-`coflow build` 生成或更新维度文件，其中 `default` 展示基础字段值；修改默认值应编辑基础记录。`__coflow_` 是系统保留的名称前缀。
+变体从项目加载的全部 CFD 动态汇总，不需要在 `coflow.yaml` 中声明。缺少某个变体时
+继承 `default`，未知变体查询同样返回 `default`；显式 `None` 是可选字段的有效覆盖。
+读取基础值使用 `.default()`，读取指定变体使用 `.for("zh")`，`.variants()` 返回当前
+维度的全部有效变体值。
 
-C# 中将基础文件和维度文件作为 `CoflowSource` 加载，再调用 `Compile`：
-
-```csharp
-var coflow = Schema.Create();
-coflow.LoadModule(
-    new CoflowSource("base.cfd", baseText),
-    new CoflowSource("translations.cfd", translationsText));
-var result = coflow.Compile();
-if (!result.Success)
-    throw new CoflowLoadException(result.Diagnostics);
-var welcome = coflow.Table(UiText.Table).Get("welcome").Value;
-var original = welcome.text.Default;
-var translated = welcome.text.For("zh");
-```
-
-`For(variant)` 返回对应变体；变体缺失、显式为 `None` 或名称未知时返回基础字段值。C# 调用方负责读取并传入文件内容，文件路径不决定字段归属。维度记录不作为业务表暴露。
-
-构建校验按配置的变体执行。变体值缺失或显式为 `None` 时，使用基础字段值执行校验；基础值仍须满足对应的校验规则。
-
-维度记录类型必须与目标字段对应的辅助类型一致。重复记录、未知变体和值类型错误会报告诊断。目标基础记录不存在时，残留的维度记录会被静默忽略；下次运行 `coflow build` 时，维度文件按现有基础记录更新并清理残留。
+C# 生成字段使用 `CoflowDimension<T>`，提供对应的 `Default()`、`For(...)` 和
+`Variants()` 读取方式。
+编辑器的维度展开视图直接编辑所属业务记录，不会生成辅助类型、记录或 CFD 文件。
