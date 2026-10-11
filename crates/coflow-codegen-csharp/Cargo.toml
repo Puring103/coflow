@@ -1,0 +1,21 @@
+[package]
+name = "coflow-codegen-csharp"
+version = "0.11.0"
+edition = "2021"
+description = "C# source generator for direct CFD loading."
+license = "Apache-2.0"
+repository = "https://github.com/Puring103/coflow"
+keywords = ["config", "game-data", "codegen", "csharp"]
+categories = ["config", "game-development"]
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-language = { path = "../coflow-language" }
+coflow-codegen = { path = "../coflow-codegen" }
+coflow-model = { path = "../coflow-model" }
+serde = { version = "1", features = ["derive"] }
+tera = "1"
+unicode-ident = "1"

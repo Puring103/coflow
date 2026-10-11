@@ -1,0 +1,108 @@
+//! 会话项目命令：check/build/diff 与项目结构变更入口。
+//!
+//! 结构变更（add/create/delete input）走 `coflow-runtime` 后触发会话重载。
+
+use std::path::Path as StdPath;
+
+use super::errors::project_diagnostics_to_editor_error;
+use super::SessionStore;
+use crate::editor::types::{EditorError, ProjectBootstrap};
+
+impl SessionStore {
+    pub fn check_project(&self, id: u32) -> Result<String, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
+        match coflow_runtime::commands::check_project(&project)
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
+        {
+            coflow_runtime::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(&diagnostics))
+            }
+        }
+    }
+
+    pub fn build_project(&self, id: u32) -> Result<String, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
+        match coflow_runtime::commands::build_project(&project)
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
+        {
+            coflow_runtime::commands::CommandOutcome::Success(report) => {
+                let mut outputs = Vec::new();
+                for target in report.targets {
+                    outputs.push(target.code.dir.display().to_string());
+                }
+                Ok(format!("Build completed: {}", outputs.join(", ")))
+            }
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(&diagnostics))
+            }
+        }
+    }
+
+    pub fn build_project_status(&self, id: u32) -> Result<bool, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
+        match coflow_runtime::commands::build_project_status(&project)
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
+        {
+            coflow_runtime::commands::CommandOutcome::Success(changed) => Ok(changed),
+            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
+                Err(project_diagnostics_to_editor_error(&diagnostics))
+            }
+        }
+    }
+
+    pub fn project_diff(&self, id: u32) -> Result<coflow_runtime::ProjectDiff, EditorError> {
+        let entry = self.session(id)?;
+        let session = entry.state.read();
+        session
+            .queries()
+            .diff_against_head()
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))
+    }
+
+    pub fn add_project_input(
+        &self,
+        id: u32,
+        kind: coflow_runtime::ProjectInputKind,
+        path: &StdPath,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::add_project_input(&yaml_path, kind, path)
+            .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+
+    pub fn create_project_file(
+        &self,
+        id: u32,
+        kind: coflow_runtime::ProjectInputKind,
+        parent_path: &StdPath,
+        file_name: &str,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::create_project_file(&yaml_path, kind, parent_path, file_name)
+            .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+
+    pub fn delete_project_entry(
+        &self,
+        id: u32,
+        path: &StdPath,
+    ) -> Result<ProjectBootstrap, EditorError> {
+        let yaml_path = self.project_action_context(id)?;
+        coflow_runtime::delete_project_entry(&yaml_path, path)
+            .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
+        self.reload_session(id)
+    }
+}
+
+// 显式复用 build 模块诊断，避免新增重复实现。
+#[allow(unused_imports)]
+use super::build as _build_reexport_guard;

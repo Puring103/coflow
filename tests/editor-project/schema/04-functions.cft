@@ -1,5 +1,5 @@
-table RuleSet {
-  owner: Entity;
+type RuleSet {
+  owner: &Entity;
   samples: [int];
   transform: IntegerTransform = fn(input: int) -> int {
     if input >= 0 { input } else { -input }

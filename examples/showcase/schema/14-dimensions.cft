@@ -1,6 +1,6 @@
 # Feature: fields can vary across configured dimensions.
 
-table UiText {
+type UiText {
 
   @localized
   text: string;

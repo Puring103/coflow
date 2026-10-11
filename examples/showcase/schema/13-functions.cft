@@ -1,6 +1,6 @@
 # Feature: functions stored as schema-checked data values.
 
-table Calculator {
+type Calculator {
   add: fn(left: int, right: int) -> int;
   classify: fn(value: int) -> string;
 }

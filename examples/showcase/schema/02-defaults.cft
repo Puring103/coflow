@@ -1,7 +1,7 @@
 # Feature: field defaults.
 
-table DefaultSettings {
+type DefaultSettings {
   retries: int = 3;
-  title: fstring = f"Untitled";
+  title: string = "Untitled";
   visible: bool = true;
 }
