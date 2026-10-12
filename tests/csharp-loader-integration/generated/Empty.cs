@@ -3,7 +3,7 @@
 
 namespace Game.Config
 {
-public struct Empty
+public partial struct Empty
 {
     public long hp { get; internal set; }
 }

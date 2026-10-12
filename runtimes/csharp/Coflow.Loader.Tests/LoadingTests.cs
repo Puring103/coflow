@@ -15,13 +15,6 @@ public sealed class LoadingTests
         internal long Hp { get; }
         internal string Label { get; }
     }
-    private sealed class StatsRecord
-    {
-        internal StatsRecord(string key) { Key = key; }
-        internal string Key { get; }
-        internal long Hp { get; set; }
-        internal string Label { get; set; } = null!;
-    }
     private sealed class Item
     {
         internal Item(string id) { Id = id; }
@@ -36,17 +29,17 @@ public sealed class LoadingTests
     }
     private sealed class Data
     {
-        internal Data(CfdData data) { Items = data.Records<Item>(); }
+        internal Data(CfdData data) { Items = data.Table<Item>(); }
         internal IReadOnlyDictionary<string, Item> Items { get; }
     }
     private static readonly CfdType[] Types =
     {
-        new CfdType<Stats, StatsRecord>("Stats", new CfdField[] {
+        new CfdType<Stats>("Stats", CfdTypeKind.Data, new CfdField[] {
             new CfdField<long>("hp", CfdValues.Int, CfdDefaults.Int(10)),
             new CfdField<string>("label", CfdValues.FormattedString, CfdDefaults.Template("f\"HP {self.hp}\"")),
-        }, key => new StatsRecord(key), (value, reader) => { value.Hp = reader.Get<long>("hp"); value.Label = reader.Get<string>("label"); },
-        reader => new Stats(reader.Get<long>("hp"), reader.Get<string>("label")), structValue: true),
-        new CfdType<Item, Item>("Item", new CfdField[] {
+        }, create: null, fill: null, construct:
+        reader => new Stats(reader.Get<long>("hp"), reader.Get<string>("label"))),
+        new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
             new CfdField<long>("price", CfdValues.Int, CfdDefaults.Int(5)),
             new CfdField<Permission>("permissions", CfdValues.Enum("Permission", new Dictionary<string, Permission> {
                 ["Read"] = Permission.Read, ["Write"] = Permission.Write, ["High"] = Permission.High,
@@ -61,12 +54,7 @@ public sealed class LoadingTests
             item.Price = reader.Get<long>("price"); item.Name = reader.Get<DimensionValue<string>>("name");
             item.Note = reader.Get<DimensionValue<Option<string>>>("note"); item.Next = reader.Get<Option<Item>>("next");
             item.Stats = reader.Get<Stats>("stats"); item.Label = reader.Get<string>("label");
-        }, reader => new Item(null!) {
-            Price = reader.Get<long>("price"), Name = reader.Get<DimensionValue<string>>("name"),
-            Note = reader.Get<DimensionValue<Option<string>>>("note"), Next = reader.Get<Option<Item>>("next"),
-            Stats = reader.Get<Stats>("stats"), Label = reader.Get<string>("label"),
-            Permissions = reader.Get<Permission>("permissions"),
-        }),
+        }, construct: null),
     };
     private static LoadResult<Data> Load(params CfdSource[] sources) => CfdLoader.Load(sources, Types, reader => new Data(reader));
 
@@ -123,8 +111,8 @@ public sealed class LoadingTests
     [InlineData("Singleton: Singleton {}", true)]
     public void SingletonRequiresOneRecordWithItsDeclaredName(string source, bool success)
     {
-        var singleton = new CfdType<Item, Item>("Singleton", Array.Empty<CfdField>(), id => new Item(id), (_, _) => { }, reader => new Item(null!), singleton: true);
-        var result = CfdLoader.Load(new[] { new CfdSource("singleton.cfd", source) }, new CfdType[] { singleton }, data => new Data(data));
+        var singleton = new CfdType<Item>("Singleton", CfdTypeKind.Singleton, Array.Empty<CfdField>(), id => new Item(id), (_, _) => { }, construct: null);
+        var result = CfdLoader.Load(new[] { new CfdSource("singleton.cfd", source) }, new CfdType[] { singleton }, data => new Tuple<Item>(data.Singleton<Item>()));
         Assert.Equal(success, result.Success);
         if (!success) Assert.Equal("CFD-SINGLETON", result.Diagnostics[0].Code);
         if (source.StartsWith("wrong", StringComparison.Ordinal)) Assert.Equal("singleton.cfd", result.Diagnostics[0].Path);

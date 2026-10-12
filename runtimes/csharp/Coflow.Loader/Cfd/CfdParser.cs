@@ -410,7 +410,9 @@ internal static class CfdParser
                 SkipTrivia();
                 if (!Match(symbol)) break;
                 var (right, _) = operand();
-                left = CfdBitExpression.Binary(operation, left, right, new CfdSpan(left.Span.StartLine, left.Span.StartColumn, right.Span.EndLine, right.Span.EndColumn));
+                var span = new CfdSpan(left.Span.StartLine, left.Span.StartColumn, right.Span.EndLine, right.Span.EndColumn);
+                if (_depth + Math.Max(left.Depth, right.Depth) + 1 > 256) Error("CFD-LIMIT", "bit expression depth exceeds 256 levels", span);
+                left = CfdBitExpression.Binary(operation, left, right, span);
                 isExpression = true;
             }
             return (left, isExpression);

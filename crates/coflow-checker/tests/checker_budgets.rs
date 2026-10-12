@@ -11,7 +11,7 @@ const fn limits(max_work: u64, max_iterations: u64) -> EvaluationLimits {
 fn quantified_model() -> (CftSchema, CfdDataModel) {
     let schema = compile_schema(
         r"
-            type Item {
+            table Item {
                 nums: [int];
                 check { all number in nums { number > 0; } }
             }
@@ -66,7 +66,7 @@ fn raising_work_does_not_raise_the_iteration_limit() {
 fn aggregate_builtins_charge_work_before_scanning() {
     let schema = compile_schema(
         r"
-            type Item {
+            table Item {
                 nums: [int];
                 check { nums.isUnique(); }
             }
@@ -102,7 +102,7 @@ fn aggregate_builtins_charge_work_before_scanning() {
 
 #[test]
 fn raising_iterations_does_not_raise_the_work_limit() {
-    let schema = compile_schema("type Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",

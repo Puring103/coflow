@@ -1,7 +1,6 @@
 mod context;
 mod evaluator;
 mod expressions;
-mod record_walker;
 mod statements;
 
 use crate::{
@@ -144,18 +143,19 @@ fn execute_task(
             };
             let direct = owner.name == *target.actual_type_name()
                 || schema.check_owner_applies_to_actual(&owner.name, target.actual_type());
-            let nested_host = schema
-                .check_hosts_for_nested_type(&owner.name)
-                .any(|host| host.as_str() == target.actual_type());
-            if direct && !nested_host {
+            if direct {
                 context.execute_record(
                     owner,
                     value::ValueLocation::root(record),
                     prepared.statement,
                 )
             } else {
-                record_walker::RecordCheckWalker::new(context, record, owner)
-                    .execute(prepared.statement)
+                (
+                    vec![internal_diagnostic(
+                        "record target does not match the statement owner",
+                    )],
+                    0,
+                )
             }
         }
         _ => (

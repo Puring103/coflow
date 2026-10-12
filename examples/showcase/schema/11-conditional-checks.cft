@@ -1,6 +1,6 @@
 # Feature: conditional validation with when blocks.
 
-type ConditionalRule {
+table ConditionalRule {
   enabled: bool;
   threshold: int;
 

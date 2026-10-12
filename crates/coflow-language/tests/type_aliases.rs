@@ -22,7 +22,7 @@ fn aliases_expand_in_fields_constants_and_nested_collections() {
             type Scores = {Key: int};
             const EMPTY: Scores = {};
 
-            type Rule {
+            table Rule {
                 groups: ScoreGroups;
                 scores: Scores = EMPTY;
             }
@@ -67,7 +67,7 @@ fn aliases_resolve_by_project_global_short_name_across_files() {
             ModuleId::from("main.cft"),
             r#"
                 type LocalIdentifier = MaybeIdentifier;
-                type Item { identifier: LocalIdentifier = None; }
+                table Item { identifier: LocalIdentifier = None; }
             "#,
         ),
     ]);
@@ -90,7 +90,7 @@ fn alias_cycles_are_rejected_with_a_dedicated_diagnostic() {
             type A = Option<B>;
             type B = {int: C};
             type C = A;
-            type Item { value: A; }
+            table Item { value: A; }
         "#,
     )
     .expect_err("alias cycles must be rejected");
@@ -116,7 +116,7 @@ fn aliases_reject_unknown_targets_invalid_dict_keys_and_inheritance() {
         .iter()
         .any(|diagnostic| diagnostic.code == CftErrorCode::InvalidDictKeyType));
 
-    let parent = compile("type Base {} type Alias = Base; type Child : Alias {}")
+    let parent = compile("table Base {} type Alias = &Base; table Child : Alias {}")
         .expect_err("aliases cannot stand in for inheritance declarations");
     assert!(parent
         .diagnostics
@@ -141,16 +141,16 @@ fn type_aliases_do_not_accept_annotations_or_object_modifiers() {
 fn object_aliases_are_transparent_in_check_type_positions() {
     compile(
         r#"
-            type Item { value: int; }
+            data Item { value: int; }
             type ItemAlias = Item;
-            type Holder { target: Item; check { target is ItemAlias; } }
+            table Holder { target: Item; check { target is ItemAlias; } }
         "#,
     )
     .expect("object aliases should work in is predicates");
     compile(
         r#"
-            type Item { value: int; }
-            type ItemAlias = Item;
+            table Item { value: int; }
+            type ItemAlias = &Item;
             check AllItems {
                 all item in records(ItemAlias) { item.value >= 0; }
             }

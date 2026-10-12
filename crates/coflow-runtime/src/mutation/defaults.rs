@@ -19,6 +19,15 @@ pub(super) fn default_object_for_type(
     materialization: DefaultMaterialization,
 ) -> Result<CfdObject, DiagnosticSet> {
     ensure_type_can_materialize(schema, type_name)?;
+    if !schema
+        .resolve_type(type_name)
+        .is_some_and(|ty| ty.is_data())
+    {
+        return Err(one_mutation_error(
+            "MUTATION-TYPE",
+            "inline object must be data",
+        ));
+    }
     let schema_type = schema.resolve_type(type_name).ok_or_else(|| {
         one_mutation_error("MUTATION-TYPE", format!("unknown type `{type_name}`"))
     })?;
@@ -62,6 +71,12 @@ pub(super) fn create_record_draft_for_type(
             format!("unknown type `{type_name}`"),
         ));
     };
+    if schema_type.is_data() {
+        return Err(one_mutation_error(
+            "MUTATION-TYPE",
+            "record draft requires table or singleton",
+        ));
+    }
     let mut materializer = DefaultValueMaterializer::new(schema);
     let fields = schema_type
         .all_fields()
@@ -485,12 +500,6 @@ fn ensure_type_can_materialize(schema: &CftSchema, type_name: &str) -> Result<()
             format!("abstract object type `{type_name}` cannot be default materialized"),
         ));
     }
-    if schema_type.is_singleton {
-        return Err(one_mutation_error(
-            "MUTATION-DEFAULT",
-            format!("singleton object type `{type_name}` cannot be default materialized"),
-        ));
-    }
     Ok(())
 }
 
@@ -509,8 +518,8 @@ mod tests {
     #[test]
     fn editable_object_omits_fields_that_require_an_explicit_choice() {
         let schema = schema(
-            "type Item {} abstract type Effect {} type Damage : Effect {} \
-             type Reward { item: &Item; effect: Effect; count: int; }",
+            "table Item {} abstract data Effect {} data Damage : Effect {} \
+             data Reward { item: &Item; effect: Effect; count: int; }",
         );
         let object =
             default_object_for_type(&schema, "Reward", DefaultMaterialization::EditableShape)
@@ -523,7 +532,7 @@ mod tests {
 
     #[test]
     fn record_draft_marks_required_reference_and_type_default_sources() {
-        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let schema = schema("table Item {} table Reward { item: &Item; count: int; }");
         let draft = create_record_draft_for_type(&schema, "Reward").expect("draft");
         let item = draft
             .fields
@@ -546,7 +555,7 @@ mod tests {
 
     #[test]
     fn record_draft_prefers_schema_defaults_over_type_defaults() {
-        let schema = schema("type Item { configured: int = 7; generated: int; }");
+        let schema = schema("table Item { configured: int = 7; generated: int; }");
         let draft = create_record_draft_for_type(&schema, "Item").expect("draft");
         let configured = draft
             .fields
@@ -567,7 +576,7 @@ mod tests {
 
     #[test]
     fn minimal_insert_fields_omit_required_references() {
-        let schema = schema("type Item {} type Reward { item: &Item; count: int; }");
+        let schema = schema("table Item {} table Reward { item: &Item; count: int; }");
         let fields = default_missing_fields_for_type(
             &schema,
             "Reward",

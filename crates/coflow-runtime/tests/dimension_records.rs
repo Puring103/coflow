@@ -59,7 +59,7 @@ fn apply(session: &mut coflow_runtime::WriteProjectSession, ops: Vec<MutationOp>
 fn missing_overlay_targets_are_diagnosed_without_rewriting_sources() {
     let source = "language[ja] { removed: Item { title: \"旧文本\" } }";
     let dir = project(
-        "type Item { @localized title: string; }",
+        "table Item { @localized title: string; }",
         "kept: Item { title: \"Keep\" }",
         &[("ja.cfd", source)],
     );
@@ -88,7 +88,7 @@ fn missing_overlay_targets_are_diagnosed_without_rewriting_sources() {
 fn singleton_overrides_use_selected_files_and_preserve_other_fields_and_comments() {
     let original = "# keep this comment\nlanguage[ja] { UiText: UiText { title: \"元\", description: \"説明\" } }\n";
     let dir = project(
-        "@singleton type UiText { @localized title: string; @localized description: string; }",
+        "singleton UiText { @localized title: string; @localized description: string; }",
         "UiText: UiText { title: \"Title\", description: \"Description\" }",
         &[("ja.cfd", original), ("new.cfd", "# chosen destination\n")],
     );
@@ -143,7 +143,7 @@ fn singleton_overrides_use_selected_files_and_preserve_other_fields_and_comments
 #[test]
 fn new_overrides_require_an_explicit_destination() {
     let dir = project(
-        "type Item { @localized title: string; }",
+        "table Item { @localized title: string; }",
         "one: Item { title: \"Title\" }",
         &[("ja.cfd", "language[ja] {}")],
     );
@@ -171,7 +171,7 @@ fn new_overrides_require_an_explicit_destination() {
 
 #[test]
 fn inherited_record_rename_and_delete_update_all_overlay_files() {
-    let dir = project("type Base { @localized name: string; @dimension(\"platform\") hint: string; } type Child: Base {}",
+    let dir = project("table Base { @localized name: string; @dimension(\"platform\") hint: string; } table Child: Base {}",
         "one: Child { name: \"Name\", hint: \"Hint\" }",
         &[("ja.cfd", "language[ja] { one: Base { name: \"名\" } }\nlanguage[en] { one: Child { name: \"Name\" } }"),
           ("mobile.cfd", "platform[mobile] { one: Child { hint: \"Tap\" } }")]);
@@ -208,7 +208,7 @@ fn inherited_record_rename_and_delete_update_all_overlay_files() {
 #[test]
 fn optional_none_is_written_as_an_explicit_override() {
     let dir = project(
-        "type Item { @localized note: Option<string>; }",
+        "table Item { @localized note: Option<string>; }",
         "one: Item { note: Some(\"base\") }",
         &[("ja.cfd", "language[ja] {}")],
     );
@@ -240,7 +240,7 @@ fn optional_none_is_written_as_an_explicit_override() {
 #[test]
 fn record_rename_updates_references_in_each_original_overlay_file() {
     let dir = project(
-        "type Item { name: string; } type Holder { @localized target: &Item; }",
+        "table Item { name: string; } table Holder { @localized target: &Item; }",
         "one: Item { name: \"One\" }\ntwo: Item { name: \"Two\" }\nholder: Holder { target: &two }",
         &[
             (

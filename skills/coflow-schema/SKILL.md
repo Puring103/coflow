@@ -1,6 +1,6 @@
 ---
 name: coflow-schema
-description: "Coflow CFT schema 与配置数据结构建模：当用户需要设计或修改 .cft、类型/字段/默认值/enum/const/check、记录引用、继承多态、@idAsEnum、@singleton、@localized、维度、本地化或游戏配置数据结构建议时使用。"
+description: "Coflow CFT schema 与配置数据结构建模：当用户需要设计或修改 .cft、类型/字段/默认值/enum/const/check、记录引用、继承多态、@idAsEnum、singleton、@localized、维度、本地化或游戏配置数据结构建议时使用。"
 ---
 
 # Coflow Schema
@@ -25,7 +25,7 @@ coflow schema write-file <project> --file schema/main.cft --check
 
 - 顶层 record key 由 CFD 记录提供；不要在 CFT 中声明 `id`、`Id` 或 `ID` 字段。
 - 固定集合用 `enum`，共享阈值用 `const`，业务规则用 `check {}`。
-- `&Type` 是顶层记录引用；普通 `Type` 是内联对象。不要用字段注解切换二者。
+- 字段使用 `&TableName` 表示记录引用，data 名称表示内联值；singleton 通过唯一入口访问。
 - 可选字段写 `Option<T>`；省略且没有默认值时为 None，嵌套可选保留每层状态。
 - 抽象父类用于多态接口，sealed type 用于不可再派生的值对象或叶子类型。
 - 需要让 record key 进入代码枚举时，用 `@idAsEnum(Name)` 并声明空 enum。

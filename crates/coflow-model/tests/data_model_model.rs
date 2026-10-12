@@ -17,7 +17,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
         r#"
             const DEFAULT_NAME = "unknown";
             enum Rarity { Common = 0, Rare = 10, }
-            type Item {
+            table Item {
                 name: string = DEFAULT_NAME;
                 rarity: Rarity = Rarity::Common;
                 tags: [string] = [];
@@ -64,7 +64,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
 fn invalid_dimension_values_preserve_the_overlay_origin() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 @dimension("platform")
                 value: int;
             }
@@ -106,9 +106,9 @@ fn invalid_dimension_values_preserve_the_overlay_origin() {
 fn data_model_reuses_shared_schema_default_subgraphs() {
     let schema = compile_schema(
         r#"
-            type Leaf { value: int = 7; }
-            type Branch { leaf: Leaf = {}; }
-            type Root { left: Branch = {}; right: Branch = {}; }
+            data Leaf { value: int = 7; }
+            data Branch { leaf: Leaf = {}; }
+            table Root { left: Branch = {}; right: Branch = {}; }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -139,7 +139,7 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 fn dimension_field_lookup_reads_record_owned_overlay() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 @dimension("platform")
                 name: string;
             }
@@ -183,8 +183,8 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
 fn dimension_refs_are_precomputed_with_typed_coordinates() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Offer {
+            table Item { name: string; }
+            table Offer {
                 @dimension("platform")
                 item: &Item;
             }
@@ -238,8 +238,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
 fn dimension_field_lookup_uses_singleton_owner_record() {
     let schema = compile_schema(
         r#"
-            @singleton
-            type UiText {
+            singleton UiText {
                 @localized
                 welcome: string;
             }
@@ -282,10 +281,10 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
 fn object_typed_record_refs_resolve_by_expected_type() {
     let schema = compile_schema(
         r#"
-            abstract type Reward {}
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
-            type Drop {
+            abstract table Reward {}
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
+            table Drop {
                 reward: &Reward;
                 item_reward: &ItemReward;
             }
@@ -334,9 +333,9 @@ fn object_typed_record_refs_resolve_by_expected_type() {
 fn parent_record_keys_do_not_satisfy_child_typed_refs() {
     let schema = compile_schema(
         r#"
-            type Base { name: string; }
-            type Child : Base { power: int; }
-            type Holder { child: &Child; }
+            table Base { name: string; }
+            table Child : Base { power: int; }
+            table Holder { child: &Child; }
         "#,
     );
 
@@ -358,8 +357,8 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
 fn inline_objects_use_declared_type_when_not_polymorphic() {
     let schema = compile_schema(
         r#"
-            type Stats { hp: int; speed: float = 1.0; }
-            type Monster { stats: Stats; }
+            data Stats { hp: int; speed: float = 1.0; }
+            table Monster { stats: Stats; }
         "#,
     );
 
@@ -388,8 +387,8 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
 fn ref_type_rejects_inline_objects() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder {
+            table Item { name: string; }
+            table Holder {
                 item: &Item;
             }
         "#,
@@ -415,7 +414,7 @@ fn ref_type_rejects_inline_objects() {
     assert!(
         err.diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message.contains("&Item")),
+            .any(|diagnostic| diagnostic.message.contains("Item")),
         "expected ref type diagnostic, got {err:?}"
     );
 }
@@ -424,8 +423,8 @@ fn ref_type_rejects_inline_objects() {
 fn plain_object_fields_reject_record_refs() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder {
+            data Item { name: string; }
+            table Holder {
                 item: Item;
                 items: [Item];
                 by_name: {string: Item};
@@ -465,7 +464,7 @@ fn semantic_edges_report_data_model_diagnostics() {
     let schema = compile_schema(
         r#"
             enum Rarity { Common, Rare, }
-            type Item {
+            table Item {
                 rarity: Rarity;
                 maybe: Option<int>;
                 attrs: {string: int};
@@ -501,7 +500,7 @@ fn semantic_edges_report_data_model_diagnostics() {
 
 #[test]
 fn omitted_option_field_materializes_as_none_without_a_diagnostic() {
-    let schema = compile_schema("type Item { name: string; maybe: Option<int>; }");
+    let schema = compile_schema("table Item { name: string; maybe: Option<int>; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
@@ -519,7 +518,7 @@ fn omitted_option_field_materializes_as_none_without_a_diagnostic() {
 
 #[test]
 fn partial_build_keeps_records_with_only_missing_required_fields() {
-    let schema = compile_schema("type Item { name: string; value: int; }");
+    let schema = compile_schema("table Item { name: string; value: int; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
 
@@ -539,7 +538,7 @@ fn partial_build_keeps_records_with_only_missing_required_fields() {
 
 #[test]
 fn partial_build_still_rejects_non_representable_data_errors() {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
@@ -558,7 +557,7 @@ fn partial_build_still_rejects_non_representable_data_errors() {
 
 #[test]
 fn duplicate_keys_report_record_level_id_paths() {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("same", "Item", [("value", LoadedValueDraft::from(1_i64))]);
@@ -575,7 +574,7 @@ fn duplicate_keys_report_record_level_id_paths() {
 
 #[test]
 fn empty_record_keys_are_rejected() {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("", "Item", [("value", LoadedValueDraft::from(1_i64))]);
@@ -590,7 +589,7 @@ fn empty_record_keys_are_rejected() {
 
 #[test]
 fn non_identifier_record_keys_are_rejected() {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
 
     for key in ["123", "fire-ball", "fire.ball", "type"] {
         let mut builder = CfdDataModel::builder(&schema);
@@ -607,8 +606,8 @@ fn non_identifier_record_keys_are_rejected() {
 fn record_value_lookup_traverses_object_array_and_dict_paths() {
     let schema = compile_schema(
         r#"
-            type Nested { value: int; }
-            type Item {
+            data Nested { value: int; }
+            table Item {
                 nested: Nested;
                 items: [Nested];
                 entries: {string: Nested};

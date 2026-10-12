@@ -62,7 +62,7 @@ pub(crate) fn dimensions_for_project(
                 source_field: field.name.to_string(),
                 is_singleton: schema
                     .resolve_type(field.declaring_type.as_str())
-                    .is_some_and(|ty| ty.is_singleton),
+                    .is_some_and(|ty| ty.is_singleton()),
             })
             .collect();
         out.push(DimensionInfo {

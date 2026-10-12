@@ -4,7 +4,7 @@ use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::source::Span;
-use crate::syntax::ast::{Annotation, AnnotationArg, FieldDef};
+use crate::syntax::ast::{Annotation, AnnotationArg, FieldDef, TypeKind};
 use std::collections::BTreeMap;
 
 impl ResolvedTypes<'_> {
@@ -38,24 +38,28 @@ impl ResolvedTypes<'_> {
                 &mut diagnostics,
             );
             if let Some(annotation) = find_annotation(&info.def.annotations, "struct") {
-                if !info.def.is_sealed {
+                if !info.def.is_sealed
+                    || info.def.kind != TypeKind::Data
+                    || info.def.parent.is_some()
+                {
                     push_diag(
                         &mut diagnostics,
                         CftErrorCode::StructRequiresSealedType,
                         &info.module,
                         annotation.span,
-                        "@struct requires a sealed type",
+                        "@struct requires sealed data without a base type",
                     );
                 }
             }
-            if let Some(singleton) = find_annotation(&info.def.annotations, "singleton") {
+            if info.def.kind == TypeKind::Singleton {
+                let singleton = &info.def;
                 if info.def.is_abstract {
                     push_diag(
                         &mut diagnostics,
                         CftErrorCode::SingletonOnAbstractType,
                         &info.module,
                         singleton.span,
-                        "@singleton cannot be applied to an abstract type",
+                        "singleton must be concrete",
                     );
                 }
                 if find_annotation(&info.def.annotations, "idAsEnum").is_some() {
@@ -64,12 +68,21 @@ impl ResolvedTypes<'_> {
                         CftErrorCode::SingletonIdAsEnumConflict,
                         &info.module,
                         singleton.span,
-                        "@singleton cannot be combined with @idAsEnum",
+                        "@idAsEnum belongs to table",
                     );
                 }
             }
 
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
+                if info.def.kind != TypeKind::Table {
+                    push_diag(
+                        &mut diagnostics,
+                        CftErrorCode::InvalidAnnotatedFieldType,
+                        &info.module,
+                        annotation.span,
+                        "@idAsEnum belongs to table",
+                    );
+                }
                 if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
                     let resolved_name = enum_name.name.clone();
                     self.validate_id_as_enum_name(
@@ -91,6 +104,15 @@ impl ResolvedTypes<'_> {
 
         for info in self.types.values() {
             for field in &info.def.fields {
+                if info.def.kind == TypeKind::Data && field_dimension_name(field).is_some() {
+                    push_diag(
+                        &mut diagnostics,
+                        CftErrorCode::InvalidAnnotatedFieldType,
+                        &info.module,
+                        field.span,
+                        "dimension fields belong to table or singleton",
+                    );
+                }
                 Self::validate_annotation_list(
                     &info.module,
                     AnnotationTarget::Field,
@@ -278,9 +300,9 @@ impl ResolvedTypes<'_> {
             return true;
         }
         ty.object_name().is_some_and(|name| {
-            self.types.get(name.as_str()).is_some_and(|info| {
-                !info.def.is_abstract && !has_annotation(&info.def.annotations, "singleton")
-            })
+            self.types
+                .get(name.as_str())
+                .is_some_and(|info| !info.def.is_abstract && info.def.kind == TypeKind::Data)
         })
     }
 
@@ -368,7 +390,7 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" | "singleton" => Self {
+            "struct" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },

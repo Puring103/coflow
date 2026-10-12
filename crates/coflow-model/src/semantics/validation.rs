@@ -169,11 +169,15 @@ fn validate_object_type_assignable_at(
             format!("abstract object type `{actual_type}` cannot be instantiated"),
         ));
     }
-    if schema_type.is_singleton {
+    if !schema_type.is_data() {
         return Err(CfdValueSemanticError::new(
-            CfdValueSemanticErrorKind::SingletonType,
+            if schema_type.is_singleton() {
+                CfdValueSemanticErrorKind::SingletonType
+            } else {
+                CfdValueSemanticErrorKind::ObjectTypeMismatch
+            },
             path,
-            format!("singleton object type `{actual_type}` cannot be used as a field value"),
+            format!("inline object type `{actual_type}` must be data"),
         ));
     }
     if !schema.is_assignable(actual_type, expected_type) {

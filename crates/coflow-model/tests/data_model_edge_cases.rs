@@ -14,7 +14,7 @@ use common::*;
 fn cyclic_record_refs_build_and_remain_resolvable() {
     let schema = compile_schema(
         r#"
-            type Person {
+            table Person {
                 parent: Option<&Person>;
             }
         "#,
@@ -75,8 +75,8 @@ fn cyclic_record_refs_build_and_remain_resolvable() {
 fn unresolved_record_ref_reports_reference_stage_diagnostic() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Drop { item: &Item; }
+            table Item { name: string; }
+            table Drop { item: &Item; }
         "#,
     );
 
@@ -100,8 +100,8 @@ fn unresolved_record_ref_reports_reference_stage_diagnostic() {
 fn top_level_abstract_records_are_rejected() {
     let schema = compile_schema(
         r#"
-            abstract type Reward {}
-            type CoinReward : Reward { amount: int; }
+            abstract table Reward {}
+            table CoinReward : Reward { amount: int; }
         "#,
     );
 
@@ -122,7 +122,7 @@ fn invalid_enum_and_non_finite_float_inputs_are_rejected() {
     let schema = compile_schema(
         r#"
             enum Rarity { Common, Rare, }
-            type Item {
+            table Item {
                 rarity: Rarity;
                 weight: float;
             }

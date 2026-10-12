@@ -59,8 +59,7 @@ pub(super) fn generate(
     for segment in namespace.split('.').filter(|_| !namespace.is_empty()) {
         validate_ident(segment)?;
     }
-    let mut names =
-        BTreeSet::from(["CoflowData", "Load", "Types", "Constants"].map(str::to_string));
+    let mut names = BTreeSet::from(["CoflowData"].map(str::to_string));
     for name in schema
         .all_types()
         .map(|ty| ty.name.as_str())
@@ -73,11 +72,14 @@ pub(super) fn generate(
             )));
         }
     }
-    for ty in schema.all_types().filter(|ty| ty.is_struct) {
-        let record_name = record_type_name(ty);
-        if !names.insert(record_name.clone()) {
+    for ty in schema
+        .all_types()
+        .filter(|ty| ty.is_table() && schema.inherited_id_as_enum(ty.name.as_str()).is_some())
+    {
+        let extension = format!("CoflowKeys_{}", metadata_identifier(ty.name.as_str()));
+        if !names.insert(extension.clone()) {
             return Err(CsharpCodegenError::new(format!(
-                "duplicate generated type `{record_name}`"
+                "duplicate generated type `{extension}`"
             )));
         }
     }
@@ -92,8 +94,7 @@ pub(super) fn generate(
         for field in ty.all_fields() {
             validate_ident(field.name.as_str())?;
             if field.name.as_str() == ty.name.as_str()
-                || field.name.as_str() == record_type_name(ty)
-                || field.name.as_str() == "id"
+                || (!ty.is_data() && field.name.as_str() == "id")
             {
                 return Err(CsharpCodegenError::new(format!(
                     "field `{}.{}` conflicts with a generated member",
@@ -103,14 +104,8 @@ pub(super) fn generate(
         }
         files.push(GeneratedFile {
             relative_path: PathBuf::from(format!("{}.cs", ty.name)),
-            contents: type_source(ty, schema, namespace, false)?,
+            contents: type_source(ty, namespace)?,
         });
-        if ty.is_struct {
-            files.push(GeneratedFile {
-                relative_path: PathBuf::from(format!("{}.cs", record_type_name(ty))),
-                contents: type_source(ty, schema, namespace, true)?,
-            });
-        }
     }
     files.push(GeneratedFile {
         relative_path: PathBuf::from("CoflowData.cs"),
@@ -160,35 +155,22 @@ fn enum_source(
     source.push_str(&format!("public enum {} : long\n{{\n", en.name));
     for (name, value) in enum_variants(en, schema, values)? {
         validate_ident(&name)?;
+        if name == en.name.as_str() || name == "value__" {
+            return Err(CsharpCodegenError::new(format!(
+                "enum member `{name}` conflicts with generated enum `{}`",
+                en.name
+            )));
+        }
         source.push_str(&format!("    {name} = {value}L,\n"));
     }
     source.push_str("}\n");
     Ok(finish(source, namespace))
 }
 
-// 内联结构体与记录身份分别生成，引用始终连接可先分配的记录类。
-fn record_type_name(ty: &CftType) -> String {
-    if ty.is_struct {
-        format!("{}Record", ty.name)
-    } else {
-        ty.name.to_string()
-    }
-}
-
-fn reference_type_name(name: &str, schema: &CftSchema) -> Result<String> {
-    schema
-        .resolve_type(name)
-        .map(record_type_name)
-        .ok_or_else(|| CsharpCodegenError::new(format!("unknown reference type `{name}`")))
-}
-
-fn type_source(ty: &CftType, schema: &CftSchema, namespace: &str, record: bool) -> Result<String> {
-    let is_struct = ty.is_struct && !record;
-    let type_name = if record {
-        record_type_name(ty)
-    } else {
-        ty.name.to_string()
-    };
+// 业务类型保留 partial 扩展入口；data 构造与记录身份由声明类别分别生成。
+fn type_source(ty: &CftType, namespace: &str) -> Result<String> {
+    let is_struct = ty.is_struct;
+    let type_name = ty.name.to_string();
     let mut source = header(namespace);
     let modifier = if ty.is_abstract {
         "abstract "
@@ -199,32 +181,33 @@ fn type_source(ty: &CftType, schema: &CftSchema, namespace: &str, record: bool) 
     };
     let kind = if is_struct { "struct" } else { "class" };
     source.push_str(&format!(
-        "public {}{kind} {}",
+        "public {}partial {kind} {}",
         if is_struct { "" } else { modifier },
         type_name
     ));
     if !is_struct {
         if let Some(parent) = &ty.parent {
-            source.push_str(&format!(
-                " : {}",
-                reference_type_name(parent.as_str(), schema)?
-            ));
+            source.push_str(&format!(" : {}", parent.as_str()));
         }
     }
     source.push_str("\n{\n");
     if !is_struct {
-        if ty.parent.is_none() {
-            source.push_str("    public string? id { get; }\n");
-        }
-        source.push_str(&format!("    internal {type_name}(string? key)"));
-        if ty.parent.is_some() {
-            source.push_str(" : base(key)");
-        }
-        source.push_str(if ty.parent.is_none() {
-            " { id = key; }\n"
+        if ty.is_data() {
+            source.push_str(&format!("    internal {type_name}() {{ }}\n"));
         } else {
-            " { }\n"
-        });
+            if ty.parent.is_none() {
+                source.push_str("    public string id { get; }\n");
+            }
+            source.push_str(&format!("    internal {type_name}(string key)"));
+            if ty.parent.is_some() {
+                source.push_str(" : base(key)");
+            }
+            source.push_str(if ty.parent.is_none() {
+                " { id = key; }\n"
+            } else {
+                " { }\n"
+            });
+        }
     }
     let fields = if is_struct {
         ty.all_fields().collect::<Vec<_>>()
@@ -232,7 +215,7 @@ fn type_source(ty: &CftType, schema: &CftSchema, namespace: &str, record: bool) 
         ty.own_fields().collect::<Vec<_>>()
     };
     for field in fields {
-        let value_type = field_type(field, schema)?;
+        let value_type = field_type(field)?;
         source.push_str(&format!(
             "    public {value_type} {} {{ get; internal set; }}{}\n",
             field.name,
@@ -243,39 +226,38 @@ fn type_source(ty: &CftType, schema: &CftSchema, namespace: &str, record: bool) 
     Ok(finish(source, namespace))
 }
 
-fn value_type(ty: &CftValueType, schema: &CftSchema) -> Result<String> {
+fn value_type(ty: &CftValueType) -> Result<String> {
     Ok(match ty {
         CftValueType::Int => "long".into(),
         CftValueType::Float => "double".into(),
         CftValueType::Bool => "bool".into(),
         CftValueType::String | CftValueType::FormattedString => "string".into(),
         CftValueType::Object(name) => name.to_string(),
-        CftValueType::RecordRef(name) => reference_type_name(name.as_str(), schema)?,
+        CftValueType::RecordRef(name) => name.to_string(),
         CftValueType::Enum(name) => name.to_string(),
         CftValueType::Array(inner) => format!(
             "global::System.Collections.Generic.IReadOnlyList<{}>",
-            value_type(inner, schema)?
+            value_type(inner)?
         ),
         CftValueType::Dict(key, value) => format!(
             "global::System.Collections.Generic.IReadOnlyDictionary<{}, {}>",
-            value_type(key, schema)?,
-            value_type(value, schema)?
+            value_type(key)?,
+            value_type(value)?
         ),
-        CftValueType::Option(inner) => format!(
-            "global::Coflow.Loader.Option<{}>",
-            value_type(inner, schema)?
-        ),
+        CftValueType::Option(inner) => {
+            format!("global::Coflow.Loader.Option<{}>", value_type(inner)?)
+        }
     })
 }
-fn field_type(field: &CftField, schema: &CftSchema) -> Result<String> {
-    let ty = value_type(&field.value_type, schema)?;
+fn field_type(field: &CftField) -> Result<String> {
+    let ty = value_type(&field.value_type)?;
     Ok(if field.dimension.is_some() {
         format!("global::Coflow.Loader.DimensionValue<{ty}>")
     } else {
         ty
     })
 }
-fn value_descriptor(ty: &CftValueType, schema: &CftSchema) -> Result<String> {
+fn value_descriptor(ty: &CftValueType) -> Result<String> {
     Ok(match ty {
         CftValueType::Int => "global::Coflow.Loader.CfdValues.Int".into(),
         CftValueType::Float => "global::Coflow.Loader.CfdValues.Float".into(),
@@ -289,53 +271,32 @@ fn value_descriptor(ty: &CftValueType, schema: &CftSchema) -> Result<String> {
         ),
         CftValueType::RecordRef(name) => format!(
             "global::Coflow.Loader.CfdValues.Reference<{}>({})",
-            reference_type_name(name.as_str(), schema)?,
+            name,
             quote(name.as_str())
         ),
         CftValueType::Enum(name) => format!("Enum_{}", metadata_identifier(name.as_str())),
         CftValueType::Array(inner) => format!(
             "global::Coflow.Loader.CfdValues.List({})",
-            value_descriptor(inner, schema)?
+            value_descriptor(inner)?
         ),
         CftValueType::Dict(key, value) => format!(
             "global::Coflow.Loader.CfdValues.Dictionary({}, {})",
-            value_descriptor(key, schema)?,
-            value_descriptor(value, schema)?
+            value_descriptor(key)?,
+            value_descriptor(value)?
         ),
         CftValueType::Option(inner) => format!(
             "global::Coflow.Loader.CfdValues.Optional({})",
-            value_descriptor(inner, schema)?
+            value_descriptor(inner)?
         ),
     })
 }
 
 fn loader_source(schema: &CftSchema, namespace: &str, values: &IdAsEnumValues) -> Result<String> {
     let mut source = header(namespace);
-    source.push_str("public sealed class CoflowData\n{\n");
-    let records = schema.all_types().collect::<Vec<_>>();
-    for ty in &records {
-        let ty_name = &ty.name;
-        let record_name = record_type_name(ty);
-        if ty.is_singleton {
-            source.push_str(&format!("    public {record_name} {ty_name} {{ get; }}\n"));
-        } else {
-            source.push_str(&format!("    public global::System.Collections.Generic.IReadOnlyDictionary<string, {record_name}> {ty_name} {{ get; }}\n"));
-        }
-    }
-    source.push_str("    private CoflowData(global::Coflow.Loader.CfdData data)\n    {\n");
-    for ty in &records {
-        source.push_str(&format!(
-            "        {} = data.{}<{}>();\n",
-            ty.name,
-            if ty.is_singleton {
-                "Singleton"
-            } else {
-                "Records"
-            },
-            record_type_name(ty)
-        ));
-    }
-    source.push_str("    }\n\n    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources)\n        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants);\n\n");
+    source.push_str("public sealed partial class CoflowData\n{\n");
+    source.push_str("    private readonly global::Coflow.Loader.CfdData _data;\n    private CoflowData(global::Coflow.Loader.CfdData data) { _data = data; }\n\n");
+    source.push_str("    public global::Coflow.Loader.Table<T> Table<T>() where T : class => _data.Table<T>();\n    public T Singleton<T>() where T : class => _data.Singleton<T>();\n\n");
+    source.push_str("    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources)\n        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants);\n\n");
     for en in schema.all_enums() {
         source.push_str(&format!("    private static readonly global::Coflow.Loader.CfdValueType<{}> Enum_{} = global::Coflow.Loader.CfdValues.Enum<{}>({}, new global::System.Collections.Generic.Dictionary<string, {}>\n    {{\n", en.name, metadata_identifier(en.name.as_str()), en.name, quote(en.name.as_str()), en.name));
         for (name, _) in enum_variants(en, schema, values)? {
@@ -367,14 +328,35 @@ fn loader_source(schema: &CftSchema, namespace: &str, values: &IdAsEnumValues) -
         ));
     }
     source.push_str("    };\n}\n");
+    source.push_str(&table_key_extensions(schema, values)?);
     Ok(finish(source, namespace))
 }
 
+// 每张枚举键表生成接收者明确的扩展，编译期拒绝其他表的 key enum。
+fn table_key_extensions(schema: &CftSchema, values: &IdAsEnumValues) -> Result<String> {
+    let mut source = String::new();
+    for ty in schema.all_types().filter(|ty| ty.is_table()) {
+        let Some(enum_name) = schema.inherited_id_as_enum(ty.name.as_str()) else {
+            continue;
+        };
+        let entries = values
+            .get(enum_name.as_str())
+            .ok_or_else(|| CsharpCodegenError::new(format!("missing key mapping `{enum_name}`")))?;
+        let extension_name = format!("CoflowKeys_{}", metadata_identifier(ty.name.as_str()));
+        source.push_str(&format!("\npublic static partial class {extension_name}\n{{\n    private static readonly global::Coflow.Loader.TableKeyMap<{enum_name}> Keys = new global::Coflow.Loader.TableKeyMap<{enum_name}>(new global::System.Collections.Generic.Dictionary<{enum_name}, string>\n    {{\n"));
+        for key in entries.keys() {
+            validate_ident(key)?;
+            source.push_str(&format!("        [{enum_name}.{key}] = {},\n", quote(key)));
+        }
+        source.push_str(&format!("    }});\n    public static {} Get(this global::Coflow.Loader.Table<{}> table, {enum_name} key) => table[Keys.GetKey(key)];\n    public static bool TryGet(this global::Coflow.Loader.Table<{}> table, {enum_name} key, out {} value)\n    {{\n        if (Keys.TryGetKey(key, out var text)) return table.TryGetValue(text, out value);\n        value = null!;\n        return false;\n    }}\n}}\n", ty.name, ty.name, ty.name, ty.name));
+    }
+    Ok(source)
+}
+
 fn type_descriptor(ty: &CftType, schema: &CftSchema) -> Result<String> {
-    let record_name = record_type_name(ty);
-    let mut source = format!("        new global::Coflow.Loader.CfdType<{}, {}>({}, new global::Coflow.Loader.CfdField[]\n        {{\n", ty.name, record_name, quote(ty.name.as_str()));
+    let mut source = format!("        new global::Coflow.Loader.CfdType<{}>({}, global::Coflow.Loader.CfdTypeKind.{}, new global::Coflow.Loader.CfdField[]\n        {{\n", ty.name, quote(ty.name.as_str()), if ty.is_data() { "Data" } else if ty.is_singleton() { "Singleton" } else { "Table" });
     for field in ty.all_fields() {
-        let mut descriptor = value_descriptor(&field.value_type, schema)?;
+        let mut descriptor = value_descriptor(&field.value_type)?;
         if let Some(dimension) = &field.dimension {
             descriptor = format!(
                 "global::Coflow.Loader.CfdValues.Dimension({}, {descriptor})",
@@ -383,7 +365,7 @@ fn type_descriptor(ty: &CftType, schema: &CftSchema) -> Result<String> {
         }
         source.push_str(&format!(
             "            new global::Coflow.Loader.CfdField<{}>({}, {}{}),\n",
-            field_type(field, schema)?,
+            field_type(field)?,
             quote(field.name.as_str()),
             descriptor,
             match &field.default {
@@ -395,41 +377,38 @@ fn type_descriptor(ty: &CftType, schema: &CftSchema) -> Result<String> {
     source.push_str("        }, ");
     if ty.is_abstract {
         source.push_str("create: null, fill: null, construct: null, abstractType: true");
-    } else {
+    } else if ty.is_data() {
         source.push_str(&format!(
-            "key => new {record_name}(key), (value, reader) =>\n        {{\n"
-        ));
-        for field in ty.all_fields() {
-            source.push_str(&format!(
-                "            value.{} = reader.Get<{}>({});\n",
-                field.name,
-                field_type(field, schema)?,
-                quote(field.name.as_str())
-            ));
-        }
-        source.push_str(&format!(
-            "        }}, reader => new {}{}\n        {{\n",
+            "create: null, fill: null, construct: reader => new {}{}\n        {{\n",
             ty.name,
-            if ty.is_struct { "" } else { "(null)" }
+            if ty.is_struct { "" } else { "()" }
         ));
         for field in ty.all_fields() {
             source.push_str(&format!(
                 "            {} = reader.Get<{}>({}),\n",
                 field.name,
-                field_type(field, schema)?,
+                field_type(field)?,
                 quote(field.name.as_str())
             ));
         }
         source.push_str("        }");
-        if ty.is_singleton {
-            source.push_str(", singleton: true");
+    } else {
+        source.push_str(&format!(
+            "create: key => new {}(key), fill: (value, reader) =>\n        {{\n",
+            ty.name
+        ));
+        for field in ty.all_fields() {
+            source.push_str(&format!(
+                "            value.{} = reader.Get<{}>({});\n",
+                field.name,
+                field_type(field)?,
+                quote(field.name.as_str())
+            ));
         }
+        source.push_str("        }, construct: null");
     }
     if let Some(parent) = &ty.parent {
         source.push_str(&format!(", parent: {}", quote(parent.as_str())));
-    }
-    if ty.is_struct {
-        source.push_str(", structValue: true");
     }
     source.push_str("),\n");
     Ok(source)

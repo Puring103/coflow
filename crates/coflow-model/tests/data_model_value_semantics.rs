@@ -39,8 +39,8 @@ impl CfdValueSemanticContext for ModelContext<'_> {
 fn complete_validation_rejects_missing_nested_required_fields() {
     let schema = compile_schema(
         r"
-            type Child { required: int; defaulted: int = 1; }
-            type Parent { child: Child; }
+            data Child { required: int; defaulted: int = 1; }
+            data Parent { child: Child; }
         ",
     );
     let compiled = &schema;
@@ -76,7 +76,7 @@ fn complete_validation_rejects_missing_nested_required_fields() {
 
 #[test]
 fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
-    let schema = compile_schema("type Child { required: int; }");
+    let schema = compile_schema("data Child { required: int; }");
     let compiled = &schema;
     let expected = CftValueType::Object(TypeName::new("Child").unwrap());
     let empty = CfdValue::Object(Box::new(
@@ -108,7 +108,7 @@ fn fragment_validation_allows_missing_fields_but_checks_provided_values() {
 
 #[test]
 fn complete_validation_allows_omitted_schema_defaults() {
-    let schema = compile_schema("type Child { defaulted: int = 1; }");
+    let schema = compile_schema("data Child { defaulted: int = 1; }");
     let compiled = &schema;
     let value = CfdValue::Object(Box::new(
         CfdObject::try_new("Child", BTreeMap::new()).unwrap(),
@@ -148,7 +148,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
     let cases = vec![
         Case {
             name: "option none",
-            schema: "type Root { value: Option<int>; }",
+            schema: "table Root { value: Option<int>; }",
             source_value: LoadedValueDraft::OptionNone,
             mutation_value: CfdValue::OptionNone,
             context_records: Vec::new(),
@@ -156,7 +156,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "primitive mismatch",
-            schema: "type Root { value: int; }",
+            schema: "table Root { value: int; }",
             source_value: LoadedValueDraft::String("bad".to_string()),
             mutation_value: CfdValue::String("bad".to_string()),
             context_records: Vec::new(),
@@ -164,7 +164,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "non-finite float",
-            schema: "type Root { value: float; }",
+            schema: "table Root { value: float; }",
             source_value: LoadedValueDraft::Float(f64::NAN),
             mutation_value: CfdValue::Float(f64::NAN),
             context_records: Vec::new(),
@@ -172,7 +172,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "array item mismatch",
-            schema: "type Root { value: [int]; }",
+            schema: "table Root { value: [int]; }",
             source_value: LoadedValueDraft::Array(vec![LoadedValueDraft::String("bad".to_string())]),
             mutation_value: CfdValue::Array(vec![CfdValue::String("bad".to_string())]),
             context_records: Vec::new(),
@@ -180,7 +180,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "dict key mismatch",
-            schema: "type Root { value: {int: string}; }",
+            schema: "table Root { value: {int: string}; }",
             source_value: LoadedValueDraft::dict([(
                 LoadedDictKeyDraft::String("bad".to_string()),
                 LoadedValueDraft::String("value".to_string()),
@@ -194,7 +194,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "unknown enum variant",
-            schema: "enum Rarity { Common } type Root { value: Rarity; }",
+            schema: "enum Rarity { Common } table Root { value: Rarity; }",
             source_value: LoadedValueDraft::enum_variant("Rarity", "Missing"),
             mutation_value: CfdValue::Enum(
                 CfdEnumValue::try_new("Rarity", Some("Missing"), 0).unwrap(),
@@ -204,7 +204,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "missing nested required field",
-            schema: "type Child { required: int; } type Root { value: Child; }",
+            schema: "data Child { required: int; } table Root { value: Child; }",
             source_value: LoadedValueDraft::object(
                 "Child",
                 std::iter::empty::<(&str, LoadedValueDraft)>(),
@@ -215,7 +215,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "abstract object instantiation",
-            schema: "abstract type Base { n: int; } type Root { value: Base; }",
+            schema: "abstract data Base { n: int; } table Root { value: Base; }",
             source_value: LoadedValueDraft::object("Base", [("n", LoadedValueDraft::Int(1))]),
             mutation_value: object(
                 "Base",
@@ -226,7 +226,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "valid concrete object",
-            schema: "abstract type Base {} type Child : Base { n: int; } type Root { value: Base; }",
+            schema: "abstract data Base {} data Child : Base { n: int; } table Root { value: Base; }",
             source_value: LoadedValueDraft::object("Child", [("n", LoadedValueDraft::Int(1))]),
             mutation_value: object(
                 "Child",
@@ -237,7 +237,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "valid record ref",
-            schema: "type Target { name: string; } type Root { value: &Target; }",
+            schema: "table Target { name: string; } table Root { value: &Target; }",
             source_value: LoadedValueDraft::record_ref("target"),
             mutation_value: CfdValue::record_ref("target").unwrap(),
             context_records: vec![input_record(
@@ -249,7 +249,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "missing record ref",
-            schema: "type Target {} type Root { value: &Target; }",
+            schema: "table Target {} table Root { value: &Target; }",
             source_value: LoadedValueDraft::record_ref("missing"),
             mutation_value: CfdValue::record_ref("missing").unwrap(),
             context_records: Vec::new(),
@@ -257,7 +257,7 @@ fn source_build_and_mutation_validation_share_semantic_rule_matrix() {
         },
         Case {
             name: "record ref actual type mismatch",
-            schema: "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Root { value: &ItemReward; }",
+            schema: "abstract table Reward {} table ItemReward : Reward {} table CurrencyReward : Reward {} table Root { value: &ItemReward; }",
             source_value: LoadedValueDraft::record_ref("reward"),
             mutation_value: CfdValue::record_ref("reward").unwrap(),
             context_records: vec![input_record("reward", "CurrencyReward", Vec::new())],

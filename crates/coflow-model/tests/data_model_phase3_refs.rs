@@ -14,8 +14,8 @@ use common::*;
 fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder { item: &Item; }
+            table Item { name: string; }
+            table Holder { item: &Item; }
         "#,
     );
 
@@ -42,10 +42,10 @@ fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
 fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parents() {
     let schema = compile_schema(
         r#"
-            type Reward { name: string; }
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
-            type Holder {
+            table Reward { name: string; }
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
+            table Holder {
                 reward: &Reward;
                 item_reward: &ItemReward;
             }
@@ -135,8 +135,8 @@ fn ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parent
 fn inline_object_fields_reject_record_refs() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder { item: Item; }
+            data Item { name: string; }
+            table Holder { item: Item; }
         "#,
     );
 
@@ -158,8 +158,8 @@ fn inline_object_fields_reject_record_refs() {
 fn missing_key_reports_ref_target_not_found() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder { item: &Item; }
+            table Item { name: string; }
+            table Holder { item: &Item; }
         "#,
     );
 
@@ -176,7 +176,7 @@ fn missing_key_reports_ref_target_not_found() {
 
 #[test]
 fn partial_build_preserves_unresolved_refs() {
-    let schema = compile_schema("type Item {} type Holder { item: &Item; }");
+    let schema = compile_schema("table Item {} table Holder { item: &Item; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "holder",
@@ -204,7 +204,7 @@ fn partial_build_preserves_unresolved_refs() {
 #[test]
 fn wrong_ref_target_type_has_a_reference_diagnostic() {
     let schema = compile_schema(
-        "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Holder { reward: &ItemReward; }",
+        "abstract table Reward {} table ItemReward : Reward {} table CurrencyReward : Reward {} table Holder { reward: &ItemReward; }",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -230,8 +230,8 @@ fn wrong_ref_target_type_has_a_reference_diagnostic() {
 fn refs_populate_ref_edge_indexes() {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type Holder {
+            table Item { name: string; }
+            table Holder {
                 item: &Item;
                 items: [&Item];
             }

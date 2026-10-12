@@ -3,7 +3,10 @@ use coflow_language::cft::syntax::ast::Annotation;
 pub(crate) const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),
     ("enum", "Define an enum."),
-    ("type", "Define a schema type."),
+    ("type", "Define a type alias."),
+    ("table", "Define records with identity."),
+    ("data", "Define inline data."),
+    ("singleton", "Define one configuration record."),
     ("abstract", "Mark a type as non-instantiable."),
     ("sealed", "Prevent a type from being inherited."),
     ("check", "Start a validation block inside a type."),
@@ -51,7 +54,7 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         label: "@struct",
         insert_text: "@struct",
         detail: "type annotation",
-        documentation: "Generate a value type. The target must be a sealed type.",
+        documentation: "Generate a value type. The target must be sealed data.",
     },
     AnnotationCompletion {
         label: "@flag",
@@ -64,12 +67,6 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
         documentation: "Fill an empty enum placeholder from this type's record keys.",
-    },
-    AnnotationCompletion {
-        label: "@singleton",
-        insert_text: "@singleton",
-        detail: "type annotation",
-        documentation: "Declare a type with one singleton record.",
     },
     AnnotationCompletion {
         label: "@label",

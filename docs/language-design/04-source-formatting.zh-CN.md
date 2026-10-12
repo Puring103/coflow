@@ -38,7 +38,7 @@
 
 ```cft
 @label("Item")
-type Item : Entity {
+table Item : Entity {
   name: string;
   tags: [string] = [];
 

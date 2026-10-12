@@ -22,16 +22,16 @@ fn all(files: &[GeneratedFile]) -> String {
 fn emits_typed_business_objects_and_shared_loader_descriptors() {
     let schema = schema(
         r#"
-        @struct sealed type Stats { hp: int; }
-        type Item { name: string; stats: Stats; next: Option<&Item> = None; }
+        @struct sealed data Stats { hp: int; }
+        table Item { name: string; stats: Stats; next: Option<&Item> = None; }
     "#,
     );
     let text = all(&generate_csharp(&schema).expect("generate"));
-    assert!(text.contains("public struct Stats"));
-    assert!(text.contains("public class Item"));
+    assert!(text.contains("public partial struct Stats"));
+    assert!(text.contains("public partial class Item"));
     assert!(text.contains("public long hp { get; internal set; }"));
     assert!(text.contains("public Option<Item> next { get; internal set; }"));
-    assert!(text.contains("new CfdType<Stats, StatsRecord>"));
+    assert!(text.contains("new CfdType<Stats>"));
     assert!(text.contains("reader => new Stats"));
     assert!(text.contains("key => new Item(key)"));
     assert!(text.contains("CfdValues.Reference<Item>(\"Item\")"));
@@ -52,12 +52,12 @@ fn emits_typed_business_objects_and_shared_loader_descriptors() {
 #[test]
 fn inheritance_preserves_shared_record_identity() {
     let text = all(&generate_csharp(&schema(
-        "abstract type Base { name: string; } type Child: Base { count: int; }",
+        "abstract table Base { name: string; } table Child: Base { count: int; }",
     ))
     .expect("generate"));
-    assert!(text.contains("public abstract class Base"));
-    assert!(text.contains("public class Child : Base"));
-    assert!(text.contains("internal Child(string? key) : base(key)"));
+    assert!(text.contains("public abstract partial class Base"));
+    assert!(text.contains("public partial class Child : Base"));
+    assert!(text.contains("internal Child(string key) : base(key)"));
     assert!(text.contains("value.name = reader.Get<string>(\"name\")"));
     assert!(text.contains("parent: \"Base\""));
     assert!(text.contains("abstractType: true"));
@@ -66,7 +66,7 @@ fn inheritance_preserves_shared_record_identity() {
 #[test]
 fn emitted_metadata_is_data_only_even_when_schema_has_checks() {
     let text = all(&generate_csharp(&schema(
-        r#"type Item { value: int; check { value > 0: "positive"; } } check Validate { 1 > 0; }"#,
+        r#"table Item { value: int; check { value > 0: "positive"; } } check Validate { 1 > 0; }"#,
     ))
     .expect("generate"));
     assert!(!text.contains("positive"));
@@ -77,7 +77,7 @@ fn emitted_metadata_is_data_only_even_when_schema_has_checks() {
 fn descriptor_defaults_preserve_literal_strings_and_explicit_templates() {
     let text = all(&generate_csharp(&schema(
         r#"
-        type Item {
+        table Item {
             name: string = "{literal}";
             label: fstring = f"{{text}} {self.name}";
             nums: [int] = [1, 2];
@@ -95,7 +95,7 @@ fn descriptor_defaults_preserve_literal_strings_and_explicit_templates() {
 fn dimension_fields_load_all_variants() {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main.cft"),
-        r#"type Item { @dimension("language") name: string; }"#,
+        r#"table Item { @dimension("language") name: string; }"#,
     )]);
     let schema = build_schema(&modules).expect("schema");
     let text = all(&generate_csharp(&schema).expect("generate"));
@@ -110,7 +110,7 @@ fn dimension_fields_load_all_variants() {
 #[test]
 fn enums_flags_constants_and_namespaces_use_loader_contracts() {
     let schema = schema(
-        r#"@flag enum Flags { A = 1, B = 2 } const SIZE: int = 3; type Item { flags: Flags = Flags::A | Flags::B; size: int = SIZE; }"#,
+        r#"@flag enum Flags { A = 1, B = 2 } const SIZE: int = 3; table Item { flags: Flags = Flags::A | Flags::B; size: int = SIZE; }"#,
     );
     let text =
         all(&emit::generate(&schema, "Game.Config", &IdAsEnumValues::new()).expect("generate"));
@@ -123,21 +123,21 @@ fn enums_flags_constants_and_namespaces_use_loader_contracts() {
 #[test]
 fn invalid_identifiers_and_generated_name_collisions_are_reported() {
     for source in [
-        "type class {}",
-        "type CoflowData {}",
-        "type Item { Item: int; }",
-        "@struct sealed type Shape {} type ShapeRecord {}",
-        "@struct sealed type Shape { ShapeRecord: int; }",
+        "table class {}",
+        "table CoflowData {}",
+        "table Item { Item: int; }",
+        "enum Kind { Kind }",
+        "enum Kind { value__ }",
     ] {
         assert!(generate_csharp(&schema(source)).is_err(), "{source}");
     }
-    assert!(emit::generate(&schema("type Item {}"), "bad-name", &IdAsEnumValues::new()).is_err());
+    assert!(emit::generate(&schema("table Item {}"), "bad-name", &IdAsEnumValues::new()).is_err());
 }
 
 #[test]
 fn generator_advertises_loader_package() {
     let target = CodegenTarget::new("csharp", "generated", serde_json::json!({}));
-    let schema = schema("type Item { value: int; }");
+    let schema = schema("table Item { value: int; }");
     let values = IdAsEnumValues::new();
     let generator = CsharpCfdCodeGenerator;
     assert_eq!(generator.descriptor().runtime_package, "Coflow.Loader");
@@ -157,7 +157,7 @@ fn generator_advertises_loader_package() {
 
 #[test]
 fn id_enum_keeps_active_keys_and_stable_numbers() {
-    let schema = schema("enum ItemId {} @idAsEnum(ItemId) type Item { name: string; }");
+    let schema = schema("enum ItemId {} @idAsEnum(ItemId) table Item { name: string; }");
     let mut builder = coflow_model::CfdDataModel::builder(&schema);
     builder.add_record(
         "live",

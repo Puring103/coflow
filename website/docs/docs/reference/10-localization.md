@@ -3,7 +3,7 @@
 `@localized` 将字段绑定 language 维度，`@dimension("name")` 绑定指定维度。同一字段保存基础值和任意数量的变体值。
 
 ```cft
-type Item {
+table Item {
   @localized
   name: string;
   @dimension("region")

@@ -3,10 +3,10 @@
 
 namespace Game.Config
 {
-public class ComplexValues
+public partial class ComplexValues
 {
-    public string? id { get; }
-    internal ComplexValues(string? key) { id = key; }
+    public string id { get; }
+    internal ComplexValues(string key) { id = key; }
     public global::System.Collections.Generic.IReadOnlyList<long> samples { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyDictionary<string, long> lookup { get; internal set; } = default!;
     public global::Coflow.Loader.Option<Payload> optional { get; internal set; } = default!;

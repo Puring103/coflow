@@ -131,7 +131,7 @@ top: Item {
 ",
     )
     .expect("write seed");
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let source = empty_source(&file);
     let origin = origin_for(&file);
     let writer = CfdWriter::new();
@@ -185,7 +185,7 @@ shield: Item {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
           value: int;
         }
@@ -229,7 +229,7 @@ fn inserts_missing_field_with_two_space_indentation() {
     let dir = temp_dir("insert-missing-field-indentation");
     let file = dir.join("items.cfd");
     fs::write(&file, "sword: Item {\n}\n").expect("write seed");
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let origin = origin_for(&file);
     let value = CfdValue::Int(42);
     let segments = vec![WriteFieldPathSegment::Field("value".to_string())];
@@ -267,18 +267,18 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        abstract type Reward {}
+        abstract data Reward {}
 
-        type ItemReward : Reward {
+        data ItemReward : Reward {
           item: &Item;
           count: int;
         }
 
-        type Stage {
+        table Stage {
           first_clear_reward: Reward;
         }
         ",
@@ -330,8 +330,8 @@ shared: Skill {
 
     let schema = compile_schema(
         r"
-        type Item { name: string; }
-        type Skill { name: string; }
+        table Item { name: string; }
+        table Skill { name: string; }
         ",
     );
 
@@ -388,11 +388,11 @@ picker: Holder {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Holder {
+        table Holder {
           current: &Item;
         }
         ",
@@ -457,11 +457,11 @@ picker: Holder {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Holder {
+        table Holder {
           current: &Item;
         }
         ",
@@ -513,7 +513,7 @@ fn inserts_record_at_end_of_cfd_file() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
           value: int;
         }
@@ -563,8 +563,8 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item { name: string; }
-        type Skill { name: string; }
+        table Item { name: string; }
+        table Skill { name: string; }
         ",
     );
     let schema = &schema;
@@ -613,15 +613,15 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
 
-        type Slot {
+        data Slot {
           item: &Item;
         }
 
-        type Loot {
+        table Loot {
           slot: Slot;
         }
         ",
@@ -679,7 +679,7 @@ shield: Item {
     .expect("write seed");
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           name: string;
         }
         ",
@@ -761,7 +761,7 @@ fn writes_enum_dict_key_path_using_member_display_text() {
         r"
         enum Element { Fire = 1, Ice = 2 }
 
-        type Loot {
+        table Loot {
           resistances: {Element: int};
         }
         ",
@@ -818,12 +818,12 @@ fn writes_group_record_without_required_commas() {
 
     let schema = compile_schema(
         r"
-        type IntRange {
+        data IntRange {
           lo: int;
           hi: int;
         }
 
-        type DamageEffect {
+        table DamageEffect {
           damage: IntRange;
           pierce_divine: bool;
         }
@@ -878,7 +878,7 @@ sword: Item {
 
     let schema = compile_schema(
         r"
-        type Item {
+        table Item {
           value: int;
         }
         ",

@@ -22,17 +22,32 @@
   },
   "type": {
     "prefix": "type",
-    "body": ["type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
-    "description": "Define a CFT type."
+    "body": ["type ${1:Name} = ${2:string};"],
+    "description": "Define a CFT type alias."
   },
-  "abstract type": {
+  "table": {
+    "prefix": "table",
+    "body": ["table ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "description": "Define records with identity."
+  },
+  "data": {
+    "prefix": "data",
+    "body": ["data ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "description": "Define inline data."
+  },
+  "singleton": {
+    "prefix": "singleton",
+    "body": ["singleton ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "description": "Define one configuration record."
+  },
+  "abstract table": {
     "prefix": "abstract",
-    "body": ["abstract type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "body": ["abstract table ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
     "description": "Define an abstract CFT type."
   },
-  "sealed type": {
+  "sealed data": {
     "prefix": "sealed",
-    "body": ["sealed type ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
+    "body": ["sealed data ${1:Name} {", "\t${2:field}: ${3:string};", "}"],
     "description": "Define a sealed CFT type."
   },
   "check block": {

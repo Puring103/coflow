@@ -99,6 +99,7 @@ pub struct CfdFieldReference {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdBitExpr {
+    pub(crate) depth: u64,
     pub kind: CfdBitExprKind,
     pub span: Span,
 }

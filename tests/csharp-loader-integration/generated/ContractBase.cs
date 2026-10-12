@@ -3,10 +3,9 @@
 
 namespace Game.Config
 {
-public abstract class ContractBase
+public abstract partial class ContractBase
 {
-    public string? id { get; }
-    internal ContractBase(string? key) { id = key; }
+    internal ContractBase() { }
     public string name { get; internal set; } = default!;
 }
 }

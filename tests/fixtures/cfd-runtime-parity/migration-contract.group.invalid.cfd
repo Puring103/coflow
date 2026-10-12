@@ -1,1 +1,1 @@
-ContractPayload { unrelated: ContractShape {} }
+ContractNode { unrelated: ContractEntry {} }

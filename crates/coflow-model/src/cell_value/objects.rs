@@ -101,7 +101,7 @@ fn validate_actual_type(
             }],
         });
     }
-    if !schema.is_assignable(actual_type, expected_type) {
+    if !actual_schema_type.is_data() || !schema.is_assignable(actual_type, expected_type) {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::ObjectTypeMismatch,

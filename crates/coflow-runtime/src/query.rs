@@ -96,7 +96,15 @@ impl<'a> ProjectQueries<'a> {
         self.session
             .schema()
             .resolve_type(type_name)
-            .is_some_and(|meta| meta.is_singleton)
+            .is_some_and(|meta| meta.is_singleton())
+    }
+
+    #[must_use]
+    pub fn type_is_data(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|ty| ty.is_data())
     }
 
     #[must_use]
@@ -511,7 +519,7 @@ mod tests {
     fn concrete_base_object_shape_exposes_all_assignable_types() {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
+            "data NPC {} data Game : NPC {} table Building { npc: NPC; }",
         )]);
         let schema = build_schema(&modules).expect("schema should compile");
         let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
@@ -523,7 +531,7 @@ mod tests {
 
     #[test]
     fn optional_concrete_object_shape_exposes_its_inner_object_type() {
-        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), "type Node {}")]);
+        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), "data Node {}")]);
         let schema = build_schema(&modules).expect("schema should compile");
         let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
             CftValueType::Object(TypeName::new("Node").expect("valid type name")),

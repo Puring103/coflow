@@ -5,7 +5,7 @@ use coflow_language::cft::{build_schema, parse_modules, CftFile, ModuleId};
 fn dimension_fields_use_independent_coordinates_without_auxiliary_type_names() {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
-        "type A_B { @localized c: string; } type A { @localized B_c: string; }",
+        "table A_B { @localized c: string; } table A { @localized B_c: string; }",
     )]);
     let schema = build_schema(&modules).expect("schema");
     let dimension = schema.resolve_dimension("language").expect("dimension");
@@ -17,7 +17,7 @@ fn dimension_fields_use_independent_coordinates_without_auxiliary_type_names() {
 #[test]
 fn declarations_can_use_names_previously_reserved_for_auxiliary_records() {
     for source in [
-        "type __coflow_language_Item_name { value: string; }",
+        "table __coflow_language_Item_name { value: string; }",
         "enum __coflow_language_Item_name { One }",
         "type __coflow_language_Item_name = string;",
     ] {

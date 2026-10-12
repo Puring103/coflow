@@ -65,7 +65,16 @@ fn every_cfd_error_code_has_negative_and_adjacent_valid_coverage() {
 
     for case in cases() {
         let diags = diagnostics_for(&case);
-        assert_has_code(&diags, case.code);
+        assert!(
+            diags
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == case.code),
+            "{} expected {:?}: {:?}",
+            case.name,
+            case.code,
+            diags
+        );
         for diag in &diags.diagnostics {
             assert_eq!(diag.stage, diag.code.stage(), "{}", case.name);
             assert_eq!(diag.severity, CfdSeverity::Error, "{}", case.name);
@@ -85,14 +94,14 @@ fn cases() -> Vec<Case> {
     vec![
         Case {
             name: "unknown record type",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_unknown_type),
             code: CfdErrorCode::UnknownType,
             adjacent: adjacent_known_record_type,
         },
         Case {
             name: "abstract record type",
-            schema: "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+            schema: "abstract table Reward {} table CoinReward : Reward { amount: int; }",
             phase: Phase::Build(build_abstract_record_type),
             code: CfdErrorCode::AbstractRecordType,
             adjacent: adjacent_concrete_child_record_type,
@@ -100,105 +109,105 @@ fn cases() -> Vec<Case> {
 
         Case {
             name: "missing polymorphic object actual type",
-            schema: "abstract type Reward {} type CoinReward : Reward { amount: int; } type Drop { reward: Reward; }",
+            schema: "abstract data Reward {} data CoinReward : Reward { amount: int; } table Drop { reward: Reward; }",
             phase: Phase::Build(build_missing_object_type),
             code: CfdErrorCode::MissingObjectType,
             adjacent: adjacent_polymorphic_object_with_actual_type,
         },
         Case {
             name: "object actual type mismatch",
-            schema: "abstract type Reward {} type CoinReward : Reward { amount: int; } type Item { name: string; } type Drop { reward: Reward; }",
+            schema: "abstract data Reward {} data CoinReward : Reward { amount: int; } table Item { name: string; } table Drop { reward: Reward; }",
             phase: Phase::Build(build_object_type_mismatch),
             code: CfdErrorCode::ObjectTypeMismatch,
             adjacent: adjacent_polymorphic_object_with_assignable_type,
         },
         Case {
             name: "unknown field",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_unknown_field),
             code: CfdErrorCode::UnknownField,
             adjacent: adjacent_known_field,
         },
         Case {
             name: "missing required field",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_missing_required_field),
             code: CfdErrorCode::MissingRequiredField,
             adjacent: adjacent_required_field_present,
         },
         Case {
             name: "data value dependency cycle",
-            schema: "type Item { first: fstring; second: fstring; }",
+            schema: "table Item { first: fstring; second: fstring; }",
             phase: Phase::Build(build_data_value_dependency_cycle),
             code: CfdErrorCode::ValueDependencyCycle,
             adjacent: adjacent_acyclic_data_value_dependency,
         },
         Case {
             name: "data structure limit exceeded",
-            schema: "type Item { value: [[int]]; }",
+            schema: "table Item { value: [[int]]; }",
             phase: Phase::Build(build_data_structure_limit_exceeded),
             code: CfdErrorCode::DataStructureLimitExceeded,
             adjacent: adjacent_data_structure_at_limit,
         },
         Case {
             name: "type mismatch",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_type_mismatch),
             code: CfdErrorCode::TypeMismatch,
             adjacent: adjacent_matching_value_type,
         },
         Case {
             name: "invalid enum variant",
-            schema: "enum Rarity { Common, Rare, } type Item { rarity: Rarity; }",
+            schema: "enum Rarity { Common, Rare, } table Item { rarity: Rarity; }",
             phase: Phase::Build(build_invalid_enum_variant),
             code: CfdErrorCode::InvalidEnumVariant,
             adjacent: adjacent_known_enum_variant,
         },
         Case {
             name: "duplicate dict key",
-            schema: "type Item { attrs: {string: int}; }",
+            schema: "table Item { attrs: {string: int}; }",
             phase: Phase::Build(build_duplicate_dict_key),
             code: CfdErrorCode::DuplicateDictKey,
             adjacent: adjacent_unique_dict_keys,
         },
         Case {
             name: "missing id field",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_missing_id_field),
             code: CfdErrorCode::MissingIdField,
             adjacent: adjacent_non_empty_record_key,
         },
         Case {
             name: "invalid record key",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_invalid_record_key),
             code: CfdErrorCode::InvalidRecordKey,
             adjacent: adjacent_identifier_record_key,
         },
         Case {
             name: "duplicate id",
-            schema: "type Item { value: int; }",
+            schema: "table Item { value: int; }",
             phase: Phase::Build(build_duplicate_id),
             code: CfdErrorCode::DuplicateId,
             adjacent: adjacent_unique_ids,
         },
         Case {
             name: "duplicate polymorphic id",
-            schema: "abstract type Reward {} type CoinReward : Reward { amount: int; } type ItemReward : Reward { count: int; }",
+            schema: "abstract table Reward {} table CoinReward : Reward { amount: int; } table ItemReward : Reward { count: int; }",
             phase: Phase::Build(build_duplicate_polymorphic_id),
             code: CfdErrorCode::DuplicatePolymorphicId,
             adjacent: adjacent_unique_polymorphic_ids,
         },
         Case {
             name: "missing ref target",
-            schema: "type Item { name: string; } type Drop { item: &Item; }",
+            schema: "table Item { name: string; } table Drop { item: &Item; }",
             phase: Phase::Build(build_missing_ref_target),
             code: CfdErrorCode::RefTargetNotFound,
             adjacent: adjacent_existing_ref_target,
         },
         Case {
             name: "ref target type mismatch",
-            schema: "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Drop { reward: &ItemReward; }",
+            schema: "abstract table Reward {} table ItemReward : Reward {} table CurrencyReward : Reward {} table Drop { reward: &ItemReward; }",
             phase: Phase::Build(build_ref_target_type_mismatch),
             code: CfdErrorCode::RefTargetTypeMismatch,
             adjacent: adjacent_assignable_ref_target,
@@ -212,7 +221,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check comparison failed",
-            schema: "type Item { value: int; check { value > 0; } }",
+            schema: "table Item { value: int; check { value > 0; } }",
             phase: Phase::Check(build_check_failed_model, run_checks),
             code: CfdErrorCode::CheckComparisonFailed,
             adjacent: adjacent_true_check,
@@ -303,21 +312,21 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check index out of bounds",
-            schema: "type Item { nums: [int]; check { nums[0] > 0; } }",
+            schema: "table Item { nums: [int]; check { nums[0] > 0; } }",
             phase: Phase::Check(build_empty_nums_model, run_checks),
             code: CfdErrorCode::CheckIndexOutOfBounds,
             adjacent: adjacent_in_bounds_index,
         },
         Case {
             name: "check missing dict key",
-            schema: "type Item { attrs: {string: int}; check { attrs[\"missing\"] > 0; } }",
+            schema: "table Item { attrs: {string: int}; check { attrs[\"missing\"] > 0; } }",
             phase: Phase::Check(build_present_attr_model, run_checks),
             code: CfdErrorCode::CheckMissingDictKey,
             adjacent: adjacent_existing_dict_key,
         },
         Case {
             name: "check empty min max",
-            schema: "type Item { nums: [int] = []; check { nums.min() > 0; } }",
+            schema: "table Item { nums: [int] = []; check { nums.min() > 0; } }",
             phase: Phase::Check(build_default_item_model, run_checks),
             code: CfdErrorCode::CheckEmptyMinMax,
             adjacent: adjacent_non_empty_min,
@@ -331,21 +340,21 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "singleton record count invalid",
-            schema: "@singleton type Cfg { value: int; }",
+            schema: "singleton Cfg { value: int; }",
             phase: Phase::Build(build_singleton_count_invalid),
             code: CfdErrorCode::SingletonRecordCountInvalid,
             adjacent: adjacent_singleton_count_valid,
         },
         Case {
             name: "singleton key missing or invalid",
-            schema: "@singleton type Cfg { value: int; }",
+            schema: "singleton Cfg { value: int; }",
             phase: Phase::Build(build_singleton_key_invalid),
             code: CfdErrorCode::SingletonKeyMissingOrInvalid,
             adjacent: adjacent_singleton_count_valid,
         },
         Case {
             name: "singleton key collision",
-            schema: "@singleton type A { x: int; } @singleton type B { y: int; }",
+            schema: "singleton A { x: int; } singleton B { y: int; }",
             phase: Phase::Build(build_singleton_key_collision),
             code: CfdErrorCode::SingletonKeyCollision,
             adjacent: adjacent_singleton_keys_unique,
@@ -366,7 +375,7 @@ fn build_singleton_count_invalid(schema: &CftSchema) -> Result<CfdDataModel, Cfd
 
 fn adjacent_singleton_count_valid() {
     assert_builds(
-        "@singleton type Cfg { value: int; }",
+        "singleton Cfg { value: int; }",
         [one_record(
             "main",
             "Cfg",
@@ -401,7 +410,7 @@ fn build_singleton_key_collision(schema: &CftSchema) -> Result<CfdDataModel, Cfd
 
 fn adjacent_singleton_keys_unique() {
     assert_builds(
-        "@singleton type A { x: int; } @singleton type B { y: int; }",
+        "singleton A { x: int; } singleton B { y: int; }",
         [
             one_record("a", "A", [("x", LoadedValueDraft::from(1_i64))]),
             one_record("b", "B", [("y", LoadedValueDraft::from(2_i64))]),
@@ -671,10 +680,10 @@ fn build_check_eval_type_error() -> CfdDiagnostics {
 
 const fn scalar_false_schema() -> &'static str {
     r#"
-        abstract type Reward {}
-        type CurrencyReward : Reward {}
-        type ItemReward : Reward {}
-        type Item {
+        abstract table Reward {}
+        table CurrencyReward : Reward {}
+        table ItemReward : Reward {}
+        table Item {
             enabled: bool;
             negated: bool;
             left: bool;
@@ -726,7 +735,7 @@ fn build_scalar_false_model(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagn
 
 const fn quantifier_false_schema() -> &'static str {
     r#"
-        type Item {
+        table Item {
             any_flags: [bool];
             none_flags: [bool];
             all_flags: [bool];
@@ -825,7 +834,7 @@ fn assert_checks(schema_source: &str, records: impl IntoIterator<Item = LoadedRe
 
 fn adjacent_known_record_type() {
     assert_builds(
-        "type Item { value: int; }",
+        "table Item { value: int; }",
         [one_record(
             "item",
             "Item",
@@ -836,7 +845,7 @@ fn adjacent_known_record_type() {
 
 fn adjacent_concrete_child_record_type() {
     assert_builds(
-        "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+        "abstract table Reward {} table CoinReward : Reward { amount: int; }",
         [one_record(
             "reward",
             "CoinReward",
@@ -847,7 +856,7 @@ fn adjacent_concrete_child_record_type() {
 
 fn adjacent_polymorphic_object_with_actual_type() {
     assert_builds(
-        "abstract type Reward {} type CoinReward : Reward { amount: int; } type Drop { reward: Reward; }",
+        "abstract data Reward {} data CoinReward : Reward { amount: int; } table Drop { reward: Reward; }",
         [one_record(
             "drop",
             "Drop",
@@ -872,7 +881,7 @@ fn adjacent_required_field_present() {
 }
 
 fn check_budget_exceeded() -> CfdDiagnostics {
-    let schema = compile_schema("type Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
     let model = model_from_records(
         &schema,
         [one_record(
@@ -893,7 +902,7 @@ fn check_budget_exceeded() -> CfdDiagnostics {
 }
 
 fn adjacent_check_budget_valid() {
-    let schema = compile_schema("type Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
     let model = model_from_records(
         &schema,
         [one_record(
@@ -914,7 +923,7 @@ fn adjacent_check_budget_valid() {
 }
 
 fn adjacent_data_structure_at_limit() {
-    let schema = compile_schema("type Item { value: [[int]]; }");
+    let schema = compile_schema("table Item { value: [[int]]; }");
     let mut builder =
         CfdDataModel::builder(&schema).with_structural_limits(StructuralLimits::new(4, 100, 100));
     builder.add_record(
@@ -932,7 +941,7 @@ fn adjacent_data_structure_at_limit() {
 
 fn adjacent_acyclic_data_value_dependency() {
     assert_builds(
-        "type Item { first: string; second: fstring; }",
+        "table Item { first: string; second: fstring; }",
         [one_record(
             "item",
             "Item",
@@ -950,7 +959,7 @@ fn adjacent_matching_value_type() {
 
 fn adjacent_known_enum_variant() {
     assert_builds(
-        "enum Rarity { Common, Rare, } type Item { rarity: Rarity; }",
+        "enum Rarity { Common, Rare, } table Item { rarity: Rarity; }",
         [one_record(
             "item",
             "Item",
@@ -961,7 +970,7 @@ fn adjacent_known_enum_variant() {
 
 fn adjacent_unique_dict_keys() {
     assert_builds(
-        "type Item { attrs: {string: int}; }",
+        "table Item { attrs: {string: int}; }",
         [one_record(
             "item",
             "Item",
@@ -986,7 +995,7 @@ fn adjacent_identifier_record_key() {
 
 fn adjacent_unique_ids() {
     assert_builds(
-        "type Item { value: int; }",
+        "table Item { value: int; }",
         [
             one_record("item_1", "Item", [("value", LoadedValueDraft::from(1_i64))]),
             one_record("item_2", "Item", [("value", LoadedValueDraft::from(2_i64))]),
@@ -996,7 +1005,7 @@ fn adjacent_unique_ids() {
 
 fn adjacent_unique_polymorphic_ids() {
     assert_builds(
-        "abstract type Reward {} type CoinReward : Reward { amount: int; } type ItemReward : Reward { count: int; }",
+        "abstract table Reward {} table CoinReward : Reward { amount: int; } table ItemReward : Reward { count: int; }",
         [
             one_record(
                 "coin",
@@ -1014,7 +1023,7 @@ fn adjacent_unique_polymorphic_ids() {
 
 fn adjacent_existing_ref_target() {
     assert_builds(
-        "type Item { name: string; } type Drop { item: &Item; }",
+        "table Item { name: string; } table Drop { item: &Item; }",
         [
             one_record("sword", "Item", [("name", LoadedValueDraft::from("Sword"))]),
             one_record(
@@ -1028,7 +1037,7 @@ fn adjacent_existing_ref_target() {
 
 fn adjacent_assignable_ref_target() {
     assert_builds(
-        "abstract type Reward {} type ItemReward : Reward {} type CurrencyReward : Reward {} type Drop { reward: &ItemReward; }",
+        "abstract table Reward {} table ItemReward : Reward {} table CurrencyReward : Reward {} table Drop { reward: &ItemReward; }",
         [
             one_record("reward", "ItemReward", []),
             one_record(
@@ -1042,7 +1051,7 @@ fn adjacent_assignable_ref_target() {
 
 fn adjacent_true_check() {
     assert_checks(
-        "type Item { value: int; check { value > 0; } }",
+        "table Item { value: int; check { value > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1054,9 +1063,9 @@ fn adjacent_true_check() {
 fn adjacent_scalar_false_checks() {
     assert_checks(
         r#"
-            abstract type Reward {}
-            type CurrencyReward : Reward {}
-            type Item {
+            abstract table Reward {}
+            table CurrencyReward : Reward {}
+            table Item {
                 enabled: bool;
                 negated: bool;
                 left: bool;
@@ -1104,7 +1113,7 @@ fn adjacent_scalar_false_checks() {
 fn adjacent_quantifier_checks() {
     assert_checks(
         r#"
-            type Item {
+            table Item {
                 any_flags: [bool];
                 none_flags: [bool];
                 all_flags: [bool];
@@ -1147,7 +1156,7 @@ fn adjacent_quantifier_checks() {
 
 fn adjacent_in_bounds_index() {
     assert_checks(
-        "type Item { nums: [int]; check { nums[0] > 0; } }",
+        "table Item { nums: [int]; check { nums[0] > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1161,7 +1170,7 @@ fn adjacent_in_bounds_index() {
 
 fn adjacent_existing_dict_key() {
     assert_checks(
-        "type Item { attrs: {string: int}; check { attrs[\"present\"] > 0; } }",
+        "table Item { attrs: {string: int}; check { attrs[\"present\"] > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1178,7 +1187,7 @@ fn adjacent_existing_dict_key() {
 
 fn adjacent_non_empty_min() {
     assert_checks(
-        "type Item { nums: [int]; check { nums.min() > 0; } }",
+        "table Item { nums: [int]; check { nums.min() > 0; } }",
         [one_record(
             "item",
             "Item",

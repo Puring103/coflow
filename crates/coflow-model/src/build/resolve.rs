@@ -53,6 +53,7 @@ pub(super) struct ValueResolver<'a, 'schema> {
     drafts: &'a [RecordDraft],
     record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
+    reference_diagnostics: Vec<CfdDiagnostic>,
     memo: BTreeMap<ValueNode, ResolvedMemo>,
     active: BTreeMap<ValueNode, usize>,
     stack: Vec<ValueNode>,
@@ -75,6 +76,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             drafts,
             record_by_domain_key,
             diagnostics,
+            reference_diagnostics: Vec::new(),
             memo: BTreeMap::new(),
             active: BTreeMap::new(),
             stack: Vec::new(),
@@ -101,7 +103,11 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             path: CfdPath::root(),
         };
         let cursor = self.enter_node(TraversalCursor::root(), &root, StructureKind::DataValue)?;
-        self.resolve_fields(fields, &root, cursor)
+        self.resolve_fields(fields, &root, cursor, &drafts[record.index()])
+    }
+
+    pub(super) fn take_reference_diagnostics(&mut self) -> Vec<CfdDiagnostic> {
+        std::mem::take(&mut self.reference_diagnostics)
     }
 
     pub(super) fn diagnostic_count(&self) -> usize {
@@ -123,7 +129,17 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             record,
             path: path.clone(),
         };
-        self.resolve_node(value, node, TraversalCursor::root(), false)
+        self.resolve_node(
+            value,
+            node,
+            TraversalCursor::root(),
+            false,
+            &self.drafts[record.index()],
+            &ValueNode {
+                record,
+                path: CfdPath::root(),
+            },
+        )
     }
 
     fn resolve_fields(
@@ -131,12 +147,15 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         fields: &BTreeMap<FieldName, ValueDraft>,
         parent: &ValueNode,
         cursor: TraversalCursor,
+        owner: &RecordDraft,
     ) -> Option<BTreeMap<FieldName, CfdValue>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         let mut complete = true;
         for (name, value) in fields {
-            let Some(value) = self.resolve_node(value, parent.field(name), cursor, false) else {
+            let Some(value) =
+                self.resolve_node(value, parent.field(name), cursor, false, owner, parent)
+            else {
                 complete = false;
                 continue;
             };
@@ -151,6 +170,8 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         node: ValueNode,
         parent: TraversalCursor,
         memoize: bool,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
     ) -> Option<CfdValue> {
         if let Some(cycle_start) = self.active.get(&node).copied() {
             self.push_cycle(cycle_start);
@@ -167,7 +188,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let diagnostic_start = self.diagnostics.len();
         self.active.insert(node.clone(), self.stack.len());
         self.stack.push(node.clone());
-        let resolved = self.resolve_value(value, &node, cursor);
+        let resolved = self.resolve_value(value, &node, cursor, owner, owner_node);
         self.stack.pop();
         self.active.remove(&node);
 
@@ -196,30 +217,49 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         value: &ValueDraft,
         node: &ValueNode,
         cursor: TraversalCursor,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
     ) -> Option<CfdValue> {
         match value {
             ValueDraft::Value(value) => Some(value.clone()),
             ValueDraft::OptionSome(value) => self
-                .resolve_value(value, node, cursor)
+                .resolve_value(value, node, cursor, owner, owner_node)
                 .map(|value| CfdValue::OptionSome(Box::new(value))),
             ValueDraft::FormattedString(value) => {
-                self.resolve_formatted_string(value, node, cursor)
+                self.resolve_formatted_string(value, node, cursor, owner, owner_node)
             }
-            ValueDraft::PendingRef {
-                expected_type: _,
-                key,
-            } => match RecordKey::new(key.clone()) {
-                Ok(key) => Some(CfdValue::Ref(key)),
-                Err(error) => {
-                    self.diagnostics.push(
-                        CfdDiagnostic::error(CfdErrorCode::TypeMismatch, error.to_string())
-                            .with_primary(Some(node.record), node.path.clone()),
-                    );
-                    None
+            ValueDraft::PendingRef { explicit_type, key } => {
+                if let Some(explicit) = explicit_type {
+                    if let Some(target) = self
+                        .schema
+                        .inheritance_root(explicit.as_str())
+                        .and_then(|root| self.record_by_domain_key.get(root))
+                        .and_then(|records| records.get(key.as_str()))
+                        .and_then(|id| self.drafts.get(id.index()))
+                    {
+                        if !self
+                            .schema
+                            .is_assignable(target.actual_type.as_str(), explicit.as_str())
+                        {
+                            // 非法引用保留记录与编辑入口，严格构建由引用诊断拒绝，不能静默放宽到字段父类型。
+                            self.reference_diagnostics.push(CfdDiagnostic::error(CfdErrorCode::RefTargetTypeMismatch, format!("reference actual type `{}` is not assignable to explicit `{explicit}`", target.actual_type)).with_primary(Some(node.record), node.path.clone()));
+                        }
+                    }
                 }
-            },
+                match RecordKey::new(key.clone()) {
+                    Ok(key) => Some(CfdValue::Ref(key)),
+                    Err(error) => {
+                        self.diagnostics.push(
+                            CfdDiagnostic::error(CfdErrorCode::TypeMismatch, error.to_string())
+                                .with_primary(Some(node.record), node.path.clone()),
+                        );
+                        None
+                    }
+                }
+            }
             ValueDraft::Object(record_draft) => {
-                let fields = self.resolve_fields(&record_draft.fields, node, cursor)?;
+                let fields =
+                    self.resolve_fields(&record_draft.fields, node, cursor, record_draft)?;
                 Some(CfdValue::Object(Box::new(CfdObject {
                     actual_type: record_draft.actual_type.clone(),
                     fields,
@@ -229,8 +269,14 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 let mut out = Vec::with_capacity(items.len());
                 let mut complete = true;
                 for (index, item) in items.iter().enumerate() {
-                    let Some(value) = self.resolve_node(item, node.index(index), cursor, false)
-                    else {
+                    let Some(value) = self.resolve_node(
+                        item,
+                        node.index(index),
+                        cursor,
+                        false,
+                        owner,
+                        owner_node,
+                    ) else {
                         complete = false;
                         continue;
                     };
@@ -239,7 +285,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 complete.then_some(CfdValue::Array(out))
             }
             ValueDraft::Dict(entries) => self
-                .resolve_dict_entries(entries, node, cursor)
+                .resolve_dict_entries(entries, node, cursor, owner, owner_node)
                 .map(CfdValue::Dict),
         }
     }
@@ -249,13 +295,16 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         value: &LoadedFormattedString,
         node: &ValueNode,
         cursor: TraversalCursor,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
     ) -> Option<CfdValue> {
         let mut rendered = String::new();
         for segment in &value.segments {
             match segment {
                 LoadedFormatSegment::Text(text) => rendered.push_str(text),
                 LoadedFormatSegment::Reference(reference) => {
-                    let resolved = self.resolve_format_reference(reference, node, cursor)?;
+                    let resolved =
+                        self.resolve_format_reference(reference, node, cursor, owner, owner_node)?;
                     match stringify_value(&resolved) {
                         Ok(text) => rendered.push_str(&text),
                         Err(message) => {
@@ -280,66 +329,62 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         reference: &LoadedFieldReference,
         node: &ValueNode,
         cursor: TraversalCursor,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
     ) -> Option<CfdValue> {
-        let owner = self.drafts.get(node.record.index())?;
-        let type_name = reference
-            .type_name
-            .as_deref()
-            .unwrap_or(owner.actual_type.as_str());
-        let expected_type = match TypeName::new(type_name) {
-            Ok(value) if self.schema.resolve_type(value.as_str()).is_some() => value,
-            Ok(value) => {
-                self.diagnostics.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::UnknownType,
-                        format!("unknown formatted string reference type `{value}`"),
-                    )
-                    .with_primary(Some(node.record), node.path.clone()),
-                );
-                return None;
-            }
-            Err(error) => {
-                self.diagnostics.push(
-                    CfdDiagnostic::error(CfdErrorCode::UnknownType, error.to_string())
-                        .with_primary(Some(node.record), node.path.clone()),
-                );
-                return None;
-            }
-        };
-        let record_id = if let Some(key) = &reference.key {
-            self.resolve_ref_target(&expected_type, key, node)?.0
+        let first = reference.path.first()?;
+        // self 绑定到实际包含模板的对象，集合和 Option 只传递所属对象，不重新绑定。
+        let (mut current_value, mut current_type) = if reference.key.is_none() {
+            self.resolve_owner_field(owner, owner_node, first, node, cursor)?
         } else {
-            node.record
+            let expected = reference
+                .type_name
+                .as_deref()
+                .unwrap_or(self.drafts.get(node.record.index())?.actual_type.as_str());
+            let expected = TypeName::new(expected).ok()?;
+            let (record, _) =
+                self.resolve_ref_target(&expected, reference.key.as_deref()?, node)?;
+            self.resolve_record_field(record, first, node, cursor)?
         };
-        let mut current_type = self
-            .drafts
-            .get(record_id.index())
-            .map(|record| CftValueType::Object(record.actual_type.clone()))?;
-        let mut current_record = Some(record_id);
-        let mut current_value = None;
-
-        for field_name in &reference.path {
-            let (value, field_type) = if let Some(record_id) = current_record.take() {
-                self.resolve_record_field(record_id, field_name, node, cursor)?
-            } else {
-                self.resolve_value_field(
-                    current_value.as_ref()?,
-                    &current_type,
-                    field_name,
-                    node,
-                    cursor,
-                )?
-            };
-            current_type = field_type;
-            current_record = match (&value, &current_type) {
-                (CfdValue::Ref(key), CftValueType::RecordRef(target_type)) => self
-                    .resolve_ref_target(target_type, key.as_str(), node)
-                    .map(|(record_id, _)| record_id),
-                _ => None,
-            };
-            current_value = Some(value);
+        for field in reference.path.iter().skip(1) {
+            let (value, value_type) =
+                self.resolve_value_field(&current_value, &current_type, field, node, cursor)?;
+            current_value = value;
+            current_type = value_type;
         }
-        current_value
+        Some(current_value)
+    }
+
+    fn resolve_owner_field(
+        &mut self,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
+        field_name: &str,
+        blame: &ValueNode,
+        cursor: TraversalCursor,
+    ) -> Option<(CfdValue, CftValueType)> {
+        // id 只属于顶层记录；data 即便位于记录内也没有虚拟身份。
+        if field_name == "id" && owner_node.path.segments.is_empty() {
+            return Some((CfdValue::String(owner.key.clone()), CftValueType::String));
+        }
+        let field = self
+            .schema
+            .full_fields(owner.actual_type.as_str())
+            .find(|field| field.name.as_str() == field_name);
+        let Some(field) = field else {
+            self.push_unknown_format_field(owner.actual_type.as_str(), field_name, blame);
+            return None;
+        };
+        let value = owner.fields.get(&field.name)?;
+        let resolved = self.resolve_node(
+            value,
+            owner_node.field(&field.name),
+            cursor,
+            true,
+            owner,
+            owner_node,
+        )?;
+        Some((resolved, field.value_type.clone()))
     }
 
     fn resolve_record_field(
@@ -349,23 +394,13 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<(CfdValue, CftValueType)> {
-        let record = self.drafts.get(record_id.index())?;
-        let field = self
-            .schema
-            .full_fields(record.actual_type.as_str())
-            .find(|field| field.name.as_str() == field_name);
-        let Some(field) = field else {
-            let actual_type = record.actual_type.clone();
-            self.push_unknown_format_field(actual_type.as_str(), field_name, node);
-            return None;
-        };
-        let value = record.fields.get(&field.name)?;
-        let target_node = ValueNode {
+        let drafts = self.drafts;
+        let owner = drafts.get(record_id.index())?;
+        let owner_node = ValueNode {
             record: record_id,
-            path: CfdPath::root().field(field_name),
+            path: CfdPath::root(),
         };
-        let resolved = self.resolve_node(value, target_node, cursor, true)?;
-        Some((resolved, field.value_type.clone()))
+        self.resolve_owner_field(owner, &owner_node, field_name, node, cursor)
     }
 
     fn resolve_value_field(
@@ -476,12 +511,16 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         entries: &[(CfdDictKey, ValueDraft)],
         node: &ValueNode,
         cursor: TraversalCursor,
+        owner: &RecordDraft,
+        owner_node: &ValueNode,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = Vec::with_capacity(entries.len());
         let mut complete = true;
         for (key, value) in entries {
-            let Some(value) = self.resolve_node(value, node.dict_key(key), cursor, false) else {
+            let Some(value) =
+                self.resolve_node(value, node.dict_key(key), cursor, false, owner, owner_node)
+            else {
                 complete = false;
                 continue;
             };

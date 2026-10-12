@@ -3,7 +3,7 @@
 
 namespace Game.Config
 {
-public struct CfdField
+public partial struct CfdField
 {
     public Empty settings { get; internal set; }
 }

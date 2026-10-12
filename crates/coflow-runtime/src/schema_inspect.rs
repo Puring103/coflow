@@ -22,6 +22,7 @@ pub struct SchemaFilesReport {
 #[derive(Debug, Clone, Serialize)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct SchemaTypeInfo {
+    pub kind: String,
     pub module: String,
     pub name: String,
     pub parent: Option<String>,
@@ -191,13 +192,21 @@ pub fn inspect_schema(
         .into_iter()
         .filter_map(|name| view.resolve_type(&name))
         .map(|ty| SchemaTypeInfo {
+            kind: if ty.is_data() {
+                "data"
+            } else if ty.is_table() {
+                "table"
+            } else {
+                "singleton"
+            }
+            .to_string(),
             module: ty.module.to_string(),
             name: ty.name.to_string(),
             parent: ty.parent.as_ref().map(ToString::to_string),
             is_abstract: ty.is_abstract,
             is_sealed: ty.is_sealed,
             is_struct: ty.is_struct,
-            is_singleton: ty.is_singleton,
+            is_singleton: ty.is_singleton(),
             id_as_enum: ty.id_as_enum.as_ref().map(ToString::to_string),
             fields: view
                 .resolve_type(&ty.name)

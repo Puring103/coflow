@@ -1,13 +1,15 @@
 @flag enum Flags { Read = 1, Write = 2 }
 const BASE_PRICE: int = 3;
-@struct sealed type Empty { hp: int = 9; }
-@struct sealed type CfdField { settings: Empty = {}; }
-@struct sealed type Stats { hp: int = 10; extra: CfdField = CfdField { settings: {} }; }
-abstract type Entity {
+@struct sealed data Empty { hp: int = 9; }
+@struct sealed data CfdField { settings: Empty = {}; }
+@struct sealed data Stats { hp: int = 10; extra: CfdField = CfdField { settings: {} }; }
+enum EntityId {}
+@idAsEnum(EntityId)
+abstract table Entity {
   @dimension("language")
   name: string;
 }
-type Item: Entity {
+table Item: Entity {
   stats: Stats;
   price: int = BASE_PRICE;
   next: Option<&Item> = None;
@@ -17,4 +19,4 @@ type Item: Entity {
   nums: [int];
   indexed: {string: int};
 }
-@singleton type Settings { start: &Item; }
+singleton Settings { start: &Item; }

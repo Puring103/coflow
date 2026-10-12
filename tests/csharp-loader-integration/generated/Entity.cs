@@ -3,10 +3,10 @@
 
 namespace Game.Config
 {
-public abstract class Entity
+public abstract partial class Entity
 {
-    public string? id { get; }
-    internal Entity(string? key) { id = key; }
+    public string id { get; }
+    internal Entity(string key) { id = key; }
     public global::Coflow.Loader.DimensionValue<string> name { get; internal set; } = default!;
 }
 }

@@ -127,7 +127,7 @@ fn parse_value(
         }
         CellType::String => parse_string(text).map(LoadedValueDraft::String),
         CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
-        CellType::Ref(type_name) => parse_ref(type_name, text),
+        CellType::Ref(type_name) => parse_ref(schema, type_name, text),
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
         CellType::Array(inner) => parse_array(schema, inner, text, context),
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),

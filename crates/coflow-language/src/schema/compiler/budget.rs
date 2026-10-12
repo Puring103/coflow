@@ -149,7 +149,7 @@ fn walk_value_type(
     while let Some((ty, parent)) = pending.pop() {
         let cursor = enter(budget, module, ty.span, parent, StructureKind::TypeRef)?;
         match &ty.kind {
-            TypeRefKind::Ref(inner) | TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
+            TypeRefKind::Array(inner) | TypeRefKind::Option(inner) | TypeRefKind::Ref(inner) => {
                 pending.push((inner, cursor));
             }
             TypeRefKind::Dict(key, value) => {

@@ -342,7 +342,7 @@ pub(crate) fn completion_with_build(
     // Top-level: suggest known non-abstract type names.
     let types: Vec<Value> = schema
         .all_types()
-        .filter(|t| !t.is_abstract)
+        .filter(|t| !t.is_abstract && !t.is_data())
         .map(|t| {
             let required = required_field_snippets(schema, &t.name, 2);
             let body = if required.is_empty() {
@@ -394,7 +394,7 @@ fn formatted_string_completion(
             paths.extend(
                 schema
                     .all_types()
-                    .filter(|ty| !ty.is_struct)
+                    .filter(|ty| ty.is_table())
                     .map(|ty| (format!("&{}::", ty.name), "record type".to_string())),
             );
         } else if let Some(field_path) = field_path {
@@ -463,7 +463,7 @@ fn formatted_string_completion(
         paths.extend(
             schema
                 .all_types()
-                .filter(|ty| !ty.is_struct)
+                .filter(|ty| ty.is_table())
                 .map(|ty| (format!("&{}::", ty.name), "record type".to_string())),
         );
     }
@@ -782,13 +782,7 @@ fn value_completion_items(
         CftValueType::Dict(_, _) => {
             vec![json!({ "label": "{}", "kind": 21, "detail": value_type.display_label() })]
         }
-        CftValueType::Object(name) => {
-            let mut items = object_value_completion_items(schema, name);
-            items.extend(record_reference_completion_items(
-                schema, name, build, false,
-            ));
-            items
-        }
+        CftValueType::Object(name) => object_value_completion_items(schema, name),
         CftValueType::Int
         | CftValueType::Float
         | CftValueType::String
@@ -1008,7 +1002,6 @@ fn value_placeholder(value_type: &CftValueType) -> String {
         CftValueType::Array(_) => "[]".to_string(),
         CftValueType::Dict(_, _) | CftValueType::Object(_) => "{}".to_string(),
         CftValueType::Option(_) => "None".to_string(),
-
     }
 }
 

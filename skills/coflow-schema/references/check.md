@@ -3,7 +3,7 @@
 check 为编辑器提供只读数据校验规则。CFT 定义规则，编辑器在已加载数据上执行并展示业务问题、计算诊断和完成状态。
 
 ```cft
-type Item {
+table Item {
   price: int;
   tags: [string];
   check {

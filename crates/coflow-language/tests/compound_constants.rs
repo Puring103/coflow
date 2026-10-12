@@ -17,8 +17,8 @@ fn resolves_schema_guided_compound_constants_and_references() {
     let schema = compile(
         r#"
 enum Mode { Primary = 1, Secondary = 2 }
-sealed type Stats { hp: int; mode: Mode; }
-type Item { name: string; }
+sealed data Stats { hp: int; mode: Mode; }
+table Item { name: string; }
 
 const BASE: int = 10;
 const VALUES: [int] = [BASE, 20];
@@ -92,7 +92,7 @@ fn infers_unambiguous_constant_types_and_rejects_dependency_cycles() {
 fn object_constants_apply_field_defaults_and_reject_missing_required_fields() {
     let schema = compile(
         r#"
-sealed type Stats { hp: int; attack: int = 3; }
+sealed data Stats { hp: int; attack: int = 3; }
 const DEFAULT_STATS: Stats = { hp: 10 };
 "#,
     )
@@ -105,7 +105,7 @@ const DEFAULT_STATS: Stats = { hp: 10 };
     ));
 
     let diagnostics = compile(
-        "sealed type Stats { hp: int; attack: int; } const DEFAULT_STATS: Stats = { hp: 10 };",
+        "sealed data Stats { hp: int; attack: int; } const DEFAULT_STATS: Stats = { hp: 10 };",
     )
     .expect_err("missing required object fields must fail during schema compilation");
     assert!(diagnostics

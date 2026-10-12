@@ -155,14 +155,6 @@ impl ValueLocation {
         }
     }
 
-    pub(crate) fn dict_key_value(&self, key: &CfdDictKey) -> Self {
-        Self {
-            storage: self.storage.dict_key_value(key),
-            blame: self.blame.dict_key_value(key),
-            references: self.references.clone(),
-        }
-    }
-
     pub(crate) fn dict_key(&self, key: impl Into<String>) -> Self {
         let key = key.into();
         Self {

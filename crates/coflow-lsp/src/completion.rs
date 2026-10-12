@@ -56,7 +56,13 @@ pub(crate) fn completion_items(
     }
 
     if is_annotation_completion_context(line_prefix) {
-        return annotation_completion_items(scope);
+        let mut items = annotation_completion_items(scope);
+        if current_type_at(build, document, offset).is_some_and(|ty| ty.is_data()) {
+            items.retain(|item| {
+                !matches!(item["label"].as_str(), Some("@dimension" | "@localized"))
+            });
+        }
+        return items;
     }
 
     if let Some(enum_name) = enum_name_before_double_colon(line_prefix) {
@@ -104,6 +110,10 @@ pub(crate) fn completion_items(
         return inheritable_type_completion_items(build, line_prefix);
     }
 
+    if line_prefix.trim_end().ends_with('&') {
+        return reference_target_completion_items(build);
+    }
+
     if is_const_type_context(line_prefix) || is_type_alias_target_context(line_prefix) {
         return type_completion_items(build);
     }
@@ -122,7 +132,11 @@ pub(crate) fn completion_items(
             if is_value_typeerence_context(line_prefix) {
                 return type_completion_items(build);
             }
-            type_member_completion_items()
+            let mut items = type_member_completion_items();
+            if current_type_at(build, document, offset).is_some_and(|ty| ty.is_data()) {
+                items.retain(|item| item["label"] != "check");
+            }
+            items
         }
         CompletionScope::CheckBlock => check_expression_completion_items(build, document, offset),
         CompletionScope::EnumBody => enum_member_completion_items(),
@@ -131,25 +145,32 @@ pub(crate) fn completion_items(
 
 pub(crate) fn top_level_completion_items(line_prefix: &str) -> Vec<Value> {
     if top_level_needs_type_keyword(line_prefix) {
-        return keyword_snippet_completion_item(
-            "type",
-            "type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
-        )
+        return [
+            ("table", "table ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+            ("data", "data ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        ]
         .into_iter()
+        .filter_map(|(label, snippet)| keyword_snippet_completion_item(label, snippet))
         .collect();
     }
 
     [
         ("const", "const ${1:NAME}: ${2:int} = ${3:value};"),
         ("enum", "enum ${1:Name} {\n\t${2:Variant},\n}"),
-        ("type", "type ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        ("type", "type ${1:Name} = ${2:string};"),
+        ("table", "table ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        ("data", "data ${1:Name} {\n\t${2:field}: ${3:string};\n}"),
+        (
+            "singleton",
+            "singleton ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+        ),
         (
             "abstract",
-            "abstract type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+            "abstract table ${1:Name} {\n\t${2:field}: ${3:string};\n}",
         ),
         (
             "sealed",
-            "sealed type ${1:Name} {\n\t${2:field}: ${3:string};\n}",
+            "sealed data ${1:Name} {\n\t${2:field}: ${3:string};\n}",
         ),
         ("check", "check ${1:Name} {\n\t${2:condition};\n}"),
     ]
@@ -442,6 +463,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 }));
             }
         }
+        TypeRefKind::Ref(_) => {}
         TypeRefKind::Array(_) => {
             items.push(completion_item(
                 "[]",
@@ -472,7 +494,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Option containing a value.",
             ));
         }
-        TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
 
@@ -549,6 +570,12 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     }
     items.extend([
         snippet_completion_item(
+            "reference",
+            "&${1:Type}",
+            "CFT record reference type",
+            "Reference a table record by key.",
+        ),
+        snippet_completion_item(
             "array",
             "[${1:string}]",
             "CFT array type",
@@ -560,17 +587,16 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             "CFT dictionary type",
             "Dictionary with key and value types.",
         ),
-        snippet_completion_item(
-            "reference",
-            "&${1:Type}",
-            "CFT record reference type",
-            "Reference a top-level record by key.",
-        ),
     ]);
     if let Some(container) = build.schema() {
-        for ty in container.all_types() {
+        for ty in container.all_types().filter(|ty| !ty.is_singleton()) {
+            let label = if ty.is_table() {
+                format!("&{}", ty.name)
+            } else {
+                ty.name.to_string()
+            };
             items.push(completion_item(
-                &ty.name,
+                &label,
                 COMPLETION_KIND_CLASS,
                 "CFT type",
                 None,
@@ -589,12 +615,24 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             if let Some(ast) = &document.ast {
                 for item in &ast.items {
                     match item {
-                        Item::Type(ty) => items.push(completion_item(
-                            &ty.name,
-                            COMPLETION_KIND_CLASS,
-                            "CFT type",
-                            None,
-                        )),
+                        Item::Type(ty)
+                            if ty.kind
+                                != coflow_language::cft::syntax::ast::TypeKind::Singleton =>
+                        {
+                            let label =
+                                if ty.kind == coflow_language::cft::syntax::ast::TypeKind::Table {
+                                    format!("&{}", ty.name)
+                                } else {
+                                    ty.name.clone()
+                                };
+                            items.push(completion_item(
+                                &label,
+                                COMPLETION_KIND_CLASS,
+                                "CFT type",
+                                None,
+                            ));
+                        }
+                        Item::Type(_) => {}
                         Item::Enum(enum_def) => items.push(completion_item(
                             &enum_def.name,
                             COMPLETION_KIND_ENUM,
@@ -611,10 +649,32 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     items
 }
 
+// & 后只补全 table 名称，避免重复插入引用标记或推荐内联类型。
+fn reference_target_completion_items(build: &LspBuild) -> Vec<Value> {
+    let mut items = Vec::new();
+    for document in build.documents.values() {
+        if let Some(ast) = &document.ast {
+            for item in &ast.items {
+                if let Item::Type(ty) = item {
+                    if ty.kind == coflow_language::cft::syntax::ast::TypeKind::Table {
+                        items.push(completion_item(
+                            &ty.name,
+                            COMPLETION_KIND_CLASS,
+                            "CFT reference target",
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    items
+}
+
 fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
     if let Some(container) = build.schema() {
-        for ty in container.all_types() {
+        for ty in container.all_types().filter(|ty| !ty.is_singleton()) {
             items.push(completion_item(
                 &ty.name,
                 COMPLETION_KIND_CLASS,
@@ -628,15 +688,24 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
 }
 
 fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
-    let current_name = line_prefix
-        .split_once("type")
-        .and_then(|(_, suffix)| suffix.split_whitespace().next());
+    let current_name = ["table", "data", "singleton"].iter().find_map(|keyword| {
+        line_prefix
+            .split_once(keyword)
+            .and_then(|(_, suffix)| suffix.split_whitespace().next())
+    });
     let Some(schema) = build.schema() else {
         return named_type_completion_items(build);
     };
     schema
         .all_types()
         .filter(|candidate| !candidate.is_sealed)
+        .filter(|candidate| {
+            if line_prefix.split_whitespace().any(|word| word == "data") {
+                candidate.is_data()
+            } else {
+                candidate.is_table()
+            }
+        })
         .filter(|candidate| current_name != Some(candidate.name.as_str()))
         .filter(|candidate| {
             current_name.is_none_or(|current| !type_descends_from(schema, &candidate.name, current))
@@ -850,7 +919,7 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match scope {
         CompletionScope::TopLevel => matches!(
             label,
-            "@struct" | "@flag" | "@idAsEnum" | "@singleton" | "@label" | "@description"
+            "@struct" | "@flag" | "@idAsEnum" | "@label" | "@description"
         ),
         CompletionScope::TypeBody => matches!(
             label,
@@ -907,7 +976,9 @@ fn inferred_completion_scope(document: &LspDocument, offset: usize) -> Option<Co
     for token in tokens {
         let current = *scopes.last()?;
         match token.kind {
-            TokenKind::Type if current == CompletionScope::TopLevel => {
+            TokenKind::Table | TokenKind::Data | TokenKind::Singleton
+                if current == CompletionScope::TopLevel =>
+            {
                 pending = Some(PendingBody::Type);
             }
             TokenKind::Enum if current == CompletionScope::TopLevel => {
@@ -976,7 +1047,12 @@ pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
         return false;
     };
     let before_colon = &line_prefix[..colon];
-    before_colon.contains("type")
+    if before_colon.contains(['{', '}', ';']) {
+        return false;
+    }
+    before_colon
+        .split_whitespace()
+        .any(|word| matches!(word, "table" | "data" | "singleton"))
 }
 
 pub(crate) fn is_value_typeerence_context(line_prefix: &str) -> bool {

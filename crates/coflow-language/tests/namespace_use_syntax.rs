@@ -10,9 +10,9 @@ use coflow_language::diagnostics::CftErrorCode;
 #[test]
 fn namespace_and_use_are_not_language_syntax() {
     for source in [
-        "namespace game; type Item {}",
-        "use common::Item; type Item {}",
-        "use common::Item as Imported; type Item {}",
+        "namespace game; table Item {}",
+        "use common::&Item; table Item {}",
+        "use common::&Item as Imported; table Item {}",
     ] {
         let diagnostics = parse_module(&ModuleId::from("invalid.cft"), source)
             .expect_err("removed declarations must be rejected");
@@ -28,11 +28,11 @@ fn declarations_are_project_global_across_files() {
     let modules = parse_modules([
         CftFile::from_source(
             ModuleId::from("common.cft"),
-            "type Position { x: int; } enum Quality { Good }",
+            "data Position { x: int; } enum Quality { Good }",
         ),
         CftFile::from_source(
             ModuleId::from("item.cft"),
-            "type Item { position: Position; quality: Quality = Quality::Good; }",
+            "table Item { position: Position; quality: Quality = Quality::Good; }",
         ),
     ]);
     let schema = build_schema(&modules).expect("short names should resolve across files");
@@ -50,8 +50,8 @@ fn declarations_are_project_global_across_files() {
 #[test]
 fn project_global_declarations_must_be_unique() {
     let modules = parse_modules([
-        CftFile::from_source(ModuleId::from("one.cft"), "type Item {}"),
-        CftFile::from_source(ModuleId::from("two.cft"), "type Item {}"),
+        CftFile::from_source(ModuleId::from("one.cft"), "table Item {}"),
+        CftFile::from_source(ModuleId::from("two.cft"), "table Item {}"),
     ]);
     let diagnostics = build_schema(&modules).expect_err("duplicate global name must fail");
     assert!(diagnostics
@@ -63,17 +63,17 @@ fn project_global_declarations_must_be_unique() {
 #[test]
 fn qualified_type_names_are_rejected_but_static_paths_remain_valid() {
     for source in [
-        "type Base {} type Item: group::Base {}",
-        "type Item { value: group::Value; }",
-        "type Item { check { self is group::Item; } }",
-        "type Item { value: Item = group::Item {}; }",
-        "type Item { value: &Item = &group::Item::key; }",
-        "enum Quality { Good } type Item { check { Quality::Group::Good; } }",
+        "table Base {} table Item: group::Base {}",
+        "table Item { value: group::Value; }",
+        "table Item { check { self is group::&Item; } }",
+        "data Item { value: Item = group::Item {}; }",
+        "table Item { value: &Item = &group::&Item::key; }",
+        "enum Quality { Good } table Item { check { Quality::Group::Good; } }",
     ] {
         assert!(parse_module(&ModuleId::from("invalid.cft"), source).is_err());
     }
 
-    let source = "enum Quality { Good } type Item { quality: Quality = Quality::Good; }";
+    let source = "enum Quality { Good } table Item { quality: Quality = Quality::Good; }";
     assert!(parse_module(&ModuleId::from("valid.cft"), source).is_ok());
 }
 

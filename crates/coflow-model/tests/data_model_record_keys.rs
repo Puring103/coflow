@@ -15,9 +15,9 @@ use common::*;
 fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     let schema = compile_schema(
         r"
-            abstract type Reward {}
-            type ItemReward : Reward { count: int; }
-            type Drop { reward: &Reward; }
+            abstract table Reward {}
+            table ItemReward : Reward { count: int; }
+            table Drop { reward: &Reward; }
         ",
     );
 
@@ -61,9 +61,9 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
 fn parent_records_cannot_satisfy_child_typed_refs() {
     let schema = compile_schema(
         r"
-            type Base { name: string; }
-            type Child : Base { power: int; }
-            type Holder { child: &Child; }
+            table Base { name: string; }
+            table Child : Base { power: int; }
+            table Holder { child: &Child; }
         ",
     );
 
@@ -85,8 +85,8 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
 fn object_typed_fields_do_not_accept_bare_string_refs() {
     let schema = compile_schema(
         r"
-            type Item { name: string; }
-            type Holder { item: Item; }
+            data Item { name: string; }
+            table Holder { item: Item; }
         ",
     );
 
@@ -112,9 +112,9 @@ fn object_typed_fields_do_not_accept_bare_string_refs() {
 fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     let schema = compile_schema(
         r"
-            abstract type Reward {}
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
+            abstract table Reward {}
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
         ",
     );
 
@@ -151,8 +151,8 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
 fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
     let schema = compile_schema(
         r"
-            type Item { value: int; }
-            type Skill { value: int; }
+            table Item { value: int; }
+            table Skill { value: int; }
         ",
     );
 
@@ -185,9 +185,9 @@ fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
 fn same_abstract_base_children_reject_duplicate_domain_keys() {
     let schema = compile_schema(
         r"
-            abstract type Reward {}
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
+            abstract table Reward {}
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
         ",
     );
 
@@ -213,8 +213,8 @@ fn same_abstract_base_children_reject_duplicate_domain_keys() {
 fn plain_parent_and_child_reject_duplicate_domain_keys() {
     let schema = compile_schema(
         r"
-            type Base { name: string; }
-            type Child : Base { power: int; }
+            table Base { name: string; }
+            table Child : Base { power: int; }
         ",
     );
 
@@ -239,9 +239,9 @@ fn plain_parent_and_child_reject_duplicate_domain_keys() {
 fn multi_level_inheritance_chain_rejects_duplicate_domain_keys() {
     let schema = compile_schema(
         r"
-            type Entity { name: string; }
-            type Reward : Entity { value: int; }
-            type ItemReward : Reward { count: int; }
+            table Entity { name: string; }
+            table Reward : Entity { value: int; }
+            table ItemReward : Reward { count: int; }
         ",
     );
 
@@ -271,9 +271,9 @@ fn multi_level_inheritance_chain_rejects_duplicate_domain_keys() {
 fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
     let schema = compile_schema(
         r"
-            type Reward { name: string; }
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
+            table Reward { name: string; }
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
         ",
     );
 
@@ -334,9 +334,9 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
 fn lookup_for_middle_type_does_not_return_ancestor_records() {
     let schema = compile_schema(
         r"
-            type Entity { name: string; }
-            type Reward : Entity { value: int; }
-            type ItemReward : Reward { count: int; }
+            table Entity { name: string; }
+            table Reward : Entity { value: int; }
+            table ItemReward : Reward { count: int; }
         ",
     );
 
@@ -370,9 +370,9 @@ fn lookup_for_middle_type_does_not_return_ancestor_records() {
 fn schema_exposes_type_ancestors_without_a_model_relation_copy() {
     let schema = compile_schema(
         r"
-            type Entity { name: string; }
-            type Reward : Entity { value: int; }
-            type ItemReward : Reward { count: int; }
+            table Entity { name: string; }
+            table Reward : Entity { value: int; }
+            table ItemReward : Reward { count: int; }
         ",
     );
 
@@ -394,10 +394,10 @@ fn schema_exposes_type_ancestors_without_a_model_relation_copy() {
 fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain() {
     let schema = compile_schema(
         r"
-            type Reward { name: string; }
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
-            type Holder { item: &ItemReward; }
+            table Reward { name: string; }
+            table ItemReward : Reward { count: int; }
+            table CurrencyReward : Reward { amount: int; }
+            table Holder { item: &ItemReward; }
         ",
     );
 

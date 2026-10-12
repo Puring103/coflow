@@ -13,14 +13,14 @@ fn compile(
 #[test]
 fn removed_result_and_unit_types_are_rejected_in_all_declaration_positions() {
     for source in [
-        "type Item { value: Result<int, string>; }",
-        "@struct sealed type Item { value: Result<int, string>; }",
-        "type Item { value: Option<Result<int, string>>; }",
-        "type Item { value: [Result<int, string>]; }",
-        "type Item { value: {string: Result<int, string>}; }",
-        "type Outcome = Result<int, string>; type Item { value: Outcome; }",
+        "table Item { value: Result<int, string>; }",
+        "@struct sealed data Item { value: Result<int, string>; }",
+        "table Item { value: Option<Result<int, string>>; }",
+        "table Item { value: [Result<int, string>]; }",
+        "table Item { value: {string: Result<int, string>}; }",
+        "type Outcome = Result<int, string>; table Item { value: Outcome; }",
         "const OUTCOME: Result<int, string> = Ok(1);",
-        "type Item { value: (); }",
+        "table Item { value: (); }",
         "type Empty = ();",
         "const EMPTY: () = ();",
     ] {
@@ -31,28 +31,31 @@ fn removed_result_and_unit_types_are_rejected_in_all_declaration_positions() {
 #[test]
 fn removed_result_constructors_are_rejected_in_defaults_and_constants() {
     for source in [
-        "type Item { value: int = Ok(1); }",
-        "type Item { value: string = Err(\"bad\"); }",
-        "type Item { value: Option<int> = Some(Ok(1)); }",
+        "table Item { value: int = Ok(1); }",
+        "table Item { value: string = Err(\"bad\"); }",
+        "table Item { value: Option<int> = Some(Ok(1)); }",
         "const OUTCOME = Ok(1);",
         "const OUTCOME = Err(\"bad\");",
     ] {
-        assert!(compile(source).is_err(), "removed constructor must fail: {source}");
+        assert!(
+            compile(source).is_err(),
+            "removed constructor must fail: {source}"
+        );
     }
 }
 
 #[test]
 fn former_result_names_are_ordinary_user_type_names() {
-    compile("type Result { value: int; } type Ok {} type Err {} type Item { value: Result; }")
+    compile("data Result { value: int; } table Ok {} table Err {} table Item { value: Result; }")
         .expect("removed built-in names can name business types");
 }
 
 #[test]
 fn required_object_cycles_are_rejected() {
     for source in [
-        "type Node { child: Node; }",
-        "type A { b: B; } type B { a: A; }",
-        "type Link = Node; type Node { child: Link; }",
+        "data Node { child: Node; }",
+        "data A { b: B; } data B { a: A; }",
+        "type Link = Node; data Node { child: Link; }",
     ] {
         let diagnostics = compile(source).expect_err("required object cycle must fail");
         assert!(diagnostics
@@ -66,10 +69,10 @@ fn required_object_cycles_are_rejected() {
 fn optional_collection_and_reference_recursion_are_finite() {
     compile(
         r#"
-            type Node {
-                optional: Option<Node>;
-                children: [Node];
-                indexed: {string: Node};
+            table Node {
+                optional: Option<&Node>;
+                children: [&Node];
+                indexed: {string: &Node};
                 linked: Option<&Node>;
             }
         "#,
@@ -80,12 +83,12 @@ fn optional_collection_and_reference_recursion_are_finite() {
 #[test]
 fn recursive_default_materialization_is_rejected() {
     for source in [
-        "type Node { child: Option<Node> = Some(Node {}); }",
-        "type Node { children: [Node] = [Node {}]; }",
-        "type Node { indexed: {string: Node} = { \"child\": Node {} }; }",
+        "data Node { child: Option<Node> = Some(Node {}); }",
+        "data Node { children: [Node] = [Node {}]; }",
+        "data Node { indexed: {string: Node} = { \"child\": Node {} }; }",
         concat!(
-            "type A { b: Option<B> = Some(B {}); } ",
-            "type B { a: Option<A> = Some(A {}); }"
+            "data A { b: Option<B> = Some(B {}); } ",
+            "data B { a: Option<A> = Some(A {}); }"
         ),
     ] {
         let diagnostics = compile(source).expect_err("recursive default must fail");
@@ -103,7 +106,7 @@ fn recursive_default_materialization_is_rejected() {
 fn terminating_recursive_defaults_are_allowed() {
     compile(
         r#"
-            type Node {
+            data Node {
                 optional: Option<Node> = None;
                 children: [Node] = [];
                 indexed: {string: Node} = {};
@@ -114,7 +117,7 @@ fn terminating_recursive_defaults_are_allowed() {
 
     compile(
         r#"
-            type Node {
+            data Node {
                 child: Option<Node> = Some(Node { child: None });
             }
         "#,

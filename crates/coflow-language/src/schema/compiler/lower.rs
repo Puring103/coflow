@@ -145,7 +145,6 @@ impl ValidatedSchema<'_> {
                 .enumerate()
                 .map(|(index, field)| (field.name.clone(), index))
                 .collect();
-            let is_singleton = has_annotation(&info.def.annotations, "singleton");
             let id_as_enum = find_annotation(&info.def.annotations, "idAsEnum")
                 .and_then(|annotation| annotation.args.first())
                 .and_then(|arg| match arg {
@@ -161,9 +160,10 @@ impl ValidatedSchema<'_> {
                     .as_ref()
                     .map(|parent| TypeName::from_validated(parent.name.clone())),
                 is_abstract: info.def.is_abstract,
-                is_sealed: info.def.is_sealed,
+                is_sealed: info.def.is_sealed
+                    || matches!(info.def.kind, crate::syntax::ast::TypeKind::Singleton),
                 is_struct: has_annotation(&info.def.annotations, "struct"),
-                is_singleton,
+                kind: info.def.kind,
                 id_as_enum,
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),

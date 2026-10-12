@@ -3,11 +3,8 @@ use crate::schema::AnalysisBudget;
 use crate::schema::{
     CheckDependency, CheckOwner, CheckStatementId, CheckStatementInfo, LocatedBudgetError,
 };
-use crate::{CftSchemaCheckStmt, CftTopLevelCheck, CftType, CftValueType, FieldName, TypeName};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-
-type NestedHosts = BTreeMap<TypeName, BTreeSet<TypeName>>;
-type NestedTypesByField = BTreeMap<(TypeName, FieldName), BTreeSet<TypeName>>;
+use crate::{CftSchemaCheckStmt, CftTopLevelCheck, CftType, TypeName};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub struct CheckStatementRef<'schema> {
@@ -22,9 +19,6 @@ pub(crate) struct CheckIndex {
     cross_record_dependencies: BTreeSet<(CheckStatementId, CheckDependency)>,
     by_actual_type: BTreeMap<TypeName, BTreeSet<CheckStatementId>>,
     owners_by_actual_type: BTreeMap<TypeName, Vec<TypeName>>,
-    nested_hosts_by_type: BTreeMap<TypeName, BTreeSet<TypeName>>,
-    nested_fields_by_actual: BTreeMap<TypeName, BTreeSet<FieldName>>,
-    nested_statements_by_actual_field: BTreeMap<(TypeName, FieldName), BTreeSet<CheckStatementId>>,
 }
 
 impl CheckIndex {
@@ -35,8 +29,6 @@ impl CheckIndex {
         budget: &mut AnalysisBudget,
     ) -> Result<Self, LocatedBudgetError> {
         let owners_by_actual_type = compile_owner_chains(types, budget)?;
-        let (nested_hosts_by_type, nested_types_by_actual_field) =
-            compile_nested_hosts(types, &owners_by_actual_type, budget)?;
 
         let mut roots = Vec::new();
         for ty in types.values() {
@@ -117,57 +109,16 @@ impl CheckIndex {
         let mut by_actual_type = BTreeMap::new();
         for actual_type in types.keys() {
             let mut ids = BTreeSet::new();
-            for contained_type in std::iter::once(actual_type).chain(
-                nested_hosts_by_type
-                    .iter()
-                    .filter(|(_, hosts)| hosts.contains(actual_type))
-                    .map(|(nested, _)| nested),
-            ) {
-                for owner in owners_by_actual_type
-                    .get(contained_type)
-                    .into_iter()
-                    .flatten()
-                {
-                    ids.extend(
-                        by_owner
-                            .get(&CheckOwner::Type(owner.clone()))
-                            .into_iter()
-                            .flatten()
-                            .copied(),
-                    );
-                }
+            for owner in owners_by_actual_type.get(actual_type).into_iter().flatten() {
+                ids.extend(
+                    by_owner
+                        .get(&CheckOwner::Type(owner.clone()))
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
             }
             by_actual_type.insert(actual_type.clone(), ids);
-        }
-
-        let mut nested_statements_by_actual_field = BTreeMap::new();
-        for (key, nested_types) in nested_types_by_actual_field {
-            let mut ids = BTreeSet::new();
-            for nested_type in nested_types {
-                for owner in owners_by_actual_type
-                    .get(&nested_type)
-                    .into_iter()
-                    .flatten()
-                {
-                    ids.extend(
-                        by_owner
-                            .get(&CheckOwner::Type(owner.clone()))
-                            .into_iter()
-                            .flatten()
-                            .copied(),
-                    );
-                }
-            }
-            if !ids.is_empty() {
-                nested_statements_by_actual_field.insert(key, ids);
-            }
-        }
-        let mut nested_fields_by_actual = BTreeMap::<TypeName, BTreeSet<FieldName>>::new();
-        for (actual_type, field) in nested_statements_by_actual_field.keys() {
-            nested_fields_by_actual
-                .entry(actual_type.clone())
-                .or_default()
-                .insert(field.clone());
         }
 
         Ok(Self {
@@ -176,9 +127,6 @@ impl CheckIndex {
             cross_record_dependencies,
             by_actual_type,
             owners_by_actual_type,
-            nested_hosts_by_type,
-            nested_fields_by_actual,
-            nested_statements_by_actual_field,
         })
     }
 
@@ -219,37 +167,6 @@ impl CheckIndex {
             .flat_map(|ids| ids.iter().copied())
     }
 
-    pub(in crate::schema) fn hosts_for_nested_type(
-        &self,
-        nested_type: &str,
-    ) -> impl Iterator<Item = &TypeName> {
-        self.nested_hosts_by_type
-            .get(nested_type)
-            .into_iter()
-            .flat_map(BTreeSet::iter)
-    }
-
-    pub(in crate::schema) fn for_nested_field(
-        &self,
-        actual_type: &TypeName,
-        field_name: &FieldName,
-    ) -> impl Iterator<Item = CheckStatementId> + '_ {
-        self.nested_statements_by_actual_field
-            .get(&(actual_type.clone(), field_name.clone()))
-            .into_iter()
-            .flat_map(|ids| ids.iter().copied())
-    }
-
-    pub(in crate::schema) fn field_has_nested_checks(
-        &self,
-        actual_type: &str,
-        field_name: &str,
-    ) -> bool {
-        self.nested_fields_by_actual
-            .get(actual_type)
-            .is_some_and(|fields| fields.contains(field_name))
-    }
-
     pub(in crate::schema) fn owner_applies_to_actual(&self, owner: &str, actual: &str) -> bool {
         self.owners_by_actual_type
             .get(actual)
@@ -277,100 +194,6 @@ fn compile_owner_chains(
         result.insert(actual_type.clone(), owners);
     }
     Ok(result)
-}
-
-fn compile_nested_hosts(
-    types: &BTreeMap<TypeName, CftType>,
-    owners: &BTreeMap<TypeName, Vec<TypeName>>,
-    budget: &mut AnalysisBudget,
-) -> Result<(NestedHosts, NestedTypesByField), LocatedBudgetError> {
-    let mut direct = BTreeMap::<TypeName, Vec<(FieldName, TypeName)>>::new();
-    for (host, meta) in types {
-        for field in &meta.all_fields {
-            if let Some(target) = nested_type_target(&field.value_type) {
-                direct
-                    .entry(host.clone())
-                    .or_default()
-                    .push((field.name.clone(), target.clone()));
-            }
-        }
-    }
-
-    let has_checks = |actual: &TypeName| {
-        owners.get(actual).into_iter().flatten().any(|owner| {
-            types.get(owner).is_some_and(|meta| {
-                meta.check
-                    .as_ref()
-                    .is_some_and(|block| !block.stmts.is_empty())
-            })
-        })
-    };
-    let mut hosts_by_nested = BTreeMap::<TypeName, BTreeSet<TypeName>>::new();
-    let mut nested_types_by_field = BTreeMap::<(TypeName, FieldName), BTreeSet<TypeName>>::new();
-    for host in types.keys() {
-        if let Some(edges) = direct.get(host) {
-            for (field, target) in edges {
-                let mut seen = BTreeSet::new();
-                let mut queue = types
-                    .keys()
-                    .filter(|candidate| {
-                        owners
-                            .get(*candidate)
-                            .is_some_and(|chain| chain.contains(target))
-                    })
-                    .cloned()
-                    .map(|nested| (nested, 1_usize))
-                    .collect::<VecDeque<_>>();
-                while let Some((nested, depth)) = queue.pop_front() {
-                    if !seen.insert(nested.clone()) {
-                        continue;
-                    }
-                    let Some(meta) = types.get(host) else {
-                        continue;
-                    };
-                    charge(budget, meta, depth)?;
-                    hosts_by_nested
-                        .entry(nested.clone())
-                        .or_default()
-                        .insert(host.clone());
-                    if let Some(nested_edges) = direct.get(&nested) {
-                        for (_, nested_target) in nested_edges {
-                            queue.extend(
-                                types
-                                    .keys()
-                                    .filter(|candidate| {
-                                        owners
-                                            .get(*candidate)
-                                            .is_some_and(|chain| chain.contains(nested_target))
-                                    })
-                                    .cloned()
-                                    .map(|candidate| (candidate, depth.saturating_add(1))),
-                            );
-                        }
-                    }
-                }
-                if seen.iter().any(&has_checks) {
-                    nested_types_by_field.insert((host.clone(), field.clone()), seen);
-                }
-            }
-        }
-    }
-    Ok((hosts_by_nested, nested_types_by_field))
-}
-
-fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
-    match ty {
-        CftValueType::Object(name) => Some(name),
-        CftValueType::Array(inner) | CftValueType::Option(inner) => nested_type_target(inner),
-        CftValueType::Dict(_, value) => nested_type_target(value),
-        CftValueType::Int
-        | CftValueType::Float
-        | CftValueType::Bool
-        | CftValueType::String
-        | CftValueType::FormattedString
-        | CftValueType::Enum(_)
-        | CftValueType::RecordRef(_) => None,
-    }
 }
 
 fn charge(
@@ -404,7 +227,7 @@ mod tests {
     fn dependency_index_compilation_obeys_the_schema_budget() {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "type Part { value: int; check { value > 0; } } type Item { part: Part; }",
+            "data Part { value: int; } table Item { part: Part; check { part.value > 0; } }",
         )]);
         let schema = build_schema(&modules).expect("schema");
         let mut budget = AnalysisBudget::new(StructuralLimits::new(1, 1, 1));

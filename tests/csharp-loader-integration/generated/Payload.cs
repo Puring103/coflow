@@ -3,10 +3,9 @@
 
 namespace Game.Config
 {
-public class Payload
+public partial class Payload
 {
-    public string? id { get; }
-    internal Payload(string? key) { id = key; }
+    internal Payload() { }
     public bool enabled { get; internal set; } = default!;
     public long score { get; internal set; } = default!;
 }

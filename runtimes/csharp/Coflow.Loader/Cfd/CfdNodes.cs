@@ -162,8 +162,10 @@ internal sealed class CfdBitExpression
     {
         Kind = kind;
         Span = span;
+        Depth = kind is CfdBitExpressionKind.Binary binary ? 1 + Math.Max(binary.Left.Depth, binary.Right.Depth) : 1;
     }
 
+    internal int Depth { get; }
     public CfdBitExpressionKind Kind { get; }
     public CfdSpan Span { get; }
 

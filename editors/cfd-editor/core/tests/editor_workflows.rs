@@ -41,7 +41,7 @@ fn configured_external_sources_can_be_opened() {
     .expect("write project config");
     let schema_path = shared_root.join("schema.cft");
     let data_path = shared_root.join("items.cfd");
-    fs::write(&schema_path, "type Item { value: int; }\n").expect("write external schema");
+    fs::write(&schema_path, "table Item { value: int; }\n").expect("write external schema");
     fs::write(&data_path, "one: Item { value: 1 }\n").expect("write external data");
 
     let sessions = SessionStore::new().expect("create session store");
@@ -128,10 +128,10 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
         root.join("schema.cft"),
         concat!(
             "enum Element { Fire, Ice, }\n",
-            "type Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
-            "type Stats { label: string = \"default\"; health: int = 100; ",
+            "data Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
+            "data Stats { label: string = \"default\"; health: int = 100; ",
             "resistances: {Element: float} = {}; combat: Combat = Combat {}; }\n",
-            "type Unit { stats: Stats = Stats {}; }\n",
+            "table Unit { stats: Stats = Stats {}; }\n",
         ),
     )
     .expect("write nested-default schema");
@@ -171,10 +171,10 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     fs::write(
         root.join("schema.cft"),
         concat!(
-            "abstract type Reward { label: string; }\n",
-            "type ItemReward : Reward { count: int; tags: [string]; }\n",
-            "type CurrencyReward : Reward { amount: int; }\n",
-            "type Holder { reward: Option<Reward>; note: Option<string>; }\n",
+            "abstract data Reward { label: string; }\n",
+            "data ItemReward : Reward { count: int; tags: [string]; }\n",
+            "data CurrencyReward : Reward { amount: int; }\n",
+            "table Holder { reward: Option<Reward>; note: Option<string>; }\n",
         ),
     )
     .expect("write inheritance schema");
@@ -218,7 +218,7 @@ fn string_defaults_project() -> PathBuf {
     fs::write(
         root.join("schema.cft"),
         concat!(
-            "type Rule {\n",
+            "table Rule {\n",
             "  name: string = \"base\";\n",
             "  label: fstring = f\"rule {self.name}\";\n",
             "}\n",
@@ -251,8 +251,8 @@ fn repairable_invalid_project() -> PathBuf {
         root.join("schema.cft"),
         concat!(
             "enum Rarity { Common, Rare }\n",
-            "type Target { label: string; }\n",
-            "type Item {\n",
+            "table Target { label: string; }\n",
+            "table Item {\n",
             "  name: string;\n",
             "  note: Option<string>;\n",
             "  count: int = 7;\n",
@@ -297,12 +297,26 @@ fn cyclic_reference_project() -> PathBuf {
     .expect("write cyclic-reference project config");
     fs::write(
         root.join("schema.cft"),
-        "type Quest { prerequisite: Option<&Quest> = None; }\n",
+        "table Quest { prerequisite: Option<&Quest> = None; }\n",
     )
     .expect("write cyclic-reference schema");
     fs::write(root.join("data/quests.cfd"), "advanced: Quest {}\n")
         .expect("write cyclic-reference data");
     root
+}
+
+fn record_default(store: &SessionStore, session: u32, name: &str) -> CfdValue {
+    let draft = store
+        .create_record_draft(session, name)
+        .expect("record draft");
+    let fields = draft
+        .fields
+        .into_iter()
+        .filter_map(|field| field.value.map(|value| (field.name, value)))
+        .collect();
+    CfdValue::Object(Box::new(
+        CfdObject::try_new(name, fields).expect("typed draft"),
+    ))
 }
 
 fn field(name: &str) -> CfdPathSegment {
@@ -314,7 +328,7 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
     let (root, data_file) = array_project();
     fs::write(
         root.join("schema.cft"),
-        "type Item { name: string; title: string = \"\"; count: int = 1; }\n",
+        "table Item { name: string; title: string = \"\"; count: int = 1; }\n",
     )
     .expect("write schema");
     fs::write(
@@ -505,6 +519,7 @@ fn repository_projects_open_in_editor() {
             "editor-project",
             repository_root.join("tests/editor-project/coflow.yaml"),
         ),
+        ("new", repository_root.join("examples/new/coflow.yaml")),
     ] {
         let store = SessionStore::new().expect("create editor session store");
         let snapshot = store.load_project(&config).unwrap_or_else(|error| {
@@ -548,46 +563,20 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     let empty_types = snapshot
         .file_types
         .get("data/empty.cfd")
-        .expect("empty file type navigation");
-    assert!(empty_types.iter().any(|ty| ty.name == "ItemReward"));
-    assert!(empty_types.iter().any(|ty| ty.name == "CurrencyReward"));
-    assert!(!empty_types.iter().any(|ty| ty.name == "Reward"));
-    let empty_records = store
-        .get_file_records(session_id, "data/empty.cfd")
-        .expect("empty file records");
-    assert!(empty_records
-        .type_names
-        .iter()
-        .any(|name| name == "ItemReward"));
-    assert!(empty_records
-        .type_names
-        .iter()
-        .any(|name| name == "CurrencyReward"));
-    assert!(!empty_records.type_names.iter().any(|name| name == "Reward"));
-
-    let draft = store
-        .create_record_draft(session_id, "ItemReward")
-        .expect("create concrete child draft");
-    assert_eq!(
-        draft
-            .fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect::<Vec<_>>(),
-        ["label", "count", "tags"]
-    );
-    let new_reward = store
-        .make_default_object(session_id, "ItemReward")
-        .expect("materialize concrete child defaults");
+        .expect("empty types");
+    assert!(empty_types.iter().any(|ty| ty.name == "Holder"));
+    assert!(!empty_types.iter().any(|ty| ty.name == "ItemReward"));
+    assert!(store.create_record_draft(session_id, "ItemReward").is_err());
+    let new_holder = record_default(&store, session_id, "Holder");
     store
         .insert_record(
             session_id,
             "data/empty.cfd",
-            "new_reward",
-            "ItemReward",
-            new_reward,
+            "new_holder",
+            "Holder",
+            new_holder,
         )
-        .expect("insert concrete child into empty file");
+        .expect("insert table into empty file");
 
     let records = store
         .get_file_records(session_id, "data/rewards.cfd")
@@ -657,7 +646,7 @@ fn assert_inheritance_edits(store: &SessionStore, session_id: u32, root: &Path, 
     let empty_source =
         fs::read_to_string(root.join("data/empty.cfd")).expect("read formerly empty source");
     assert!(
-        empty_source.contains("new_reward: ItemReward"),
+        empty_source.contains("new_holder: Holder"),
         "{empty_source}"
     );
 }
@@ -686,9 +675,7 @@ fn array_editor_mutations_round_trip_through_reload() {
         .rename_record_key(session_id, &original, "featured_tags_v2")
         .expect("rename grouped record")
         .renamed;
-    let draft = store
-        .make_default_object(session_id, "ArrayExample")
-        .expect("create default array record");
+    let draft = record_default(&store, session_id, "ArrayExample");
     store
         .insert_record(session_id, file_path, "empty_array", "ArrayExample", draft)
         .expect("insert array record");
@@ -976,7 +963,7 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
         .expect("open live schema");
     for path in ["schema.cft", "deleted.cft"] {
         let tokens = store
-            .highlight_source_snapshot(project.session_id, path, "type Old { value: int; }\n")
+            .highlight_source_snapshot(project.session_id, path, "table Old { value: int; }\n")
             .expect("highlight CFT snapshot");
         assert!(!tokens.semantic_token_data.is_empty(), "{path}");
     }
@@ -1226,9 +1213,7 @@ fn cft_string_defaults_are_supported_through_the_editor_backend() {
     );
     assert!(document.syntax_valid);
     assert!(!document.semantic_token_data.is_empty());
-    let value = store
-        .make_default_object(snapshot.session_id, "Rule")
-        .expect("materialize defaults");
+    let value = record_default(&store, snapshot.session_id, "Rule");
     let CfdValue::Object(rule) = value else {
         panic!("expected Rule object")
     };
@@ -1250,7 +1235,7 @@ fn cft_source_is_visible_editable_and_validated() {
     let source = store
         .read_source_text(snapshot.session_id, file_path)
         .expect("read configured CFT source");
-    assert!(source.contains("type ArrayExample"));
+    assert!(source.contains("table ArrayExample"));
 
     let invalid = source.replace("[string]", "MissingType");
     let diagnostics = store
@@ -1268,7 +1253,7 @@ fn cft_source_is_visible_editable_and_validated() {
     assert!(formatted.text.contains("  tags:"), "{}", formatted.text);
     assert!(!formatted.edits.is_empty());
     let source_with_added_type = format!(
-        "{}\n\ntype AddedFromSourceEditor {{\n  value: string;\n}}\n",
+        "{}\n\ntable AddedFromSourceEditor {{\n  value: string;\n}}\n",
         formatted.text.trim_end()
     );
     let saved = store
@@ -1286,7 +1271,7 @@ fn cft_source_is_visible_editable_and_validated() {
         .flatten()
         .any(|option| { option.name == "AddedFromSourceEditor" }));
 
-    let invalid_syntax = source.replacen("type ArrayExample {", "type ArrayExample", 1);
+    let invalid_syntax = source.replacen("table ArrayExample {", "type ArrayExample", 1);
     let invalid_formatting = store
         .format_language_document(snapshot.session_id, file_path, &invalid_syntax, 2)
         .expect("ignore formatting for invalid CFT");
@@ -1299,7 +1284,7 @@ fn editor_check_command_runs_rules_while_build_only_generates_data_types() {
     let (root, data_file) = array_project();
     fs::write(
         root.join("schema.cft"),
-        "type Item { name: string; check { false : \"editor business issue\"; } }",
+        "table Item { name: string; check { false : \"editor business issue\"; } }",
     )
     .expect("schema");
     fs::write(data_file, "item: Item { name: \"Item\" }").expect("data");
@@ -1310,4 +1295,96 @@ fn editor_check_command_runs_rules_while_build_only_generates_data_types() {
     assert!(sessions.check_project(bootstrap.session_id).is_err());
     assert!(sessions.build_project(bootstrap.session_id).is_ok());
     fs::remove_dir_all(root).expect("remove project");
+}
+
+#[test]
+fn cell_templates_and_explicit_reference_constraints_survive_reload() {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("cfd-editor-template-owner-{id}"));
+    fs::create_dir_all(root.join("data")).expect("create project");
+    fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated\n",
+    )
+    .expect("config");
+    fs::write(root.join("schema.cft"), r#"
+        data Payload { score: int; label: fstring = f"{self.score}"; labels: [fstring] = []; optional: Option<fstring> = None; }
+        table Node { label: fstring = f"{self.id}"; }
+        table Child: Node {}
+        table Entry { payload: Payload; target: &Node; }
+    "#).expect("schema");
+    fs::write(root.join("data/main.cfd"), "base: Node {} child: Child {} entry: Entry { payload: Payload { score: 7 }, target: &base }").expect("data");
+    let store = SessionStore::new().expect("store");
+    let session = store.load_project(&root.join("coflow.yaml")).expect("load");
+    assert!(session.diagnostics.is_empty(), "{:?}", session.diagnostics);
+    let coordinate = RecordCoordinate::try_new("Entry", "entry").expect("coordinate");
+    for (name, text) in [
+        ("label", r#"f"value {self.score}""#),
+        (
+            "labels",
+            r#"[f"first {self.score}" | f"second {self.score}"]"#,
+        ),
+        ("optional", r#"Some(f"maybe {self.score}")"#),
+    ] {
+        let path = [field("payload"), field(name)];
+        let value = store
+            .parse_cell_text(session.session_id, &coordinate, &path, text)
+            .expect("parse nested template");
+        store
+            .write_field(session.session_id, &coordinate, &path, &value)
+            .expect("write template");
+    }
+    assert!(store
+        .parse_cell_text(
+            session.session_id,
+            &coordinate,
+            &[field("target")],
+            "&Child::base"
+        )
+        .is_err());
+    let typed = store
+        .parse_cell_text(
+            session.session_id,
+            &coordinate,
+            &[field("target")],
+            "&Child::child",
+        )
+        .expect("correct subtype reference");
+    store
+        .write_field(session.session_id, &coordinate, &[field("target")], &typed)
+        .expect("write typed reference");
+    let snapshot = store.reload_session(session.session_id).expect("reload");
+    assert!(
+        snapshot.diagnostics.is_empty(),
+        "{:?}",
+        snapshot.diagnostics
+    );
+    let rows = store
+        .get_file_records(session.session_id, "data/main.cfd")
+        .expect("rows");
+    let row = rows
+        .records
+        .iter()
+        .find(|row| row.coordinate == coordinate)
+        .expect("entry");
+    let CfdValue::Object(payload) = &row
+        .fields
+        .iter()
+        .find(|cell| cell.name == "payload")
+        .expect("payload")
+        .value
+    else {
+        panic!("object");
+    };
+    assert!(
+        matches!(payload.field("label"), Some(CfdValue::FormattedString(value)) if value.rendered == "value 7")
+    );
+    let Some(CfdValue::Array(labels)) = payload.field("labels") else {
+        panic!("labels");
+    };
+    assert!(matches!(&labels[0], CfdValue::FormattedString(value) if value.rendered == "first 7"));
+    assert!(
+        matches!(payload.field("optional"), Some(CfdValue::OptionSome(value)) if matches!(&**value, CfdValue::FormattedString(text) if text.rendered == "maybe 7"))
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
 }

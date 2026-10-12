@@ -21,6 +21,14 @@ public sealed class ParserParityTests
         }
     }
 
+    [Fact]
+    public void UnparenthesizedBitExpressionChainsHaveABoundedDepth()
+    {
+        var source = string.Join(" | ", System.Linq.Enumerable.Repeat("Read", 300));
+        var error = Assert.Throws<CfdParseException>(() => CfdParser.ParseValue(new CfdSource("chain.cfd", source)));
+        Assert.Equal("CFD-LIMIT", error.Diagnostics[0].Code);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

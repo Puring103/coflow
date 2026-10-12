@@ -22,6 +22,11 @@ pub enum LoadedValueDraft {
         fields: BTreeMap<String, LoadedValueDraft>,
     },
     RecordRef(String),
+    /// 显式 &Type::key 保留目标类型限定，不能在降低阶段只剩 key。
+    TypedRecordRef {
+        type_name: String,
+        key: String,
+    },
     Array(Vec<LoadedValueDraft>),
     Dict(Vec<(LoadedDictKeyDraft, LoadedValueDraft)>),
 }

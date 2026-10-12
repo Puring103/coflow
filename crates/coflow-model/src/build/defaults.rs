@@ -188,7 +188,7 @@ impl Validator<'_, '_> {
                     return None;
                 }
                 return Some(ValueDraft::PendingRef {
-                    expected_type: expected.clone(),
+                    explicit_type: Some(type_name.clone()),
                     key: key.clone(),
                 });
             }

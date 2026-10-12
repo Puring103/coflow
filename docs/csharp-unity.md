@@ -1,7 +1,6 @@
 # C# 数据加载
 
-`Coflow.Loader` 支持 netstandard2.1 和 net8.0。应用引用加载器程序集和生成的 C# 源码，提供自己选择的 CFD 文件内容。
-C# 不读取 CFT，不执行 check，不需要原生插件或运行时契约文件。
+Coflow.Loader 支持 netstandard2.1、net8.0 与 Unity 2022+。应用引用加载器和生成源码，自行选择互相引用的一组 CFD 文件并提供逻辑路径与文本。
 
 ```csharp
 using Coflow.Loader;
@@ -16,25 +15,19 @@ if (!result.Success) {
         System.Console.WriteLine(diagnostic);
     return;
 }
-
 var data = result.Data;
-var sword = data.Item["sword"];
+var items = data.Table<Item>();
+var sword = items["sword"];
+var settings = data.Singleton<Settings>();
 var name = sword.name.For("ja");
 ```
 
-逻辑文件路径用于诊断定位。文件选择与读取由调用方负责；互相引用的记录应当放在同一次加载中。
+Table<T>() 返回只读表，提供索引、TryGetValue、ContainsKey、Count、Keys、Values 与遍历。父表包含子类型记录，字段引用与记录表共享对象身份。Singleton<T>() 获取唯一配置；data 不注册记录表。
 
-普通 type 的内联值与记录均生成 class；内联对象的 `id` 为 null，记录的 `id` 为 CFD key。
-`@struct` 类型的内联值生成结构体，顶层记录与 `&Type` 使用 `TypeRecord` 类；继承字段保留在结构体与身份类中。
-引用保留记录对象身份，可形成环。生成入口保存全部类型的记录表和 singleton；继承表与引用共享对象。
+@idAsEnum 的对应表生成 Get(enum) 与 TryGet(enum, out record) 强类型扩展，显式映射枚举到 CFD key，编号保持稳定。未知 key 的 Get 抛出异常，TryGet 返回 false。
 
-`int` 生成 `long`，`float` 生成有限 `double`。`Option<T>` 使用 `IsSome`、`IsNone`、`Value`，嵌套可选保留 None、Some(None) 与 Some(Some(value)) 的区别。读取 None 的 Value 抛出异常。
+table、singleton 和默认 data 生成 partial class，sealed/abstract/继承约束保留；@struct sealed data 生成 partial struct。struct data 使用封闭的值类型，无 class 基类。扩展文件与生成类型必须在同一 namespace 和程序集。
 
-维度字段为 `DimensionValue<T>`，包含 `Default`、`For(variant)` 和 `Variants`。
-未覆盖字段及未知变体回退到默认值，显式 `None` 覆盖保持为空。一次加载可读取多个变体。
+int/float 使用 long/double，Option<T> 提供 IsSome、IsNone、Value，并保留嵌套层。维度字段使用 DimensionValue<T>.Default、For、Variants，未覆盖和未知变体使用基础值，显式 None 保留为空。
 
-格式化字符串使用 `f"..."`，只允许字段路径插值、基础值转文本及花括号转义。
-模板在加载阶段求值；循环依赖或不合法路径生成带来源的加载诊断。普通字符串保留花括号原文。
-
-加载结束后只保留生成类型组成的数据；解析树和构建缓存随加载过程结束释放。
-详细构造协议见 [加载器设计](language-design/02-api-runtime-design.zh-CN.md)。
+fstring 在加载时按字段路径生成文本，普通字符串保持原文。加载结果只保留业务数据；解析材料释放。构造和注册契约见 [加载器设计](language-design/02-api-runtime-design.zh-CN.md)。

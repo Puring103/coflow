@@ -1,1 +1,8 @@
-a: ContractShape { count: 9223372036854775808 }
+a: ContractNode {}
+entry: ContractEntry {
+  payload: ContractPayload { score: 9223372036854775808 },
+  shape: ContractShape {},
+  polymorphic: ContractChild { name: "child", score: 7 },
+  child: ContractChild { name: "value", score: 8 },
+  target: &ContractNode::a,
+}

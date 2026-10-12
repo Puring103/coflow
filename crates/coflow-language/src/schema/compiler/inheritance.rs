@@ -115,7 +115,9 @@ impl<'a> ResolvedTypes<'a> {
             if let Some(parent) = &info.def.parent {
                 let parent_name = parent.name.clone();
                 if let Some(parent_info) = self.types.get(&parent_name) {
-                    if parent_info.def.is_sealed {
+                    if parent_info.def.is_sealed
+                        || parent_info.def.kind == crate::syntax::ast::TypeKind::Singleton
+                    {
                         self.diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::InheritSealedType,

@@ -7,6 +7,6 @@ enum Rarity {
   sda
 }
 
-type EnumExample {
+table EnumExample {
   rarity: Rarity;
 }

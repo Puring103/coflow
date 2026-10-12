@@ -481,7 +481,17 @@ fn lower_object(
     match value {
         CfdValue::Block(block) => {
             let (actual_type, declared) = if let Some((actual_type, span)) = &block.type_marker {
-                validate_actual_type(schema, expected_type, actual_type, *span)?;
+                if !schema
+                    .resolve_type(actual_type)
+                    .is_some_and(|ty| ty.is_data())
+                    || !schema.is_assignable(actual_type, expected_type)
+                {
+                    return Err(error(
+                        CfdTextErrorCode::ObjectTypeMismatch,
+                        "inline value requires assignable data",
+                        *span,
+                    ));
+                }
                 (actual_type.clone(), false)
             } else {
                 (expected_type.to_string(), true)
@@ -532,7 +542,14 @@ fn lower_ref(
         validate_actual_type(schema, expected_type, type_name, *span)?;
     }
     validate_record_key(&reference.key.0, reference.key.1)?;
-    Ok(LoadedValueDraft::record_ref(reference.key.0.clone()))
+    Ok(if let Some((type_name, _)) = &reference.type_name {
+        LoadedValueDraft::TypedRecordRef {
+            type_name: type_name.clone(),
+            key: reference.key.0.clone(),
+        }
+    } else {
+        LoadedValueDraft::record_ref(reference.key.0.clone())
+    })
 }
 
 fn lower_array(
@@ -676,7 +693,10 @@ fn validate_group_type(
     type_name: &str,
     span: Span,
 ) -> Result<(), CfdTextDiagnostics> {
-    if schema.resolve_type(type_name).is_some() {
+    if schema
+        .resolve_type(type_name)
+        .is_some_and(|ty| ty.is_table())
+    {
         Ok(())
     } else {
         Err(error(
@@ -699,6 +719,13 @@ fn validate_record_type(
             span,
         ));
     };
+    if schema_type.is_data() {
+        return Err(error(
+            CfdTextErrorCode::TypeMismatch,
+            "data cannot be a top-level record",
+            span,
+        ));
+    }
     if schema_type.is_abstract {
         return Err(error(
             CfdTextErrorCode::AbstractObjectType,

@@ -486,20 +486,28 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             return InferredType::Unknown;
         }
         let resolved_name = type_name.name.clone();
-        let object_name = if self.schema.types.contains_key(&resolved_name) {
+        let object_name = if self
+            .schema
+            .types
+            .get(&resolved_name)
+            .is_some_and(|info| info.def.kind == crate::syntax::ast::TypeKind::Table)
+        {
             Some(resolved_name.clone())
         } else {
             self.schema
                 .resolved_aliases
                 .get(&resolved_name)
-                .and_then(InferredType::object_name)
+                .and_then(|ty| match ty.value_type()? {
+                    CftValueType::RecordRef(name) => Some(name),
+                    _ => None,
+                })
                 .map(ToString::to_string)
         };
         let Some(object_name) = object_name else {
             self.diag(
                 CftErrorCode::InvalidRecordSetQuery,
                 type_name.span,
-                format!("`{resolved_name}` is not an object type"),
+                format!("`{resolved_name}` is not a table"),
             );
             return InferredType::Unknown;
         };

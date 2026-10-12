@@ -390,6 +390,19 @@ impl ValueResolver<'_, '_> {
             );
             return None;
         }
+        if !self
+            .types
+            .get(&type_name)
+            .is_some_and(|info| info.def.kind == crate::syntax::ast::TypeKind::Table)
+        {
+            self.push_diag(
+                CftErrorCode::InvalidConstValue,
+                module,
+                path.span,
+                "record reference requires table",
+            );
+            return None;
+        }
         let type_name = TypeName::from_validated(type_name);
         Some((
             CftValueType::RecordRef(type_name.clone()),
@@ -481,6 +494,19 @@ impl ValueResolver<'_, '_> {
         fields: &[(crate::syntax::ast::NameRef, DefaultExpr)],
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
+        if self
+            .types
+            .get(type_name.as_str())
+            .is_some_and(|info| info.def.kind != crate::syntax::ast::TypeKind::Data)
+        {
+            self.push_diag(
+                CftErrorCode::InvalidConstValue,
+                module,
+                expression.span,
+                "inline object literal requires data",
+            );
+            return None;
+        }
         let Some(field_types) = self.full_fields.get(type_name.as_str()).cloned() else {
             self.push_diag(
                 CftErrorCode::UnknownNamedType,

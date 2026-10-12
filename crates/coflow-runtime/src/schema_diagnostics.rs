@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn canonical_conversion_deduplicates_complete_diagnostic_identity() {
-        let source = "type 表 {\n  名: string;\n}\n";
+        let source = "table 表 {\n  名: string;\n}\n";
         let start = source.find('名').expect("field name");
         let end = start + "名".len();
         let diagnostic = CftDiagnostic::error(

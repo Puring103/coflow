@@ -270,7 +270,7 @@ mod tests {
     fn schema() -> coflow_language::cft::CftSchema {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "type Item { value: int; }",
+            "table Item { value: int; }",
         )]);
         build_schema(&modules).expect("schema")
     }
