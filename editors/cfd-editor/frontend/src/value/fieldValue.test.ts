@@ -22,10 +22,6 @@ describe('FieldValue authoring', () => {
       kind: 'option_some',
       value: { kind: 'int', value: 1n },
     }, '2')).toEqual({ kind: 'option_some', value: { kind: 'int', value: 2n } })
-    expect(parseFieldValueText({
-      kind: 'result_err',
-      value: { kind: 'string', value: 'old' },
-    }, 'new')).toEqual({ kind: 'result_err', value: { kind: 'string', value: 'new' } })
   })
 
   it('provides one summary for table filtering and editor cards', () => {

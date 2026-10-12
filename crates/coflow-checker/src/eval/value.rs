@@ -90,8 +90,6 @@ impl<'a> EvalValue<'a> {
         Ok(match value {
             CfdValue::OptionNone
             | CfdValue::OptionSome(_)
-            | CfdValue::ResultOk(_)
-            | CfdValue::ResultErr(_)
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
             | CfdValue::Float(_)
@@ -222,8 +220,6 @@ fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
         CfdValue::FormattedString(value) => Some(ScalarValue::String(&value.rendered)),
         CfdValue::Enum(value) => Some(ScalarValue::Enum(value)),
         CfdValue::OptionSome(_)
-        | CfdValue::ResultOk(_)
-        | CfdValue::ResultErr(_)
         | CfdValue::Object(_)
         | CfdValue::Ref(_)
         | CfdValue::Array(_)
@@ -434,9 +430,7 @@ pub(crate) fn model_value<'a>(
 }
 
 pub(super) fn transparent_value(mut value: &CfdValue) -> &CfdValue {
-    while let CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) =
-        value
-    {
+    while let CfdValue::OptionSome(inner) = value {
         value = inner;
     }
     value

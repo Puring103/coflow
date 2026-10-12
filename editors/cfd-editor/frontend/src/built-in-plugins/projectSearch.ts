@@ -470,8 +470,6 @@ function scalarSearchText(value: FieldValue): string | null {
   switch (value.kind) {
     case 'option_none': return 'None'
     case 'option_some': return scalarSearchText(value.value)
-    case 'result_ok': return scalarSearchText(value.value)
-    case 'result_err': return scalarSearchText(value.value)
     case 'bool': return String(value.value)
     case 'int': return String(value.value)
     case 'float': return String(value.value)

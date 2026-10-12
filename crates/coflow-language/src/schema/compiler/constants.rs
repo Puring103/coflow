@@ -45,7 +45,7 @@ impl ValueResolver<'_, '_> {
                 CftErrorCode::InvalidConstValue,
                 &module,
                 expression.span,
-                "constants cannot contain formatted strings or functions",
+                "constants cannot contain formatted strings",
             );
             return None;
         }
@@ -53,16 +53,6 @@ impl ValueResolver<'_, '_> {
         let expected = declared_type
             .as_ref()
             .and_then(|ty| self.resolve_field_type(ty).value_type().cloned());
-        if matches!(expected, Some(CftValueType::Unit)) {
-            self.push_diag(
-                CftErrorCode::InvalidConstValue,
-                &module,
-                declared_type.as_ref().map_or(expression.span, |ty| ty.span),
-                "constants cannot have function or unit type",
-            );
-            visiting.pop();
-            return None;
-        }
         let resolved = self.resolve_static_value(&module, &expression, expected.as_ref(), visiting);
         visiting.pop();
         if let Some(resolved) = &resolved {
@@ -164,28 +154,6 @@ impl ValueResolver<'_, '_> {
                 (
                     CftValueType::Option(Box::new(inner_type)),
                     CftConstValue::OptionSome(Box::new(inner_value)),
-                )
-            }
-            DefaultExprKind::ResultOk(value) => {
-                let Some(CftValueType::Result(ok_type, error_type)) = expected else {
-                    return self.cannot_infer_const(module, expression, "Ok");
-                };
-                let (_, value) =
-                    self.resolve_static_value(module, value, Some(ok_type), visiting)?;
-                (
-                    CftValueType::Result(ok_type.clone(), error_type.clone()),
-                    CftConstValue::ResultOk(Box::new(value)),
-                )
-            }
-            DefaultExprKind::ResultErr(error) => {
-                let Some(CftValueType::Result(ok_type, error_type)) = expected else {
-                    return self.cannot_infer_const(module, expression, "Err");
-                };
-                let (_, error) =
-                    self.resolve_static_value(module, error, Some(error_type), visiting)?;
-                (
-                    CftValueType::Result(ok_type.clone(), error_type.clone()),
-                    CftConstValue::ResultErr(Box::new(error)),
                 )
             }
             DefaultExprKind::StaticPath(path) => {
@@ -640,9 +608,7 @@ impl ValueResolver<'_, '_> {
 fn contains_runtime_default(expression: &DefaultExpr) -> bool {
     match &expression.kind {
         DefaultExprKind::FormattedString(_) => true,
-        DefaultExprKind::OptionSome(value)
-        | DefaultExprKind::ResultOk(value)
-        | DefaultExprKind::ResultErr(value) => contains_runtime_default(value),
+        DefaultExprKind::OptionSome(value) => contains_runtime_default(value),
         DefaultExprKind::Array(values) => values.iter().any(contains_runtime_default),
         DefaultExprKind::BitExpr { lhs, rhs, .. } => {
             contains_runtime_default(lhs) || contains_runtime_default(rhs)

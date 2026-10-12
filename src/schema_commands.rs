@@ -229,13 +229,6 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Option { inner } => {
             format!("Option<{}>", display_value_type(inner))
         }
-        SchemaTypeRefInfo::Result { value, error } => format!(
-            "Result<{}, {}>",
-            display_value_type(value),
-            display_value_type(error)
-        ),
-
-        SchemaTypeRefInfo::Unit => "()".to_string(),
     }
 }
 

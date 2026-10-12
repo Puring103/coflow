@@ -68,3 +68,29 @@ fn recovery_ignores_delimiters_inside_strings_and_comments() {
     assert_eq!(ast.records.len(), 1);
     assert_eq!(ast.records[0].key, "next");
 }
+
+#[test]
+fn option_constructors_share_the_structural_depth_budget() {
+    use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
+    use coflow_language::limits::StructuralLimits;
+    let options = CfdParseOptions {
+        structural_limits: StructuralLimits::new(4, 1000, 1000),
+    };
+    for (depth, accepted) in [(3, true), (4, false), (12, false)] {
+        let source = format!(
+            "item: Sample {{ value: {}None{} }}",
+            "Some(".repeat(depth),
+            ")".repeat(depth)
+        );
+        let (ast, diagnostics) = parse_cfd_with_options(&source, options);
+        assert_eq!(
+            diagnostics.is_empty(),
+            accepted,
+            "depth {depth}: {diagnostics:?}"
+        );
+        assert_eq!(ast.records.len(), usize::from(accepted));
+        if !accepted {
+            assert!(diagnostics[0].message.contains("depth limit 4"));
+        }
+    }
+}

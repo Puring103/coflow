@@ -66,8 +66,6 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
         LoadedValueDraft::OptionSome(value) => {
             Ok(tagged_json("$some", input_value_to_json(*value)?))
         }
-        LoadedValueDraft::ResultOk(value) => Ok(tagged_json("$ok", input_value_to_json(*value)?)),
-        LoadedValueDraft::ResultErr(value) => Ok(tagged_json("$err", input_value_to_json(*value)?)),
         LoadedValueDraft::Bool(value) => Ok(Value::Bool(value)),
         LoadedValueDraft::Int(value) | LoadedValueDraft::EnumValue { value, .. } => {
             Ok(Value::Number(Number::from(value)))
@@ -132,6 +130,7 @@ fn input_dict_key_to_json(key: LoadedDictKeyDraft) -> Value {
         LoadedDictKeyDraft::String(value) => Value::String(value),
         LoadedDictKeyDraft::Int(value) => Value::Number(Number::from(value)),
         LoadedDictKeyDraft::EnumVariant { variant, .. } => Value::String(variant),
+        LoadedDictKeyDraft::EnumValue { value, .. } => Value::Number(Number::from(value)),
     }
 }
 

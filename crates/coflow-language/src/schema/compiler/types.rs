@@ -146,12 +146,6 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Option(inner) => {
                 InferredType::option(self.resolve_alias_target(module, inner, visiting))
             }
-            TypeRefKind::Result(value, error) => InferredType::result(
-                self.resolve_alias_target(module, value, visiting),
-                self.resolve_alias_target(module, error, visiting),
-            ),
-
-            TypeRefKind::Unit => InferredType::unit(),
         }
     }
 
@@ -388,12 +382,6 @@ impl ResolvedTypes<'_> {
                 InferredType::dict(self.resolve_field_type(key), self.resolve_field_type(value))
             }
             TypeRefKind::Option(inner) => InferredType::option(self.resolve_field_type(inner)),
-            TypeRefKind::Result(value, error) => InferredType::result(
-                self.resolve_field_type(value),
-                self.resolve_field_type(error),
-            ),
-
-            TypeRefKind::Unit => InferredType::unit(),
         }
     }
 
@@ -495,12 +483,6 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Option(inner) => {
                 InferredType::option(self.validate_field_type(module, inner, diagnostics))
             }
-            TypeRefKind::Result(value, error) => InferredType::result(
-                self.validate_field_type(module, value, diagnostics),
-                self.validate_field_type(module, error, diagnostics),
-            ),
-
-            TypeRefKind::Unit => InferredType::unit(),
         }
     }
 

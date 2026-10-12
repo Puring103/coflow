@@ -230,18 +230,6 @@ fn ref_target_in_value(
             };
             ref_target_in_value(value, schema, inner, offset)
         }
-        CfdValue::ResultOk(value, _) => {
-            let CftValueType::Result(ok, _) = expected_type else {
-                return None;
-            };
-            ref_target_in_value(value, schema, ok, offset)
-        }
-        CfdValue::ResultErr(value, _) => {
-            let CftValueType::Result(_, error) = expected_type else {
-                return None;
-            };
-            ref_target_in_value(value, schema, error, offset)
-        }
         _ => None,
     }
 }

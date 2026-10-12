@@ -1,0 +1,32 @@
+const CONTRACT_NESTED: Option<Option<int>> = Some(None);
+@flag enum ContractFlags { A = 1, B = 2 }
+const CONTRACT_MASK: ContractFlags = ContractFlags::A | ContractFlags::B;
+const CONTRACT_VALUES: [int] = [2147483648, -9223372036854775808];
+const CONTRACT_INDEX: {ContractFlags: int} = { ContractFlags::A | ContractFlags::B: 7 };
+type ContractPayload { score: int; }
+abstract type ContractBase { name: string; }
+@struct sealed type ContractChild: ContractBase { score: int; }
+@struct sealed type ContractShape {
+  count: int = 2147483648;
+  next: Option<&ContractShape> = None;
+  inner: Option<ContractShape> = None;
+}
+type ContractEntry {
+  payload: ContractPayload;
+  shape: ContractShape;
+  polymorphic: ContractBase;
+  child: ContractChild;
+  target: &ContractShape;
+  wide: int = -9223372036854775808;
+  precise: float = 1.0000000000000002;
+  large: float = 1e100;
+  scalar_text: fstring = f"{self.wide}|{self.precise}|{self.large}";
+  nested: Option<Option<int>> = Some(None);
+  constant_nested: Option<Option<int>> = CONTRACT_NESTED;
+  samples: [int] = CONTRACT_VALUES;
+  flags: ContractFlags = CONTRACT_MASK;
+  indexed: {ContractFlags: int} = CONTRACT_INDEX;
+  some_nested: Option<Option<int>> = Some(Some(9223372036854775807));
+  @dimension("contract_language")
+  localized: Option<Option<string>> = Some(Some("base"));
+}

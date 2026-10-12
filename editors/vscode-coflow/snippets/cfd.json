@@ -33,20 +33,5 @@
     "prefix": "Some",
     "body": "Some(${1:value})",
     "description": "Present Option value."
-  },
-  "Ok": {
-    "prefix": "Ok",
-    "body": "Ok(${1:value})",
-    "description": "Successful Result value."
-  },
-  "Err": {
-    "prefix": "Err",
-    "body": "Err(${1:error})",
-    "description": "Failed Result value."
-  },
-  "Function": {
-    "prefix": "fn",
-    "body": ["fn(${1:value}: ${2:int}) -> ${3:int} {", "\t${4:value}", "}"],
-    "description": "CFD function value."
   }
 }

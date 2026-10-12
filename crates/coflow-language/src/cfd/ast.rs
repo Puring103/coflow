@@ -53,8 +53,6 @@ pub enum CfdValue {
     FormattedString(CfdFormattedString),
     OptionNone(Span),
     OptionSome(Box<CfdValue>, Span),
-    ResultOk(Box<CfdValue>, Span),
-    ResultErr(Box<CfdValue>, Span),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
     Array(Vec<CfdValue>, Span),
@@ -69,8 +67,6 @@ impl CfdValue {
             | Self::QuotedString(_, s)
             | Self::OptionNone(s)
             | Self::OptionSome(_, s)
-            | Self::ResultOk(_, s)
-            | Self::ResultErr(_, s)
             | Self::Array(_, s) => *s,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,

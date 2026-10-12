@@ -138,9 +138,7 @@ fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue
 fn value_starts_object(value: &CfdValue) -> bool {
     match value {
         CfdValue::Object(_) => true,
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            value_starts_object(inner)
-        }
+        CfdValue::OptionSome(inner) => value_starts_object(inner),
         _ => false,
     }
 }

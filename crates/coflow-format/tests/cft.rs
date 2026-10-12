@@ -144,8 +144,8 @@ calculate - 1!=- 1;    # keep  comment\n\
     assert_eq!(format_cft(expected), expected);
 
     assert_eq!(
-        format_cft("type Box {\nvalue:Result<Option<int>,string>;\ncheck { a>b; c<d; }\n}"),
-        "type Box {\n  value: Result<Option<int>, string>;\n\n  check {\n    a > b;\n    c < d;\n  }\n}\n"
+        format_cft("type Box {\nvalue:Option<Option<int>>;\ncheck { a>b; c<d; }\n}"),
+        "type Box {\n  value: Option<Option<int>>;\n\n  check {\n    a > b;\n    c < d;\n  }\n}\n"
     );
     assert_eq!(format_cft("type Scores=[int];"), "type Scores = [int];\n");
 }

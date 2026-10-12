@@ -132,7 +132,7 @@ jobs:
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
-          cargo test --features ts-export -p cfd-editor export_bindings
+          cargo test --features ts-export -p cfd-editor-core -p cfd-editor export_bindings
           git diff --exit-code editors/cfd-editor/frontend/src/bindings
 
       - name: Test and build CFD editor frontend

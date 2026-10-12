@@ -8,14 +8,69 @@
     clippy::unwrap_used
 )]
 
+use super::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
+use crate as coflow_runtime;
 use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_runtime::SourceLocation;
-use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+#[test]
+fn shared_runtime_corpus_preserves_acceptance_and_value_states() {
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/cfd-runtime-parity");
+    let mut count = 0;
+    for entry in fs::read_dir(&dir).expect("runtime corpus") {
+        let path = entry.expect("fixture").path();
+        if path.extension().is_none_or(|extension| extension != "cfd") {
+            continue;
+        }
+        let name = path.file_name().expect("name").to_str().expect("UTF-8");
+        let schema_name = format!("{}.cft", name.split('.').next().expect("fixture stem"));
+        let schema =
+            compile_schema(&fs::read_to_string(dir.join(schema_name)).expect("fixture schema"));
+        let result = load_cfd_model(&schema, &fs::read_to_string(&path).expect("fixture source"));
+        assert_eq!(
+            result.is_ok(),
+            name.ends_with(".valid.cfd"),
+            "{name}: {result:?}"
+        );
+        count += 1;
+        if name == "migration-contract.valid.cfd" {
+            let model = result.expect("contract model");
+            let record = model
+                .record_by_type_key("ContractEntry", "entry")
+                .and_then(|id| model.record(id))
+                .expect("entry");
+            assert_eq!(record.field("wide"), Some(&CfdValue::Int(i64::MIN)));
+            assert_eq!(
+                record.field("precise"),
+                Some(&CfdValue::Float(1.0000000000000002))
+            );
+            assert_eq!(
+                record.field("nested"),
+                Some(&CfdValue::OptionSome(Box::new(CfdValue::OptionNone)))
+            );
+            let Some(CfdValue::FormattedString(text)) = record.field("scalar_text") else {
+                panic!("evaluated scalar template");
+            };
+            assert_eq!(
+                text.rendered,
+                format!(
+                    "-9223372036854775808|1.0000000000000002|1{}",
+                    "0".repeat(100)
+                )
+            );
+        }
+    }
+    assert!(
+        count >= 7,
+        "shared runtime corpus must cover all regression fixtures"
+    );
+}
 
 fn runtime_parity_fixture(name: &str) -> String {
     fs::read_to_string(
@@ -82,6 +137,25 @@ Item {
         )))
     );
     Ok(())
+}
+
+#[test]
+fn cfd_loading_rejects_removed_result_constructors_and_unit_values() {
+    let schema =
+        compile_schema("type Item { value: int; maybe: Option<int> = None; items: [int] = []; }");
+    for fields in [
+        "value: Ok(1)",
+        "value: Err(\"bad\")",
+        "value: ()",
+        "value: 1, maybe: Some(Ok(2))",
+        "value: 1, items: [Ok(2)]",
+    ] {
+        let source = format!("item: Item {{ {fields} }}");
+        assert!(
+            load_cfd_model(&schema, &source).is_err(),
+            "removed constructor or value must fail: {source}"
+        );
+    }
 }
 
 #[test]

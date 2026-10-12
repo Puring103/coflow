@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 pub enum LoadedValueDraft {
     OptionNone,
     OptionSome(Box<LoadedValueDraft>),
-    ResultOk(Box<LoadedValueDraft>),
-    ResultErr(Box<LoadedValueDraft>),
     Bool(bool),
     Int(i64),
     Float(f64),
@@ -136,7 +134,15 @@ impl From<String> for LoadedValueDraft {
 pub enum LoadedDictKeyDraft {
     String(String),
     Int(i64),
-    EnumVariant { enum_name: String, variant: String },
+    EnumVariant {
+        enum_name: String,
+        variant: String,
+    },
+    /// 已解析常量的枚举键保留位模式，组合 flag 不需要虚构成员名。
+    EnumValue {
+        enum_name: String,
+        value: i64,
+    },
 }
 
 impl LoadedDictKeyDraft {

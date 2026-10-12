@@ -258,17 +258,6 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             }
             _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
-        CftValueType::Result(ok, error) => match value {
-            CfdValue::ResultOk(value) => {
-                validate_value_inner(schema, context, ok, value, pending_insert, mode, path)
-            }
-            CfdValue::ResultErr(value) => {
-                validate_value_inner(schema, context, error, value, pending_insert, mode, path)
-            }
-            _ => Err(type_mismatch(&expected.to_string(), value, path)),
-        },
-
-        CftValueType::Unit => Err(type_mismatch(&expected.to_string(), value, path)),
     }
 }
 
@@ -606,8 +595,6 @@ const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
         CfdValue::OptionNone => "None",
         CfdValue::OptionSome(_) => "Some",
-        CfdValue::ResultOk(_) => "Ok",
-        CfdValue::ResultErr(_) => "Err",
         CfdValue::Bool(_) => "bool",
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",

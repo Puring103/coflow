@@ -171,7 +171,7 @@ async function main() {
     ),
     "CFT TextMate grammar must not include old typed reference rules"
   );
-  for (const syntax of ["Option", "Result", "fn", "None", "Some", "Ok", "Err"]) {
+  for (const syntax of ["Option", "fstring", "None", "Some"]) {
     assert(
       JSON.stringify(cftGrammar).includes(syntax),
       `CFT TextMate grammar should include migrated syntax: ${syntax}`
@@ -180,7 +180,7 @@ async function main() {
   assert(!JSON.stringify(cftGrammar).includes("module-declarations"));
   assert(!JSON.stringify(cftGrammar).includes("keyword.control.namespace"));
   assert(!JSON.stringify(cftGrammar).includes("keyword.control.import"));
-  for (const annotation of ["Host", "dimension", "label", "description"]) {
+  for (const annotation of ["dimension", "label", "description"]) {
     assert(annotationPattern.includes(annotation), `CFT TextMate grammar should include @${annotation}`);
   }
 
@@ -189,8 +189,8 @@ async function main() {
   );
   assert.strictEqual(cfdGrammar.repository["comment-slash"], undefined);
   assert(JSON.stringify(cfdGrammar.repository.comments).includes("number-sign"));
-  assert(cfdGrammar.repository.function, "CFD TextMate grammar should include function values");
-  for (const syntax of ["Option", "Result", "fn", "match", "Some", "Ok", "Err"]) {
+  assert.strictEqual(cfdGrammar.repository.function, undefined);
+  for (const syntax of ["Option", "fstring", "Some"]) {
     assert(
       JSON.stringify(cfdGrammar).includes(syntax),
       `CFD TextMate grammar should include migrated syntax: ${syntax}`
@@ -216,11 +216,23 @@ async function main() {
   const cfdSnippets = JSON.parse(
     fs.readFileSync(path.join(__dirname, "..", "snippets", "cfd.json"), "utf8")
   );
-  for (const snippet of ["optional field", "result field", "function field"]) {
+  for (const snippet of ["optional field"]) {
     assert(cftSnippets[snippet], `CFT snippets should include ${snippet}`);
   }
-  for (const snippet of ["Some", "Ok", "Err", "Function"]) {
+  for (const snippet of ["Some"]) {
     assert(cfdSnippets[snippet], `CFD snippets should include ${snippet}`);
+  }
+  for (const grammar of [cftGrammar, cfdGrammar]) {
+    const text = JSON.stringify(grammar);
+    for (const syntax of ["Result", "Ok", "Err"]) {
+      assert(!text.includes(syntax), `grammar must omit removed built-in syntax: ${syntax}`);
+    }
+  }
+  for (const snippet of ["result field", "function field", "host singleton"]) {
+    assert.strictEqual(cftSnippets[snippet], undefined);
+  }
+  for (const snippet of ["Ok", "Err", "Function"]) {
+    assert.strictEqual(cfdSnippets[snippet], undefined);
   }
   assert.strictEqual(cftSnippets.namespace, undefined);
   assert.strictEqual(cftSnippets.use, undefined);

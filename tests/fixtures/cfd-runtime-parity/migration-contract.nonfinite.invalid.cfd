@@ -1,0 +1,9 @@
+entry: ContractEntry {
+  payload: ContractPayload { score: 1 },
+  shape: ContractShape {},
+  polymorphic: ContractChild { name: "child", score: 7 },
+  child: ContractChild { name: "value", score: 8 },
+  target: &ContractShape::a,
+  large: inf,
+}
+a: ContractShape {}

@@ -1,12 +1,13 @@
-use crate::api::{
-    byte_range, map_diagnostics_with_origins, Diagnostic, DiagnosticSet, Label, LineIndex,
-    SourceLocation,
-};
-use crate::data_model::{CfdDiagnostics, RecordOrigin, TextSpan};
+use crate::api::{byte_range, Diagnostic, DiagnosticSet, Label, LineIndex, SourceLocation};
+use crate::data_model::TextSpan;
+#[cfg(test)]
+use crate::data_model::{CfdDiagnostics, RecordOrigin};
+#[cfg(test)]
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CfdTextLoadError {
     Text(CfdTextDiagnostics),
@@ -16,6 +17,7 @@ pub enum CfdTextLoadError {
     },
 }
 
+#[cfg(test)]
 impl fmt::Display for CfdTextLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -31,6 +33,7 @@ impl fmt::Display for CfdTextLoadError {
     }
 }
 
+#[cfg(test)]
 impl Error for CfdTextLoadError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,52 +114,30 @@ pub(super) fn text_span(line_index: &LineIndex, source: &str, span: CfdTextSpan)
 pub(super) fn cfd_error_to_diagnostics(
     file: &Path,
     source: &str,
-    err: CfdTextLoadError,
+    diagnostics: CfdTextDiagnostics,
 ) -> DiagnosticSet {
-    match err {
-        CfdTextLoadError::Text(diagnostics) => DiagnosticSet {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| {
-                    let range = byte_range(source, diagnostic.span.start, diagnostic.span.end);
-                    Diagnostic::error(
-                        format!("CFD-TEXT-{:?}", diagnostic.code),
-                        "CFD",
-                        diagnostic.message,
-                    )
-                    .with_primary(Label {
-                        location: SourceLocation::FileSpan {
-                            path: file.to_path_buf(),
-                            start_line: range.start.line,
-                            start_character: range.start.character,
-                            end_line: range.end.line,
-                            end_character: range.end.character,
-                        },
-                        message: None,
-                    })
+    DiagnosticSet {
+        diagnostics: diagnostics
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                let range = byte_range(source, diagnostic.span.start, diagnostic.span.end);
+                Diagnostic::error(
+                    format!("CFD-TEXT-{:?}", diagnostic.code),
+                    "CFD",
+                    diagnostic.message,
+                )
+                .with_primary(Label {
+                    location: SourceLocation::FileSpan {
+                        path: file.to_path_buf(),
+                        start_line: range.start.line,
+                        start_character: range.start.character,
+                        end_line: range.end.line,
+                        end_character: range.end.character,
+                    },
+                    message: None,
                 })
-                .collect(),
-        },
-        CfdTextLoadError::DataModel {
-            diagnostics,
-            origins,
-        } => {
-            let origins = origins
-                .into_iter()
-                .map(|origin| origin_with_file(file, origin))
-                .collect::<Vec<_>>();
-            map_diagnostics_with_origins(diagnostics, &origins)
-        }
-    }
-}
-
-fn origin_with_file(file: &Path, origin: RecordOrigin) -> RecordOrigin {
-    match origin {
-        RecordOrigin::File { path, span } if path.as_os_str().is_empty() => RecordOrigin::File {
-            path: file.to_path_buf(),
-            span,
-        },
-        other => other,
+            })
+            .collect(),
     }
 }

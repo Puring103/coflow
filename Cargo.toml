@@ -31,6 +31,10 @@ members = [
 ]
 resolver = "2"
 
+# 保留源码行号调试信息，避免 Windows 工作区链接的 PDB 超出容量限制。
+[profile.dev]
+debug = 1
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"

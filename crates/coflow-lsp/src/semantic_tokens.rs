@@ -272,11 +272,7 @@ fn add_lex_semantic_token(
         | TokenKind::Is
         | TokenKind::True
         | TokenKind::False => SEM_KEYWORD,
-        TokenKind::Ident(text)
-            if matches!(
-                text.as_str(),
-                "fn" | "Option" | "Result" | "None" | "Some" | "Ok" | "Err"
-            ) =>
+        TokenKind::Ident(text) if matches!(text.as_str(), "Option" | "None" | "Some") =>
         {
             SEM_KEYWORD
         }
@@ -518,11 +514,6 @@ fn add_value_type_semantic(
             add_value_type_semantic(build, document, key, tokens);
             add_value_type_semantic(build, document, value, tokens);
         }
-        TypeRefKind::Result(value, error) => {
-            add_value_type_semantic(build, document, value, tokens);
-            add_value_type_semantic(build, document, error, tokens);
-        }
-        TypeRefKind::Unit => {}
     }
 }
 
@@ -540,16 +531,10 @@ fn add_default_expr_semantic(
         DefaultExprKind::Bool(_) | DefaultExprKind::OptionNone => {
             push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
-        DefaultExprKind::OptionSome(value)
-        | DefaultExprKind::ResultOk(value)
-        | DefaultExprKind::ResultErr(value) => {
-            let keyword_len = match &expr.kind {
-                DefaultExprKind::OptionSome(_) => 4,
-                _ => 3,
-            };
+        DefaultExprKind::OptionSome(value) => {
             push_semantic_span_plain(
                 &document.source,
-                Span::new(expr.span.start, expr.span.start + keyword_len),
+                Span::new(expr.span.start, expr.span.start + "Some".len()),
                 SEM_KEYWORD,
                 tokens,
             );

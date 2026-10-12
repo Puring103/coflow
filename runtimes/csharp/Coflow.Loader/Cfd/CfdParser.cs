@@ -203,7 +203,7 @@ internal static class CfdParser
         private CfdValueNode ParseValue()
         {
             // 解析深度有限，恶意嵌套不得耗尽宿主调用栈。
-            if (++_depth > 128) Error("CFD-LIMIT", "value nesting exceeds 128 levels", CurrentSpan());
+            EnterNesting();
             try { return ParseValueInner(); } finally { _depth--; }
         }
 
@@ -211,7 +211,6 @@ internal static class CfdParser
         {
             SkipTrivia();
             var start = Cursor;
-            var sourceStart = _index;
             if (End) { Error("CFD-SYNTAX-004", "expected a value", CurrentSpan()); return new CfdInvalidValue(CurrentSpan()); }
             if (Match("f\""))
             {
@@ -232,6 +231,15 @@ internal static class CfdParser
             if (Match('[')) return ParseArray(start);
             if (Match('{')) return ParseDictionary(start);
             if (MatchKeyword("None")) return new CfdNoneValue(SpanFrom(start));
+            if (MatchKeyword("Some"))
+            {
+                SkipTrivia();
+                Expect('(', "expected `(` after Some");
+                var value = ParseValue();
+                SkipTrivia();
+                Expect(')', "expected `)` after Some value");
+                return new CfdSomeValue(value, SpanFrom(start));
+            }
             if (MatchKeyword("null"))
             {
                 Error("CFD-SYNTAX-NULL", "`null` is not part of the language; use `None` for Option values", SpanFrom(start));
@@ -414,9 +422,16 @@ internal static class CfdParser
             var start = Cursor;
             if (Match('('))
             {
-                var (expression, _) = ParseBitOrExpression();
-                Expect(')', "expected `)` after bit expression");
-                return (expression.WithSpan(SpanFrom(start)), true);
+                // 括号表达式和复合值共享深度预算，递归前检查而非返回后检查。
+                EnterNesting();
+                try
+                {
+                    var (expression, _) = ParseBitOrExpression();
+                    SkipTrivia();
+                    Expect(')', "expected `)` after bit expression");
+                    return (expression.WithSpan(SpanFrom(start)), true);
+                }
+                finally { _depth--; }
             }
             var token = ParseName("flag expression operand");
             return (CfdBitExpression.Value(token, SpanFrom(start)), false);
@@ -506,6 +521,11 @@ internal static class CfdParser
                 if (Peek() == '#') { while (!End && Read() != '\n') { } continue; }
                 break;
             }
+        }
+
+        private void EnterNesting()
+        {
+            if (++_depth > 256) Error("CFD-LIMIT", "value nesting exceeds 256 levels", CurrentSpan());
         }
 
         private void Expect(char character, string message) { if (!Match(character)) Error("CFD-SYNTAX-008", message, CurrentSpan()); }

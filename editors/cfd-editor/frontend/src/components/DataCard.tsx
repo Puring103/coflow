@@ -216,8 +216,6 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
     case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
     case 'option_some':
-    case 'result_ok':
-    case 'result_err':
       return <ValueChip value={value.value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
     case 'bool':
       return (
@@ -731,7 +729,7 @@ function FieldRow({
   const nullControls = commit ? (
     <NullableControls
       value={value}
-      nullable={!!nullable}
+      missing={missing}
       declaredType={declaredType}
       objectType={valueAnnotation?.object_type ?? undefined}
       enumType={enumType}
@@ -834,7 +832,7 @@ function FieldRow({
 
 function NullableControls({
   value,
-  nullable,
+  missing,
   declaredType,
   objectType,
   enumType,
@@ -846,7 +844,7 @@ function NullableControls({
   onCommitValue,
 }: {
   value: FieldValue
-  nullable: boolean
+  missing: boolean
   declaredType?: string
   objectType?: string
   enumType?: string
@@ -873,9 +871,8 @@ function NullableControls({
     || !!objectType
   )
 
-  // 非 Option 的旧 nullable 元数据仍按单层控件处理。
-  const legacyCanClear = optionDepth === 0 && nullable && shownValue.kind !== 'option_none'
-  const legacyCanCreate = optionDepth === 0 && shownValue.kind === 'option_none' && (
+  // 必填缺失字段与 Option 空态分开处理，只有显式缺失状态允许直接创建值。
+  const canCreateMissing = missing && optionDepth === 0 && shownValue.kind === 'option_none' && (
     scalarDefaultForDeclaredType(declaredType) !== null
     || isPolymorphic
     || !!enumType
@@ -886,7 +883,7 @@ function NullableControls({
   const lookups = useEditorLookups()
   const [choosingTarget, setChoosingTarget] = useState<{ optionLayer: number | null } | null>(null)
 
-  if (layers.length === 0 && !legacyCanClear && !legacyCanCreate && !canSwitchType) return null
+  if (layers.length === 0 && !canCreateMissing && !canSwitchType) return null
 
   async function materializeObject(typeName: string) {
     const result = await lookups.makeDefaultObject(typeName)
@@ -977,17 +974,6 @@ function NullableControls({
           <Icon name="close" size={11} />
         </button>
       ))}
-      {legacyCanClear && (
-        <button
-          type="button"
-          className="dc-null-btn dc-null-btn-clear"
-          title="清除为 None"
-          aria-label="清除为 None"
-          onClick={() => onCommit(nullValue())}
-        >
-          <Icon name="close" size={11} />
-        </button>
-      )}
       {canCreate && (
         <button
           type="button"
@@ -999,7 +985,7 @@ function NullableControls({
           <Icon name="plus" size={11} />
         </button>
       )}
-      {legacyCanCreate && (
+      {canCreateMissing && (
         <button
           type="button"
           className="dc-null-btn dc-null-btn-create"

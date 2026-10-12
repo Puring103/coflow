@@ -247,7 +247,7 @@ impl Parser<'_> {
                 }
             });
         }
-        if matches!(first.name.as_str(), "Some" | "Ok" | "Err") {
+        if first.name == "Some" {
             self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
             let inner_span = self.peek().span;
             let inner = self.nested(StructureKind::DefaultValue, inner_span, |parser| {
@@ -258,13 +258,7 @@ impl Parser<'_> {
                 .end;
             let span = Span::new(first.span.start, end);
             let depth = inner.depth;
-            let kind = if first.name == "Some" {
-                DefaultExprKind::OptionSome(Box::new(inner.value))
-            } else if first.name == "Ok" {
-                DefaultExprKind::ResultOk(Box::new(inner.value))
-            } else {
-                DefaultExprKind::ResultErr(Box::new(inner.value))
-            };
+            let kind = DefaultExprKind::OptionSome(Box::new(inner.value));
             return self.node(StructureKind::DefaultValue, first.span, [depth], || {
                 DefaultExpr { kind, span }
             });

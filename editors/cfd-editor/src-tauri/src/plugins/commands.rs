@@ -8,7 +8,7 @@ use super::store::{
     update_project_frontend_plugin_enabled,
 };
 use crate::commands::{run_blocking, run_host_command};
-use crate::editor::EditorError;
+use cfd_editor_core::editor::EditorError;
 use cfd_editor_core::EditorHost;
 use std::path::PathBuf;
 use tauri::{AppHandle, State};

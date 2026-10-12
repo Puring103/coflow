@@ -83,6 +83,7 @@ fn format_input_dict_key(key: &LoadedDictKeyDraft) -> String {
     match key {
         LoadedDictKeyDraft::String(value) => quote_cfd_string(value),
         LoadedDictKeyDraft::Int(value) => value.to_string(),
+        LoadedDictKeyDraft::EnumValue { enum_name, value } => format!("{enum_name}({value})"),
         LoadedDictKeyDraft::EnumVariant { enum_name, variant } => {
             format!("{enum_name}.{variant}")
         }

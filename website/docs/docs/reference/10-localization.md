@@ -1,42 +1,26 @@
 # 本地化与维度
 
-维度为同一记录字段提供基础值和任意数量的变体值。字段使用 `@localized` 绑定
-`language` 维度，或使用 `@dimension("name")` 绑定其他维度。
+`@localized` 将字段绑定 language 维度，`@dimension("name")` 绑定指定维度。同一字段保存基础值和任意数量的变体值。
 
 ```cft
-table Item {
+type Item {
   @localized
   name: string;
-
   @dimension("region")
   price: int;
 }
 ```
 
-维度值直接写在业务 CFD 中：
-
 ```cfd
-sword: Item {
-  name: dimension {
-    default: "Sword",
-    zh: "剑",
-    ja: "剣",
-  },
-  price: dimension {
-    default: 100,
-    cn: 90,
-  },
-}
+sword: Item { name: "Sword", price: 100 }
+language[ja] { sword: Item { name: "剣" } }
+region[cn] { sword: Item { price: 90 } }
 ```
 
-维度字段必须使用 `dimension { ... }`，其中 `default` 必填。其他字段名即变体名，
-值类型与原字段一致；只有 `T?` 字段的变体可以显式写 `None`。
+覆盖块定位已有记录，只替换明确写出的维度字段。字段必须绑定外层维度，覆盖值符合字段声明类型；同一维度、变体、记录和字段重复覆盖时报错。
 
-变体从项目加载的全部 CFD 动态汇总，不需要在 `coflow.yaml` 中声明。缺少某个变体时
-继承 `default`，未知变体查询同样返回 `default`；显式 `None` 是可选字段的有效覆盖。
-读取基础值使用 `.default()`，读取指定变体使用 `.for("zh")`，`.variants()` 返回当前
-维度的全部有效变体值。
+变体从全部所选 CFD 的覆盖块汇总，文件顺序不提供优先级。未覆盖或未知变体使用基础值；Option 字段的显式 None 是有效覆盖，保留当前层空态。
 
-C# 生成字段使用 `CoflowDimension<T>`，提供对应的 `Default()`、`For(...)` 和
-`Variants()` 读取方式。
-编辑器的维度展开视图直接编辑所属业务记录，不会生成辅助类型、记录或 CFD 文件。
+编辑器检查使用 `.default()`、`.for("ja")` 和 `.variants()`。C# 字段使用 `DimensionValue<T>`，通过 `Default`、`For("ja")` 和 `Variants` 在同一份加载结果中读取多个变体。
+
+已有覆盖修改后写回来源文件，首次添加覆盖由用户选择目标 CFD 文件。基础记录重命名或删除时同步更新覆盖目标。

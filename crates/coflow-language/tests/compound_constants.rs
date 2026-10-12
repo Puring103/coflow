@@ -26,7 +26,6 @@ const WEIGHTS: {string: int} = { "fire": BASE, "ice": 5 };
 const DEFAULT_STATS: Stats = { hp: BASE, mode: Mode::Primary };
 const MAYBE_ITEM: Option<&Item> = Some(&Item::wooden_sword);
 const NO_ITEM: Option<&Item> = None;
-const RESULT: Result<int, string> = Ok(BASE);
 "#,
     )
     .expect("compound constants compile");
@@ -70,10 +69,6 @@ const RESULT: Result<int, string> = Ok(BASE);
     assert!(matches!(
         schema.resolve_const("NO_ITEM").expect("NO_ITEM").value,
         CftConstValue::OptionNone
-    ));
-    assert!(matches!(
-        schema.resolve_const("RESULT").expect("RESULT").value,
-        CftConstValue::ResultOk(_)
     ));
 }
 

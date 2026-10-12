@@ -1,103 +1,65 @@
-# CFT 声明语言
+# CFT 语言
 
-CFT 定义数据类型、默认值、常量、维度和规则声明。`coflow cft check` 检查声明，
-包括名称、类型、继承、默认值、函数、模板、check 和注解。程序体在契约生成时编译，由运行时按需执行。
+CFT 定义配置类型、字段、默认值、枚举、常量、维度和编辑器检查规则。项目中的全部 CFT 文件共同组成全局声明集合。
 
 ```cft
-namespace game;
-
-enum Rarity { Common, Rare }
-data Stats { hp: int = 100; }
-table Item {
+enum Quality { Common, Rare = 10, Epic }
+@struct sealed type Stats { hp: int = 100; }
+type Item {
+  @localized
   name: string;
-  rarity: Rarity = Rarity::Common;
-  stats: Stats = Stats { hp: 100 };
-  next: Item?;
-  tags: [string] = [];
+  stats: Stats;
+  quality: Quality = Quality::Common;
+  next: Option<&Item> = None;
+  label: fstring = f"{self.name}: {self.stats.hp}";
+  check { stats.hp > 0: "生命值必须为正"; }
 }
-singleton Settings { title: string = "Game"; }
+@singleton type Settings { start: &Item; }
 ```
 
-注释从 `#` 延续到行尾，标识符区分大小写。字段以分号分隔。
+## 类型
 
-## 名称与类型声明
+| 类型 | 数据含义 |
+| --- | --- |
+| int | 有符号 64 位整数 |
+| float | 有限 IEEE 754 binary64 浮点数 |
+| bool / string | 布尔 / 文本 |
+| fstring | 加载时生成文本的字段路径模板 |
+| TypeName | 内联对象 |
+| &TypeName | 记录引用 |
+| `Option<T>` | None 或 Some(T)，支持嵌套 |
+| [T] / {K: V} | 数组 / 字典 |
+| EnumName | 命名枚举值 |
 
-文件可先声明 `namespace game;`，再以 `use shared::Stats;` 导入名称。
-跨命名空间使用完整限定名或显式导入的短名；文件路径不决定命名空间。
-
-| 声明 | 用途 | 继承 |
-| --- | --- | --- |
-| `table Item { ... }` | 有 id 的记录 | 可继承 table |
-| `singleton Settings { ... }` | 单例记录 | 可继承 table，本身不可继续派生 |
-| `data Stats { ... }` | 内联数据对象 | 可继承 data |
-
-`abstract` 类型不可直接构造，`sealed` 类型不可派生。记录不能内联构造，data 不能声明为记录。
-字段类型直接写 `Item` 即表示记录，写 `Stats` 即表示内联数据。
-
-`type Name = Type;` 声明类型别名。字段、常量和函数签名必须写明类型：
+普通 type 同时支持顶层记录和内联对象。类型采用单继承，abstract 类型由具体子类型实例化，sealed 类型不能继续派生。字段使用声明类型，继承链中字段不得重名。必填对象循环和无限默认值展开会产生诊断。
 
 ```cft
-type ItemList = [Item];
-const MAX_LEVEL: int = 100;
-const DEFAULT_TAGS: [string] = ["common"];
-type Callback = fn(value: int) -> int;
+abstract type Entity { name: string; }
+type Weapon: Entity { damage: int; }
+type Link = Option<&Entity>;
+const LIMIT = 100;
+const EMPTY: Option<int> = None;
 ```
 
-## 值类型
+常量可以推断无歧义类型；None、空集合需要明确类型。类型别名和常量依赖必须无环。常量不包含依赖所属对象的 fstring。字典 key 使用 int、string 或 enum。
 
-| 类型 | 写法 | 值示例 |
-| --- | --- | --- |
-| 32 位整数 | `int` | `42` |
-| 32 位浮点 | `float` | `3.5`、`inf` |
-| 布尔 | `bool` | `true` |
-| 普通字符串 | `string` | `"text {braces}"` |
-| 模板 | `fstring` | `f"名称：{self.name}"` |
-| 枚举 | `Rarity` | `Rarity::Rare` |
-| 内联数据 | `Stats` | `Stats { hp: 100 }` |
-| 记录 | `Item` | `&Item::sword` |
-| 数组 | `[T]` | `[1, 2]` |
-| 字典 | `{K: V}` | `{ "hp": 100 }` |
-| 可选值 | `T?` | `None` 或直接书写非空值 |
-| 函数 | `fn(name: T) -> R` | 完整签名的函数字面量 |
-| 无返回值 | `()` | 用于函数签名 |
+Option 每层状态独立：`None`、`Some(None)` 与 `Some(Some(3))` 不同。明确可选位置也可以提供裸值，表示一层 Some。省略字段优先读取默认值；没有默认值的 Option 字段为空，其他必填字段缺失时产生诊断。
 
-字典 key 支持 string、int、bool 和 enum。可选类型不嵌套。
-`(fn() -> int)?` 是可选函数，`fn() -> int?` 是返回可选整数的函数。
-枚举值使用非负 32 位整数；`@flag` 枚举使用 32 位无符号位掩码，支持 `&`、`^`、`|`。
+## 枚举与注解
 
-## 默认值与注解
-
-字段可以使用 `field: Type = value;` 指定默认值。省略无默认值的可选字段得到 None，
-其余无默认值字段必填。内联数据始终写出类型名，默认值展开必须有限。
-
-普通字符串的花括号只是文本。模板必须起源于 `f"..."`，已有模板可按明确的 fstring 类型传递。
-对象字段中直接声明的函数和模板绑定该对象，复制已有函数或模板不改变绑定。
-函数、模板和 check 使用同一套静态类型检查与运行时执行机制。fstring 在普通读取时求值，check 仅在显式请求时执行。
+enum 成员数值为有符号 64 位整数，省略值时递增；名称、数值不得重复，自动编号越界时报错。`@flag` 非零成员为正的二次幂，使用同类型成员的 `&`、`^`、`|` 和括号组合。
 
 | 注解 | 用途 |
 | --- | --- |
-| `@label`、`@description` | 显示名称与说明 |
-| `@flag` | 位标志枚举 |
-| `@struct` | 无继承的 sealed data 值类型 |
-| `@Host` | 由宿主提供的 singleton 服务 |
-| `@idAsEnum(Name)` | 将 table 的记录 key 映射到稳定枚举 |
-| `@localized`、`@dimension("name")` | 记录字段的维度值 |
+| @label("文本") / @description("文本") | 类型、枚举、成员、字段的展示信息 |
+| @singleton | 类型恰好有一条以类型名称为 key 的记录 |
+| @struct | sealed type 的内联值生成目标结构体 |
+| @flag | enum 的标志成员约束 |
+| @idAsEnum(Name) | 以已声明的空 enum 为记录 key 生成目标枚举 |
+| @localized | 字段绑定 language 维度 |
+| @dimension("名称") | 字段绑定指定维度 |
+| @expand | 具体内联对象字段的展开信息 |
 
-check 声明仅适用于记录和顶层规则，data 不声明 check。详见 [Check 校验](./04-check.md)。
+单例不能用作内联字段或引用目标，也不能与 @idAsEnum 同时使用。同一字段只能绑定一个维度。
 
-## 局部构造
-
-函数内可用 `build` 创建或修改 data、数组和字典，正常结束自动得到不可变值：
-
-```cft
-var values: [int] = build [int] as b {
-  b.append(1);
-  b.append(2);
-};
-var updated: [int] = build (values) as b {
-  b[0] = 3;
-  b.remove(1);
-};
-```
-
-data 字段用 `b.field = value;` 赋值；所有正常出口须填完必填字段。字典覆盖保留顺序，删除后重新插入放在末尾。构造不会修改输入；嵌套值需单独构造后替换。构造绑定不能复制、捕获、返回或传入函数，记录与 singleton 不可动态构造。
+字符串使用双引号，`#` 开始行注释。fstring 使用 `f"..."` 和基础字段路径，连续两个同方向的花括号表示一个文本花括号。类型中的匿名 check 位于所有字段之后，顶层 check 必须命名；规则见 [Check 校验](./04-check.md)。

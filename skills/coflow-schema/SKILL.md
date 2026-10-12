@@ -10,7 +10,7 @@ description: "Coflow CFT schema 与配置数据结构建模：当用户需要设
 ## 建模流程
 
 1. 先读取现有项目：`coflow schema inspect <project>` 获取结构化视图；`coflow schema files <project>` 获取原始注释、字段顺序和 `check`。
-2. 明确数据形态：顶层记录、内联对象、枚举、引用、数组、字典、`Option<T>`、`Result<T, E>` 和多态边界。
+2. 明确数据形态：顶层记录、内联对象、枚举、引用、数组、字典、`Option<T>` 和多态边界。
 3. 先设计字段类型和默认值，再设计 `check {}`；不要用 CFD 文件约定替代 schema 约束。
 4. 修改 `.cft` 时优先使用：
 
@@ -26,10 +26,10 @@ coflow schema write-file <project> --file schema/main.cft --check
 - 顶层 record key 由 CFD 记录提供；不要在 CFT 中声明 `id`、`Id` 或 `ID` 字段。
 - 固定集合用 `enum`，共享阈值用 `const`，业务规则用 `check {}`。
 - `&Type` 是顶层记录引用；普通 `Type` 是内联对象。不要用字段注解切换二者。
-- 可选字段写 `Option<T>`；想在 CFD 中省略字段时设置 `= None`。
+- 可选字段写 `Option<T>`；省略且没有默认值时为 None，嵌套可选保留每层状态。
 - 抽象父类用于多态接口，sealed type 用于不可再派生的值对象或叶子类型。
 - 需要让 record key 进入代码枚举时，用 `@idAsEnum(Name)` 并声明空 enum。
-- 使用 `@localized` 前确认 `coflow.yaml` 配置了 `dimensions.language`。
+- `@localized` 绑定 language 维度；变体由已纳入项目的 CFD 覆盖块发现。
 
 ## Reference
 

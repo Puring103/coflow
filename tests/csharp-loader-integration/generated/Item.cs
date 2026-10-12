@@ -5,14 +5,14 @@ namespace Game.Config
 {
 public class Item : Entity
 {
-    internal Item(string key) : base(key) { }
+    internal Item(string? key) : base(key) { }
     public Stats stats { get; internal set; } = default!;
-    public int price { get; internal set; } = default!;
-    public Item? next { get; internal set; } = default!;
+    public long price { get; internal set; } = default!;
+    public global::Coflow.Loader.Option<Item> next { get; internal set; } = default!;
     public string label { get; internal set; } = default!;
     public Flags permissions { get; internal set; } = default!;
     public string enum_label { get; internal set; } = default!;
-    public global::System.Collections.Generic.IReadOnlyList<int> nums { get; internal set; } = default!;
-    public global::System.Collections.Generic.IReadOnlyDictionary<string, int> indexed { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyList<long> nums { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyDictionary<string, long> indexed { get; internal set; } = default!;
 }
 }

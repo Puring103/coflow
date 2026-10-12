@@ -1,50 +1,32 @@
-# 面向程序员
+# 程序员接入
 
-Coflow 项目由 CFT schema、`.cfd` 数据文件和一个或多个代码生成目标组成。Rust host 使用
-`coflow-project` 打开只读 session。
+在 coflow.yaml 中指定 schema、CFD 数据路径和代码生成目标，使用 `coflow check .` 校验声明与数据，使用 `coflow codegen .` 生成业务类型。
 
-## 目标语言生成
+```yaml
+schema: schema/
+data: data/
+codegen:
+  - language: csharp
+    dir: generated
+    namespace: Game.Config
+```
 
-目标语言 generator 实现 `coflow_project::codegen::CodeGenerator`：
+C# 项目引用 `runtimes/csharp/Coflow.Loader` 和生成文件：
 
-```rust
-pub trait CodeGenerator: Send + Sync + std::fmt::Debug {
-    fn descriptor(&self) -> &'static CodegenDescriptor;
-    fn generate(&self, input: CodegenInput<'_>)
-        -> Result<CodeArtifactSet, CodegenError>;
+```csharp
+using Coflow.Loader;
+using Game.Config;
+
+var result = CoflowData.Load(new[] {
+    new CfdSource("items.cfd", itemsText),
+    new CfdSource("ja.cfd", localizationText),
+});
+if (result.Success) {
+    var sword = result.Data.Item["sword"];
+    var name = sword.name.For("ja");
 }
 ```
 
-`CodegenInput` 提供不可变 schema、可选 `CfdDataModel`、CFD source 清单和目标选项；返回的
-`CodeArtifactSet` 只能包含安全的项目内相对路径。generator 不读取文件，也不发布目录。
+互相引用的记录一起加载，引用直接连接业务对象。整数与浮点使用 long/double，可选值使用 `Option<T>` 保留每层状态。应用选择文件、读取内容和处理加载诊断，编辑器执行 CFT 中的业务检查。
 
-增加语言时新增 generator 和目标语言 runtime，并在应用层注册 descriptor。一个项目可以配置
-多个语言目标，所有 generator 都读取同一份 schema、`CfdDataModel` 和 CFD source 清单；Coflow
-会在全部目标生成成功后统一发布。
-
-## C# 进程内加载
-
-`coflow-codegen-csharp` 生成业务类型、Schema 绑定和强类型 `Schema` 入口。游戏或
-服务进程引用 `Coflow.Runtime`，读取 CFD 文本后按 Module 加载并编译：
-
-```csharp
-var coflow = Schema.Create();
-coflow.LoadModule(new CoflowSource("items.cfd", File.ReadAllText("data/items.cfd")));
-coflow.LoadModule(new CoflowSource("rules.cfd", File.ReadAllText("data/rules.cfd")));
-var result = coflow.Compile();
-
-var items = coflow.Table(Item.Table);
-```
-
-`Compile` 解析全部 Module 中的 CFD、建立 record identity、解析跨 Module 引用并构造生成类型，同时
-链接和编译函数。未知字段、非法值、
-缺失引用、函数签名/函数体错误和资源限制都通过 `CfdLoadException.Diagnostics` 返回。
-
-维度字段生成为对应的强类型维度值，使用 `value.For("zh")` 读取指定 variant；未提供该 variant 时返回基础值。
-
-## 约束
-
-- 数据文件必须是 `.cfd`；目录发现会忽略其它扩展名。
-- Rust runtime 会把 CFD 函数作为 `CfdFunction` 保留在数据模型中并校验声明签名，不会从
-  `data` 中跳过含函数字段的文件。
-- 写入只能通过 runtime mutation/write plan，不能绕过 revision 检查直接覆盖源文件。
+类型映射、单例、结构体记录与加载结果见 [C# 参考](../reference/07-codegen/01-csharp.md)。

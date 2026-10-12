@@ -88,7 +88,7 @@ fn alias_cycles_are_rejected_with_a_dedicated_diagnostic() {
     let diagnostics = compile(
         r#"
             type A = Option<B>;
-            type B = Result<int, C>;
+            type B = {int: C};
             type C = A;
             type Item { value: A; }
         "#,

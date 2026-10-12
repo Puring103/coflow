@@ -202,12 +202,6 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             ValueDraft::OptionSome(value) => self
                 .resolve_value(value, node, cursor)
                 .map(|value| CfdValue::OptionSome(Box::new(value))),
-            ValueDraft::ResultOk(value) => self
-                .resolve_value(value, node, cursor)
-                .map(|value| CfdValue::ResultOk(Box::new(value))),
-            ValueDraft::ResultErr(value) => self
-                .resolve_value(value, node, cursor)
-                .map(|value| CfdValue::ResultErr(Box::new(value))),
             ValueDraft::FormattedString(value) => {
                 self.resolve_formatted_string(value, node, cursor)
             }
@@ -625,9 +619,7 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
         depth = depth.max(value_depth);
         let child_depth = value_depth.saturating_add(1);
         match value {
-            CfdValue::OptionSome(value)
-            | CfdValue::ResultOk(value)
-            | CfdValue::ResultErr(value) => pending.push((value, child_depth)),
+            CfdValue::OptionSome(value) => pending.push((value, child_depth)),
             CfdValue::Object(object) => {
                 pending.extend(object.fields().values().map(|value| (value, child_depth)));
             }

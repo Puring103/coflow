@@ -1,58 +1,26 @@
 # 本地化与维度
 
-维度为同一个字段提供多组变体值。配置声明变体和目录：
-
-```yaml
-dimensions:
-  language:
-    variants: [en, zh]
-    out_dir: data/dimensions/language
-```
-
-字段通过 `@localized` 使用 `language` 维度，也可以通过 `@dimension("维度名")` 指定其他维度：
+`@localized` 将字段绑定 language 维度，`@dimension("name")` 绑定指定维度。同一字段保存基础值和任意数量的变体值。
 
 ```cft
-type UiText {
-  @localized text: string;
+type Item {
+  @localized
+  name: string;
+  @dimension("region")
+  price: int;
 }
 ```
 
-基础文件保存默认值：
-
 ```cfd
-welcome: UiText { text: "Welcome" }
+sword: Item { name: "Sword", price: 100 }
+language[ja] { sword: Item { name: "剣" } }
+region[cn] { sword: Item { price: 90 } }
 ```
 
-维度文件使用 `__coflow_<维度名>_<类型名>_<字段名>` 作为记录类型，记录 key 与基础记录一致：
+覆盖块定位已有记录，只替换明确写出的维度字段。字段必须绑定外层维度，覆盖值符合字段声明类型；同一维度、变体、记录和字段重复覆盖时报错。
 
-```cfd
-welcome: __coflow_language_UiText_text {
-  en: "Welcome",
-  zh: "欢迎",
-}
-```
+变体从全部所选 CFD 的覆盖块汇总，文件顺序不提供优先级。未覆盖或未知变体使用基础值；Option 字段的显式 None 是有效覆盖，保留当前层空态。
 
-每份 `.cfd` 维度文件可包含多个变体。普通类型的文件位于维度目录中的 `<bucket>_<字段名>.cfd`，未指定 bucket 时使用类型名；singleton 使用 `<类型名>.cfd`，每行的 key 是字段名，记录类型仍包含对应字段名。继承字段使用声明该字段的类型名。
+编辑器检查使用 `.default()`、`.for("ja")` 和 `.variants()`。C# 字段使用 `DimensionValue<T>`，通过 `Default`、`For("ja")` 和 `Variants` 在同一份加载结果中读取多个变体。
 
-`coflow build` 生成或更新维度文件，其中 `default` 展示基础字段值；修改默认值应编辑基础记录。`__coflow_` 是系统保留的名称前缀。
-
-C# 中将基础文件和维度文件作为 `CoflowSource` 加载，再调用 `Compile`：
-
-```csharp
-var coflow = Schema.Create();
-coflow.LoadModule(
-    new CoflowSource("base.cfd", baseText),
-    new CoflowSource("translations.cfd", translationsText));
-var result = coflow.Compile();
-if (!result.Success)
-    throw new CoflowLoadException(result.Diagnostics);
-var welcome = coflow.Table(UiText.Table).Get("welcome").Value;
-var original = welcome.text.Default;
-var translated = welcome.text.For("zh");
-```
-
-`For(variant)` 返回对应变体；变体缺失、显式为 `None` 或名称未知时返回基础字段值。C# 调用方负责读取并传入文件内容，文件路径不决定字段归属。维度记录不作为业务表暴露。
-
-构建校验按配置的变体执行。变体值缺失或显式为 `None` 时，使用基础字段值执行校验；基础值仍须满足对应的校验规则。
-
-维度记录类型必须与目标字段对应的辅助类型一致。重复记录、未知变体和值类型错误会报告诊断。目标基础记录不存在时，残留的维度记录会被静默忽略；下次运行 `coflow build` 时，维度文件按现有基础记录更新并清理残留。
+已有覆盖修改后写回来源文件，首次添加覆盖由用户选择目标 CFD 文件。基础记录重命名或删除时同步更新覆盖目标。

@@ -11,7 +11,7 @@ fn compile(
 }
 
 #[test]
-fn result_is_supported_in_data_field_shapes() {
+fn removed_result_and_unit_types_are_rejected_in_all_declaration_positions() {
     for source in [
         "type Item { value: Result<int, string>; }",
         "@struct sealed type Item { value: Result<int, string>; }",
@@ -19,9 +19,32 @@ fn result_is_supported_in_data_field_shapes() {
         "type Item { value: [Result<int, string>]; }",
         "type Item { value: {string: Result<int, string>}; }",
         "type Outcome = Result<int, string>; type Item { value: Outcome; }",
+        "const OUTCOME: Result<int, string> = Ok(1);",
+        "type Item { value: (); }",
+        "type Empty = ();",
+        "const EMPTY: () = ();",
     ] {
-        compile(source).expect("Result is a data field type");
+        assert!(compile(source).is_err(), "removed type must fail: {source}");
     }
+}
+
+#[test]
+fn removed_result_constructors_are_rejected_in_defaults_and_constants() {
+    for source in [
+        "type Item { value: int = Ok(1); }",
+        "type Item { value: string = Err(\"bad\"); }",
+        "type Item { value: Option<int> = Some(Ok(1)); }",
+        "const OUTCOME = Ok(1);",
+        "const OUTCOME = Err(\"bad\");",
+    ] {
+        assert!(compile(source).is_err(), "removed constructor must fail: {source}");
+    }
+}
+
+#[test]
+fn former_result_names_are_ordinary_user_type_names() {
+    compile("type Result { value: int; } type Ok {} type Err {} type Item { value: Result; }")
+        .expect("removed built-in names can name business types");
 }
 
 #[test]

@@ -1,4 +1,6 @@
-schema: schema/
+schema:
+  - schema/
+  - ../fixtures/cfd-runtime-parity/
 data: data/
 
 codegen:

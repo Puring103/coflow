@@ -177,8 +177,6 @@ pub enum TypeRefKind {
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
     Option(Box<TypeRef>),
-    Result(Box<TypeRef>, Box<TypeRef>),
-    Unit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,8 +198,6 @@ pub enum DefaultExprKind {
     Bool(bool),
     OptionNone,
     OptionSome(Box<DefaultExpr>),
-    ResultOk(Box<DefaultExpr>),
-    ResultErr(Box<DefaultExpr>),
     String(String),
     FormattedString(String),
 

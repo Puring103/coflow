@@ -1,5 +1,4 @@
-// wire 兼容层：按域拆分后的统一出口，存量导入路径不变。
-// 新代码优先从 './wire/ids|paths|annotation|values|diagnostics|ipc|graph|routing' 直接导入。
+// 编辑器 wire 的公共入口；各领域实现分别维护值、坐标、诊断与 IPC 转换。
 export * from './wire/ids'
 export * from './wire/paths'
 export * from './wire/annotation'

@@ -401,9 +401,7 @@ fn dimension_value_at_path<'a>(
 ) -> Option<&'a CfdValue> {
     for segment in path {
         value = match value {
-            CfdValue::OptionSome(inner)
-            | CfdValue::ResultOk(inner)
-            | CfdValue::ResultErr(inner) => inner,
+            CfdValue::OptionSome(inner) => inner,
             CfdValue::OptionNone => return None,
             _ => value,
         };
@@ -483,13 +481,6 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         CftValueType::Option(inner) => Some(Box::new(field_shape(schema, inner))),
         _ => None,
     };
-    let (result_ok, result_err) = match ty {
-        CftValueType::Result(ok, err) => (
-            Some(Box::new(field_shape(schema, ok))),
-            Some(Box::new(field_shape(schema, err))),
-        ),
-        _ => (None, None),
-    };
     FieldShapeInfo {
         display_label: ty.display_label(),
         label: None,
@@ -499,8 +490,6 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
         enum_is_flag,
         nullable: matches!(ty, CftValueType::Option(_)),
         option_inner,
-        result_ok,
-        result_err,
         polymorphic_types,
         collection_key,
         collection_item,

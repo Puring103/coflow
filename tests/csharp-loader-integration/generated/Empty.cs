@@ -5,6 +5,6 @@ namespace Game.Config
 {
 public struct Empty
 {
-    public int hp { get; internal set; }
+    public long hp { get; internal set; }
 }
 }

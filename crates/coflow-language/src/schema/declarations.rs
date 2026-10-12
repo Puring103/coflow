@@ -120,8 +120,6 @@ pub enum CftConstValue {
     },
     OptionNone,
     OptionSome(Box<CftConstValue>),
-    ResultOk(Box<CftConstValue>),
-    ResultErr(Box<CftConstValue>),
     Array(Vec<CftConstValue>),
     Dictionary(Vec<(CftConstValue, CftConstValue)>),
     Object {
@@ -176,8 +174,6 @@ pub struct CftField {
 pub enum CftSchemaDefaultValue {
     OptionNone,
     OptionSome(Box<CftSchemaDefaultValue>),
-    ResultOk(Box<CftSchemaDefaultValue>),
-    ResultErr(Box<CftSchemaDefaultValue>),
     Int(i64),
     Float(f64),
     Bool(bool),

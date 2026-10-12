@@ -88,9 +88,6 @@ pub enum SchemaTypeRefInfo {
     Array { item: Box<Self> },
     Dict { key: Box<Self>, value: Box<Self> },
     Option { inner: Box<Self> },
-    Result { value: Box<Self>, error: Box<Self> },
-
-    Unit,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,8 +95,6 @@ pub enum SchemaTypeRefInfo {
 pub enum SchemaDefaultValueInfo {
     OptionNone,
     OptionSome(Box<Self>),
-    ResultOk(Box<Self>),
-    ResultErr(Box<Self>),
     Int(#[serde(with = "crate::data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
@@ -148,8 +143,6 @@ pub enum SchemaConstValueInfo {
     },
     OptionNone,
     OptionSome(Box<Self>),
-    ResultOk(Box<Self>),
-    ResultErr(Box<Self>),
     Array(Vec<Self>),
     Dictionary(Vec<(Self, Self)>),
     Object {
@@ -324,12 +317,6 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
         CftValueType::Option(inner) => SchemaTypeRefInfo::Option {
             inner: Box::new(value_type_info(inner)),
         },
-        CftValueType::Result(value, error) => SchemaTypeRefInfo::Result {
-            value: Box::new(value_type_info(value)),
-            error: Box::new(value_type_info(error)),
-        },
-
-        CftValueType::Unit => SchemaTypeRefInfo::Unit,
     }
 }
 
@@ -338,12 +325,6 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::OptionNone => SchemaDefaultValueInfo::OptionNone,
         CftSchemaDefaultValue::OptionSome(value) => {
             SchemaDefaultValueInfo::OptionSome(Box::new(default_value_info(value)))
-        }
-        CftSchemaDefaultValue::ResultOk(value) => {
-            SchemaDefaultValueInfo::ResultOk(Box::new(default_value_info(value)))
-        }
-        CftSchemaDefaultValue::ResultErr(error) => {
-            SchemaDefaultValueInfo::ResultErr(Box::new(default_value_info(error)))
         }
         CftSchemaDefaultValue::Int(value) => SchemaDefaultValueInfo::Int(*value),
         CftSchemaDefaultValue::Float(value) => SchemaDefaultValueInfo::Float(*value),
@@ -411,12 +392,6 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::OptionNone => SchemaConstValueInfo::OptionNone,
         CftConstValue::OptionSome(value) => {
             SchemaConstValueInfo::OptionSome(Box::new(const_value_info(value)))
-        }
-        CftConstValue::ResultOk(value) => {
-            SchemaConstValueInfo::ResultOk(Box::new(const_value_info(value)))
-        }
-        CftConstValue::ResultErr(value) => {
-            SchemaConstValueInfo::ResultErr(Box::new(const_value_info(value)))
         }
         CftConstValue::Array(values) => {
             SchemaConstValueInfo::Array(values.iter().map(const_value_info).collect())

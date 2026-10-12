@@ -153,14 +153,6 @@ pub(crate) fn expected_type_for_record_path(
                     current_type = (**inner).clone();
                     current_value = Some(value);
                 }
-                (CftValueType::Result(ok, _), Some(CfdValue::ResultOk(value))) => {
-                    current_type = (**ok).clone();
-                    current_value = Some(value);
-                }
-                (CftValueType::Result(_, err), Some(CfdValue::ResultErr(value))) => {
-                    current_type = (**err).clone();
-                    current_value = Some(value);
-                }
                 _ => break,
             }
         }

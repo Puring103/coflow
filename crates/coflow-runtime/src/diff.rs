@@ -376,10 +376,6 @@ fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
         CfdValue::OptionSome(value) => {
             CfdValue::OptionSome(Box::new(normalized_semantic_value(value)))
         }
-        CfdValue::ResultOk(value) => CfdValue::ResultOk(Box::new(normalized_semantic_value(value))),
-        CfdValue::ResultErr(value) => {
-            CfdValue::ResultErr(Box::new(normalized_semantic_value(value)))
-        }
         CfdValue::Object(object) => {
             let mut normalized = object.as_ref().clone();
             for value in normalized.fields_mut().values_mut() {

@@ -19,7 +19,7 @@ internal static class CfdIdentifiers
         "max" or "sum" or "keys" or "values" or "matches" or "if" or "else" or "match" or
         "case" or "for" or "while" or "let" or "module" or "import" or "export" or "from" or
         "fn" or "var" or "return" or "break" or "continue" or
-        "None" or "Some" or "Ok" or "Err" or "Option" or "Result" or "alert" or "records";
+        "None" or "Some" or "Option" or "alert" or "records";
 
     internal static bool IsIdentifier(string value) =>
         IsIdentifierName(value) && !IsReserved(value);

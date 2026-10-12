@@ -6,7 +6,6 @@ use crate::schema::{
     CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue,
     CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp, CftTopLevelCheck, CftType,
-    CftValueType,
 };
 use crate::syntax::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment,
@@ -183,6 +182,8 @@ impl ValidatedSchema<'_> {
         types
     }
 
+    // 进入 lowering 前已经完成字段类型校验，未解析类型属于编译流水线不变量错误。
+    #[allow(clippy::expect_used)]
     fn build_schema_field(
         &self,
         module: &crate::ModuleId,
@@ -198,7 +199,7 @@ impl ValidatedSchema<'_> {
                 .resolve_field_type(&field.ty)
                 .value_type()
                 .cloned()
-                .unwrap_or(CftValueType::Unit),
+                .expect("validated field types must resolve before lowering"),
             default: field
                 .default
                 .as_ref()
@@ -283,12 +284,6 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
         CftConstValue::OptionNone => CftSchemaDefaultValue::OptionNone,
         CftConstValue::OptionSome(value) => {
             CftSchemaDefaultValue::OptionSome(Box::new(const_value_as_default(value)))
-        }
-        CftConstValue::ResultOk(value) => {
-            CftSchemaDefaultValue::ResultOk(Box::new(const_value_as_default(value)))
-        }
-        CftConstValue::ResultErr(value) => {
-            CftSchemaDefaultValue::ResultErr(Box::new(const_value_as_default(value)))
         }
         CftConstValue::Array(values) => {
             CftSchemaDefaultValue::Array(values.iter().map(const_value_as_default).collect())

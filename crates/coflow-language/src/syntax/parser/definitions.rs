@@ -227,37 +227,18 @@ impl Parser<'_> {
     // 类型语法的所有首 token 分支集中处理，便于核对递归深度预算。
     #[allow(clippy::too_many_lines)]
     fn parse_value_type_primary(&mut self) -> Result<Parsed<TypeRef>, CftDiagnostics> {
-        if let Some(start) = self.eat(&TokenKind::LParen) {
-            let end = self
-                .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
-                .end;
-            return self.node(StructureKind::TypeRef, start, [], || TypeRef {
-                span: Span::new(start.start, end),
-                kind: TypeRefKind::Unit,
-            });
-        }
         if self.peek_ident_is("Option") {
             let start = self.expect_ident()?.span;
             self.expect_simple(&TokenKind::Less, CftErrorCode::ExpectedToken)?;
-            let inner = self.parse_value_type()?;
+            // Option 泛型与集合类型共享递归深度预算，解析内部类型前先进入。
+            let inner = self.nested(StructureKind::TypeRef, start, |parser| {
+                parser.parse_value_type()
+            })?;
             let end = self.expect_type_close()?.end;
             let depth = inner.depth;
             return self.node(StructureKind::TypeRef, start, [depth], || TypeRef {
                 span: Span::new(start.start, end),
                 kind: TypeRefKind::Option(Box::new(inner.value)),
-            });
-        }
-        if self.peek_ident_is("Result") {
-            let start = self.expect_ident()?.span;
-            self.expect_simple(&TokenKind::Less, CftErrorCode::ExpectedToken)?;
-            let value = self.parse_value_type()?;
-            self.expect_simple(&TokenKind::Comma, CftErrorCode::ExpectedToken)?;
-            let error = self.parse_value_type()?;
-            let end = self.expect_type_close()?.end;
-            let depths = [value.depth, error.depth];
-            return self.node(StructureKind::TypeRef, start, depths, || TypeRef {
-                span: Span::new(start.start, end),
-                kind: TypeRefKind::Result(Box::new(value.value), Box::new(error.value)),
             });
         }
         if let Some(start) = self.eat(&TokenKind::Amp) {

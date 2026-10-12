@@ -108,6 +108,12 @@ internal sealed class CfdNoneValue : CfdValueNode
 
 
 
+internal sealed class CfdSomeValue : CfdValueNode
+{
+    internal CfdSomeValue(CfdValueNode value, CfdSpan span) : base(span) => Value = value;
+    internal CfdValueNode Value { get; }
+}
+
 internal sealed class CfdScalarValue : CfdValueNode
 {
     public CfdScalarValue(string value, CfdSpan span) : base(span) => Value = value;

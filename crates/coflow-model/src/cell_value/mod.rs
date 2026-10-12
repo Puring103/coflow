@@ -106,14 +106,6 @@ fn parse_value(
             parse_value(schema, inner, value, ValueContext::Nested)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
         }
-        CellType::Result(ok, _) if text.starts_with("Ok") => constructor_inner(text, "Ok")
-            .ok_or_else(|| type_mismatch(&ty.display()))
-            .and_then(|value| parse_value(schema, ok, value, ValueContext::Nested))
-            .map(|value| LoadedValueDraft::ResultOk(Box::new(value))),
-        CellType::Result(_, error) => constructor_inner(text, "Err")
-            .ok_or_else(|| type_mismatch(&ty.display()))
-            .and_then(|value| parse_value(schema, error, value, ValueContext::Nested))
-            .map(|value| LoadedValueDraft::ResultErr(Box::new(value))),
         CellType::Int => Ok(LoadedValueDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
@@ -139,7 +131,6 @@ fn parse_value(
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
         CellType::Array(inner) => parse_array(schema, inner, text, context),
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
-        CellType::Unsupported(display) => Err(type_mismatch(display)),
     }
 }
 

@@ -152,7 +152,7 @@ fn walk_value_type(
             TypeRefKind::Ref(inner) | TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
                 pending.push((inner, cursor));
             }
-            TypeRefKind::Dict(key, value) | TypeRefKind::Result(key, value) => {
+            TypeRefKind::Dict(key, value) => {
                 pending.push((value, cursor));
                 pending.push((key, cursor));
             }
@@ -161,7 +161,6 @@ fn walk_value_type(
             | TypeRefKind::Bool
             | TypeRefKind::String
             | TypeRefKind::FormattedString
-            | TypeRefKind::Unit
             | TypeRefKind::Named(_) => {}
         }
     }
@@ -210,9 +209,7 @@ fn walk_default(
             | DefaultExprKind::FormattedString(_)
             | DefaultExprKind::StaticPath(_)
             | DefaultExprKind::RecordReference(_) => {}
-            DefaultExprKind::OptionSome(value)
-            | DefaultExprKind::ResultOk(value)
-            | DefaultExprKind::ResultErr(value) => {
+            DefaultExprKind::OptionSome(value) => {
                 pending.push((value, cursor));
             }
         }

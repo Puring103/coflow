@@ -247,12 +247,6 @@ fn annotation_for_value(
         CfdValue::OptionSome(inner) => declared_shape
             .and_then(|shape| shape.option_inner.as_deref())
             .map(|shape| (inner.as_ref(), shape)),
-        CfdValue::ResultOk(inner) => declared_shape
-            .and_then(|shape| shape.result_ok.as_deref())
-            .map(|shape| (inner.as_ref(), shape)),
-        CfdValue::ResultErr(inner) => declared_shape
-            .and_then(|shape| shape.result_err.as_deref())
-            .map(|shape| (inner.as_ref(), shape)),
         _ => None,
     };
     if let Some((inner, inner_shape)) = wrapped {
