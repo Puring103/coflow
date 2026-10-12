@@ -1,4 +1,0 @@
-# 每条记录显式声明类型。
-sword: Item { name: "Sword", tags: ["weapon", "melee"] }
-shield: Item { name: "Shield" }
-bow: RangedItem { name: "Bow" }

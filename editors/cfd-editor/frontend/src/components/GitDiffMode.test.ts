@@ -29,7 +29,7 @@ describe('Git Diff available views and tree', () => {
 
   it('restores deleted paths and preserves the main tree dimension grouping', () => {
     const tree = buildDiffTree({ ...emptyDiff, files: ['schema/old.cft', 'data/nested/old.cfd', 'generated/lang/old.cfd'].map(path => ({ path, change: 'deleted', before: '', patch: '' })) }, [{ name: '本地化', path: 'generated/lang', is_dir: true, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] }])
-    const groups = buildFileTreeGroups(tree, [{ name: 'language', display_name: '本地化', variants: [], fields: [], out_dir: null }])
+    const groups = buildFileTreeGroups(tree, [{ name: 'language', display_name: '本地化', variants: [], fields: [] }])
     expect(groups[0].nodes[0].children[0].path).toBe('schema/old.cft')
     expect(JSON.stringify(groups[1].nodes)).toContain('data/nested/old.cfd')
     expect(JSON.stringify(groups[1].nodes)).toContain('generated/lang/old.cfd')
@@ -66,7 +66,7 @@ describe('Git Diff available views and tree', () => {
     const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
       diff,
       nodes,
-      dimensions: [{ name: 'language', display_name: '本地化', variants: [], fields: [], out_dir: null }],
+      dimensions: [{ name: 'language', display_name: '本地化', variants: [], fields: [] }],
       fileTypes: multiTypes,
       loading: false,
       error: null,

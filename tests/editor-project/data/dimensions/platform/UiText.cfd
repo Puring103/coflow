@@ -1,0 +1,2 @@
+platform[desktop] { UiText: UiText { hint: "Press Enter" } }
+platform[mobile] { UiText: UiText { hint: "Tap to continue" } }

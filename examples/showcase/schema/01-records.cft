@@ -1,7 +1,7 @@
 # Feature: records with scalar fields.
 
 @label("Product")
-table Product {
+type Product {
 
   @label("Name")
   name: string;

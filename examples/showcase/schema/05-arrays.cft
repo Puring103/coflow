@@ -1,5 +1,5 @@
 # Feature: arrays.
 
-table ArrayExample {
+type ArrayExample {
   tags: [string] = [];
 }

@@ -1,0 +1,581 @@
+use crate::api::WriterCapabilities;
+use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use coflow_language::cft::{CftSchema, CftValueType};
+
+use crate::indexes::{FileIndex, SourceIndex};
+use crate::mutation::defaults::default_value_for_value_type;
+use crate::DefaultMaterialization;
+use crate::{
+    DiagnosticsStore, DimensionInfo, DimensionValueOrigin, DimensionValueState, DimensionValueView,
+    EffectiveFieldWrite, FieldShapeInfo, FileTreeNode, IdAsEnumInfo, ProjectExecutionStats,
+    ProjectSession, RecordCoordinate, RecordReferenceInfo, RecordView, RefTargetInfo,
+};
+
+/// Read-only capability over one immutable project generation.
+///
+/// Hosts receive this view instead of the owning runtime session, so query
+/// code cannot reach mutation methods or replace the active generation.
+#[derive(Debug, Clone, Copy)]
+pub struct ProjectQueries<'a> {
+    session: &'a ProjectSession,
+    revision: u64,
+}
+
+impl<'a> ProjectQueries<'a> {
+    pub(crate) const fn new(session: &'a ProjectSession, revision: u64) -> Self {
+        Self { session, revision }
+    }
+
+    #[must_use]
+    pub const fn revision(self) -> u64 {
+        self.revision
+    }
+
+    /// 比较当前已发布的 Runtime 数据与 Git HEAD。
+    ///
+    /// # Errors
+    ///
+    /// 当前项目不在 Git 工作区、HEAD 不存在或 Git 查询失败时返回诊断。
+    pub fn diff_against_head(self) -> Result<crate::ProjectDiff, crate::DiagnosticSet> {
+        crate::diff::diff_against_head(self.session, self.revision)
+    }
+
+    #[must_use]
+    pub const fn diagnostics(self) -> &'a DiagnosticsStore {
+        self.session.diagnostics()
+    }
+
+    #[must_use]
+    pub const fn execution_stats(self) -> &'a ProjectExecutionStats {
+        self.session.execution_stats()
+    }
+
+    #[must_use]
+    pub(crate) const fn sources(self) -> &'a SourceIndex {
+        self.session.sources()
+    }
+
+    #[must_use]
+    pub(crate) const fn files(self) -> &'a FileIndex {
+        self.session.files()
+    }
+
+    #[must_use]
+    pub fn source_file_count(self) -> usize {
+        self.session.files().source_files().len()
+    }
+
+    pub fn source_files(self) -> impl Iterator<Item = &'a str> + 'a {
+        self.session
+            .files()
+            .source_files()
+            .iter()
+            .map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn record_count(self) -> usize {
+        self.session.records().by_id().len()
+    }
+
+    #[must_use]
+    pub fn record_count_for_type(self, actual_type: &str) -> usize {
+        self.session
+            .model()
+            .table(actual_type)
+            .map_or(0, |table| table.records.len())
+    }
+
+    #[must_use]
+    pub fn schema_has_type(self, type_name: &str) -> bool {
+        self.session.schema().resolve_type(type_name).is_some()
+    }
+
+    #[must_use]
+    pub fn type_is_singleton(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_singleton)
+    }
+
+    #[must_use]
+    pub fn type_is_abstract(self, type_name: &str) -> bool {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .is_some_and(|meta| meta.is_abstract)
+    }
+
+    #[must_use]
+    pub fn id_as_enum_name_for_type(self, type_name: &str) -> Option<String> {
+        self.session
+            .schema()
+            .inherited_id_as_enum(type_name)
+            .map(|name| name.to_string())
+    }
+
+    #[must_use]
+    pub fn schema_type_names(self) -> Vec<String> {
+        self.session
+            .schema()
+            .all_types()
+            .map(|schema_type| schema_type.name.to_string())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn schema_type_fields(self, type_name: &str) -> Vec<(String, String)> {
+        self.session
+            .schema()
+            .resolve_type(type_name)
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| (field.name.to_string(), field.value_type.display_label()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Builds a schema-shaped value used only to present an absent field in
+    /// an editor. Failure means the type requires user input (most notably a
+    /// required record reference), so the host should present an empty typed
+    /// control instead of inventing a valid model value.
+    #[must_use]
+    pub fn editable_field_seed(self, actual_type: &str, field_name: &str) -> Option<CfdValue> {
+        let field = self.session.schema().field(actual_type, field_name)?;
+        default_value_for_value_type(
+            self.session.schema(),
+            &field.value_type,
+            DefaultMaterialization::EditableShape,
+        )
+        .ok()
+    }
+
+    #[must_use]
+    pub fn rejected_records(self) -> &'a [crate::RejectedRecordRef] {
+        self.session.records().rejected()
+    }
+
+    #[must_use]
+    pub fn has_source_file(self, file: &str) -> bool {
+        self.session.files().source_files().contains(file)
+    }
+
+    #[must_use]
+    pub fn has_unique_source_for_file(self, file: &str) -> bool {
+        self.session.files().source_for_display(file).is_some()
+    }
+
+    pub fn rejected_records_in_file(
+        self,
+        file: &str,
+    ) -> impl Iterator<Item = &'a crate::RejectedRecordRef> + 'a {
+        self.session.records().rejected_in_file(file)
+    }
+
+    pub fn rejected_records_by_coordinate(
+        self,
+        actual_type: &str,
+        key: &str,
+    ) -> impl Iterator<Item = &'a crate::RejectedRecordRef> + 'a {
+        self.session
+            .records()
+            .rejected_by_coordinate(actual_type, key)
+    }
+
+    #[must_use]
+    pub fn has_diagnostics(self) -> bool {
+        self.session.has_diagnostics()
+    }
+
+    #[must_use]
+    fn id_for_coordinate(self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+        self.session.id_for_coordinate(actual_type, key)
+    }
+
+    #[must_use]
+    fn coordinate_of(self, id: CfdRecordId) -> Option<RecordCoordinate> {
+        self.session.coordinate_of(id)
+    }
+
+    #[must_use]
+    pub fn file_for_record(self, actual_type: &str, key: &str) -> Option<&'a str> {
+        self.session.file_for_record(actual_type, key)
+    }
+
+    #[must_use]
+    pub fn dimensions(self) -> Vec<DimensionInfo> {
+        self.session.dimensions()
+    }
+
+    #[must_use]
+    pub fn dimension_value(
+        self,
+        coordinate: &crate::DimensionValueCoordinate,
+    ) -> Option<DimensionValueView> {
+        let record_id = self.id_for_coordinate(
+            coordinate.actual_type.as_str(),
+            coordinate.record_key.as_str(),
+        )?;
+        match self
+            .session
+            .model()
+            .dimension_field_value(
+                self.session.schema(),
+                record_id,
+                coordinate.field.as_str(),
+                coordinate.dimension.as_str(),
+                coordinate.variant.as_str(),
+            )
+            .ok()?
+        {
+            DimensionValueLookup::Value { value, origin } => Some(DimensionValueView {
+                state: DimensionValueState::Value(
+                    dimension_value_at_path(value, &coordinate.path)?.clone(),
+                ),
+                origin: DimensionValueOrigin::from_record_origin(origin),
+            }),
+            DimensionValueLookup::ExplicitNone { origin } => {
+                coordinate.path.is_empty().then(|| DimensionValueView {
+                    state: DimensionValueState::Value(CfdValue::OptionNone),
+                    origin: DimensionValueOrigin::from_record_origin(origin),
+                })
+            }
+            DimensionValueLookup::Missing => Some(DimensionValueView {
+                state: DimensionValueState::Missing,
+                origin: None,
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn record_view(self, actual_type: &str, key: &str) -> Option<RecordView<'a>> {
+        self.session.record_view(actual_type, key)
+    }
+
+    #[must_use]
+    pub fn field_value(
+        self,
+        actual_type: &str,
+        key: &str,
+        path: &[CfdPathSegment],
+    ) -> Option<&'a CfdValue> {
+        self.session.field_value(actual_type, key, path)
+    }
+
+    #[must_use]
+    pub fn effective_field_write(
+        self,
+        coordinate: &RecordCoordinate,
+        path: &[CfdPathSegment],
+    ) -> Option<EffectiveFieldWrite> {
+        self.session.effective_field_write(coordinate, path)
+    }
+
+    #[must_use]
+    pub fn ref_targets(self, expected_type: &str) -> Vec<RefTargetInfo> {
+        self.session.ref_targets(expected_type)
+    }
+
+    #[must_use]
+    pub fn field_shape(self, actual_type: &str, field_name: &str) -> Option<FieldShapeInfo> {
+        let field = self.session.schema().field(actual_type, field_name)?;
+        let mut shape = field_shape(self.session.schema(), &field.value_type);
+        if let Some(display) = &field.display {
+            shape.label.clone_from(&display.label);
+            shape.description.clone_from(&display.description);
+        }
+        Some(shape)
+    }
+
+    #[must_use]
+    pub fn enum_variant_options(
+        self,
+        enum_name: &str,
+    ) -> Vec<(String, i64, Option<String>, Option<String>)> {
+        self.session
+            .schema()
+            .resolve_enum(enum_name)
+            .map_or_else(Vec::new, |schema_enum| {
+                schema_enum
+                    .variants
+                    .iter()
+                    .map(|variant| {
+                        let display = variant.display.as_ref();
+                        (
+                            variant.name.to_string(),
+                            variant.value,
+                            display.and_then(|meta| meta.label.clone()),
+                            display.and_then(|meta| meta.description.clone()),
+                        )
+                    })
+                    .collect()
+            })
+    }
+
+    #[must_use]
+    pub fn type_field_names(self, actual_type: &str) -> Vec<String> {
+        self.session
+            .schema()
+            .resolve_type(actual_type)
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn record_references(self, coordinate: &RecordCoordinate) -> Vec<RecordReferenceInfo> {
+        let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key) else {
+            return Vec::new();
+        };
+        self.session
+            .model()
+            .ref_edges_from_host(host)
+            .filter_map(|edge| {
+                Some(RecordReferenceInfo {
+                    target: self.coordinate_of(edge.target)?,
+                    path: edge.site.path.clone(),
+                    dimension: edge.site.dimension.clone(),
+                })
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn id_as_enum_info(self) -> Vec<IdAsEnumInfo> {
+        let schema = self.session.schema();
+        let model = self.session.model();
+        schema
+            .all_types()
+            .filter_map(|schema_type| {
+                let enum_name = schema_type.id_as_enum.as_ref()?.to_string();
+                let is_flags = schema
+                    .resolve_enum(&enum_name)
+                    .is_some_and(|schema_enum| schema_enum.is_flag);
+                let mut ids = model
+                    .records_assignable_to(schema, &schema_type.name)
+                    .map(|(_, record)| record.key().to_string())
+                    .collect::<Vec<_>>();
+                if schema.range_is_polymorphic(&schema_type.name) {
+                    ids.sort();
+                    ids.dedup();
+                }
+                Some(IdAsEnumInfo {
+                    enum_name,
+                    ids,
+                    is_flags,
+                })
+            })
+            .collect()
+    }
+
+    pub fn record_views_in_file(self, file: &str) -> impl Iterator<Item = RecordView<'a>> + 'a {
+        self.session.record_views_in_file(file)
+    }
+
+    #[must_use]
+    pub fn file_tree(self) -> Vec<FileTreeNode> {
+        self.session.file_tree()
+    }
+
+    pub(crate) fn writer_capabilities_for_file(self, file: &str) -> WriterCapabilities {
+        let Some(entry) = self
+            .files()
+            .source_for_display(file)
+            .and_then(|source_id| self.sources().entries().get(source_id.index()))
+        else {
+            return WriterCapabilities::read_only();
+        };
+        let _ = entry;
+        crate::cfd_loader::CFD_WRITER_CAPABILITIES.clone()
+    }
+}
+
+fn dimension_value_at_path<'a>(
+    mut value: &'a CfdValue,
+    path: &[CfdPathSegment],
+) -> Option<&'a CfdValue> {
+    for segment in path {
+        value = match value {
+            CfdValue::OptionSome(inner)
+            | CfdValue::ResultOk(inner)
+            | CfdValue::ResultErr(inner) => inner,
+            CfdValue::OptionNone => return None,
+            _ => value,
+        };
+        value = match (segment, value) {
+            (CfdPathSegment::Field(field), CfdValue::Object(object)) => {
+                object.fields().get(field.as_str())?
+            }
+            (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
+            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
+                entries.iter().find_map(|(candidate, value)| {
+                    (crate::data_model::format_cfd_dict_key(candidate) == *key).then_some(value)
+                })?
+            }
+            _ => return None,
+        };
+    }
+    Some(value)
+}
+
+fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
+    let mut semantic_ty = ty;
+    while let CftValueType::Option(inner) = semantic_ty {
+        semantic_ty = inner.as_ref();
+    }
+    let ref_target_type = match semantic_ty {
+        CftValueType::RecordRef(name) => Some(name.to_string()),
+        _ => None,
+    };
+    let enum_type = match semantic_ty {
+        CftValueType::Enum(name) => Some(name.to_string()),
+        _ => None,
+    };
+    let enum_is_flag = enum_type
+        .as_deref()
+        .and_then(|name| schema.resolve_enum(name))
+        .is_some_and(|schema_enum| schema_enum.is_flag);
+    let polymorphic_types = match semantic_ty {
+        CftValueType::Object(name) => Some(name.as_str()),
+        _ => None,
+    }
+    // 具体基类同样可以承载派生对象；只按 abstract 判断会让编辑器缺少类型切换候选。
+    .filter(|name| schema.range_is_polymorphic(name))
+    .and_then(|name| schema.concrete_assignable_types(name))
+    .unwrap_or_default()
+    .into_iter()
+    .map(|name| name.to_string())
+    .collect();
+    let collection_key = match semantic_ty {
+        CftValueType::Dict(key, _) => Some(Box::new(field_shape(schema, key))),
+        _ => None,
+    };
+    let collection_item = match semantic_ty {
+        CftValueType::Array(item) | CftValueType::Dict(_, item) => {
+            Some(Box::new(field_shape(schema, item)))
+        }
+        _ => None,
+    };
+    let object_type = match semantic_ty {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .filter(|meta| !meta.is_abstract)
+            .map(|meta| meta.name.to_string()),
+        _ => None,
+    };
+    let field_order = match semantic_ty {
+        CftValueType::Object(name) => schema
+            .resolve_type(name)
+            .map(|meta| {
+                meta.all_fields()
+                    .map(|field| field.name.to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let option_inner = match ty {
+        CftValueType::Option(inner) => Some(Box::new(field_shape(schema, inner))),
+        _ => None,
+    };
+    let (result_ok, result_err) = match ty {
+        CftValueType::Result(ok, err) => (
+            Some(Box::new(field_shape(schema, ok))),
+            Some(Box::new(field_shape(schema, err))),
+        ),
+        _ => (None, None),
+    };
+    FieldShapeInfo {
+        display_label: ty.display_label(),
+        label: None,
+        description: None,
+        ref_target_type,
+        enum_type,
+        enum_is_flag,
+        nullable: matches!(ty, CftValueType::Option(_)),
+        option_inner,
+        result_ok,
+        result_err,
+        polymorphic_types,
+        collection_key,
+        collection_item,
+        object_type,
+        field_order,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use super::field_shape;
+    use coflow_language::cft::{
+        build_schema, parse_modules, CftFile, CftValueType, ModuleId, TypeName,
+    };
+
+    #[test]
+    fn concrete_base_object_shape_exposes_all_assignable_types() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "type NPC {} type Game : NPC {} type Building { npc: NPC; }",
+        )]);
+        let schema = build_schema(&modules).expect("schema should compile");
+        let npc_type = CftValueType::Object(TypeName::new("NPC").expect("valid type name"));
+
+        let shape = field_shape(&schema, &npc_type);
+
+        assert_eq!(shape.polymorphic_types, ["NPC", "Game"]);
+    }
+
+    #[test]
+    fn optional_concrete_object_shape_exposes_its_inner_object_type() {
+        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), "type Node {}")]);
+        let schema = build_schema(&modules).expect("schema should compile");
+        let node_type = CftValueType::Option(Box::new(CftValueType::Option(Box::new(
+            CftValueType::Object(TypeName::new("Node").expect("valid type name")),
+        ))));
+
+        let shape = field_shape(&schema, &node_type);
+
+        assert_eq!(shape.display_label, "Option<Option<Node>>");
+        assert_eq!(shape.object_type.as_deref(), Some("Node"));
+        assert!(shape.nullable);
+    }
+
+    #[test]
+    fn dict_shape_exposes_key_and_value_metadata() {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "enum Element { Fire, Ice, }",
+        )]);
+        let schema = build_schema(&modules).expect("schema should compile");
+        let dict_type = CftValueType::Dict(
+            Box::new(CftValueType::Enum(
+                coflow_language::cft::EnumName::new("Element").expect("valid enum name"),
+            )),
+            Box::new(CftValueType::Int),
+        );
+
+        let shape = field_shape(&schema, &dict_type);
+
+        assert_eq!(
+            shape
+                .collection_key
+                .as_deref()
+                .and_then(|key| key.enum_type.as_deref()),
+            Some("Element")
+        );
+        assert_eq!(
+            shape
+                .collection_item
+                .as_deref()
+                .map(|item| item.display_label.as_str()),
+            Some("int")
+        );
+    }
+}

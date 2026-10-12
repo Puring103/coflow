@@ -1,4 +1,4 @@
-// api 兼容层：按域拆分后的统一出口，存量导入路径不变。
+// 编辑器 API 的统一出口。
 // 新代码优先从 './api/project|settings|language|data|plugins|events|dialogs|tauriEnv' 直接导入。
 export * from './api/tauriEnv'
 export * from './api/dialogs'
@@ -10,7 +10,6 @@ export * from './api/plugins'
 export * from './api/events'
 
 export type {
-  FunctionDocumentState,
   LanguageCompletion,
   LanguageDiagnostic,
   LanguageDocumentState,

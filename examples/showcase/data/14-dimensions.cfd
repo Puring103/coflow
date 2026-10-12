@@ -1,17 +1,9 @@
 # Feature: the base value is used when a dimension variant is unavailable.
 
 welcome: UiText {
-  text: dimension {
-    default: "Welcome",
-    en: "Welcome",
-    zh: "欢迎",
-  },
+  text: "Welcome",
 }
 
 goodbye: UiText {
-  text: dimension {
-    default: "Goodbye",
-    en: "Goodbye",
-    zh: "再见",
-  },
+  text: "Goodbye",
 }

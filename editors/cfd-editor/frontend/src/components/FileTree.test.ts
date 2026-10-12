@@ -18,7 +18,7 @@ function node(name: string, path: string, children: FileTreeNode[] = []): FileTr
 }
 
 function dimension(name: string, displayName: string): DimensionInfo {
-  return { name, display_name: displayName, variants: [], fields: [], out_dir: null }
+  return { name, display_name: displayName, variants: [], fields: [] }
 }
 
 describe('buildFileTreeGroups', () => {

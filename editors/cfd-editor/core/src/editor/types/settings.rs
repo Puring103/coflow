@@ -55,6 +55,10 @@ pub struct EditorWorkspaceState {
 /// 维度导航目标是业务文件中的类型/字段，不对应独立 CFD 文件。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct EditorDimensionTarget {
     pub dimension: String,
     #[serde(rename = "ownerFile")]

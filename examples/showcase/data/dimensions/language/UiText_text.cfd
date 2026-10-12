@@ -1,0 +1,9 @@
+# Feature: selected CFD files supply partial field overrides.
+language[en] {
+  welcome: UiText { text: "Welcome" }
+  goodbye: UiText { text: "Goodbye" }
+}
+language[zh] {
+  welcome: UiText { text: "欢迎" }
+  goodbye: UiText { text: "再见" }
+}

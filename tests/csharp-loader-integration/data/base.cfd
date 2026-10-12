@@ -1,0 +1,9 @@
+alpha: Item {
+  name: "Alpha", stats: { hp: 12 }, next: &Item::beta,
+  nums: [1, 2], indexed: { "score": 5 }
+}
+beta: Item {
+  name: "Beta", stats: { hp: 20 }, next: &Item::alpha,
+  nums: [], indexed: {}
+}
+Settings: Settings { start: &Item::alpha }

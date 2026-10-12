@@ -66,7 +66,7 @@ record-member := field-decl | check-block
 - sealed table 和 sealed data 不能继续派生；singleton 是具体的封闭记录类型，不能作为父类型。
 - 每个类型最多有一个直接父类型，继承关系不能成环。
 - 子类型继承父字段，不能重新声明父字段，也不能修改其声明类型或默认值。记录子类型同时继承父 check。
-- 同一记录类型及其继承链中，字段和命名 check 共用成员名称，禁止同名；data 字段在继承链中也不能重名。
+- 同一记录类型及其继承链中，字段禁止重名；data 字段在继承链中也不能重名。
 - 记录父子 check 都保留，按父到子执行。每个记录类型最多有一个匿名 check；data 不声明 check。
 - `@struct` 只能用于 sealed data，不参与继承；字段类型不受额外限制。
 - data 的内容递归必须经过可选类型；数组和字典本身不能打断递归。记录引用连接身份，允许成环。
@@ -169,9 +169,9 @@ table CatalogItem {
 ## 6. check
 
 ```text
-check-block := "check" [ identifier ] check-body
+check-block := "check" check-body
 check-decl := "check" identifier check-body
 ```
 
 table 和 singleton 内的 check 位于所有字段之后；data 不声明 check。顶层 check 必须命名。
-check 是显式执行的校验规则。现行检查块、执行和报告规则见[Check 校验](./07-Check校验.md)。
+check 是编辑器执行的声明式校验规则。检查块、执行和报告规则见[Check 校验](./07-Check校验.md)。

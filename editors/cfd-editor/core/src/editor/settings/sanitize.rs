@@ -12,12 +12,19 @@ use crate::editor::types::{
     EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab, ViewConfig, ViewKind,
 };
 
-fn workspace_tab_id(file_path: &str, type_name: &str, target: Option<&crate::editor::types::EditorDimensionTarget>) -> String {
+fn workspace_tab_id(
+    file_path: &str,
+    type_name: &str,
+    target: Option<&crate::editor::types::EditorDimensionTarget>,
+) -> String {
     match target {
         Some(target) => serde_json::to_string(&[
-            &target.dimension, &target.owner_file, &target.type_name,
+            &target.dimension,
+            &target.owner_file,
+            &target.type_name,
             target.field.as_deref().unwrap_or(""),
-        ]).expect("JSON 字符串数组必可序列化"),
+        ])
+        .expect("JSON 字符串数组必可序列化"),
         None => format!("{file_path}\u{1f}{type_name}"),
     }
 }
@@ -53,10 +60,12 @@ pub(crate) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWork
             }
             if let Some(target) = &tab.dimension_target {
                 if file_path != format!("@dimension/{}", target.dimension)
-                    || !type_name.is_empty() || target.owner_file.trim().is_empty()
+                    || !type_name.is_empty()
+                    || target.owner_file.trim().is_empty()
                     || target.type_name.trim().is_empty()
                     || (target.singleton && target.field.is_some())
-                    || (!target.singleton && target.field.as_deref().is_none_or(str::is_empty)) {
+                    || (!target.singleton && target.field.as_deref().is_none_or(str::is_empty))
+                {
                     return None;
                 }
             }
@@ -75,9 +84,16 @@ pub(crate) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWork
         })
         .take(MAX_TABS)
         .collect::<Vec<_>>();
-    let retained_ids = tabs.iter().map(|tab| workspace_tab_id(
-        &tab.file_path, &tab.type_name, tab.dimension_target.as_ref(),
-    )).collect::<BTreeSet<_>>();
+    let retained_ids = tabs
+        .iter()
+        .map(|tab| {
+            workspace_tab_id(
+                &tab.file_path,
+                &tab.type_name,
+                tab.dimension_target.as_ref(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
     let active_tab_id = workspace
         .active_tab_id
         .filter(|active| retained_ids.contains(active));

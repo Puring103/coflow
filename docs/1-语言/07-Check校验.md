@@ -1,85 +1,75 @@
 # Check 校验
 
-> 范围：现行检查块语法、执行入口、require 与检查报告。
+## 1. 声明式规则
 
-## 1. 检查块
+check 是编辑器使用的只读数据校验规则。CFT 定义规则，CFD 提供被检查的数据；规则不进入生成的 C# 代码，C# 加载器只读取 CFD。
 
 ```text
-check-block := "check" [ identifier ] check-body
+record-check := "check" check-body
 check-decl := "check" identifier check-body
+check-body := "{" { check-statement } "}"
+check-statement := expression [ ":" message ] ";"
+                 | "when" expression check-body
+                 | ("all" | "any" | "none") binding [ "," binding ] "in" expression check-body
+message := string-literal | formatted-string-literal
 ```
 
-记录内可以声明匿名或命名 check，顶层 check 必须命名：
+记录声明内使用匿名 check，顶层规则必须命名。记录规则直接读取当前记录字段；顶层规则通过 `records(Type)` 获取记录。
 
 ```cft
-use Coflow::Check::require;
-use Coflow::Check::records;
-
-table Item {
-  price: int;
-
-  check {
-    require(self.price >= 0, "价格不能为负");
-  }
-
-  check priceLimit {
-    require(self.price <= 10000, "价格超过上限");
-  }
-}
-
 check ItemPrices {
-  for item in records(Item) {
-    require(item.price >= 0, f"物品 {item.id} 的价格无效");
+  all item in records(Item) {
+    item.price >= 0 : f"物品 {item.id} 的价格不能为负";
   }
 }
 ```
 
-- 记录 check 位于全部字段之后；每个记录类型最多一个匿名 check，可有多个命名 check。
-- 字段与命名 check 在同一类型及其继承链中禁止同名。
-- 父类型规则也用于子类型，按父到子执行。
-- 记录 check 使用只读 self；顶层 check 显式查询记录。
-- data 不声明 check，字段、集合与引用不触发自动递归检查。
-- check 名称用于选择规则和定位报告；check 不接受用户参数、不返回业务值。
-- check 由 CFT 声明，CFD 提供被检查数据。
+每条表达式必须产生 bool。条件不满足时生成检查问题，省略消息时使用默认诊断。消息使用普通字符串或基础字段路径插值，例如 `f"价格 {item.price} 无效"`。
 
-检查体中的现行局部变量、条件、运算与遍历见[校验表达式](./06-校验表达式.md)。
+## 2. 条件与集合规则
 
-## 2. require 的现行形式
-
-使用 `Coflow::Check::require` 全限定名，或通过 use 导入后调用：
+`when condition { ... }` 仅在条件成立时检查内部规则。条件不成立时跳过内部规则。
 
 ```cft
-require(condition, message);
+check EnabledItems {
+  all item in records(Item) {
+    when item.enabled {
+      item.price > 0 : "启用的物品必须设置价格";
+    }
+  }
+}
 ```
 
-condition 必须为 bool，message 必须产生 string。
-条件为 false 时向本次报告记录问题，然后继续当前 check。
-条件和消息从左到右立即求值；条件为 true 时消息也会求值。
-任一参数求值失败时报告计算错误，不提交该条业务消息。
-require 失败不提供类型收窄或可选解包保证。
-
-## 3. records 与维度遍历
-
-`Coflow::Check::records(Type)` 只用于顶层 check，Type 为静态 table 或 singleton 类型。
-结果包含该类型及其子类型的记录，按实际类型限定名与记录 key 稳定排序。
-数组、字典的绑定与遍历顺序见[校验表达式](./06-校验表达式.md)。
-
-维度值通过 `.for(variant)` 显式选择，或通过 `.variants()` 返回的名称到有效值字典显式遍历。
-读取维度字段不会自动切换变体或重复执行 check。
-
-## 4. 执行与报告
-
-check 只在调用方请求时执行；不执行也能正常使用 Runtime。
-一次请求可以选择记录范围、规则名称及是否包含顶层规则。
-每次请求实际执行所选规则，不复用过去的检查结果。
-
-| 情况 | 行为 |
+| 规则 | 条件 |
 | --- | --- |
-| require 条件不满足 | 记录问题，继续当前 check |
-| 表达式或消息求值出错 | 记录错误，结束当前 check，继续其他规则 |
-| 总预算耗尽 | 停止检查，报告未完成 |
-| 检查完成 | 返回报告，Runtime 继续可用 |
+| all | 每个元素都满足内部规则 |
+| any | 至少一个元素满足内部规则 |
+| none | 所有元素都不满足内部规则 |
 
-本次检查中的遍历、内建操作与文本生成共同计入执行预算。
-报告保留规则名称、错误码、消息、被检查记录及 CFT/CFD 来源位置。
-检查报告与声明或加载诊断分别展示，不改变已构建 Runtime 的可用状态。
+空集合满足 all 和 none，不满足 any。数组单绑定读取元素，双绑定读取索引与元素；字典双绑定读取 key 与 value。嵌套规则的绑定仅在自己的块内可见。
+
+## 3. 维度读取
+
+维度字段使用 `.default()` 读取基础值，使用 `.for(variant)` 选择变体，使用 `.variants()` 获取有效变体。规则通过显式读取决定检查哪个变体，每条规则执行一次。
+
+```cft
+check {
+  name.default() != "";
+  name.for("ja") != "" : "日语名称不能为空";
+  all variant, text in name.variants() {
+    text != "" : f"变体 {variant} 的名称不能为空";
+  }
+}
+```
+
+C# 对应 API 为 `DimensionValue<T>.Default`、`.For(variant)` 和 `.Variants`，读取同一份已加载数据。
+
+## 4. 编辑器执行与报告
+
+编辑器在数据校验时执行 check。CLI 的 `check` 验证 CFT 声明和 CFD 数据；`build`、`codegen` 生成业务类型，这些命令不执行 check 规则。记录规则应用于对应记录及其子类型记录；顶层规则检查项目中已选 CFD 构成的数据集合。
+
+检查保持数据只读。条件不满足生成业务问题；表达式或消息求值失败生成计算诊断。遍历、内建操作与文本生成计入检查预算，预算耗尽时报告检查未完成。
+
+报告包含规则位置、错误码、消息、相关记录以及 CFT/CFD 来源位置。检查报告与声明或数据加载诊断分别展示。
+
+条件表达式、类型判断与检查专用内建操作见[校验表达式](./06-校验表达式.md)。

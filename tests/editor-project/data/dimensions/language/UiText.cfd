@@ -1,0 +1,2 @@
+language[en] { UiText: UiText { text: "Welcome" } }
+language[zh] { UiText: UiText { text: "欢迎" } }

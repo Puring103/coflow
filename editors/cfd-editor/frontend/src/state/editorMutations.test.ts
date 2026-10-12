@@ -1,0 +1,935 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { RecordRow } from '../bindings/RecordRow'
+import type { FileRecords } from '../bindings/FileRecords'
+import type { WriteFieldOutcome } from '../bindings/WriteFieldOutcome'
+import type { BatchWriteFieldOutcome } from '../bindings/BatchWriteFieldOutcome'
+import type { WriteDimensionValueOutcome } from '../bindings/WriteDimensionValueOutcome'
+import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
+import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
+import { committed, MutationHistoryController, superseded } from './editorState'
+import {
+  EditorMutationController,
+  type EditorMutationBackend,
+  type EditorMutationPort,
+} from './editorMutations'
+
+const coordinate = { actual_type: 'Item', key: 'sword' }
+const fieldPath = [{ kind: 'field' as const, value: 'name' }]
+const row = { coordinate } as RecordRow
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+function writeOutcome(revision: number, oldValue: string, newValue: string): WriteFieldOutcome {
+  return {
+    revision,
+    row,
+    diagnostics: [],
+    old_value: { kind: 'string', value: oldValue },
+    new_value: { kind: 'string', value: newValue },
+    affected_files: ['data/items.cfd'],
+    renamed: null,
+  }
+}
+
+function backend(
+  writeField: EditorMutationBackend['writeField'],
+  writeDimensionValue: EditorMutationBackend['writeDimensionValue'] = vi.fn(),
+): EditorMutationBackend {
+  return {
+    writeFields: vi.fn(),
+    writeField,
+    writeDimensionValue,
+    editCollection: vi.fn(),
+    renameRecordKey: vi.fn(),
+    insertRecord: vi.fn(),
+    deleteRecord: vi.fn(),
+    swapRecords: vi.fn(),
+    moveRecord: vi.fn(),
+    transferRecord: vi.fn(),
+  }
+}
+
+const dimensionCoordinate = {
+  actual_type: 'Item',
+  record_key: 'sword',
+  field: 'name',
+  dimension: 'language',
+  variant: 'zh',
+  path: [],
+}
+
+function recordsOutcome(revision: number) {
+  return {
+    revision,
+    file_records: {
+      revision,
+      file_path: 'data/items.cfd',
+      type_names: ['Item'],
+      columns: [],
+      records: [],
+      capabilities: {} as never,
+    },
+    diagnostics: [],
+    affected_files: ['data/items.cfd'],
+  }
+}
+
+function dimensionOutcome(
+  revision: number,
+  oldValue: string | null,
+  newValue: string | null,
+): WriteDimensionValueOutcome {
+  return {
+    revision,
+    coordinate: dimensionCoordinate,
+    old_value: oldValue === null
+      ? { kind: 'missing' }
+      : { kind: 'value', value: { kind: 'string', value: oldValue } },
+    new_value: newValue === null
+      ? { kind: 'missing' }
+      : { kind: 'value', value: { kind: 'string', value: newValue } },
+    diagnostics: [],
+    affected_files: ['data/dimensions/language/Item_name.cfd'],
+  }
+}
+
+describe('EditorMutationController', () => {
+  it('undoes and redoes node movement through the shared history without a data write', async () => {
+    const fakeBackend = backend(vi.fn())
+    const applyGraphPositions = vi.fn(async () => committed(undefined))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+      applyGraphPositions,
+    }
+    const history = new MutationHistoryController()
+    const controller = new EditorMutationController(fakeBackend, port, history)
+    const oldPositions = { node: [0, 0] as [number, number] }
+    const newPositions = { node: [50, 80] as [number, number] }
+    history.record({ kind: 'graph-layout', revision: 1, viewKey: 'view', oldPositions, newPositions })
+    await controller.undo()
+    expect(applyGraphPositions).toHaveBeenLastCalledWith('view', oldPositions)
+    expect(history.getSnapshot().redo).toHaveLength(1)
+    await controller.redo()
+    expect(applyGraphPositions).toHaveBeenLastCalledWith('view', newPositions)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(fakeBackend.writeField).not.toHaveBeenCalled()
+    expect(port.publish).not.toHaveBeenCalled()
+  })
+
+  it('undoes a record insert by deleting it and redoes by inserting again', async () => {
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.insertRecord = vi.fn(async () => recordsOutcome(2) as InsertRecordOutcome)
+    fakeBackend.deleteRecord = vi.fn(async () => ({ ...recordsOutcome(3), deleted_snapshot: null }) as DeleteRecordOutcome)
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    const fields = { kind: 'object' as const, value: { actual_type: 'Item', fields: {} } }
+
+    await mutations.insertRecord('data/items.cfd', 'sword', 'Item', fields)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+
+    await mutations.undo()
+    expect(fakeBackend.deleteRecord).toHaveBeenCalledWith(1, coordinate)
+    expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(history.getSnapshot().redo).toHaveLength(1)
+
+    await mutations.redo()
+    expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+  })
+
+  it('collapses a batched insert and relation write into one undo step', async () => {
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.insertRecord = vi.fn(async () => recordsOutcome(2) as InsertRecordOutcome)
+    fakeBackend.writeField = vi.fn(async () => writeOutcome(3, 'old', 'new'))
+    fakeBackend.deleteRecord = vi.fn(async () => ({ ...recordsOutcome(4), deleted_snapshot: null }) as DeleteRecordOutcome)
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    const fields = { kind: 'object' as const, value: { actual_type: 'Item', fields: {} } }
+
+    await mutations.withHistoryBatch(async () => {
+      await mutations.insertRecord('data/items.cfd', 'sword', 'Item', fields)
+      await mutations.writeField('data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' })
+    })
+
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch')
+
+    await mutations.undo()
+    // 反向：先恢复引用，再删除记录。
+    expect(fakeBackend.writeField).toHaveBeenLastCalledWith(
+      1, coordinate, fieldPath, { kind: 'string', value: 'old' },
+    )
+    expect(fakeBackend.deleteRecord).toHaveBeenCalledWith(1, coordinate)
+    expect(history.getSnapshot().undo).toHaveLength(0)
+
+    await mutations.redo()
+    expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+  })
+  it('records a batch field edit as one atomic undo and redo step', async () => {
+    const second = { actual_type: 'Item', key: 'shield' }
+    const batchOutcome = (
+      revision: number,
+      values: Array<[typeof coordinate, string, string]>,
+    ): BatchWriteFieldOutcome => ({
+      revision,
+      edits: values.map(([item, oldValue, newValue]) => ({
+        coordinate: item,
+        final_coordinate: item,
+        field_path: fieldPath,
+        old_value: { kind: 'string', value: oldValue },
+        new_value: { kind: 'string', value: newValue },
+      })),
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
+    })
+    const writeFields = vi.fn()
+      .mockResolvedValueOnce(batchOutcome(2, [[coordinate, 'Sword', 'Shared'], [second, 'Shield', 'Shared']]))
+      .mockResolvedValueOnce(batchOutcome(3, [[coordinate, 'Shared', 'Sword'], [second, 'Shared', 'Shield']]))
+      .mockResolvedValueOnce(batchOutcome(4, [[coordinate, 'Sword', 'Shared'], [second, 'Shield', 'Shared']]))
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.writeFields = writeFields
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+
+    await mutations.writeFields(
+      'data/items.cfd',
+      [coordinate, second],
+      fieldPath,
+      { kind: 'string', value: 'Shared' },
+    )
+
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch-field')
+    await mutations.undo()
+    expect(writeFields).toHaveBeenNthCalledWith(2, 1, [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string', value: 'Sword' } },
+      { coordinate: second, field_path: fieldPath, new_value: { kind: 'string', value: 'Shield' } },
+    ])
+    await mutations.redo()
+    expect(writeFields).toHaveBeenNthCalledWith(3, 1, [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
+      { coordinate: second, field_path: fieldPath, new_value: { kind: 'string', value: 'Shared' } },
+    ])
+  })
+
+  it('submits heterogeneous field writes in one batch history entry', async () => {
+    const hpPath = [{ kind: 'field' as const, value: 'hp' }]
+    const writeFields = vi.fn().mockResolvedValue({
+      revision: 2,
+      edits: [
+        {
+          coordinate,
+          final_coordinate: coordinate,
+          field_path: fieldPath,
+          old_value: { kind: 'string', value: 'Sword' },
+          new_value: { kind: 'string', value: 'Blade' },
+        },
+        {
+          coordinate,
+          final_coordinate: coordinate,
+          field_path: hpPath,
+          old_value: { kind: 'int', value: 1n },
+          new_value: { kind: 'int', value: 2n },
+        },
+      ],
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
+    } satisfies BatchWriteFieldOutcome)
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.writeFields = writeFields
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }, history)
+    const writes = [
+      { coordinate, field_path: fieldPath, new_value: { kind: 'string' as const, value: 'Blade' } },
+      { coordinate, field_path: hpPath, new_value: { kind: 'int' as const, value: 2n } },
+    ]
+
+    await mutations.writeFieldBatch('data/items.cfd', writes)
+
+    expect(writeFields).toHaveBeenCalledTimes(1)
+    expect(writeFields).toHaveBeenCalledWith(1, writes)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().undo[0].kind).toBe('batch-field')
+  })
+
+  it('coalesces dimension writes and uses authoritative states for undo and redo', async () => {
+    const writeDimensionValue = vi.fn()
+      .mockResolvedValueOnce(dimensionOutcome(2, null, '最终值'))
+      .mockResolvedValueOnce(dimensionOutcome(3, '最终值', null))
+      .mockResolvedValueOnce(dimensionOutcome(4, null, '最终值'))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(
+      backend(vi.fn(), writeDimensionValue),
+      port,
+      history,
+    )
+    const missing = { kind: 'missing' as const }
+    const first = mutations.writeDimensionValue(
+      'data/dimensions/language/Item_name.cfd',
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '中间值' } },
+    )
+    const latest = mutations.writeDimensionValue(
+      'data/dimensions/language/Item_name.cfd',
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+    )
+    await Promise.all([first, latest])
+
+    expect(writeDimensionValue).toHaveBeenCalledTimes(1)
+    expect(writeDimensionValue).toHaveBeenCalledWith(
+      1,
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      'data/dimensions/language/Item_name.cfd',
+    )
+    expect(history.getSnapshot().undo).toHaveLength(1)
+
+    await mutations.undo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(
+      2,
+      1,
+      dimensionCoordinate,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      missing,
+      'data/dimensions/language/Item_name.cfd',
+    )
+    await mutations.redo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(
+      3,
+      1,
+      dimensionCoordinate,
+      missing,
+      { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      'data/dimensions/language/Item_name.cfd',
+    )
+  })
+
+  it('replays dimension edits into the authoritative source instead of the virtual view', async () => {
+    const sourceFile = 'localization/ja.cfd'
+    const outcome = (revision: number, before: string | null, after: string | null) => ({
+      ...dimensionOutcome(revision, before, after),
+      affected_files: [sourceFile],
+    })
+    const writeDimensionValue = vi.fn()
+      .mockResolvedValueOnce(outcome(2, '旧译文', '新译文'))
+      .mockResolvedValueOnce(outcome(3, '新译文', '旧译文'))
+      .mockResolvedValueOnce(outcome(4, '旧译文', '新译文'))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(vi.fn(), writeDimensionValue), port, history)
+    const state = (text: string) => ({ kind: 'value' as const, value: { kind: 'string' as const, value: text } })
+
+    await mutations.writeDimensionValue('@dimension/language/Item/name', dimensionCoordinate,
+      state('旧译文'), state('新译文'))
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(1, 1, dimensionCoordinate,
+      state('旧译文'), state('新译文'), null)
+    expect(history.getSnapshot().undo[0]).toMatchObject({ kind: 'dimension', filePath: sourceFile })
+
+    await mutations.undo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(2, 1, dimensionCoordinate,
+      state('新译文'), state('旧译文'), sourceFile)
+    await mutations.redo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(3, 1, dimensionCoordinate,
+      state('旧译文'), state('新译文'), sourceFile)
+    expect(port.reportError).not.toHaveBeenCalled()
+  })
+
+  it('skips backend writes for deep value no-ops', async () => {
+    const writeField = vi.fn()
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => ({
+        changed: false,
+        row,
+        reapply: vi.fn(),
+        rollback: vi.fn(),
+      })),
+    }
+    const mutations = new EditorMutationController(
+      backend(writeField),
+      port,
+      new MutationHistoryController(),
+    )
+
+    await expect(mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'old' },
+    )).resolves.toBe(row)
+
+    expect(writeField).not.toHaveBeenCalled()
+    expect(port.publish).not.toHaveBeenCalled()
+  })
+
+  it('notifies the selection owner only after a delete is committed', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const removeCoordinate = vi.fn()
+    const mutationBackend = backend(vi.fn())
+    mutationBackend.deleteRecord = vi.fn(async () => ({
+      revision: 2,
+      file_records: { revision: 2, file_path: 'data/items.cfd' } as FileRecords,
+      diagnostics: [],
+      affected_files: ['data/items.cfd'],
+      deleted_snapshot: null,
+    }))
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      removeCoordinate,
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.deleteRecord('data/items.cfd', coordinate)
+
+    expect(removeCoordinate).toHaveBeenCalledWith('data/items.cfd', coordinate)
+  })
+
+  it('publishes a cached row projection without requiring a full file reload', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const projected = { revision: 2, file_path: 'data/items.cfd' } as FileRecords
+    const fileRecordsForRow = vi.fn(() => projected)
+    const publish = vi.fn(async request => {
+      generation = { sessionId: request.sessionId, revision: request.revision }
+      return committed(undefined)
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish,
+      fileRecordsForRow,
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      backend(vi.fn(async () => writeOutcome(2, 'old', 'new'))),
+      port,
+      new MutationHistoryController(),
+    )
+
+    await mutations.writeField('data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' })
+
+    expect(fileRecordsForRow).toHaveBeenCalledWith('data/items.cfd', coordinate, row, 2)
+    expect(publish.mock.calls[0][0].knownRecords).toBe(projected)
+    expect(publish.mock.calls[0][0].topologyChanged).toBe(false)
+  })
+
+  it('records and replays history only through committed editor generations', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const writeField = vi.fn()
+      .mockResolvedValueOnce(writeOutcome(2, 'old', 'new'))
+      .mockResolvedValueOnce(writeOutcome(3, 'new', 'old'))
+      .mockResolvedValueOnce(writeOutcome(4, 'old', 'new'))
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    await expect(mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'new' },
+    )).resolves.toBe(row)
+    expect(history.getSnapshot().undo).toHaveLength(1)
+
+    await mutations.undo()
+
+    expect(writeField).toHaveBeenNthCalledWith(
+      2,
+      1,
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'old' },
+    )
+    expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(history.getSnapshot().redo).toHaveLength(1)
+
+    await mutations.redo()
+
+    expect(writeField).toHaveBeenNthCalledWith(
+      3,
+      1,
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'new' },
+    )
+    expect(history.getSnapshot().undo).toHaveLength(1)
+    expect(history.getSnapshot().redo).toHaveLength(0)
+  })
+
+  it('records a committed outcome superseded without a history reset', async () => {
+    const history = new MutationHistoryController()
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => superseded()),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(
+      backend(vi.fn(async () => writeOutcome(2, 'old', 'new'))),
+      port,
+      history,
+    )
+
+    await expect(mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'new' },
+    )).resolves.toBe(row)
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2])
+  })
+
+  it('serializes concurrent edits and keeps backend revision order', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const revision2 = deferred<WriteFieldOutcome>()
+    const revision3 = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => revision2.promise)
+      .mockImplementationOnce(() => revision3.promise)
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        if (request.revision < generation.revision) return superseded()
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const older = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const newer = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'three' },
+    )
+    revision2.resolve(writeOutcome(2, 'old', 'two'))
+    await older
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    revision3.resolve(writeOutcome(3, 'two', 'three'))
+    await newer
+
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2, 3])
+  })
+
+  it('coalesces adjacent queued writes to the same field', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const firstOutcome = deferred<WriteFieldOutcome>()
+    const latestOutcome = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => firstOutcome.promise)
+      .mockImplementationOnce(() => latestOutcome.promise)
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const first = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'one' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const skipped = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
+    )
+    const latest = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'three' },
+    )
+    expect(writeField).toHaveBeenCalledTimes(1)
+
+    firstOutcome.resolve(writeOutcome(2, 'old', 'one'))
+    await first
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(writeField).toHaveBeenLastCalledWith(
+      1,
+      coordinate,
+      fieldPath,
+      { kind: 'string', value: 'three' },
+    )
+    latestOutcome.resolve(writeOutcome(3, 'one', 'three'))
+    await Promise.all([skipped, latest])
+
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2, 3])
+  })
+
+  it('reapplies queued optimistic writes before advancing the mutation queue', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const firstOutcome = deferred<WriteFieldOutcome>()
+    const secondOutcome = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => firstOutcome.promise)
+      .mockImplementationOnce(() => secondOutcome.promise)
+    const firstProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const secondProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const optimisticWriteField = vi.fn()
+      .mockReturnValueOnce(firstProjection)
+      .mockReturnValueOnce(secondProjection)
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField,
+    }
+    const mutations = new EditorMutationController(
+      backend(writeField),
+      port,
+      new MutationHistoryController(),
+    )
+
+    const first = mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      [{ kind: 'field', value: 'name' }],
+      { kind: 'string', value: 'first' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const second = mutations.writeField(
+      'data/items.cfd',
+      coordinate,
+      [{ kind: 'field', value: 'description' }],
+      { kind: 'string', value: 'second' },
+    )
+
+    firstOutcome.resolve(writeOutcome(2, 'old', 'first'))
+    await first
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(secondProjection.reapply).toHaveBeenCalledTimes(1)
+    secondOutcome.resolve(writeOutcome(3, 'old', 'second'))
+    await second
+  })
+
+  it('reapplies a queued optimistic write after an in-flight collection edit', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const collectionOutcome = deferred<WriteFieldOutcome>()
+    const fieldOutcome = deferred<WriteFieldOutcome>()
+    const events: string[] = []
+    const writeField = vi.fn(() => {
+      events.push('write')
+      return fieldOutcome.promise
+    })
+    const editCollection = vi.fn(() => collectionOutcome.promise)
+    const projection = {
+      changed: true,
+      reapply: vi.fn(() => events.push('reapply')),
+      rollback: vi.fn(),
+    }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => projection),
+    }
+    const mutationBackend = backend(writeField)
+    mutationBackend.editCollection = editCollection
+    const mutations = new EditorMutationController(
+      mutationBackend,
+      port,
+      new MutationHistoryController(),
+    )
+
+    const collection = mutations.editCollection(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'array_append' },
+    )
+    await vi.waitFor(() => expect(editCollection).toHaveBeenCalledTimes(1))
+    const field = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'latest' },
+    )
+
+    collectionOutcome.resolve(writeOutcome(2, 'old', 'collection'))
+    await collection
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    expect(events).toEqual(['reapply', 'write'])
+
+    fieldOutcome.resolve(writeOutcome(3, 'collection', 'latest'))
+    await field
+  })
+
+  it('keeps committed history when projection refresh falls back to reload', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async () => { throw new Error('refresh failed') }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return true
+      }),
+      reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(
+      backend(vi.fn(async () => writeOutcome(2, 'old', 'new'))),
+      port,
+      history,
+    )
+
+    await mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' },
+    )
+
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([2])
+    expect(port.reportError).toHaveBeenCalledWith(
+      1, '编辑已保存，但刷新失败', expect.any(Error), 2,
+    )
+  })
+
+  it('does not restore stale history after an external generation reset', async () => {
+    const pending = deferred<WriteFieldOutcome>()
+    const history = new MutationHistoryController()
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 3 }),
+      publish: vi.fn(async () => superseded()),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(backend(vi.fn(() => pending.promise)), port, history)
+
+    const mutation = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'new' },
+    )
+    await Promise.resolve()
+    history.clear()
+    pending.resolve(writeOutcome(2, 'old', 'new'))
+    await mutation
+
+    expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(port.rebindCoordinate).not.toHaveBeenCalled()
+  })
+
+  it('drops queued edits that belong to an externally replaced generation', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const pending = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn(() => pending.promise)
+    const firstProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const queuedProjection = { changed: true, reapply: vi.fn(), rollback: vi.fn() }
+    const optimisticWriteField = vi.fn()
+      .mockReturnValueOnce(firstProjection)
+      .mockReturnValueOnce(queuedProjection)
+    const history = new MutationHistoryController()
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async () => superseded()),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField,
+    }
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const inFlight = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'two' },
+    )
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const queued = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'stale' },
+    )
+
+    generation = { sessionId: 1, revision: 10 }
+    history.clear()
+    pending.resolve(writeOutcome(2, 'old', 'two'))
+    await Promise.all([inFlight, queued])
+
+    expect(writeField).toHaveBeenCalledTimes(1)
+    expect(history.getSnapshot().undo).toHaveLength(0)
+    expect(queuedProjection.reapply).not.toHaveBeenCalled()
+    expect(queuedProjection.rollback).toHaveBeenCalledTimes(1)
+  })
+
+  it('serializes ordinary edits behind an in-flight undo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const undoRequest = deferred<WriteFieldOutcome>()
+    const editRequest = deferred<WriteFieldOutcome>()
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => undoRequest.promise)
+      .mockImplementationOnce(() => editRequest.promise)
+    const history = new MutationHistoryController()
+    history.record({
+      kind: 'field',
+      revision: 1,
+      filePath: 'data/items.cfd',
+      coordinate,
+      fieldPath,
+      oldValue: { kind: 'string', value: 'old' },
+      newValue: { kind: 'string', value: 'new' },
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+    }
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const undo = mutations.undo()
+    await Promise.resolve()
+    const edit = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'latest' },
+    )
+    expect(writeField).toHaveBeenCalledTimes(1)
+
+    undoRequest.resolve(writeOutcome(2, 'new', 'old'))
+    await undo
+    await Promise.resolve()
+    expect(writeField).toHaveBeenCalledTimes(2)
+    editRequest.resolve(writeOutcome(3, 'old', 'latest'))
+    await edit
+
+    expect(history.getSnapshot().undo.map(entry => entry.revision)).toEqual([3])
+    expect(history.getSnapshot().redo).toHaveLength(0)
+  })
+
+  it('reapplies a queued optimistic write before completing an in-flight undo', async () => {
+    let generation = { sessionId: 1, revision: 1 }
+    const undoRequest = deferred<WriteFieldOutcome>()
+    const editRequest = deferred<WriteFieldOutcome>()
+    const events: string[] = []
+    const writeField = vi.fn()
+      .mockImplementationOnce(() => undoRequest.promise)
+      .mockImplementationOnce(() => {
+        events.push('write')
+        return editRequest.promise
+      })
+    const projection = {
+      changed: true,
+      reapply: vi.fn(() => events.push('reapply')),
+      rollback: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    history.record({
+      kind: 'field',
+      revision: 1,
+      filePath: 'data/items.cfd',
+      coordinate,
+      fieldPath,
+      oldValue: { kind: 'string', value: 'old' },
+      newValue: { kind: 'string', value: 'new' },
+    })
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(),
+      recoverPublication: vi.fn(() => false),
+      reportError: vi.fn(),
+      optimisticWriteField: vi.fn(() => projection),
+    }
+    const mutations = new EditorMutationController(backend(writeField), port, history)
+
+    const undo = mutations.undo()
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1))
+    const edit = mutations.writeField(
+      'data/items.cfd', coordinate, fieldPath, { kind: 'string', value: 'latest' },
+    )
+
+    undoRequest.resolve(writeOutcome(2, 'new', 'old'))
+    await undo
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2))
+    expect(events).toEqual(['reapply', 'write'])
+
+    editRequest.resolve(writeOutcome(3, 'old', 'latest'))
+    await edit
+  })
+})

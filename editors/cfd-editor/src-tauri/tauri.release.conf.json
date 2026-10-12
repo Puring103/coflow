@@ -1,0 +1,20 @@
+{
+  "productName": "Coflow Tools",
+  "identifier": "com.coflow.tools",
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": false,
+    "externalBin": ["binaries/coflow"],
+    "resources": {
+      "../../../packaging/windows/coflow-path.ps1": "installer/coflow-path.ps1"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/nsis-hooks.nsh",
+        "startMenuFolder": "Coflow"
+      }
+    }
+  }
+}

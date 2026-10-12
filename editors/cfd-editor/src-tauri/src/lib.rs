@@ -81,7 +81,6 @@ pub fn run() -> tauri::Result<()> {
             complete_language_document,
             format_language_document,
             close_language_document,
-            function_document,
             write_source_text,
             get_file_records,
             search_records,

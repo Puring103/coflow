@@ -1,12 +1,12 @@
-# Feature: conditional validation with if.
+# Feature: conditional validation with when blocks.
 
-table ConditionalRule {
+type ConditionalRule {
   enabled: bool;
   threshold: int;
 
   check {
-    if self.enabled {
-      Coflow::Check::require(self.threshold > 0, "enabled rules need a positive threshold");
+    when enabled {
+      threshold > 0;
     }
   }
 }

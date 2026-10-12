@@ -7,7 +7,7 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 - CFT 记录与 data 类型、默认值、枚举、引用、多态和维度。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
-- Unity 2022+ / IL2CPP 宿主通过 `Coflow.Runtime` 加载契约与 CFD，构建只读运行时。
+- C# 通过 `Coflow.Loader` 将调用方提供的 CFD 直接加载为生成类型。
 - 代码生成接口支持继续增加其他目标语言；数据格式不再扩展。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
 
@@ -36,23 +36,26 @@ codegen:
     dir: generated/csharp
 ```
 
-`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。C# 目标可设置 `namespace`，默认使用 `Coflow.Generated`。
+`data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。C# 目标可设置 `namespace`。
 
-## C# runtime
+## C# 数据加载
 
-将 `engine/runtimes/csharp/src/Coflow.Runtime` 作为 Unity 包引入，安装目标平台原生插件，并把生成目录中的
-`coflow.contract` 作为运行时资源部署：
+引用 `runtimes/csharp/Coflow.Loader` 和生成的 C# 文件。加载器支持 netstandard2.1 与 net8.0。
+应用自行选择 CFD 文件并提供内容：
 
 ```csharp
-using Coflow.Generated;
-using Coflow;
+using Coflow.Loader;
 
-using var contract = Generated.LoadContract(contractBytes);
-using var builder = new RuntimeBuilder(contract);
-builder.AddSource(itemsText);
-using var runtime = builder.Build();
-var item = runtime.Table<Item>().Get("sword");
+var result = CoflowData.Load(new[] {
+    new CfdSource("items.cfd", itemsText),
+    new CfdSource("ja.cfd", japaneseText),
+});
+var data = result.Data;
+var sword = data.Item["sword"];
+var japaneseName = sword.name.For("ja");
 ```
 
-应用向构建器提供所有互相引用的 CFD 文本。构建成功后数据只读；更新数据或 Host 绑定时创建新运行时。
-使用结束后释放运行时，记录和集合无需单独释放。完整用法见 [C# 接入文档](website/docs/docs/reference/07-codegen/01-csharp.md)。
+加载结果包含成功状态和诊断。声明为 struct 的类型生成为结构体，记录引用直接连接生成对象。
+维度字段通过 `Default` 和 `For(variant)` 读取；未覆盖的值回退到基础值。
+C# 加载只使用 CFD 和生成代码，CFT 用于编辑器声明检查和代码生成，check 规则由编辑器执行。
+详见 [C# 接入文档](docs/csharp-unity.md)。

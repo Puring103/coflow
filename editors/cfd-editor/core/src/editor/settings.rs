@@ -29,8 +29,8 @@ mod tests {
     use super::{read_project_settings, write_project_settings};
     use super::{sanitized_column_widths, sanitized_record_groups, sanitized_views};
     use crate::editor::types::{
-        EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab,
-        ViewConfig, ViewKind,
+        EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState,
+        EditorWorkspaceTab, ViewConfig, ViewKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -128,10 +128,23 @@ mod tests {
         );
         assert_eq!(loaded.record_groups, settings.record_groups);
         assert_eq!(loaded.workspace, settings.workspace);
-        assert_eq!(loaded.views["data/items.cfd"]["Item"][0].column_widths, settings.views["data/items.cfd"]["Item"][0].column_widths);
-        let shared = fs::read_to_string(root.join("editor-setting").join(SETTINGS_FILE)).expect("shared settings");
-        for field in ["workspace", "view_order", "graph_compact_modes", "default_table_column_widths", "column_widths"] {
-            assert!(!shared.contains(&format!("\"{field}\"")), "personal field {field} leaked into shared settings");
+        assert_eq!(
+            loaded.views["data/items.cfd"]["Item"][0].column_widths,
+            settings.views["data/items.cfd"]["Item"][0].column_widths
+        );
+        let shared = fs::read_to_string(root.join("editor-setting").join(SETTINGS_FILE))
+            .expect("shared settings");
+        for field in [
+            "workspace",
+            "view_order",
+            "graph_compact_modes",
+            "default_table_column_widths",
+            "column_widths",
+        ] {
+            assert!(
+                !shared.contains(&format!("\"{field}\"")),
+                "personal field {field} leaked into shared settings"
+            );
         }
         assert!(root.join("editor-setting").join(SETTINGS_FILE).is_file());
         let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
@@ -181,45 +194,77 @@ mod tests {
 
     #[test]
     fn dimension_workspace_round_trip_and_path_migration() {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
         let root = std::env::temp_dir().join(format!("coflow-editor-dimension-settings-{nonce}"));
         fs::create_dir_all(&root).expect("create project root");
         let owner = coflow_runtime::path_to_slash(&root.join("data").join("mixed.cfd"));
         let target = EditorDimensionTarget {
-            dimension: "language".to_string(), owner_file: owner.clone(),
-            type_name: "Item".to_string(), field: Some("name".to_string()), singleton: false,
+            dimension: "language".to_string(),
+            owner_file: owner.clone(),
+            type_name: "Item".to_string(),
+            field: Some("name".to_string()),
+            singleton: false,
         };
         let id = serde_json::to_string(&["language", &owner, "Item", "name"]).expect("id");
         let mut settings = EditorProjectSettings::default();
         settings.workspace = EditorWorkspaceState {
             tabs: vec![EditorWorkspaceTab {
-                file_path: "@dimension/language".to_string(), type_name: String::new(),
-                view_id: "__default_table".to_string(), view_kind: crate::editor::WorkspaceViewKind::Table,
-                coordinate: None, dimension_target: Some(target),
-            }], active_tab_id: Some(id),
+                file_path: "@dimension/language".to_string(),
+                type_name: String::new(),
+                view_id: "__default_table".to_string(),
+                view_kind: crate::editor::WorkspaceViewKind::Table,
+                coordinate: None,
+                dimension_target: Some(target),
+            }],
+            active_tab_id: Some(id),
         };
         write_project_settings(&root, &settings).expect("write settings");
         let raw = fs::read_to_string(super::io::local_settings_path(&root).expect("local path"))
             .expect("read local json");
         assert!(raw.contains("data/mixed.cfd"));
         let loaded = read_project_settings(&root).expect("read settings");
-        assert_eq!(loaded.workspace.tabs[0].dimension_target.as_ref().expect("target").owner_file, "data/mixed.cfd");
-        assert_eq!(loaded.workspace.active_tab_id.as_deref(), Some("[\"language\",\"data/mixed.cfd\",\"Item\",\"name\"]"));
+        assert_eq!(
+            loaded.workspace.tabs[0]
+                .dimension_target
+                .as_ref()
+                .expect("target")
+                .owner_file,
+            "data/mixed.cfd"
+        );
+        assert_eq!(
+            loaded.workspace.active_tab_id.as_deref(),
+            Some("[\"language\",\"data/mixed.cfd\",\"Item\",\"name\"]")
+        );
         let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
     fn legacy_personal_settings_migrate_without_rewriting_shared_file() {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
         let root = std::env::temp_dir().join(format!("coflow-legacy-settings-{nonce}"));
         let path = root.join("editor-setting").join(SETTINGS_FILE);
         fs::create_dir_all(path.parent().expect("parent")).expect("create root");
         let raw = r#"{"version":1,"unknown_setting":42,"workspace":{"tabs":[],"active_tab_id":null},"views":{"data/items.cfd":{"Item":[{"id":"view-1","name":"List","kind":"table","columns":["name"],"column_widths":{"name":120},"unknown_view_setting":true}]}}}"#;
         fs::write(&path, raw).expect("write old settings");
         let loaded = read_project_settings(&root).expect("migrate personal settings");
-        assert_eq!(loaded.views[&coflow_runtime::project_path(&root, std::path::Path::new("data/items.cfd"))]["Item"][0].column_widths["name"], 120.0);
-        assert_eq!(fs::read_to_string(&path).expect("unchanged shared file"), raw);
+        assert_eq!(
+            loaded.views
+                [&coflow_runtime::project_path(&root, std::path::Path::new("data/items.cfd"))]
+                ["Item"][0]
+                .column_widths["name"],
+            120.0
+        );
+        assert_eq!(
+            fs::read_to_string(&path).expect("unchanged shared file"),
+            raw
+        );
         let local = super::io::local_settings_path(&root).expect("local path");
         assert!(local.is_file());
         let _ = fs::remove_file(local);
